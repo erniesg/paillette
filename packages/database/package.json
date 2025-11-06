@@ -11,8 +11,8 @@
     "db:migrate:local": "wrangler d1 migrations apply paillette-db --local",
     "db:migrate:staging": "wrangler d1 migrations apply paillette-db --env staging",
     "db:migrate:prod": "wrangler d1 migrations apply paillette-db --env production",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "echo \"No tests for schema-only package\" && exit 0",
+    "test:watch": "echo \"No tests for schema-only package\" && exit 0",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts",
     "clean": "rm -rf dist"
