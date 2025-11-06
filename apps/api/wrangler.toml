@@ -1,0 +1,60 @@
+name = "paillette-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+node_compat = true
+
+# Account ID - update with your Cloudflare account ID
+# account_id = "your-account-id-here"
+
+[observability]
+enabled = true
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "paillette-db"
+database_id = "your-d1-database-id"  # Create with: wrangler d1 create paillette-db
+
+# R2 Storage
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "paillette-images"
+
+# Vectorize
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "artwork-embeddings"
+
+# KV for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+
+# AI binding
+[ai]
+binding = "AI"
+
+# Queue for async processing
+[[queues.producers]]
+binding = "EMBEDDING_QUEUE"
+queue = "embedding-jobs"
+
+[[queues.consumers]]
+queue = "embedding-jobs"
+max_batch_size = 10
+max_batch_timeout = 30
+
+# Environment variables (use .dev.vars for local development)
+[vars]
+ENVIRONMENT = "development"
+API_VERSION = "v1"
+
+# Staging environment
+[env.staging]
+name = "paillette-api-staging"
+vars = { ENVIRONMENT = "staging" }
+
+# Production environment
+[env.production]
+name = "paillette-api-production"
+vars = { ENVIRONMENT = "production" }

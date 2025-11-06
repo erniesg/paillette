@@ -25,25 +25,45 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
 dist/
 build/
 .cache/
-.env.local
-.env.*.local
+.next/
+out/
+.turbo/
+*.tsbuildinfo
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+# Testing
+coverage/
+*.lcov
+.nyc_output
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.dev.vars
+
+# Cloudflare
+.wrangler/
+wrangler.toml.local
+
+# IDEs
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 
 # Logs
 logs/
