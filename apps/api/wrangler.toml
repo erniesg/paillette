@@ -49,12 +49,41 @@ max_batch_timeout = 30
 ENVIRONMENT = "development"
 API_VERSION = "v1"
 
-# Staging environment
+# Staging environment (deploy from 'staging' branch)
 [env.staging]
-name = "paillette-api-staging"
+name = "paillette-stg"
 vars = { ENVIRONMENT = "staging" }
 
-# Production environment
+# Staging resources (separate from production)
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "paillette-db-staging"
+database_id = "your-staging-d1-id"  # Create with: wrangler d1 create paillette-db-staging
+
+[[env.staging.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "paillette-images-staging"
+
+[[env.staging.vectorize]]
+binding = "VECTORIZE"
+index_name = "artwork-embeddings-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "your-staging-kv-id"
+
+[[env.staging.queues.producers]]
+binding = "EMBEDDING_QUEUE"
+queue = "embedding-jobs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "embedding-jobs-staging"
+max_batch_size = 10
+max_batch_timeout = 30
+
+# Production environment (deploy from 'master' branch)
 [env.production]
-name = "paillette-api-production"
+name = "paillette"
 vars = { ENVIRONMENT = "production" }
+
+# Production uses the main bindings defined above
