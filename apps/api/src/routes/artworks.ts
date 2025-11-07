@@ -15,6 +15,7 @@ import {
   type ArtworkListResponse,
   type ArtworkUploadResponse,
 } from '../types/artwork';
+import type { EmbeddingJob } from '../types/embedding';
 import {
   uploadImage,
   uploadThumbnail,
@@ -264,11 +265,23 @@ app.post('/upload', async (c) => {
       )
       .run();
 
-    // TODO: Queue for embedding generation
-    // await c.env.EMBEDDING_QUEUE.send({
-    //   artworkId: artwork.id,
-    //   imageUrl: artwork.image_url,
-    // });
+    // Queue for embedding generation
+    const embeddingJob: EmbeddingJob = {
+      artworkId: artwork.id,
+      imageUrl: artwork.image_url,
+      imageKey: uploadResult.key,
+      metadata: {
+        galleryId: artwork.gallery_id,
+        title: artwork.title,
+        artist: artwork.artist || undefined,
+        year: artwork.year || undefined,
+        medium: artwork.medium || undefined,
+        description: artwork.description || undefined,
+      },
+    };
+
+    await c.env.EMBEDDING_QUEUE.send(embeddingJob);
+    console.log(`Queued embedding generation for artwork ${artwork.id}`);
 
     const response: ArtworkUploadResponse = {
       success: true,

@@ -2,17 +2,20 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import artworkRoutes from './routes/artworks';
+import searchRoutes from './routes/search';
+import embeddingConsumer from './queues/embedding-consumer';
 
 // Environment bindings
 export interface Env {
   DB: D1Database;
   IMAGES: R2Bucket;
-  VECTORIZE: Vectorize;
+  VECTORIZE: VectorizeIndex;
   CACHE: KVNamespace;
   AI: Ai;
   EMBEDDING_QUEUE: Queue;
   ENVIRONMENT: string;
   API_VERSION: string;
+  REPLICATE_API_KEY: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -44,6 +47,7 @@ app.get('/health', (c) => {
 // API routes
 const apiVersion = 'v1';
 app.route(`/api/${apiVersion}/artworks`, artworkRoutes);
+app.route(`/api/${apiVersion}/search`, searchRoutes);
 
 // 404 handler
 app.notFound((c) => {
@@ -77,5 +81,8 @@ app.onError((err, c) => {
     500
   );
 });
+
+// Export queue consumer
+export { embeddingConsumer as queue };
 
 export default app;
