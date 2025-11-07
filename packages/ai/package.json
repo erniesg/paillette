@@ -1,0 +1,27 @@
+{
+  "name": "@paillette/ai",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/ai": "^1.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.2.0",
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@paillette/types": "workspace:*",
+    "typescript": "^5.7.0",
+    "vitest": "^2.0.0"
+  }
+}
