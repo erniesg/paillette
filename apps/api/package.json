@@ -17,6 +17,9 @@
   },
   "dependencies": {
     "@cloudflare/ai": "^1.0.63",
+    "@hono/zod-validator": "^0.4.1",
+    "@paillette/database": "workspace:*",
+    "@paillette/types": "workspace:*",
     "hono": "^4.6.14",
     "zod": "^3.24.1"
   },
