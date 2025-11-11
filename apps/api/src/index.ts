@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import galleries from './routes/galleries';
+import artworkRoutes from './routes/artworks';
 
 // Environment bindings
 export interface Env {
@@ -40,10 +42,13 @@ app.get('/health', (c) => {
   });
 });
 
-// API routes
-app.get(`/api/${process.env.API_VERSION || 'v1'}/*`, (c) => {
-  return c.json({ message: 'API endpoint placeholder' }, 200);
-});
+// API v1 routes
+const api = new Hono<{ Bindings: Env }>();
+api.route('/galleries', galleries);
+api.route('/artworks', artworkRoutes);
+
+// Mount API routes
+app.route('/api/v1', api);
 
 // 404 handler
 app.notFound((c) => {
