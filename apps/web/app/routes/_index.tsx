@@ -124,6 +124,7 @@ export default function Index() {
               description="Instant translation to English, Chinese, Tamil, and Malay"
               icon="🌏"
               delay={0.4}
+              link="/translate"
             />
             <FeatureCard
               title="Public API"
@@ -151,21 +152,16 @@ function FeatureCard({
   description,
   icon,
   delay,
+  link,
 }: {
   title: string;
   description: string;
   icon: string;
   delay: number;
+  link?: string;
 }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6, delay }}
-      whileHover={{ scale: 1.05, y: -5 }}
-      className="group relative bg-gradient-to-br from-neutral-900/80 to-neutral-800/50 backdrop-blur-sm border border-neutral-800 rounded-2xl p-8 transition-all duration-300 hover:border-primary-500/50 hover:shadow-xl hover:shadow-primary-500/10"
-    >
+  const content = (
+    <>
       <div className="text-5xl mb-4 group-hover:scale-110 transition-transform duration-300">
         {icon}
       </div>
@@ -176,6 +172,29 @@ function FeatureCard({
 
       {/* Gradient overlay on hover */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary-500/0 to-accent-500/0 group-hover:from-primary-500/5 group-hover:to-accent-500/5 rounded-2xl transition-all duration-300" />
+    </>
+  );
+
+  const className =
+    'group relative bg-gradient-to-br from-neutral-900/80 to-neutral-800/50 backdrop-blur-sm border border-neutral-800 rounded-2xl p-8 transition-all duration-300 hover:border-primary-500/50 hover:shadow-xl hover:shadow-primary-500/10 block';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.6, delay }}
+      whileHover={{ scale: 1.05, y: -5 }}
+    >
+      {link ? (
+        <a href={link} className={className}>
+          {content}
+        </a>
+      ) : (
+        <div className={className}>
+          {content}
+        </div>
+      )}
     </motion.div>
   );
 }

@@ -9,6 +9,11 @@ import type {
   SearchImageRequest,
   Gallery,
   Artwork,
+  TranslateTextRequest,
+  TranslateTextResponse,
+  TranslateCostEstimate,
+  TranslateDocumentResponse,
+  TranslationJobStatus,
 } from '../types';
 
 // Get API URL from environment or use default
@@ -339,6 +344,101 @@ class ApiClient {
     }
 
     return data.data;
+  }
+
+  /**
+   * Translate text
+   */
+  async translateText(
+    request: TranslateTextRequest
+  ): Promise<TranslateTextResponse> {
+    const response = await fetch(`${this.baseUrl}/translate/text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    const data: ApiResponse<TranslateTextResponse> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Translation failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Estimate translation cost
+   */
+  async estimateTranslationCost(
+    text: string,
+    targetLang: string
+  ): Promise<TranslateCostEstimate> {
+    const response = await fetch(`${this.baseUrl}/translate/estimate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, targetLang }),
+    });
+
+    const data: ApiResponse<TranslateCostEstimate> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Cost estimation failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Upload document for translation
+   */
+  async translateDocument(
+    file: File,
+    sourceLang: string,
+    targetLang: string
+  ): Promise<TranslateDocumentResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sourceLang', sourceLang);
+    formData.append('targetLang', targetLang);
+
+    const response = await fetch(`${this.baseUrl}/translate/document`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data: ApiResponse<TranslateDocumentResponse> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Document upload failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Get translation job status
+   */
+  async getTranslationJobStatus(jobId: string): Promise<TranslationJobStatus> {
+    const response = await fetch(`${this.baseUrl}/translate/document/${jobId}`);
+    const data: ApiResponse<TranslationJobStatus> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch job status');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Download translated document
+   */
+  downloadTranslatedDocument(jobId: string): string {
+    return `${this.baseUrl}/translate/document/${jobId}/download`;
   }
 }
 

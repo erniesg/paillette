@@ -120,3 +120,52 @@ export interface SearchImageRequest {
   topK?: number;
   minScore?: number;
 }
+
+// Translation types
+export type Language = 'en' | 'zh' | 'ms' | 'ta';
+
+export interface TranslateTextRequest {
+  text: string;
+  sourceLang: Language;
+  targetLang: Language;
+}
+
+export interface TranslateTextResponse {
+  translatedText: string;
+  provider: string;
+  cached: boolean;
+  cost?: number;
+}
+
+export interface TranslateCostEstimate {
+  estimatedCost: number;
+  provider: string;
+  characterCount: number;
+  costPerCharacter: number;
+}
+
+export interface TranslateDocumentRequest {
+  file: File;
+  sourceLang: Language;
+  targetLang: Language;
+}
+
+export interface TranslateDocumentResponse {
+  jobId: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  filename: string;
+  estimatedTime?: string;
+}
+
+export interface TranslationJobStatus {
+  jobId: string;
+  filename: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  sourceLang: Language;
+  targetLang: Language;
+  createdAt: string;
+  completedAt?: string;
+  downloadUrl?: string;
+  error?: string;
+  cost?: number;
+}

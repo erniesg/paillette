@@ -140,6 +140,12 @@ export default function GalleryExplore() {
               >
                 Explore
               </Link>
+              <Link
+                to="/translate"
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                Translate
+              </Link>
             </nav>
           </div>
         </div>
