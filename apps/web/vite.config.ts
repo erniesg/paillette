@@ -12,7 +12,10 @@ export default defineConfig({
     }),
   ],
   ssr: {
-    noExternal: ['react-dom'],
+    resolve: {
+      conditions: ['workerd', 'worker', 'browser'],
+      externalConditions: ['workerd', 'worker', 'browser'],
+    },
   },
   test: {
     globals: true,
