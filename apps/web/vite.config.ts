@@ -9,11 +9,10 @@ export default defineConfig({
         v3_relativeSplatPath: true,
         v3_throwAbortReason: true,
       },
-      serverModuleFormat: 'esm',
     }),
   ],
-  resolve: {
-    conditions: ['worker', 'browser'],
+  ssr: {
+    noExternal: ['react-dom'],
   },
   test: {
     globals: true,
