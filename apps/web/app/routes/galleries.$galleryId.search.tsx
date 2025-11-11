@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
-import { useLoaderData, useSearchParams } from '@remix-run/react';
+import { useLoaderData, useSearchParams, Link } from '@remix-run/react';
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -154,18 +154,24 @@ export default function SearchPage() {
               <p className="text-sm text-neutral-400 mt-1">{gallery.name}</p>
             </div>
             <nav className="flex items-center gap-4">
-              <a
-                href={`/galleries/${galleryId}`}
+              <Link
+                to={`/galleries/${galleryId}`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Dashboard
-              </a>
-              <a
-                href={`/galleries/${galleryId}/search`}
+              </Link>
+              <Link
+                to={`/galleries/${galleryId}/search`}
                 className="text-white font-semibold"
               >
                 Search
-              </a>
+              </Link>
+              <Link
+                to={`/galleries/${galleryId}/explore`}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                Explore
+              </Link>
             </nav>
           </div>
         </div>

@@ -34,15 +34,24 @@ id = "your-kv-namespace-id"
 [ai]
 binding = "AI"
 
-# Queue for async processing
+# Queues for async processing
 [[queues.producers]]
 binding = "EMBEDDING_QUEUE"
 queue = "embedding-jobs"
+
+[[queues.producers]]
+binding = "TRANSLATION_QUEUE"
+queue = "translation-jobs"
 
 [[queues.consumers]]
 queue = "embedding-jobs"
 max_batch_size = 10
 max_batch_timeout = 30
+
+[[queues.consumers]]
+queue = "translation-jobs"
+max_batch_size = 5
+max_batch_timeout = 60
 
 # Environment variables (use .dev.vars for local development)
 [vars]
