@@ -1219,6 +1219,7 @@ export function FrameRemovalPreview({ artwork }: { artwork: Artwork }) {
 
 **Duration:** 5 days
 **Research Required:** Yes (Day 1)
+**Goal:** Build a translation tool for user-entered text and document uploads (DOCX, PDF)
 
 ### 4.1 Research Phase (Day 1)
 
@@ -1228,8 +1229,8 @@ export function FrameRemovalPreview({ artwork }: { artwork: Artwork }) {
 - [x] Test: Youdao API for Mandarin (specialized for Chinese)
 - [x] Test: Google Translate API for Tamil (best support)
 - [x] Test: OpenAI GPT-4 for Malay (best quality for Southeast Asian languages)
-- [x] Tested: Quality verified for EN→ZH, EN→MS, EN→TA
-- [x] Calculated: Cost for translating 1000 artworks × 3 languages
+- [x] Tested: Quality verified for EN↔ZH, EN↔MS, EN↔TA
+- [x] Test: Document parsing (DOCX, PDF) with formatting preservation
 
 **Deliverable:** Provider matrix with quality scores and costs
 
@@ -1238,6 +1239,10 @@ export function FrameRemovalPreview({ artwork }: { artwork: Artwork }) {
 - **Malay (MS):** OpenAI GPT-4 - best quality for Southeast Asian art context
 - **Tamil (TA):** Google Translate V2 - excellent Tamil support with REST API
 - **Fallback:** Cloudflare AI (free, decent quality)
+
+**Document Processing:**
+- **DOCX:** mammoth.js for HTML conversion + translation + reconstruction
+- **PDF:** pdf.js for text extraction + translation (no formatting preservation)
 
 ---
 
@@ -1375,22 +1380,97 @@ export class TranslationService {
 }
 ```
 
-#### 4.2.2 API Endpoints
-- [ ] `POST /api/v1/translate/text` - Single text translation
-- [ ] `POST /api/v1/artworks/:id/translate` - Translate artwork metadata
-- [ ] `POST /api/v1/galleries/:id/translate-all` - Batch translate entire gallery
-- [ ] `GET /api/v1/translation-jobs/:id` - Check batch job status
+#### 4.2.2 Document Processing Package
+- [ ] Create: `packages/document-processor/` package
+- [ ] Install: `mammoth` (DOCX), `pdf-parse` (PDF), `docx` (DOCX creation)
+- [ ] Implement: DOCX parser with formatting preservation
+- [ ] Implement: PDF text extraction
+- [ ] Implement: Translated DOCX reconstruction
 
-#### 4.2.3 Queue Consumer
-- [ ] Create: `translation-queue`
-- [ ] Implement: Batch translation processor
-- [ ] Update: Artwork translations in database
+**File:** `packages/document-processor/src/docx-processor.ts`
+
+```typescript
+import mammoth from 'mammoth';
+import { Document, Paragraph, TextRun } from 'docx';
+
+export class DocxProcessor {
+  async extractText(fileBuffer: Buffer): Promise<{ text: string; html: string }> {
+    const result = await mammoth.convertToHtml({ buffer: fileBuffer });
+    const textResult = await mammoth.extractRawText({ buffer: fileBuffer });
+
+    return {
+      text: textResult.value,
+      html: result.value
+    };
+  }
+
+  async createTranslatedDocx(
+    originalHtml: string,
+    translatedText: string,
+    metadata: { originalLang: string; targetLang: string }
+  ): Promise<Buffer> {
+    // Parse HTML and create new DOCX with translated content
+    // Preserve basic formatting (bold, italic, headings)
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            children: [new TextRun(translatedText)]
+          })
+        ]
+      }]
+    });
+
+    return await Packer.toBuffer(doc);
+  }
+}
+```
+
+#### 4.2.3 API Endpoints
+- [ ] `POST /api/v1/translate/text` - Translate user-entered text
+  - Body: `{ text: string, sourceLang: string, targetLang: string }`
+  - Response: `{ translatedText: string, provider: string, cached: boolean }`
+- [ ] `POST /api/v1/translate/document` - Upload document for translation
+  - Accept: DOCX, PDF (multipart/form-data)
+  - Response: `{ jobId: string, status: 'queued' }`
+- [ ] `GET /api/v1/translate/document/:jobId` - Check translation job status
+  - Response: `{ status: 'processing' | 'completed' | 'failed', downloadUrl?: string }`
+- [ ] `GET /api/v1/translate/document/:jobId/download` - Download translated document
+
+#### 4.2.4 Queue Consumer
+- [ ] Create: `translation-queue` for document processing
+- [ ] Implement: Document translation processor
+  - Extract text from DOCX/PDF
+  - Split into chunks (handle large documents)
+  - Translate each chunk
+  - Reconstruct document
+  - Upload to R2 storage
 - [ ] Track: Translation costs and usage
 
-#### 4.2.4 Database Schema
-- [ ] Verify: `translations` JSON column exists in artworks table
-- [ ] Add: Translation job tracking table
-- [ ] Add: Translation cache analytics
+#### 4.2.5 Database Schema
+- [ ] Create: `translation_jobs` table
+
+```sql
+CREATE TABLE translation_jobs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  file_type TEXT NOT NULL, -- 'docx' | 'pdf'
+  source_lang TEXT NOT NULL,
+  target_lang TEXT NOT NULL,
+  status TEXT NOT NULL, -- 'queued' | 'processing' | 'completed' | 'failed'
+  original_file_url TEXT NOT NULL,
+  translated_file_url TEXT,
+  error_message TEXT,
+  cost REAL,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+- [ ] Add: Translation cache in KV store (for text translations)
 
 ---
 
@@ -1398,63 +1478,233 @@ export class TranslationService {
 
 **Owner:** Translation Frontend Agent
 
-#### 4.3.1 Language Selector Component
-- [ ] Create: `<LanguageSelector />` component
-- [ ] Show: Available languages (EN, ZH, MS, TA)
-- [ ] Persist: User language preference in localStorage
-- [ ] Update: Content dynamically when language changes
+#### 4.3.1 Translation Tool Page
+- [ ] Create: `/translate` route (main translation tool page)
+- [ ] Add: Two modes - Text Translation | Document Translation
+- [ ] Layout: Side-by-side source/target panels
 
-**Component:** `apps/web/app/components/language-selector.tsx`
+**File:** `apps/web/app/routes/translate.tsx`
 
 ```typescript
-export function LanguageSelector() {
-  const [language, setLanguage] = useLanguage();
+export default function TranslatePage() {
+  const [mode, setMode] = useState<'text' | 'document'>('text');
 
   return (
-    <Select value={language} onValueChange={setLanguage}>
-      <SelectTrigger className="w-32">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="en">English</SelectItem>
-        <SelectItem value="zh">中文</SelectItem>
-        <SelectItem value="ms">Melayu</SelectItem>
-        <SelectItem value="ta">தமிழ்</SelectItem>
-      </SelectContent>
-    </Select>
+    <div className="container mx-auto py-8">
+      <h1 className="text-3xl font-bold mb-8">Translation Tool</h1>
+
+      {/* Mode toggle */}
+      <Tabs value={mode} onValueChange={setMode}>
+        <TabsList>
+          <TabsTrigger value="text">Text Translation</TabsTrigger>
+          <TabsTrigger value="document">Document Translation</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="text">
+          <TextTranslator />
+        </TabsContent>
+
+        <TabsContent value="document">
+          <DocumentTranslator />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
 ```
 
-#### 4.3.2 Translated Content Display
-- [ ] Update: `<ArtworkCard />` to show translated title/description
-- [ ] Update: `<ArtworkDetail />` dialog
-- [ ] Add: Language badge when viewing translations
-- [ ] Fallback: Show English if translation not available
+#### 4.3.2 Text Translation Component
+- [ ] Create: `<TextTranslator />` component
+- [ ] Source panel: Large textarea for input text
+- [ ] Target panel: Display translated text
+- [ ] Language selectors: Source language → Target language
+- [ ] Add: "Translate" button
+- [ ] Add: "Copy to clipboard" button
+- [ ] Add: Character count and cost estimate
 
-#### 4.3.3 Translation Management UI
-- [ ] Create: `/galleries/:id/translations` page
-- [ ] Show: Translation status for all artworks
-- [ ] Add: "Translate All" button
-- [ ] Display: Translation progress
-- [ ] Show: Cost estimate before translating
+**Component:** `apps/web/app/components/translate/text-translator.tsx`
 
-#### 4.3.4 Document Translation UI
-- [ ] Add: Document upload for translation
-- [ ] Support: DOCX format
-- [ ] Show: Translation progress
-- [ ] Download: Translated document
+```typescript
+export function TextTranslator() {
+  const [sourceText, setSourceText] = useState('');
+  const [sourceLang, setSourceLang] = useState('en');
+  const [targetLang, setTargetLang] = useState('zh');
+  const [translatedText, setTranslatedText] = useState('');
+
+  const translate = useTranslateText();
+
+  const handleTranslate = async () => {
+    const result = await translate.mutateAsync({
+      text: sourceText,
+      sourceLang,
+      targetLang
+    });
+    setTranslatedText(result.translatedText);
+  };
+
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {/* Source panel */}
+      <div>
+        <label>Source Language</label>
+        <Select value={sourceLang} onValueChange={setSourceLang}>
+          <SelectItem value="en">English</SelectItem>
+          <SelectItem value="zh">中文</SelectItem>
+          <SelectItem value="ms">Melayu</SelectItem>
+          <SelectItem value="ta">தமிழ்</SelectItem>
+        </Select>
+
+        <Textarea
+          value={sourceText}
+          onChange={(e) => setSourceText(e.target.value)}
+          rows={15}
+          placeholder="Enter text to translate..."
+        />
+
+        <p className="text-sm text-neutral-500">
+          {sourceText.length} characters
+        </p>
+      </div>
+
+      {/* Target panel */}
+      <div>
+        <label>Target Language</label>
+        <Select value={targetLang} onValueChange={setTargetLang}>
+          <SelectItem value="en">English</SelectItem>
+          <SelectItem value="zh">中文</SelectItem>
+          <SelectItem value="ms">Melayu</SelectItem>
+          <SelectItem value="ta">தமிழ்</SelectItem>
+        </Select>
+
+        <Textarea
+          value={translatedText}
+          readOnly
+          rows={15}
+          placeholder="Translation will appear here..."
+        />
+
+        <Button onClick={() => navigator.clipboard.writeText(translatedText)}>
+          Copy to Clipboard
+        </Button>
+      </div>
+
+      {/* Translate button */}
+      <div className="col-span-2">
+        <Button onClick={handleTranslate} disabled={!sourceText}>
+          Translate
+        </Button>
+      </div>
+    </div>
+  );
+}
+```
+
+#### 4.3.3 Document Translation Component
+- [ ] Create: `<DocumentTranslator />` component
+- [ ] File upload: Drag & drop for DOCX/PDF
+- [ ] Language selectors: Source → Target
+- [ ] Show: Translation progress with real-time updates
+- [ ] Add: Download button when complete
+- [ ] Add: File size limit warning (e.g., max 10MB)
+
+**Component:** `apps/web/app/components/translate/document-translator.tsx`
+
+```typescript
+export function DocumentTranslator() {
+  const [file, setFile] = useState<File | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [sourceLang, setSourceLang] = useState('en');
+  const [targetLang, setTargetLang] = useState('zh');
+
+  const uploadDocument = useTranslateDocument();
+  const jobStatus = useTranslationJobStatus(jobId);
+
+  const handleUpload = async () => {
+    if (!file) return;
+
+    const result = await uploadDocument.mutateAsync({
+      file,
+      sourceLang,
+      targetLang
+    });
+
+    setJobId(result.jobId);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* File upload */}
+      <FileUploader
+        accept=".docx,.pdf"
+        onFileSelect={setFile}
+        maxSize={10 * 1024 * 1024} // 10MB
+      />
+
+      {/* Language selection */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label>Source Language</label>
+          <Select value={sourceLang} onValueChange={setSourceLang}>
+            <SelectItem value="en">English</SelectItem>
+            <SelectItem value="zh">中文</SelectItem>
+            <SelectItem value="ms">Melayu</SelectItem>
+            <SelectItem value="ta">தமிழ்</SelectItem>
+          </Select>
+        </div>
+
+        <div>
+          <label>Target Language</label>
+          <Select value={targetLang} onValueChange={setTargetLang}>
+            <SelectItem value="en">English</SelectItem>
+            <SelectItem value="zh">中文</SelectItem>
+            <SelectItem value="ms">Melayu</SelectItem>
+            <SelectItem value="ta">தமிழ்</SelectItem>
+          </Select>
+        </div>
+      </div>
+
+      {/* Upload button */}
+      <Button onClick={handleUpload} disabled={!file}>
+        Translate Document
+      </Button>
+
+      {/* Progress */}
+      {jobStatus && (
+        <TranslationProgress
+          status={jobStatus.status}
+          downloadUrl={jobStatus.downloadUrl}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+#### 4.3.4 Write Component Tests
+- [ ] Test: Text translator updates target panel on translate
+- [ ] Test: Document uploader accepts DOCX/PDF only
+- [ ] Test: Translation progress shows status updates
+- [ ] Test: Copy to clipboard works
+- [ ] Test: Download button appears when translation complete
+
+#### 4.3.5 E2E Tests
+- [ ] Test: Translate text from EN to ZH
+- [ ] Test: Upload DOCX and download translated version
+- [ ] Test: Handle translation errors gracefully
+- [ ] Test: Cost estimate calculation
 
 **Checklist Summary - Translation:**
 - [ ] 4.1.1 Research & API testing
 - [ ] 4.2.1 Translation service package
-- [ ] 4.2.2 API endpoints
-- [ ] 4.2.3 Queue consumer
-- [ ] 4.2.4 Database schema
-- [ ] 4.3.1 Language selector component
-- [ ] 4.3.2 Translated content display
-- [ ] 4.3.3 Translation management UI
-- [ ] 4.3.4 Document translation UI
+- [ ] 4.2.2 Document processing package
+- [ ] 4.2.3 API endpoints
+- [ ] 4.2.4 Queue consumer
+- [ ] 4.2.5 Database schema
+- [ ] 4.3.1 Translation tool page
+- [ ] 4.3.2 Text translation component
+- [ ] 4.3.3 Document translation component
+- [ ] 4.3.4 Component tests
+- [ ] 4.3.5 E2E tests
 
 ---
 
@@ -1750,11 +2000,13 @@ export function EmbeddingProjector2D({ artworks }: { artworks: ProjectedArtwork[
 - [ ] ✅ Manual fallback option available
 - [ ] ✅ Cost per 1000 images: < $20
 
-### Sprint 4: Translation
-- [ ] ✅ Translate 100 artworks to 3 languages in < 5 minutes
-- [ ] ✅ Translation quality verified by native speakers
-- [ ] ✅ Language switcher works correctly
-- [ ] ✅ Fallback to English when translation unavailable
+### Sprint 4: Translation Tool
+- [ ] ✅ Translate 10,000 character text in < 5 seconds
+- [ ] ✅ Translate 10-page DOCX document in < 30 seconds
+- [ ] ✅ Translation quality verified by native speakers (EN↔ZH, EN↔MS, EN↔TA)
+- [ ] ✅ Document formatting preserved in DOCX output
+- [ ] ✅ Fallback to Cloudflare AI when primary provider fails
+- [ ] ✅ Test coverage: 90%+
 
 ### Sprint 5: Embedding Visualizer
 - [ ] ✅ Visualize 1000 artworks smoothly (60fps)
@@ -1772,9 +2024,10 @@ export function EmbeddingProjector2D({ artworks }: { artworks: ProjectedArtwork[
 |---------|---------|------|
 | Color Extraction | Cloudflare Workers | $0 (included) |
 | Frame Removal | Replicate SAM | $2-13 |
-| Translation (3 langs) | DeepL Beta + CF AI | $0-50 |
+| Translation Tool (per 1000 docs) | Youdao + OpenAI + Google | $10-100 |
 | Embedding Viz | UMAP service | $5-20 |
-| **Total** | | **$7-83** |
+| **Total (1000 artworks)** | | **$7-33** |
+| **Total (1000 document translations)** | | **$17-133** |
 
 **Monthly Operational Costs:**
 - Cloudflare Workers: $5-25/month (depending on usage)
