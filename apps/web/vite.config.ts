@@ -1,5 +1,6 @@
 import { vitePlugin as remix } from '@remix-run/dev';
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 export default defineConfig({
   plugins: [
@@ -11,6 +12,11 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: {
+    alias: {
+      '~': path.resolve(__dirname, './app'),
+    },
+  },
   ssr: {
     resolve: {
       conditions: ['workerd', 'worker', 'browser'],
