@@ -54,6 +54,9 @@ importers:
       '@paillette/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@paillette/metadata':
+        specifier: workspace:*
+        version: link:../../packages/metadata
       '@paillette/types':
         specifier: workspace:*
         version: link:../../packages/types

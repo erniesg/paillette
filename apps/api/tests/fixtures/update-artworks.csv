@@ -1,0 +1,3 @@
+artwork_id,title,artist,year,medium,dimensions_height,dimensions_width,dimensions_depth,dimensions_unit,description,provenance,image_filename
+test-artwork-001,Starry Night (Updated),Vincent van Gogh,1889,Oil on canvas,73.7,92.1,,cm,Updated description: A famous painting depicting a swirling night sky,Museum of Modern Art - Updated,starry-night.jpg
+test-artwork-002,The Scream (Revised),Edvard Munch,1893,Oil tempera pastel and crayon on cardboard,91,73.5,,cm,Revised expressionist painting,National Gallery of Norway,the-scream.jpg

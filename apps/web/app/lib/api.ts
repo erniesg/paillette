@@ -151,6 +151,145 @@ class ApiClient {
 
     return data.data;
   }
+
+  /**
+   * Upload CSV file with metadata
+   */
+  async uploadMetadata(
+    galleryId: string,
+    file: File
+  ): Promise<{
+    job_id: string;
+    result: {
+      created: Array<{ id: string; title: string }>;
+      updated: Array<{ id: string; title: string }>;
+      failed: Array<{ row: number; error: string }>;
+      stats: {
+        total: number;
+        created: number;
+        updated: number;
+        failed: number;
+        file_name: string;
+        file_size: number;
+      };
+    };
+  }> {
+    const formData = new FormData();
+    formData.append('csv', file);
+    formData.append('gallery_id', galleryId);
+
+    const response = await fetch(`${this.baseUrl}/metadata/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Upload failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Validate CSV file without uploading
+   */
+  async validateMetadata(file: File): Promise<{
+    valid: boolean;
+    stats: {
+      totalRows: number;
+      validRows: number;
+      invalidRows: number;
+    };
+    errors: Array<{
+      row: number;
+      column: string;
+      message: string;
+      value: any;
+    }>;
+    sample: any[];
+    file_info: {
+      name: string;
+      size: number;
+      type: string;
+    };
+  }> {
+    const formData = new FormData();
+    formData.append('csv', file);
+
+    const response = await fetch(`${this.baseUrl}/metadata/validate`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Validation failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Get upload job status
+   */
+  async getUploadJob(jobId: string): Promise<{
+    id: string;
+    gallery_id: string;
+    status: string;
+    total_items: number;
+    processed_items: number;
+    failed_items: number;
+    error_log: any;
+    created_at: string;
+    updated_at: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/metadata/jobs/${jobId}`);
+    const data = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch job');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * List upload jobs for gallery
+   */
+  async listUploadJobs(galleryId: string): Promise<{
+    jobs: Array<{
+      id: string;
+      gallery_id: string;
+      status: string;
+      total_items: number;
+      processed_items: number;
+      failed_items: number;
+      created_at: string;
+      updated_at: string;
+    }>;
+    total: number;
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/metadata/jobs?gallery_id=${galleryId}`
+    );
+    const data = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to list jobs');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Download CSV template
+   */
+  downloadTemplate(): string {
+    return `${this.baseUrl}/metadata/template`;
+  }
 }
 
 export const apiClient = new ApiClient();

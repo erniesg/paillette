@@ -1,0 +1,5 @@
+artwork_id,title,artist,year,medium,dimensions_height,dimensions_width,dimensions_depth,dimensions_unit,description,provenance,image_filename
+test-existing-001,Updated via CSV,Claude Monet,1899,Oil on canvas,100,100,,cm,This artwork will be updated,Updated Provenance,water-lilies.jpg
+,New Artwork 1,Pablo Picasso,1920,Cubist painting,80,60,,cm,This is a new artwork to be created,,new-artwork-1.jpg
+,New Artwork 2,Frida Kahlo,1940,Self-portrait,50,40,,cm,Another new artwork,,new-artwork-2.jpg
+test-existing-002,Another Update,Henri Matisse,1910,Fauvism,90,70,,cm,Update existing artwork 2,Updated Info,matisse-work.jpg
