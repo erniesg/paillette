@@ -1,0 +1,6 @@
+artwork_id,title,artist,year,medium,dimensions_height,dimensions_width,dimensions_depth,dimensions_unit,description,provenance,image_filename
+,Artwork 1,Artist 1,1900,Oil on canvas,100,80,,cm,Description for artwork 1,Provenance 1,artwork-001.jpg
+,Artwork 2,Artist 2,1901,Watercolor,90,70,,cm,Description for artwork 2,Provenance 2,artwork-002.jpg
+,Artwork 3,Artist 3,1902,Acrylic,80,60,,cm,Description for artwork 3,Provenance 3,artwork-003.jpg
+,Artwork 4,Artist 4,1903,Oil on canvas,110,90,,cm,Description for artwork 4,Provenance 4,artwork-004.jpg
+,Artwork 5,Artist 5,1904,Mixed media,95,75,,cm,Description for artwork 5,Provenance 5,artwork-005.jpg
