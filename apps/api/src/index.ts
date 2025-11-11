@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import galleries from './routes/galleries';
 import artworkRoutes from './routes/artworks';
+import { searchRoutes } from './routes/search';
 
 // Environment bindings
 export interface Env {
@@ -44,8 +45,13 @@ app.get('/health', (c) => {
 
 // API v1 routes
 const api = new Hono<{ Bindings: Env }>();
+
+// Core CRUD routes
 api.route('/galleries', galleries);
 api.route('/artworks', artworkRoutes);
+
+// Search routes
+api.route('/galleries/:galleryId', searchRoutes);
 
 // Mount API routes
 app.route('/api/v1', api);
