@@ -9,9 +9,10 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import './tailwind.css';
+import styles from './tailwind.css?url';
 
 export const links: LinksFunction = () => [
+  { rel: 'stylesheet', href: styles },
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
   {
     rel: 'preconnect',

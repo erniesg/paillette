@@ -3,11 +3,11 @@ import { motion } from 'framer-motion';
 
 export const meta: MetaFunction = () => {
   return [
-    { title: 'Paillette - AI-Powered Art Gallery Platform' },
+    { title: 'Paillette - AI-Powered Gallery Platform' },
     {
       name: 'description',
       content:
-        'Multimodal search and management platform for art galleries worldwide',
+        'Multimodal search and management platform for galleries worldwide',
     },
   ];
 };
@@ -51,8 +51,8 @@ export default function Index() {
               transition={{ delay: 0.3, duration: 0.8 }}
               className="text-xl lg:text-2xl text-neutral-300 mb-8 max-w-3xl mx-auto leading-relaxed"
             >
-              AI-powered multimodal search and management platform for art
-              galleries worldwide
+              AI-powered multimodal search and management platform for galleries
+              worldwide
             </motion.p>
 
             <motion.div
@@ -137,7 +137,7 @@ export default function Index() {
         {/* Footer */}
         <footer className="container mx-auto px-6 py-12 text-center border-t border-neutral-800">
           <p className="text-neutral-500">
-            © {new Date().getFullYear()} Paillette. Illuminating art galleries
+            © {new Date().getFullYear()} Paillette. Making collections shine
             with AI.
           </p>
         </footer>
