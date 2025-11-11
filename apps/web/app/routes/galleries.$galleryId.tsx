@@ -84,6 +84,12 @@ export default function GalleryDashboard() {
                 Explore
               </Link>
               <Link
+                to={`/galleries/${galleryId}/frame-removal`}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                Frame Removal
+              </Link>
+              <Link
                 to="/translate"
                 className="text-neutral-400 hover:text-white transition-colors"
               >
@@ -173,7 +179,7 @@ export default function GalleryDashboard() {
                 Common tasks to manage your gallery
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Button variant="outline" asChild className="h-auto py-4 flex-col">
                 <Link to={`/galleries/${galleryId}/search`}>
                   <span className="text-3xl mb-2">🔍</span>
@@ -192,6 +198,12 @@ export default function GalleryDashboard() {
                 <Link to={`/galleries/${galleryId}/explore`}>
                   <span className="text-3xl mb-2">🎨</span>
                   <span>Explore</span>
+                </Link>
+              </Button>
+              <Button variant="outline" asChild className="h-auto py-4 flex-col">
+                <Link to={`/galleries/${galleryId}/frame-removal`}>
+                  <span className="text-3xl mb-2">🖼️</span>
+                  <span>Frame Removal</span>
                 </Link>
               </Button>
             </CardContent>

@@ -173,6 +173,12 @@ export default function SearchPage() {
                 Explore
               </Link>
               <Link
+                to={`/galleries/${galleryId}/frame-removal`}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                Frame Removal
+              </Link>
+              <Link
                 to="/translate"
                 className="text-neutral-400 hover:text-white transition-colors"
               >
