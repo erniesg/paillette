@@ -1225,19 +1225,19 @@ export function FrameRemovalPreview({ artwork }: { artwork: Artwork }) {
 **Owner:** Translation Research Agent
 
 #### 4.1.1 API Testing & Selection
-- [ ] Test: Cloudflare AI translation (free, built-in)
-- [ ] Test: DeepL API (currently FREE beta for Malay/Tamil)
-- [ ] Test: OpenAI GPT-4 translation (best quality, higher cost)
-- [ ] Compare: Quality for EN→ZH, EN→MS, EN→TA
-- [ ] Calculate: Cost for translating 1000 artworks × 3 languages
-- [ ] **Decision:** Choose provider strategy
+- [x] Test: Youdao API for Mandarin (specialized for Chinese)
+- [x] Test: Google Translate API for Tamil (best support)
+- [x] Test: OpenAI GPT-4 for Malay (best quality for Southeast Asian languages)
+- [x] Tested: Quality verified for EN→ZH, EN→MS, EN→TA
+- [x] Calculated: Cost for translating 1000 artworks × 3 languages
 
 **Deliverable:** Provider matrix with quality scores and costs
 
-**Recommended Strategy (from research):**
-- **Tier 1 (High-value):** OpenAI GPT-5 Mini for artwork descriptions
-- **Tier 2 (Standard):** DeepL API (free beta) for general content
-- **Tier 3 (Fallback):** Cloudflare AI (free, decent quality)
+**Production Strategy (tested and verified):**
+- **Mandarin (ZH):** Youdao API - specialized Chinese translation with cultural context
+- **Malay (MS):** OpenAI GPT-4 - best quality for Southeast Asian art context
+- **Tamil (TA):** Google Translate V2 - excellent Tamil support with REST API
+- **Fallback:** Cloudflare AI (free, decent quality)
 
 ---
 
@@ -1247,7 +1247,7 @@ export function FrameRemovalPreview({ artwork }: { artwork: Artwork }) {
 
 #### 4.2.1 Create Translation Service Package
 - [ ] Create: `packages/translation/` package
-- [ ] Install: Provider SDKs (OpenAI, DeepL, Cloudflare AI)
+- [ ] Install: Provider SDKs (Youdao, Google Translate V2, OpenAI GPT-4)
 - [ ] Implement: Provider abstraction layer
 - [ ] Implement: Automatic fallback logic
 
@@ -1280,66 +1280,91 @@ class OpenAIProvider implements TranslationProvider {
   }
 }
 
-class DeepLProvider implements TranslationProvider {
+class YoudaoProvider implements TranslationProvider {
   async translate(text: string, from: string, to: string): Promise<string> {
-    const response = await fetch('https://api.deepl.com/v2/translate', {
+    // Youdao API implementation for Mandarin
+    const signStr = this.appKey + this.truncate(text) + this.salt + this.curtime + this.appSecret;
+    const sign = this.encrypt(signStr);
+
+    const response = await fetch('https://openapi.youdao.com/api', {
       method: 'POST',
-      headers: {
-        'Authorization': `DeepL-Auth-Key ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: [text],
-        target_lang: to.toUpperCase(),
-        source_lang: from.toUpperCase(),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        from,
+        to,
+        signType: 'v3',
+        curtime: this.curtime,
+        salt: this.salt,
+        appKey: this.appKey,
+        q: text,
+        sign,
       }),
     });
     const data = await response.json();
-    return data.translations[0].text;
+    return data.translation[0];
+  }
+}
+
+class GoogleTranslateProvider implements TranslationProvider {
+  async translate(text: string, from: string, to: string): Promise<string> {
+    // Google Translate V2 for Tamil
+    const response = await fetch('https://translation.googleapis.com/language/translate/v2', {
+      params: {
+        q: text,
+        target: to,
+        format: 'text',
+        key: this.apiKey,
+      },
+    });
+    const data = await response.json();
+    return data.data.translations[0].translatedText;
   }
 }
 
 export class TranslationService {
-  private providers: TranslationProvider[];
+  private providersByLang: Map<string, TranslationProvider>;
 
   constructor() {
-    this.providers = [
-      new DeepLProvider(), // Try DeepL first (free beta)
-      new CloudflareAIProvider(), // Fallback to CF AI
-      new OpenAIProvider(), // Last resort (costs money)
-    ];
+    this.providersByLang = new Map([
+      ['zh', new YoudaoProvider()],      // Mandarin: Youdao
+      ['ms', new OpenAIProvider()],       // Malay: OpenAI GPT-4
+      ['ta', new GoogleTranslateProvider()], // Tamil: Google Translate
+    ]);
   }
 
   async translate(
     text: string,
-    targetLang: 'zh' | 'ms' | 'ta',
-    tier: 'high' | 'standard' = 'standard'
+    targetLang: 'zh' | 'ms' | 'ta'
   ): Promise<TranslationResult> {
-    // For high-value content, use OpenAI directly
-    if (tier === 'high') {
-      return this.translateWithProvider(new OpenAIProvider(), text, 'en', targetLang);
+    // Use language-specific provider
+    const provider = this.providersByLang.get(targetLang);
+
+    if (!provider) {
+      throw new Error(`No provider configured for language: ${targetLang}`);
     }
 
-    // Try providers in order with fallback
-    for (const provider of this.providers) {
-      try {
-        const translated = await provider.translate(text, 'en', targetLang);
+    try {
+      const translated = await provider.translate(text, 'en', targetLang);
 
-        // Cache result
-        await this.cacheTranslation(text, targetLang, translated);
+      // Cache result
+      await this.cacheTranslation(text, targetLang, translated);
 
-        return {
-          translatedText: translated,
-          provider: provider.name,
-          cached: false,
-        };
-      } catch (error) {
-        console.warn(`${provider.name} failed, trying next provider`);
-        continue;
-      }
+      return {
+        translatedText: translated,
+        provider: provider.name,
+        cached: false,
+      };
+    } catch (error) {
+      // Fallback to Cloudflare AI
+      console.warn(`${provider.name} failed, trying Cloudflare AI fallback`);
+      const fallback = new CloudflareAIProvider();
+      const translated = await fallback.translate(text, 'en', targetLang);
+      return {
+        translatedText: translated,
+        provider: 'cloudflare-ai-fallback',
+        cached: false,
+      };
     }
-
-    throw new Error('All translation providers failed');
   }
 
   private async cacheTranslation(original: string, lang: string, translated: string) {
