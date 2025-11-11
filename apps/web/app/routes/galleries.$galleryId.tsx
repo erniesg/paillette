@@ -77,6 +77,12 @@ export default function GalleryDashboard() {
               >
                 Search
               </Link>
+              <Link
+                to={`/galleries/${galleryId}/explore`}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                Explore
+              </Link>
             </nav>
           </div>
         </div>
@@ -176,9 +182,11 @@ export default function GalleryDashboard() {
                 <span className="text-3xl mb-2">📊</span>
                 <span>Import CSV</span>
               </Button>
-              <Button variant="outline" className="h-auto py-4 flex-col" disabled>
-                <span className="text-3xl mb-2">🎨</span>
-                <span>Projector</span>
+              <Button variant="outline" asChild className="h-auto py-4 flex-col">
+                <Link to={`/galleries/${galleryId}/explore`}>
+                  <span className="text-3xl mb-2">🎨</span>
+                  <span>Explore</span>
+                </Link>
               </Button>
             </CardContent>
           </Card>

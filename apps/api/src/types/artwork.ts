@@ -16,6 +16,11 @@ export interface ArtworkRow {
   thumbnail_url: string;
   original_filename: string;
   image_hash: string;
+  image_url_processed: string | null;
+  processing_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
+  frame_removal_confidence: number | null;
+  processed_at: string | null;
+  processing_error: string | null;
   embedding_id: string | null;
   title: string;
   artist: string | null;

@@ -4,7 +4,9 @@ import { logger } from 'hono/logger';
 import galleries from './routes/galleries';
 import artworkRoutes from './routes/artworks';
 import { searchRoutes } from './routes/search';
+import { embeddingsRoutes } from './routes/embeddings';
 import metadataRoutes from './routes/metadata';
+import translationRoutes from './routes/translation';
 
 // Environment bindings
 export interface Env {
@@ -14,8 +16,14 @@ export interface Env {
   CACHE: KVNamespace;
   AI: Ai;
   EMBEDDING_QUEUE: Queue;
+  TRANSLATION_QUEUE?: Queue;
   ENVIRONMENT: string;
   API_VERSION: string;
+  // Translation provider API keys
+  OPENAI_API_KEY?: string;
+  YOUDAO_APP_KEY?: string;
+  YOUDAO_APP_SECRET?: string;
+  GOOGLE_TRANSLATE_API_KEY?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -49,9 +57,11 @@ const api = new Hono<{ Bindings: Env }>();
 api.route('/galleries', galleries);
 api.route('/artworks', artworkRoutes);
 api.route('/metadata', metadataRoutes);
+api.route('/translate', translationRoutes);
 
-// Search routes (nested under galleries)
+// Search and embeddings routes (nested under galleries)
 api.route('/galleries/:galleryId', searchRoutes);
+api.route('/galleries/:galleryId', embeddingsRoutes);
 
 // Mount API routes
 app.route('/api/v1', api);

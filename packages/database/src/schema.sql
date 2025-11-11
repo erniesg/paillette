@@ -101,6 +101,13 @@ CREATE TABLE IF NOT EXISTS artworks (
   original_filename TEXT NOT NULL,
   image_hash TEXT NOT NULL,
 
+  -- Processed image (frame removed)
+  image_url_processed TEXT,
+  processing_status TEXT CHECK(processing_status IN ('pending', 'processing', 'completed', 'failed')),
+  frame_removal_confidence REAL CHECK(frame_removal_confidence >= 0.0 AND frame_removal_confidence <= 1.0),
+  processed_at TEXT,
+  processing_error TEXT,
+
   -- Embedding reference (stored in Vectorize)
   embedding_id TEXT,
 
@@ -145,6 +152,8 @@ CREATE INDEX idx_artworks_artist ON artworks(artist);
 CREATE INDEX idx_artworks_year ON artworks(year);
 CREATE INDEX idx_artworks_image_hash ON artworks(image_hash);
 CREATE INDEX idx_artworks_created_at ON artworks(created_at DESC);
+CREATE INDEX idx_artworks_processing_status ON artworks(gallery_id, processing_status) WHERE processing_status IS NOT NULL;
+CREATE INDEX idx_artworks_processed ON artworks(gallery_id, image_url_processed) WHERE image_url_processed IS NOT NULL;
 
 -- ============================================================================
 -- Collection Artworks (M:M relationship)

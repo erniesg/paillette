@@ -290,6 +290,56 @@ class ApiClient {
   downloadTemplate(): string {
     return `${this.baseUrl}/metadata/template`;
   }
+
+  /**
+   * Get artwork embeddings for visualization
+   */
+  async getEmbeddings(
+    galleryId: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{
+    embeddings: Array<{
+      id: string;
+      title: string;
+      artist: string | null;
+      year: number | null;
+      medium: string | null;
+      imageUrl: string;
+      thumbnailUrl: string;
+      embedding: number[];
+    }>;
+    total: number;
+    dimensions: number;
+  }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+
+    const url = `${this.baseUrl}/galleries/${galleryId}/embeddings${
+      params.toString() ? `?${params}` : ''
+    }`;
+    const response = await fetch(url);
+    const data: ApiResponse<{
+      embeddings: Array<{
+        id: string;
+        title: string;
+        artist: string | null;
+        year: number | null;
+        medium: string | null;
+        imageUrl: string;
+        thumbnailUrl: string;
+        embedding: number[];
+      }>;
+      total: number;
+      dimensions: number;
+    }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch embeddings');
+    }
+
+    return data.data;
+  }
 }
 
 export const apiClient = new ApiClient();
