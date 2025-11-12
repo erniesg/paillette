@@ -64,7 +64,5 @@
           - generic [ref=e51]: Frame Removal
     - generic [ref=e52]:
       - heading "Recent Artworks" [level=2] [ref=e54]
-      - generic [ref=e55]:
-        - generic [ref=e56]: ⚠️
-        - paragraph [ref=e57]: Failed to fetch
+      - paragraph [ref=e57]: Loading artworks...
 ```
