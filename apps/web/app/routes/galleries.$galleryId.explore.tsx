@@ -48,9 +48,9 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
 export default function GalleryExplore() {
   const { gallery, galleryId } = useLoaderData<typeof loader>();
-  const [colorBy, setColorBy] = useState<'artist' | 'year' | 'medium' | null>(
-    'artist'
-  );
+  const [colorBy, setColorBy] = useState<
+    'artist' | 'year' | 'medium' | 'cluster' | null
+  >('cluster');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArtwork, setSelectedArtwork] = useState<string | null>(null);
   const [filterArtist, setFilterArtist] = useState<string>('');
@@ -209,12 +209,17 @@ export default function GalleryExplore() {
                     value={colorBy || ''}
                     onChange={(e) =>
                       setColorBy(
-                        (e.target.value as 'artist' | 'year' | 'medium') || null
+                        (e.target.value as
+                          | 'artist'
+                          | 'year'
+                          | 'medium'
+                          | 'cluster') || null
                       )
                     }
                     className="mt-1 w-full bg-neutral-800 border border-neutral-700 rounded-md px-3 py-2 text-sm text-white"
                   >
                     <option value="">None</option>
+                    <option value="cluster">AI Clusters</option>
                     <option value="artist">Artist</option>
                     <option value="year">Period (50yr)</option>
                     <option value="medium">Medium</option>

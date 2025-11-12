@@ -5,8 +5,12 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Point2D } from '~/lib/dimensionality-reduction';
-import { reduceTo2D } from '~/lib/dimensionality-reduction';
+import type { Point2D, Cluster } from '~/lib/dimensionality-reduction';
+import {
+  reduceTo2D,
+  dbscan,
+  estimateDBSCANParams,
+} from '~/lib/dimensionality-reduction';
 
 export interface ArtworkPoint {
   id: string;
@@ -23,9 +27,10 @@ interface EmbeddingScatterPlotProps {
   artworks: ArtworkPoint[];
   width?: number;
   height?: number;
-  colorBy?: 'artist' | 'year' | 'medium' | null;
+  colorBy?: 'artist' | 'year' | 'medium' | 'cluster' | null;
   selectedArtwork?: string | null;
   onArtworkClick?: (artworkId: string) => void;
+  showClusters?: boolean;
 }
 
 export function EmbeddingScatterPlot({
@@ -35,6 +40,7 @@ export function EmbeddingScatterPlot({
   colorBy = null,
   selectedArtwork = null,
   onArtworkClick,
+  showClusters = true,
 }: EmbeddingScatterPlotProps) {
   const [hoveredArtwork, setHoveredArtwork] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -54,6 +60,15 @@ export function EmbeddingScatterPlot({
       y: reduced[i].y,
     }));
   }, [artworks]);
+
+  // Perform clustering
+  const clusterResult = useMemo(() => {
+    if (points.length === 0 || !showClusters) return null;
+
+    const pointsOnly = points.map((p) => ({ x: p.x, y: p.y }));
+    const params = estimateDBSCANParams(pointsOnly);
+    return dbscan(pointsOnly, params.eps, params.minPts);
+  }, [points, showClusters]);
 
   // Color mapping
   const colorMap = useMemo(() => {
@@ -78,7 +93,17 @@ export function EmbeddingScatterPlot({
     return map;
   }, [points, colorBy]);
 
-  const getPointColor = (point: typeof points[0]): string => {
+  const getPointColor = (point: typeof points[0], index: number): string => {
+    // If clustering is enabled and colorBy is 'cluster', use cluster colors
+    if (colorBy === 'cluster' && clusterResult) {
+      const clusterId = clusterResult.labels[index];
+      if (clusterId === -1) {
+        return 'rgb(156, 163, 175)'; // Gray for noise
+      }
+      const cluster = clusterResult.clusters.find((c) => c.id === clusterId);
+      return cluster?.color || 'rgb(59, 130, 246)';
+    }
+
     if (!colorBy) return 'rgb(59, 130, 246)'; // Primary blue
 
     let key: string;
@@ -170,8 +195,36 @@ export function EmbeddingScatterPlot({
             ))}
           </g>
 
+          {/* Cluster hulls (convex hulls around clusters) */}
+          {showClusters && clusterResult && (
+            <g opacity="0.1">
+              {clusterResult.clusters.map((cluster) => {
+                const clusterPoints = cluster.points.map((idx) => points[idx]);
+                const hull = computeConvexHull(clusterPoints);
+                const pathD = hull
+                  .map(
+                    (p, i) =>
+                      `${i === 0 ? 'M' : 'L'} ${p.x * plotWidth} ${
+                        (1 - p.y) * plotHeight
+                      }`
+                  )
+                  .join(' ') + ' Z';
+
+                return (
+                  <path
+                    key={cluster.id}
+                    d={pathD}
+                    fill={cluster.color}
+                    stroke={cluster.color}
+                    strokeWidth={2}
+                  />
+                );
+              })}
+            </g>
+          )}
+
           {/* Data points */}
-          {points.map((point) => {
+          {points.map((point, i) => {
             const cx = point.x * plotWidth;
             const cy = (1 - point.y) * plotHeight; // Invert Y axis
             const isHovered = point.id === hoveredArtwork;
@@ -183,7 +236,7 @@ export function EmbeddingScatterPlot({
                 cx={cx}
                 cy={cy}
                 r={isHovered || isSelected ? 8 : 5}
-                fill={getPointColor(point)}
+                fill={getPointColor(point, i)}
                 opacity={isHovered || isSelected ? 1 : 0.7}
                 stroke={isSelected ? 'white' : 'none'}
                 strokeWidth={2}
@@ -234,7 +287,35 @@ export function EmbeddingScatterPlot({
       </AnimatePresence>
 
       {/* Legend */}
-      {colorBy && colorMap.size > 0 && (
+      {colorBy === 'cluster' && clusterResult && clusterResult.clusters.length > 0 && (
+        <div className="absolute bottom-4 left-4 bg-neutral-800 border border-neutral-700 rounded-lg p-3 max-h-48 overflow-y-auto">
+          <div className="text-xs font-semibold text-neutral-400 mb-2 uppercase">
+            Clusters
+          </div>
+          <div className="space-y-1">
+            {clusterResult.clusters.map((cluster) => (
+              <div key={cluster.id} className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: cluster.color }}
+                />
+                <span className="text-xs text-neutral-300">
+                  Cluster {cluster.id + 1} ({cluster.points.length} artworks)
+                </span>
+              </div>
+            ))}
+            {clusterResult.noisePoints.length > 0 && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-neutral-700">
+                <div className="w-3 h-3 rounded-full bg-neutral-500" />
+                <span className="text-xs text-neutral-400">
+                  Noise ({clusterResult.noisePoints.length} points)
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {colorBy && colorBy !== 'cluster' && colorMap.size > 0 && (
         <div className="absolute bottom-4 left-4 bg-neutral-800 border border-neutral-700 rounded-lg p-3 max-h-48 overflow-y-auto">
           <div className="text-xs font-semibold text-neutral-400 mb-2 uppercase">
             {colorBy === 'artist' && 'Artists'}
@@ -311,4 +392,41 @@ function generateColors(count: number): string[] {
   }
 
   return colors;
+}
+
+/**
+ * Compute convex hull of points using Gift Wrapping algorithm
+ */
+function computeConvexHull(points: Point2D[]): Point2D[] {
+  if (points.length < 3) return points;
+
+  // Find leftmost point
+  let leftmost = points[0];
+  for (const p of points) {
+    if (p.x < leftmost.x || (p.x === leftmost.x && p.y < leftmost.y)) {
+      leftmost = p;
+    }
+  }
+
+  const hull: Point2D[] = [];
+  let current = leftmost;
+
+  do {
+    hull.push(current);
+    let next = points[0];
+
+    for (const p of points) {
+      const cross =
+        (next.x - current.x) * (p.y - current.y) -
+        (next.y - current.y) * (p.x - current.x);
+
+      if (next === current || cross < 0) {
+        next = p;
+      }
+    }
+
+    current = next;
+  } while (current !== leftmost && hull.length < points.length);
+
+  return hull;
 }
