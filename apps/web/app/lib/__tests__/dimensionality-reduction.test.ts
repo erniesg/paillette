@@ -63,8 +63,8 @@ describe('PCA', () => {
 
 describe('reduceTo2D', () => {
   it('should reduce and normalize embeddings to 2D', () => {
-    const embeddings = Array.from({ length: 20 }, (_, i) =>
-      Array.from({ length: 768 }, (_, j) => Math.random())
+    const embeddings = Array.from({ length: 20 }, () =>
+      Array.from({ length: 768 }, () => Math.random())
     );
 
     const points = reduceTo2D(embeddings);
@@ -104,8 +104,8 @@ describe('reduceTo2D', () => {
 
 describe('reduceTo3D', () => {
   it('should reduce and normalize embeddings to 3D', () => {
-    const embeddings = Array.from({ length: 15 }, (_, i) =>
-      Array.from({ length: 768 }, (_, j) => Math.random())
+    const embeddings = Array.from({ length: 15 }, () =>
+      Array.from({ length: 768 }, () => Math.random())
     );
 
     const points = reduceTo3D(embeddings);
@@ -187,7 +187,7 @@ describe('DBSCAN Clustering', () => {
 
     const result = dbscan(points, 0.05, 3);
 
-    if (result.clusters.length > 0) {
+    if (result.clusters.length > 0 && result.clusters[0]) {
       expect(result.clusters[0].color).toBeDefined();
       expect(result.clusters[0].color).toMatch(/^hsl\(/);
     }
@@ -202,7 +202,7 @@ describe('DBSCAN Clustering', () => {
 
     const result = dbscan(points, 0.15, 2);
 
-    if (result.clusters.length > 0) {
+    if (result.clusters.length > 0 && result.clusters[0]) {
       const centroid = result.clusters[0].centroid;
       expect(centroid.x).toBeGreaterThan(0);
       expect(centroid.y).toBeGreaterThan(0);
@@ -212,7 +212,7 @@ describe('DBSCAN Clustering', () => {
 
 describe('estimateDBSCANParams', () => {
   it('should estimate parameters for small dataset', () => {
-    const points: Point2D[] = Array.from({ length: 10 }, (_, i) => ({
+    const points: Point2D[] = Array.from({ length: 10 }, () => ({
       x: Math.random(),
       y: Math.random(),
     }));
@@ -225,7 +225,7 @@ describe('estimateDBSCANParams', () => {
   });
 
   it('should estimate parameters for large dataset', () => {
-    const points: Point2D[] = Array.from({ length: 100 }, (_, i) => ({
+    const points: Point2D[] = Array.from({ length: 100 }, () => ({
       x: Math.random(),
       y: Math.random(),
     }));
@@ -237,12 +237,12 @@ describe('estimateDBSCANParams', () => {
   });
 
   it('should scale minPts with dataset size', () => {
-    const smallPoints: Point2D[] = Array.from({ length: 10 }, (_, i) => ({
+    const smallPoints: Point2D[] = Array.from({ length: 10 }, () => ({
       x: Math.random(),
       y: Math.random(),
     }));
 
-    const largePoints: Point2D[] = Array.from({ length: 100 }, (_, i) => ({
+    const largePoints: Point2D[] = Array.from({ length: 100 }, () => ({
       x: Math.random(),
       y: Math.random(),
     }));
@@ -258,7 +258,7 @@ describe('Integration: Full pipeline', () => {
   it('should reduce embeddings and cluster them', () => {
     // Simulate real artwork embeddings (1024 dimensions)
     const embeddings = Array.from({ length: 30 }, (_, i) =>
-      Array.from({ length: 1024 }, (_, j) => {
+      Array.from({ length: 1024 }, () => {
         // Create 3 distinct clusters in high-dimensional space
         const cluster = Math.floor(i / 10);
         return cluster * 0.5 + Math.random() * 0.1;

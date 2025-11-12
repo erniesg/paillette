@@ -3,9 +3,9 @@
  * Shows artworks in 2D reduced embedding space
  */
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Point2D, Cluster } from '~/lib/dimensionality-reduction';
+import type { Point2D } from '~/lib/dimensionality-reduction';
 import {
   reduceTo2D,
   dbscan,
@@ -56,8 +56,8 @@ export function EmbeddingScatterPlot({
 
     return artworks.map((artwork, i) => ({
       ...artwork,
-      x: reduced[i].x,
-      y: reduced[i].y,
+      x: reduced[i]?.x ?? 0,
+      y: reduced[i]?.y ?? 0,
     }));
   }, [artworks]);
 
@@ -87,7 +87,10 @@ export function EmbeddingScatterPlot({
     const colors = generateColors(uniqueValues.size);
     const map = new Map<string, string>();
     Array.from(uniqueValues).forEach((value, i) => {
-      map.set(String(value), colors[i]);
+      const color = colors[i];
+      if (color) {
+        map.set(String(value), color);
+      }
     });
 
     return map;
@@ -199,7 +202,9 @@ export function EmbeddingScatterPlot({
           {showClusters && clusterResult && (
             <g opacity="0.1">
               {clusterResult.clusters.map((cluster) => {
-                const clusterPoints = cluster.points.map((idx) => points[idx]);
+                const clusterPoints = cluster.points
+                  .map((idx) => points[idx])
+                  .filter((p): p is typeof points[0] => p !== undefined);
                 const hull = computeConvexHull(clusterPoints);
                 const pathD = hull
                   .map(
@@ -402,20 +407,28 @@ function computeConvexHull(points: Point2D[]): Point2D[] {
 
   // Find leftmost point
   let leftmost = points[0];
+  if (!leftmost) return points;
+
   for (const p of points) {
+    if (!leftmost) {
+      leftmost = p;
+      continue;
+    }
     if (p.x < leftmost.x || (p.x === leftmost.x && p.y < leftmost.y)) {
       leftmost = p;
     }
   }
 
   const hull: Point2D[] = [];
-  let current = leftmost;
+  let current: Point2D | undefined = leftmost;
 
   do {
+    if (!current) break;
     hull.push(current);
-    let next = points[0];
+    let next: Point2D | undefined = points[0];
 
     for (const p of points) {
+      if (!next || !current) break;
       const cross =
         (next.x - current.x) * (p.y - current.y) -
         (next.y - current.y) * (p.x - current.x);
@@ -426,7 +439,7 @@ function computeConvexHull(points: Point2D[]): Point2D[] {
     }
 
     current = next;
-  } while (current !== leftmost && hull.length < points.length);
+  } while (current && current !== leftmost && hull.length < points.length);
 
   return hull;
 }

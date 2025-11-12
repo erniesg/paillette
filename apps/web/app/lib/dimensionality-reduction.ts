@@ -29,20 +29,27 @@ export class PCA {
     if (data.length === 0) return [];
 
     const n = data.length;
-    const d = data[0].length;
+    const d = data[0]?.length ?? 0;
+    if (d === 0) return [];
 
     // 1. Calculate mean
     this.mean = new Array(d).fill(0);
     for (let i = 0; i < n; i++) {
+      const row = data[i];
+      if (!row) continue;
       for (let j = 0; j < d; j++) {
-        this.mean[j] += data[i][j];
+        const val = row[j];
+        const meanVal = this.mean[j];
+        if (val !== undefined && meanVal !== undefined) {
+          this.mean[j] = meanVal + val;
+        }
       }
     }
     this.mean = this.mean.map((m) => m / n);
 
     // 2. Center the data
     const centered = data.map((row) =>
-      row.map((val, idx) => val - this.mean[idx])
+      row.map((val, idx) => val - (this.mean[idx] ?? 0))
     );
 
     // 3. Calculate covariance matrix (simplified - use randomized SVD for large data)
@@ -96,7 +103,7 @@ export class PCA {
   private transform(data: number[][]): number[][] {
     return data.map((row) => {
       return this.components.map((component) => {
-        return row.reduce((sum, val, idx) => sum + val * component[idx], 0);
+        return row.reduce((sum, val, idx) => sum + val * (component[idx] ?? 0), 0);
       });
     });
   }
@@ -112,7 +119,7 @@ export function reduceTo2D(embeddings: number[][]): Point2D[] {
   const reduced = pca.fitTransform(embeddings, 2);
 
   // Normalize to [0, 1] range for better visualization
-  const points = reduced.map(([x, y]) => ({ x, y }));
+  const points = reduced.map(([x, y]) => ({ x: x ?? 0, y: y ?? 0 }));
   return normalizePoints2D(points);
 }
 
@@ -125,7 +132,7 @@ export function reduceTo3D(embeddings: number[][]): Point3D[] {
   const pca = new PCA();
   const reduced = pca.fitTransform(embeddings, 3);
 
-  const points = reduced.map(([x, y, z]) => ({ x, y, z }));
+  const points = reduced.map(([x, y, z]) => ({ x: x ?? 0, y: y ?? 0, z: z ?? 0 }));
   return normalizePoints3D(points);
 }
 
@@ -190,12 +197,19 @@ export function calculateDistances(points: Point2D[]): number[][] {
     .map(() => Array(n).fill(0));
 
   for (let i = 0; i < n; i++) {
+    const distRow1 = distances[i];
+    if (!distRow1) continue;
+
     for (let j = i + 1; j < n; j++) {
-      const dx = points[i].x - points[j].x;
-      const dy = points[i].y - points[j].y;
+      const p1 = points[i];
+      const p2 = points[j];
+      const distRow2 = distances[j];
+      if (!p1 || !p2 || !distRow2) continue;
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      distances[i][j] = dist;
-      distances[j][i] = dist;
+      distRow1[j] = dist;
+      distRow2[i] = dist;
     }
   }
 
@@ -239,8 +253,11 @@ export function dbscan(
 
   // Calculate distance between two points
   const distance = (i: number, j: number): number => {
-    const dx = points[i].x - points[j].x;
-    const dy = points[i].y - points[j].y;
+    const p1 = points[i];
+    const p2 = points[j];
+    if (!p1 || !p2) return Infinity;
+    const dx = p1.x - p2.x;
+    const dy = p1.y - p2.y;
     return Math.sqrt(dx * dx + dy * dy);
   };
 
@@ -257,12 +274,17 @@ export function dbscan(
 
   // Expand cluster from a seed point
   const expandCluster = (pointIdx: number, neighbors: number[]): void => {
+    if (labels[pointIdx] === undefined) return;
     labels[pointIdx] = clusterId;
     const clusterPoints = [pointIdx];
 
     let i = 0;
     while (i < neighbors.length) {
       const neighborIdx = neighbors[i];
+      if (neighborIdx === undefined) {
+        i++;
+        continue;
+      }
 
       if (!visited[neighborIdx]) {
         visited[neighborIdx] = true;
@@ -288,8 +310,11 @@ export function dbscan(
     let cx = 0,
       cy = 0;
     for (const idx of clusterPoints) {
-      cx += points[idx].x;
-      cy += points[idx].y;
+      const point = points[idx];
+      if (point) {
+        cx += point.x;
+        cy += point.y;
+      }
     }
     const centroid = {
       x: cx / clusterPoints.length,
@@ -368,15 +393,20 @@ export function estimateDBSCANParams(points: Point2D[]): {
 
   for (let i = 0; i < n; i++) {
     const distances: number[] = [];
+    const pi = points[i];
+    if (!pi) continue;
+
     for (let j = 0; j < n; j++) {
       if (i !== j) {
-        const dx = points[i].x - points[j].x;
-        const dy = points[i].y - points[j].y;
+        const pj = points[j];
+        if (!pj) continue;
+        const dx = pi.x - pj.x;
+        const dy = pi.y - pj.y;
         distances.push(Math.sqrt(dx * dx + dy * dy));
       }
     }
     distances.sort((a, b) => a - b);
-    kDistances.push(distances[minPts - 1] || distances[distances.length - 1]);
+    kDistances.push(distances[minPts - 1] ?? distances[distances.length - 1] ?? 0);
   }
 
   // Sort k-distances
@@ -384,7 +414,7 @@ export function estimateDBSCANParams(points: Point2D[]): {
 
   // Find the "elbow" - use the 90th percentile as a heuristic
   const elbowIndex = Math.floor(kDistances.length * 0.9);
-  const eps = kDistances[elbowIndex];
+  const eps = kDistances[elbowIndex] ?? 0.05;
 
   return { eps, minPts };
 }
