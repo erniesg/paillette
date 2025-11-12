@@ -72,9 +72,9 @@ export interface FrameDetectionConfig {
 export const DEFAULT_FRAME_DETECTION_CONFIG: FrameDetectionConfig = {
   cannyLowThreshold: 50,
   cannyHighThreshold: 150,
-  minConfidence: 0.6,
+  minConfidence: 0.5, // Lowered from 0.6 to support thin frames
   minCropPercentage: 0.3,
-  maxCropPercentage: 0.9,
+  maxCropPercentage: 0.99, // Increased from 0.9 to support very thin frames
   blurKernelSize: 5,
 };
 

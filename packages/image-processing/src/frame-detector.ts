@@ -50,6 +50,13 @@ export class FrameDetector {
       // (Sharp doesn't have built-in Canny edge detection, so we use a simplified approach)
       const edgeData = await this.detectEdges(processedImage.data, processedImage.info);
 
+      // Step 2.5: Calculate edge strength (to detect frameless/solid color images)
+      const edgeStrength = this.calculateEdgeStrength(
+        edgeData,
+        processedImage.info.width,
+        processedImage.info.height
+      );
+
       // Step 3: Analyze edge distribution to find frame boundaries
       const boundingBox = this.findArtworkBounds(
         edgeData,
@@ -60,7 +67,8 @@ export class FrameDetector {
       // Step 4: Calculate confidence score
       const confidence = this.calculateConfidence(
         boundingBox,
-        originalDimensions
+        originalDimensions,
+        edgeStrength
       );
 
       // Step 5: Validate the result
@@ -122,14 +130,31 @@ export class FrameDetector {
 
       // Crop the image to the detected artwork bounds
       const { boundingBox } = detection;
-      const processedImageBuffer = await sharp(imageBuffer)
-        .extract({
-          left: boundingBox.x,
-          top: boundingBox.y,
-          width: boundingBox.width,
-          height: boundingBox.height,
-        })
-        .toBuffer();
+
+      // Preserve original image format and quality
+      const metadata = await sharp(imageBuffer).metadata();
+      const isJpeg = metadata.format === 'jpeg' || metadata.format === 'jpg';
+
+      let processedImage = sharp(imageBuffer).extract({
+        left: boundingBox.x,
+        top: boundingBox.y,
+        width: boundingBox.width,
+        height: boundingBox.height,
+      });
+
+      // Use high quality settings to preserve image quality
+      if (isJpeg) {
+        processedImage = processedImage.jpeg({ quality: 95, mozjpeg: true });
+      } else {
+        // Use minimal compression for PNG to preserve quality and file size
+        processedImage = processedImage.png({
+          compressionLevel: 0,
+          adaptiveFiltering: false,
+          force: true
+        });
+      }
+
+      const processedImageBuffer = await processedImage.toBuffer();
 
       return {
         success: true,
@@ -198,6 +223,53 @@ export class FrameDetector {
   }
 
   /**
+   * Calculate overall edge strength in the image
+   * Returns a value between 0-1 representing edge density
+   * Low values indicate solid colors or frameless artwork
+   *
+   * For frameless/solid color images, edges should only be at the outer boundaries.
+   * For framed images, there should be significant edges in the interior.
+   */
+  private calculateEdgeStrength(
+    edgeData: Uint8Array,
+    width: number,
+    height: number
+  ): number {
+    let totalEdgePixels = 0;
+    let interiorEdgePixels = 0;
+
+    // Define interior region (exclude 10% border on all sides)
+    const borderX = Math.floor(width * 0.1);
+    const borderY = Math.floor(height * 0.1);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        if (edgeData[idx] > 0) {
+          totalEdgePixels++;
+
+          // Check if in interior region
+          if (x >= borderX && x < width - borderX &&
+              y >= borderY && y < height - borderY) {
+            interiorEdgePixels++;
+          }
+        }
+      }
+    }
+
+    const totalPixels = width * height;
+    const interiorPixels = (width - 2 * borderX) * (height - 2 * borderY);
+
+    // Calculate interior edge density
+    const interiorEdgeDensity = interiorPixels > 0 ?
+      interiorEdgePixels / interiorPixels : 0;
+
+    // For solid colors, interior should have minimal edges
+    // Return the interior edge density as the strength metric
+    return interiorEdgeDensity;
+  }
+
+  /**
    * Find artwork bounds by analyzing edge distribution
    * Frames typically have strong edges at their boundaries
    */
@@ -259,6 +331,16 @@ export class FrameDetector {
     const maxDensity = sortedDensity[0];
     const medianDensity = sortedDensity[Math.floor(sortedDensity.length / 2)];
 
+    // Check if there are virtually no edges (solid color or frameless image)
+    const totalEdges = densityArray.reduce((sum, val) => sum + val, 0);
+    const avgDensity = totalEdges / length;
+
+    // If very low edge density overall, this is likely a frameless image
+    // Return the full extent (no cropping)
+    if (maxDensity < 5 || avgDensity < 1) {
+      return direction === 'forward' ? 0 : length - 1;
+    }
+
     // Use median instead of mean to be more robust to outliers
     const threshold = Math.max(medianDensity * 1.5, maxDensity * 0.3);
 
@@ -288,11 +370,9 @@ export class FrameDetector {
       }
     }
 
-    // If no boundary found, use conservative estimate
+    // If no clear boundary found, return the outer edge (no cropping)
     if (!peakFound) {
-      boundary = direction === 'forward' ?
-        Math.floor(length * 0.05) : // 5% from edge
-        Math.floor(length * 0.95);   // 95% position
+      boundary = direction === 'forward' ? 0 : length - 1;
     }
 
     return boundary;
@@ -303,7 +383,8 @@ export class FrameDetector {
    */
   private calculateConfidence(
     boundingBox: BoundingBox,
-    originalDimensions: ImageDimensions
+    originalDimensions: ImageDimensions,
+    edgeStrength?: number
   ): number {
     const originalArea =
       originalDimensions.width * originalDimensions.height;
@@ -311,22 +392,25 @@ export class FrameDetector {
     const cropRatio = croppedArea / originalArea;
 
     // Start with base confidence
-    let confidence = 0.3;
+    let confidence = 0.25;
 
     // 1. Crop ratio should be reasonable
     // Award more confidence for moderate cropping (indicates frame present)
     if (cropRatio >= 0.5 && cropRatio <= 0.85) {
       // Optimal range - clear frame detected
-      confidence += 0.4;
+      confidence += 0.40;
     } else if (cropRatio >= 0.3 && cropRatio < 0.5) {
       // Heavy cropping - possible thick frame
-      confidence += 0.25;
-    } else if (cropRatio > 0.85 && cropRatio <= 0.95) {
-      // Light cropping - thin frame
-      confidence += 0.2;
-    } else if (cropRatio > 0.95) {
-      // Very little cropping - likely no frame
-      confidence -= 0.3;
+      confidence += 0.30;
+    } else if (cropRatio > 0.85 && cropRatio <= 0.96) {
+      // Light cropping - thin frame (increased range to support <5% frames)
+      confidence += 0.28;
+    } else if (cropRatio > 0.96 && cropRatio <= 0.99) {
+      // Very thin frame (1-4% cropping)
+      confidence += 0.18;
+    } else if (cropRatio > 0.99) {
+      // Virtually no cropping - likely no frame or false positive
+      confidence -= 0.4;
     }
 
     // 2. Bounding box should be reasonably centered
@@ -338,10 +422,14 @@ export class FrameDetector {
     const centerOffsetX = Math.abs(centerX - imageCenterX) / imageCenterX;
     const centerOffsetY = Math.abs(centerY - imageCenterY) / imageCenterY;
 
-    if (centerOffsetX < 0.15 && centerOffsetY < 0.15) {
-      confidence += 0.2;
-    } else if (centerOffsetX < 0.25 && centerOffsetY < 0.25) {
-      confidence += 0.1;
+    // Reduced bonus for centering to avoid overconfidence
+    if (centerOffsetX < 0.1 && centerOffsetY < 0.1) {
+      confidence += 0.15;
+    } else if (centerOffsetX < 0.2 && centerOffsetY < 0.2) {
+      confidence += 0.08;
+    } else if (centerOffsetX > 0.4 || centerOffsetY > 0.4) {
+      // Significantly off-center - suspicious
+      confidence -= 0.15;
     }
 
     // 3. Aspect ratio should be preserved (roughly)
@@ -350,11 +438,37 @@ export class FrameDetector {
     const croppedAspect = boundingBox.width / boundingBox.height;
     const aspectDiff = Math.abs(originalAspect - croppedAspect) / originalAspect;
 
-    if (aspectDiff < 0.15) {
+    if (aspectDiff < 0.1) {
       confidence += 0.1;
-    } else if (aspectDiff > 0.4) {
+    } else if (aspectDiff < 0.2) {
+      confidence += 0.05;
+    } else if (aspectDiff > 0.3) {
       // Significant aspect ratio change - suspicious
       confidence -= 0.2;
+    }
+
+    // 4. Edge strength factor (if provided)
+    // Edge strength now measures interior edge density
+    // Low interior edges can mean: solid colors, frameless artwork, or ambiguous frames
+    // Key: Frameless images have low edges AND minimal cropping (>0.98)
+    if (edgeStrength !== undefined) {
+      if (edgeStrength < 0.003 && cropRatio > 0.98) {
+        // Virtually no interior edges AND minimal cropping = solid color frameless artwork
+        confidence -= 0.7;
+      } else if (edgeStrength < 0.008 && cropRatio > 0.96) {
+        // Very few interior edges AND light cropping = likely frameless
+        confidence -= 0.45;
+      } else if (edgeStrength < 0.02 && cropRatio > 0.90) {
+        // Low interior edges and moderate cropping = ambiguous (similar colors)
+        confidence -= 0.25;
+      } else if (edgeStrength < 0.02 && cropRatio <= 0.90) {
+        // Low interior edges but significant cropping = frame with solid color artwork
+        // Apply small penalty for ambiguity
+        confidence -= 0.10;
+      } else if (edgeStrength > 0.15) {
+        // High interior edge density - strong frame boundary likely
+        confidence += 0.1;
+      }
     }
 
     // Normalize to 0-1 range
