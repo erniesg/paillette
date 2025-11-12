@@ -44,15 +44,16 @@ export function DocumentTranslator() {
   });
 
   // Poll job status
-  const { data: jobStatus, refetch } = useQuery({
+  const { data: jobStatus } = useQuery({
     queryKey: ['translation-job', uploadedFile?.jobId],
     queryFn: () => {
       if (!uploadedFile?.jobId) return null;
       return apiClient.getTranslationJobStatus(uploadedFile.jobId);
     },
     enabled: !!uploadedFile?.jobId,
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // Stop polling when completed or failed
+      const data = query.state.data;
       if (!data || data.status === 'completed' || data.status === 'failed') {
         return false;
       }
@@ -76,14 +77,16 @@ export function DocumentTranslator() {
     setDragActive(false);
 
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      validateAndSetFile(files[0]);
+    const file = files[0];
+    if (file) {
+      validateAndSetFile(file);
     }
   }, []);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      validateAndSetFile(e.target.files[0]);
+    const file = e.target.files?.[0];
+    if (file) {
+      validateAndSetFile(file);
     }
   };
 

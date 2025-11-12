@@ -345,9 +345,11 @@ export default function GalleryExplore() {
             artist: selectedArtworkData.artist || undefined,
             year: selectedArtworkData.year || undefined,
             medium: selectedArtworkData.medium || undefined,
-            image_url: selectedArtworkData.imageUrl,
-            thumbnail_url: selectedArtworkData.thumbnailUrl,
-            gallery_id: galleryId,
+            imageUrl: selectedArtworkData.imageUrl,
+            thumbnailUrl: selectedArtworkData.thumbnailUrl,
+            galleryId: galleryId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           }}
           open={!!selectedArtwork}
           onClose={() => setSelectedArtwork(null)}

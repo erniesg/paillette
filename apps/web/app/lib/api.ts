@@ -275,7 +275,7 @@ class ApiClient {
       body: formData,
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as ApiResponse<any>;
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Upload failed');
@@ -315,7 +315,7 @@ class ApiClient {
       body: formData,
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as ApiResponse<any>;
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Validation failed');
@@ -339,7 +339,7 @@ class ApiClient {
     updated_at: string;
   }> {
     const response = await fetch(`${this.baseUrl}/metadata/jobs/${jobId}`);
-    const data = await response.json();
+    const data = (await response.json()) as ApiResponse<any>;
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Failed to fetch job');
@@ -367,7 +367,7 @@ class ApiClient {
     const response = await fetch(
       `${this.baseUrl}/metadata/jobs?gallery_id=${galleryId}`
     );
-    const data = await response.json();
+    const data = (await response.json()) as ApiResponse<any>;
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Failed to list jobs');

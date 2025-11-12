@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '~/lib/api';
 import { ColorPicker } from '~/components/ui/color-picker';
-import { SearchResults } from '~/components/search/search-results';
 import { Button } from '~/components/ui/button';
 import { Label } from '~/components/ui/label';
 import { Card, CardContent } from '~/components/ui/card';
