@@ -29,20 +29,27 @@ export class PCA {
     if (data.length === 0) return [];
 
     const n = data.length;
-    const d = data[0].length;
+    const d = data[0]?.length ?? 0;
+    if (d === 0) return [];
 
     // 1. Calculate mean
     this.mean = new Array(d).fill(0);
     for (let i = 0; i < n; i++) {
+      const row = data[i];
+      if (!row) continue;
       for (let j = 0; j < d; j++) {
-        this.mean[j] += data[i][j];
+        const val = row[j];
+        const meanVal = this.mean[j];
+        if (val !== undefined && meanVal !== undefined) {
+          this.mean[j] = meanVal + val;
+        }
       }
     }
     this.mean = this.mean.map((m) => m / n);
 
     // 2. Center the data
     const centered = data.map((row) =>
-      row.map((val, idx) => val - this.mean[idx])
+      row.map((val, idx) => val - (this.mean[idx] ?? 0))
     );
 
     // 3. Calculate covariance matrix (simplified - use randomized SVD for large data)
@@ -96,7 +103,7 @@ export class PCA {
   private transform(data: number[][]): number[][] {
     return data.map((row) => {
       return this.components.map((component) => {
-        return row.reduce((sum, val, idx) => sum + val * component[idx], 0);
+        return row.reduce((sum, val, idx) => sum + val * (component[idx] ?? 0), 0);
       });
     });
   }
@@ -112,7 +119,7 @@ export function reduceTo2D(embeddings: number[][]): Point2D[] {
   const reduced = pca.fitTransform(embeddings, 2);
 
   // Normalize to [0, 1] range for better visualization
-  const points = reduced.map(([x, y]) => ({ x, y }));
+  const points = reduced.map(([x, y]) => ({ x: x ?? 0, y: y ?? 0 }));
   return normalizePoints2D(points);
 }
 
@@ -125,7 +132,7 @@ export function reduceTo3D(embeddings: number[][]): Point3D[] {
   const pca = new PCA();
   const reduced = pca.fitTransform(embeddings, 3);
 
-  const points = reduced.map(([x, y, z]) => ({ x, y, z }));
+  const points = reduced.map(([x, y, z]) => ({ x: x ?? 0, y: y ?? 0, z: z ?? 0 }));
   return normalizePoints3D(points);
 }
 
@@ -190,14 +197,224 @@ export function calculateDistances(points: Point2D[]): number[][] {
     .map(() => Array(n).fill(0));
 
   for (let i = 0; i < n; i++) {
+    const distRow1 = distances[i];
+    if (!distRow1) continue;
+
     for (let j = i + 1; j < n; j++) {
-      const dx = points[i].x - points[j].x;
-      const dy = points[i].y - points[j].y;
+      const p1 = points[i];
+      const p2 = points[j];
+      const distRow2 = distances[j];
+      if (!p1 || !p2 || !distRow2) continue;
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      distances[i][j] = dist;
-      distances[j][i] = dist;
+      distRow1[j] = dist;
+      distRow2[i] = dist;
     }
   }
 
   return distances;
+}
+
+/**
+ * DBSCAN Clustering Algorithm
+ * Density-Based Spatial Clustering of Applications with Noise
+ */
+export interface Cluster {
+  id: number;
+  points: number[]; // Indices of points in this cluster
+  centroid: Point2D;
+  color: string;
+}
+
+export interface ClusterResult {
+  clusters: Cluster[];
+  labels: number[]; // -1 for noise, 0+ for cluster ID
+  noisePoints: number[]; // Indices of noise points
+}
+
+/**
+ * Perform DBSCAN clustering on 2D points
+ * @param points - Array of 2D points
+ * @param eps - Maximum distance between points in a cluster (epsilon)
+ * @param minPts - Minimum number of points to form a dense region
+ * @returns Cluster result with labels and cluster info
+ */
+export function dbscan(
+  points: Point2D[],
+  eps: number = 0.05,
+  minPts: number = 5
+): ClusterResult {
+  const n = points.length;
+  const labels = new Array(n).fill(-1); // -1 = unvisited
+  const visited = new Array(n).fill(false);
+  let clusterId = 0;
+  const clusters: Cluster[] = [];
+
+  // Calculate distance between two points
+  const distance = (i: number, j: number): number => {
+    const p1 = points[i];
+    const p2 = points[j];
+    if (!p1 || !p2) return Infinity;
+    const dx = p1.x - p2.x;
+    const dy = p1.y - p2.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Find all neighbors within eps distance
+  const getNeighbors = (pointIdx: number): number[] => {
+    const neighbors: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (distance(pointIdx, i) <= eps) {
+        neighbors.push(i);
+      }
+    }
+    return neighbors;
+  };
+
+  // Expand cluster from a seed point
+  const expandCluster = (pointIdx: number, neighbors: number[]): void => {
+    if (labels[pointIdx] === undefined) return;
+    labels[pointIdx] = clusterId;
+    const clusterPoints = [pointIdx];
+
+    let i = 0;
+    while (i < neighbors.length) {
+      const neighborIdx = neighbors[i];
+      if (neighborIdx === undefined) {
+        i++;
+        continue;
+      }
+
+      if (!visited[neighborIdx]) {
+        visited[neighborIdx] = true;
+        const neighborNeighbors = getNeighbors(neighborIdx);
+
+        if (neighborNeighbors.length >= minPts) {
+          // Add new neighbors to expand
+          neighbors.push(
+            ...neighborNeighbors.filter((n) => !neighbors.includes(n))
+          );
+        }
+      }
+
+      if (labels[neighborIdx] === -1) {
+        labels[neighborIdx] = clusterId;
+        clusterPoints.push(neighborIdx);
+      }
+
+      i++;
+    }
+
+    // Calculate cluster centroid
+    let cx = 0,
+      cy = 0;
+    for (const idx of clusterPoints) {
+      const point = points[idx];
+      if (point) {
+        cx += point.x;
+        cy += point.y;
+      }
+    }
+    const centroid = {
+      x: cx / clusterPoints.length,
+      y: cy / clusterPoints.length,
+    };
+
+    // Assign cluster color
+    const color = generateClusterColor(clusterId);
+
+    clusters.push({
+      id: clusterId,
+      points: clusterPoints,
+      centroid,
+      color,
+    });
+  };
+
+  // Main DBSCAN loop
+  for (let i = 0; i < n; i++) {
+    if (visited[i]) continue;
+    visited[i] = true;
+
+    const neighbors = getNeighbors(i);
+
+    if (neighbors.length < minPts) {
+      // Mark as noise (labels[i] stays -1)
+      continue;
+    }
+
+    // Start a new cluster
+    expandCluster(i, neighbors);
+    clusterId++;
+  }
+
+  // Collect noise points
+  const noisePoints: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (labels[i] === -1) {
+      noisePoints.push(i);
+    }
+  }
+
+  return {
+    clusters,
+    labels,
+    noisePoints,
+  };
+}
+
+/**
+ * Generate a distinct color for a cluster
+ */
+function generateClusterColor(clusterId: number): string {
+  const goldenRatio = 0.618033988749895;
+  const hue = (clusterId * goldenRatio) % 1;
+  const saturation = 0.6 + ((clusterId * 0.1) % 0.3);
+  const lightness = 0.5 + ((clusterId * 0.15) % 0.2);
+  return `hsl(${hue * 360}, ${saturation * 100}%, ${lightness * 100}%)`;
+}
+
+/**
+ * Auto-calculate optimal DBSCAN parameters based on data
+ * Uses k-distance graph method to estimate eps
+ */
+export function estimateDBSCANParams(points: Point2D[]): {
+  eps: number;
+  minPts: number;
+} {
+  const n = points.length;
+
+  // MinPts is typically 2 * dimensions (for 2D = 4) or ln(n)
+  const minPts = Math.max(4, Math.ceil(Math.log(n)));
+
+  // Calculate k-nearest neighbor distances for all points
+  const kDistances: number[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const distances: number[] = [];
+    const pi = points[i];
+    if (!pi) continue;
+
+    for (let j = 0; j < n; j++) {
+      if (i !== j) {
+        const pj = points[j];
+        if (!pj) continue;
+        const dx = pi.x - pj.x;
+        const dy = pi.y - pj.y;
+        distances.push(Math.sqrt(dx * dx + dy * dy));
+      }
+    }
+    distances.sort((a, b) => a - b);
+    kDistances.push(distances[minPts - 1] ?? distances[distances.length - 1] ?? 0);
+  }
+
+  // Sort k-distances
+  kDistances.sort((a, b) => a - b);
+
+  // Find the "elbow" - use the 90th percentile as a heuristic
+  const elbowIndex = Math.floor(kDistances.length * 0.9);
+  const eps = kDistances[elbowIndex] ?? 0.05;
+
+  return { eps, minPts };
 }
