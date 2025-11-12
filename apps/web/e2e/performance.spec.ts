@@ -75,7 +75,7 @@ test.describe('Performance Tests', () => {
     expect(searchTime).toBeLessThan(1000);
   });
 
-  test('api response times should be acceptable', async ({ page, request }) => {
+  test('api response times should be acceptable', async ({ request }) => {
     // Test API endpoint performance
     const startTime = Date.now();
 

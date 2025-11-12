@@ -10,7 +10,6 @@ import type { Language, TranslateTextResponse } from '~/types';
 import { apiClient } from '~/lib/api';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { Label } from '~/components/ui/label';
 import { LanguageSelector } from './language-selector';
 import { cn } from '~/lib/utils';
 
@@ -61,13 +60,13 @@ export function TextTranslator() {
     },
   });
 
-  // Cost estimation mutation
-  const estimateMutation = useMutation({
-    mutationFn: async () => {
-      if (!inputText.trim()) return null;
-      return await apiClient.estimateTranslationCost(inputText, targetLang);
-    },
-  });
+  // Cost estimation mutation (for future feature)
+  // const estimateMutation = useMutation({
+  //   mutationFn: async () => {
+  //     if (!inputText.trim()) return null;
+  //     return await apiClient.estimateTranslationCost(inputText, targetLang);
+  //   },
+  // });
 
   const handleTranslate = () => {
     if (!inputText.trim()) return;
