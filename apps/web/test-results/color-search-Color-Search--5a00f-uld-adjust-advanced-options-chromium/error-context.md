@@ -1,0 +1,96 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - link "Paillette" [ref=e7] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123
+        - paragraph [ref=e8]: Test Gallery
+      - navigation [ref=e9]:
+        - link "Dashboard" [ref=e10] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123
+        - link "Search" [ref=e11] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/search
+        - link "Explore" [ref=e12] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/explore
+        - link "Frame Removal" [ref=e13] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/frame-removal
+        - link "Translate" [ref=e14] [cursor=pointer]:
+          - /url: /translate
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - button "🔍 Text" [ref=e20] [cursor=pointer]
+      - button "🖼️ Image" [ref=e21] [cursor=pointer]
+      - button "🎨 Color" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e28]: Selected Colors (0/5)
+          - paragraph [ref=e30]: Select colors from the palette below
+        - generic [ref=e31]:
+          - generic [ref=e32]: Common Colors
+          - generic [ref=e33]:
+            - 'button "Select color #FF0000" [ref=e34] [cursor=pointer]'
+            - 'button "Select color #DC143C" [ref=e35] [cursor=pointer]'
+            - 'button "Select color #8B0000" [ref=e36] [cursor=pointer]'
+            - 'button "Select color #CD5C5C" [ref=e37] [cursor=pointer]'
+            - 'button "Select color #FFC0CB" [ref=e38] [cursor=pointer]'
+            - 'button "Select color #FFA500" [ref=e39] [cursor=pointer]'
+            - 'button "Select color #FF8C00" [ref=e40] [cursor=pointer]'
+            - 'button "Select color #FF4500" [ref=e41] [cursor=pointer]'
+            - 'button "Select color #FF6347" [ref=e42] [cursor=pointer]'
+            - 'button "Select color #FFD700" [ref=e43] [cursor=pointer]'
+            - 'button "Select color #FFFF00" [ref=e44] [cursor=pointer]'
+            - 'button "Select color #FFFFE0" [ref=e45] [cursor=pointer]'
+            - 'button "Select color #F0E68C" [ref=e46] [cursor=pointer]'
+            - 'button "Select color #BDB76B" [ref=e47] [cursor=pointer]'
+            - 'button "Select color #EEE8AA" [ref=e48] [cursor=pointer]'
+            - 'button "Select color #00FF00" [ref=e49] [cursor=pointer]'
+            - 'button "Select color #32CD32" [ref=e50] [cursor=pointer]'
+            - 'button "Select color #228B22" [ref=e51] [cursor=pointer]'
+            - 'button "Select color #006400" [ref=e52] [cursor=pointer]'
+            - 'button "Select color #7CFC00" [ref=e53] [cursor=pointer]'
+            - 'button "Select color #0000FF" [ref=e54] [cursor=pointer]'
+            - 'button "Select color #4169E1" [ref=e55] [cursor=pointer]'
+            - 'button "Select color #1E90FF" [ref=e56] [cursor=pointer]'
+            - 'button "Select color #87CEEB" [ref=e57] [cursor=pointer]'
+            - 'button "Select color #00BFFF" [ref=e58] [cursor=pointer]'
+            - 'button "Select color #800080" [ref=e59] [cursor=pointer]'
+            - 'button "Select color #9370DB" [ref=e60] [cursor=pointer]'
+            - 'button "Select color #8A2BE2" [ref=e61] [cursor=pointer]'
+            - 'button "Select color #9400D3" [ref=e62] [cursor=pointer]'
+            - 'button "Select color #DDA0DD" [ref=e63] [cursor=pointer]'
+            - 'button "Select color #A52A2A" [ref=e64] [cursor=pointer]'
+            - 'button "Select color #8B4513" [ref=e65] [cursor=pointer]'
+            - 'button "Select color #D2691E" [ref=e66] [cursor=pointer]'
+            - 'button "Select color #CD853F" [ref=e67] [cursor=pointer]'
+            - 'button "Select color #F4A460" [ref=e68] [cursor=pointer]'
+            - 'button "Select color #000000" [ref=e69] [cursor=pointer]'
+            - 'button "Select color #808080" [ref=e70] [cursor=pointer]'
+            - 'button "Select color #C0C0C0" [ref=e71] [cursor=pointer]'
+            - 'button "Select color #FFFFFF" [ref=e72] [cursor=pointer]'
+            - 'button "Select color #D3D3D3" [ref=e73] [cursor=pointer]'
+        - generic [ref=e74]:
+          - generic [ref=e75]: Custom Color
+          - generic [ref=e76]:
+            - textbox "Custom Color" [ref=e77] [cursor=pointer]: "#000000"
+            - textbox "#000000" [ref=e78]
+            - button "Add" [ref=e79] [cursor=pointer]
+      - generic [ref=e80]:
+        - generic [ref=e81]: "Match Mode:"
+        - generic [ref=e82]:
+          - button "ANY" [ref=e83] [cursor=pointer]
+          - button "ALL" [ref=e84] [cursor=pointer]
+        - button "Search Artworks" [disabled]
+    - group [ref=e85]:
+      - generic "Advanced Options" [active] [ref=e86] [cursor=pointer]
+      - generic [ref=e87]:
+        - generic [ref=e88]:
+          - text: Results Limit
+          - spinbutton "Results Limit" [ref=e89]: "10"
+        - generic [ref=e90]:
+          - text: Min Similarity (%)
+          - spinbutton "Min Similarity (%)" [ref=e91]: "70"
+```

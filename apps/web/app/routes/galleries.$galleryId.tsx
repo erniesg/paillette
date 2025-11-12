@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
-import { useLoaderData, Link } from '@remix-run/react';
+import { useLoaderData, Link, Outlet, useLocation } from '@remix-run/react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { apiClient } from '~/lib/api';
@@ -39,15 +39,25 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
 export default function GalleryDashboard() {
   const { gallery, galleryId } = useLoaderData<typeof loader>();
+  const location = useLocation();
 
-  // Fetch artworks
+  // Check if we're on a child route
+  const isChildRoute = location.pathname !== `/galleries/${galleryId}`;
+
+  // Fetch artworks (only for dashboard)
   const { data, isLoading, error } = useQuery({
     queryKey: ['artworks', galleryId],
     queryFn: () => apiClient.listArtworks(galleryId, { limit: 50 }),
+    enabled: !isChildRoute,
   });
 
   const artworks = data?.artworks || [];
   const total = data?.total || 0;
+
+  // If on a child route, just render the outlet
+  if (isChildRoute) {
+    return <Outlet />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-primary-950 text-white">

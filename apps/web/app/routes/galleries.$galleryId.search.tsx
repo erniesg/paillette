@@ -7,6 +7,7 @@ import { useDropzone } from 'react-dropzone';
 import { apiClient } from '~/lib/api';
 import { debounce } from '~/lib/utils';
 import { SearchResults } from '~/components/search/search-results';
+import { ColorPicker } from '~/components/ui/color-picker';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -41,12 +42,15 @@ export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Search state
-  const [searchMode, setSearchMode] = useState<'text' | 'image'>('text');
+  const [searchMode, setSearchMode] = useState<'text' | 'image' | 'color'>('text');
   const [textQuery, setTextQuery] = useState(
     searchParams.get('q') || ''
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [colorMatchMode, setColorMatchMode] = useState<'any' | 'all'>('any');
+  const [colorThreshold, setColorThreshold] = useState(15);
   const [topK, setTopK] = useState(10);
   const [minScore, setMinScore] = useState(0.7);
   const [shouldSearch, setShouldSearch] = useState(false);
@@ -79,8 +83,26 @@ export default function SearchPage() {
     enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
+  // Color search query
+  const colorSearchQuery = useQuery({
+    queryKey: ['search', 'color', galleryId, selectedColors, colorMatchMode, colorThreshold],
+    queryFn: async () => {
+      if (selectedColors.length === 0) return null;
+      return apiClient.searchColor(galleryId, {
+        colors: selectedColors,
+        matchMode: colorMatchMode,
+        threshold: colorThreshold,
+        limit: topK,
+      });
+    },
+    enabled: searchMode === 'color' && shouldSearch && selectedColors.length > 0,
+  });
+
   // Get current results based on mode
-  const currentQuery = searchMode === 'text' ? textSearchQuery : imageSearchQuery;
+  const currentQuery =
+    searchMode === 'text' ? textSearchQuery :
+    searchMode === 'image' ? imageSearchQuery :
+    colorSearchQuery;
   const results = currentQuery.data?.results || [];
   const isLoading = currentQuery.isLoading;
   const error = currentQuery.error;
@@ -205,14 +227,21 @@ export default function SearchPage() {
                   onClick={() => setSearchMode('text')}
                   className="flex-1"
                 >
-                  🔍 Text Search
+                  🔍 Text
                 </Button>
                 <Button
                   variant={searchMode === 'image' ? 'default' : 'outline'}
                   onClick={() => setSearchMode('image')}
                   className="flex-1"
                 >
-                  🖼️ Image Search
+                  🖼️ Image
+                </Button>
+                <Button
+                  variant={searchMode === 'color' ? 'default' : 'outline'}
+                  onClick={() => setSearchMode('color')}
+                  className="flex-1"
+                >
+                  🎨 Color
                 </Button>
               </div>
 
@@ -289,6 +318,52 @@ export default function SearchPage() {
                       </Button>
                     </div>
                   )}
+                </motion.div>
+              )}
+
+              {/* Color Search */}
+              {searchMode === 'color' && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="space-y-4"
+                >
+                  <ColorPicker
+                    value={selectedColors}
+                    onChange={setSelectedColors}
+                    maxColors={5}
+                  />
+
+                  <div className="flex items-center gap-4 pt-2">
+                    <Label className="text-sm">Match Mode:</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={colorMatchMode === 'any' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setColorMatchMode('any')}
+                      >
+                        ANY
+                      </Button>
+                      <Button
+                        variant={colorMatchMode === 'all' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setColorMatchMode('all')}
+                      >
+                        ALL
+                      </Button>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        if (selectedColors.length > 0) {
+                          setShouldSearch(true);
+                        }
+                      }}
+                      disabled={selectedColors.length === 0}
+                      className="ml-auto"
+                    >
+                      Search Artworks
+                    </Button>
+                  </div>
                 </motion.div>
               )}
 

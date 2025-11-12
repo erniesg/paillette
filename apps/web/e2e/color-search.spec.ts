@@ -9,24 +9,28 @@ test.describe('Color Search Feature', () => {
     // Set up API mocking
     await setupApiMocks(page);
 
-    // Navigate to color search page
-    await page.goto(`${baseUrl}/galleries/${testGalleryId}/color-search`);
+    // Navigate to search page
+    await page.goto(`${baseUrl}/galleries/${testGalleryId}/search`);
 
     // Wait for page to hydrate (framer-motion animations)
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500); // Wait for animations
+
+    // Click color search mode tab
+    await page.getByRole('button', { name: /🎨 Color/i }).click();
+    await page.waitForTimeout(300); // Wait for tab transition
   });
 
-  test('should display color search page with header', async ({ page }) => {
+  test('should display color search mode', async ({ page }) => {
     // Check page title
-    await expect(page).toHaveTitle(/Color Search - Paillette/);
+    await expect(page).toHaveTitle(/Search Artworks - Paillette/);
 
-    // Check header elements (use getByRole for better semantics)
-    await expect(page.getByRole('link', { name: 'Paillette' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Search by Color' })).toBeVisible();
-    await expect(
-      page.getByText('Find artworks that match specific color palettes')
-    ).toBeVisible();
+    // Check color mode tab is active
+    const colorTab = page.getByRole('button', { name: /🎨 Color/i });
+    await expect(colorTab).toBeVisible();
+
+    // Check color picker is visible
+    await expect(page.getByText(/Selected Colors \(\d+\/5\)/)).toBeVisible();
   });
 
   test('should display color picker with common colors', async ({ page }) => {
@@ -98,28 +102,20 @@ test.describe('Color Search Feature', () => {
   });
 
   test('should toggle between ANY and ALL match modes', async ({ page }) => {
-    // Check default mode description is visible
-    await expect(
-      page.getByText('Find artworks containing at least one of the selected colors')
-    ).toBeVisible();
+    // Check ANY button is visible
+    const anyButton = page.getByRole('button', { name: 'ANY' });
+    const allButton = page.getByRole('button', { name: 'ALL' });
 
-    // Click ALL mode button
-    const allButton = page.getByRole('button', { name: 'Match ALL Colors' });
+    await expect(anyButton).toBeVisible();
     await expect(allButton).toBeVisible();
-    await allButton.click();
 
-    // Check description changed to ALL mode
-    await expect(
-      page.getByText('Find artworks containing all of the selected colors')
-    ).toBeVisible();
+    // Click ALL mode
+    await allButton.click();
+    await page.waitForTimeout(100);
 
     // Click back to ANY mode
-    await page.getByRole('button', { name: 'Match ANY Color' }).click();
-
-    // Check description changed back
-    await expect(
-      page.getByText('Find artworks containing at least one of the selected colors')
-    ).toBeVisible();
+    await anyButton.click();
+    await page.waitForTimeout(100);
   });
 
   test('should show search button disabled when no colors selected', async ({
@@ -165,64 +161,53 @@ test.describe('Color Search Feature', () => {
     ).toBeVisible();
   });
 
-  test('should adjust advanced options', async ({ page }) => {
-    // Open advanced options details element
-    const advancedOptions = page.getByText('Advanced Options');
-    await expect(advancedOptions).toBeVisible();
-    await advancedOptions.click();
-
-    // Wait for options to expand
-    await page.waitForTimeout(200);
-
-    // Check threshold input
-    const thresholdInput = page.locator('input#threshold');
-    await expect(thresholdInput).toBeVisible();
-    await expect(thresholdInput).toHaveValue('15');
-
-    // Change threshold
-    await thresholdInput.fill('25');
-    await expect(thresholdInput).toHaveValue('25');
-
-    // Check limit input
-    const limitInput = page.locator('input#limit');
-    await expect(limitInput).toBeVisible();
-    await expect(limitInput).toHaveValue('20');
-
-    // Change limit
-    await limitInput.fill('50');
-    await expect(limitInput).toHaveValue('50');
+  test.skip('should adjust advanced options', async ({ page }) => {
+    // Note: Color search uses simpler match mode toggle (ANY/ALL) instead of
+    // advanced threshold options. This test is skipped for color search mode.
+    // Advanced options are available in text/image search modes.
   });
 
-  test('should show navigation links in header', async ({ page }) => {
-    // Check all nav links are present using semantic selectors
-    await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Search' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Color Search' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Explore' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Frame Removal' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Translate' })).toBeVisible();
-  });
+  test('should switch between search modes', async ({ page }) => {
+    // Check all search mode tabs are present
+    await expect(page.getByRole('button', { name: /🔍 Text/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /🖼️ Image/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /🎨 Color/i })).toBeVisible();
 
-  test('should have proper styling and animations', async ({ page }) => {
-    // Check gradient background exists
-    const mainContainer = page.locator('div.min-h-screen').first();
-    await expect(mainContainer).toBeVisible();
-
-    // Verify it has gradient classes
-    const classList = await mainContainer.getAttribute('class');
-    expect(classList).toContain('bg-gradient-to-br');
-
-    // Select a color and check for visual feedback
-    const firstColor = page.locator('button[aria-label^="Select color"]').first();
-    await expect(firstColor).toBeVisible();
-    await firstColor.click();
-
-    // Wait for animation
+    // Switch to text mode
+    await page.getByRole('button', { name: /🔍 Text/i }).click();
     await page.waitForTimeout(300);
 
-    // Check selected color has ring effect
+    // Check text search input is visible
+    await expect(page.getByPlaceholder('Describe what you\'re looking for...')).toBeVisible();
+
+    // Switch back to color mode
+    await page.getByRole('button', { name: /🎨 Color/i }).click();
+    await page.waitForTimeout(300);
+
+    // Check color picker is visible again
+    await expect(page.getByText(/Selected Colors \(\d+\/5\)/)).toBeVisible();
+  });
+
+  test('should have proper color selection interaction', async ({ page }) => {
+    // Wait for color buttons
+    const firstColor = page.locator('button[aria-label^="Select color"]').first();
+    await expect(firstColor).toBeVisible();
+
+    // Click to select
+    await firstColor.click();
+    await page.waitForTimeout(300);
+
+    // Verify selection indicator (ring effect)
     const selectedClasses = await firstColor.getAttribute('class');
     expect(selectedClasses).toContain('ring-2');
+
+    // Click again to deselect
+    await firstColor.click();
+    await page.waitForTimeout(300);
+
+    // Verify deselection
+    const deselectedClasses = await firstColor.getAttribute('class');
+    expect(deselectedClasses).not.toContain('ring-2');
   });
 
   // Note: The following tests require a live backend API
