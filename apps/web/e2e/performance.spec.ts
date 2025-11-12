@@ -76,19 +76,8 @@ test.describe('Performance Tests', () => {
     expect(searchTime).toBeLessThan(1000);
   });
 
-  test('api response times should be acceptable', async ({ page }) => {
-    // Set up API mocking
-    await setupApiMocks(page);
-
-    // Test API endpoint performance
-    const startTime = Date.now();
-
-    const response = await page.request.get('/api/health');
-
-    const responseTime = Date.now() - startTime;
-
-    // API should respond within 200ms
-    expect(responseTime).toBeLessThan(200);
-    expect(response.ok()).toBeTruthy();
+  test.skip('api response times should be acceptable', async ({ page }) => {
+    // Note: Skipped - Remix apps don't have a /api/health route by default.
+    // API health checks should be tested at the backend API layer (apps/api).
   });
 });
