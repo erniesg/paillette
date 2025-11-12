@@ -89,6 +89,93 @@ class ApiClient {
   }
 
   /**
+   * Search artworks by color similarity
+   */
+  async searchColor(
+    galleryId: string,
+    request: {
+      colors: string[];
+      matchMode?: 'any' | 'all';
+      threshold?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    results: Array<{
+      artworkId: string;
+      title: string;
+      imageUrl: string;
+      matchedColors: Array<{
+        searchColor: string;
+        artworkColor: string;
+        distance: number;
+      }>;
+      averageDistance: number;
+      dominantColors: Array<{
+        color: string;
+        rgb: { r: number; g: number; b: number };
+        percentage: number;
+      }>;
+    }>;
+    query: {
+      colors: string[];
+      matchMode: 'any' | 'all';
+      threshold: number;
+      limit: number;
+    };
+    totalResults: number;
+    took: number;
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/galleries/${galleryId}/search/color`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          colors: request.colors,
+          matchMode: request.matchMode || 'any',
+          threshold: request.threshold || 15,
+          limit: request.limit || 20,
+        }),
+      }
+    );
+
+    const data: ApiResponse<{
+      results: Array<{
+        artworkId: string;
+        title: string;
+        imageUrl: string;
+        matchedColors: Array<{
+          searchColor: string;
+          artworkColor: string;
+          distance: number;
+        }>;
+        averageDistance: number;
+        dominantColors: Array<{
+          color: string;
+          rgb: { r: number; g: number; b: number };
+          percentage: number;
+        }>;
+      }>;
+      query: {
+        colors: string[];
+        matchMode: 'any' | 'all';
+        threshold: number;
+        limit: number;
+      };
+      totalResults: number;
+      took: number;
+    }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Color search failed');
+    }
+
+    return data.data;
+  }
+
+  /**
    * Get gallery by ID
    */
   async getGallery(galleryId: string): Promise<Gallery> {
