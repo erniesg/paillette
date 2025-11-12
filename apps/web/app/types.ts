@@ -50,10 +50,17 @@ export interface Artwork {
   description?: string;
   imageUrl: string;
   thumbnailUrl?: string;
+  imageUrlProcessed?: string | null;
+  processingStatus?: ProcessingStatus;
+  frameRemovalConfidence?: number | null;
+  processedAt?: string | null;
+  processingError?: string | null;
   metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
+
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ArtworkDimensions {
   height?: number;
@@ -168,4 +175,15 @@ export interface TranslationJobStatus {
   downloadUrl?: string;
   error?: string;
   cost?: number;
+}
+
+// Frame removal types
+export interface ProcessingStats {
+  total: number;
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  hasProcessedImage: number;
+  avgConfidence: number | null;
 }

@@ -440,6 +440,136 @@ class ApiClient {
   downloadTranslatedDocument(jobId: string): string {
     return `${this.baseUrl}/translate/document/${jobId}/download`;
   }
+
+  /**
+   * Process frame removal for a single artwork
+   */
+  async processFrameRemoval(
+    artworkId: string
+  ): Promise<{ artworkId: string; status: string; message: string }> {
+    const response = await fetch(
+      `${this.baseUrl}/artworks/${artworkId}/process-frame`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const data: ApiResponse<{
+      artworkId: string;
+      status: string;
+      message: string;
+    }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Frame processing failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Batch process frame removal for gallery artworks
+   */
+  async batchProcessFrames(
+    galleryId: string,
+    options?: { artworkIds?: string[]; forceReprocess?: boolean }
+  ): Promise<{
+    galleryId: string;
+    totalQueued: number;
+    skipped: number;
+    message: string;
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/galleries/${galleryId}/artworks/batch-process-frames`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(options || {}),
+      }
+    );
+
+    const data: ApiResponse<{
+      galleryId: string;
+      totalQueued: number;
+      skipped: number;
+      message: string;
+    }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Batch processing failed');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Get frame processing status for an artwork
+   */
+  async getProcessingStatus(artworkId: string): Promise<{
+    artworkId: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    confidence: number | null;
+    processedImageUrl: string | null;
+    processedAt: string | null;
+    error: string | null;
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/artworks/${artworkId}/processing-status`
+    );
+
+    const data: ApiResponse<{
+      artworkId: string;
+      status: 'pending' | 'processing' | 'completed' | 'failed';
+      confidence: number | null;
+      processedImageUrl: string | null;
+      processedAt: string | null;
+      error: string | null;
+    }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch processing status');
+    }
+
+    return data.data;
+  }
+
+  /**
+   * Get processing statistics for a gallery
+   */
+  async getProcessingStats(galleryId: string): Promise<{
+    total: number;
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    hasProcessedImage: number;
+    avgConfidence: number | null;
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/galleries/${galleryId}/processing-stats`
+    );
+
+    const data: ApiResponse<{
+      total: number;
+      pending: number;
+      processing: number;
+      completed: number;
+      failed: number;
+      hasProcessedImage: number;
+      avgConfidence: number | null;
+    }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch processing stats');
+    }
+
+    return data.data;
+  }
 }
 
 export const apiClient = new ApiClient();
