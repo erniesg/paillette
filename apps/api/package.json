@@ -18,6 +18,7 @@
   "dependencies": {
     "@cloudflare/ai": "^1.0.63",
     "@hono/zod-validator": "^0.4.1",
+    "@paillette/color-extraction": "workspace:*",
     "@paillette/database": "workspace:*",
     "@paillette/document-processor": "workspace:*",
     "@paillette/metadata": "workspace:*",
