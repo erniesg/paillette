@@ -1,12 +1,17 @@
 import { Env } from '../index';
 import { EmbeddingService, VectorService, EmbeddingJobPayload } from '@paillette/ai';
+import { ColorExtractor } from '@paillette/color-extraction';
+
+type QueueMessage = EmbeddingJobPayload & {
+  type?: 'generate-embedding' | 'extract-colors';
+};
 
 /**
- * Queue consumer for processing embedding generation jobs
- * Triggered when artworks are uploaded
+ * Queue consumer for processing embedding generation and color extraction jobs
+ * Triggered when artworks are uploaded or color extraction is requested
  */
 export async function processEmbeddingJob(
-  batch: MessageBatch<EmbeddingJobPayload>,
+  batch: MessageBatch<QueueMessage>,
   env: Env
 ): Promise<void> {
   const embeddingService = new EmbeddingService({ ai: env.AI });
@@ -17,6 +22,17 @@ export async function processEmbeddingJob(
     const startTime = performance.now();
 
     try {
+      // Determine job type (default to embedding generation for backwards compatibility)
+      const jobType = job.type || 'generate-embedding';
+
+      if (jobType === 'extract-colors') {
+        // Process color extraction
+        await processColorExtraction(job, env);
+        message.ack();
+        continue;
+      }
+
+      // Process embedding generation (default)
       console.log(`Processing embedding job for artwork: ${job.artworkId}`);
 
       // Fetch the image from R2
@@ -113,6 +129,117 @@ export async function processEmbeddingJob(
 }
 
 /**
+ * Process color extraction for an artwork
+ */
+async function processColorExtraction(
+  job: QueueMessage,
+  env: Env
+): Promise<void> {
+  const startTime = performance.now();
+
+  try {
+    console.log(`Processing color extraction for artwork: ${job.artworkId}`);
+
+    // Fetch the image from R2 or use URL directly
+    let imageUrl = job.imageUrl;
+
+    // If we have an image key, construct the R2 URL
+    if (job.imageKey) {
+      const imageObject = await env.IMAGES.get(job.imageKey);
+      if (!imageObject) {
+        throw new Error(`Image not found in R2: ${job.imageKey}`);
+      }
+      // For node-vibrant, we need a URL or buffer
+      // Since R2Object can be converted to buffer, let's use that
+      const buffer = await imageObject.arrayBuffer();
+      const result = await ColorExtractor.extractFromBuffer(Buffer.from(buffer), 5);
+
+      // Store color data in database
+      await env.DB.prepare(
+        `
+        UPDATE artworks
+        SET
+          dominant_colors = ?,
+          color_palette = ?,
+          color_extracted_at = ?,
+          color_extraction_version = 'v1',
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `
+      )
+        .bind(
+          JSON.stringify(result.dominantColors),
+          JSON.stringify(result.palette),
+          result.extractedAt,
+          job.artworkId
+        )
+        .run();
+
+      const duration = performance.now() - startTime;
+      console.log(
+        `Successfully extracted colors for artwork ${job.artworkId} in ${duration.toFixed(2)}ms`
+      );
+
+      return;
+    }
+
+    // Otherwise, use the URL directly
+    if (!imageUrl) {
+      throw new Error('No image URL or key provided');
+    }
+
+    const result = await ColorExtractor.extract(imageUrl, 5);
+
+    // Store color data in database
+    await env.DB.prepare(
+      `
+      UPDATE artworks
+      SET
+        dominant_colors = ?,
+        color_palette = ?,
+        color_extracted_at = ?,
+        color_extraction_version = 'v1',
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `
+    )
+      .bind(
+        JSON.stringify(result.dominantColors),
+        JSON.stringify(result.palette),
+        result.extractedAt,
+        job.artworkId
+      )
+      .run();
+
+    const duration = performance.now() - startTime;
+    console.log(
+      `Successfully extracted colors for artwork ${job.artworkId} in ${duration.toFixed(2)}ms`
+    );
+  } catch (error) {
+    console.error(
+      `Failed to extract colors for artwork ${job.artworkId}:`,
+      error
+    );
+
+    // Retry logic
+    const retryCount = job.retryCount || 0;
+    if (retryCount < 3) {
+      console.log(`Retrying color extraction (attempt ${retryCount + 1}/3)...`);
+      await env.EMBEDDING_QUEUE.send({
+        ...job,
+        retryCount: retryCount + 1,
+      });
+    } else {
+      console.error(
+        `Max retries exceeded for color extraction of artwork ${job.artworkId}`
+      );
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Enqueue an embedding job for an artwork
  */
 export async function enqueueEmbeddingJob(
@@ -124,6 +251,30 @@ export async function enqueueEmbeddingJob(
     console.log(`Enqueued embedding job for artwork: ${job.artworkId}`);
   } catch (error) {
     console.error('Failed to enqueue embedding job:', error);
+    throw error;
+  }
+}
+
+/**
+ * Enqueue a color extraction job for an artwork
+ */
+export async function enqueueColorExtractionJob(
+  env: Env,
+  artworkId: string,
+  imageUrl: string,
+  imageKey?: string
+): Promise<void> {
+  try {
+    await env.EMBEDDING_QUEUE.send({
+      type: 'extract-colors',
+      artworkId,
+      imageUrl,
+      imageKey,
+      galleryId: '', // Not needed for color extraction
+    });
+    console.log(`Enqueued color extraction job for artwork: ${artworkId}`);
+  } catch (error) {
+    console.error('Failed to enqueue color extraction job:', error);
     throw error;
   }
 }

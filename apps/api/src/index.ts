@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import galleries from './routes/galleries';
 import artworkRoutes from './routes/artworks';
 import { searchRoutes } from './routes/search';
+import { colorSearchRoutes } from './routes/color-search';
 import { embeddingsRoutes } from './routes/embeddings';
 import metadataRoutes from './routes/metadata';
 import translationRoutes from './routes/translation';
@@ -61,6 +62,7 @@ api.route('/translate', translationRoutes);
 
 // Search and embeddings routes (nested under galleries)
 api.route('/galleries/:galleryId', searchRoutes);
+api.route('/galleries/:galleryId', colorSearchRoutes);
 api.route('/galleries/:galleryId', embeddingsRoutes);
 
 // Mount API routes
