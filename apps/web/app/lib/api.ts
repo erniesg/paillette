@@ -659,4 +659,13 @@ class ApiClient {
   }
 }
 
-export const apiClient = new ApiClient();
+// Use mock API client during E2E tests
+import { MockApiClient } from './mock-api';
+
+// Check if we're in E2E test mode
+const isE2ETest =
+  typeof process !== 'undefined' &&
+  (process.env.E2E_TEST_MODE === 'true' ||
+   process.env.PLAYWRIGHT_TEST_MODE === 'true');
+
+export const apiClient = isE2ETest ? new MockApiClient() : new ApiClient();

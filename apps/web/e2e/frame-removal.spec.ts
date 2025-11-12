@@ -1,10 +1,14 @@
 import { test, expect } from '@playwright/test';
+import { setupApiMocks } from './fixtures/mock-api';
 
 test.describe('Frame Removal Feature', () => {
   test.skip('should display frame removal interface', async ({ page }) => {
+    // Set up API mocking
+    await setupApiMocks(page);
+
     // Skip this test in CI as it requires a real gallery setup
     // This serves as documentation of the E2E test structure
-    await page.goto('/galleries/test-gallery-id/frame-removal');
+    await page.goto('/galleries/test-gallery-123/frame-removal');
 
     // Should display the page title
     await expect(page.getByRole('heading', { name: /frame removal/i })).toBeVisible();
@@ -16,7 +20,8 @@ test.describe('Frame Removal Feature', () => {
   });
 
   test.skip('should allow batch processing', async ({ page }) => {
-    await page.goto('/galleries/test-gallery-id/frame-removal');
+    await setupApiMocks(page);
+    await page.goto('/galleries/test-gallery-123/frame-removal');
 
     // Find and click batch process button
     const batchButton = page.getByRole('button', { name: /batch process/i });
@@ -29,7 +34,8 @@ test.describe('Frame Removal Feature', () => {
   });
 
   test.skip('should filter artworks by status', async ({ page }) => {
-    await page.goto('/galleries/test-gallery-id/frame-removal');
+    await setupApiMocks(page);
+    await page.goto('/galleries/test-gallery-123/frame-removal');
 
     // Should have status filter options
     const statusFilter = page.locator('[data-testid="status-filter"]');
@@ -45,7 +51,8 @@ test.describe('Frame Removal Feature', () => {
   });
 
   test.skip('should search artworks', async ({ page }) => {
-    await page.goto('/galleries/test-gallery-id/frame-removal');
+    await setupApiMocks(page);
+    await page.goto('/galleries/test-gallery-123/frame-removal');
 
     // Should have search input
     const searchInput = page.getByPlaceholder(/search/i);

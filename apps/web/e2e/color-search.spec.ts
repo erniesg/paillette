@@ -1,10 +1,14 @@
 import { test, expect } from '@playwright/test';
+import { setupApiMocks } from './fixtures/mock-api';
 
 test.describe('Color Search Feature', () => {
   const testGalleryId = 'test-gallery-123';
   const baseUrl = 'http://localhost:5173';
 
   test.beforeEach(async ({ page }) => {
+    // Set up API mocking
+    await setupApiMocks(page);
+
     // Navigate to color search page
     await page.goto(`${baseUrl}/galleries/${testGalleryId}/color-search`);
   });

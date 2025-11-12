@@ -1,0 +1,70 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - link "Paillette" [ref=e7] [cursor=pointer]:
+          - /url: /
+        - paragraph [ref=e8]: Test Gallery
+      - navigation [ref=e9]:
+        - link "Dashboard" [ref=e10] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123
+        - link "Search" [ref=e11] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/search
+        - link "Explore" [ref=e12] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/explore
+        - link "Frame Removal" [ref=e13] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/frame-removal
+        - link "Translate" [ref=e14] [cursor=pointer]:
+          - /url: /translate
+  - generic [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "Test Gallery" [level=1] [ref=e19]
+          - paragraph [ref=e20]: Test gallery for E2E testing
+        - generic [ref=e21]:
+          - link "🔍 Search Artworks" [ref=e22] [cursor=pointer]:
+            - /url: /galleries/test-gallery-123/search
+          - button "+ Upload Artwork" [ref=e23] [cursor=pointer]
+      - generic [ref=e24]:
+        - generic [ref=e26]:
+          - paragraph [ref=e27]: Total Artworks
+          - heading "0" [level=3] [ref=e28]
+        - generic [ref=e30]:
+          - paragraph [ref=e31]: Public Access
+          - heading "✗ Disabled" [level=3] [ref=e32]
+        - generic [ref=e34]:
+          - paragraph [ref=e35]: Languages Supported
+          - heading "0" [level=3] [ref=e36]
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - heading "Quick Actions" [level=3] [ref=e40]
+        - paragraph [ref=e41]: Common tasks to manage your gallery
+      - generic [ref=e42]:
+        - link "🔍 Search" [ref=e43] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/search
+          - generic [ref=e44]: 🔍
+          - generic [ref=e45]: Search
+        - button "📤 Upload" [disabled]:
+          - generic: 📤
+          - generic: Upload
+        - button "📊 Import CSV" [disabled]:
+          - generic: 📊
+          - generic: Import CSV
+        - link "🎨 Explore" [ref=e46] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/explore
+          - generic [ref=e47]: 🎨
+          - generic [ref=e48]: Explore
+        - link "🖼️ Frame Removal" [ref=e49] [cursor=pointer]:
+          - /url: /galleries/test-gallery-123/frame-removal
+          - generic [ref=e50]: 🖼️
+          - generic [ref=e51]: Frame Removal
+    - generic [ref=e52]:
+      - heading "Recent Artworks" [level=2] [ref=e54]
+      - generic [ref=e55]:
+        - generic [ref=e56]: ⚠️
+        - paragraph [ref=e57]: Failed to fetch
+```

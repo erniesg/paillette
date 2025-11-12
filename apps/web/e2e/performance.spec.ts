@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { setupApiMocks } from './fixtures/mock-api';
 
 test.describe('Performance Tests', () => {
   test('homepage should load within acceptable time', async ({ page }) => {
@@ -75,11 +76,14 @@ test.describe('Performance Tests', () => {
     expect(searchTime).toBeLessThan(1000);
   });
 
-  test('api response times should be acceptable', async ({ request }) => {
+  test('api response times should be acceptable', async ({ page }) => {
+    // Set up API mocking
+    await setupApiMocks(page);
+
     // Test API endpoint performance
     const startTime = Date.now();
 
-    const response = await request.get('/api/health');
+    const response = await page.request.get('/api/health');
 
     const responseTime = Date.now() - startTime;
 
