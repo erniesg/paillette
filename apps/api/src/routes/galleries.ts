@@ -49,6 +49,20 @@ galleries.get(
       });
     } catch (error: any) {
       console.error('Error listing galleries:', error);
+
+      // If database table doesn't exist, return empty data for local dev
+      if (error.message?.includes('no such table')) {
+        return c.json({
+          success: true,
+          data: [],
+          metadata: {
+            page: pageNum,
+            pageSize: limitNum,
+            total: 0,
+          },
+        });
+      }
+
       return c.json(
         {
           success: false,

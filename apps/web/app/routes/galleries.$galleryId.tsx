@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from '~/components/ui/card';
 import { ArtworkGrid } from '~/components/gallery/artwork-grid';
+import { Logo } from '~/components/ui/logo';
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   return [
@@ -66,12 +67,7 @@ export default function GalleryDashboard() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <Link
-                to="/"
-                className="text-2xl font-display font-bold bg-gradient-accent bg-clip-text text-transparent hover:opacity-80 transition-opacity"
-              >
-                Paillette
-              </Link>
+              <Logo linkToHome />
               <p className="text-sm text-neutral-400 mt-1">{gallery.name}</p>
             </div>
             <nav className="flex items-center gap-4">

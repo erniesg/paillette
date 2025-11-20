@@ -1,4 +1,4 @@
-import type { LinksFunction } from '@remix-run/cloudflare';
+import type { LinksFunction, MetaFunction } from '@remix-run/cloudflare';
 import {
   Links,
   Meta,
@@ -10,9 +10,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import styles from './tailwind.css?url';
+// import colorfulStyles from 'react-colorful/dist/index.css?url';
+
+export const meta: MetaFunction = () => {
+  return [
+    { title: 'Paillette - AI-Powered Art Gallery Search' },
+    { name: 'description', content: 'Multimodal search and management platform for art galleries' },
+  ];
+};
 
 export const links: LinksFunction = () => [
   { rel: 'stylesheet', href: styles },
+  // { rel: 'stylesheet', href: colorfulStyles },
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
   {
     rel: 'preconnect',
@@ -27,14 +36,12 @@ export const links: LinksFunction = () => [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         {children}
         <ScrollRestoration />
         <Scripts />

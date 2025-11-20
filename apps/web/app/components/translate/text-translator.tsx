@@ -5,7 +5,8 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Copy, RotateCcw, Loader2, DollarSign } from 'lucide-react';
+import { ArrowRight, Copy, Download, Loader2, DollarSign } from 'lucide-react';
+import { Document, Paragraph, TextRun, Packer } from 'docx';
 import type { Language, TranslateTextResponse } from '~/types';
 import { apiClient } from '~/lib/api';
 import { Button } from '~/components/ui/button';
@@ -14,6 +15,8 @@ import { LanguageSelector } from './language-selector';
 import { cn } from '~/lib/utils';
 
 const MAX_CHARS = 10000;
+
+type FileFormat = 'txt' | 'docx';
 
 interface TranslationHistoryItem {
   id: string;
@@ -26,12 +29,13 @@ interface TranslationHistoryItem {
 }
 
 export function TextTranslator() {
-  const [sourceLang, setSourceLang] = useState<Language>('en');
+  const sourceLang: Language = 'en'; // Fixed to English only
   const [targetLang, setTargetLang] = useState<Language>('zh');
   const [inputText, setInputText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [history, setHistory] = useState<TranslationHistoryItem[]>([]);
   const [copiedResult, setCopiedResult] = useState(false);
+  const [fileFormat, setFileFormat] = useState<FileFormat>('docx');
 
   // Translation mutation
   const translateMutation = useMutation({
@@ -83,23 +87,58 @@ export function TextTranslator() {
     setTimeout(() => setCopiedResult(false), 2000);
   };
 
+  const handleDownload = async () => {
+    if (!translatedText) return;
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `translation_${targetLang}_${timestamp}`;
+
+    if (fileFormat === 'txt') {
+      // Download as TXT
+      const blob = new Blob([translatedText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${filename}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else {
+      // Download as DOCX
+      const doc = new Document({
+        sections: [
+          {
+            properties: {},
+            children: translatedText.split('\n').map(
+              (line) =>
+                new Paragraph({
+                  children: [new TextRun(line || ' ')], // Empty line if line is empty
+                })
+            ),
+          },
+        ],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${filename}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+  };
+
   const handleReset = () => {
     setInputText('');
     setTranslatedText('');
     translateMutation.reset();
   };
 
-  const handleSwapLanguages = () => {
-    setSourceLang(targetLang);
-    setTargetLang(sourceLang);
-    if (translatedText) {
-      setInputText(translatedText);
-      setTranslatedText('');
-    }
-  };
-
   const handleLoadFromHistory = (item: TranslationHistoryItem) => {
-    setSourceLang(item.sourceLang);
     setTargetLang(item.targetLang);
     setInputText(item.text);
     setTranslatedText(item.translatedText);
@@ -111,34 +150,25 @@ export function TextTranslator() {
 
   return (
     <div className="space-y-6">
-      {/* Language selectors */}
+      {/* Language selector */}
       <Card>
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-            <LanguageSelector
-              label="Source Language"
-              value={sourceLang}
-              onChange={setSourceLang}
-              disabled={translateMutation.isPending}
-            />
-
-            <div className="flex justify-center items-end pb-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleSwapLanguages}
-                disabled={translateMutation.isPending}
-                title="Swap languages"
-              >
-                <RotateCcw className="h-5 w-5" />
-              </Button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+            {/* Source language - fixed to English */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-neutral-200">Source Language</label>
+              <div className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-base text-neutral-400">
+                🇬🇧 English (Fixed)
+              </div>
             </div>
 
+            {/* Target language selector */}
             <LanguageSelector
               label="Target Language"
               value={targetLang}
               onChange={setTargetLang}
               disabled={translateMutation.isPending}
+              excludeLanguage="en"
             />
           </div>
         </CardContent>
@@ -291,12 +321,30 @@ export function TextTranslator() {
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-3"
+                  className="space-y-3"
                 >
-                  <Button variant="outline" onClick={handleCopy} className="flex-1">
-                    <Copy className="h-4 w-4" />
-                    {copiedResult ? 'Copied!' : 'Copy'}
-                  </Button>
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" onClick={handleCopy} className="flex-1">
+                      <Copy className="h-4 w-4" />
+                      {copiedResult ? 'Copied!' : 'Copy'}
+                    </Button>
+
+                    <div className="flex gap-2 flex-1">
+                      <select
+                        value={fileFormat}
+                        onChange={(e) => setFileFormat(e.target.value as FileFormat)}
+                        className="bg-neutral-800 border-2 border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
+                      >
+                        <option value="docx">DOCX</option>
+                        <option value="txt">TXT</option>
+                      </select>
+
+                      <Button variant="outline" onClick={handleDownload} className="flex-1">
+                        <Download className="h-4 w-4" />
+                        Download
+                      </Button>
+                    </div>
+                  </div>
 
                   {translateMutation.data?.cost && (
                     <span className="text-sm text-neutral-400">

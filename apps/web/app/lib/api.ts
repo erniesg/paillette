@@ -17,11 +17,21 @@ import type {
 } from '../types';
 
 // Get API URL from environment or use default
-const API_URL =
-  typeof window !== 'undefined'
-    ? (window as any).ENV?.API_URL || 'https://paillette-stg.workers.dev'
-    : 'https://paillette-stg.workers.dev';
+// In local dev, use localhost:8787 (wrangler dev default port)
+const getApiUrl = () => {
+  if (typeof window !== 'undefined') {
+    // Client-side
+    const isDev = window.location.hostname === 'localhost';
+    return (window as any).ENV?.API_URL ||
+           (isDev ? 'http://localhost:8787' : 'https://paillette-stg.workers.dev');
+  }
+  // Server-side
+  // Check if we're in development mode (NODE_ENV or presence of .dev.vars)
+  const isDev = process.env.NODE_ENV === 'development' || !process.env.API_URL;
+  return process.env.API_URL || (isDev ? 'http://localhost:8787' : 'https://paillette-stg.workers.dev');
+};
 
+const API_URL = getApiUrl();
 const API_BASE = `${API_URL}/api/v1`;
 
 class ApiClient {
@@ -176,6 +186,29 @@ class ApiClient {
   }
 
   /**
+   * Create a new gallery
+   */
+  async createGallery(
+    input: Omit<Gallery, 'id' | 'apiKey' | 'apiKeyHash' | 'createdAt'>
+  ): Promise<Gallery & { api_key: string }> {
+    const response = await fetch(`${this.baseUrl}/galleries`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    });
+
+    const data: ApiResponse<Gallery & { api_key: string }> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to create gallery');
+    }
+
+    return data.data;
+  }
+
+  /**
    * Get gallery by ID
    */
   async getGallery(galleryId: string): Promise<Gallery> {
@@ -194,13 +227,13 @@ class ApiClient {
    */
   async listGalleries(): Promise<Gallery[]> {
     const response = await fetch(`${this.baseUrl}/galleries`);
-    const data: ApiResponse<{ galleries: Gallery[] }> = await response.json();
+    const data: ApiResponse<Gallery[]> = await response.json();
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Failed to fetch galleries');
     }
 
-    return data.data.galleries;
+    return data.data;
   }
 
   /**

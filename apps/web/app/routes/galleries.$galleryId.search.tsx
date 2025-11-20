@@ -12,6 +12,7 @@ import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Card, CardContent } from '~/components/ui/card';
+import { Logo } from '~/components/ui/logo';
 
 export const meta: MetaFunction = () => {
   return [
@@ -167,12 +168,9 @@ export default function SearchPage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <a
-                href={`/galleries/${galleryId}`}
-                className="text-2xl font-display font-bold bg-gradient-accent bg-clip-text text-transparent hover:opacity-80 transition-opacity"
-              >
-                Paillette
-              </a>
+              <Link to={`/galleries/${galleryId}`}>
+                <Logo />
+              </Link>
               <p className="text-sm text-neutral-400 mt-1">{gallery.name}</p>
             </div>
             <nav className="flex items-center gap-4">

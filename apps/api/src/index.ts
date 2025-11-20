@@ -56,11 +56,11 @@ app.get('/health', (c) => {
 // API v1 routes
 const api = new Hono<{ Bindings: Env }>();
 api.route('/galleries', galleries);
-api.route('/artworks', artworkRoutes);
 api.route('/metadata', metadataRoutes);
 api.route('/translate', translationRoutes);
 
-// Search and embeddings routes (nested under galleries)
+// Nested routes under galleries (artworks, search, embeddings, etc.)
+api.route('/galleries/:galleryId/artworks', artworkRoutes);
 api.route('/galleries/:galleryId', searchRoutes);
 api.route('/galleries/:galleryId', colorSearchRoutes);
 api.route('/galleries/:galleryId', embeddingsRoutes);

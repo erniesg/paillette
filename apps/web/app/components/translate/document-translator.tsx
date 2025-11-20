@@ -28,7 +28,7 @@ interface UploadedFile {
 }
 
 export function DocumentTranslator() {
-  const [sourceLang, setSourceLang] = useState<Language>('en');
+  const sourceLang: Language = 'en'; // Fixed to English only
   const [targetLang, setTargetLang] = useState<Language>('zh');
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -161,22 +161,25 @@ export function DocumentTranslator() {
 
   return (
     <div className="space-y-6">
-      {/* Language selectors */}
+      {/* Language selector */}
       <Card>
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <LanguageSelector
-              label="Source Language"
-              value={sourceLang}
-              onChange={setSourceLang}
-              disabled={!!uploadedFile?.jobId}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Source language - fixed to English */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-neutral-200">Source Language</label>
+              <div className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-base text-neutral-400">
+                🇬🇧 English (Fixed)
+              </div>
+            </div>
 
+            {/* Target language selector */}
             <LanguageSelector
               label="Target Language"
               value={targetLang}
               onChange={setTargetLang}
               disabled={!!uploadedFile?.jobId}
+              excludeLanguage="en"
             />
           </div>
         </CardContent>

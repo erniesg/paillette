@@ -4,29 +4,23 @@
  */
 
 import type { MetaFunction } from '@remix-run/cloudflare';
-import { useState } from 'react';
 import { Link } from '@remix-run/react';
 import { motion } from 'framer-motion';
-import { Languages, FileText, Type } from 'lucide-react';
+import { Languages } from 'lucide-react';
 import { Card } from '~/components/ui/card';
 import { TextTranslator } from '~/components/translate/text-translator';
-import { DocumentTranslator } from '~/components/translate/document-translator';
-import { cn } from '~/lib/utils';
 
 export const meta: MetaFunction = () => {
   return [
     { title: 'Translate - Paillette' },
     {
       name: 'description',
-      content: 'Translate text and documents between English, Chinese, Malay, and Tamil',
+      content: 'Translate text between English, Chinese, Malay, and Tamil',
     },
   ];
 };
 
-type Tab = 'text' | 'document';
-
 export default function TranslatePage() {
-  const [activeTab, setActiveTab] = useState<Tab>('text');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-primary-950 text-white">
@@ -72,7 +66,7 @@ export default function TranslatePage() {
             <div>
               <h1 className="text-4xl lg:text-5xl font-display font-bold">Translation Tool</h1>
               <p className="text-lg text-neutral-300 mt-2">
-                Translate text and documents between English, Chinese, Malay, and Tamil
+                Translate text between English, Chinese, Malay, and Tamil
               </p>
             </div>
           </div>
@@ -87,53 +81,13 @@ export default function TranslatePage() {
           </div>
         </motion.div>
 
-        {/* Tab Navigation */}
+        {/* Translation Tool */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-6"
         >
-          <Card className="p-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setActiveTab('text')}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-all duration-200',
-                  activeTab === 'text'
-                    ? 'bg-gradient-accent text-white shadow-lg'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                )}
-              >
-                <Type className="h-5 w-5" />
-                <span>Text Translation</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('document')}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-all duration-200',
-                  activeTab === 'document'
-                    ? 'bg-gradient-accent text-white shadow-lg'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                )}
-              >
-                <FileText className="h-5 w-5" />
-                <span>Document Translation</span>
-              </button>
-            </div>
-          </Card>
-        </motion.div>
-
-        {/* Tab Content */}
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {activeTab === 'text' && <TextTranslator />}
-          {activeTab === 'document' && <DocumentTranslator />}
+          <TextTranslator />
         </motion.div>
 
         {/* Info Section */}
@@ -185,7 +139,7 @@ export default function TranslatePage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-primary-400">✓</span>
-                  <span>Document translation for TXT, PDF, and DOCX files</span>
+                  <span>Download as DOCX or TXT file</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-primary-400">✓</span>

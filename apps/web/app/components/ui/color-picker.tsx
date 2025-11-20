@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { HexColorPicker } from 'react-colorful';
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
@@ -11,6 +12,8 @@ export interface ColorPickerProps {
   className?: string;
 }
 
+type PickerMode = 'grid' | 'wheel';
+
 export function ColorPicker({
   value = [],
   onChange,
@@ -19,6 +22,7 @@ export function ColorPicker({
 }: ColorPickerProps) {
   const [selectedColors, setSelectedColors] = useState<string[]>(value);
   const [customColor, setCustomColor] = useState('#000000');
+  const [pickerMode, setPickerMode] = useState<PickerMode>('grid');
 
   // Common color palette
   const commonColors = [
@@ -133,62 +137,128 @@ export function ColorPicker({
           </div>
         </div>
 
-        {/* Common Color Palette */}
+        {/* Picker Mode Toggle */}
         <div className="mb-4">
-          <Label className="text-sm font-semibold mb-2 block">
-            Common Colors
-          </Label>
-          <div className="grid grid-cols-10 gap-2">
-            {commonColors.map((color) => (
-              <button
-                key={color}
-                onClick={() => handleColorClick(color)}
-                className={`w-8 h-8 rounded border-2 transition-all duration-200 ${
-                  selectedColors.includes(color)
-                    ? 'border-primary-500 ring-2 ring-primary-500/50 scale-110'
-                    : 'border-neutral-600 hover:border-neutral-400 hover:scale-105'
-                }`}
-                style={{ backgroundColor: color }}
-                title={color}
-                aria-label={`Select color ${color}`}
-              />
-            ))}
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-semibold">Picker Mode:</Label>
+            <div className="flex gap-1">
+              <Button
+                variant={pickerMode === 'grid' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPickerMode('grid')}
+                className="h-7 px-3 text-xs"
+              >
+                Grid
+              </Button>
+              <Button
+                variant={pickerMode === 'wheel' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPickerMode('wheel')}
+                className="h-7 px-3 text-xs"
+              >
+                Wheel
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Custom Color Input */}
-        <div>
-          <Label htmlFor="custom-color" className="text-sm font-semibold mb-2 block">
-            Custom Color
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="custom-color"
-              type="color"
-              value={customColor}
-              onChange={(e) => setCustomColor(e.target.value)}
-              className="w-16 h-10 p-1 cursor-pointer"
-            />
-            <Input
-              type="text"
-              value={customColor}
-              onChange={(e) => setCustomColor(e.target.value)}
-              placeholder="#000000"
-              pattern="^#[0-9A-Fa-f]{6}$"
-              className="flex-1 font-mono"
-            />
-            <Button
-              onClick={handleAddCustomColor}
-              disabled={
-                selectedColors.includes(customColor) ||
-                selectedColors.length >= maxColors
-              }
-              size="sm"
-            >
-              Add
-            </Button>
+        {/* Color Picker - Grid or Wheel */}
+        {pickerMode === 'grid' ? (
+          <div className="mb-4">
+            <Label className="text-sm font-semibold mb-2 block">
+              Common Colors
+            </Label>
+            <div className="grid grid-cols-10 gap-2">
+              {commonColors.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => handleColorClick(color)}
+                  className={`w-8 h-8 rounded border-2 transition-all duration-200 ${
+                    selectedColors.includes(color)
+                      ? 'border-primary-500 ring-2 ring-primary-500/50 scale-110'
+                      : 'border-neutral-600 hover:border-neutral-400 hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={color}
+                  aria-label={`Select color ${color}`}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mb-4">
+            <Label className="text-sm font-semibold mb-2 block">
+              Color Wheel
+            </Label>
+            <div className="flex flex-col items-center gap-4 p-4 bg-neutral-900/50 rounded-lg">
+              <HexColorPicker
+                color={customColor}
+                onChange={setCustomColor}
+                style={{ width: '100%', maxWidth: '280px' }}
+              />
+              <div className="flex items-center gap-2 w-full">
+                <div
+                  className="w-12 h-12 rounded border-2 border-neutral-600 flex-shrink-0"
+                  style={{ backgroundColor: customColor }}
+                />
+                <Input
+                  type="text"
+                  value={customColor}
+                  onChange={(e) => setCustomColor(e.target.value)}
+                  placeholder="#000000"
+                  pattern="^#[0-9A-Fa-f]{6}$"
+                  className="flex-1 font-mono"
+                />
+                <Button
+                  onClick={() => handleColorClick(customColor)}
+                  disabled={
+                    selectedColors.includes(customColor) ||
+                    selectedColors.length >= maxColors
+                  }
+                  size="sm"
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Color Input - Only shown in Grid mode */}
+        {pickerMode === 'grid' && (
+          <div>
+            <Label htmlFor="custom-color" className="text-sm font-semibold mb-2 block">
+              Custom Color
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="custom-color"
+                type="color"
+                value={customColor}
+                onChange={(e) => setCustomColor(e.target.value)}
+                className="w-16 h-10 p-1 cursor-pointer"
+              />
+              <Input
+                type="text"
+                value={customColor}
+                onChange={(e) => setCustomColor(e.target.value)}
+                placeholder="#000000"
+                pattern="^#[0-9A-Fa-f]{6}$"
+                className="flex-1 font-mono"
+              />
+              <Button
+                onClick={handleAddCustomColor}
+                disabled={
+                  selectedColors.includes(customColor) ||
+                  selectedColors.length >= maxColors
+                }
+                size="sm"
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -37,21 +37,15 @@ export class OpenAIProvider extends BaseTranslationProvider {
           Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: JSON.stringify({
-          model: this.config.model || 'gpt-4o-mini',
+          model: this.config.model || 'gpt-5.1',
           messages: [
             {
               role: 'system',
-              content: `You are an expert translator specializing in art gallery and museum content. Translate accurately while preserving:
-- Artistic terminology and technical terms
-- Cultural nuance and context
-- Proper names of artists, artworks, and movements
-- Formatting (paragraphs, line breaks)
-
-Only return the translated text without any explanations or notes.`,
+              content: 'You are a highly intelligent translator well-versed in Southeast Asian art.',
             },
             {
               role: 'user',
-              content: `Translate the following text from ${sourceLangName} to ${targetLangName}:\n\n${text}`,
+              content: `Translate this text into ${targetLangName} for a gallery in Singapore: ${text}`,
             },
           ],
           temperature: 0.3, // Lower temperature for more consistent translations

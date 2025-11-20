@@ -6,14 +6,14 @@ import type { Env } from '../types';
 // Request schemas
 const TranslateTextSchema = z.object({
   text: z.string().min(1).max(50000),
-  sourceLang: z.enum(['en', 'zh', 'ms', 'ta']),
-  targetLang: z.enum(['en', 'zh', 'ms', 'ta']),
+  sourceLang: z.literal('en'), // Only English source allowed
+  targetLang: z.enum(['zh', 'ms', 'ta']), // Target: Mandarin, Malay, or Tamil
 });
 
 const DocumentUploadSchema = z.object({
   filename: z.string(),
-  sourceLang: z.enum(['en', 'zh', 'ms', 'ta']),
-  targetLang: z.enum(['en', 'zh', 'ms', 'ta']),
+  sourceLang: z.literal('en'), // Only English source allowed
+  targetLang: z.enum(['zh', 'ms', 'ta']), // Target: Mandarin, Malay, or Tamil
 });
 
 const translation = new Hono<{ Bindings: Env }>();
@@ -83,7 +83,7 @@ translation.post(
     'json',
     z.object({
       text: z.string().min(1),
-      targetLang: z.enum(['en', 'zh', 'ms', 'ta']),
+      targetLang: z.enum(['zh', 'ms', 'ta']), // Target: Mandarin, Malay, or Tamil
     })
   ),
   async (c) => {
