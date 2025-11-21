@@ -22,7 +22,7 @@ const sizeClasses = {
 
 /**
  * Paillette Logo Component
- * Consistent branding across the application
+ * Consistent branding across the application with gradient "ai"
  */
 export function Logo({
   size = 'md',
@@ -33,13 +33,15 @@ export function Logo({
   const logoElement = (
     <div
       className={cn(
-        'font-display font-bold inline-block',
+        'font-display font-bold inline-block tracking-tight',
         sizeClasses[size],
         className
       )}
       {...props}
     >
-      <span className="text-primary-400">Paillette</span>
+      <span className="text-white">P</span>
+      <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+      <span className="text-white">llette</span>
     </div>
   );
 

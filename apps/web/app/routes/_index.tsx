@@ -1,5 +1,8 @@
 import type { MetaFunction } from '@remix-run/cloudflare';
 import { motion } from 'framer-motion';
+import { Link } from '@remix-run/react';
+import { Logo } from '~/components/ui/logo';
+import { UserMenu } from '~/components/user/user-menu';
 
 export const meta: MetaFunction = () => {
   return [
@@ -15,6 +18,26 @@ export const meta: MetaFunction = () => {
 export default function Index() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-primary-950 text-white overflow-hidden">
+      {/* Header */}
+      <header className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm relative z-50">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <Logo size="md" />
+            <nav className="flex items-center gap-4">
+              <Link to="/galleries" className="text-neutral-400 hover:text-white transition-colors">
+                Galleries
+              </Link>
+              <Link to="/translate" className="text-neutral-400 hover:text-white transition-colors">
+                Translate
+              </Link>
+              <div className="ml-2 pl-4 border-l border-neutral-700">
+                <UserMenu />
+              </div>
+            </nav>
+          </div>
+        </div>
+      </header>
+
       {/* Ambient background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 right-20 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl animate-float" />
