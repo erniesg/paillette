@@ -8,6 +8,7 @@ import {
 } from '@remix-run/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import { UserProvider } from './contexts/user-context';
 
 import styles from './tailwind.css?url';
 // import colorfulStyles from 'react-colorful/dist/index.css?url';
@@ -65,7 +66,9 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <UserProvider>
+        <Outlet />
+      </UserProvider>
     </QueryClientProvider>
   );
 }

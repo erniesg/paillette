@@ -13,6 +13,7 @@ import {
 } from '~/components/ui/card';
 import { ArtworkGrid } from '~/components/gallery/artwork-grid';
 import { Logo } from '~/components/ui/logo';
+import { UserMenu } from '~/components/user/user-menu';
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   return [
@@ -101,6 +102,9 @@ export default function GalleryDashboard() {
               >
                 Translate
               </Link>
+              <div className="ml-2 pl-4 border-l border-neutral-700">
+                <UserMenu />
+              </div>
             </nav>
           </div>
         </div>

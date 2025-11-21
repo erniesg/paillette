@@ -7,6 +7,8 @@ import { useState } from 'react';
 import { apiClient } from '~/lib/api';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Logo } from '~/components/ui/logo';
+import { UserMenu } from '~/components/user/user-menu';
 
 export const meta: MetaFunction = () => {
   return [
@@ -77,15 +79,20 @@ export default function GalleriesIndex() {
       {/* Header */}
       <header className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-6 py-4">
-          <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
-            <h1 className="text-2xl font-display font-bold tracking-tight">
-              <span className="text-white">P</span>
-              <span className="bg-gradient-accent bg-clip-text text-transparent">
-                ai
-              </span>
-              <span className="text-white">llette</span>
-            </h1>
-          </Link>
+          <div className="flex items-center justify-between">
+            <Logo linkToHome />
+            <div className="flex items-center gap-4">
+              <Link to="/galleries" className="text-white font-semibold">
+                Galleries
+              </Link>
+              <Link to="/translate" className="text-neutral-400 hover:text-white transition-colors">
+                Translate
+              </Link>
+              <div className="ml-2 pl-4 border-l border-neutral-700">
+                <UserMenu />
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 

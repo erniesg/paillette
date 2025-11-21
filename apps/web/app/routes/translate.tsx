@@ -9,6 +9,8 @@ import { motion } from 'framer-motion';
 import { Languages } from 'lucide-react';
 import { Card } from '~/components/ui/card';
 import { TextTranslator } from '~/components/translate/text-translator';
+import { Logo } from '~/components/ui/logo';
+import { UserMenu } from '~/components/user/user-menu';
 
 export const meta: MetaFunction = () => {
   return [
@@ -29,12 +31,7 @@ export default function TranslatePage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <Link
-                to="/"
-                className="text-2xl font-display font-bold bg-gradient-accent bg-clip-text text-transparent hover:opacity-80 transition-opacity"
-              >
-                Paillette
-              </Link>
+              <Logo linkToHome />
               <p className="text-sm text-neutral-400 mt-1">Translation Tool</p>
             </div>
             <nav className="flex items-center gap-4">
@@ -47,6 +44,9 @@ export default function TranslatePage() {
               <Link to="/translate" className="text-white font-semibold">
                 Translate
               </Link>
+              <div className="ml-2 pl-4 border-l border-neutral-700">
+                <UserMenu />
+              </div>
             </nav>
           </div>
         </div>
