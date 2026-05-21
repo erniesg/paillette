@@ -24,8 +24,8 @@ export default function Index() {
           <div className="flex items-center justify-between">
             <Logo size="md" />
             <nav className="flex items-center gap-4">
-              <Link to="/galleries" className="text-neutral-400 hover:text-white transition-colors">
-                Galleries
+              <Link to="/collections" className="text-neutral-400 hover:text-white transition-colors">
+                Collections
               </Link>
               <Link to="/translate" className="text-neutral-400 hover:text-white transition-colors">
                 Translate
@@ -84,12 +84,12 @@ export default function Index() {
               transition={{ delay: 0.6, duration: 0.8 }}
               className="flex flex-col sm:flex-row gap-4 justify-center items-center"
             >
-              <a
-                href="/galleries"
+              <Link
+                to="/collections"
                 className="group relative px-8 py-4 bg-gradient-accent rounded-full font-semibold text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-primary-500/50"
               >
                 <span className="relative z-10">Get Started</span>
-              </a>
+              </Link>
               <a
                 href="#features"
                 className="px-8 py-4 border-2 border-primary-500/50 rounded-full font-semibold text-lg transition-all duration-300 hover:border-primary-400 hover:bg-primary-500/10"
