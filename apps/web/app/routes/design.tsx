@@ -14,6 +14,22 @@ export const links: LinksFunction = () => [
   },
 ];
 
+// Every variant route, newest first. This is the master index.
+const ALL_VARIANTS = [
+  { round: 'R4', href: '/home-2', name: 'Home 2', note: 'Search + Refine (colour facet) × layout (Masonry / Salon / Atlas / Table) × group-by-colour. The synthesis.' },
+  { round: 'R3', href: '/find', name: 'Find', note: 'Search-as-hero — the landing IS the product. No marketing copy.' },
+  { round: 'R3', href: '/spectrum', name: 'Spectrum', note: '12 color bars fill the viewport. Color is the navigation.' },
+  { round: 'R3', href: '/atlas', name: 'Atlas', note: 'The embedding atlas itself is the hero — paintings in style clusters.' },
+  { round: 'R3', href: '/raw', name: 'Raw', note: 'Brutalist wiki. Monospace, sortable table, anti-design.' },
+  { round: 'R2', href: '/noir', name: 'Noir', note: 'Tech-product. Linear / Vercel / Cursor coded, near-black, Inter only.' },
+  { round: 'R2', href: '/mubi', name: 'Cinema', note: 'MUBI / Criterion coded. Painting framed as the "now showing" poster.' },
+  { round: 'R2', href: '/chrome', name: 'Chrome', note: 'Y2K iridescent anti-museum. Glass cards, oversaturated gradient.' },
+  { round: 'R1', href: '/salon', name: 'Salon hang', note: 'Petersburg hang on a cream linen wall, hero text in the clear band.' },
+  { round: 'R1', href: '/cinematic', name: 'Cinematic', note: 'Full-bleed Van Gogh with Ken Burns drift, film-title-card hero.' },
+  { round: 'R1', href: '/cube', name: 'White cube', note: 'Museum-minimal. One small artwork plate, huge serif wordmark.' },
+  { round: 'orig', href: '/', name: 'V0 Current', note: 'The original homepage — dark gradient, floating orbs, feature grid.' },
+];
+
 type System = {
   id: string;
   name: string;
@@ -225,12 +241,129 @@ export default function Design() {
       </div>
 
       <div className="relative z-10 container mx-auto px-6 py-16 max-w-6xl">
-        {/* Fresh ideas — full-page mockups, not card abstractions */}
+        {/* Quick index — every variant, one click away */}
+        <div className="mb-16">
+          <div className="text-center mb-6">
+            <p className="text-sm uppercase tracking-[0.3em] text-neutral-400 mb-1">
+              Index
+            </p>
+            <h1 className="text-3xl font-display">All variants — 11 routes</h1>
+            <p className="text-neutral-500 text-sm mt-2">
+              Bookmark this page (/design). Every mockup below is a live route.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/50 backdrop-blur-sm divide-y divide-neutral-800 overflow-hidden">
+            {ALL_VARIANTS.map((v) => (
+              <Link
+                key={v.href}
+                to={v.href}
+                className="flex items-center gap-4 px-5 py-3 hover:bg-neutral-800/50 transition-colors group"
+              >
+                <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-600 w-16 shrink-0">
+                  {v.round}
+                </span>
+                <span className="font-mono text-sm text-accent-300 w-28 shrink-0">
+                  {v.href}
+                </span>
+                <span className="font-display text-base text-white w-32 shrink-0">
+                  {v.name}
+                </span>
+                <span className="text-sm text-neutral-400 flex-1 hidden md:block truncate">
+                  {v.note}
+                </span>
+                <span className="text-xs text-neutral-600 group-hover:text-primary-300 transition-colors shrink-0">
+                  open →
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Round 3 — actually divergent. Not another "hero + CTA + features". */}
         <div className="mb-10 text-center">
-          <p className="text-sm uppercase tracking-[0.3em] text-neutral-400 mb-2">
-            Fresh take · round 2
+          <p className="text-sm uppercase tracking-[0.3em] text-accent-300 mb-2">
+            Round 3 · divergent
           </p>
-          <h2 className="text-3xl font-display">Three new directions, fully rendered</h2>
+          <h2 className="text-3xl font-display">Four routes that aren't "hero + CTA + features"</h2>
+          <p className="text-neutral-400 mt-3 max-w-2xl mx-auto">
+            Each one departs structurally — the search is the page, the page is a wall of color,
+            the hero is the product itself, or the whole site refuses to be designed.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3 mb-20">
+          {[
+            {
+              href: '/find',
+              label: 'Find',
+              vibe: 'The landing IS the search. Giant input, query chips, results stream below. No marketing copy, no features. Perplexity-for-art.',
+              tag: 'product-as-hero',
+              bg: '#08070d',
+            },
+            {
+              href: '/spectrum',
+              label: 'Spectrum',
+              vibe: '12 vertical color bars fill the viewport. Each one is a painting\'s dominant color. Hover to reveal the work. Color IS navigation.',
+              tag: 'no traditional hero',
+              bg: 'linear-gradient(90deg, #1e3a5f, #c89f3a, #c8542e, #8a2a6a)',
+            },
+            {
+              href: '/atlas',
+              label: 'Atlas',
+              vibe: 'The hero is the embedding atlas itself — a galaxy of paintings clustered by style, similarity edges drawn between them. Show the product, don\'t describe it.',
+              tag: 'show, don\'t tell',
+              bg: 'radial-gradient(ellipse at 30% 30%, rgba(168,85,247,0.3), #08070d 60%)',
+            },
+            {
+              href: '/raw',
+              label: 'Raw',
+              vibe: 'Brutalist wiki. White bg, monospace, blue underlined links, real table with sortable columns. Looks like a 1995 museum database. Aggressively un-designed.',
+              tag: 'anti-design',
+              bg: '#ffffff',
+              isLight: true,
+            },
+          ].map((v) => (
+            <Link
+              key={v.href}
+              to={v.href}
+              className="group rounded-2xl border border-neutral-800 hover:border-accent-400/60 overflow-hidden transition-colors"
+            >
+              <div className="aspect-[4/5] relative overflow-hidden" style={{ background: v.bg }}>
+                <div className="absolute top-5 left-5 right-5">
+                  <p className={`text-[10px] uppercase tracking-[0.3em] font-mono ${v.isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    {v.tag}
+                  </p>
+                  <p className={`mt-1 font-display font-bold text-2xl ${v.isLight ? 'text-black' : 'text-white'}`}>
+                    {v.label}
+                  </p>
+                </div>
+                <div className={`absolute bottom-5 left-5 right-5 font-display font-bold text-xl`}>
+                  <span className={v.isLight ? 'text-black' : 'text-white'}>P</span>
+                  <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+                  <span className={v.isLight ? 'text-black' : 'text-white'}>llette</span>
+                </div>
+              </div>
+              <div className="p-4 bg-neutral-900/60 backdrop-blur-sm">
+                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                  <div className="text-sm font-mono uppercase tracking-widest text-accent-300">
+                    {v.label}
+                  </div>
+                  <div className="text-xs text-neutral-500 group-hover:text-primary-300 transition-colors">
+                    open →
+                  </div>
+                </div>
+                <p className="text-[12px] text-neutral-400 leading-relaxed">{v.vibe}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        {/* Round 2 — kept for reference */}
+        <div className="mb-10 text-center">
+          <p className="text-sm uppercase tracking-[0.3em] text-neutral-500 mb-2">
+            Round 2 · system swaps (kept for reference)
+          </p>
+          <h2 className="text-2xl font-display text-neutral-300">Three system shifts (same shape)</h2>
           <p className="text-neutral-400 mt-3 max-w-2xl mx-auto">
             Dropping the museum-reference framing (Frieze / Tate / Zwirner / NGS were all wrong).
             All three keep the V0 purple gradient as the only accent. Click into each — they're real pages, not swatch cards.
