@@ -264,11 +264,13 @@ app.post('/upload', async (c) => {
       )
       .run();
 
-    // TODO: Queue for embedding generation
-    // await c.env.EMBEDDING_QUEUE.send({
-    //   artworkId: artwork.id,
-    //   imageUrl: artwork.image_url,
-    // });
+    // Queue for embedding generation
+    await c.env.EMBEDDING_QUEUE.send({
+      artworkId: artwork.id,
+      imageUrl: artwork.image_url,
+      imageKey: uploadResult.key,
+      galleryId: artwork.gallery_id,
+    });
 
     const response: ArtworkUploadResponse = {
       success: true,

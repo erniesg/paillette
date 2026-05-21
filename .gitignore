@@ -69,6 +69,17 @@ wrangler.toml.local
 logs/
 *.log
 
+# Data & Binary Files
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+*.csv
+*.xlsx
+*.pickle
+*.pkl
+
 # OS
 .DS_Store
 Thumbs.db

@@ -25,8 +25,6 @@ export class FrameDetector {
    * Uses edge detection and analysis to identify frame boundaries
    */
   async detectFrame(imageBuffer: Buffer): Promise<FrameDetectionResult> {
-    const startTime = Date.now();
-
     try {
       // Get original image dimensions
       const metadata = await sharp(imageBuffer).metadata();
@@ -194,15 +192,15 @@ export class FrameDetector {
       for (let x = 1; x < width - 1; x++) {
         const idx = y * width + x;
 
-        // Get 3x3 neighborhood
-        const tl = data[(y - 1) * width * channels + (x - 1) * channels];
-        const tc = data[(y - 1) * width * channels + x * channels];
-        const tr = data[(y - 1) * width * channels + (x + 1) * channels];
-        const ml = data[y * width * channels + (x - 1) * channels];
-        const mr = data[y * width * channels + (x + 1) * channels];
-        const bl = data[(y + 1) * width * channels + (x - 1) * channels];
-        const bc = data[(y + 1) * width * channels + x * channels];
-        const br = data[(y + 1) * width * channels + (x + 1) * channels];
+        // Get 3x3 neighborhood (with fallback to 0 for safety)
+        const tl = data[(y - 1) * width * channels + (x - 1) * channels] ?? 0;
+        const tc = data[(y - 1) * width * channels + x * channels] ?? 0;
+        const tr = data[(y - 1) * width * channels + (x + 1) * channels] ?? 0;
+        const ml = data[y * width * channels + (x - 1) * channels] ?? 0;
+        const mr = data[y * width * channels + (x + 1) * channels] ?? 0;
+        const bl = data[(y + 1) * width * channels + (x - 1) * channels] ?? 0;
+        const bc = data[(y + 1) * width * channels + x * channels] ?? 0;
+        const br = data[(y + 1) * width * channels + (x + 1) * channels] ?? 0;
 
         // Sobel X gradient
         const gx = -tl + tr - 2 * ml + 2 * mr - bl + br;
@@ -245,7 +243,8 @@ export class FrameDetector {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
-        if (edgeData[idx] > 0) {
+        const edgeValue = edgeData[idx];
+        if (edgeValue !== undefined && edgeValue > 0) {
           totalEdgePixels++;
 
           // Check if in interior region
@@ -257,7 +256,6 @@ export class FrameDetector {
       }
     }
 
-    const totalPixels = width * height;
     const interiorPixels = (width - 2 * borderX) * (height - 2 * borderY);
 
     // Calculate interior edge density
@@ -285,9 +283,12 @@ export class FrameDetector {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
-        if (edgeData[idx] > 0) {
-          rowEdges[y]++;
-          colEdges[x]++;
+        const edgeValue = edgeData[idx];
+        if (edgeValue !== undefined && edgeValue > 0) {
+          const rowIdx = rowEdges[y];
+          const colIdx = colEdges[x];
+          if (rowIdx !== undefined) rowEdges[y] = rowIdx + 1;
+          if (colIdx !== undefined) colEdges[x] = colIdx + 1;
         }
       }
     }
@@ -328,8 +329,8 @@ export class FrameDetector {
     // Calculate statistics
     const densityArray = Array.from(edgeDensity);
     const sortedDensity = [...densityArray].sort((a, b) => b - a);
-    const maxDensity = sortedDensity[0];
-    const medianDensity = sortedDensity[Math.floor(sortedDensity.length / 2)];
+    const maxDensity = sortedDensity[0] ?? 0;
+    const medianDensity = sortedDensity[Math.floor(sortedDensity.length / 2)] ?? 0;
 
     // Check if there are virtually no edges (solid color or frameless image)
     const totalEdges = densityArray.reduce((sum, val) => sum + val, 0);
@@ -351,7 +352,7 @@ export class FrameDetector {
 
     // Look for a sustained high-density region (frame edge)
     for (let i = start; i !== end; i += step) {
-      const density = edgeDensity[i];
+      const density = edgeDensity[i] ?? 0;
 
       if (density > threshold && !peakFound) {
         peakFound = true;

@@ -5,11 +5,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FrameDetector } from '../src/frame-detector';
-import type {
-  FrameDetectionResult,
-  FrameRemovalResult,
-  FrameDetectionConfig,
-} from '../src/types';
+import type { FrameDetectionConfig } from '../src/types';
 import sharp from 'sharp';
 
 describe('FrameDetector', () => {
@@ -368,24 +364,10 @@ async function createComplexArtworkWithFrame(
   height: number,
   borderWidth: number
 ): Promise<Buffer> {
-  // Create a gradient or pattern for complex artwork
-  // For now, create multiple colored rectangles to simulate complexity
-  const artworkWidth = width - 2 * borderWidth;
-  const artworkHeight = height - 2 * borderWidth;
-
-  const artwork = await sharp({
-    create: {
-      width: artworkWidth,
-      height: artworkHeight,
-      channels: 3,
-      background: { r: 150, g: 100, b: 200 },
-    },
-  })
-    .png()
-    .toBuffer();
-
+  // Create a framed image with complex artwork (multiple colors)
   return createImageWithFrame(width, height, borderWidth, {
     frameColor: { r: 0, g: 0, b: 0 },
+    artworkColor: { r: 150, g: 100, b: 200 },
   });
 }
 
