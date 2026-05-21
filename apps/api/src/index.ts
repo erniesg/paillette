@@ -8,6 +8,8 @@ import { colorSearchRoutes } from './routes/color-search';
 import { embeddingsRoutes } from './routes/embeddings';
 import metadataRoutes from './routes/metadata';
 import translationRoutes from './routes/translation';
+import apiKeyRoutes from './routes/api-keys';
+import impactRoutes from './routes/impact';
 
 // Environment bindings
 export interface Env {
@@ -25,6 +27,11 @@ export interface Env {
   YOUDAO_APP_KEY?: string;
   YOUDAO_APP_SECRET?: string;
   GOOGLE_TRANSLATE_API_KEY?: string;
+  LOGTO_ISSUER?: string;
+  LOGTO_JWKS_URI?: string;
+  LOGTO_API_RESOURCE?: string;
+  API_KEY_PEPPER?: string;
+  DAILY_FREE_QUERY_LIMIT?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -34,7 +41,11 @@ app.use('*', logger());
 app.use(
   '*',
   cors({
-    origin: ['http://localhost:5173', 'https://paillette.art'], // Update with actual domains
+    origin: [
+      'http://localhost:5173',
+      'https://paillette.berlayar.ai',
+      'https://paillette-stg.berlayar.ai',
+    ],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
     exposeHeaders: ['Content-Length', 'X-Request-ID'],
@@ -55,6 +66,8 @@ app.get('/health', (c) => {
 
 // API v1 routes
 const api = new Hono<{ Bindings: Env }>();
+api.route('/me', apiKeyRoutes as any);
+api.route('/impact', impactRoutes as any);
 api.route('/galleries', galleries);
 api.route('/metadata', metadataRoutes);
 api.route('/translate', translationRoutes);

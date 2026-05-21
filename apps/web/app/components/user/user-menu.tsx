@@ -8,10 +8,9 @@ import { Link } from '@remix-run/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Settings, LogOut, LogIn, UserPlus, LayoutDashboard } from 'lucide-react';
 import { useUser } from '~/contexts/user-context';
-import { Button } from '~/components/ui/button';
 
 export function UserMenu() {
-  const { user, logout } = useUser();
+  const { user, login, logout, signup } = useUser();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -29,8 +28,18 @@ export function UserMenu() {
     }
   }, [isOpen]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogin = async () => {
+    setIsOpen(false);
+    await login();
+  };
+
+  const handleSignup = async () => {
+    setIsOpen(false);
+    await signup();
+  };
+
+  const handleLogout = async () => {
+    await logout();
     setIsOpen(false);
   };
 
@@ -117,22 +126,22 @@ export function UserMenu() {
             ) : (
               /* Logged Out Menu */
               <div className="py-2">
-                <Link
-                  to="/auth/login"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-800/50 transition-colors text-neutral-300 hover:text-white"
+                <button
+                  type="button"
+                  onClick={handleLogin}
+                  className="flex w-full items-center gap-3 px-4 py-3 hover:bg-neutral-800/50 transition-colors text-left text-neutral-300 hover:text-white"
                 >
                   <LogIn className="w-4 h-4" />
                   <span className="text-sm font-medium">Sign In</span>
-                </Link>
-                <Link
-                  to="/auth/signup"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-800/50 transition-colors text-neutral-300 hover:text-white"
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignup}
+                  className="flex w-full items-center gap-3 px-4 py-3 hover:bg-neutral-800/50 transition-colors text-left text-neutral-300 hover:text-white"
                 >
                   <UserPlus className="w-4 h-4" />
                   <span className="text-sm font-medium">Create Account</span>
-                </Link>
+                </button>
               </div>
             )}
           </motion.div>

@@ -1,11 +1,6 @@
-/**
- * Login Page
- * Simple login form with mock authentication
- */
-
 import type { MetaFunction } from '@remix-run/cloudflare';
 import { useState } from 'react';
-import { useNavigate, Link } from '@remix-run/react';
+import { Link } from '@remix-run/react';
 import { motion } from 'framer-motion';
 import { LogIn, Loader2 } from 'lucide-react';
 import { useUser } from '~/contexts/user-context';
@@ -21,21 +16,16 @@ export const meta: MetaFunction = () => {
 };
 
 export default function LoginPage() {
-  const navigate = useNavigate();
-  const { login } = useUser();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { login, isLogtoConfigured } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignIn = async () => {
     setError('');
     setIsLoading(true);
 
     try {
-      await login(email, password);
-      navigate('/galleries');
+      await login();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -59,42 +49,10 @@ export default function LoginPage() {
         <Card>
           <CardHeader>
             <CardTitle>Sign In</CardTitle>
-            <CardDescription>Enter your credentials to continue</CardDescription>
+            <CardDescription>Continue with your Berlayar account</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Email */}
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium text-neutral-200">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
-                />
-              </div>
-
-              {/* Password */}
-              <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium text-neutral-200">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  required
-                  className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
-                />
-              </div>
-
+            <div className="space-y-4">
               {/* Error Message */}
               {error && (
                 <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
@@ -104,8 +62,9 @@ export default function LoginPage() {
 
               {/* Submit Button */}
               <Button
-                type="submit"
-                disabled={isLoading}
+                type="button"
+                onClick={handleSignIn}
+                disabled={isLoading || !isLogtoConfigured}
                 className="w-full"
               >
                 {isLoading ? (
@@ -121,10 +80,11 @@ export default function LoginPage() {
                 )}
               </Button>
 
-              {/* Note */}
-              <p className="text-xs text-center text-neutral-500 mt-4">
-                Note: This is a demo. Any email/password will work.
-              </p>
+              {!isLogtoConfigured && (
+                <p className="text-xs text-center text-red-400">
+                  Logto is not configured for this environment.
+                </p>
+              )}
 
               {/* Sign Up Link */}
               <div className="text-center pt-4 border-t border-neutral-800">
@@ -135,7 +95,7 @@ export default function LoginPage() {
                   </Link>
                 </p>
               </div>
-            </form>
+            </div>
           </CardContent>
         </Card>
       </motion.div>

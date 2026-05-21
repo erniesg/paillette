@@ -13,6 +13,7 @@ import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Card, CardContent } from '~/components/ui/card';
 import { Logo } from '~/components/ui/logo';
+import { useUser } from '~/contexts/user-context';
 
 export const meta: MetaFunction = () => {
   return [
@@ -41,6 +42,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
 export default function SearchPage() {
   const { gallery, galleryId } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { getAccessToken } = useUser();
 
   // Search state
   const [searchMode, setSearchMode] = useState<'text' | 'image' | 'color'>('text');
@@ -65,7 +67,7 @@ export default function SearchPage() {
         query: textQuery,
         topK,
         minScore,
-      });
+      }, getAccessToken);
     },
     enabled: searchMode === 'text' && shouldSearch && textQuery.trim().length > 0,
   });
@@ -79,7 +81,7 @@ export default function SearchPage() {
         image: imageFile,
         topK,
         minScore,
-      });
+      }, getAccessToken);
     },
     enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
   });
@@ -94,7 +96,7 @@ export default function SearchPage() {
         matchMode: colorMatchMode,
         threshold: colorThreshold,
         limit: topK,
-      });
+      }, getAccessToken);
     },
     enabled: searchMode === 'color' && shouldSearch && selectedColors.length > 0,
   });

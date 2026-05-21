@@ -8,9 +8,20 @@ import {
   type ColorSearchResult,
   type ColorSearchResultItem,
 } from '@paillette/color-extraction';
+import {
+  enforceDailyQuota,
+  recordArtworkResults,
+  requireAuthOrApiKey,
+} from '../middleware/auth';
 import type { ApiResponse } from '../types';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
+
+colorSearchRoutes.use(
+  '/search/*',
+  requireAuthOrApiKey as any,
+  enforceDailyQuota({ queryType: 'color_search' }) as any
+);
 
 /**
  * POST /galleries/:galleryId/search/color
@@ -139,6 +150,16 @@ colorSearchRoutes.post('/search/color', async (c) => {
 
     // Apply limit
     const limitedResults = results.slice(0, query.limit);
+
+    await recordArtworkResults(
+      c as any,
+      limitedResults.map((result, index) => ({
+        artworkId: result.artworkId,
+        galleryId,
+        rank: index + 1,
+        score: 1 / (1 + result.averageDistance),
+      }))
+    );
 
     const response: ApiResponse<ColorSearchResult> = {
       success: true,

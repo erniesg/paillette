@@ -1,9 +1,10 @@
-/**
- * User Context
- * Manages user authentication state (mock implementation for now)
- */
-
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { useLogto, type UserInfoResponse } from '@logto/react';
+import {
+  getLogtoPostSignInUri,
+  getLogtoPostSignOutUri,
+  getLogtoRedirectUri,
+} from '~/lib/logto';
 
 interface User {
   id: string;
@@ -15,67 +16,128 @@ interface User {
 interface UserContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  signup: (email: string, password: string, name: string) => Promise<void>;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  signup: () => Promise<void>;
+  isAuthenticated: boolean;
+  isLogtoConfigured: boolean;
+  getAccessToken: (resource?: string) => Promise<string | undefined>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-export function UserProvider({ children }: { children: ReactNode }) {
+const buildUser = (profile: UserInfoResponse): User => {
+  const email = profile.email ?? '';
+  const name =
+    profile.name ??
+    profile.username ??
+    (email ? email.split('@')[0] : undefined) ??
+    profile.sub;
+
+  return {
+    id: profile.sub,
+    email,
+    name,
+    avatar: profile.picture ?? undefined,
+  };
+};
+
+export function UserProvider({
+  children,
+  isLogtoConfigured,
+  apiResource,
+}: {
+  children: ReactNode;
+  isLogtoConfigured: boolean;
+  apiResource?: string;
+}) {
+  const {
+    fetchUserInfo,
+    getAccessToken,
+    isAuthenticated,
+    isLoading: isLogtoLoading,
+    signIn,
+    signOut,
+  } = useLogto();
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
 
-  // Load user from localStorage on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('paillette_user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error('Failed to parse stored user:', e);
-      }
+    if (!isAuthenticated) {
+      setUser(null);
+      return;
     }
-    setIsLoading(false);
-  }, []);
 
-  const login = async (email: string, password: string) => {
-    // Mock login - in production, this would call your auth API
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
+    let isMounted = true;
+    setIsProfileLoading(true);
 
-    const mockUser: User = {
-      id: 'mock-user-id',
-      email,
-      name: email.split('@')[0], // Use email prefix as name
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(email)}&background=random`,
+    void fetchUserInfo()
+      .then((profile) => {
+        if (isMounted && profile) {
+          setUser(buildUser(profile));
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to fetch Logto user profile:', error);
+        if (isMounted) {
+          setUser(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsProfileLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
     };
+  }, [fetchUserInfo, isAuthenticated]);
 
-    setUser(mockUser);
-    localStorage.setItem('paillette_user', JSON.stringify(mockUser));
+  const ensureConfigured = () => {
+    if (!isLogtoConfigured) {
+      throw new Error('Logto is not configured for this environment.');
+    }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('paillette_user');
+  const login = async () => {
+    ensureConfigured();
+    await signIn({
+      redirectUri: getLogtoRedirectUri(),
+      postRedirectUri: getLogtoPostSignInUri(),
+    });
   };
 
-  const signup = async (email: string, password: string, name: string) => {
-    // Mock signup - in production, this would call your auth API
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
-
-    const mockUser: User = {
-      id: 'mock-user-id',
-      email,
-      name,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-    };
-
-    setUser(mockUser);
-    localStorage.setItem('paillette_user', JSON.stringify(mockUser));
+  const logout = async () => {
+    ensureConfigured();
+    await signOut(getLogtoPostSignOutUri());
   };
+
+  const signup = async () => {
+    ensureConfigured();
+    await signIn({
+      redirectUri: getLogtoRedirectUri(),
+      postRedirectUri: getLogtoPostSignInUri(),
+      firstScreen: 'register',
+    });
+  };
+
+  const getConfiguredAccessToken = (resource?: string) =>
+    getAccessToken(resource || apiResource || undefined);
 
   return (
-    <UserContext.Provider value={{ user, isLoading, login, logout, signup }}>
+    <UserContext.Provider
+      value={{
+        user,
+        isLoading: isLogtoLoading || isProfileLoading,
+        login,
+        logout,
+        signup,
+        isAuthenticated,
+        isLogtoConfigured,
+        getAccessToken: getConfiguredAccessToken,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );

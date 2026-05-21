@@ -1,14 +1,17 @@
-import type { LinksFunction, MetaFunction } from '@remix-run/cloudflare';
+import { json, type LinksFunction, type LoaderFunctionArgs, type MetaFunction } from '@remix-run/cloudflare';
 import {
   Links,
   Meta,
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLoaderData,
 } from '@remix-run/react';
+import { LogtoProvider, UserScope, type LogtoConfig } from '@logto/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { UserProvider } from './contexts/user-context';
+import type { LogtoRuntimeEnv } from './lib/logto';
 
 import styles from './tailwind.css?url';
 // import colorfulStyles from 'react-colorful/dist/index.css?url';
@@ -27,13 +30,54 @@ export const links: LinksFunction = () => [
   {
     rel: 'preconnect',
     href: 'https://fonts.gstatic.com',
-    crossOrigin: 'anonymous',
+    crossOrigin: 'anonymous' as const,
   },
   {
     rel: 'stylesheet',
     href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700;1,800&display=swap',
   },
 ];
+
+type WorkerContext = {
+  cloudflare?: {
+    env?: Record<string, string | undefined>;
+  };
+};
+
+const getProcessEnv = () => {
+  const runtime = globalThis as typeof globalThis & {
+    process?: { env?: Record<string, string | undefined> };
+  };
+
+  return runtime.process?.env ?? {};
+};
+
+export const loader = ({ context }: LoaderFunctionArgs) => {
+  const workerEnv = (context as WorkerContext).cloudflare?.env ?? {};
+  const processEnv = getProcessEnv();
+  const appEnv = workerEnv.APP_ENV ?? processEnv.APP_ENV ?? processEnv.NODE_ENV ?? 'development';
+  const defaultStagingAppId = appEnv === 'production' ? '' : 'zsrsuc0jkv9zhinog3bx5';
+
+  return json({
+    env: {
+      endpoint:
+        workerEnv.LOGTO_ENDPOINT ??
+        processEnv.LOGTO_ENDPOINT ??
+        processEnv.VITE_LOGTO_ENDPOINT ??
+        'https://m2fmae.logto.app/',
+      appId:
+        workerEnv.LOGTO_APP_ID ??
+        processEnv.LOGTO_APP_ID ??
+        processEnv.VITE_LOGTO_APP_ID ??
+        defaultStagingAppId,
+      apiResource:
+        workerEnv.LOGTO_API_RESOURCE ??
+        processEnv.LOGTO_API_RESOURCE ??
+        processEnv.VITE_LOGTO_API_RESOURCE ??
+        '',
+    } satisfies LogtoRuntimeEnv,
+  });
+};
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -52,6 +96,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const { env } = useLoaderData<typeof loader>();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -63,12 +108,27 @@ export default function App() {
         },
       })
   );
+  const logtoConfig = useMemo<LogtoConfig>(() => {
+    const resources = env.apiResource ? [env.apiResource] : undefined;
+
+    return {
+      endpoint: env.endpoint,
+      appId: env.appId,
+      scopes: [UserScope.Email],
+      resources,
+    };
+  }, [env.apiResource, env.appId, env.endpoint]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <UserProvider>
-        <Outlet />
-      </UserProvider>
+      <LogtoProvider config={logtoConfig}>
+        <UserProvider
+          apiResource={env.apiResource || undefined}
+          isLogtoConfigured={Boolean(env.endpoint && env.appId)}
+        >
+          <Outlet />
+        </UserProvider>
+      </LogtoProvider>
     </QueryClientProvider>
   );
 }

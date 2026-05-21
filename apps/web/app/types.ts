@@ -187,3 +187,35 @@ export interface ProcessingStats {
   hasProcessedImage: number;
   avgConfidence: number | null;
 }
+
+export interface PailletteApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  status: 'active' | 'revoked';
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  used_today: number;
+  quota_today: number;
+}
+
+export interface PailletteApiKeyList {
+  keys: PailletteApiKey[];
+  today: string;
+}
+
+export interface CreatedPailletteApiKey {
+  id: string;
+  name: string;
+  key: string;
+  key_prefix: string;
+  status: 'active';
+  created_at: string;
+}
+
+export interface DailyUsageSummary {
+  date: string;
+  used: number;
+  quota: number;
+}

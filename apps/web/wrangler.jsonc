@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "paillette",
+  "main": "./worker.ts",
+  "compatibility_date": "2026-05-21",
+  "assets": {
+    "directory": "./build/client",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    {
+      "pattern": "paillette.berlayar.ai",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "APP_ENV": "production",
+    "LOGTO_ENDPOINT": "https://m2fmae.logto.app/",
+    "LOGTO_APP_ID": "",
+    "LOGTO_API_RESOURCE": ""
+  },
+  "env": {
+    "staging": {
+      "name": "paillette-stg",
+      "assets": {
+        "directory": "./build/client",
+        "not_found_handling": "single-page-application"
+      },
+      "routes": [
+        {
+          "pattern": "paillette-stg.berlayar.ai",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_ENV": "staging",
+        "LOGTO_ENDPOINT": "https://m2fmae.logto.app/",
+        "LOGTO_APP_ID": "zsrsuc0jkv9zhinog3bx5",
+        "LOGTO_API_RESOURCE": ""
+      }
+    }
+  }
+}

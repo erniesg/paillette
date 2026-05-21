@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "remix vite:dev",
     "build": "remix vite:build",
-    "start": "wrangler pages dev ./build/client",
-    "deploy": "pnpm build && wrangler pages deploy ./build/client",
-    "deploy:staging": "pnpm build && wrangler pages deploy ./build/client --branch staging",
+    "start": "pnpm build && wrangler dev",
+    "deploy": "pnpm build && wrangler deploy --env=\"\"",
+    "deploy:staging": "pnpm build && wrangler deploy --env staging",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -19,6 +19,7 @@
     "clean": "rm -rf build .cache"
   },
   "dependencies": {
+    "@logto/react": "^4.0.14",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-dropdown-menu": "^2.1.2",
     "@radix-ui/react-select": "^2.1.2",
@@ -33,6 +34,7 @@
     "docx": "^9.5.1",
     "framer-motion": "^11.15.0",
     "isbot": "^4",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.553.0",
     "react": "^18.3.1",
     "react-colorful": "^5.6.1",
@@ -47,6 +49,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/jszip": "^3.4.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
@@ -58,6 +61,6 @@
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vitest": "^2.1.8",
-    "wrangler": "^3.94.0"
+    "wrangler": "^4.93.1"
   }
 }

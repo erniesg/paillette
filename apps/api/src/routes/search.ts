@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { Env } from '../index';
 import { EmbeddingService } from '@paillette/ai';
 import { VectorService } from '@paillette/ai';
+import {
+  enforceDailyQuota,
+  recordArtworkResults,
+  requireAuthOrApiKey,
+} from '../middleware/auth';
 import type {
   ApiResponse,
   SearchResponse,
@@ -23,6 +28,12 @@ const imageSearchSchema = z.object({
 });
 
 export const searchRoutes = new Hono<{ Bindings: Env }>();
+
+searchRoutes.use(
+  '/search/*',
+  requireAuthOrApiKey as any,
+  enforceDailyQuota({ queryType: 'vector_search' }) as any
+);
 
 /**
  * POST /search/text
@@ -128,6 +139,16 @@ searchRoutes.post('/search/text', async (c) => {
       .filter((r): r is ArtworkSearchResult => r !== null);
 
     const queryTime = performance.now() - startTime;
+
+    await recordArtworkResults(
+      c as any,
+      enrichedResults.map((result, index) => ({
+        artworkId: result.id,
+        galleryId: result.galleryId,
+        rank: index + 1,
+        score: result.similarity,
+      }))
+    );
 
     return c.json<ApiResponse<SearchResponse>>({
       success: true,
@@ -280,6 +301,16 @@ searchRoutes.post('/search/image', async (c) => {
       .filter((r): r is ArtworkSearchResult => r !== null);
 
     const queryTime = performance.now() - startTime;
+
+    await recordArtworkResults(
+      c as any,
+      enrichedResults.map((result, index) => ({
+        artworkId: result.id,
+        galleryId: result.galleryId,
+        rank: index + 1,
+        score: result.similarity,
+      }))
+    );
 
     return c.json<ApiResponse<SearchResponse>>({
       success: true,

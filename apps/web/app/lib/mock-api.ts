@@ -9,6 +9,9 @@ import type {
   SearchImageRequest,
   Gallery,
   Artwork,
+  PailletteApiKeyList,
+  CreatedPailletteApiKey,
+  DailyUsageSummary,
 } from '../types';
 
 // Mock data
@@ -62,7 +65,8 @@ export class MockApiClient {
 
   async searchText(
     galleryId: string,
-    request: SearchTextRequest
+    request: SearchTextRequest,
+    _getAccessToken?: () => Promise<string | undefined>
   ): Promise<SearchResponse> {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -79,7 +83,8 @@ export class MockApiClient {
 
   async searchImage(
     galleryId: string,
-    request: SearchImageRequest
+    request: SearchImageRequest,
+    _getAccessToken?: () => Promise<string | undefined>
   ): Promise<SearchResponse> {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -100,7 +105,8 @@ export class MockApiClient {
       matchMode?: 'any' | 'all';
       threshold?: number;
       limit?: number;
-    }
+    },
+    _getAccessToken?: () => Promise<string | undefined>
   ): Promise<{
     results: Array<{
       artworkId: string;
@@ -170,6 +176,42 @@ export class MockApiClient {
   async listGalleries(): Promise<Gallery[]> {
     await new Promise((resolve) => setTimeout(resolve, 50));
     return [mockGallery];
+  }
+
+  async listApiKeys(_getAccessToken?: () => Promise<string | undefined>): Promise<PailletteApiKeyList> {
+    return {
+      today: new Date().toISOString().slice(0, 10),
+      keys: [],
+    };
+  }
+
+  async createApiKey(
+    _getAccessToken?: () => Promise<string | undefined>,
+    name = 'Default key'
+  ): Promise<CreatedPailletteApiKey> {
+    return {
+      id: 'mock-api-key',
+      name,
+      key: 'plt_stg_mock_key_only_for_tests',
+      key_prefix: 'plt_stg_mock_key',
+      status: 'active',
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  async revokeApiKey(
+    _getAccessToken?: () => Promise<string | undefined>,
+    _keyId?: string
+  ): Promise<void> {
+    return undefined;
+  }
+
+  async getTodayUsage(_getAccessToken?: () => Promise<string | undefined>): Promise<DailyUsageSummary> {
+    return {
+      date: new Date().toISOString().slice(0, 10),
+      used: 0,
+      quota: 100,
+    };
   }
 
   async getArtwork(galleryId: string, artworkId: string): Promise<Artwork> {

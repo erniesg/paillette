@@ -2,6 +2,7 @@ name = "paillette-api"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
+routes = [{ pattern = "paillette-api.berlayar.ai", custom_domain = true }]
 
 # Account ID - update with your Cloudflare account ID
 # account_id = "your-account-id-here"
@@ -18,12 +19,12 @@ database_id = "your-d1-database-id"  # Create with: wrangler d1 create paillette
 # R2 Storage
 [[r2_buckets]]
 binding = "IMAGES"
-bucket_name = "paillette-images"
+bucket_name = "paillette-assets"
 
 # Vectorize
 [[vectorize]]
 binding = "VECTORIZE"
-index_name = "artwork-embeddings"
+index_name = "paillette-embeddings"
 
 # KV for caching
 [[kv_namespaces]]
@@ -37,45 +38,50 @@ binding = "AI"
 # Queues for async processing
 [[queues.producers]]
 binding = "EMBEDDING_QUEUE"
-queue = "embedding-jobs"
+queue = "paillette-embedding-jobs"
 
 [[queues.producers]]
 binding = "TRANSLATION_QUEUE"
-queue = "translation-jobs"
+queue = "paillette-translation-jobs"
 
 [[queues.consumers]]
-queue = "embedding-jobs"
+queue = "paillette-embedding-jobs"
 max_batch_size = 10
 max_batch_timeout = 30
 
 [[queues.consumers]]
-queue = "translation-jobs"
+queue = "paillette-translation-jobs"
 max_batch_size = 5
 max_batch_timeout = 60
 
 # Environment variables (use .dev.vars for local development)
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 API_VERSION = "v1"
+LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"
+LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks"
+LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai"
+DAILY_FREE_QUERY_LIMIT = "100"
 
 # Staging environment (deploy from 'staging' branch)
 [env.staging]
-name = "paillette-stg"
-vars = { ENVIRONMENT = "staging" }
+name = "paillette-api-stg"
+routes = [{ pattern = "paillette-api-stg.berlayar.ai", custom_domain = true }]
+vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100" }
 
 # Staging resources (separate from production)
 [[env.staging.d1_databases]]
 binding = "DB"
-database_name = "paillette-db-staging"
-database_id = "your-staging-d1-id"  # Create with: wrangler d1 create paillette-db-staging
+database_name = "paillette-db-stg"
+database_id = "your-staging-d1-id"  # Create with: wrangler d1 create paillette-db-stg
 
 [[env.staging.r2_buckets]]
 binding = "IMAGES"
-bucket_name = "paillette-images-staging"
+bucket_name = "paillette-assets-stg"
 
 [[env.staging.vectorize]]
 binding = "VECTORIZE"
-index_name = "artwork-embeddings-staging"
+index_name = "paillette-embeddings-stg"
 
 [[env.staging.kv_namespaces]]
 binding = "CACHE"
@@ -83,16 +89,16 @@ id = "your-staging-kv-id"
 
 [[env.staging.queues.producers]]
 binding = "EMBEDDING_QUEUE"
-queue = "embedding-jobs-staging"
+queue = "paillette-embedding-jobs-stg"
 
 [[env.staging.queues.consumers]]
-queue = "embedding-jobs-staging"
+queue = "paillette-embedding-jobs-stg"
 max_batch_size = 10
 max_batch_timeout = 30
 
 # Production environment (deploy from 'master' branch)
 [env.production]
-name = "paillette"
-vars = { ENVIRONMENT = "production" }
+name = "paillette-api"
+vars = { ENVIRONMENT = "production", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100" }
 
 # Production uses the main bindings defined above

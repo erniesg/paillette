@@ -26,6 +26,7 @@
     "@paillette/translation": "workspace:*",
     "@paillette/types": "workspace:*",
     "hono": "^4.6.14",
+    "jose": "^6.2.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {

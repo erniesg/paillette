@@ -14,25 +14,38 @@ import type {
   TranslateCostEstimate,
   TranslateDocumentResponse,
   TranslationJobStatus,
+  PailletteApiKeyList,
+  CreatedPailletteApiKey,
+  DailyUsageSummary,
 } from '../types';
 
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
 const getApiUrl = () => {
+  const configuredApiUrl =
+    (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_URL;
+
   if (typeof window !== 'undefined') {
     // Client-side
     const isDev = window.location.hostname === 'localhost';
+    const isStaging = window.location.hostname === 'paillette-stg.berlayar.ai';
     return (window as any).ENV?.API_URL ||
-           (isDev ? 'http://localhost:8787' : 'https://paillette-stg.workers.dev');
+           configuredApiUrl ||
+           (isDev
+             ? 'http://localhost:8787'
+             : isStaging
+               ? 'https://paillette-api-stg.berlayar.ai'
+               : 'https://paillette-api.berlayar.ai');
   }
+
   // Server-side
-  // Check if we're in development mode (NODE_ENV or presence of .dev.vars)
-  const isDev = process.env.NODE_ENV === 'development' || !process.env.API_URL;
-  return process.env.API_URL || (isDev ? 'http://localhost:8787' : 'https://paillette-stg.workers.dev');
+  return configuredApiUrl || 'https://paillette-api.berlayar.ai';
 };
 
 const API_URL = getApiUrl();
 const API_BASE = `${API_URL}/api/v1`;
+
+type AccessTokenProvider = () => Promise<string | undefined>;
 
 class ApiClient {
   private baseUrl: string;
@@ -41,18 +54,111 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
+  private async getAuthHeaders(getAccessToken: AccessTokenProvider) {
+    const token = await getAccessToken();
+
+    if (!token) {
+      throw new Error('Sign in is required');
+    }
+
+    return {
+      Authorization: `Bearer ${token}`,
+    };
+  }
+
+  private async getOptionalAuthHeaders(getAccessToken?: AccessTokenProvider) {
+    if (!getAccessToken) {
+      return {};
+    }
+
+    const token = await getAccessToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async listApiKeys(
+    getAccessToken: AccessTokenProvider
+  ): Promise<PailletteApiKeyList> {
+    const response = await fetch(`${this.baseUrl}/me/api-keys`, {
+      headers: await this.getAuthHeaders(getAccessToken),
+    });
+
+    const data: ApiResponse<PailletteApiKeyList> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch API keys');
+    }
+
+    return data.data;
+  }
+
+  async createApiKey(
+    getAccessToken: AccessTokenProvider,
+    name = 'Default key'
+  ): Promise<CreatedPailletteApiKey> {
+    const response = await fetch(`${this.baseUrl}/me/api-keys`, {
+      method: 'POST',
+      headers: {
+        ...(await this.getAuthHeaders(getAccessToken)),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
+    });
+
+    const data: ApiResponse<CreatedPailletteApiKey> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to create API key');
+    }
+
+    return data.data;
+  }
+
+  async revokeApiKey(
+    getAccessToken: AccessTokenProvider,
+    keyId: string
+  ): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/me/api-keys/${keyId}`, {
+      method: 'DELETE',
+      headers: await this.getAuthHeaders(getAccessToken),
+    });
+
+    const data: ApiResponse<{ id: string; status: string }> = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Failed to revoke API key');
+    }
+  }
+
+  async getTodayUsage(
+    getAccessToken: AccessTokenProvider
+  ): Promise<DailyUsageSummary> {
+    const response = await fetch(`${this.baseUrl}/me/usage/today`, {
+      headers: await this.getAuthHeaders(getAccessToken),
+    });
+
+    const data: ApiResponse<DailyUsageSummary> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch usage');
+    }
+
+    return data.data;
+  }
+
   /**
    * Search artworks using text query
    */
   async searchText(
     galleryId: string,
-    request: SearchTextRequest
+    request: SearchTextRequest,
+    getAccessToken?: AccessTokenProvider
   ): Promise<SearchResponse> {
     const response = await fetch(
       `${this.baseUrl}/galleries/${galleryId}/search/text`,
       {
         method: 'POST',
         headers: {
+          ...(await this.getOptionalAuthHeaders(getAccessToken)),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(request),
@@ -73,7 +179,8 @@ class ApiClient {
    */
   async searchImage(
     galleryId: string,
-    request: SearchImageRequest
+    request: SearchImageRequest,
+    getAccessToken?: AccessTokenProvider
   ): Promise<SearchResponse> {
     const formData = new FormData();
     formData.append('image', request.image);
@@ -85,6 +192,7 @@ class ApiClient {
       `${this.baseUrl}/galleries/${galleryId}/search/image`,
       {
         method: 'POST',
+        headers: await this.getOptionalAuthHeaders(getAccessToken),
         body: formData,
       }
     );
@@ -108,7 +216,8 @@ class ApiClient {
       matchMode?: 'any' | 'all';
       threshold?: number;
       limit?: number;
-    }
+    },
+    getAccessToken?: AccessTokenProvider
   ): Promise<{
     results: Array<{
       artworkId: string;
@@ -140,6 +249,7 @@ class ApiClient {
       {
         method: 'POST',
         headers: {
+          ...(await this.getOptionalAuthHeaders(getAccessToken)),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

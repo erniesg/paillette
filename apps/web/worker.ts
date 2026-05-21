@@ -1,0 +1,32 @@
+import { createRequestHandler } from '@remix-run/cloudflare';
+import * as build from './build/server/index.js';
+import type { ServerBuild } from '@remix-run/cloudflare';
+
+type Env = {
+  APP_ENV?: string;
+  LOGTO_ENDPOINT?: string;
+  LOGTO_APP_ID?: string;
+  LOGTO_API_RESOURCE?: string;
+};
+
+const serverBuild = {
+  assets: build.assets,
+  assetsBuildDirectory: build.assetsBuildDirectory,
+  basename: build.basename,
+  entry: build.entry,
+  future: build.future,
+  isSpaMode: build.isSpaMode,
+  mode: build.mode,
+  publicPath: build.publicPath,
+  routes: build.routes,
+} as unknown as ServerBuild;
+
+const handleRemixRequest = createRequestHandler(serverBuild, 'production');
+
+export default {
+  fetch(request: Request, env: Env, context: ExecutionContext) {
+    return handleRemixRequest(request, {
+      cloudflare: { env, context },
+    });
+  },
+};
