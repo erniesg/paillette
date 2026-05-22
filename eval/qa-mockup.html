@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Paillette · Embedding Eval — QA Review</title>
+<style>
+  :root{
+    --paper:#f6f4ef; --card:#fffefb; --ink:#211f1c; --muted:#6f6a62;
+    --line:#e4dfd5; --mat:#efebe2; --accent:#403a6e; --accent-soft:#ecebf5;
+    --good:#3f7d52; --bad:#a8492f; --warn:#9a7320; --warn-soft:#f6efda;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{font-family:Georgia,"Times New Roman",serif}
+  header{
+    display:flex;align-items:baseline;gap:14px;
+    padding:16px 28px;border-bottom:1px solid var(--line);background:var(--card);
+  }
+  header .mark{font-weight:700;letter-spacing:.02em}
+  header .sub{color:var(--muted);font-size:13px}
+  header .right{margin-left:auto;font-size:12px;color:var(--muted)}
+  .banner{
+    background:var(--warn-soft);color:var(--warn);font-size:12.5px;
+    padding:7px 28px;border-bottom:1px solid var(--line);
+  }
+  main{max-width:1180px;margin:0 auto;padding:24px 28px 80px}
+
+  /* context strip */
+  .context{display:flex;align-items:center;gap:18px;margin-bottom:18px}
+  .progress{flex:1;height:6px;background:var(--mat);border-radius:99px;overflow:hidden}
+  .progress > i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .context .count{font-size:13px;color:var(--muted);white-space:nowrap}
+  .explain{
+    background:var(--accent-soft);border:1px solid #dcdaef;border-radius:10px;
+    padding:11px 14px;font-size:13px;color:#403a6e;margin-bottom:22px;
+  }
+  .explain b{font-weight:700}
+
+  /* review card */
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:22px 24px;box-shadow:0 1px 2px rgba(0,0,0,.03);
+  }
+  .qhead{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .query{font-size:27px;line-height:1.25}
+  .query::before{content:"\201C";color:var(--muted)}
+  .query::after{content:"\201D";color:var(--muted)}
+  .chip{
+    font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    padding:4px 9px;border-radius:99px;background:var(--mat);color:var(--muted);
+    white-space:nowrap;margin-top:6px;
+  }
+  .qno{margin-left:auto;font-size:13px;color:var(--muted);margin-top:6px}
+
+  .split{
+    display:flex;align-items:center;gap:9px;margin:16px 0 6px;
+    font-size:13px;color:var(--warn);
+  }
+  .split .dot{width:8px;height:8px;border-radius:99px;background:var(--warn)}
+  .split button{
+    background:none;border:none;color:var(--accent);cursor:pointer;
+    font-size:12.5px;text-decoration:underline;padding:0;
+  }
+  .reason{
+    display:none;background:var(--mat);border-radius:9px;padding:12px 14px;
+    font-size:13px;color:#524e47;margin:6px 0 4px;
+  }
+  .reason.open{display:block}
+  .reason p{margin:3px 0}
+  .reason .j{font-weight:700;color:var(--ink)}
+
+  /* two sets */
+  .sets{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+  .set{border:1px solid var(--line);border-radius:11px;overflow:hidden;transition:.15s}
+  .set .label{
+    display:flex;align-items:center;gap:8px;padding:9px 13px;
+    background:var(--mat);font-weight:700;font-size:14px;
+  }
+  .set .label .tag{
+    font-size:10.5px;font-weight:700;color:#fff;background:var(--muted);
+    padding:2px 7px;border-radius:99px;letter-spacing:.04em;
+  }
+  .set.pick{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  .set.pick .label{background:var(--accent);color:#fff}
+  .set.pick .label .tag{background:#fff;color:var(--accent)}
+  .grid{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:8px;
+    background:#fff;
+  }
+  figure.tile{position:relative;background:var(--mat);border-radius:6px;padding:7px 7px 8px}
+  .artwrap{height:118px;display:flex;align-items:center;justify-content:center}
+  .art{
+    height:108px;aspect-ratio:var(--asp,1);border:1px solid rgba(0,0,0,.22);
+    background:radial-gradient(circle at 38% 30%,
+      hsl(var(--h),46%,79%), hsl(var(--h),40%,40%) 84%);
+    box-shadow:inset 0 0 14px rgba(0,0,0,.22);
+  }
+  figure.tile .rank{
+    position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:5px;
+    background:rgba(33,31,28,.78);color:#fff;font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .cap{margin-top:5px}
+  .cap .t{font-size:11.5px;line-height:1.25;font-family:Georgia,serif}
+  .cap .a{font-size:10px;color:var(--muted);margin-top:1px}
+  .jscore{
+    position:absolute;top:3px;right:3px;font-size:9.5px;font-weight:700;
+    background:rgba(255,255,255,.92);border:1px solid var(--line);
+    border-radius:5px;padding:1px 4px;color:var(--muted);
+  }
+  .jscore b{color:var(--good)}
+  .jscore b.lo{color:var(--bad)}
+  .jscore.disagree{border-color:var(--warn);background:var(--warn-soft)}
+  .flags{
+    position:absolute;bottom:6px;right:6px;display:none;gap:3px;
+  }
+  figure.tile:hover .flags{display:flex}
+  .flags button{
+    width:21px;height:21px;border-radius:5px;border:1px solid var(--line);
+    background:#fff;cursor:pointer;font-size:11px;line-height:1;
+  }
+  .flags button.on{background:var(--accent);border-color:var(--accent)}
+
+  /* decision bar */
+  .decide{margin-top:22px;border-top:1px solid var(--line);padding-top:18px}
+  .verdict{display:flex;gap:10px;justify-content:center}
+  .vbtn{
+    flex:1;max-width:230px;padding:13px 10px;border-radius:10px;cursor:pointer;
+    border:1.5px solid var(--line);background:var(--card);font-size:14px;font-weight:600;
+    display:flex;flex-direction:column;align-items:center;gap:2px;transition:.12s;
+  }
+  .vbtn:hover{border-color:var(--accent)}
+  .vbtn.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .vbtn .kbd{font-size:10px;font-weight:700;opacity:.6;letter-spacing:.08em}
+  .vbtn.sel .kbd{opacity:.8}
+
+  .extras{display:flex;gap:14px;margin-top:14px;align-items:flex-start}
+  .extras textarea{
+    flex:1;border:1px solid var(--line);border-radius:9px;padding:9px 11px;
+    font:13px/1.5 inherit;resize:vertical;min-height:42px;background:var(--paper);
+  }
+  .extras .side{display:flex;flex-direction:column;gap:8px;width:188px}
+  .ghost{
+    background:none;border:none;color:var(--bad);font-size:12px;cursor:pointer;
+    text-align:left;padding:2px 0;text-decoration:underline;
+  }
+  .next{
+    background:var(--accent);color:#fff;border:none;border-radius:9px;
+    padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;
+  }
+  .next:disabled{opacity:.4;cursor:not-allowed}
+  .skip{background:none;border:1px solid var(--line);border-radius:9px;
+    padding:11px 14px;font-size:13px;cursor:pointer;color:var(--muted)}
+
+  /* done / matrix */
+  .done{text-align:center;padding:14px 0 6px}
+  .done h2{font-size:22px;font-weight:600;margin-bottom:6px}
+  .done p{color:var(--muted);font-size:14px;max-width:620px;margin:0 auto 22px}
+  table.matrix{border-collapse:collapse;margin:0 auto;font-size:13px}
+  table.matrix th,table.matrix td{border:1px solid var(--line);padding:9px 12px;text-align:center}
+  table.matrix th{background:var(--mat);font-weight:700}
+  table.matrix td.rowh{text-align:left;font-weight:600;background:#fbfaf7}
+  .cell{display:flex;flex-direction:column;gap:3px;align-items:center}
+  .bar{height:5px;width:54px;background:var(--mat);border-radius:99px;overflow:hidden}
+  .bar > i{display:block;height:100%;background:var(--accent)}
+  .cell .n{font-variant-numeric:tabular-nums;font-size:12px}
+  td.win{background:#f0f5f0}
+  td.win .bar > i{background:var(--good)}
+  .star{color:var(--warn);font-size:11px}
+  .legend{font-size:12px;color:var(--muted);margin-top:16px}
+  footer{
+    max-width:1180px;margin:0 auto;padding:0 28px 40px;
+    font-size:12px;color:var(--muted);
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="mark serif">Paillette</span>
+  <span class="sub">Embedding Eval · QA Review</span>
+  <span class="right" id="hdr-right">2 AI judges first-passed · you review the splits</span>
+</header>
+<div class="banner">
+  Mockup — placeholder artworks &amp; illustrative scores. Real NGS corpus + live model
+  results load once <code>wrangler</code> is re-authenticated.
+</div>
+
+<main>
+  <div class="context">
+    <div class="progress"><i id="bar" style="width:0%"></i></div>
+    <div class="count" id="count">Query 1 of 3</div>
+  </div>
+  <div class="explain">
+    <b>How this works.</b> Two AI judges scored every result 0–3 for each query.
+    Where they <b>agreed</b>, the score stands — you never see it. You only review the
+    <b>~12% where they split</b>. Your call is one click: which set is better.
+  </div>
+
+  <div id="stage"></div>
+</main>
+
+<footer>
+  Pairwise A/B is deliberate — humans are faster &amp; more consistent choosing between
+  two sets than scoring images one by one. Keyboard: <b>A</b> · <b>T</b> · <b>B</b>,
+  then <b>Enter</b>.
+</footer>
+
+<script>
+/* ---- placeholder artworks: [title, artist, date, hue, aspect] ---- */
+const ART = {
+  boats:["Boats at Telok Ayer","Ng Wee Lian","1954",205,"4/3"],
+  nets:["Drying the Nets","unattributed","1961",32,"5/4"],
+  harbour:["Harbour, Evening","R. Suparman","1958",218,"16/10"],
+  kampong:["Kampong Morning","Lai Foong","1949",95,"4/3"],
+  monsoon:["Monsoon","unattributed","1963",214,"3/4"],
+  sampans:["Sampans","Teo Hock Seng","1956",198,"7/5"],
+  letter:["The Letter Writer","Goh Beng","1952",28,"4/5"],
+  pasar:["Pasar at Dusk","Lim Soo","1959",18,"3/2"],
+  procession:["Festival Procession","unattributed","1965",8,"16/9"],
+  sisters:["Two Sisters","Chua Lee","1948",36,"4/5"],
+  grey:["Untitled (Composition in Grey)","M. Daud","1971",240,"1/1"],
+  mangrove:["Mangrove Study","unattributed","1967",150,"5/4"],
+  market:["Night Market","Wong Ah","1960",12,"3/2"],
+  selfport:["Self-Portrait in Blue","unattributed","1955",222,"4/5"],
+  village:["Coastal Village","Tan Puay","1957",190,"3/2"],
+  offerings:["Offerings","unattributed","1962",40,"1/1"],
+  raintree:["Rain Trees","unattributed","1968",120,"4/3"],
+  padang:["Crowd at the Padang","Lim Soo","1966",30,"16/9"],
+  lamplight:["Procession by Lamplight","unattributed","1964",25,"3/2"],
+  chair:["Empty Chair","unattributed","1973",235,"4/5"],
+  quiet:["Quiet Harbour","Tan Puay","1959",210,"3/2"],
+  widow:["Widow","unattributed","1951",250,"4/5"],
+  saltfish:["Drying Salted Fish","unattributed","1958",35,"3/2"],
+  lantern:["Lantern Sellers","Wong Ah","1962",14,"4/3"],
+};
+
+/* each result: [artkey, judge1score, judge2score] */
+const QUERIES = [
+  {
+    q:"fishing boats", type:"Keyword / object",
+    j1:"A", j2:"B",
+    reason:[
+      ["Judge 1","Set A keeps every result on-subject — boats or harbour craft in all 8. Set B is tighter at the top but ranks two clear misses (Night Market, Kampong Morning) in the grid."],
+      ["Judge 2","Set B's top 3 are the strongest boat images in the pool; I weight precision@3 heavily for a literal keyword. The two misses sit low enough not to matter."]
+    ],
+    A:[["boats",3,3],["sampans",3,3],["harbour",3,2],["nets",2,3],
+       ["village",2,2],["quiet",2,2],["monsoon",1,2],["saltfish",2,1]],
+    B:[["sampans",3,3],["boats",3,3],["village",2,3],["harbour",2,2],
+       ["market",0,1],["kampong",1,0],["nets",3,2],["quiet",2,2]],
+  },
+  {
+    q:"a dense crowd of figures", type:"Visual motif",
+    j1:"B", j2:"A",
+    reason:[
+      ["Judge 1","Set A leads with the literal crowd scenes but includes Two Sisters (2 figures) and Offerings (still life) — the motif is 'many figures', those break it."],
+      ["Judge 2","Set B is cleaner on the motif but Set A's top 4 are more visually dense — packed, overlapping figures rather than just 'a group'. I read the motif as compositional density."]
+    ],
+    A:[["padang",3,3],["procession",3,2],["market",2,3],["pasar",2,2],
+       ["lantern",2,1],["lamplight",2,2],["sisters",0,1],["offerings",1,0]],
+    B:[["procession",3,3],["padang",3,3],["pasar",3,2],["market",2,2],
+       ["lamplight",2,3],["lantern",2,2],["nets",1,0],["kampong",1,1]],
+  },
+  {
+    q:"a quiet, melancholy mood", type:"Mood / vibe",
+    j1:"A", j2:"B",
+    reason:[
+      ["Judge 1","Set A holds the mood end to end — empty rooms, solitary figures, muted blues. Set B is strong up top but ranks a bright festival scene and a night market, which read as the opposite of melancholy."],
+      ["Judge 2","Set B's top 4 evoke the feeling more intensely than anything in A. Mood is carried by the strongest few images, not the average — and B's misses are obvious enough for a curator to skip."]
+    ],
+    A:[["chair",3,2],["widow",3,3],["selfport",2,3],["monsoon",2,2],
+       ["quiet",2,1],["grey",2,2],["raintree",1,2],["letter",1,1]],
+    B:[["widow",3,2],["monsoon",3,3],["selfport",3,2],["harbour",2,2],
+       ["market",0,1],["procession",0,0],["chair",2,3],["sisters",2,1]],
+  },
+];
+
+let idx=0; const verdicts=[]; let choice=null; const flags={};
+
+const stage=document.getElementById("stage");
+const bar=document.getElementById("bar");
+const count=document.getElementById("count");
+
+function tile(r,qi,si,ti){
+  const [k,j1,j2]=r; const a=ART[k];
+  const dis=Math.abs(j1-j2)>=2;
+  const fid=qi+"-"+si+"-"+ti;
+  const fl=flags[fid]||"";
+  const sc=(v)=>'<b class="'+(v<=1?"lo":"")+'">'+v+"</b>";
+  return `<figure class="tile">
+    <div class="rank">${ti+1}</div>
+    <div class="artwrap"><div class="art" style="--h:${a[3]};--asp:${a[4]}"></div></div>
+    <div class="jscore ${dis?"disagree":""}" title="AI judge scores 0-3">J ${sc(j1)}·${sc(j2)}</div>
+    <div class="cap"><div class="t">${a[0]}</div><div class="a">${a[1]} · ${a[2]}</div></div>
+    <div class="flags">
+      <button class="${fl==="up"?"on":""}" onclick="flag('${fid}','up')">&#128077;</button>
+      <button class="${fl==="down"?"on":""}" onclick="flag('${fid}','down')">&#128078;</button>
+    </div>
+  </figure>`;
+}
+function flag(fid,v){ flags[fid]=flags[fid]===v?"":v; render(); }
+
+function setBlock(q,qi,si){
+  const key=si===0?"A":"B"; const rows=q[key];
+  return `<div class="set" id="set${key}">
+    <div class="label"><span class="tag">Set ${key}</span> 8 results</div>
+    <div class="grid">${rows.map((r,ti)=>tile(r,qi,si,ti)).join("")}</div>
+  </div>`;
+}
+
+function render(){
+  if(idx>=QUERIES.length){ return done(); }
+  const q=QUERIES[idx];
+  bar.style.width=((idx)/QUERIES.length*100)+"%";
+  count.textContent="Query "+(idx+1)+" of "+QUERIES.length;
+  stage.innerHTML=`<div class="card">
+    <div class="qhead">
+      <div class="query serif">${q.q}</div>
+      <div class="chip">${q.type}</div>
+      <div class="qno">contested · ${idx+1}/${QUERIES.length}</div>
+    </div>
+    <div class="split">
+      <span class="dot"></span>
+      <span>Judge 1 preferred <b>Set ${q.j1}</b> · Judge 2 preferred <b>Set ${q.j2}</b> — split decision.</span>
+      <button onclick="document.getElementById('reason').classList.toggle('open')">see why &#9662;</button>
+    </div>
+    <div class="reason" id="reason">
+      ${q.reason.map(r=>`<p><span class="j">${r[0]}:</span> ${r[1]}</p>`).join("")}
+    </div>
+    <div class="sets">${setBlock(q,idx,0)}${setBlock(q,idx,1)}</div>
+    <div class="decide">
+      <div class="verdict">
+        <button class="vbtn" id="vA" onclick="pick('A')">Set A is better<span class="kbd">KEY A</span></button>
+        <button class="vbtn" id="vT" onclick="pick('T')">Tie / both fine<span class="kbd">KEY T</span></button>
+        <button class="vbtn" id="vB" onclick="pick('B')">Set B is better<span class="kbd">KEY B</span></button>
+      </div>
+      <div class="extras">
+        <textarea id="note" placeholder="Optional — what tipped it? (e.g. 'B's misses are disqualifying for a curator')"></textarea>
+        <div class="side">
+          <button class="ghost" onclick="badq()">&#9873; Flag this query as bad</button>
+          <button class="next" id="next" disabled onclick="submit()">Submit &amp; next &#9656;</button>
+          <button class="skip" onclick="submit(true)">Skip</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  choice=null;
+}
+
+function pick(c){
+  choice=c;
+  ["A","T","B"].forEach(x=>document.getElementById("v"+x).classList.toggle("sel",x===c));
+  document.getElementById("setA").classList.toggle("pick",c==="A");
+  document.getElementById("setB").classList.toggle("pick",c==="B");
+  document.getElementById("next").disabled=false;
+}
+function badq(){ choice="BAD"; document.getElementById("next").disabled=false; submit(); }
+function submit(skip){
+  verdicts.push({q:QUERIES[idx]?QUERIES[idx].q:"",choice:skip?"SKIP":choice,
+    note:(document.getElementById("note")||{}).value||""});
+  idx++; render();
+}
+document.addEventListener("keydown",e=>{
+  if(idx>=QUERIES.length) return;
+  const k=e.key.toLowerCase();
+  if(k==="a")pick("A"); else if(k==="b")pick("B"); else if(k==="t")pick("T");
+  else if(k==="enter"&&choice)submit();
+});
+
+function done(){
+  bar.style.width="100%"; count.textContent="Review complete";
+  document.getElementById("hdr-right").textContent="Review complete — results refined";
+  const rows=[
+    ["Visual · jina-clip-v2",[.71,.52,.66,.49]],
+    ["Visual · SigLIP 2",[.69,.55,.74,.53]],
+    ["Visual · OpenCLIP H-14",[.72,.50,.70,.47]],
+    ["Caption → text-embed",[.64,.78,.61,.77]],
+    ["Hybrid (fuse all)",[.76,.80,.75,.79]],
+  ];
+  const cols=["Keyword","Occasion","Motif","Mood"];
+  const best=cols.map((_,c)=>Math.max(...rows.map(r=>r[1][c])));
+  const star=[[3],[2,3],[1],[1,2,3]]; // contested cells refined by QA, per column
+  const cell=(v,win)=>`<div class="cell"><div class="bar"><i style="width:${v*100}%"></i></div>
+    <span class="n">${v.toFixed(2)}</span></div>`;
+  stage.innerHTML=`<div class="card done">
+    <h2 class="serif">That's the 3 contested queries.</h2>
+    <p>Your pairwise calls just refined the cells the AI panel couldn't settle.
+    Here's where the full eval lands — <b>nDCG@10 per approach × query type</b>.
+    The winner differs by intent: that's the real finding.</p>
+    <table class="matrix">
+      <tr><th>Approach</th>${cols.map(c=>"<th>"+c+"</th>").join("")}</tr>
+      ${rows.map((r,ri)=>`<tr><td class="rowh">${r[0]}</td>${
+        r[1].map((v,ci)=>{const win=v===best[ci];
+          return `<td class="${win?"win":""}">${cell(v)}</td>`;}).join("")
+      }</tr>`).join("")}
+    </table>
+    <p class="legend">Green = best approach for that intent. In the live run, cells the
+    judges split on carry a <span class="star">&#9733;</span> and show your verdict.
+    Takeaway shape: visual models win literal queries, caption&#8594;embed wins
+    abstract/curatorial ones, hybrid wins overall — so production routes by intent.</p>
+    <p style="margin-top:20px"><button class="next" onclick="idx=0;verdicts.length=0;render()">&#8634; Run through again</button></p>
+  </div>`;
+}
+
+render();
+</script>
+</body>
+</html>
