@@ -1,18 +1,27 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
-import { useLoaderData, useSearchParams, Link } from '@remix-run/react';
-import { useState, useCallback, useEffect } from 'react';
+import { Link, useLoaderData, useSearchParams } from '@remix-run/react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
+import {
+  ArrowLeft,
+  Camera,
+  Clock,
+  ExternalLink,
+  Image as ImageIcon,
+  LayoutGrid,
+  ListFilter,
+  LogIn,
+  Palette,
+  Search,
+  Table2,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { apiClient, getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { debounce } from '~/lib/utils';
-import { SearchResults } from '~/components/search/search-results';
-import { ColorPicker } from '~/components/ui/color-picker';
-import { Button } from '~/components/ui/button';
-import { Input } from '~/components/ui/input';
-import { Label } from '~/components/ui/label';
-import { Card, CardContent } from '~/components/ui/card';
-import { Logo } from '~/components/ui/logo';
+import type { ArtworkSearchResult } from '~/types';
 import { useUser } from '~/contexts/user-context';
 
 export const meta: MetaFunction = () => {
@@ -38,107 +47,289 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       galleryId: gallery.id,
       preferredRouteId: getPreferredOrgRouteId(galleryId, gallery.slug),
     };
-  } catch (error) {
+  } catch {
     throw new Response('Gallery not found', { status: 404 });
   }
 }
 
+type SearchMode = 'text' | 'image';
+type ViewMode = 'masonry' | 'table';
+type SortMode = 'relevance' | 'colour' | 'time-desc' | 'time-asc' | 'artist' | 'title';
+
+const EXAMPLE_QUERIES = [
+  'pineapple',
+  'fishing boats',
+  'self portrait',
+  'batik patterns',
+  '1950s Singapore',
+];
+
+const COLOURS = [
+  { id: 'navy', hex: '#1a2f52', name: 'Navy' },
+  { id: 'cobalt', hex: '#365f9c', name: 'Cobalt' },
+  { id: 'steel', hex: '#6e8ea8', name: 'Steel' },
+  { id: 'sage', hex: '#8a9a7a', name: 'Sage' },
+  { id: 'olive', hex: '#6a6a3a', name: 'Olive' },
+  { id: 'gold', hex: '#cda636', name: 'Gold' },
+  { id: 'amber', hex: '#d2853a', name: 'Amber' },
+  { id: 'rust', hex: '#bf5631', name: 'Rust' },
+  { id: 'umber', hex: '#6a5238', name: 'Umber' },
+  { id: 'bone', hex: '#cdbfa2', name: 'Bone' },
+  { id: 'charcoal', hex: '#221e1a', name: 'Charcoal' },
+];
+
+const SORT_OPTIONS: { id: SortMode; label: string; icon: LucideIcon }[] = [
+  { id: 'relevance', label: 'Relevance', icon: ListFilter },
+  { id: 'colour', label: 'Colour', icon: Palette },
+  { id: 'time-desc', label: 'Newest', icon: Clock },
+  { id: 'time-asc', label: 'Oldest', icon: Clock },
+  { id: 'artist', label: 'Artist', icon: ListFilter },
+  { id: 'title', label: 'Title', icon: ListFilter },
+];
+
+const hexToRgb = (hex: string): [number, number, number] | null => {
+  const clean = hex.trim().replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return null;
+
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ];
+};
+
+const rgbDistance = (a: string, b: string) => {
+  const rgbA = hexToRgb(a);
+  const rgbB = hexToRgb(b);
+  if (!rgbA || !rgbB) return Infinity;
+
+  return Math.sqrt(
+    (rgbA[0] - rgbB[0]) ** 2 +
+      (rgbA[1] - rgbB[1]) ** 2 +
+      (rgbA[2] - rgbB[2]) ** 2
+  );
+};
+
+const asText = (value: unknown) =>
+  typeof value === 'string' && value.trim() ? value.trim() : null;
+
+const asNumber = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const getMeta = (result: ArtworkSearchResult) => result.metadata || {};
+
+const getYear = (result: ArtworkSearchResult) =>
+  asNumber(result.year) || asNumber(getMeta(result).year);
+
+const getDateText = (result: ArtworkSearchResult) =>
+  asText(getMeta(result).dateText) || asText(getMeta(result).date_text) || String(getYear(result) || '');
+
+const getMedium = (result: ArtworkSearchResult) =>
+  asText(getMeta(result).medium) || asText(getMeta(result).classification);
+
+const getAccession = (result: ArtworkSearchResult) =>
+  asText(getMeta(result).accessionNumber) || asText(getMeta(result).accession_number);
+
+const getSourceName = (result: ArtworkSearchResult) =>
+  asText(getMeta(result).sourceInstitution) ||
+  asText(getMeta(result).source_institution) ||
+  'National Gallery Singapore';
+
+const getCaption = (result: ArtworkSearchResult) => {
+  const meta = getMeta(result);
+  const caption = meta.generated_caption || meta.generatedCaption;
+  if (caption && typeof caption === 'object') {
+    return asText((caption as Record<string, unknown>).text);
+  }
+  return asText(caption);
+};
+
+const getSourceUrl = (result: ArtworkSearchResult) =>
+  asText(getMeta(result).sourceUrl) ||
+  asText(getMeta(result).source_url) ||
+  asText(getMeta(result).ngs_detail_url);
+
+const collectPalette = (result: ArtworkSearchResult): string[] => {
+  const meta = getMeta(result);
+  const candidates = [
+    meta.dominantColors,
+    meta.dominant_colors,
+    meta.colorPalette,
+    meta.color_palette,
+    meta.colour_palette,
+  ];
+  const colours: string[] = [];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        if (typeof item === 'string' && hexToRgb(item)) colours.push(item);
+        if (item && typeof item === 'object') {
+          const color = asText((item as Record<string, unknown>).color);
+          if (color && hexToRgb(color)) colours.push(color);
+        }
+      }
+    }
+
+    if (candidate && typeof candidate === 'object' && 'colors' in candidate) {
+      const colorList = (candidate as { colors?: unknown }).colors;
+      if (Array.isArray(colorList)) {
+        for (const color of colorList) {
+          if (typeof color === 'string' && hexToRgb(color)) colours.push(color);
+        }
+      }
+    }
+  }
+
+  return [...new Set(colours)];
+};
+
+const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
+  const palette = collectPalette(result);
+  if (!selected.length) return 0;
+  if (!palette.length) return Infinity;
+
+  const total = selected.reduce((sum, colourId) => {
+    const selectedColour = COLOURS.find((colour) => colour.id === colourId);
+    if (!selectedColour) return sum;
+    const nearest = Math.min(
+      ...palette.map((paletteColour) => rgbDistance(selectedColour.hex, paletteColour))
+    );
+    return sum + nearest;
+  }, 0);
+
+  return total / selected.length;
+};
+
+const sortResults = (
+  results: ArtworkSearchResult[],
+  sortMode: SortMode,
+  selectedColours: string[]
+) => {
+  const sorted = [...results];
+
+  sorted.sort((a, b) => {
+    if (sortMode === 'colour') {
+      const delta = colourScore(a, selectedColours) - colourScore(b, selectedColours);
+      if (Number.isFinite(delta) && delta !== 0) return delta;
+    }
+
+    if (sortMode === 'time-desc') {
+      return (getYear(b) || -Infinity) - (getYear(a) || -Infinity);
+    }
+
+    if (sortMode === 'time-asc') {
+      return (getYear(a) || Infinity) - (getYear(b) || Infinity);
+    }
+
+    if (sortMode === 'artist') {
+      return (a.artist || '').localeCompare(b.artist || '') || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'title') {
+      return (a.title || '').localeCompare(b.title || '') || b.similarity - a.similarity;
+    }
+
+    return b.similarity - a.similarity;
+  });
+
+  return sorted;
+};
+
 export default function SearchPage() {
   const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getAccessToken, isAuthenticated } = useUser();
+  const { getAccessToken, isAuthenticated, login } = useUser();
   const optionalAccessToken = isAuthenticated ? getAccessToken : undefined;
 
-  // Search state
-  const [searchMode, setSearchMode] = useState<'text' | 'image' | 'color'>('text');
-  const [textQuery, setTextQuery] = useState(
-    searchParams.get('q') || ''
-  );
+  const [searchMode, setSearchMode] = useState<SearchMode>('text');
+  const [textQuery, setTextQuery] = useState(searchParams.get('q') || '');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-  const [colorMatchMode, setColorMatchMode] = useState<'any' | 'all'>('any');
-  const [colorThreshold, setColorThreshold] = useState(15);
-  const [topK, setTopK] = useState(10);
-  const [minScore, setMinScore] = useState(0.7);
-  const [shouldSearch, setShouldSearch] = useState(false);
+  const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+  const [view, setView] = useState<ViewMode>('masonry');
+  const [topK, setTopK] = useState(30);
+  const [minScore, setMinScore] = useState(0.3);
+  const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
 
-  // Text search query
   const textSearchQuery = useQuery({
     queryKey: ['search', 'text', galleryId, textQuery, topK, minScore, isAuthenticated],
     queryFn: async () => {
       if (!textQuery.trim()) return null;
-      return apiClient.searchText(galleryId, {
-        query: textQuery,
-        topK,
-        minScore,
-      }, optionalAccessToken);
+      return apiClient.searchText(
+        galleryId,
+        {
+          query: textQuery,
+          topK,
+          minScore,
+        },
+        optionalAccessToken
+      );
     },
-    enabled: searchMode === 'text' && shouldSearch && textQuery.trim().length > 0,
+    enabled:
+      isAuthenticated &&
+      searchMode === 'text' &&
+      shouldSearch &&
+      textQuery.trim().length > 0,
   });
 
-  // Image search query
   const imageSearchQuery = useQuery({
     queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore, isAuthenticated],
     queryFn: async () => {
       if (!imageFile) return null;
-      return apiClient.searchImage(galleryId, {
-        image: imageFile,
-        topK,
-        minScore,
-      }, optionalAccessToken);
+      return apiClient.searchImage(
+        galleryId,
+        {
+          image: imageFile,
+          topK,
+          minScore,
+        },
+        optionalAccessToken
+      );
     },
-    enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
+    enabled: isAuthenticated && searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
-  // Color search query
-  const colorSearchQuery = useQuery({
-    queryKey: ['search', 'color', galleryId, selectedColors, colorMatchMode, colorThreshold, isAuthenticated],
-    queryFn: async () => {
-      if (selectedColors.length === 0) return null;
-      return apiClient.searchColor(galleryId, {
-        colors: selectedColors,
-        matchMode: colorMatchMode,
-        threshold: colorThreshold,
-        limit: topK,
-      }, optionalAccessToken);
-    },
-    enabled: searchMode === 'color' && shouldSearch && selectedColors.length > 0,
-  });
-
-  // Get current results based on mode
-  const currentQuery =
-    searchMode === 'text' ? textSearchQuery :
-    searchMode === 'image' ? imageSearchQuery :
-    colorSearchQuery;
-  const results = currentQuery.data?.results || [];
-  const isLoading = currentQuery.isLoading;
+  const currentQuery = searchMode === 'text' ? textSearchQuery : imageSearchQuery;
+  const rawResults = currentQuery.data?.results || [];
+  const results = useMemo(
+    () => sortResults(rawResults, sortMode, selectedColours),
+    [rawResults, selectedColours, sortMode]
+  );
+  const isLoading = currentQuery.isLoading || currentQuery.isFetching;
   const error = currentQuery.error;
 
-  // Debounced text search
   const debouncedSearch = useCallback(
     debounce(() => {
       if (textQuery.trim()) {
         setShouldSearch(true);
       }
-    }, 500),
+    }, 450),
     [textQuery]
   );
 
-  // Trigger search when text changes
   useEffect(() => {
     if (searchMode === 'text' && textQuery.trim()) {
       setShouldSearch(false);
       debouncedSearch();
     }
-  }, [textQuery, searchMode, debouncedSearch]);
+  }, [debouncedSearch, searchMode, textQuery]);
 
-  // Image dropzone
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (file) {
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
+      setSearchMode('image');
       setShouldSearch(true);
     }
   }, []);
@@ -153,322 +344,655 @@ export default function SearchPage() {
     maxFiles: 1,
   });
 
-  // Handle text search
-  const handleTextSearch = () => {
-    if (textQuery.trim()) {
-      setShouldSearch(true);
-      setSearchParams({ q: textQuery });
-    }
+  const runTextSearch = (query = textQuery) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    setSearchMode('text');
+    setTextQuery(trimmed);
+    setShouldSearch(true);
+    setSearchParams({ q: trimmed });
   };
 
-  // Clear image
   const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
     setShouldSearch(false);
   };
 
+  const toggleColour = (id: string) => {
+    setSelectedColours((prev) =>
+      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
+    );
+    setSortMode('colour');
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-primary-950 text-white">
-      {/* Header */}
-      <header className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <Link to={`/galleries/${preferredRouteId}`}>
-                <Logo />
-              </Link>
-              <p className="text-sm text-neutral-400 mt-1">{gallery.name}</p>
-            </div>
-            <nav className="flex items-center gap-4">
-              <Link
-                to={`/galleries/${preferredRouteId}`}
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                Dashboard
-              </Link>
+    <div className="min-h-screen bg-[#0b0b0e] text-white">
+      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              to={`/galleries/${preferredRouteId}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 text-white/65 transition-colors hover:text-white"
+              aria-label="Back to org"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <div className="min-w-0">
               <Link
                 to={`/${preferredRouteId}/search`}
-                className="text-white font-semibold"
+                className="font-display text-lg font-semibold leading-none tracking-normal"
               >
-                Search
+                Paillette
               </Link>
-              <Link
-                to={`/galleries/${preferredRouteId}/explore`}
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                Explore
-              </Link>
-              <Link
-                to={`/galleries/${preferredRouteId}/frame-removal`}
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                Frame Removal
-              </Link>
-              <Link
-                to="/translate"
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                Translate
-              </Link>
-            </nav>
+              <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+                {gallery.name}
+              </p>
+            </div>
           </div>
+          <nav className="flex items-center gap-2">
+            <Link
+              to={`/galleries/${preferredRouteId}/explore`}
+              className="hidden rounded-md px-3 py-1.5 text-xs text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white sm:inline-flex"
+            >
+              Explore
+            </Link>
+            {!isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => void login()}
+                className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white"
+              >
+                <LogIn className="h-3.5 w-3.5" />
+                Sign in
+              </button>
+            )}
+          </nav>
         </div>
       </header>
 
-      <div className="container mx-auto px-6 py-8">
-        {/* Search Interface */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-4xl mx-auto mb-12"
-        >
-          <Card>
-            <CardContent className="p-6">
-              {/* Search Mode Toggle */}
-              <div className="flex gap-2 mb-6">
-                <Button
-                  variant={searchMode === 'text' ? 'default' : 'outline'}
-                  onClick={() => setSearchMode('text')}
-                  className="flex-1"
-                >
-                  🔍 Text
-                </Button>
-                <Button
-                  variant={searchMode === 'image' ? 'default' : 'outline'}
-                  onClick={() => setSearchMode('image')}
-                  className="flex-1"
-                >
-                  🖼️ Image
-                </Button>
-                <Button
-                  variant={searchMode === 'color' ? 'default' : 'outline'}
-                  onClick={() => setSearchMode('color')}
-                  className="flex-1"
-                >
-                  🎨 Color
-                </Button>
+      <main className="mx-auto max-w-7xl px-5 pb-14 pt-8 lg:px-8">
+        <section className="mx-auto max-w-4xl">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+          >
+            <div className="mb-6 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.24em] text-white/35">
+              <span>{gallery.name}</span>
+              <span>/</span>
+              <span>registered search</span>
+              {currentQuery.data?.queryTime !== undefined && (
+                <>
+                  <span>/</span>
+                  <span>{Math.round(currentQuery.data.queryTime)}ms</span>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-2">
+              <ModeButton
+                active={searchMode === 'text'}
+                icon={Search}
+                label="Text"
+                onClick={() => setSearchMode('text')}
+              />
+              <ModeButton
+                active={searchMode === 'image'}
+                icon={ImageIcon}
+                label="Image"
+                onClick={() => setSearchMode('image')}
+              />
+            </div>
+
+            {searchMode === 'text' ? (
+              <div className="relative mt-5">
+                <Search className="absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 text-white/30" />
+                <input
+                  value={textQuery}
+                  onChange={(event) => setTextQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') runTextSearch();
+                  }}
+                  autoFocus
+                  placeholder="search by subject, artist, era, material"
+                  className="w-full border-b-2 border-white/20 bg-transparent py-4 pl-8 pr-4 font-display text-2xl italic outline-none transition-colors placeholder:text-white/25 focus:border-cyan-300 lg:text-3xl"
+                />
               </div>
-
-              {/* Text Search */}
-              {searchMode === 'text' && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="space-y-4"
-                >
-                  <div>
-                    <Label htmlFor="query">Search Query</Label>
-                    <div className="flex gap-2 mt-2">
-                      <Input
-                        id="query"
-                        type="text"
-                        placeholder="Describe what you're looking for..."
-                        value={textQuery}
-                        onChange={(e) => setTextQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleTextSearch();
-                          }
-                        }}
-                        className="flex-1"
-                      />
-                      <Button onClick={handleTextSearch}>Search</Button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Image Search */}
-              {searchMode === 'image' && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="space-y-4"
-                >
-                  {!imagePreview ? (
-                    <div
-                      {...getRootProps()}
-                      className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all duration-200 ${
-                        isDragActive
-                          ? 'border-primary-500 bg-primary-500/10'
-                          : 'border-neutral-700 hover:border-primary-500/50 hover:bg-neutral-800/50'
-                      }`}
-                    >
-                      <input {...getInputProps()} />
-                      <div className="text-6xl mb-4">📸</div>
-                      <p className="text-lg text-neutral-300 mb-2">
-                        {isDragActive
-                          ? 'Drop your image here...'
-                          : 'Drag & drop an image here'}
-                      </p>
-                      <p className="text-sm text-neutral-500">
-                        or click to browse (JPEG, PNG, WebP)
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <img
-                        src={imagePreview}
-                        alt="Search preview"
-                        className="w-full max-h-96 object-contain rounded-lg"
-                      />
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={clearImage}
-                        className="absolute top-2 right-2"
-                      >
-                        ✕ Clear
-                      </Button>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-
-              {/* Color Search */}
-              {searchMode === 'color' && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="space-y-4"
-                >
-                  <ColorPicker
-                    value={selectedColors}
-                    onChange={setSelectedColors}
-                    maxColors={5}
-                  />
-
-                  <div className="flex items-center gap-4 pt-2">
-                    <Label className="text-sm">Match Mode:</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        variant={colorMatchMode === 'any' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setColorMatchMode('any')}
-                      >
-                        ANY
-                      </Button>
-                      <Button
-                        variant={colorMatchMode === 'all' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setColorMatchMode('all')}
-                      >
-                        ALL
-                      </Button>
-                    </div>
-                    <Button
-                      onClick={() => {
-                        if (selectedColors.length > 0) {
-                          setShouldSearch(true);
-                        }
+            ) : (
+              <div
+                {...getRootProps()}
+                className={`mt-5 flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
+                  isDragActive
+                    ? 'border-cyan-300 bg-cyan-300/10'
+                    : 'border-white/15 bg-white/[0.025] hover:border-white/30'
+                }`}
+              >
+                <input {...getInputProps()} />
+                {imagePreview ? (
+                  <div className="relative w-full max-w-lg">
+                    <img
+                      src={imagePreview}
+                      alt="Query preview"
+                      className="max-h-64 w-full rounded-md object-contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        clearImage();
                       }}
-                      disabled={selectedColors.length === 0}
-                      className="ml-auto"
+                      className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-black/75 text-white transition-colors hover:bg-black"
+                      aria-label="Clear image"
                     >
-                      Search Artworks
-                    </Button>
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                </motion.div>
-              )}
+                ) : (
+                  <div className="text-center">
+                    <Camera className="mx-auto h-8 w-8 text-white/45" />
+                    <p className="mt-3 text-sm text-white/65">
+                      Drop an image to search visually
+                    </p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
+                      jpg / png / webp
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
-              {/* Advanced Options */}
-              <details className="mt-6">
-                <summary className="cursor-pointer text-sm text-neutral-400 hover:text-white">
-                  Advanced Options
-                </summary>
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <div>
-                    <Label htmlFor="topK">Results Limit</Label>
-                    <Input
-                      id="topK"
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={topK}
-                      onChange={(e) => setTopK(Number(e.target.value))}
-                      className="mt-2"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="minScore">Min Similarity (%)</Label>
-                    <Input
-                      id="minScore"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={minScore * 100}
-                      onChange={(e) => setMinScore(Number(e.target.value) / 100)}
-                      className="mt-2"
-                    />
-                  </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {EXAMPLE_QUERIES.map((query) => (
+                <button
+                  key={query}
+                  type="button"
+                  onClick={() => runTextSearch(query)}
+                  className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white"
+                >
+                  {query}
+                </button>
+              ))}
+            </div>
+
+            {!isAuthenticated && (
+              <div className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-amber-200/20 bg-amber-200/[0.06] p-4">
+                <div>
+                  <p className="text-sm font-medium text-white">Sign in to search</p>
+                  <p className="mt-1 text-sm text-white/55">
+                    NGS search now counts against a registered user or API key quota.
+                  </p>
                 </div>
-              </details>
-            </CardContent>
-          </Card>
-        </motion.div>
+                <button
+                  type="button"
+                  onClick={() => void login()}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-medium text-black transition-opacity hover:opacity-85"
+                >
+                  <LogIn className="h-4 w-4" />
+                  Sign in
+                </button>
+              </div>
+            )}
+          </motion.div>
+        </section>
 
-        {/* Loading State */}
-        <AnimatePresence mode="wait">
+        <section className="mt-7 rounded-lg border border-white/[0.08] bg-white/[0.025] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-white/45">
+                Refine
+              </p>
+              <p className="mt-1 text-sm text-white/55">
+                Colour, time, artist, and title are result ordering controls.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <ViewButton
+                active={view === 'masonry'}
+                icon={LayoutGrid}
+                label="Masonry"
+                onClick={() => setView('masonry')}
+              />
+              <ViewButton
+                active={view === 'table'}
+                icon={Table2}
+                label="Table"
+                onClick={() => setView('table')}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <div className="mb-2 flex items-baseline gap-2">
+                <span className="text-sm font-medium text-white/80">Colour</span>
+                <span className="font-mono text-[10px] text-white/35">
+                  select swatches to sort by nearest palette match
+                </span>
+              </div>
+              <ColourStrip selected={selectedColours} onToggle={toggleColour} />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {SORT_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setSortMode(option.id)}
+                    className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium transition-colors ${
+                      sortMode === option.id
+                        ? 'border-white/25 bg-white/[0.14] text-white'
+                        : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
+            <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+              Limit
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={topK}
+                onChange={(event) => setTopK(Number(event.target.value))}
+                className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-cyan-300"
+              />
+            </label>
+            <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+              Min score
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={Math.round(minScore * 100)}
+                onChange={(event) => setMinScore(Number(event.target.value) / 100)}
+                className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-cyan-300"
+              />
+            </label>
+            {selectedColours.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedColours([])}
+                className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+              >
+                Clear colours
+              </button>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
+                {isLoading
+                  ? 'Searching'
+                  : results.length
+                    ? `${results.length} works`
+                    : shouldSearch
+                      ? 'No works'
+                      : 'Ready'}
+                {textQuery && searchMode === 'text' && (
+                  <span className="ml-2 normal-case tracking-normal text-white/70">
+                    "{textQuery}"
+                  </span>
+                )}
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+                sorted by {SORT_OPTIONS.find((option) => option.id === sortMode)?.label}
+              </p>
+            </div>
+          </div>
+
           {isLoading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-12"
-            >
-              <div className="inline-block w-16 h-16 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin mb-4" />
-              <p className="text-neutral-400">Searching artworks...</p>
-            </motion.div>
+            <div className="py-16 text-center text-sm text-white/45">Searching artworks...</div>
           )}
 
-          {/* Error State */}
           {error && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-12"
-            >
-              <div className="text-6xl mb-4">⚠️</div>
-              <p className="text-red-400">
+            <div className="py-16 text-center">
+              <p className="text-sm font-medium text-red-300">
                 {error instanceof Error ? error.message : 'Search failed'}
               </p>
-            </motion.div>
+            </div>
           )}
 
-          {/* Results */}
           {!isLoading && !error && results.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-            >
-              <SearchResults
-                results={results}
-                queryTime={currentQuery.data?.queryTime || 0}
-              />
-            </motion.div>
+            view === 'masonry' ? (
+              <MasonryResults results={results} routeId={preferredRouteId} selectedColours={selectedColours} />
+            ) : (
+              <TableResults results={results} routeId={preferredRouteId} selectedColours={selectedColours} />
+            )
           )}
 
-          {/* No Results */}
-          {!isLoading && !error && shouldSearch && results.length === 0 && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-12"
-            >
-              <div className="text-6xl mb-4">🔍</div>
-              <p className="text-neutral-400">No artworks found</p>
-              <p className="text-sm text-neutral-500 mt-2">
-                Try adjusting your search query or lowering the minimum similarity
+          {!isLoading && !error && shouldSearch && isAuthenticated && results.length === 0 && (
+            <div className="py-16 text-center">
+              <p className="text-white/55">No artworks found.</p>
+              <p className="mt-1 text-sm text-white/35">
+                Try a broader query or lower the minimum score.
               </p>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
-      </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function ModeButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+        active
+          ? 'border-white/25 bg-white/[0.14] text-white'
+          : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
+
+function ViewButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors ${
+        active
+          ? 'border-white/25 bg-white/[0.14] text-white'
+          : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
+function ColourStrip({
+  selected,
+  onToggle,
+}: {
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="flex h-11 overflow-hidden rounded-md border border-white/10">
+      {COLOURS.map((colour, index) => {
+        const active = selected.includes(colour.id);
+        const grow = index === 9 ? 1.4 : index === 5 ? 1.25 : 1;
+        return (
+          <button
+            key={colour.id}
+            type="button"
+            onClick={() => onToggle(colour.id)}
+            title={colour.name}
+            aria-pressed={active}
+            className="relative min-w-7 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none"
+            style={{ background: colour.hex, flex: `${grow} 1 0` }}
+          >
+            {active && (
+              <span className="absolute inset-0 flex items-center justify-center ring-2 ring-inset ring-white">
+                <span className="h-2.5 w-2.5 rounded-full bg-white shadow-[0_1px_8px_rgba(0,0,0,0.8)]" />
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MasonryResults({
+  results,
+  routeId,
+  selectedColours,
+}: {
+  results: ArtworkSearchResult[];
+  routeId: string;
+  selectedColours: string[];
+}) {
+  return (
+    <div className="columns-1 gap-4 pt-6 sm:columns-2 lg:columns-3 xl:columns-4">
+      {results.map((result, index) => (
+        <ResultCard
+          key={result.id}
+          result={result}
+          rank={index + 1}
+          routeId={routeId}
+          selectedColours={selectedColours}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ResultCard({
+  result,
+  rank,
+  routeId,
+  selectedColours,
+}: {
+  result: ArtworkSearchResult;
+  rank: number;
+  routeId: string;
+  selectedColours: string[];
+}) {
+  const palette = collectPalette(result).slice(0, 5);
+  const caption = getCaption(result);
+
+  return (
+    <article className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.025]">
+      <Link to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`} className="group block">
+        <div className="bg-white/[0.03]">
+          {result.thumbnailUrl || result.imageUrl ? (
+            <img
+              src={result.thumbnailUrl || result.imageUrl || undefined}
+              alt={result.title || 'Artwork'}
+              loading="lazy"
+              className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            />
+          ) : (
+            <div className="flex aspect-[4/3] items-center justify-center text-sm text-white/35">
+              No image
+            </div>
+          )}
+        </div>
+        <div className="space-y-3 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-display text-lg font-semibold leading-tight text-white">
+                {result.title || 'Untitled'}
+              </h2>
+              <p className="mt-1 text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+              #{rank.toString().padStart(2, '0')}
+            </span>
+          </div>
+
+          <MetadataLine result={result} />
+
+          {caption && (
+            <p className="line-clamp-3 text-sm leading-relaxed text-white/50">
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/65">
+                AI caption
+              </span>{' '}
+              {caption}
+            </p>
+          )}
+
+          <div className="flex items-center justify-between gap-3">
+            <PaletteDots colours={palette} />
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+              {selectedColours.length ? `dE ${Math.round(colourScore(result, selectedColours))}` : `${Math.round(result.similarity * 100)}%`}
+            </span>
+          </div>
+        </div>
+      </Link>
+    </article>
+  );
+}
+
+function MetadataLine({ result }: { result: ArtworkSearchResult }) {
+  const items = [
+    getDateText(result),
+    getMedium(result),
+    asText(getMeta(result).classification),
+    getAccession(result),
+  ].filter(Boolean);
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.slice(0, 4).map((item) => (
+        <span
+          key={item}
+          className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-white/55"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PaletteDots({ colours }: { colours: string[] }) {
+  if (!colours.length) {
+    return <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">No palette</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      {colours.map((colour) => (
+        <span
+          key={colour}
+          className="h-4 w-4 rounded-sm border border-white/15"
+          style={{ background: colour }}
+          title={colour}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TableResults({
+  results,
+  routeId,
+  selectedColours,
+}: {
+  results: ArtworkSearchResult[];
+  routeId: string;
+  selectedColours: string[];
+}) {
+  return (
+    <div className="mt-6 overflow-x-auto rounded-lg border border-white/[0.08]">
+      <table className="w-full min-w-[980px] border-collapse text-sm">
+        <thead className="border-b border-white/[0.08] bg-white/[0.04]">
+          <tr className="text-left font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+            <th className="px-3 py-3 font-normal">#</th>
+            <th className="px-3 py-3 font-normal">Work</th>
+            <th className="px-3 py-3 font-normal">Artist</th>
+            <th className="px-3 py-3 font-normal">Date</th>
+            <th className="px-3 py-3 font-normal">Medium</th>
+            <th className="px-3 py-3 font-normal">Source</th>
+            <th className="px-3 py-3 font-normal">Score</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/[0.06]">
+          {results.map((result, index) => (
+            <tr key={result.id} className="transition-colors hover:bg-white/[0.035]">
+              <td className="px-3 py-3 font-mono text-white/35">
+                {(index + 1).toString().padStart(2, '0')}
+              </td>
+              <td className="px-3 py-3">
+                <Link
+                  to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`}
+                  className="flex items-center gap-3 text-white transition-colors hover:text-cyan-200"
+                >
+                  {result.thumbnailUrl || result.imageUrl ? (
+                    <img
+                      src={result.thumbnailUrl || result.imageUrl || undefined}
+                      alt=""
+                      loading="lazy"
+                      className="h-12 w-12 rounded-md object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">
+                      <ImageIcon className="h-4 w-4" />
+                    </span>
+                  )}
+                  <span>
+                    <span className="block font-medium">{result.title || 'Untitled'}</span>
+                    {getAccession(result) && (
+                      <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+                        {getAccession(result)}
+                      </span>
+                    )}
+                  </span>
+                </Link>
+              </td>
+              <td className="px-3 py-3 text-white/65">{result.artist || 'Unknown'}</td>
+              <td className="px-3 py-3 text-white/55">{getDateText(result) || '-'}</td>
+              <td className="px-3 py-3 text-white/55">{getMedium(result) || '-'}</td>
+              <td className="px-3 py-3 text-white/55">
+                {getSourceUrl(result) ? (
+                  <a
+                    href={getSourceUrl(result) || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-cyan-200/75 hover:text-cyan-200"
+                  >
+                    {getSourceName(result)}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : (
+                  getSourceName(result)
+                )}
+              </td>
+              <td className="px-3 py-3 font-mono text-white/55">
+                {selectedColours.length
+                  ? `dE ${Math.round(colourScore(result, selectedColours))}`
+                  : `${Math.round(result.similarity * 100)}%`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

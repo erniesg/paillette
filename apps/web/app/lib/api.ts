@@ -72,6 +72,29 @@ export const getPreferredOrgRouteId = (
     ? requestedOrgId.toLowerCase()
     : canonicalSlug || requestedOrgId;
 
+const normalizeArtwork = (artwork: Artwork): Artwork => {
+  const raw = artwork as Artwork & Record<string, any>;
+  const orgId = raw.orgId || raw.org_id || raw.galleryId || raw.gallery_id || '';
+  const metadata = {
+    ...(raw.metadata || {}),
+    ...(raw.custom_metadata || {}),
+  };
+
+  return {
+    ...artwork,
+    orgId,
+    galleryId: orgId,
+    imageUrl: raw.imageUrl ?? raw.image_url ?? null,
+    thumbnailUrl: raw.thumbnailUrl ?? raw.thumbnail_url ?? null,
+    medium: raw.medium ?? metadata.medium,
+    description: raw.description ?? metadata.description,
+    dimensions: raw.dimensions,
+    metadata,
+    createdAt: raw.createdAt ?? raw.created_at,
+    updatedAt: raw.updatedAt ?? raw.updated_at,
+  };
+};
+
 class ApiClient {
   private baseUrl: string;
 
@@ -411,7 +434,7 @@ class ApiClient {
       throw new Error(data.error?.message || 'Failed to fetch artwork');
     }
 
-    return data.data;
+    return normalizeArtwork(data.data);
   }
 
   /**
@@ -431,14 +454,24 @@ class ApiClient {
       params.toString() ? `?${params}` : ''
     }`;
     const response = await fetch(url);
-    const data: ApiResponse<{ artworks: Artwork[]; total: number }> =
-      await response.json();
+    const data: ApiResponse<{ artworks: Artwork[]; total: number }> & {
+      pagination?: { total?: number };
+    } = await response.json();
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Failed to fetch artworks');
     }
 
-    return data.data;
+    const payload = data.data as { artworks?: Artwork[]; total?: number } | Artwork[];
+    const artworks = Array.isArray(payload) ? payload : payload.artworks || [];
+
+    return {
+      artworks: artworks.map(normalizeArtwork),
+      total:
+        (Array.isArray(payload) ? undefined : payload.total) ??
+        data.pagination?.total ??
+        artworks.length,
+    };
   }
 
   /**

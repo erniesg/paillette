@@ -44,16 +44,41 @@ export interface GallerySettings {
 
 export interface Artwork {
   id: string;
+  org_id?: string;
   orgId?: string;
+  gallery_id?: string;
   galleryId: string;
+  collection_id?: string | null;
   title?: string;
   artist?: string;
   year?: number;
+  date_text?: string | null;
   medium?: string;
+  classification?: string | null;
+  culture?: string | null;
+  origin?: string | null;
   dimensions?: ArtworkDimensions;
   description?: string;
+  provenance?: string | null;
+  credit_line?: string | null;
+  rights?: string | null;
+  accession_number?: string | null;
+  source_url?: string | null;
+  source_institution?: string | null;
+  source_collection?: string | null;
+  source_record_id?: string | null;
+  field_sources?: Record<string, any>;
+  custom_metadata?: Record<string, any>;
+  colors?: {
+    dominant?: string[] | null;
+    palette?: any;
+  };
+  citation?: Citation | null;
+  image_url?: string | null;
   imageUrl: string | null;
+  thumbnail_url?: string | null;
   thumbnailUrl?: string | null;
+  original_filename?: string | null;
   imageUrlProcessed?: string | null;
   processingStatus?: ProcessingStatus;
   frameRemovalConfidence?: number | null;
