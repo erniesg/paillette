@@ -18,6 +18,28 @@ interface ArtworkSearchRow {
   title: string | null;
   artist: string | null;
   year: number | null;
+  date_text: string | null;
+  medium: string | null;
+  classification: string | null;
+  culture: string | null;
+  origin: string | null;
+  dimensions_height: number | null;
+  dimensions_width: number | null;
+  dimensions_depth: number | null;
+  dimensions_unit: string | null;
+  description: string | null;
+  provenance: string | null;
+  credit_line: string | null;
+  rights: string | null;
+  accession_number: string | null;
+  source_url: string | null;
+  source_institution: string | null;
+  source_collection: string | null;
+  source_record_id: string | null;
+  field_sources: string | null;
+  dominant_colors: string | null;
+  color_palette: string | null;
+  citation: string | null;
   image_url: string | null;
   thumbnail_url: string | null;
   custom_metadata: string | null;
@@ -73,21 +95,77 @@ const parseJsonObject = (value: string | null) => {
   }
 };
 
+const compactObject = <T extends Record<string, unknown>>(value: T) =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null)
+  ) as Partial<T>;
+
+const buildDimensions = (artwork: ArtworkSearchRow) => {
+  const dimensions = compactObject({
+    height: artwork.dimensions_height,
+    width: artwork.dimensions_width,
+    depth: artwork.dimensions_depth,
+    unit: artwork.dimensions_unit,
+  });
+
+  return Object.keys(dimensions).length ? dimensions : undefined;
+};
+
 const mapSearchRow = (
   artwork: ArtworkSearchRow,
   similarity: number
-): ArtworkSearchResult => ({
-  id: artwork.id,
-  orgId: artwork.org_id,
-  galleryId: artwork.org_id,
-  title: artwork.title || undefined,
-  artist: artwork.artist || undefined,
-  year: artwork.year || undefined,
-  imageUrl: artwork.image_url,
-  thumbnailUrl: artwork.thumbnail_url,
-  similarity,
-  metadata: parseJsonObject(artwork.custom_metadata),
-});
+): ArtworkSearchResult => {
+  const customMetadata = parseJsonObject(artwork.custom_metadata) ?? {};
+  const fieldSources = parseJsonObject(artwork.field_sources);
+  const dominantColors = parseJsonObject(artwork.dominant_colors);
+  const colorPalette = parseJsonObject(artwork.color_palette);
+  const citation = parseJsonObject(artwork.citation);
+  const dimensions = buildDimensions(artwork);
+
+  return {
+    id: artwork.id,
+    orgId: artwork.org_id,
+    galleryId: artwork.org_id,
+    title: artwork.title || undefined,
+    artist: artwork.artist || undefined,
+    year: artwork.year || undefined,
+    imageUrl: artwork.image_url,
+    thumbnailUrl: artwork.thumbnail_url,
+    similarity,
+    metadata: compactObject({
+      ...customMetadata,
+      medium: artwork.medium,
+      dateText: artwork.date_text,
+      date_text: artwork.date_text,
+      classification: artwork.classification,
+      culture: artwork.culture,
+      origin: artwork.origin,
+      dimensions,
+      description: artwork.description,
+      provenance: artwork.provenance,
+      creditLine: artwork.credit_line,
+      credit_line: artwork.credit_line,
+      rights: artwork.rights,
+      accessionNumber: artwork.accession_number,
+      accession_number: artwork.accession_number,
+      sourceUrl: artwork.source_url,
+      source_url: artwork.source_url,
+      sourceInstitution: artwork.source_institution,
+      source_institution: artwork.source_institution,
+      sourceCollection: artwork.source_collection,
+      source_collection: artwork.source_collection,
+      sourceRecordId: artwork.source_record_id,
+      source_record_id: artwork.source_record_id,
+      fieldSources,
+      field_sources: fieldSources,
+      dominantColors,
+      dominant_colors: dominantColors,
+      colorPalette,
+      color_palette: colorPalette,
+      citation,
+    }),
+  };
+};
 
 const l2Normalize = (values: number[]) => {
   const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
@@ -317,6 +395,28 @@ async function getArtworksByIds(
       title,
       artist,
       year,
+      date_text,
+      medium,
+      classification,
+      culture,
+      origin,
+      dimensions_height,
+      dimensions_width,
+      dimensions_depth,
+      dimensions_unit,
+      description,
+      provenance,
+      credit_line,
+      rights,
+      accession_number,
+      source_url,
+      source_institution,
+      source_collection,
+      source_record_id,
+      field_sources,
+      dominant_colors,
+      color_palette,
+      citation,
       image_url,
       thumbnail_url,
       custom_metadata
@@ -460,6 +560,28 @@ async function searchArtworksByMetadata(
       title,
       artist,
       year,
+      date_text,
+      medium,
+      classification,
+      culture,
+      origin,
+      dimensions_height,
+      dimensions_width,
+      dimensions_depth,
+      dimensions_unit,
+      description,
+      provenance,
+      credit_line,
+      rights,
+      accession_number,
+      source_url,
+      source_institution,
+      source_collection,
+      source_record_id,
+      field_sources,
+      dominant_colors,
+      color_palette,
+      citation,
       image_url,
       thumbnail_url,
       custom_metadata,
@@ -489,49 +611,6 @@ async function searchArtworksByMetadata(
   );
 }
 
-const PUBLIC_SEARCH_USER_ID = '00000000-0000-4000-8000-000000000001';
-
-const hasExplicitAuth = (c: any) =>
-  Boolean(c.req.header('Authorization') || c.req.header('X-API-Key') || c.req.header('X-User-Id'));
-
-const isPublicOrgSearchEnabled = async (c: any, orgId?: string) => {
-  if (!orgId) return false;
-
-  const org = await c.env.DB.prepare('SELECT settings FROM orgs WHERE id = ?')
-    .bind(orgId)
-    .first() as { settings: string | null } | null;
-
-  if (!org) return false;
-
-  try {
-    const settings = org.settings ? JSON.parse(org.settings) : {};
-    return settings.allowPublicAccess === true;
-  } catch {
-    return false;
-  }
-};
-
-const requireAuthOrPublicOrg = async (c: any, next: any) => {
-  if (hasExplicitAuth(c)) {
-    return requireAuthOrApiKey(c, next);
-  }
-
-  const orgId = c.req.param('orgId') || c.req.param('galleryId');
-  if (await isPublicOrgSearchEnabled(c, orgId)) {
-    c.set('auth', {
-      kind: 'user',
-      userId: PUBLIC_SEARCH_USER_ID,
-      email: 'system@paillette.local',
-      name: 'Public Search',
-      scopes: ['public:search'],
-    });
-    await next();
-    return;
-  }
-
-  return requireAuthOrApiKey(c, next);
-};
-
 // Validation schemas
 const textSearchSchema = z.object({
   query: z.string().min(1, 'Query cannot be empty').max(500),
@@ -543,7 +622,7 @@ export const searchRoutes = new Hono<{ Bindings: Env }>();
 
 searchRoutes.use(
   '/search/*',
-  requireAuthOrPublicOrg as any,
+  requireAuthOrApiKey as any,
   enforceDailyQuota({ queryType: 'vector_search' }) as any
 );
 
@@ -722,6 +801,28 @@ searchRoutes.post('/search/image', async (c) => {
         title,
         artist,
         year,
+        date_text,
+        medium,
+        classification,
+        culture,
+        origin,
+        dimensions_height,
+        dimensions_width,
+        dimensions_depth,
+        dimensions_unit,
+        description,
+        provenance,
+        credit_line,
+        rights,
+        accession_number,
+        source_url,
+        source_institution,
+        source_collection,
+        source_record_id,
+        field_sources,
+        dominant_colors,
+        color_palette,
+        citation,
         image_url,
         thumbnail_url,
         custom_metadata
@@ -748,9 +849,7 @@ searchRoutes.post('/search/image', async (c) => {
           imageUrl: artwork.image_url,
           thumbnailUrl: artwork.thumbnail_url,
           similarity: vectorResult.score,
-          metadata: artwork.custom_metadata
-            ? JSON.parse(artwork.custom_metadata as string)
-            : undefined,
+          metadata: mapSearchRow(artwork, vectorResult.score).metadata,
         },
       ];
     });

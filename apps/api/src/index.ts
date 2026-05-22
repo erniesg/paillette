@@ -63,7 +63,12 @@ app.use(
       'X-User-Email',
       'X-User-Name',
     ],
-    exposeHeaders: ['Content-Length', 'X-Request-ID'],
+    exposeHeaders: [
+      'Content-Length',
+      'X-Request-ID',
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+    ],
     maxAge: 600,
     credentials: true,
   })

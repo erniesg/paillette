@@ -484,6 +484,9 @@ export const enforceDailyQuota = (
         .bind(principalType, principalId, usageDate)
         .first<{ used: number; quota: number }>();
 
+      c.header('X-RateLimit-Limit', String(current?.quota ?? quota));
+      c.header('X-RateLimit-Remaining', '0');
+
       return c.json(
         {
           success: false,
@@ -580,7 +583,39 @@ export const enforceDailyQuota = (
     c.header('X-RateLimit-Limit', String(usage?.quota ?? quota));
     c.header('X-RateLimit-Remaining', String(Math.max((usage?.quota ?? quota) - (usage?.used ?? 0), 0)));
 
-    await next();
+    const rollbackUsage = async () => {
+      await c.env.DB.prepare(
+        `
+        UPDATE api_usage_daily
+        SET used = CASE WHEN used >= ? THEN used - ? ELSE 0 END,
+            updated_at = datetime('now')
+        WHERE principal_type = ?
+          AND principal_id = ?
+          AND usage_date = ?
+        `
+      )
+        .bind(cost, cost, principalType, principalId, usageDate)
+        .run();
+
+      await c.env.DB.prepare('DELETE FROM artwork_usage_events WHERE usage_event_id = ?')
+        .bind(usageEventId)
+        .run();
+
+      await c.env.DB.prepare('DELETE FROM api_usage_events WHERE id = ?')
+        .bind(usageEventId)
+        .run();
+    };
+
+    try {
+      await next();
+    } catch (error) {
+      await rollbackUsage();
+      throw error;
+    }
+
+    if (c.res.status >= 400) {
+      await rollbackUsage();
+    }
   };
 };
 
