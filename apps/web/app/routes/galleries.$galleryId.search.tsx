@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
-import { apiClient } from '~/lib/api';
+import { apiClient, getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { debounce } from '~/lib/utils';
 import { SearchResults } from '~/components/search/search-results';
 import { ColorPicker } from '~/components/ui/color-picker';
@@ -25,18 +25,18 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ params, request }: LoaderFunctionArgs) {
   const { galleryId } = params;
   if (!galleryId) {
     throw new Response('Gallery ID is required', { status: 400 });
   }
 
   try {
-    const gallery = await apiClient.getGallery(galleryId);
+    const gallery = await getApiClientForRequest(request).getGallery(galleryId);
     return {
       gallery,
       galleryId: gallery.id,
-      preferredRouteId: gallery.slug || galleryId,
+      preferredRouteId: getPreferredOrgRouteId(galleryId, gallery.slug),
     };
   } catch (error) {
     throw new Response('Gallery not found', { status: 404 });

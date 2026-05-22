@@ -22,25 +22,31 @@ import type {
 
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
-const getApiUrl = () => {
-  const configuredApiUrl =
-    (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_URL;
+const getConfiguredApiUrl = () =>
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_URL;
 
+const getApiUrlForHostname = (hostname: string) => {
+  const configuredApiUrl = getConfiguredApiUrl();
+  const isDev = hostname === 'localhost';
+  const isStaging = hostname === 'paillette-stg.berlayar.ai';
+
+  return configuredApiUrl ||
+         (isDev
+           ? 'http://localhost:8787'
+           : isStaging
+             ? 'https://paillette-api-stg.berlayar.ai'
+             : 'https://paillette-api.berlayar.ai');
+};
+
+const getApiUrl = () => {
   if (typeof window !== 'undefined') {
     // Client-side
-    const isDev = window.location.hostname === 'localhost';
-    const isStaging = window.location.hostname === 'paillette-stg.berlayar.ai';
     return (window as any).ENV?.API_URL ||
-           configuredApiUrl ||
-           (isDev
-             ? 'http://localhost:8787'
-             : isStaging
-               ? 'https://paillette-api-stg.berlayar.ai'
-               : 'https://paillette-api.berlayar.ai');
+           getApiUrlForHostname(window.location.hostname);
   }
 
   // Server-side
-  return configuredApiUrl || 'https://paillette-api.berlayar.ai';
+  return getConfiguredApiUrl() || 'https://paillette-api.berlayar.ai';
 };
 
 const API_URL = getApiUrl();
@@ -50,6 +56,21 @@ type AccessTokenProvider = () => Promise<string | undefined>;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const ORG_ID_ALIASES: Record<string, string> = {
+  ngs: '00000000-0000-4000-8000-000000000101',
+};
+
+export const resolveOrgIdentifier = (orgId: string) =>
+  ORG_ID_ALIASES[orgId.toLowerCase()] || orgId;
+
+export const getPreferredOrgRouteId = (
+  requestedOrgId: string,
+  canonicalSlug?: string | null
+) =>
+  ORG_ID_ALIASES[requestedOrgId.toLowerCase()]
+    ? requestedOrgId.toLowerCase()
+    : canonicalSlug || requestedOrgId;
 
 class ApiClient {
   private baseUrl: string;
@@ -339,9 +360,10 @@ class ApiClient {
    * Get org by ID
    */
   async getOrg(orgId: string): Promise<Org> {
-    const orgPath = UUID_PATTERN.test(orgId)
-      ? `/orgs/${orgId}`
-      : `/orgs/slug/${orgId}`;
+    const resolvedOrgId = resolveOrgIdentifier(orgId);
+    const orgPath = UUID_PATTERN.test(resolvedOrgId)
+      ? `/orgs/${resolvedOrgId}`
+      : `/orgs/slug/${resolvedOrgId}`;
     const response = await fetch(`${this.baseUrl}${orgPath}`);
     const data: ApiResponse<Org> = await response.json();
 
@@ -848,3 +870,8 @@ const isE2ETest =
    process.env.PLAYWRIGHT_TEST_MODE === 'true');
 
 export const apiClient = isE2ETest ? new MockApiClient() : new ApiClient();
+
+export const getApiClientForRequest = (request: Request) =>
+  isE2ETest
+    ? new MockApiClient()
+    : new ApiClient(`${getApiUrlForHostname(new URL(request.url).hostname)}/api/v1`);
