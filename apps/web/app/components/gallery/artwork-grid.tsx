@@ -22,14 +22,19 @@ export function ArtworkGrid({ artworks }: ArtworkGridProps) {
             className="group relative bg-neutral-900/80 border border-neutral-800 rounded-xl overflow-hidden hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 cursor-pointer"
             onClick={() => setSelectedArtwork(artwork)}
           >
-            {/* Image */}
             <div className="aspect-square bg-neutral-950 flex items-center justify-center overflow-hidden">
-              <img
-                src={artwork.thumbnailUrl || artwork.imageUrl}
-                alt={artwork.title || 'Artwork'}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                loading="lazy"
-              />
+              {artwork.thumbnailUrl || artwork.imageUrl ? (
+                <img
+                  src={artwork.thumbnailUrl || artwork.imageUrl || undefined}
+                  alt={artwork.title || 'Artwork'}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">
+                  No image
+                </div>
+              )}
             </div>
 
             {/* Info */}

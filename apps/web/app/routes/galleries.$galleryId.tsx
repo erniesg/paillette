@@ -33,18 +33,24 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   try {
     const gallery = await apiClient.getGallery(galleryId);
-    return { gallery, galleryId };
+    return {
+      gallery,
+      galleryId: gallery.id,
+      currentRouteId: galleryId,
+      preferredRouteId: gallery.slug || galleryId,
+    };
   } catch (error) {
     throw new Response('Gallery not found', { status: 404 });
   }
 }
 
 export default function GalleryDashboard() {
-  const { gallery, galleryId } = useLoaderData<typeof loader>();
+  const { gallery, galleryId, currentRouteId, preferredRouteId } =
+    useLoaderData<typeof loader>();
   const location = useLocation();
 
   // Check if we're on a child route
-  const isChildRoute = location.pathname !== `/galleries/${galleryId}`;
+  const isChildRoute = location.pathname !== `/galleries/${currentRouteId}`;
 
   // Fetch artworks (only for dashboard)
   const { data, isLoading, error } = useQuery({
@@ -73,25 +79,25 @@ export default function GalleryDashboard() {
             </div>
             <nav className="flex items-center gap-4">
               <Link
-                to={`/galleries/${galleryId}`}
+                to={`/galleries/${preferredRouteId}`}
                 className="text-white font-semibold"
               >
                 Dashboard
               </Link>
               <Link
-                to={`/galleries/${galleryId}/search`}
+                to={`/${preferredRouteId}/search`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Search
               </Link>
               <Link
-                to={`/galleries/${galleryId}/explore`}
+                to={`/galleries/${preferredRouteId}/explore`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Explore
               </Link>
               <Link
-                to={`/galleries/${galleryId}/frame-removal`}
+                to={`/galleries/${preferredRouteId}/frame-removal`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Frame Removal
@@ -140,7 +146,7 @@ export default function GalleryDashboard() {
             </div>
             <div className="flex gap-3">
               <Button asChild>
-                <Link to={`/galleries/${galleryId}/search`}>
+                <Link to={`/${preferredRouteId}/search`}>
                   🔍 Search Artworks
                 </Link>
               </Button>
@@ -191,7 +197,7 @@ export default function GalleryDashboard() {
             </CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Button variant="outline" asChild className="h-auto py-4 flex-col">
-                <Link to={`/galleries/${galleryId}/search`}>
+                <Link to={`/${preferredRouteId}/search`}>
                   <span className="text-3xl mb-2">🔍</span>
                   <span>Search</span>
                 </Link>
@@ -205,13 +211,13 @@ export default function GalleryDashboard() {
                 <span>Import CSV</span>
               </Button>
               <Button variant="outline" asChild className="h-auto py-4 flex-col">
-                <Link to={`/galleries/${galleryId}/explore`}>
+                <Link to={`/galleries/${preferredRouteId}/explore`}>
                   <span className="text-3xl mb-2">🎨</span>
                   <span>Explore</span>
                 </Link>
               </Button>
               <Button variant="outline" asChild className="h-auto py-4 flex-col">
-                <Link to={`/galleries/${galleryId}/frame-removal`}>
+                <Link to={`/galleries/${preferredRouteId}/frame-removal`}>
                   <span className="text-3xl mb-2">🖼️</span>
                   <span>Frame Removal</span>
                 </Link>

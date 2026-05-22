@@ -33,16 +33,21 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   try {
     const gallery = await apiClient.getGallery(galleryId);
-    return { gallery, galleryId };
+    return {
+      gallery,
+      galleryId: gallery.id,
+      preferredRouteId: gallery.slug || galleryId,
+    };
   } catch (error) {
     throw new Response('Gallery not found', { status: 404 });
   }
 }
 
 export default function SearchPage() {
-  const { gallery, galleryId } = useLoaderData<typeof loader>();
+  const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getAccessToken } = useUser();
+  const { getAccessToken, isAuthenticated } = useUser();
+  const optionalAccessToken = isAuthenticated ? getAccessToken : undefined;
 
   // Search state
   const [searchMode, setSearchMode] = useState<'text' | 'image' | 'color'>('text');
@@ -60,35 +65,35 @@ export default function SearchPage() {
 
   // Text search query
   const textSearchQuery = useQuery({
-    queryKey: ['search', 'text', galleryId, textQuery, topK, minScore],
+    queryKey: ['search', 'text', galleryId, textQuery, topK, minScore, isAuthenticated],
     queryFn: async () => {
       if (!textQuery.trim()) return null;
       return apiClient.searchText(galleryId, {
         query: textQuery,
         topK,
         minScore,
-      }, getAccessToken);
+      }, optionalAccessToken);
     },
     enabled: searchMode === 'text' && shouldSearch && textQuery.trim().length > 0,
   });
 
   // Image search query
   const imageSearchQuery = useQuery({
-    queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore],
+    queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore, isAuthenticated],
     queryFn: async () => {
       if (!imageFile) return null;
       return apiClient.searchImage(galleryId, {
         image: imageFile,
         topK,
         minScore,
-      }, getAccessToken);
+      }, optionalAccessToken);
     },
     enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
   // Color search query
   const colorSearchQuery = useQuery({
-    queryKey: ['search', 'color', galleryId, selectedColors, colorMatchMode, colorThreshold],
+    queryKey: ['search', 'color', galleryId, selectedColors, colorMatchMode, colorThreshold, isAuthenticated],
     queryFn: async () => {
       if (selectedColors.length === 0) return null;
       return apiClient.searchColor(galleryId, {
@@ -96,7 +101,7 @@ export default function SearchPage() {
         matchMode: colorMatchMode,
         threshold: colorThreshold,
         limit: topK,
-      }, getAccessToken);
+      }, optionalAccessToken);
     },
     enabled: searchMode === 'color' && shouldSearch && selectedColors.length > 0,
   });
@@ -170,32 +175,32 @@ export default function SearchPage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <Link to={`/galleries/${galleryId}`}>
+              <Link to={`/galleries/${preferredRouteId}`}>
                 <Logo />
               </Link>
               <p className="text-sm text-neutral-400 mt-1">{gallery.name}</p>
             </div>
             <nav className="flex items-center gap-4">
               <Link
-                to={`/galleries/${galleryId}`}
+                to={`/galleries/${preferredRouteId}`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Dashboard
               </Link>
               <Link
-                to={`/galleries/${galleryId}/search`}
+                to={`/${preferredRouteId}/search`}
                 className="text-white font-semibold"
               >
                 Search
               </Link>
               <Link
-                to={`/galleries/${galleryId}/explore`}
+                to={`/galleries/${preferredRouteId}/explore`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Explore
               </Link>
               <Link
-                to={`/galleries/${galleryId}/frame-removal`}
+                to={`/galleries/${preferredRouteId}/frame-removal`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Frame Removal

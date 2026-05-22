@@ -450,7 +450,9 @@ export const enforceDailyQuota = (
       `
       INSERT INTO api_usage_daily (principal_type, principal_id, usage_date, used, quota)
       VALUES (?, ?, ?, 0, ?)
-      ON CONFLICT(principal_type, principal_id, usage_date) DO NOTHING
+      ON CONFLICT(principal_type, principal_id, usage_date) DO UPDATE SET
+        quota = excluded.quota,
+        updated_at = datetime('now')
       `
     )
       .bind(principalType, principalId, usageDate, quota)
@@ -516,7 +518,7 @@ export const enforceDailyQuota = (
       `
       INSERT INTO api_usage_events (
         id, user_id, api_key_id, usage_date, method, path, route, query_type,
-        gallery_id, collection_id, auth_kind, ip_address, user_agent,
+        org_id, collection_id, auth_kind, ip_address, user_agent,
         browser_name, browser_version, os_name, os_version, device_type,
         country, region, region_code, city, postal_code, timezone, continent,
         latitude, longitude, colo, asn, as_organization, cf_ray,
@@ -536,7 +538,7 @@ export const enforceDailyQuota = (
         new URL(c.req.url).pathname,
         c.req.routePath,
         options.queryType,
-        c.req.param('galleryId') || null,
+        c.req.param('orgId') || c.req.param('galleryId') || null,
         c.req.param('collectionId') || null,
         auth.kind,
         requestMetadata.ipAddress,
@@ -584,7 +586,7 @@ export const enforceDailyQuota = (
 
 export const recordArtworkResults = async (
   c: Context<AppBindings>,
-  results: Array<{ artworkId: string; galleryId?: string; rank: number; score?: number | null }>
+  results: Array<{ artworkId: string; orgId?: string; galleryId?: string; rank: number; score?: number | null }>
 ) => {
   const usageEventId = c.get('usageEventId');
 
@@ -597,7 +599,7 @@ export const recordArtworkResults = async (
       c.env.DB.prepare(
         `
         INSERT INTO artwork_usage_events (
-          id, usage_event_id, artwork_id, gallery_id, rank, score, interaction
+          id, usage_event_id, artwork_id, org_id, rank, score, interaction
         )
         VALUES (?, ?, ?, ?, ?, ?, 'result')
         `
@@ -605,7 +607,7 @@ export const recordArtworkResults = async (
         generateId(),
         usageEventId,
         result.artworkId,
-        result.galleryId || c.req.param('galleryId') || null,
+        result.orgId || result.galleryId || c.req.param('orgId') || c.req.param('galleryId') || null,
         result.rank,
         result.score ?? null
       )

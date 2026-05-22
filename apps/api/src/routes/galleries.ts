@@ -2,17 +2,17 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
-import { galleryQueries } from '@paillette/database';
-import { CreateGalleryInputSchema } from '@paillette/types';
+import { orgQueries } from '@paillette/database';
+import { CreateOrgInputSchema } from '@paillette/types';
 import { generateId, generateSlug, generateApiKey, hashApiKey } from '../utils/crypto';
 
-const galleries = new Hono<{ Bindings: Env }>();
+const orgs = new Hono<{ Bindings: Env }>();
 
 /**
- * GET /galleries
- * List all galleries (with pagination)
+ * GET /orgs
+ * List all orgs (with pagination)
  */
-galleries.get(
+orgs.get(
   '/',
   zValidator(
     'query',
@@ -28,14 +28,14 @@ galleries.get(
     const offset = (pageNum - 1) * limitNum;
 
     try {
-      const query = galleryQueries.list(limitNum, offset);
+      const query = orgQueries.list(limitNum, offset);
       const result = await c.env.DB.prepare(query.sql)
         .bind(...query.params)
         .all();
 
       // Get total count
       const countResult = await c.env.DB.prepare(
-        'SELECT COUNT(*) as total FROM galleries'
+        'SELECT COUNT(*) as total FROM orgs'
       ).first<{ total: number }>();
 
       return c.json({
@@ -48,7 +48,7 @@ galleries.get(
         },
       });
     } catch (error: any) {
-      console.error('Error listing galleries:', error);
+      console.error('Error listing orgs:', error);
 
       // If database table doesn't exist, return empty data for local dev
       if (error.message?.includes('no such table')) {
@@ -68,7 +68,7 @@ galleries.get(
           success: false,
           error: {
             code: 'DATABASE_ERROR',
-            message: 'Failed to fetch galleries',
+            message: 'Failed to fetch orgs',
           },
         },
         500
@@ -78,25 +78,25 @@ galleries.get(
 );
 
 /**
- * GET /galleries/:id
- * Get a single gallery by ID
+ * GET /orgs/:id
+ * Get a single org by ID
  */
-galleries.get('/:id', async (c) => {
+orgs.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const query = galleryQueries.findById(id);
-    const gallery = await c.env.DB.prepare(query.sql)
+    const query = orgQueries.findById(id);
+    const org = await c.env.DB.prepare(query.sql)
       .bind(...query.params)
       .first();
 
-    if (!gallery) {
+    if (!org) {
       return c.json(
         {
           success: false,
           error: {
             code: 'NOT_FOUND',
-            message: 'Gallery not found',
+            message: 'Org not found',
           },
         },
         404
@@ -104,23 +104,23 @@ galleries.get('/:id', async (c) => {
     }
 
     // Parse JSON fields
-    const galleryData = {
-      ...gallery,
-      settings: gallery.settings ? JSON.parse(gallery.settings as string) : {},
+    const orgData = {
+      ...org,
+      settings: org.settings ? JSON.parse(org.settings as string) : {},
     };
 
     return c.json({
       success: true,
-      data: galleryData,
+      data: orgData,
     });
   } catch (error: any) {
-    console.error('Error fetching gallery:', error);
+    console.error('Error fetching org:', error);
     return c.json(
       {
         success: false,
         error: {
           code: 'DATABASE_ERROR',
-          message: 'Failed to fetch gallery',
+          message: 'Failed to fetch org',
         },
       },
       500
@@ -129,25 +129,25 @@ galleries.get('/:id', async (c) => {
 });
 
 /**
- * GET /galleries/slug/:slug
- * Get a gallery by slug
+ * GET /orgs/slug/:slug
+ * Get an org by slug
  */
-galleries.get('/slug/:slug', async (c) => {
+orgs.get('/slug/:slug', async (c) => {
   const slug = c.req.param('slug');
 
   try {
-    const query = galleryQueries.findBySlug(slug);
-    const gallery = await c.env.DB.prepare(query.sql)
+    const query = orgQueries.findBySlug(slug);
+    const org = await c.env.DB.prepare(query.sql)
       .bind(...query.params)
       .first();
 
-    if (!gallery) {
+    if (!org) {
       return c.json(
         {
           success: false,
           error: {
             code: 'NOT_FOUND',
-            message: 'Gallery not found',
+            message: 'Org not found',
           },
         },
         404
@@ -155,23 +155,23 @@ galleries.get('/slug/:slug', async (c) => {
     }
 
     // Parse JSON fields
-    const galleryData = {
-      ...gallery,
-      settings: gallery.settings ? JSON.parse(gallery.settings as string) : {},
+    const orgData = {
+      ...org,
+      settings: org.settings ? JSON.parse(org.settings as string) : {},
     };
 
     return c.json({
       success: true,
-      data: galleryData,
+      data: orgData,
     });
   } catch (error: any) {
-    console.error('Error fetching gallery:', error);
+    console.error('Error fetching org:', error);
     return c.json(
       {
         success: false,
         error: {
           code: 'DATABASE_ERROR',
-          message: 'Failed to fetch gallery',
+          message: 'Failed to fetch org',
         },
       },
       500
@@ -180,18 +180,18 @@ galleries.get('/slug/:slug', async (c) => {
 });
 
 /**
- * POST /galleries
- * Create a new gallery
+ * POST /orgs
+ * Create a new org
  */
-galleries.post('/', zValidator('json', CreateGalleryInputSchema), async (c) => {
+orgs.post('/', zValidator('json', CreateOrgInputSchema), async (c) => {
   const input = c.req.valid('json');
 
   try {
     // TODO: Get authenticated user ID (for now using placeholder)
     const userId = 'user-placeholder'; // Will be replaced with auth
 
-    // Generate gallery data
-    const galleryId = generateId();
+    // Generate org data
+    const orgId = generateId();
     const slug = input.slug || generateSlug(input.name);
     const apiKey = generateApiKey();
     const apiKeyHash = await hashApiKey(apiKey);
@@ -204,8 +204,8 @@ galleries.post('/', zValidator('json', CreateGalleryInputSchema), async (c) => {
       supportedLanguages: ['en'],
     };
 
-    const gallery = {
-      id: galleryId,
+    const org = {
+      id: orgId,
       name: input.name,
       slug,
       description: input.description || null,
@@ -219,15 +219,15 @@ galleries.post('/', zValidator('json', CreateGalleryInputSchema), async (c) => {
       settings: settingsObj,
     };
 
-    const query = galleryQueries.create(gallery as any);
+    const query = orgQueries.create(org as any);
     await c.env.DB.prepare(query.sql).bind(...query.params).run();
 
-    // Return created gallery (with API key visible only on creation)
+    // Return created org (with API key visible only on creation)
     return c.json(
       {
         success: true,
         data: {
-          ...gallery,
+          ...org,
           settings: settingsObj,
           api_key: apiKey, // Only returned on creation
         },
@@ -235,13 +235,13 @@ galleries.post('/', zValidator('json', CreateGalleryInputSchema), async (c) => {
       201
     );
   } catch (error: any) {
-    console.error('Error creating gallery:', error);
+    console.error('Error creating org:', error);
     return c.json(
       {
         success: false,
         error: {
           code: 'DATABASE_ERROR',
-          message: 'Failed to create gallery',
+          message: 'Failed to create org',
           details: error.message,
         },
       },
@@ -251,22 +251,22 @@ galleries.post('/', zValidator('json', CreateGalleryInputSchema), async (c) => {
 });
 
 /**
- * PATCH /galleries/:id
- * Update a gallery
+ * PATCH /orgs/:id
+ * Update an org
  */
-galleries.patch(
+orgs.patch(
   '/:id',
   zValidator(
     'json',
-    CreateGalleryInputSchema.partial().omit({ ownerId: true })
+    CreateOrgInputSchema.partial().omit({ ownerId: true })
   ),
   async (c) => {
     const id = c.req.param('id');
     const updates = c.req.valid('json');
 
     try {
-      // Check if gallery exists
-      const existingQuery = galleryQueries.findById(id);
+      // Check if org exists
+      const existingQuery = orgQueries.findById(id);
       const existing = await c.env.DB.prepare(existingQuery.sql)
         .bind(...existingQuery.params)
         .first();
@@ -277,7 +277,7 @@ galleries.patch(
             success: false,
             error: {
               code: 'NOT_FOUND',
-              message: 'Gallery not found',
+              message: 'Org not found',
             },
           },
           404
@@ -300,24 +300,24 @@ galleries.patch(
       }
       if (updates.settings) dbUpdates.settings = JSON.stringify(updates.settings);
 
-      // Update gallery
+      // Update org
       if (Object.keys(dbUpdates).length > 0) {
-        const query = galleryQueries.update(id, dbUpdates);
+        const query = orgQueries.update(id, dbUpdates);
         await c.env.DB.prepare(query.sql).bind(...query.params).run();
       }
 
-      // Fetch updated gallery
-      const updatedGallery = await c.env.DB.prepare(existingQuery.sql)
+      // Fetch updated org
+      const updatedOrg = await c.env.DB.prepare(existingQuery.sql)
         .bind(...existingQuery.params)
         .first();
 
-      if (!updatedGallery) {
+      if (!updatedOrg) {
         return c.json(
           {
             success: false,
             error: {
               code: 'NOT_FOUND',
-              message: 'Gallery not found after update',
+              message: 'Org not found after update',
             },
           },
           404
@@ -327,20 +327,20 @@ galleries.patch(
       return c.json({
         success: true,
         data: {
-          ...updatedGallery,
-          settings: updatedGallery.settings
-            ? JSON.parse(updatedGallery.settings as string)
+          ...updatedOrg,
+          settings: updatedOrg.settings
+            ? JSON.parse(updatedOrg.settings as string)
             : {},
         },
       });
     } catch (error: any) {
-      console.error('Error updating gallery:', error);
+      console.error('Error updating org:', error);
       return c.json(
         {
           success: false,
           error: {
             code: 'DATABASE_ERROR',
-            message: 'Failed to update gallery',
+            message: 'Failed to update org',
             details: error.message,
           },
         },
@@ -351,15 +351,15 @@ galleries.patch(
 );
 
 /**
- * DELETE /galleries/:id
- * Delete a gallery
+ * DELETE /orgs/:id
+ * Delete an org
  */
-galleries.delete('/:id', async (c) => {
+orgs.delete('/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    // Check if gallery exists
-    const existingQuery = galleryQueries.findById(id);
+    // Check if org exists
+    const existingQuery = orgQueries.findById(id);
     const existing = await c.env.DB.prepare(existingQuery.sql)
       .bind(...existingQuery.params)
       .first();
@@ -370,29 +370,29 @@ galleries.delete('/:id', async (c) => {
           success: false,
           error: {
             code: 'NOT_FOUND',
-            message: 'Gallery not found',
+            message: 'Org not found',
           },
         },
         404
       );
     }
 
-    // Delete gallery
-    const query = galleryQueries.delete(id);
+    // Delete org
+    const query = orgQueries.delete(id);
     await c.env.DB.prepare(query.sql).bind(...query.params).run();
 
     return c.json({
       success: true,
-      data: { message: 'Gallery deleted successfully' },
+      data: { message: 'Org deleted successfully' },
     });
   } catch (error: any) {
-    console.error('Error deleting gallery:', error);
+    console.error('Error deleting org:', error);
     return c.json(
       {
         success: false,
         error: {
           code: 'DATABASE_ERROR',
-          message: 'Failed to delete gallery',
+          message: 'Failed to delete org',
           details: error.message,
         },
       },
@@ -401,4 +401,4 @@ galleries.delete('/:id', async (c) => {
   }
 });
 
-export default galleries;
+export default orgs;

@@ -44,7 +44,8 @@ export async function loader({ params }: LoaderFunctionArgs) {
 export default function CollectionSearchPage() {
   const { collection, collectionId } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getAccessToken } = useUser();
+  const { getAccessToken, isAuthenticated } = useUser();
+  const optionalAccessToken = isAuthenticated ? getAccessToken : undefined;
 
   // Search state
   const [searchMode, setSearchMode] = useState<'text' | 'image' | 'color'>('text');
@@ -59,35 +60,35 @@ export default function CollectionSearchPage() {
 
   // Text search query
   const textSearchQuery = useQuery({
-    queryKey: ['search', 'text', collectionId, textQuery, topK, minScore],
+    queryKey: ['search', 'text', collectionId, textQuery, topK, minScore, isAuthenticated],
     queryFn: async () => {
       if (!textQuery.trim()) return null;
       return apiClient.searchText(collectionId, {
         query: textQuery,
         topK,
         minScore,
-      }, getAccessToken);
+      }, optionalAccessToken);
     },
     enabled: searchMode === 'text' && shouldSearch && textQuery.trim().length > 0,
   });
 
   // Image search query
   const imageSearchQuery = useQuery({
-    queryKey: ['search', 'image', collectionId, imageFile?.name, topK, minScore],
+    queryKey: ['search', 'image', collectionId, imageFile?.name, topK, minScore, isAuthenticated],
     queryFn: async () => {
       if (!imageFile) return null;
       return apiClient.searchImage(collectionId, {
         image: imageFile,
         topK,
         minScore,
-      }, getAccessToken);
+      }, optionalAccessToken);
     },
     enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
   // Color search query
   const colorSearchQuery = useQuery({
-    queryKey: ['search', 'color', collectionId, selectedColors, colorMatchMode],
+    queryKey: ['search', 'color', collectionId, selectedColors, colorMatchMode, isAuthenticated],
     queryFn: async () => {
       if (selectedColors.length === 0) return null;
       return apiClient.searchColor(collectionId, {
@@ -95,7 +96,7 @@ export default function CollectionSearchPage() {
         matchMode: colorMatchMode,
         threshold: 15,
         limit: topK,
-      }, getAccessToken);
+      }, optionalAccessToken);
     },
     enabled: searchMode === 'color' && shouldSearch && selectedColors.length > 0,
   });

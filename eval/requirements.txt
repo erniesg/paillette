@@ -1,0 +1,14 @@
+# Paillette embedding-eval harness
+torch
+torchvision
+transformers>=4.49
+open_clip_torch
+sentence-transformers
+pillow
+numpy
+scikit-learn
+einops
+timm
+pyyaml
+anthropic
+google-genai

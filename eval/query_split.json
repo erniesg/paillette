@@ -1,0 +1,13 @@
+{
+  "_note": "Held-out test queries — fixed BEFORE any results or tuning exist. Any tuning (hybrid fusion weight, caption prompt, thresholds) is done on the dev set only; the test set is scored once, at the end, to confirm the result generalises. 2 of the 7 queries per intent are held out.",
+  "test": [
+    "kw-06", "kw-07",
+    "oc-06", "oc-07",
+    "mo-06", "mo-07",
+    "md-06", "md-07",
+    "st-06", "st-07",
+    "me-06", "me-07",
+    "met-06", "met-07",
+    "co-06", "co-07"
+  ]
+}

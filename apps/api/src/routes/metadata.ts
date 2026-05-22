@@ -20,7 +20,9 @@ app.post('/upload', async (c) => {
     // Parse multipart form data
     const formData = await c.req.formData();
     const file = formData.get('csv') as File | null;
-    const galleryId = formData.get('gallery_id') as string | null;
+    const orgId =
+      (formData.get('org_id') as string | null) ||
+      (formData.get('gallery_id') as string | null);
 
     if (!file) {
       return c.json(
@@ -35,13 +37,13 @@ app.post('/upload', async (c) => {
       );
     }
 
-    if (!galleryId) {
+    if (!orgId) {
       return c.json(
         {
           success: false,
           error: {
-            code: 'MISSING_GALLERY_ID',
-            message: 'Gallery ID is required',
+            code: 'MISSING_ORG_ID',
+            message: 'Org ID is required',
           },
         },
         400
@@ -106,13 +108,13 @@ app.post('/upload', async (c) => {
 
     await c.env.DB.prepare(
       `INSERT INTO upload_jobs (
-        id, gallery_id, user_id, status, total_items,
+        id, org_id, user_id, status, total_items,
         processed_items, failed_items, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         jobId,
-        galleryId,
+        orgId,
         userId,
         'processing',
         parseResult.rows.length,
@@ -127,7 +129,7 @@ app.post('/upload', async (c) => {
     const processor = new BatchMetadataProcessor(c.env.DB);
     const batchResult = await processor.processBatch(
       parseResult.rows,
-      galleryId,
+      orgId,
       userId
     );
 
@@ -266,7 +268,17 @@ app.get('/jobs/:jobId', async (c) => {
       'SELECT * FROM upload_jobs WHERE id = ?'
     )
       .bind(jobId)
-      .first();
+      .first<{
+        id: string;
+        org_id: string;
+        status: string;
+        total_items: number;
+        processed_items: number;
+        failed_items: number;
+        error_log: string | null;
+        created_at: string;
+        updated_at: string;
+      }>();
 
     if (!job) {
       return c.json(
@@ -285,7 +297,7 @@ app.get('/jobs/:jobId', async (c) => {
       success: true,
       data: {
         id: job.id,
-        gallery_id: job.gallery_id,
+        org_id: job.org_id,
         status: job.status,
         total_items: job.total_items,
         processed_items: job.processed_items,
@@ -312,19 +324,19 @@ app.get('/jobs/:jobId', async (c) => {
 
 /**
  * GET /api/v1/metadata/jobs
- * List upload jobs for a gallery
+ * List upload jobs for an org
  */
 app.get('/jobs', async (c) => {
   try {
-    const galleryId = c.req.query('gallery_id');
+    const orgId = c.req.query('org_id') || c.req.query('gallery_id');
 
-    if (!galleryId) {
+    if (!orgId) {
       return c.json(
         {
           success: false,
           error: {
-            code: 'MISSING_GALLERY_ID',
-            message: 'Gallery ID is required',
+            code: 'MISSING_ORG_ID',
+            message: 'Org ID is required',
           },
         },
         400
@@ -332,14 +344,14 @@ app.get('/jobs', async (c) => {
     }
 
     const result = await c.env.DB.prepare(
-      'SELECT * FROM upload_jobs WHERE gallery_id = ? ORDER BY created_at DESC LIMIT 50'
+      'SELECT * FROM upload_jobs WHERE org_id = ? ORDER BY created_at DESC LIMIT 50'
     )
-      .bind(galleryId)
+      .bind(orgId)
       .all();
 
     const jobs = result.results.map((job: any) => ({
       id: job.id,
-      gallery_id: job.gallery_id,
+      org_id: job.org_id,
       status: job.status,
       total_items: job.total_items,
       processed_items: job.processed_items,

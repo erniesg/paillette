@@ -51,13 +51,18 @@ export function ArtworkDetailDialog({
               </button>
             </Dialog.Close>
 
-            {/* Image */}
             <div className="w-full bg-neutral-950 flex items-center justify-center p-8">
-              <img
-                src={artwork.imageUrl}
-                alt={artwork.title || 'Artwork'}
-                className="max-w-full max-h-[60vh] object-contain rounded-lg"
-              />
+              {artwork.imageUrl ? (
+                <img
+                  src={artwork.imageUrl}
+                  alt={artwork.title || 'Artwork'}
+                  className="max-w-full max-h-[60vh] object-contain rounded-lg"
+                />
+              ) : (
+                <div className="flex h-64 w-full items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
+                  No image
+                </div>
+              )}
             </div>
 
             {/* Content */}

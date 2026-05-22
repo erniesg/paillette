@@ -36,7 +36,8 @@ const app = new Hono<{ Bindings: Env }>();
 function mapArtworkRowToResponse(row: ArtworkRow): ArtworkResponse {
   return {
     id: row.id,
-    gallery_id: row.gallery_id,
+    org_id: row.org_id,
+    gallery_id: row.org_id,
     collection_id: row.collection_id,
     image_url: row.image_url,
     thumbnail_url: row.thumbnail_url,
@@ -44,7 +45,11 @@ function mapArtworkRowToResponse(row: ArtworkRow): ArtworkResponse {
     title: row.title,
     artist: row.artist,
     year: row.year,
+    date_text: row.date_text,
     medium: row.medium,
+    classification: row.classification,
+    culture: row.culture,
+    origin: row.origin,
     dimensions: {
       height: row.dimensions_height,
       width: row.dimensions_width,
@@ -53,6 +58,14 @@ function mapArtworkRowToResponse(row: ArtworkRow): ArtworkResponse {
     },
     description: row.description,
     provenance: row.provenance,
+    credit_line: row.credit_line,
+    rights: row.rights,
+    accession_number: row.accession_number,
+    source_url: row.source_url,
+    source_institution: row.source_institution,
+    source_collection: row.source_collection,
+    source_record_id: row.source_record_id,
+    field_sources: row.field_sources ? JSON.parse(row.field_sources) : {},
     translations: row.translations ? JSON.parse(row.translations) : {},
     colors: {
       dominant: row.dominant_colors ? JSON.parse(row.dominant_colors) : null,
@@ -131,6 +144,7 @@ app.post('/upload', async (c) => {
     }
 
     const uploadData = validationResult.data;
+    const orgId = uploadData.org_id || uploadData.gallery_id!;
 
     // Validate image file
     const imageValidation = validateImage(file);
@@ -155,7 +169,7 @@ app.post('/upload', async (c) => {
       const isDuplicate = await checkDuplicateImage(
         c.env.DB,
         imageMetadata.hash,
-        uploadData.gallery_id
+        orgId
       );
 
       if (isDuplicate) {
@@ -179,7 +193,7 @@ app.post('/upload', async (c) => {
     const uploadResult = await uploadImage(c.env.IMAGES, file, {
       originalFilename: file.name,
       uploadedBy: 'system', // TODO: Get from auth context
-      galleryId: uploadData.gallery_id,
+      galleryId: orgId,
       width: uploadData.image_width,
       height: uploadData.image_height,
       hash: imageMetadata.hash,
@@ -195,81 +209,148 @@ app.post('/upload', async (c) => {
 
     const artwork: ArtworkRow = {
       id: artworkId,
-      gallery_id: uploadData.gallery_id,
+      org_id: orgId,
       collection_id: uploadData.collection_id || null,
       image_url: uploadResult.url,
       thumbnail_url: thumbnailUrl,
       original_filename: file.name,
       image_hash: imageMetadata.hash || '',
+      image_url_processed: null,
+      processing_status: null,
+      frame_removal_confidence: null,
+      processed_at: null,
+      processing_error: null,
       embedding_id: null,
       title: uploadData.title || filenameMetadata.title || file.name,
       artist: uploadData.artist || filenameMetadata.artist || null,
       year: uploadData.year || filenameMetadata.year || null,
+      date_text: uploadData.date_text || null,
       medium: uploadData.medium || null,
+      classification: uploadData.classification || null,
+      culture: uploadData.culture || null,
+      origin: uploadData.origin || null,
       dimensions_height: uploadData.dimensions_height || null,
       dimensions_width: uploadData.dimensions_width || null,
       dimensions_depth: uploadData.dimensions_depth || null,
       dimensions_unit: uploadData.dimensions_unit || null,
       description: uploadData.description || null,
       provenance: uploadData.provenance || null,
+      credit_line: uploadData.credit_line || null,
+      rights: uploadData.rights || null,
+      accession_number: uploadData.accession_number || null,
+      source_url: uploadData.source_url || null,
+      source_institution: uploadData.source_institution || null,
+      source_collection: uploadData.source_collection || null,
+      source_record_id: uploadData.source_record_id || null,
+      field_sources: JSON.stringify(uploadData.field_sources || {}),
       translations: JSON.stringify(uploadData.translations || {}),
       dominant_colors: null,
       color_palette: null,
+      color_extracted_at: null,
+      color_extraction_version: 'v1',
       custom_metadata: JSON.stringify(uploadData.custom_metadata || {}),
       citation: uploadData.citation ? JSON.stringify(uploadData.citation) : null,
       created_at: now,
       updated_at: now,
       uploaded_by: 'system', // TODO: Get from auth context
+      deleted_at: null,
     };
 
     // Insert into database
     await c.env.DB.prepare(
       `INSERT INTO artworks (
-        id, gallery_id, collection_id, image_url, thumbnail_url,
-        original_filename, image_hash, embedding_id,
-        title, artist, year, medium,
+        id, org_id, collection_id, image_url, thumbnail_url,
+        original_filename, image_hash,
+        image_url_processed, processing_status, frame_removal_confidence, processed_at, processing_error,
+        embedding_id,
+        title, artist, year, date_text, medium, classification, culture, origin,
         dimensions_height, dimensions_width, dimensions_depth, dimensions_unit,
-        description, provenance, translations,
-        dominant_colors, color_palette, custom_metadata, citation,
-        created_at, updated_at, uploaded_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        description, provenance, credit_line, rights, accession_number,
+        source_url, source_institution, source_collection, source_record_id,
+        field_sources, translations,
+        dominant_colors, color_palette, color_extracted_at, color_extraction_version,
+        custom_metadata, citation,
+        created_at, updated_at, uploaded_by, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         artwork.id,
-        artwork.gallery_id,
+        artwork.org_id,
         artwork.collection_id,
         artwork.image_url,
         artwork.thumbnail_url,
         artwork.original_filename,
         artwork.image_hash,
+        artwork.image_url_processed,
+        artwork.processing_status,
+        artwork.frame_removal_confidence,
+        artwork.processed_at,
+        artwork.processing_error,
         artwork.embedding_id,
         artwork.title,
         artwork.artist,
         artwork.year,
+        artwork.date_text,
         artwork.medium,
+        artwork.classification,
+        artwork.culture,
+        artwork.origin,
         artwork.dimensions_height,
         artwork.dimensions_width,
         artwork.dimensions_depth,
         artwork.dimensions_unit,
         artwork.description,
         artwork.provenance,
+        artwork.credit_line,
+        artwork.rights,
+        artwork.accession_number,
+        artwork.source_url,
+        artwork.source_institution,
+        artwork.source_collection,
+        artwork.source_record_id,
+        artwork.field_sources,
         artwork.translations,
         artwork.dominant_colors,
         artwork.color_palette,
+        artwork.color_extracted_at,
+        artwork.color_extraction_version,
         artwork.custom_metadata,
         artwork.citation,
         artwork.created_at,
         artwork.updated_at,
-        artwork.uploaded_by
+        artwork.uploaded_by,
+        artwork.deleted_at
+      )
+      .run();
+
+    await c.env.DB.prepare(
+      `INSERT INTO assets (
+        id, artwork_id, org_id, role, storage_provider, object_key, url,
+        mime_type, size_bytes, metadata, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        randomUUID(),
+        artwork.id,
+        artwork.org_id,
+        'original',
+        'r2',
+        uploadResult.key,
+        uploadResult.url,
+        uploadResult.contentType,
+        uploadResult.size,
+        JSON.stringify({ originalFilename: file.name, imageHash: imageMetadata.hash || null }),
+        now,
+        now
       )
       .run();
 
     // Queue for embedding generation
     await c.env.EMBEDDING_QUEUE.send({
       artworkId: artwork.id,
-      imageUrl: artwork.image_url,
+      imageUrl: artwork.image_url!,
       imageKey: uploadResult.key,
-      galleryId: artwork.gallery_id,
+      galleryId: artwork.org_id,
     });
 
     const response: ArtworkUploadResponse = {
@@ -307,8 +388,9 @@ app.post('/upload', async (c) => {
 app.get('/', async (c) => {
   try {
     const query = c.req.query();
+    const routeOrgId = c.req.param('orgId') || c.req.param('galleryId');
     const validatedQuery = ArtworkQuerySchema.parse({
-      gallery_id: query.gallery_id,
+      org_id: query.org_id || query.gallery_id || routeOrgId,
       collection_id: query.collection_id,
       artist: query.artist,
       year: query.year ? parseInt(query.year) : undefined,
@@ -326,9 +408,10 @@ app.get('/', async (c) => {
     let sql = 'SELECT * FROM artworks WHERE 1=1';
     const params: any[] = [];
 
-    if (validatedQuery.gallery_id) {
-      sql += ' AND gallery_id = ?';
-      params.push(validatedQuery.gallery_id);
+    const queryOrgId = validatedQuery.org_id || validatedQuery.gallery_id;
+    if (queryOrgId) {
+      sql += ' AND org_id = ?';
+      params.push(queryOrgId);
     }
 
     if (validatedQuery.collection_id) {
@@ -589,10 +672,10 @@ app.delete('/:id', async (c) => {
     }
 
     // Extract R2 key from URL
-    const imageKey = artwork.image_url.split('/').slice(-3).join('/');
-
-    // Delete from R2
-    await deleteImage(c.env.IMAGES, imageKey);
+    if (artwork.image_url) {
+      const imageKey = artwork.image_url.split('/').slice(-3).join('/');
+      await deleteImage(c.env.IMAGES, imageKey);
+    }
 
     // Delete from database
     await c.env.DB.prepare('DELETE FROM artworks WHERE id = ?').bind(id).run();

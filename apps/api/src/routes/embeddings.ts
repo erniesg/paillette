@@ -20,8 +20,8 @@ export interface ArtworkEmbedding {
   artist: string | null;
   year: number | null;
   medium: string | null;
-  imageUrl: string;
-  thumbnailUrl: string;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
   embedding: number[];
 }
 
@@ -34,14 +34,14 @@ export interface EmbeddingsResponse {
 export const embeddingsRoutes = new Hono<{ Bindings: Env }>();
 
 /**
- * GET /galleries/:galleryId/embeddings
+ * GET /orgs/:orgId/embeddings
  * Fetch artwork embeddings for visualization
  */
 embeddingsRoutes.get('/embeddings', async (c) => {
   const startTime = performance.now();
 
   try {
-    const galleryId = c.req.param('galleryId');
+    const orgId = c.req.param('orgId') || c.req.param('galleryId');
     const query = c.req.query();
 
     // Validate query parameters
@@ -66,20 +66,20 @@ embeddingsRoutes.get('/embeddings', async (c) => {
 
     const { limit, offset } = validation.data;
 
-    // First, verify gallery exists
-    const galleryCheck = await c.env.DB.prepare(
-      'SELECT id FROM galleries WHERE id = ?'
+    // First, verify org exists
+    const orgCheck = await c.env.DB.prepare(
+      'SELECT id FROM orgs WHERE id = ?'
     )
-      .bind(galleryId)
+      .bind(orgId)
       .first();
 
-    if (!galleryCheck) {
+    if (!orgCheck) {
       return c.json<ApiResponse>(
         {
           success: false,
           error: {
             code: 'NOT_FOUND',
-            message: 'Gallery not found',
+            message: 'Org not found',
           },
         },
         404
@@ -99,20 +99,20 @@ embeddingsRoutes.get('/embeddings', async (c) => {
         thumbnail_url,
         embedding_id
       FROM artworks
-      WHERE gallery_id = ? AND embedding_id IS NOT NULL
+      WHERE org_id = ? AND embedding_id IS NOT NULL
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?
       `
     )
-      .bind(galleryId, limit, offset)
+      .bind(orgId, limit, offset)
       .all<{
         id: string;
         title: string;
         artist: string | null;
         year: number | null;
         medium: string | null;
-        image_url: string;
-        thumbnail_url: string;
+        image_url: string | null;
+        thumbnail_url: string | null;
         embedding_id: string;
       }>();
 
@@ -134,14 +134,14 @@ embeddingsRoutes.get('/embeddings', async (c) => {
     }
 
     // Get total count of artworks with embeddings
-    const { count: total } = await c.env.DB.prepare(
+    const totalRow = await c.env.DB.prepare(
       `
       SELECT COUNT(*) as count
       FROM artworks
-      WHERE gallery_id = ? AND embedding_id IS NOT NULL
+      WHERE org_id = ? AND embedding_id IS NOT NULL
       `
     )
-      .bind(galleryId)
+      .bind(orgId)
       .first<{ count: number }>();
 
     // Fetch embeddings from Vectorize
@@ -178,7 +178,7 @@ embeddingsRoutes.get('/embeddings', async (c) => {
       success: true,
       data: {
         embeddings: enrichedEmbeddings,
-        total: total || 0,
+        total: totalRow?.count || 0,
         dimensions: 1024, // Jina CLIP v2 dimensions
       },
       meta: {

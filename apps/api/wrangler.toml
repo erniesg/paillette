@@ -67,13 +67,13 @@ DAILY_FREE_QUERY_LIMIT = "100"
 [env.staging]
 name = "paillette-api-stg"
 routes = [{ pattern = "paillette-api-stg.berlayar.ai", custom_domain = true }]
-vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100" }
+vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000" }
 
 # Staging resources (separate from production)
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "paillette-db-stg"
-database_id = "your-staging-d1-id"  # Create with: wrangler d1 create paillette-db-stg
+database_id = "ebe8ae51-30bb-40e4-9532-5b1c9bd748d3"
 
 [[env.staging.r2_buckets]]
 binding = "IMAGES"
@@ -83,18 +83,20 @@ bucket_name = "paillette-assets-stg"
 binding = "VECTORIZE"
 index_name = "paillette-embeddings-stg"
 
+[[env.staging.vectorize]]
+binding = "CAPTION_VECTORIZE"
+index_name = "paillette-caption-embeddings-stg"
+
 [[env.staging.kv_namespaces]]
 binding = "CACHE"
-id = "your-staging-kv-id"
+id = "db13cd8536b34765a7a7be64401cf0b7"
+
+[env.staging.ai]
+binding = "AI"
 
 [[env.staging.queues.producers]]
 binding = "EMBEDDING_QUEUE"
 queue = "paillette-embedding-jobs-stg"
-
-[[env.staging.queues.consumers]]
-queue = "paillette-embedding-jobs-stg"
-max_batch_size = 10
-max_batch_timeout = 30
 
 # Production environment (deploy from 'master' branch)
 [env.production]

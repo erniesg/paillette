@@ -137,7 +137,10 @@ export default function GalleriesIndex() {
             transition={{ delay: 0.1 }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto"
           >
-            {galleries.map((gallery, index) => (
+            {galleries.map((gallery, index) => {
+              const galleryRouteId = gallery.slug || gallery.id;
+
+              return (
               <motion.div
                 key={gallery.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -173,12 +176,12 @@ export default function GalleriesIndex() {
                     )}
                     <div className="flex gap-2">
                       <Button asChild className="flex-1" size="sm">
-                        <Link to={`/galleries/${gallery.id}`}>
+                        <Link to={`/galleries/${galleryRouteId}`}>
                           📊 Dashboard
                         </Link>
                       </Button>
                       <Button asChild variant="outline" className="flex-1" size="sm">
-                        <Link to={`/galleries/${gallery.id}/search`}>
+                        <Link to={`/${galleryRouteId}/search`}>
                           🔍 Search
                         </Link>
                       </Button>
@@ -186,7 +189,8 @@ export default function GalleriesIndex() {
                   </CardContent>
                 </Card>
               </motion.div>
-            ))}
+              );
+            })}
           </motion.div>
         )}
 

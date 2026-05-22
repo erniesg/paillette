@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import galleries from './routes/galleries';
+import orgs from './routes/galleries';
 import artworkRoutes from './routes/artworks';
 import { searchRoutes } from './routes/search';
 import { colorSearchRoutes } from './routes/color-search';
@@ -10,12 +10,14 @@ import metadataRoutes from './routes/metadata';
 import translationRoutes from './routes/translation';
 import apiKeyRoutes from './routes/api-keys';
 import impactRoutes from './routes/impact';
+import assetRoutes from './routes/assets';
 
 // Environment bindings
 export interface Env {
   DB: D1Database;
   IMAGES: R2Bucket;
   VECTORIZE: Vectorize;
+  CAPTION_VECTORIZE?: Vectorize;
   CACHE: KVNamespace;
   AI: Ai;
   EMBEDDING_QUEUE: Queue;
@@ -32,6 +34,12 @@ export interface Env {
   LOGTO_API_RESOURCE?: string;
   API_KEY_PEPPER?: string;
   DAILY_FREE_QUERY_LIMIT?: string;
+  JINA_API_KEY?: string;
+  JINA_MULTIMODAL_MODEL?: string;
+  JINA_EMBEDDING_DIMENSIONS?: string;
+  CAPTION_EMBEDDING_PROVIDER?: string;
+  JINA_TEXT_MODEL?: string;
+  JINA_TEXT_EMBEDDING_DIMENSIONS?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -47,7 +55,14 @@ app.use(
       'https://paillette-stg.berlayar.ai',
     ],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-API-Key',
+      'X-User-Id',
+      'X-User-Email',
+      'X-User-Name',
+    ],
     exposeHeaders: ['Content-Length', 'X-Request-ID'],
     maxAge: 600,
     credentials: true,
@@ -68,11 +83,18 @@ app.get('/health', (c) => {
 const api = new Hono<{ Bindings: Env }>();
 api.route('/me', apiKeyRoutes as any);
 api.route('/impact', impactRoutes as any);
-api.route('/galleries', galleries);
+api.route('/orgs', orgs);
+api.route('/galleries', orgs);
 api.route('/metadata', metadataRoutes);
 api.route('/translate', translationRoutes);
+api.route('/assets', assetRoutes);
 
-// Nested routes under galleries (artworks, search, embeddings, etc.)
+// Nested routes under orgs. /galleries remains as a legacy alias while the
+// frontend and API clients move over.
+api.route('/orgs/:orgId/artworks', artworkRoutes);
+api.route('/orgs/:orgId', searchRoutes);
+api.route('/orgs/:orgId', colorSearchRoutes);
+api.route('/orgs/:orgId', embeddingsRoutes);
 api.route('/galleries/:galleryId/artworks', artworkRoutes);
 api.route('/galleries/:galleryId', searchRoutes);
 api.route('/galleries/:galleryId', colorSearchRoutes);

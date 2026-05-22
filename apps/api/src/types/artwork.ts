@@ -10,12 +10,12 @@ import { z } from 'zod';
 
 export interface ArtworkRow {
   id: string;
-  gallery_id: string;
+  org_id: string;
   collection_id: string | null;
-  image_url: string;
-  thumbnail_url: string;
-  original_filename: string;
-  image_hash: string;
+  image_url: string | null;
+  thumbnail_url: string | null;
+  original_filename: string | null;
+  image_hash: string | null;
   image_url_processed: string | null;
   processing_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
   frame_removal_confidence: number | null;
@@ -25,21 +25,36 @@ export interface ArtworkRow {
   title: string;
   artist: string | null;
   year: number | null;
+  date_text: string | null;
   medium: string | null;
+  classification: string | null;
+  culture: string | null;
+  origin: string | null;
   dimensions_height: number | null;
   dimensions_width: number | null;
   dimensions_depth: number | null;
   dimensions_unit: 'cm' | 'in' | 'm' | null;
   description: string | null;
   provenance: string | null;
+  credit_line: string | null;
+  rights: string | null;
+  accession_number: string | null;
+  source_url: string | null;
+  source_institution: string | null;
+  source_collection: string | null;
+  source_record_id: string | null;
+  field_sources: string;
   translations: string; // JSON
   dominant_colors: string | null; // JSON array
   color_palette: string | null; // JSON array
+  color_extracted_at: string | null;
+  color_extraction_version: string | null;
   custom_metadata: string; // JSON
   citation: string | null; // JSON
   created_at: string;
   updated_at: string;
   uploaded_by: string;
+  deleted_at: string | null;
 }
 
 // ============================================================================
@@ -63,37 +78,63 @@ export const CitationSchema = z.object({
   text: z.string(),
 });
 
-export const CreateArtworkSchema = z.object({
-  gallery_id: z.string().uuid(),
+const hasOrgScope = (value: { org_id?: string; gallery_id?: string }) =>
+  Boolean(value.org_id || value.gallery_id);
+
+const CreateArtworkBaseSchema = z.object({
+  org_id: z.string().uuid().optional(),
+  gallery_id: z.string().uuid().optional(),
   collection_id: z.string().uuid().optional(),
   title: z.string().min(1).max(500),
   artist: z.string().max(255).optional(),
   year: z.number().int().min(0).max(9999).optional(),
+  date_text: z.string().max(255).optional(),
   medium: z.string().max(255).optional(),
+  classification: z.string().max(255).optional(),
+  culture: z.string().max(255).optional(),
+  origin: z.string().max(255).optional(),
   dimensions_height: z.number().positive().optional(),
   dimensions_width: z.number().positive().optional(),
   dimensions_depth: z.number().positive().optional(),
   dimensions_unit: DimensionsUnitSchema.optional(),
   description: z.string().max(5000).optional(),
   provenance: z.string().max(2000).optional(),
+  credit_line: z.string().max(2000).optional(),
+  rights: z.string().max(2000).optional(),
+  accession_number: z.string().max(255).optional(),
+  source_url: z.string().url().optional(),
+  source_institution: z.string().max(255).optional(),
+  source_collection: z.string().max(255).optional(),
+  source_record_id: z.string().max(255).optional(),
+  field_sources: z.record(z.any()).optional(),
   translations: TranslationsSchema.optional(),
   custom_metadata: z.record(z.any()).optional(),
   citation: CitationSchema.optional(),
 });
 
-export const UpdateArtworkSchema = CreateArtworkSchema.partial().omit({
+export const CreateArtworkSchema = CreateArtworkBaseSchema.refine(hasOrgScope, {
+  message: 'org_id is required',
+});
+
+export const UpdateArtworkSchema = CreateArtworkBaseSchema.partial().omit({
+  org_id: true,
   gallery_id: true,
 });
 
-export const UploadArtworkSchema = z.object({
-  gallery_id: z.string().uuid(),
+const UploadArtworkBaseSchema = z.object({
+  org_id: z.string().uuid().optional(),
+  gallery_id: z.string().uuid().optional(),
   collection_id: z.string().uuid().optional(),
 
   // Metadata (can be auto-extracted from filename or provided)
   title: z.string().min(1).max(500).optional(),
   artist: z.string().max(255).optional(),
   year: z.number().int().min(0).max(9999).optional(),
+  date_text: z.string().max(255).optional(),
   medium: z.string().max(255).optional(),
+  classification: z.string().max(255).optional(),
+  culture: z.string().max(255).optional(),
+  origin: z.string().max(255).optional(),
 
   dimensions_height: z.number().positive().optional(),
   dimensions_width: z.number().positive().optional(),
@@ -102,6 +143,14 @@ export const UploadArtworkSchema = z.object({
 
   description: z.string().max(5000).optional(),
   provenance: z.string().max(2000).optional(),
+  credit_line: z.string().max(2000).optional(),
+  rights: z.string().max(2000).optional(),
+  accession_number: z.string().max(255).optional(),
+  source_url: z.string().url().optional(),
+  source_institution: z.string().max(255).optional(),
+  source_collection: z.string().max(255).optional(),
+  source_record_id: z.string().max(255).optional(),
+  field_sources: z.record(z.any()).optional(),
 
   // Client-provided image dimensions (for validation)
   image_width: z.number().positive().optional(),
@@ -113,7 +162,12 @@ export const UploadArtworkSchema = z.object({
   citation: CitationSchema.optional(),
 });
 
+export const UploadArtworkSchema = UploadArtworkBaseSchema.refine(hasOrgScope, {
+  message: 'org_id is required',
+});
+
 export const ArtworkQuerySchema = z.object({
+  org_id: z.string().uuid().optional(),
   gallery_id: z.string().uuid().optional(),
   collection_id: z.string().uuid().optional(),
   artist: z.string().optional(),
@@ -134,15 +188,20 @@ export const ArtworkQuerySchema = z.object({
 
 export interface ArtworkResponse {
   id: string;
-  gallery_id: string;
+  org_id: string;
+  gallery_id?: string;
   collection_id: string | null;
-  image_url: string;
-  thumbnail_url: string;
-  original_filename: string;
+  image_url: string | null;
+  thumbnail_url: string | null;
+  original_filename: string | null;
   title: string;
   artist: string | null;
   year: number | null;
+  date_text: string | null;
   medium: string | null;
+  classification: string | null;
+  culture: string | null;
+  origin: string | null;
   dimensions: {
     height: number | null;
     width: number | null;
@@ -151,6 +210,14 @@ export interface ArtworkResponse {
   };
   description: string | null;
   provenance: string | null;
+  credit_line: string | null;
+  rights: string | null;
+  accession_number: string | null;
+  source_url: string | null;
+  source_institution: string | null;
+  source_collection: string | null;
+  source_record_id: string | null;
+  field_sources: Record<string, any>;
   translations: Record<string, any>;
   colors: {
     dominant: string[] | null;

@@ -1,0 +1,89 @@
+# Embedding eval — query set (round 2). 8 intent types x 7 divergent queries = 56.
+# Built to cover the real spread of how someone searches an art collection.
+# "divergent" = the 7 within a type deliberately spread across the space.
+#
+# intent -> AI-judge rubric (what "relevant" means):
+#   keyword  - is the named object/subject literally depicted?
+#   occasion - would a curator feature this for that festival/event?
+#   motif    - does the visual pattern/structure appear, regardless of subject?
+#   mood     - does the artwork *evoke* the feeling?
+#   style    - does it exhibit that art style / movement / technique look?
+#   medium   - is it made in that medium / material?
+#   metadata - does it match that artist / title / accession / classification / date?
+#   color    - is that colour prominent in the artwork?
+#
+# metadata + color queries deliberately probe where pure embeddings hit a floor
+# (exact accession numbers, exact hex) — that gap is the case for hybrid search.
+
+queries:
+  # --- keyword / object / subject -------------------------------------
+  - { id: kw-01, type: keyword,  text: "fishing boats and sampans by the shore" }
+  - { id: kw-02, type: keyword,  text: "a self-portrait of the artist" }
+  - { id: kw-03, type: keyword,  text: "a crowded wet market with hawker stalls" }
+  - { id: kw-04, type: keyword,  text: "water buffalo in a paddy field" }
+  - { id: kw-05, type: keyword,  text: "a still life of tropical fruit and flowers" }
+  - { id: kw-06, type: keyword,  text: "kampong houses on stilts among palms" }
+  - { id: kw-07, type: keyword,  text: "a mother holding a child" }
+
+  # --- occasion / festival (direct + decomposed proxies) --------------
+  - { id: oc-01, type: occasion, text: "Chinese New Year — lion dance, reunion, festivity" }
+  - { id: oc-02, type: occasion, text: "year of the dragon — dragons in the artwork" }
+  - { id: oc-03, type: occasion, text: "Hari Raya — Malay families in festive dress" }
+  - { id: oc-04, type: occasion, text: "Deepavali — oil lamps, rangoli, the festival of lights" }
+  - { id: oc-05, type: occasion, text: "Singapore National Day — flags and the nation" }
+  - { id: oc-06, type: occasion, text: "Mid-Autumn Festival — lanterns and the moon" }
+  - { id: oc-07, type: occasion, text: "a traditional wedding ceremony" }
+
+  # --- visual motif (pattern / structure) -----------------------------
+  - { id: mo-01, type: motif,    text: "loose calligraphic, gestural brushwork" }
+  - { id: mo-02, type: motif,    text: "hard-edged geometric abstraction" }
+  - { id: mo-03, type: motif,    text: "a dense crowd of overlapping figures" }
+  - { id: mo-04, type: motif,    text: "batik or songket textile pattern" }
+  - { id: mo-05, type: motif,    text: "repeating rhythmic shapes" }
+  - { id: mo-06, type: motif,    text: "strong silhouettes against a flat sky" }
+  - { id: mo-07, type: motif,    text: "bold flat blocks of colour" }
+
+  # --- mood / vibe ----------------------------------------------------
+  - { id: md-01, type: mood,     text: "quiet, melancholic and solitary" }
+  - { id: md-02, type: mood,     text: "joyful, festive, celebratory energy" }
+  - { id: md-03, type: mood,     text: "nostalgic, old-world colonial atmosphere" }
+  - { id: md-04, type: mood,     text: "tense, turbulent — the anxiety of wartime" }
+  - { id: md-05, type: mood,     text: "serene, still and contemplative" }
+  - { id: md-06, type: mood,     text: "warm, intimate domestic life" }
+  - { id: md-07, type: mood,     text: "ominous, dark and foreboding" }
+
+  # --- art style / movement / technique -------------------------------
+  - { id: st-01, type: style,    text: "traditional Chinese ink-wash painting" }
+  - { id: st-02, type: style,    text: "Cubist-influenced fragmented forms" }
+  - { id: st-03, type: style,    text: "Nanyang-style fusion of Chinese and Southeast Asian" }
+  - { id: st-04, type: style,    text: "social realist depiction of working life" }
+  - { id: st-05, type: style,    text: "expressive, gestural abstract painting" }
+  - { id: st-06, type: style,    text: "naive or folk-art style" }
+  - { id: st-07, type: style,    text: "woodblock print aesthetic" }
+
+  # --- medium / material ----------------------------------------------
+  - { id: me-01, type: medium,   text: "oil on canvas painting" }
+  - { id: me-02, type: medium,   text: "watercolour painting" }
+  - { id: me-03, type: medium,   text: "charcoal or pencil sketch" }
+  - { id: me-04, type: medium,   text: "woodcut or linocut print" }
+  - { id: me-05, type: medium,   text: "bronze or carved sculpture" }
+  - { id: me-06, type: medium,   text: "Chinese ink on paper" }
+  - { id: me-07, type: medium,   text: "batik painting on cloth" }
+
+  # --- metadata (artist / title / accession / class / date) -----------
+  - { id: met-01, type: metadata, text: "Cheong Soo Pieng" }
+  - { id: met-02, type: metadata, text: "Georgette Chen" }
+  - { id: met-03, type: metadata, text: "Latiff Mohidin" }
+  - { id: met-04, type: metadata, text: "accession 2003-03860" }
+  - { id: met-05, type: metadata, text: "the work titled Variations on I-Ching" }
+  - { id: met-06, type: metadata, text: "sculptures in the collection" }
+  - { id: met-07, type: metadata, text: "artworks made in the 1950s" }
+
+  # --- colour (name + hex) --------------------------------------------
+  - { id: co-01, type: color,    text: "deep crimson red" }
+  - { id: co-02, type: color,    text: "#8B0000 dark red" }
+  - { id: co-03, type: color,    text: "golden ochre yellow" }
+  - { id: co-04, type: color,    text: "muted sage green" }
+  - { id: co-05, type: color,    text: "#1a2740 dark navy blue" }
+  - { id: co-06, type: color,    text: "warm earth-tone browns" }
+  - { id: co-07, type: color,    text: "near-black, high-contrast monochrome" }

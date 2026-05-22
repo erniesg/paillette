@@ -7,6 +7,7 @@ import type {
   SearchResponse,
   SearchTextRequest,
   SearchImageRequest,
+  Org,
   Gallery,
   Artwork,
   TranslateTextRequest,
@@ -47,6 +48,9 @@ const API_BASE = `${API_URL}/api/v1`;
 
 type AccessTokenProvider = () => Promise<string | undefined>;
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 class ApiClient {
   private baseUrl: string;
 
@@ -54,7 +58,7 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  private async getAuthHeaders(getAccessToken: AccessTokenProvider) {
+  private async getAuthHeaders(getAccessToken: AccessTokenProvider): Promise<Record<string, string>> {
     const token = await getAccessToken();
 
     if (!token) {
@@ -66,13 +70,19 @@ class ApiClient {
     };
   }
 
-  private async getOptionalAuthHeaders(getAccessToken?: AccessTokenProvider) {
+  private async getOptionalAuthHeaders(
+    getAccessToken?: AccessTokenProvider
+  ): Promise<Record<string, string>> {
     if (!getAccessToken) {
       return {};
     }
 
-    const token = await getAccessToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    try {
+      const token = await getAccessToken();
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    } catch {
+      return {};
+    }
   }
 
   async listApiKeys(
@@ -149,12 +159,12 @@ class ApiClient {
    * Search artworks using text query
    */
   async searchText(
-    galleryId: string,
+    orgId: string,
     request: SearchTextRequest,
     getAccessToken?: AccessTokenProvider
   ): Promise<SearchResponse> {
     const response = await fetch(
-      `${this.baseUrl}/galleries/${galleryId}/search/text`,
+      `${this.baseUrl}/orgs/${orgId}/search/text`,
       {
         method: 'POST',
         headers: {
@@ -178,7 +188,7 @@ class ApiClient {
    * Search artworks using image upload
    */
   async searchImage(
-    galleryId: string,
+    orgId: string,
     request: SearchImageRequest,
     getAccessToken?: AccessTokenProvider
   ): Promise<SearchResponse> {
@@ -189,7 +199,7 @@ class ApiClient {
       formData.append('minScore', request.minScore.toString());
 
     const response = await fetch(
-      `${this.baseUrl}/galleries/${galleryId}/search/image`,
+      `${this.baseUrl}/orgs/${orgId}/search/image`,
       {
         method: 'POST',
         headers: await this.getOptionalAuthHeaders(getAccessToken),
@@ -210,7 +220,7 @@ class ApiClient {
    * Search artworks by color similarity
    */
   async searchColor(
-    galleryId: string,
+    orgId: string,
     request: {
       colors: string[];
       matchMode?: 'any' | 'all';
@@ -245,7 +255,7 @@ class ApiClient {
     took: number;
   }> {
     const response = await fetch(
-      `${this.baseUrl}/galleries/${galleryId}/search/color`,
+      `${this.baseUrl}/orgs/${orgId}/search/color`,
       {
         method: 'POST',
         headers: {
@@ -296,12 +306,12 @@ class ApiClient {
   }
 
   /**
-   * Create a new gallery
+   * Create a new org
    */
-  async createGallery(
-    input: Omit<Gallery, 'id' | 'apiKey' | 'apiKeyHash' | 'createdAt'>
-  ): Promise<Gallery & { api_key: string }> {
-    const response = await fetch(`${this.baseUrl}/galleries`, {
+  async createOrg(
+    input: Omit<Org, 'id' | 'apiKey' | 'apiKeyHash' | 'createdAt'>
+  ): Promise<Org & { api_key: string }> {
+    const response = await fetch(`${this.baseUrl}/orgs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -309,49 +319,69 @@ class ApiClient {
       body: JSON.stringify(input),
     });
 
-    const data: ApiResponse<Gallery & { api_key: string }> = await response.json();
+    const data: ApiResponse<Org & { api_key: string }> = await response.json();
 
     if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Failed to create gallery');
+      throw new Error(data.error?.message || 'Failed to create org');
     }
 
     return data.data;
   }
 
+  /** @deprecated Use createOrg. */
+  async createGallery(
+    input: Omit<Gallery, 'id' | 'apiKey' | 'apiKeyHash' | 'createdAt'>
+  ): Promise<Gallery & { api_key: string }> {
+    return this.createOrg(input);
+  }
+
   /**
-   * Get gallery by ID
+   * Get org by ID
    */
+  async getOrg(orgId: string): Promise<Org> {
+    const orgPath = UUID_PATTERN.test(orgId)
+      ? `/orgs/${orgId}`
+      : `/orgs/slug/${orgId}`;
+    const response = await fetch(`${this.baseUrl}${orgPath}`);
+    const data: ApiResponse<Org> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch org');
+    }
+
+    return data.data;
+  }
+
+  /** @deprecated Use getOrg. */
   async getGallery(galleryId: string): Promise<Gallery> {
-    const response = await fetch(`${this.baseUrl}/galleries/${galleryId}`);
-    const data: ApiResponse<Gallery> = await response.json();
+    return this.getOrg(galleryId);
+  }
+
+  /**
+   * List all orgs
+   */
+  async listOrgs(): Promise<Org[]> {
+    const response = await fetch(`${this.baseUrl}/orgs`);
+    const data: ApiResponse<Org[]> = await response.json();
 
     if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Failed to fetch gallery');
+      throw new Error(data.error?.message || 'Failed to fetch orgs');
     }
 
     return data.data;
   }
 
-  /**
-   * List all galleries
-   */
+  /** @deprecated Use listOrgs. */
   async listGalleries(): Promise<Gallery[]> {
-    const response = await fetch(`${this.baseUrl}/galleries`);
-    const data: ApiResponse<Gallery[]> = await response.json();
-
-    if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Failed to fetch galleries');
-    }
-
-    return data.data;
+    return this.listOrgs();
   }
 
   /**
    * Get artwork by ID
    */
-  async getArtwork(galleryId: string, artworkId: string): Promise<Artwork> {
+  async getArtwork(orgId: string, artworkId: string): Promise<Artwork> {
     const response = await fetch(
-      `${this.baseUrl}/galleries/${galleryId}/artworks/${artworkId}`
+      `${this.baseUrl}/orgs/${orgId}/artworks/${artworkId}`
     );
     const data: ApiResponse<Artwork> = await response.json();
 
@@ -363,17 +393,19 @@ class ApiClient {
   }
 
   /**
-   * List artworks for a gallery
+   * List artworks for an org
    */
   async listArtworks(
-    galleryId: string,
+    orgId: string,
     options?: { limit?: number; offset?: number }
   ): Promise<{ artworks: Artwork[]; total: number }> {
     const params = new URLSearchParams();
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
 
-    const url = `${this.baseUrl}/galleries/${galleryId}/artworks${
+    params.append('org_id', orgId);
+
+    const url = `${this.baseUrl}/orgs/${orgId}/artworks${
       params.toString() ? `?${params}` : ''
     }`;
     const response = await fetch(url);
@@ -391,7 +423,7 @@ class ApiClient {
    * Upload CSV file with metadata
    */
   async uploadMetadata(
-    galleryId: string,
+    orgId: string,
     file: File
   ): Promise<{
     job_id: string;
@@ -411,7 +443,7 @@ class ApiClient {
   }> {
     const formData = new FormData();
     formData.append('csv', file);
-    formData.append('gallery_id', galleryId);
+    formData.append('org_id', orgId);
 
     const response = await fetch(`${this.baseUrl}/metadata/upload`, {
       method: 'POST',
@@ -472,7 +504,8 @@ class ApiClient {
    */
   async getUploadJob(jobId: string): Promise<{
     id: string;
-    gallery_id: string;
+    org_id: string;
+    gallery_id?: string;
     status: string;
     total_items: number;
     processed_items: number;
@@ -492,12 +525,13 @@ class ApiClient {
   }
 
   /**
-   * List upload jobs for gallery
+   * List upload jobs for org
    */
-  async listUploadJobs(galleryId: string): Promise<{
+  async listUploadJobs(orgId: string): Promise<{
     jobs: Array<{
       id: string;
-      gallery_id: string;
+      org_id: string;
+      gallery_id?: string;
       status: string;
       total_items: number;
       processed_items: number;
@@ -508,7 +542,7 @@ class ApiClient {
     total: number;
   }> {
     const response = await fetch(
-      `${this.baseUrl}/metadata/jobs?gallery_id=${galleryId}`
+      `${this.baseUrl}/metadata/jobs?org_id=${orgId}`
     );
     const data = (await response.json()) as ApiResponse<any>;
 
@@ -530,7 +564,7 @@ class ApiClient {
    * Get artwork embeddings for visualization
    */
   async getEmbeddings(
-    galleryId: string,
+    orgId: string,
     options?: { limit?: number; offset?: number }
   ): Promise<{
     embeddings: Array<{
@@ -539,8 +573,8 @@ class ApiClient {
       artist: string | null;
       year: number | null;
       medium: string | null;
-      imageUrl: string;
-      thumbnailUrl: string;
+      imageUrl: string | null;
+      thumbnailUrl: string | null;
       embedding: number[];
     }>;
     total: number;
@@ -550,7 +584,7 @@ class ApiClient {
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
 
-    const url = `${this.baseUrl}/galleries/${galleryId}/embeddings${
+    const url = `${this.baseUrl}/orgs/${orgId}/embeddings${
       params.toString() ? `?${params}` : ''
     }`;
     const response = await fetch(url);
@@ -561,8 +595,8 @@ class ApiClient {
         artist: string | null;
         year: number | null;
         medium: string | null;
-        imageUrl: string;
-        thumbnailUrl: string;
+        imageUrl: string | null;
+        thumbnailUrl: string | null;
         embedding: number[];
       }>;
       total: number;
@@ -701,19 +735,20 @@ class ApiClient {
   }
 
   /**
-   * Batch process frame removal for gallery artworks
+   * Batch process frame removal for org artworks
    */
   async batchProcessFrames(
-    galleryId: string,
+    orgId: string,
     options?: { artworkIds?: string[]; forceReprocess?: boolean }
   ): Promise<{
-    galleryId: string;
+    orgId: string;
+    galleryId?: string;
     totalQueued: number;
     skipped: number;
     message: string;
   }> {
     const response = await fetch(
-      `${this.baseUrl}/galleries/${galleryId}/artworks/batch-process-frames`,
+      `${this.baseUrl}/orgs/${orgId}/artworks/batch-process-frames`,
       {
         method: 'POST',
         headers: {
@@ -724,7 +759,8 @@ class ApiClient {
     );
 
     const data: ApiResponse<{
-      galleryId: string;
+      orgId: string;
+      galleryId?: string;
       totalQueued: number;
       skipped: number;
       message: string;
@@ -769,9 +805,9 @@ class ApiClient {
   }
 
   /**
-   * Get processing statistics for a gallery
+   * Get processing statistics for an org
    */
-  async getProcessingStats(galleryId: string): Promise<{
+  async getProcessingStats(orgId: string): Promise<{
     total: number;
     pending: number;
     processing: number;
@@ -781,7 +817,7 @@ class ApiClient {
     avgConfidence: number | null;
   }> {
     const response = await fetch(
-      `${this.baseUrl}/galleries/${galleryId}/processing-stats`
+      `${this.baseUrl}/orgs/${orgId}/processing-stats`
     );
 
     const data: ApiResponse<{

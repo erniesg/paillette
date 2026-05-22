@@ -23,7 +23,8 @@ const ProcessFrameSchema = z.object({
 });
 
 const BatchProcessSchema = z.object({
-  galleryId: z.string().uuid(),
+  orgId: z.string().uuid().optional(),
+  galleryId: z.string().uuid().optional(),
   artworkIds: z.array(z.string().uuid()).optional(),
   forceReprocess: z.boolean().default(false),
 });
@@ -50,15 +51,15 @@ frameRemoval.post(
     try {
       // Get artwork details
       const artwork = await c.env.DB.prepare(
-        `SELECT id, image_url, gallery_id, processing_status
+        `SELECT id, image_url, org_id, processing_status
          FROM artworks
          WHERE id = ?`
       )
         .bind(artworkId)
         .first<{
           id: string;
-          image_url: string;
-          gallery_id: string;
+          image_url: string | null;
+          org_id: string;
           processing_status: string | null;
         }>();
 
@@ -72,6 +73,19 @@ frameRemoval.post(
             },
           },
           404
+        );
+      }
+
+      if (!artwork.image_url) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'MISSING_IMAGE',
+              message: 'Artwork has no image to process',
+            },
+          },
+          400
         );
       }
 
@@ -103,7 +117,7 @@ frameRemoval.post(
         c.env.FRAME_REMOVAL_QUEUE,
         artwork.id,
         artwork.image_url,
-        artwork.gallery_id
+        artwork.org_id
       );
 
       return c.json({
@@ -132,25 +146,39 @@ frameRemoval.post(
 );
 
 /**
- * POST /galleries/:galleryId/artworks/batch-process-frames
+ * POST /orgs/:orgId/artworks/batch-process-frames
  * Queue multiple artworks for frame removal processing
  */
 frameRemoval.post(
-  '/galleries/:galleryId/artworks/batch-process-frames',
+  '/orgs/:orgId/artworks/batch-process-frames',
   zValidator('json', BatchProcessSchema),
   async (c) => {
-    const { galleryId } = c.req.param();
+    const orgId = c.req.param('orgId') || c.req.param('galleryId');
     const { artworkIds, forceReprocess } = await c.req.json();
+
+    if (!orgId) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'MISSING_ORG_ID',
+            message: 'Org ID is required',
+          },
+        },
+        400
+      );
+    }
 
     try {
       // Build query based on input
       let query = `
-        SELECT id, image_url, gallery_id, processing_status
+        SELECT id, image_url, org_id, processing_status
         FROM artworks
-        WHERE gallery_id = ?
+        WHERE org_id = ?
+          AND image_url IS NOT NULL
       `;
 
-      const bindings: string[] = [galleryId];
+      const bindings: string[] = [orgId];
 
       // Filter by specific artwork IDs if provided
       if (artworkIds && artworkIds.length > 0) {
@@ -169,7 +197,7 @@ frameRemoval.post(
         .all<{
           id: string;
           image_url: string;
-          gallery_id: string;
+          org_id: string;
           processing_status: string | null;
         }>();
 
@@ -201,7 +229,7 @@ frameRemoval.post(
         results.results.map((a) => ({
           id: a.id,
           imageUrl: a.image_url,
-          galleryId: a.gallery_id,
+          galleryId: a.org_id,
         }))
       );
 
@@ -295,11 +323,11 @@ frameRemoval.get('/artworks/:id/processing-status', async (c) => {
 });
 
 /**
- * GET /galleries/:galleryId/processing-stats
- * Get aggregate processing statistics for a gallery
+ * GET /orgs/:orgId/processing-stats
+ * Get aggregate processing statistics for an org
  */
-frameRemoval.get('/galleries/:galleryId/processing-stats', async (c) => {
-  const { galleryId } = c.req.param();
+frameRemoval.get('/orgs/:orgId/processing-stats', async (c) => {
+  const orgId = c.req.param('orgId') || c.req.param('galleryId');
 
   try {
     const stats = await c.env.DB.prepare(
@@ -312,9 +340,9 @@ frameRemoval.get('/galleries/:galleryId/processing-stats', async (c) => {
          SUM(CASE WHEN image_url_processed IS NOT NULL THEN 1 ELSE 0 END) as has_processed_image,
          AVG(CASE WHEN frame_removal_confidence IS NOT NULL THEN frame_removal_confidence ELSE NULL END) as avg_confidence
        FROM artworks
-       WHERE gallery_id = ?`
+       WHERE org_id = ?`
     )
-      .bind(galleryId)
+      .bind(orgId)
       .first<{
         total: number;
         pending: number;

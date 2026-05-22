@@ -35,12 +35,13 @@ export interface SearchImageRequest {
 
 export interface ArtworkSearchResult {
   id: string;
+  orgId?: string;
   galleryId: string;
   title?: string;
   artist?: string;
   year?: number;
-  imageUrl: string;
-  thumbnailUrl?: string;
+  imageUrl: string | null;
+  thumbnailUrl?: string | null;
   similarity: number;
   metadata?: Record<string, any>;
 }

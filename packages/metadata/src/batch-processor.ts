@@ -15,13 +15,13 @@ export class BatchMetadataProcessor {
    * Also supports matching by image_filename
    *
    * @param rows - Validated artwork rows from CSV
-   * @param galleryId - Gallery ID for new artworks
+   * @param orgId - Org ID for new artworks
    * @param userId - User ID performing the operation
    * @returns Batch process result with created, updated, and failed items
    */
   async processBatch(
     rows: ArtworkRow[],
-    galleryId: string,
+    orgId: string,
     userId: string
   ): Promise<BatchProcessResult> {
     const created: Array<{ id: string; title: string }> = [];
@@ -36,31 +36,31 @@ export class BatchMetadataProcessor {
       try {
         if (row.artwork_id) {
           // UPDATE operation: artwork_id provided
-          await this.updateArtwork(row, galleryId, userId);
+          await this.updateArtwork(row, orgId, userId);
           updated.push({ id: row.artwork_id, title: row.title });
         } else if (row.image_filename) {
           // Try to match by image_filename
           const existing = await this.findArtworkByFilename(
             row.image_filename,
-            galleryId
+            orgId
           );
 
           if (existing) {
             // UPDATE existing artwork matched by filename
             await this.updateArtwork(
               { ...row, artwork_id: existing.id },
-              galleryId,
+              orgId,
               userId
             );
             updated.push({ id: existing.id, title: row.title });
           } else {
             // CREATE new artwork
-            const artworkId = await this.createArtwork(row, galleryId, userId);
+            const artworkId = await this.createArtwork(row, orgId, userId);
             created.push({ id: artworkId, title: row.title });
           }
         } else {
           // CREATE operation: no artwork_id or image_filename
-          const artworkId = await this.createArtwork(row, galleryId, userId);
+          const artworkId = await this.createArtwork(row, orgId, userId);
           created.push({ id: artworkId, title: row.title });
         }
       } catch (error) {
@@ -89,38 +89,41 @@ export class BatchMetadataProcessor {
    */
   private async createArtwork(
     row: ArtworkRow,
-    galleryId: string,
+    orgId: string,
     userId: string
   ): Promise<string> {
     const artworkId = randomUUID();
     const now = new Date().toISOString();
 
-    // Use placeholder URLs if no image provided
-    const imageUrl = row.image_filename
-      ? `https://images.paillette.art/placeholder/${row.image_filename}`
-      : 'https://images.paillette.art/placeholder/default.jpg';
-    const thumbnailUrl = imageUrl.replace('/placeholder/', '/placeholder/thumb-');
+    const originalFilename = row.image_filename || null;
 
     await this.db
       .prepare(
         `INSERT INTO artworks (
-          id, gallery_id, collection_id, image_url, thumbnail_url,
-          original_filename, image_hash, embedding_id,
+          id, org_id, collection_id, image_url, thumbnail_url,
+          original_filename, image_hash,
+          image_url_processed, processing_status, frame_removal_confidence, processed_at, processing_error,
+          embedding_id,
           title, artist, year, medium,
           dimensions_height, dimensions_width, dimensions_depth, dimensions_unit,
-          description, provenance, translations,
+          description, provenance, field_sources, translations,
           dominant_colors, color_palette, custom_metadata, citation,
-          created_at, updated_at, uploaded_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          created_at, updated_at, uploaded_by, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         artworkId,
-        galleryId,
+        orgId,
         null, // collection_id
-        imageUrl,
-        thumbnailUrl,
-        row.image_filename || 'metadata-only.csv',
-        '', // image_hash (empty for metadata-only)
+        null, // image_url
+        null, // thumbnail_url
+        originalFilename,
+        null, // image_hash
+        null, // image_url_processed
+        null, // processing_status
+        null, // frame_removal_confidence
+        null, // processed_at
+        null, // processing_error
         null, // embedding_id
         row.title,
         row.artist || null,
@@ -132,6 +135,7 @@ export class BatchMetadataProcessor {
         row.dimensions_unit || null,
         row.description || null,
         row.provenance || null,
+        '{}', // field_sources
         '{}', // translations
         null, // dominant_colors
         null, // color_palette
@@ -139,7 +143,8 @@ export class BatchMetadataProcessor {
         null, // citation
         now,
         now,
-        userId
+        userId,
+        null // deleted_at
       )
       .run();
 
@@ -151,17 +156,17 @@ export class BatchMetadataProcessor {
    */
   private async updateArtwork(
     row: ArtworkRow & { artwork_id: string },
-    galleryId: string,
+    orgId: string,
     userId: string
   ): Promise<void> {
     // Check if artwork exists
     const existing = await this.db
-      .prepare('SELECT * FROM artworks WHERE id = ? AND gallery_id = ?')
-      .bind(row.artwork_id, galleryId)
+      .prepare('SELECT * FROM artworks WHERE id = ? AND org_id = ?')
+      .bind(row.artwork_id, orgId)
       .first();
 
     if (!existing) {
-      throw new Error(`Artwork with ID ${row.artwork_id} not found in gallery`);
+      throw new Error(`Artwork with ID ${row.artwork_id} not found in org`);
     }
 
     // Build update query dynamically based on provided fields
@@ -213,13 +218,13 @@ export class BatchMetadataProcessor {
    */
   private async findArtworkByFilename(
     filename: string,
-    galleryId: string
+    orgId: string
   ): Promise<{ id: string } | null> {
     const result = await this.db
       .prepare(
-        'SELECT id FROM artworks WHERE original_filename = ? AND gallery_id = ?'
+        'SELECT id FROM artworks WHERE original_filename = ? AND org_id = ?'
       )
-      .bind(filename, galleryId)
+      .bind(filename, orgId)
       .first<{ id: string }>();
 
     return result;

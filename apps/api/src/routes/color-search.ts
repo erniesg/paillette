@@ -24,14 +24,14 @@ colorSearchRoutes.use(
 );
 
 /**
- * POST /galleries/:galleryId/search/color
+ * POST /orgs/:orgId/search/color
  * Search artworks by color similarity
  */
 colorSearchRoutes.post('/search/color', async (c) => {
   const startTime = performance.now();
 
   try {
-    const galleryId = c.req.param('galleryId');
+    const orgId = c.req.param('orgId') || c.req.param('galleryId');
 
     // Parse and validate request body
     const body = await c.req.json();
@@ -64,12 +64,13 @@ colorSearchRoutes.post('/search/color', async (c) => {
         dominant_colors,
         color_palette
       FROM artworks
-      WHERE gallery_id = ?
+      WHERE org_id = ?
         AND dominant_colors IS NOT NULL
+        AND image_url IS NOT NULL
         AND deleted_at IS NULL
       `
     )
-      .bind(galleryId)
+      .bind(orgId)
       .all();
 
     if (!artworks.success || !artworks.results) {
@@ -155,7 +156,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
       c as any,
       limitedResults.map((result, index) => ({
         artworkId: result.artworkId,
-        galleryId,
+        galleryId: orgId,
         rank: index + 1,
         score: 1 / (1 + result.averageDistance),
       }))
@@ -190,12 +191,12 @@ colorSearchRoutes.post('/search/color', async (c) => {
 });
 
 /**
- * GET /galleries/:galleryId/artworks/:artworkId/colors
+ * GET /orgs/:orgId/artworks/:artworkId/colors
  * Get color palette for a specific artwork
  */
 colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
   try {
-    const galleryId = c.req.param('galleryId');
+    const orgId = c.req.param('orgId') || c.req.param('galleryId');
     const artworkId = c.req.param('artworkId');
 
     const artwork = await c.env.DB.prepare(
@@ -208,11 +209,11 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
         color_extracted_at
       FROM artworks
       WHERE id = ?
-        AND gallery_id = ?
+        AND org_id = ?
         AND deleted_at IS NULL
       `
     )
-      .bind(artworkId, galleryId)
+      .bind(artworkId, orgId)
       .first();
 
     if (!artwork) {
@@ -258,12 +259,12 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
 });
 
 /**
- * POST /galleries/:galleryId/artworks/:artworkId/extract-colors
+ * POST /orgs/:orgId/artworks/:artworkId/extract-colors
  * Trigger color extraction for a specific artwork
  */
 colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
   try {
-    const galleryId = c.req.param('galleryId');
+    const orgId = c.req.param('orgId') || c.req.param('galleryId');
     const artworkId = c.req.param('artworkId');
 
     // Verify artwork exists
@@ -272,11 +273,12 @@ colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
       SELECT id, image_url
       FROM artworks
       WHERE id = ?
-        AND gallery_id = ?
+        AND org_id = ?
+        AND image_url IS NOT NULL
         AND deleted_at IS NULL
       `
     )
-      .bind(artworkId, galleryId)
+      .bind(artworkId, orgId)
       .first();
 
     if (!artwork) {
@@ -323,24 +325,25 @@ colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
 });
 
 /**
- * POST /galleries/:galleryId/artworks/batch-extract-colors
- * Trigger batch color extraction for all artworks in a gallery
+ * POST /orgs/:orgId/artworks/batch-extract-colors
+ * Trigger batch color extraction for all artworks in an org
  */
 colorSearchRoutes.post('/artworks/batch-extract-colors', async (c) => {
   try {
-    const galleryId = c.req.param('galleryId');
+    const orgId = c.req.param('orgId') || c.req.param('galleryId');
 
     // Get all artworks without color data
     const artworks = await c.env.DB.prepare(
       `
       SELECT id, image_url
       FROM artworks
-      WHERE gallery_id = ?
+      WHERE org_id = ?
         AND (dominant_colors IS NULL OR dominant_colors = '')
+        AND image_url IS NOT NULL
         AND deleted_at IS NULL
       `
     )
-      .bind(galleryId)
+      .bind(orgId)
       .all();
 
     if (!artworks.success || !artworks.results) {

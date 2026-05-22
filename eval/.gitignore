@@ -1,0 +1,13 @@
+# generated / large / secret — never commit
+.venv/
+.env
+__pycache__/
+images/
+vectors/
+results/
+judgements/
+montages/
+*.log
+corpus.jsonl
+fetch_failures.txt
+review.html

@@ -21,7 +21,7 @@ export interface ResponseMeta {
   duration?: number;
 }
 
-export interface Gallery {
+export interface Org {
   id: string;
   name: string;
   slug: string;
@@ -34,6 +34,9 @@ export interface Gallery {
   updatedAt: string;
 }
 
+/** @deprecated Use Org. */
+export type Gallery = Org;
+
 export interface GallerySettings {
   enableEmbeddingProjector?: boolean;
   supportedLanguages?: string[];
@@ -41,6 +44,7 @@ export interface GallerySettings {
 
 export interface Artwork {
   id: string;
+  orgId?: string;
   galleryId: string;
   title?: string;
   artist?: string;
@@ -48,8 +52,8 @@ export interface Artwork {
   medium?: string;
   dimensions?: ArtworkDimensions;
   description?: string;
-  imageUrl: string;
-  thumbnailUrl?: string;
+  imageUrl: string | null;
+  thumbnailUrl?: string | null;
   imageUrlProcessed?: string | null;
   processingStatus?: ProcessingStatus;
   frameRemovalConfidence?: number | null;
@@ -71,12 +75,13 @@ export interface ArtworkDimensions {
 
 export interface ArtworkSearchResult {
   id: string;
+  orgId?: string;
   galleryId: string;
   title?: string;
   artist?: string;
   year?: number;
-  imageUrl: string;
-  thumbnailUrl?: string;
+  imageUrl: string | null;
+  thumbnailUrl?: string | null;
   similarity: number;
   metadata?: ArtworkMetadata;
 }

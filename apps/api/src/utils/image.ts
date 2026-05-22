@@ -126,7 +126,7 @@ export async function checkDuplicateImage(
   galleryId: string
 ): Promise<boolean> {
   const result = await db
-    .prepare('SELECT id FROM artworks WHERE image_hash = ? AND gallery_id = ?')
+    .prepare('SELECT id FROM artworks WHERE image_hash = ? AND org_id = ?')
     .bind(hash, galleryId)
     .first();
 

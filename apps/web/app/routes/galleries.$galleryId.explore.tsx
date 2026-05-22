@@ -40,14 +40,18 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   try {
     const gallery = await apiClient.getGallery(galleryId);
-    return { gallery, galleryId };
+    return {
+      gallery,
+      galleryId: gallery.id,
+      preferredRouteId: gallery.slug || galleryId,
+    };
   } catch (error) {
     throw new Response('Gallery not found', { status: 404 });
   }
 }
 
 export default function GalleryExplore() {
-  const { gallery, galleryId } = useLoaderData<typeof loader>();
+  const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const [colorBy, setColorBy] = useState<
     'artist' | 'year' | 'medium' | 'cluster' | null
   >('cluster');
@@ -123,25 +127,25 @@ export default function GalleryExplore() {
             </div>
             <nav className="flex items-center gap-4">
               <Link
-                to={`/galleries/${galleryId}`}
+                to={`/galleries/${preferredRouteId}`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Dashboard
               </Link>
               <Link
-                to={`/galleries/${galleryId}/search`}
+                to={`/${preferredRouteId}/search`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Search
               </Link>
               <Link
-                to={`/galleries/${galleryId}/explore`}
+                to={`/galleries/${preferredRouteId}/explore`}
                 className="text-white font-semibold"
               >
                 Explore
               </Link>
               <Link
-                to={`/galleries/${galleryId}/frame-removal`}
+                to={`/galleries/${preferredRouteId}/frame-removal`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Frame Removal
@@ -312,7 +316,7 @@ export default function GalleryExplore() {
                     Upload artworks and wait for embeddings to be generated.
                   </p>
                   <Button asChild>
-                    <Link to={`/galleries/${galleryId}/upload`}>
+                    <Link to={`/galleries/${preferredRouteId}/upload`}>
                       Upload Artworks
                     </Link>
                   </Button>

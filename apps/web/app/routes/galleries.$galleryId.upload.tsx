@@ -5,6 +5,7 @@
 
 import { json, type LoaderFunctionArgs } from '@remix-run/cloudflare';
 import { useLoaderData, useNavigate } from '@remix-run/react';
+import { apiClient } from '~/lib/api';
 import { CSVUploader } from '../components/upload/csv-uploader';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -16,13 +17,19 @@ export const loader = async ({ params }: LoaderFunctionArgs) => {
     throw new Response('Gallery ID is required', { status: 400 });
   }
 
-  return json({
-    galleryId,
-  });
+  try {
+    const gallery = await apiClient.getGallery(galleryId);
+    return json({
+      galleryId: gallery.id,
+      preferredRouteId: gallery.slug || galleryId,
+    });
+  } catch (error) {
+    throw new Response('Gallery not found', { status: 404 });
+  }
 };
 
 export default function GalleryUpload() {
-  const { galleryId } = useLoaderData<typeof loader>();
+  const { galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
   const handleUploadComplete = (result: any) => {
@@ -42,7 +49,7 @@ export default function GalleryUpload() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-3xl font-bold">Upload Artwork Metadata</h1>
           <Button
-            onClick={() => navigate(`/galleries/${galleryId}`)}
+            onClick={() => navigate(`/galleries/${preferredRouteId}`)}
             className="bg-gray-500"
           >
             Back to Gallery

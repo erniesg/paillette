@@ -5,9 +5,10 @@
 
 import type {
   UserRow,
-  GalleryRow,
+  OrgRow,
   ArtworkRow,
   CollectionRow,
+  AssetRow,
   AuditLogRow,
 } from './types';
 
@@ -47,55 +48,55 @@ export const userQueries = {
 };
 
 /**
- * Gallery queries
+ * Org queries
  */
-export const galleryQueries = {
+export const orgQueries = {
   findById: (id: string) => ({
-    sql: 'SELECT * FROM galleries WHERE id = ?',
+    sql: 'SELECT * FROM orgs WHERE id = ?',
     params: [id],
   }),
 
   findBySlug: (slug: string) => ({
-    sql: 'SELECT * FROM galleries WHERE slug = ?',
+    sql: 'SELECT * FROM orgs WHERE slug = ?',
     params: [slug],
   }),
 
   findByOwner: (ownerId: string) => ({
-    sql: 'SELECT * FROM galleries WHERE owner_id = ? ORDER BY created_at DESC',
+    sql: 'SELECT * FROM orgs WHERE owner_id = ? ORDER BY created_at DESC',
     params: [ownerId],
   }),
 
   list: (limit = 50, offset = 0) => ({
-    sql: 'SELECT * FROM galleries ORDER BY created_at DESC LIMIT ? OFFSET ?',
+    sql: 'SELECT * FROM orgs ORDER BY created_at DESC LIMIT ? OFFSET ?',
     params: [limit, offset],
   }),
 
   create: (
-    gallery: Omit<GalleryRow, 'created_at'> & { settings?: Record<string, any> }
+    org: Omit<OrgRow, 'created_at'> & { settings?: Record<string, any> }
   ) => ({
-    sql: `INSERT INTO galleries (
+    sql: `INSERT INTO orgs (
       id, name, slug, description, location_country, location_city,
       location_address, website, settings, api_key, api_key_hash, owner_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     params: [
-      gallery.id,
-      gallery.name,
-      gallery.slug,
-      gallery.description || null,
-      gallery.location_country || null,
-      gallery.location_city || null,
-      gallery.location_address || null,
-      gallery.website || null,
-      gallery.settings ? JSON.stringify(gallery.settings) : '{}',
-      gallery.api_key,
-      gallery.api_key_hash,
-      gallery.owner_id,
+      org.id,
+      org.name,
+      org.slug,
+      org.description || null,
+      org.location_country || null,
+      org.location_city || null,
+      org.location_address || null,
+      org.website || null,
+      org.settings ? JSON.stringify(org.settings) : '{}',
+      org.api_key,
+      org.api_key_hash,
+      org.owner_id,
     ],
   }),
 
   update: (
     id: string,
-    updates: Partial<Omit<GalleryRow, 'id' | 'created_at' | 'owner_id'>>
+    updates: Partial<Omit<OrgRow, 'id' | 'created_at' | 'owner_id'>>
   ) => {
     const fields: string[] = [];
     const values: any[] = [];
@@ -111,16 +112,19 @@ export const galleryQueries = {
     });
 
     return {
-      sql: `UPDATE galleries SET ${fields.join(', ')} WHERE id = ?`,
+      sql: `UPDATE orgs SET ${fields.join(', ')} WHERE id = ?`,
       params: [...values, id],
     };
   },
 
   delete: (id: string) => ({
-    sql: 'DELETE FROM galleries WHERE id = ?',
+    sql: 'DELETE FROM orgs WHERE id = ?',
     params: [id],
   }),
 };
+
+/** @deprecated Use orgQueries. */
+export const galleryQueries = orgQueries;
 
 /**
  * Artwork queries
@@ -133,10 +137,18 @@ export const artworkQueries = {
 
   findByGallery: (galleryId: string, limit = 50, offset = 0) => ({
     sql: `SELECT * FROM artworks
-          WHERE gallery_id = ?
+          WHERE org_id = ?
           ORDER BY created_at DESC
           LIMIT ? OFFSET ?`,
     params: [galleryId, limit, offset],
+  }),
+
+  findByOrg: (orgId: string, limit = 50, offset = 0) => ({
+    sql: `SELECT * FROM artworks
+          WHERE org_id = ?
+          ORDER BY created_at DESC
+          LIMIT ? OFFSET ?`,
+    params: [orgId, limit, offset],
   }),
 
   findByCollection: (collectionId: string, limit = 50, offset = 0) => ({
@@ -150,7 +162,7 @@ export const artworkQueries = {
 
   search: (galleryId: string, searchTerm: string, limit = 50) => ({
     sql: `SELECT * FROM artworks
-          WHERE gallery_id = ?
+          WHERE org_id = ?
           AND (
             title LIKE ? OR
             artist LIKE ? OR
@@ -170,36 +182,63 @@ export const artworkQueries = {
   create: (artwork: Omit<ArtworkRow, 'created_at' | 'updated_at'>) => {
     const fields = [
       'id',
-      'gallery_id',
+      'org_id',
       'collection_id',
       'image_url',
       'thumbnail_url',
       'original_filename',
       'image_hash',
+      'image_url_processed',
+      'processing_status',
+      'frame_removal_confidence',
+      'processed_at',
+      'processing_error',
       'embedding_id',
       'title',
       'artist',
       'year',
+      'date_text',
       'medium',
+      'classification',
+      'culture',
+      'origin',
       'dimensions_height',
       'dimensions_width',
       'dimensions_depth',
       'dimensions_unit',
       'description',
       'provenance',
+      'credit_line',
+      'rights',
+      'accession_number',
+      'source_url',
+      'source_institution',
+      'source_collection',
+      'source_record_id',
+      'field_sources',
       'translations',
       'dominant_colors',
       'color_palette',
+      'color_extracted_at',
+      'color_extraction_version',
       'custom_metadata',
       'citation',
       'uploaded_by',
+      'deleted_at',
     ];
 
     const placeholders = fields.map(() => '?').join(', ');
     const values = fields.map((field) => {
       const value = artwork[field as keyof typeof artwork];
       if (
-        ['translations', 'dominant_colors', 'color_palette', 'custom_metadata', 'citation'].includes(
+        [
+          'field_sources',
+          'translations',
+          'dominant_colors',
+          'color_palette',
+          'custom_metadata',
+          'citation',
+        ].includes(
           field
         ) &&
         value &&
@@ -222,7 +261,14 @@ export const artworkQueries = {
 
     Object.entries(updates).forEach(([key, value]) => {
       if (
-        ['translations', 'dominant_colors', 'color_palette', 'custom_metadata', 'citation'].includes(
+        [
+          'field_sources',
+          'translations',
+          'dominant_colors',
+          'color_palette',
+          'custom_metadata',
+          'citation',
+        ].includes(
           key
         ) &&
         value &&
@@ -248,7 +294,7 @@ export const artworkQueries = {
   }),
 
   count: (galleryId: string) => ({
-    sql: 'SELECT COUNT(*) as count FROM artworks WHERE gallery_id = ?',
+    sql: 'SELECT COUNT(*) as count FROM artworks WHERE org_id = ?',
     params: [galleryId],
   }),
 };
@@ -263,16 +309,21 @@ export const collectionQueries = {
   }),
 
   findByGallery: (galleryId: string) => ({
-    sql: 'SELECT * FROM collections WHERE gallery_id = ? ORDER BY created_at DESC',
+    sql: 'SELECT * FROM collections WHERE org_id = ? ORDER BY created_at DESC',
     params: [galleryId],
   }),
 
+  findByOrg: (orgId: string) => ({
+    sql: 'SELECT * FROM collections WHERE org_id = ? ORDER BY created_at DESC',
+    params: [orgId],
+  }),
+
   create: (collection: Omit<CollectionRow, 'created_at' | 'artwork_count'>) => ({
-    sql: `INSERT INTO collections (id, gallery_id, name, description, thumbnail_artwork_id, created_by)
+    sql: `INSERT INTO collections (id, org_id, name, description, thumbnail_artwork_id, created_by)
           VALUES (?, ?, ?, ?, ?, ?)`,
     params: [
       collection.id,
-      collection.gallery_id,
+      collection.org_id,
       collection.name,
       collection.description || null,
       collection.thumbnail_artwork_id || null,
@@ -304,6 +355,62 @@ export const collectionQueries = {
     sql: `DELETE FROM collection_artworks
           WHERE collection_id = ? AND artwork_id = ?`,
     params: [collectionId, artworkId],
+  }),
+};
+
+/**
+ * Asset queries
+ */
+export const assetQueries = {
+  findByArtwork: (artworkId: string) => ({
+    sql: 'SELECT * FROM assets WHERE artwork_id = ? ORDER BY role, created_at DESC',
+    params: [artworkId],
+  }),
+
+  findByOrg: (orgId: string, limit = 100, offset = 0) => ({
+    sql: `SELECT * FROM assets
+          WHERE org_id = ?
+          ORDER BY created_at DESC
+          LIMIT ? OFFSET ?`,
+    params: [orgId, limit, offset],
+  }),
+
+  create: (asset: Omit<AssetRow, 'created_at' | 'updated_at'>) => {
+    const fields = [
+      'id',
+      'artwork_id',
+      'org_id',
+      'role',
+      'storage_provider',
+      'bucket',
+      'object_key',
+      'url',
+      'mime_type',
+      'width',
+      'height',
+      'size_bytes',
+      'checksum',
+      'metadata',
+    ];
+
+    const placeholders = fields.map(() => '?').join(', ');
+    const values = fields.map((field) => {
+      const value = asset[field as keyof typeof asset];
+      if (field === 'metadata' && value && typeof value === 'object') {
+        return JSON.stringify(value);
+      }
+      return value ?? null;
+    });
+
+    return {
+      sql: `INSERT INTO assets (${fields.join(', ')}) VALUES (${placeholders})`,
+      params: values,
+    };
+  },
+
+  delete: (id: string) => ({
+    sql: 'DELETE FROM assets WHERE id = ?',
+    params: [id],
   }),
 };
 

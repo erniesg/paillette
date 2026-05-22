@@ -40,14 +40,18 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   try {
     const gallery = await apiClient.getGallery(galleryId);
-    return { gallery, galleryId };
+    return {
+      gallery,
+      galleryId: gallery.id,
+      preferredRouteId: gallery.slug || galleryId,
+    };
   } catch (error) {
     throw new Response('Gallery not found', { status: 404 });
   }
 }
 
 export default function GalleryFrameRemoval() {
-  const { gallery, galleryId } = useLoaderData<typeof loader>();
+  const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<ProcessingStatus | 'all'>(
     'all'
@@ -176,25 +180,25 @@ export default function GalleryFrameRemoval() {
             </div>
             <nav className="flex items-center gap-4">
               <Link
-                to={`/galleries/${galleryId}`}
+                to={`/galleries/${preferredRouteId}`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Dashboard
               </Link>
               <Link
-                to={`/galleries/${galleryId}/search`}
+                to={`/${preferredRouteId}/search`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Search
               </Link>
               <Link
-                to={`/galleries/${galleryId}/explore`}
+                to={`/galleries/${preferredRouteId}/explore`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Explore
               </Link>
               <Link
-                to={`/galleries/${galleryId}/frame-removal`}
+                to={`/galleries/${preferredRouteId}/frame-removal`}
                 className="text-white font-semibold"
               >
                 Frame Removal
@@ -410,11 +414,17 @@ export default function GalleryFrameRemoval() {
                   className="overflow-hidden hover:border-primary-500/50 transition-colors"
                 >
                   <div className="relative aspect-square">
-                    <img
-                      src={artwork.imageUrlProcessed || artwork.thumbnailUrl || artwork.imageUrl}
-                      alt={artwork.title || 'Artwork'}
-                      className="w-full h-full object-cover"
-                    />
+                    {artwork.imageUrlProcessed || artwork.thumbnailUrl || artwork.imageUrl ? (
+                      <img
+                        src={artwork.imageUrlProcessed || artwork.thumbnailUrl || artwork.imageUrl || undefined}
+                        alt={artwork.title || 'Artwork'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-neutral-950 text-sm text-neutral-500">
+                        No image
+                      </div>
+                    )}
                     <div className="absolute top-2 right-2">
                       {getStatusBadge(artwork.processingStatus)}
                     </div>
@@ -482,6 +492,7 @@ export default function GalleryFrameRemoval() {
 
                     {/* Before/After Comparison */}
                     {selectedArtwork?.id === artwork.id &&
+                      artwork.imageUrl &&
                       artwork.imageUrlProcessed && (
                         <div className="mt-4 pt-4 border-t border-neutral-700">
                           <h4 className="text-sm font-semibold mb-2">
