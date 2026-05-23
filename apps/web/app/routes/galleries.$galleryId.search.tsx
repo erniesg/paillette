@@ -6,7 +6,6 @@ import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
-  ArrowLeft,
   Camera,
   Clock,
   ExternalLink,
@@ -29,10 +28,10 @@ import {
   getGeneratedCaptionText,
   getGeographicAssociation,
   getNgsUrl,
-  getPublicDateText,
   getPublicAccession,
   getPublicCatalogueRows,
-  getPublicDescription,
+  getPublicDateText,
+  getPublicDescriptionDetails,
   getPublicImageUrl,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
@@ -356,15 +355,6 @@ const getSourceName = (result: ArtworkSearchResult) =>
 const getPlace = (result: ArtworkSearchResult) =>
   getGeographicAssociation(result);
 
-const getCaption = (result: ArtworkSearchResult) => {
-  const meta = getMeta(result);
-  const caption = meta.generated_caption || meta.generatedCaption;
-  if (caption && typeof caption === 'object') {
-    return asText((caption as Record<string, unknown>).text);
-  }
-  return asText(caption);
-};
-
 const getSourceUrl = (result: ArtworkSearchResult) =>
   getNgsUrl(result) || getRootsUrl(result);
 
@@ -395,6 +385,13 @@ const getMetadataFacets = (result: ArtworkSearchResult): MetadataFacet[] => {
   });
 };
 
+const hasPaletteWeight = (item: Record<string, unknown>) => {
+  const percentage = asNumber(
+    item.percentage ?? item.percent ?? item.weight ?? item.ratio
+  );
+  return percentage === null || percentage > 0;
+};
+
 const collectPalette = (result: ArtworkSearchResult): string[] => {
   const meta = getMeta(result);
   const candidates = [
@@ -413,16 +410,28 @@ const collectPalette = (result: ArtworkSearchResult): string[] => {
       for (const item of candidate) {
         if (typeof item === 'string' && hexToRgb(item)) colours.push(item);
         if (item && typeof item === 'object') {
-          const color = asText((item as Record<string, unknown>).color);
-          if (color && hexToRgb(color)) colours.push(color);
+          const record = item as Record<string, unknown>;
+          const color = asText(record.color);
+          if (color && hexToRgb(color) && hasPaletteWeight(record)) {
+            colours.push(color);
+          }
         }
       }
     }
 
     if (candidate && typeof candidate === 'object' && 'colors' in candidate) {
-      const colorList = (candidate as { colors?: unknown }).colors;
+      const paletteRecord = candidate as {
+        colors?: unknown;
+        percentages?: unknown;
+      };
+      const colorList = paletteRecord.colors;
+      const percentages = Array.isArray(paletteRecord.percentages)
+        ? paletteRecord.percentages
+        : [];
       if (Array.isArray(colorList)) {
-        for (const color of colorList) {
+        for (const [index, color] of colorList.entries()) {
+          const percentage = asNumber(percentages[index]);
+          if (percentage !== null && percentage <= 0) continue;
           if (typeof color === 'string' && hexToRgb(color)) colours.push(color);
         }
       }
@@ -752,6 +761,16 @@ export default function SearchPage() {
     useState<ArtworkSearchResult | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const colourRailRef = useRef<HTMLDivElement | null>(null);
+
+  const revealColourRail = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      colourRailRef.current?.scrollIntoView({
+        block: 'center',
+        behavior: 'smooth',
+      });
+    });
+  }, []);
 
   useEffect(() => {
     setHasMounted(true);
@@ -988,6 +1007,17 @@ export default function SearchPage() {
     }
   };
 
+  const clearColourSort = () => {
+    setSortColours([]);
+    if (sortMode === 'colour') {
+      setSortMode('relevance');
+    }
+  };
+
+  const clearColourSortTarget = () => {
+    setSortColours([]);
+  };
+
   const runColourSearch = (selection: string) => {
     const active = searchMode === 'colour' && searchColours.includes(selection);
     if (active) {
@@ -996,16 +1026,6 @@ export default function SearchPage() {
     }
 
     selectColourSearch(selection);
-  };
-
-  const runSpectrumColourSort = () => {
-    if (sortMode === 'colour' && sortColours.length === 0) {
-      setSortMode('relevance');
-      return;
-    }
-
-    setSortMode('colour');
-    setSortColours([]);
   };
 
   const runTargetColourSort = (selection: string) => {
@@ -1030,6 +1050,20 @@ export default function SearchPage() {
       selectColourSearch(`custom:${hex}`);
     }
   };
+
+  const useArtworkPaletteColour = (hex: string) => {
+    if (searchMode === 'colour') {
+      updateCustomColour(hex);
+      revealColourRail();
+      return;
+    }
+
+    updateSortCustomColour(hex);
+    revealColourRail();
+  };
+
+  const showColourRail = searchMode === 'colour' || sortMode === 'colour';
+  const colourRailIsSearch = searchMode === 'colour';
 
   const runEvalSearch = (suggestion: (typeof EVAL_SUGGESTIONS)[number]) => {
     const active =
@@ -1079,13 +1113,6 @@ export default function SearchPage() {
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <Link
-              to={`/galleries/${preferredRouteId}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 text-white/65 transition-colors hover:text-white"
-              aria-label="Back to org"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
             <div className="min-w-0">
               <Link
                 to={`/${preferredRouteId}/search`}
@@ -1096,12 +1123,6 @@ export default function SearchPage() {
             </div>
           </div>
           <nav className="flex items-center gap-2">
-            <Link
-              to={`/galleries/${preferredRouteId}/explore`}
-              className="hidden rounded-md px-3 py-1.5 text-xs text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white sm:inline-flex"
-            >
-              Explore
-            </Link>
             {!isAuthenticated && (
               <button
                 type="button"
@@ -1135,74 +1156,70 @@ export default function SearchPage() {
               )}
             </div>
 
-            {searchMode === 'text' ? (
-              <div className="relative">
-                <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
-                <input
-                  value={textQuery}
-                  onChange={(event) => setTextQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') runTextSearch();
-                  }}
-                  autoFocus
-                  placeholder="search by feeling, era, subject..."
-                  className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
-                />
-              </div>
-            ) : searchMode === 'image' ? (
-              <div
-                {...getRootProps()}
-                className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
-                  isDragActive
-                    ? 'border-fuchsia-300 bg-fuchsia-300/10'
-                    : 'border-white/15 bg-white/[0.025] hover:border-white/30'
-                }`}
-              >
-                <input {...getInputProps()} />
-                {imagePreview ? (
-                  <div className="relative w-full max-w-lg">
-                    <img
-                      src={imagePreview}
-                      alt="Query preview"
-                      className="max-h-64 w-full rounded-md object-contain"
-                    />
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        clearImage();
-                      }}
-                      className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-black/75 text-white transition-colors hover:bg-black"
-                      aria-label="Clear image"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <Camera className="mx-auto h-8 w-8 text-white/45" />
-                    <p className="mt-3 text-sm text-white/65">
-                      Drop an image to search visually
-                    </p>
-                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
-                      jpg / png / webp
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <ColourSearchPanel
-                selected={searchColours}
-                customColour={customColour}
-                onSelect={runColourSearch}
-                onCustomChange={updateCustomColour}
-                onClear={clearColourSearch}
-              />
-            )}
+            <div className="space-y-4">
+              {searchMode === 'text' && (
+                <div className="relative">
+                  <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
+                  <input
+                    value={textQuery}
+                    onChange={(event) => setTextQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') runTextSearch();
+                    }}
+                    autoFocus
+                    placeholder="search by feeling, era, subject..."
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
+                  />
+                </div>
+              )}
+
+              {searchMode === 'image' && (
+                <div
+                  {...getRootProps()}
+                  className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
+                    isDragActive
+                      ? 'border-fuchsia-300 bg-fuchsia-300/10'
+                      : 'border-white/15 bg-white/[0.025] hover:border-white/30'
+                  }`}
+                >
+                  <input {...getInputProps()} />
+                  {imagePreview ? (
+                    <div className="relative w-full max-w-lg">
+                      <img
+                        src={imagePreview}
+                        alt="Query preview"
+                        className="max-h-64 w-full rounded-md object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          clearImage();
+                        }}
+                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-black/75 text-white transition-colors hover:bg-black"
+                        aria-label="Clear image"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Camera className="mx-auto h-8 w-8 text-white/45" />
+                      <p className="mt-3 text-sm text-white/65">
+                        Drop an image to search visually
+                      </p>
+                      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
+                        jpg / png / webp
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <span className="self-center pr-1 font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
-                eval set
+                Try instead
               </span>
               {EVAL_SUGGESTIONS.map((query) => {
                 const active =
@@ -1253,8 +1270,19 @@ export default function SearchPage() {
                   icon={Palette}
                   label="Colour"
                   onClick={() => {
+                    if (searchMode === 'colour') {
+                      if (searchColours.length) {
+                        clearColourSearch();
+                      }
+                      setSearchMode('text');
+                      return;
+                    }
+
                     setIsBrowsingCollection(false);
                     setSearchMode('colour');
+                    setSortMode('colour');
+                    setSortColours(searchColours);
+                    revealColourRail();
                   }}
                 />
               </div>
@@ -1264,20 +1292,8 @@ export default function SearchPage() {
 
         <section className="mt-8">
           <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
-            <div
-              className={
-                view === 'table'
-                  ? 'relative left-1/2 w-[calc(100vw-2rem)] max-w-[1800px] -translate-x-1/2 lg:w-[calc(100vw-4rem)]'
-                  : 'mx-auto max-w-7xl'
-              }
-            >
-              <div
-                className={
-                  view === 'table'
-                    ? 'flex flex-col gap-3'
-                    : 'flex flex-wrap items-center justify-between gap-3'
-                }
-              >
+            <div className="mx-auto max-w-7xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
                   {isBrowsingCollection
                     ? isLoading && !results.length
@@ -1303,22 +1319,12 @@ export default function SearchPage() {
                     </span>
                   )}
                 </p>
-                <div
-                  className={
-                    view === 'table'
-                      ? 'grid w-full gap-2 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.95fr)_auto]'
-                      : 'flex flex-wrap items-center gap-2'
-                  }
-                >
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
                     <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
                       Sort
                     </span>
-                    <div
-                      className={`flex min-w-0 flex-1 items-center gap-1 p-1 ${
-                        view === 'table' ? 'justify-between' : ''
-                      }`}
-                    >
+                    <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
                       {SORT_OPTIONS.map((option) => {
                         const Icon = option.icon;
                         const active =
@@ -1349,12 +1355,12 @@ export default function SearchPage() {
 
                               if (option.id === 'colour') {
                                 if (sortMode === 'colour') {
-                                  setSortMode('relevance');
-                                  setSortColours([]);
+                                  clearColourSort();
                                   return;
                                 }
 
                                 setSortMode('colour');
+                                revealColourRail();
                                 return;
                               }
 
@@ -1390,11 +1396,7 @@ export default function SearchPage() {
                     <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
                       View
                     </span>
-                    <div
-                      className={`flex min-w-0 flex-1 items-center gap-1 p-1 ${
-                        view === 'table' ? 'justify-between' : ''
-                      }`}
-                    >
+                    <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
                       {VIEW_OPTIONS.map((option) => {
                         const Icon = option.icon;
                         return (
@@ -1427,7 +1429,7 @@ export default function SearchPage() {
                       isSettingsOpen
                         ? 'border-white/20 bg-white/[0.12] text-white'
                         : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                    } ${view === 'table' ? 'justify-center' : ''}`}
+                    }`}
                   >
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     <span>Settings</span>
@@ -1439,16 +1441,6 @@ export default function SearchPage() {
                   </button>
                 </div>
               </div>
-
-              {sortMode === 'colour' && (
-                <ColourSortControls
-                  selected={sortColours}
-                  customColour={customColour}
-                  onSpectrum={runSpectrumColourSort}
-                  onSelect={runTargetColourSort}
-                  onCustomChange={updateSortCustomColour}
-                />
-              )}
 
               {isSettingsOpen && (
                 <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
@@ -1554,6 +1546,28 @@ export default function SearchPage() {
             </div>
           </div>
 
+          {showColourRail && (
+            <div ref={colourRailRef} className="mt-3">
+              <ColourRail
+                intent={colourRailIsSearch ? 'search' : 'sort'}
+                selected={colourRailIsSearch ? searchColours : sortColours}
+                activeSort={sortMode === 'colour'}
+                customColour={customColour}
+                onSelect={
+                  colourRailIsSearch ? runColourSearch : runTargetColourSort
+                }
+                onCustomChange={
+                  colourRailIsSearch
+                    ? updateCustomColour
+                    : updateSortCustomColour
+                }
+                onClear={
+                  colourRailIsSearch ? clearColourSearch : clearColourSortTarget
+                }
+              />
+            </div>
+          )}
+
           {isLoading && (
             <div className="py-16 text-center text-sm text-white/45">
               Searching artworks...
@@ -1578,6 +1592,7 @@ export default function SearchPage() {
                 showSimilarity={!isBrowsingCollection}
                 onSortModeChange={setSortMode}
                 onFacetSearch={runTextSearch}
+                onPaletteColourSelect={useArtworkPaletteColour}
                 onSelectArtwork={setSelectedArtwork}
               />
               <div ref={loadMoreRef} className="flex justify-center py-8">
@@ -1636,7 +1651,9 @@ function SearchArtworkDialog({
   onClose: () => void;
 }) {
   const imageUrl = artwork ? getPublicImageUrl(artwork) : null;
-  const description = artwork ? getPublicDescription(artwork) : null;
+  const descriptionDetails = artwork
+    ? getPublicDescriptionDetails(artwork)
+    : null;
   const caption = artwork ? getGeneratedCaptionText(artwork) : null;
   const catalogRows = artwork ? getPublicCatalogueRows(artwork) : [];
   const ngsUrl = artwork ? getNgsUrl(artwork) : null;
@@ -1654,7 +1671,8 @@ function SearchArtworkDialog({
         {artwork && (
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none md:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
             <Dialog.Description className="sr-only">
-              Public catalogue metadata and AI caption for the selected artwork.
+              Public catalogue metadata, catalogue text, and AI caption for the
+              selected artwork.
             </Dialog.Description>
             <div className="flex min-h-[280px] items-center justify-center bg-black/35 p-4 md:min-h-[620px]">
               {imageUrl ? (
@@ -1725,13 +1743,16 @@ function SearchArtworkDialog({
                 )}
               </div>
 
-              {description && (
+              {descriptionDetails && (
                 <section className="mt-6">
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
                     Catalogue text
                   </h3>
+                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100/45">
+                    {descriptionDetails.sourceLabel}
+                  </p>
                   <p className="mt-2 text-sm leading-relaxed text-white/70">
-                    {description}
+                    {descriptionDetails.text}
                   </p>
                 </section>
               )}
@@ -1789,103 +1810,83 @@ function PublicRecordLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function ColourSortControls({
+function ColourRail({
+  intent,
   selected,
-  customColour,
-  onSpectrum,
-  onSelect,
-  onCustomChange,
-}: {
-  selected: string[];
-  customColour: string;
-  onSpectrum: () => void;
-  onSelect: (id: string) => void;
-  onCustomChange: (hex: string) => void;
-}) {
-  const activeColour = selected[0] ? getSelectedColour(selected[0]) : null;
-
-  return (
-    <div className="mt-3 grid gap-3 border-t border-white/[0.07] pt-3 lg:grid-cols-[auto_auto_minmax(280px,1fr)_auto] lg:items-center">
-      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-        Sort colour
-      </span>
-      <button
-        type="button"
-        onClick={onSpectrum}
-        className={`inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
-          selected.length
-            ? 'text-white/45 hover:bg-white/[0.06] hover:text-white/80'
-            : 'bg-white/[0.12] text-white'
-        }`}
-      >
-        Spectrum
-      </button>
-      <ColourStrip
-        selected={selected}
-        onToggle={onSelect}
-        customColour={customColour}
-        onCustomChange={onCustomChange}
-        customAriaLabel="Choose custom colour sort target"
-        compact
-        className="min-w-[280px]"
-      />
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/28">
-        {activeColour ? `Nearest ${activeColour.name}` : 'Palette band order'}
-      </span>
-    </div>
-  );
-}
-
-function ColourSearchPanel({
-  selected,
+  activeSort,
   customColour,
   onSelect,
   onCustomChange,
   onClear,
 }: {
+  intent: 'search' | 'sort';
   selected: string[];
+  activeSort: boolean;
   customColour: string;
   onSelect: (id: string) => void;
   onCustomChange: (hex: string) => void;
   onClear: () => void;
 }) {
   const activeColour = selected[0] ? getSelectedColour(selected[0]) : null;
+  const emptyStatus =
+    intent === 'search'
+      ? 'Choose a colour'
+      : activeSort
+        ? 'Spectrum order'
+        : 'Off';
+  const detailText = activeColour
+    ? intent === 'search'
+      ? `Search ${activeColour.name}`
+      : `Nearest ${activeColour.name}`
+    : emptyStatus;
 
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Palette className="h-4 w-4 text-white/45" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/45">
-            colour search
+    <div className="border-b border-white/[0.07] pb-3">
+      <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
+            Colour
+          </span>
+          <span className="inline-flex h-8 items-center rounded-md bg-white/[0.1] px-3 text-xs font-semibold text-white/85">
+            {intent === 'search' ? 'Search' : 'Sort'}
           </span>
         </div>
-        {activeColour && (
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70">
-              <span
-                className="h-3 w-3 rounded-full"
-                style={{ background: activeColour.hex }}
-              />
-              {activeColour.name}
-            </span>
+        <ColourStrip
+          selected={selected}
+          onToggle={onSelect}
+          customColour={customColour}
+          onCustomChange={onCustomChange}
+          customAriaLabel={
+            intent === 'search'
+              ? 'Choose custom colour search'
+              : 'Choose custom colour target'
+          }
+          className="min-w-0"
+        />
+        <div className="flex min-w-0 items-center gap-3 lg:justify-end">
+          {activeColour ? (
             <button
               type="button"
               onClick={onClear}
-              className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+              className="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-white/12 bg-white/[0.04] px-2.5 text-xs text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+              aria-label={`Clear ${activeColour.name} colour target`}
+              title="Clear colour target"
             >
-              Clear
+              <span
+                className="h-3.5 w-3.5 shrink-0 rounded-sm border border-white/20"
+                style={{ background: activeColour.hex }}
+              />
+              <span className="truncate font-mono text-[10px] uppercase tracking-[0.14em]">
+                {activeColour.name}
+              </span>
+              <X className="h-3 w-3 shrink-0 text-white/45" />
             </button>
-          </div>
-        )}
+          ) : null}
+          <span className="min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.18em] text-white/55">
+            {detailText}
+          </span>
+        </div>
       </div>
-      <ColourStrip
-        selected={selected}
-        onToggle={onSelect}
-        customColour={customColour}
-        onCustomChange={onCustomChange}
-        customAriaLabel="Choose custom colour search"
-      />
     </div>
   );
 }
@@ -2008,6 +2009,7 @@ function ResultsView({
   showSimilarity,
   onSortModeChange,
   onFacetSearch,
+  onPaletteColourSelect,
   onSelectArtwork,
 }: {
   view: ViewMode;
@@ -2017,6 +2019,7 @@ function ResultsView({
   showSimilarity: boolean;
   onSortModeChange: (sortMode: SortMode) => void;
   onFacetSearch: (query: string) => void;
+  onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   if (view === 'table') {
@@ -2046,6 +2049,7 @@ function ResultsView({
       selectedColours={selectedColours}
       showSimilarity={showSimilarity}
       onFacetSearch={onFacetSearch}
+      onPaletteColourSelect={onPaletteColourSelect}
       onSelectArtwork={onSelectArtwork}
     />
   );
@@ -2056,12 +2060,14 @@ function MasonryResults({
   selectedColours,
   showSimilarity,
   onFacetSearch,
+  onPaletteColourSelect,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
   selectedColours: string[];
   showSimilarity: boolean;
   onFacetSearch: (query: string) => void;
+  onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
@@ -2074,6 +2080,7 @@ function MasonryResults({
           selectedColours={selectedColours}
           showSimilarity={showSimilarity}
           onFacetSearch={onFacetSearch}
+          onPaletteColourSelect={onPaletteColourSelect}
           onSelectArtwork={onSelectArtwork}
         />
       ))}
@@ -2199,6 +2206,7 @@ function ResultCard({
   selectedColours,
   showSimilarity,
   onFacetSearch,
+  onPaletteColourSelect,
   onSelectArtwork,
 }: {
   result: ArtworkSearchResult;
@@ -2206,10 +2214,10 @@ function ResultCard({
   selectedColours: string[];
   showSimilarity: boolean;
   onFacetSearch: (query: string) => void;
+  onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const palette = collectPalette(result).slice(0, 5);
-  const caption = getCaption(result);
 
   return (
     <article className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.025]">
@@ -2254,17 +2262,11 @@ function ResultCard({
 
         <MetadataLine result={result} onFacetSearch={onFacetSearch} />
 
-        {caption && (
-          <p className="line-clamp-3 text-sm leading-relaxed text-white/50">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/65">
-              AI caption
-            </span>{' '}
-            {caption}
-          </p>
-        )}
-
         <div className="flex items-center justify-between gap-3">
-          <PaletteDots colours={palette} />
+          <PaletteDots
+            colours={palette}
+            onColourSelect={onPaletteColourSelect}
+          />
           <span
             className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35"
             title={
@@ -2323,7 +2325,13 @@ function MetadataLine({
   );
 }
 
-function PaletteDots({ colours }: { colours: string[] }) {
+function PaletteDots({
+  colours,
+  onColourSelect,
+}: {
+  colours: string[];
+  onColourSelect?: (hex: string) => void;
+}) {
   if (!colours.length) {
     return (
       <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">
@@ -2334,14 +2342,32 @@ function PaletteDots({ colours }: { colours: string[] }) {
 
   return (
     <div className="flex items-center gap-1">
-      {colours.map((colour) => (
-        <span
-          key={colour}
-          className="h-4 w-4 rounded-sm border border-white/15"
-          style={{ background: colour }}
-          title={colour}
-        />
-      ))}
+      {colours.map((colour) => {
+        const colourLabel = colour.toUpperCase();
+
+        if (onColourSelect) {
+          return (
+            <button
+              key={colour}
+              type="button"
+              onClick={() => onColourSelect(colour)}
+              className="h-4 w-4 rounded-sm border border-white/15 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
+              style={{ background: colour }}
+              title={`Use ${colourLabel} as colour target`}
+              aria-label={`Use ${colourLabel} as colour target`}
+            />
+          );
+        }
+
+        return (
+          <span
+            key={colour}
+            className="h-4 w-4 rounded-sm border border-white/15"
+            style={{ background: colour }}
+            title={colourLabel}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -2407,13 +2433,7 @@ function TableResults({
             />
             <TableSortHeader
               label={
-                showSimilarity
-                  ? isColourSort
-                    ? selectedColours.length
-                      ? 'Colour match'
-                      : 'Palette band'
-                    : 'Score'
-                  : 'Rank'
+                showSimilarity ? (isColourSort ? 'Colour' : 'Score') : 'Rank'
               }
               column={isColourSort ? 'colour' : 'score'}
               sortMode={sortMode}
@@ -2525,14 +2545,19 @@ function TableSortHeader({
   onSortModeChange: (sortMode: SortMode) => void;
 }) {
   const direction = tableSortDirection(column, sortMode);
-  const nextSortMode = tableColumnSortMode(column, sortMode);
+  const nextSortMode =
+    column === 'colour' && direction
+      ? 'relevance'
+      : tableColumnSortMode(column, sortMode);
+  const directionLabel =
+    direction === 'asc' ? 'ASC' : direction === 'desc' ? 'DESC' : '';
 
   return (
     <th className="px-3 py-3 font-normal">
       <button
         type="button"
         onClick={() => onSortModeChange(nextSortMode)}
-        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 transition-colors ${
+        className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2 transition-colors ${
           direction
             ? 'bg-white/[0.1] text-white'
             : 'text-white/45 hover:bg-white/[0.06] hover:text-white/75'
@@ -2540,15 +2565,11 @@ function TableSortHeader({
         aria-label={`Sort table by ${label.toLowerCase()}`}
       >
         {label}
-        <span className="text-[9px] tracking-[0.08em] text-white/35">
-          {direction === 'asc'
-            ? 'ASC'
-            : direction === 'desc'
-              ? 'DESC'
-              : direction === 'best'
-                ? 'BEST'
-                : ''}
-        </span>
+        {directionLabel && (
+          <span className="text-[9px] tracking-[0.08em] text-white/35">
+            {directionLabel}
+          </span>
+        )}
       </button>
     </th>
   );

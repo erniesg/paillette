@@ -8,10 +8,10 @@ import {
   getNgsUrl,
   getPublicCatalogueRows,
   getPublicDescription,
+  getPublicDescriptionDetails,
   getPublicImageUrl,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
-import type { Artwork } from '~/types';
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   const artwork = data?.artwork;
@@ -47,12 +47,14 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 }
 
 const compactRows = (rows: Array<[string, unknown]>) =>
-  rows.filter(([, value]) => value !== null && value !== undefined && value !== '');
+  rows.filter(
+    ([, value]) => value !== null && value !== undefined && value !== ''
+  );
 
 export default function ArtworkDetailPage() {
   const { gallery, artwork, preferredRouteId } = useLoaderData<typeof loader>();
   const caption = getGeneratedCaptionRecord(artwork);
-  const description = getPublicDescription(artwork);
+  const descriptionDetails = getPublicDescriptionDetails(artwork);
   const imageUrl = getPublicImageUrl(artwork);
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
@@ -108,9 +110,14 @@ export default function ArtworkDetailPage() {
             )}
           </div>
 
-          {description && (
-            <Section title="Description" eyebrow="Catalogue text">
-              <p className="leading-relaxed text-white/70">{description}</p>
+          {descriptionDetails && (
+            <Section
+              title="Catalogue text"
+              eyebrow={descriptionDetails.sourceLabel}
+            >
+              <p className="leading-relaxed text-white/70">
+                {descriptionDetails.text}
+              </p>
             </Section>
           )}
 
@@ -120,7 +127,10 @@ export default function ArtworkDetailPage() {
           >
             <dl className="grid gap-3 sm:grid-cols-2">
               {catalogRows.map(({ label, value }) => (
-                <div key={label} className="rounded-md border border-white/[0.08] bg-black/20 p-3">
+                <div
+                  key={label}
+                  className="rounded-md border border-white/[0.08] bg-black/20 p-3"
+                >
                   <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
                     {label}
                   </dt>
@@ -131,7 +141,10 @@ export default function ArtworkDetailPage() {
           </Section>
 
           {Object.keys(caption).length > 0 && (
-            <Section title="Generated Caption" eyebrow="AI generated, not catalogue metadata">
+            <Section
+              title="AI caption"
+              eyebrow="AI generated, not catalogue metadata"
+            >
               <p className="leading-relaxed text-white/70">
                 {caption.text || 'No caption text available.'}
               </p>
@@ -145,19 +158,33 @@ export default function ArtworkDetailPage() {
                     <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/35">
                       {label}
                     </dt>
-                    <dd className="mt-1 break-words text-xs text-white/55">{String(value)}</dd>
+                    <dd className="mt-1 break-words text-xs text-white/55">
+                      {String(value)}
+                    </dd>
                   </div>
                 ))}
               </dl>
             </Section>
           )}
 
-          <Section title="Public Portal Links" eyebrow="National Gallery Singapore / NHB Roots">
+          <Section
+            title="Public Portal Links"
+            eyebrow="National Gallery Singapore / NHB Roots"
+          >
             <div className="flex flex-wrap gap-2">
-              {ngsUrl && <SourceLink href={ngsUrl} label="National Gallery Singapore record" />}
-              {rootsUrl && <SourceLink href={rootsUrl} label="NHB Roots record" />}
+              {ngsUrl && (
+                <SourceLink
+                  href={ngsUrl}
+                  label="National Gallery Singapore record"
+                />
+              )}
+              {rootsUrl && (
+                <SourceLink href={rootsUrl} label="NHB Roots record" />
+              )}
               {!ngsUrl && !rootsUrl && (
-                <p className="text-sm text-white/45">No public source links available.</p>
+                <p className="text-sm text-white/45">
+                  No public source links available.
+                </p>
               )}
             </div>
           </Section>
