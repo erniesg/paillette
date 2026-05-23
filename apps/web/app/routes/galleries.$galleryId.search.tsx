@@ -209,6 +209,7 @@ type TableSortColumn =
   | 'place'
   | 'medium'
   | 'source'
+  | 'colour'
   | 'score';
 
 const SORT_DESC: Partial<Record<SortMode, SortMode>> = {
@@ -231,6 +232,7 @@ const tableColumnSortMode = (
   column: TableSortColumn,
   current: SortMode
 ): SortMode => {
+  if (column === 'colour') return 'colour';
   if (column === 'score') return 'relevance';
   if (column === 'time')
     return current === 'time-asc' ? 'time-desc' : 'time-asc';
@@ -242,6 +244,7 @@ const tableColumnSortMode = (
 };
 
 const tableSortDirection = (column: TableSortColumn, current: SortMode) => {
+  if (column === 'colour') return current === 'colour' ? 'best' : null;
   if (column === 'score') return current === 'relevance' ? 'desc' : null;
   if (column === 'time') {
     if (current === 'time-asc') return 'asc';
@@ -446,6 +449,39 @@ const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
   }, 0);
 
   return total / selected.length;
+};
+
+const colourMatchPercent = (
+  result: ArtworkSearchResult,
+  selected: string[]
+) => {
+  const distance = colourScore(result, selected);
+  if (!Number.isFinite(distance)) return null;
+
+  const maxUsefulDistance = 160;
+  return Math.max(
+    0,
+    Math.round(
+      100 - (Math.min(distance, maxUsefulDistance) / maxUsefulDistance) * 100
+    )
+  );
+};
+
+const formatColourMatch = (result: ArtworkSearchResult, selected: string[]) => {
+  const match = colourMatchPercent(result, selected);
+  return match === null ? 'No palette' : `${match}%`;
+};
+
+const getColourMatchTitle = (
+  result: ArtworkSearchResult,
+  selected: string[]
+) => {
+  const distance = colourScore(result, selected);
+  if (!Number.isFinite(distance)) {
+    return 'No palette available for this artwork';
+  }
+
+  return `Nearest palette distance: ${Math.round(distance)}. Lower distance is closer.`;
 };
 
 const paletteBandSortKey = (result: ArtworkSearchResult) => {
@@ -2117,10 +2153,17 @@ function ResultCard({
 
         <div className="flex items-center justify-between gap-3">
           <PaletteDots colours={palette} />
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+          <span
+            className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35"
+            title={
+              selectedColours.length
+                ? getColourMatchTitle(result, selectedColours)
+                : undefined
+            }
+          >
             {showSimilarity
               ? selectedColours.length
-                ? `dE ${Math.round(colourScore(result, selectedColours))}`
+                ? `Colour ${formatColourMatch(result, selectedColours)}`
                 : `${Math.round(result.similarity * 100)}%`
               : getAccession(result) || 'Collection'}
           </span>
@@ -2249,8 +2292,14 @@ function TableResults({
               onSortModeChange={onSortModeChange}
             />
             <TableSortHeader
-              label={showSimilarity ? 'Score' : 'Rank'}
-              column="score"
+              label={
+                showSimilarity
+                  ? selectedColours.length
+                    ? 'Colour match'
+                    : 'Score'
+                  : 'Rank'
+              }
+              column={selectedColours.length ? 'colour' : 'score'}
               sortMode={sortMode}
               onSortModeChange={onSortModeChange}
             />
@@ -2322,10 +2371,17 @@ function TableResults({
                   getSourceName(result)
                 )}
               </td>
-              <td className="px-3 py-3 font-mono text-white/55">
+              <td
+                className="px-3 py-3 font-mono text-white/55"
+                title={
+                  selectedColours.length
+                    ? getColourMatchTitle(result, selectedColours)
+                    : undefined
+                }
+              >
                 {showSimilarity
                   ? selectedColours.length
-                    ? `dE ${Math.round(colourScore(result, selectedColours))}`
+                    ? formatColourMatch(result, selectedColours)
                     : `${Math.round(result.similarity * 100)}%`
                   : (index + 1).toString().padStart(2, '0')}
               </td>
@@ -2365,7 +2421,13 @@ function TableSortHeader({
       >
         {label}
         <span className="text-[9px] tracking-[0.08em] text-white/35">
-          {direction === 'asc' ? 'ASC' : direction === 'desc' ? 'DESC' : ''}
+          {direction === 'asc'
+            ? 'ASC'
+            : direction === 'desc'
+              ? 'DESC'
+              : direction === 'best'
+                ? 'BEST'
+                : ''}
         </span>
       </button>
     </th>
