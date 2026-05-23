@@ -489,7 +489,7 @@ export default function SearchPage() {
             <div className="mb-6 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
-              <span>registered search</span>
+              <span>collection search</span>
               {currentQuery.data?.queryTime !== undefined && (
                 <>
                   <span>/</span>
