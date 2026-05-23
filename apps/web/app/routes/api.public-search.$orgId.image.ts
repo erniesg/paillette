@@ -72,7 +72,7 @@ export const action = async ({ context, params, request }: ActionFunctionArgs) =
 
   const outbound = new FormData();
   outbound.set('image', image);
-  outbound.set('topK', String(clamp(incoming.get('topK'), 1, 50, 30)));
+  outbound.set('topK', String(clamp(incoming.get('topK'), 1, 100, 30)));
   outbound.set('minScore', String(clamp(incoming.get('minScore'), 0, 1, 0.3)));
 
   const response = await fetch(

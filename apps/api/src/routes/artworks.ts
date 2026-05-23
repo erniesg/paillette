@@ -29,6 +29,15 @@ import {
 
 const app = new Hono<{ Bindings: Env }>();
 
+const publicSourceFilterSql = `
+  AND source_url IS NOT NULL
+  AND trim(source_url) <> ''
+  AND accession_number IS NOT NULL
+  AND trim(accession_number) <> ''
+  AND title IS NOT NULL
+  AND trim(title) <> ''
+`;
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -398,6 +407,8 @@ app.get('/', async (c) => {
       year_max: query.year_max ? parseInt(query.year_max) : undefined,
       medium: query.medium,
       search: query.search,
+      public_only:
+        query.public_only === 'true' || query.public_only === '1' || undefined,
       limit: query.limit ? parseInt(query.limit) : undefined,
       offset: query.offset ? parseInt(query.offset) : undefined,
       sort_by: query.sort_by,
@@ -417,6 +428,10 @@ app.get('/', async (c) => {
     if (validatedQuery.collection_id) {
       sql += ' AND collection_id = ?';
       params.push(validatedQuery.collection_id);
+    }
+
+    if (validatedQuery.public_only) {
+      sql += publicSourceFilterSql;
     }
 
     if (validatedQuery.artist) {

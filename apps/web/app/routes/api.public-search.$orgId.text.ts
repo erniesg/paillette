@@ -72,7 +72,7 @@ export const action = async ({ context, params, request }: ActionFunctionArgs) =
 
   const payload: SearchTextRequest = {
     query,
-    topK: clamp(body.topK, 1, 50, 30),
+    topK: clamp(body.topK, 1, 100, 30),
     minScore: clamp(body.minScore, 0, 1, 0.3),
   };
 

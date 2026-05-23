@@ -61,6 +61,7 @@ const DEFAULT_JINA_TEXT_MODEL = 'jina-embeddings-v5-text-small';
 const DEFAULT_JINA_DIMENSIONS = 1024;
 const JINA_EMBEDDINGS_ENDPOINT = 'https://api.jina.ai/v1/embeddings';
 const RRF_K = 60;
+const MAX_SEARCH_RESULTS = 100;
 const NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 
 const BACKABLE_NGS_SEARCH_SQL = `
@@ -370,7 +371,7 @@ async function searchJinaTextVectors(
     config.dimensions
   );
   const result = await vectorize.query(queryEmbedding, {
-    topK: Math.min(Math.max(topK * 4, 20), 50),
+    topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
     filter: orgId ? { galleryId: orgId } : undefined,
     returnMetadata: true,
   });
@@ -395,7 +396,7 @@ async function searchCaptionVectors(
 
   const queryEmbedding = await generateCaptionQueryEmbedding(env, query);
   const result = await env.CAPTION_VECTORIZE.query(queryEmbedding, {
-    topK: Math.min(Math.max(topK * 4, 20), 50),
+    topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
     returnMetadata: true,
   });
 
@@ -442,7 +443,7 @@ async function searchJinaImageVectors(
     config.dimensions
   );
   const result = await vectorize.query(queryEmbedding, {
-    topK,
+    topK: Math.min(Math.max(topK, 1), MAX_SEARCH_RESULTS),
     filter: orgId ? { galleryId: orgId } : undefined,
     returnMetadata: true,
   });
@@ -542,7 +543,12 @@ async function searchArtworksHybrid(
   const [jinaMatches, captionMatches, metadataMatches] = await Promise.all([
     jinaMatchesPromise,
     searchCaptionVectors(env, query, topK),
-    searchArtworksByMetadata(env.DB, orgId, query, Math.min(Math.max(topK * 2, 10), 50)),
+    searchArtworksByMetadata(
+      env.DB,
+      orgId,
+      query,
+      Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS)
+    ),
   ]);
 
   const scores = new Map<string, { score: number; vectorScore?: number }>();
@@ -737,7 +743,7 @@ async function searchArtworksByMetadata(
 // Validation schemas
 const textSearchSchema = z.object({
   query: z.string().min(1, 'Query cannot be empty').max(500),
-  topK: z.number().int().positive().max(50).optional().default(10),
+  topK: z.number().int().positive().max(MAX_SEARCH_RESULTS).optional().default(10),
   minScore: z.number().min(0).max(1).optional().default(0.7),
 });
 
@@ -870,8 +876,14 @@ searchRoutes.post('/search/image', async (c) => {
     }
 
     // Get optional parameters from form data
-    const topK = Number(formData.get('topK') || '10');
-    const minScore = Number(formData.get('minScore') || '0.7');
+    const requestedTopK = Number(formData.get('topK') || '10');
+    const requestedMinScore = Number(formData.get('minScore') || '0.7');
+    const topK = Number.isFinite(requestedTopK)
+      ? Math.min(Math.max(Math.round(requestedTopK), 1), MAX_SEARCH_RESULTS)
+      : 10;
+    const minScore = Number.isFinite(requestedMinScore)
+      ? Math.min(Math.max(requestedMinScore, 0), 1)
+      : 0.7;
 
     // Convert image to ArrayBuffer
     const imageBuffer = await imageFile.arrayBuffer();

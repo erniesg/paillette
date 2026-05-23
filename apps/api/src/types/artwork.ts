@@ -176,6 +176,7 @@ export const ArtworkQuerySchema = z.object({
   year_max: z.number().int().optional(),
   medium: z.string().optional(),
   search: z.string().optional(), // Full-text search
+  public_only: z.boolean().optional(),
   limit: z.number().int().positive().max(100).default(20),
   offset: z.number().int().min(0).default(0),
   sort_by: z.enum(['created_at', 'updated_at', 'title', 'artist', 'year']).default('created_at'),

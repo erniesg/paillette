@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { Link, useLoaderData, useSearchParams } from '@remix-run/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -44,6 +44,12 @@ import type {
 } from '~/types';
 import { useUser } from '~/contexts/user-context';
 
+const SEARCH_DISPLAY_INCREMENT = 30;
+const BROWSE_PAGE_SIZE = 60;
+const MIN_BROWSE_PAGE_SIZE = 12;
+const MAX_BROWSE_PAGE_SIZE = 100;
+const MAX_SEARCH_RESULTS = 100;
+
 export const meta: MetaFunction = () => {
   return [
     { title: 'Search Artworks - Paillette' },
@@ -74,6 +80,14 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
 type SearchMode = 'text' | 'image' | 'colour';
 type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
+type BrowseCollectionResponse = {
+  results: ArtworkSearchResult[];
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
 type SortMode =
   | 'relevance'
   | 'colour'
@@ -564,6 +578,51 @@ const publicSearchImage = async (
   return readSearchResponse(response);
 };
 
+const readBrowseResponse = async (response: Response) => {
+  const payload = (await response.json()) as ApiResponse<BrowseCollectionResponse>;
+  if (!payload.success || !payload.data) {
+    throw new Error(payload.error?.message || 'Failed to browse collection');
+  }
+
+  return payload.data;
+};
+
+const publicBrowseCollection = async (
+  orgId: string,
+  request: {
+    limit: number;
+    offset: number;
+    sortBy: 'title' | 'artist' | 'year' | 'created_at' | 'updated_at';
+    sortOrder: 'asc' | 'desc';
+  }
+): Promise<BrowseCollectionResponse> => {
+  const params = new URLSearchParams({
+    limit: String(request.limit),
+    offset: String(request.offset),
+    sort_by: request.sortBy,
+    sort_order: request.sortOrder,
+  });
+  const response = await fetch(
+    `/api/public-search/${encodeURIComponent(orgId)}/browse?${params.toString()}`
+  );
+
+  return readBrowseResponse(response);
+};
+
+const getBrowseSort = (sortMode: SortMode): {
+  sortBy: 'title' | 'artist' | 'year' | 'created_at' | 'updated_at';
+  sortOrder: 'asc' | 'desc';
+} => {
+  if (sortMode === 'time-desc') return { sortBy: 'year', sortOrder: 'desc' };
+  if (sortMode === 'time-asc') return { sortBy: 'year', sortOrder: 'asc' };
+  if (sortMode === 'artist-desc') return { sortBy: 'artist', sortOrder: 'desc' };
+  if (sortMode === 'artist') return { sortBy: 'artist', sortOrder: 'asc' };
+  if (sortMode === 'title-desc') return { sortBy: 'title', sortOrder: 'desc' };
+  if (sortMode === 'title') return { sortBy: 'title', sortOrder: 'asc' };
+
+  return { sortBy: 'title', sortOrder: 'asc' };
+};
+
 export default function SearchPage() {
   const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -579,10 +638,14 @@ export default function SearchPage() {
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(0.3);
+  const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
+  const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
   const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedArtwork, setSelectedArtwork] = useState<ArtworkSearchResult | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setHasMounted(true);
@@ -624,17 +687,94 @@ export default function SearchPage() {
     enabled: hasMounted && searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
+  const browseSort = useMemo(() => getBrowseSort(sortMode), [sortMode]);
+  const browseQuery = useInfiniteQuery({
+    queryKey: [
+      'browse',
+      galleryId,
+      browsePageSize,
+      browseSort.sortBy,
+      browseSort.sortOrder,
+    ],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      publicBrowseCollection(galleryId, {
+        limit: browsePageSize,
+        offset: Number(pageParam),
+        sortBy: browseSort.sortBy,
+        sortOrder: browseSort.sortOrder,
+      }),
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    enabled: hasMounted && isBrowsingCollection,
+  });
+
   const currentQuery = searchMode === 'image' ? imageSearchQuery : textSearchQuery;
-  const rawResults = currentQuery.data?.results || [];
+  const rawResults = isBrowsingCollection
+    ? browseQuery.data?.pages.flatMap((page) => page.results) || []
+    : currentQuery.data?.results || [];
   const results = useMemo(
     () => sortResults(rawResults, sortMode, selectedColours),
     [rawResults, selectedColours, sortMode]
   );
-  const isLoading = hasMounted && (currentQuery.isLoading || currentQuery.isFetching);
-  const error = currentQuery.error;
+  const visibleResults = isBrowsingCollection ? results : results.slice(0, visibleCount);
+  const totalBrowseResults = browseQuery.data?.pages[0]?.total ?? results.length;
+  const isLoading = hasMounted && (
+    isBrowsingCollection
+      ? browseQuery.isLoading
+      : currentQuery.isLoading || currentQuery.isFetching
+  );
+  const error = isBrowsingCollection ? browseQuery.error : currentQuery.error;
+  const hasMoreResults = isBrowsingCollection
+    ? Boolean(browseQuery.hasNextPage)
+    : visibleCount < results.length;
+
+  const loadMoreResults = useCallback(() => {
+    if (isBrowsingCollection) {
+      if (browseQuery.hasNextPage && !browseQuery.isFetchingNextPage) {
+        void browseQuery.fetchNextPage();
+      }
+      return;
+    }
+
+    setVisibleCount((count) => Math.min(count + SEARCH_DISPLAY_INCREMENT, results.length));
+  }, [
+    browseQuery,
+    isBrowsingCollection,
+    results.length,
+  ]);
 
   useEffect(() => {
-    if (searchMode !== 'text') return undefined;
+    setVisibleCount(SEARCH_DISPLAY_INCREMENT);
+  }, [galleryId, imageFile?.name, minScore, searchMode, textQuery, topK, isBrowsingCollection]);
+
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMoreResults || isLoading || (isBrowsingCollection && browseQuery.isFetchingNextPage)) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreResults();
+        }
+      },
+      { rootMargin: '600px 0px' }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [
+    browseQuery.isFetchingNextPage,
+    hasMoreResults,
+    isBrowsingCollection,
+    isLoading,
+    loadMoreResults,
+  ]);
+
+  useEffect(() => {
+    if (isBrowsingCollection || searchMode !== 'text') return undefined;
 
     const trimmed = textQuery.trim();
     if (!trimmed) {
@@ -649,7 +789,7 @@ export default function SearchPage() {
     }, 450);
 
     return () => window.clearTimeout(handle);
-  }, [searchMode, setSearchParams, textQuery]);
+  }, [isBrowsingCollection, searchMode, setSearchParams, textQuery]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -657,6 +797,7 @@ export default function SearchPage() {
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
       setSearchMode('image');
+      setIsBrowsingCollection(false);
       setShouldSearch(true);
     }
   }, []);
@@ -675,6 +816,7 @@ export default function SearchPage() {
     const trimmed = query.trim();
     if (!trimmed) return;
 
+    setIsBrowsingCollection(false);
     setSearchMode('text');
     setTextQuery(trimmed);
     setShouldSearch(true);
@@ -684,6 +826,7 @@ export default function SearchPage() {
   const clearSearch = () => {
     setTextQuery('');
     setShouldSearch(false);
+    setIsBrowsingCollection(false);
     setSearchParams({}, { replace: true });
   };
 
@@ -691,6 +834,7 @@ export default function SearchPage() {
     setImageFile(null);
     setImagePreview(null);
     setShouldSearch(false);
+    setIsBrowsingCollection(false);
   };
 
   const runColourSearch = (selection: string) => {
@@ -698,6 +842,7 @@ export default function SearchPage() {
     if (!query) return;
 
     setSearchMode('colour');
+    setIsBrowsingCollection(false);
     setSelectedColours([selection]);
     setSortMode('colour');
     setTextQuery(query);
@@ -733,7 +878,14 @@ export default function SearchPage() {
 
   const updateTopK = (value: number) => {
     if (!Number.isFinite(value)) return;
-    setTopK(Math.min(50, Math.max(1, Math.round(value))));
+    setTopK(Math.min(MAX_SEARCH_RESULTS, Math.max(1, Math.round(value))));
+  };
+
+  const updateBrowsePageSize = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    setBrowsePageSize(
+      Math.min(MAX_BROWSE_PAGE_SIZE, Math.max(MIN_BROWSE_PAGE_SIZE, Math.round(value)))
+    );
   };
 
   const updateMinScorePercent = (value: number) => {
@@ -899,19 +1051,28 @@ export default function SearchPage() {
                   active={searchMode === 'text'}
                   icon={Search}
                   label="Text"
-                  onClick={() => setSearchMode('text')}
+                  onClick={() => {
+                    setIsBrowsingCollection(false);
+                    setSearchMode('text');
+                  }}
                 />
                 <ModeButton
                   active={searchMode === 'image'}
                   icon={ImageIcon}
                   label="Image"
-                  onClick={() => setSearchMode('image')}
+                  onClick={() => {
+                    setIsBrowsingCollection(false);
+                    setSearchMode('image');
+                  }}
                 />
                 <ModeButton
                   active={searchMode === 'colour'}
                   icon={Palette}
                   label="Colour"
-                  onClick={() => setSearchMode('colour')}
+                  onClick={() => {
+                    setIsBrowsingCollection(false);
+                    setSearchMode('colour');
+                  }}
                 />
               </div>
             </div>
@@ -923,16 +1084,25 @@ export default function SearchPage() {
             <div className="mx-auto max-w-7xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
-                  {isLoading
-                    ? 'Searching'
-                    : results.length
-                      ? `${results.length} works`
-                      : hasMounted && shouldSearch
-                        ? 'No works'
-                        : 'Ready'}
-                  {textQuery && searchMode !== 'image' && (
+                  {isBrowsingCollection
+                    ? isLoading && !results.length
+                      ? 'Loading collection'
+                      : `${visibleResults.length} / ${totalBrowseResults} works`
+                    : isLoading
+                      ? 'Searching'
+                      : results.length
+                        ? `${visibleResults.length} / ${results.length} works`
+                        : hasMounted && shouldSearch
+                          ? 'No works'
+                          : 'Ready'}
+                  {textQuery && searchMode !== 'image' && !isBrowsingCollection && (
                     <span className="ml-2 normal-case tracking-normal text-white/70">
                       "{textQuery}"
+                    </span>
+                  )}
+                  {isBrowsingCollection && (
+                    <span className="ml-2 normal-case tracking-normal text-white/70">
+                      infinite browse
                     </span>
                   )}
                 </p>
@@ -1014,7 +1184,9 @@ export default function SearchPage() {
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     <span>Settings</span>
                     <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
-                      {topK} / {Math.round(minScore * 100)}
+                      {isBrowsingCollection
+                        ? `${browsePageSize} / infinite`
+                        : `${topK} / ${Math.round(minScore * 100)}`}
                     </span>
                   </button>
                 </div>
@@ -1022,28 +1194,60 @@ export default function SearchPage() {
 
               {isSettingsOpen && (
                 <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBrowsingCollection((value) => !value);
+                        setShouldSearch(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
+                        isBrowsingCollection
+                          ? 'border-fuchsia-300/35 bg-fuchsia-300/10 text-white'
+                          : 'border-white/10 bg-white/[0.035] text-white/65 hover:bg-white/[0.07] hover:text-white'
+                      }`}
+                    >
+                      <span>
+                        <span className="block text-sm font-medium">Infinite browse</span>
+                        <span className="mt-0.5 block text-xs text-white/40">
+                          Show the full source-backed collection. Ranked AI search stays capped.
+                        </span>
+                      </span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                        {isBrowsingCollection ? 'Infinite' : 'Off'}
+                      </span>
+                    </button>
+                  </div>
                   <label className="grid gap-2">
                     <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                      Results returned
+                      {isBrowsingCollection ? 'Browse page size' : 'Ranked search cap'}
                       <input
                         type="number"
-                        min={1}
-                        max={50}
-                        value={topK}
-                        onChange={(event) => updateTopK(Number(event.target.value))}
+                        min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
+                        max={isBrowsingCollection ? MAX_BROWSE_PAGE_SIZE : MAX_SEARCH_RESULTS}
+                        value={isBrowsingCollection ? browsePageSize : topK}
+                        onChange={(event) =>
+                          isBrowsingCollection
+                            ? updateBrowsePageSize(Number(event.target.value))
+                            : updateTopK(Number(event.target.value))
+                        }
                         className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
                       />
                     </span>
                     <input
                       type="range"
-                      min={1}
-                      max={50}
-                      value={topK}
-                      onChange={(event) => updateTopK(Number(event.target.value))}
+                      min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
+                      max={isBrowsingCollection ? MAX_BROWSE_PAGE_SIZE : MAX_SEARCH_RESULTS}
+                      value={isBrowsingCollection ? browsePageSize : topK}
+                      onChange={(event) =>
+                        isBrowsingCollection
+                          ? updateBrowsePageSize(Number(event.target.value))
+                          : updateTopK(Number(event.target.value))
+                      }
                       className="w-full accent-fuchsia-300"
                     />
                   </label>
-                  <label className="grid gap-2">
+                  <label className={`grid gap-2 ${isBrowsingCollection ? 'opacity-45' : ''}`}>
                     <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
                       Minimum score
                       <input
@@ -1052,6 +1256,7 @@ export default function SearchPage() {
                         max={100}
                         step={5}
                         value={Math.round(minScore * 100)}
+                        disabled={isBrowsingCollection}
                         onChange={(event) => updateMinScorePercent(Number(event.target.value))}
                         className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
                       />
@@ -1062,6 +1267,7 @@ export default function SearchPage() {
                       max={100}
                       step={5}
                       value={Math.round(minScore * 100)}
+                      disabled={isBrowsingCollection}
                       onChange={(event) => updateMinScorePercent(Number(event.target.value))}
                       className="w-full accent-fuchsia-300"
                     />
@@ -1084,15 +1290,36 @@ export default function SearchPage() {
           )}
 
           {!isLoading && !error && results.length > 0 && (
-            <ResultsView
-              view={view}
-              results={results}
-              selectedColours={selectedColours}
-              sortMode={sortMode}
-              onSortModeChange={setSortMode}
-              onFacetSearch={runTextSearch}
-              onSelectArtwork={setSelectedArtwork}
-            />
+            <>
+              <ResultsView
+                view={view}
+                results={visibleResults}
+                selectedColours={selectedColours}
+                sortMode={sortMode}
+                showSimilarity={!isBrowsingCollection}
+                onSortModeChange={setSortMode}
+                onFacetSearch={runTextSearch}
+                onSelectArtwork={setSelectedArtwork}
+              />
+              <div ref={loadMoreRef} className="flex justify-center py-8">
+                {hasMoreResults ? (
+                  <button
+                    type="button"
+                    onClick={loadMoreResults}
+                    disabled={isBrowsingCollection && browseQuery.isFetchingNextPage}
+                    className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
+                  >
+                    {isBrowsingCollection && browseQuery.isFetchingNextPage
+                      ? 'Loading more works'
+                      : 'Load more works'}
+                  </button>
+                ) : (
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
+                    End of results
+                  </p>
+                )}
+              </div>
+            </>
           )}
 
           {!isLoading && !error && hasMounted && shouldSearch && results.length === 0 && (
@@ -1405,6 +1632,7 @@ function ResultsView({
   results,
   selectedColours,
   sortMode,
+  showSimilarity,
   onSortModeChange,
   onFacetSearch,
   onSelectArtwork,
@@ -1413,6 +1641,7 @@ function ResultsView({
   results: ArtworkSearchResult[];
   selectedColours: string[];
   sortMode: SortMode;
+  showSimilarity: boolean;
   onSortModeChange: (sortMode: SortMode) => void;
   onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
@@ -1423,6 +1652,7 @@ function ResultsView({
         results={results}
         selectedColours={selectedColours}
         sortMode={sortMode}
+        showSimilarity={showSimilarity}
         onSortModeChange={onSortModeChange}
         onSelectArtwork={onSelectArtwork}
       />
@@ -1441,6 +1671,7 @@ function ResultsView({
     <MasonryResults
       results={results}
       selectedColours={selectedColours}
+      showSimilarity={showSimilarity}
       onFacetSearch={onFacetSearch}
       onSelectArtwork={onSelectArtwork}
     />
@@ -1450,11 +1681,13 @@ function ResultsView({
 function MasonryResults({
   results,
   selectedColours,
+  showSimilarity,
   onFacetSearch,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
   selectedColours: string[];
+  showSimilarity: boolean;
   onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -1466,6 +1699,7 @@ function MasonryResults({
           result={result}
           rank={index + 1}
           selectedColours={selectedColours}
+          showSimilarity={showSimilarity}
           onFacetSearch={onFacetSearch}
           onSelectArtwork={onSelectArtwork}
         />
@@ -1582,12 +1816,14 @@ function ResultCard({
   result,
   rank,
   selectedColours,
+  showSimilarity,
   onFacetSearch,
   onSelectArtwork,
 }: {
   result: ArtworkSearchResult;
   rank: number;
   selectedColours: string[];
+  showSimilarity: boolean;
   onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -1647,7 +1883,11 @@ function ResultCard({
         <div className="flex items-center justify-between gap-3">
           <PaletteDots colours={palette} />
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
-            {selectedColours.length ? `dE ${Math.round(colourScore(result, selectedColours))}` : `${Math.round(result.similarity * 100)}%`}
+            {showSimilarity
+              ? selectedColours.length
+                ? `dE ${Math.round(colourScore(result, selectedColours))}`
+                : `${Math.round(result.similarity * 100)}%`
+              : getAccession(result) || 'Collection'}
           </span>
         </div>
       </div>
@@ -1710,12 +1950,14 @@ function TableResults({
   results,
   selectedColours,
   sortMode,
+  showSimilarity,
   onSortModeChange,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
   selectedColours: string[];
   sortMode: SortMode;
+  showSimilarity: boolean;
   onSortModeChange: (sortMode: SortMode) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -1762,7 +2004,7 @@ function TableResults({
               onSortModeChange={onSortModeChange}
             />
             <TableSortHeader
-              label="Score"
+              label={showSimilarity ? 'Score' : 'Rank'}
               column="score"
               sortMode={sortMode}
               onSortModeChange={onSortModeChange}
@@ -1823,9 +2065,11 @@ function TableResults({
                 )}
               </td>
               <td className="px-3 py-3 font-mono text-white/55">
-                {selectedColours.length
-                  ? `dE ${Math.round(colourScore(result, selectedColours))}`
-                  : `${Math.round(result.similarity * 100)}%`}
+                {showSimilarity
+                  ? selectedColours.length
+                    ? `dE ${Math.round(colourScore(result, selectedColours))}`
+                    : `${Math.round(result.similarity * 100)}%`
+                  : (index + 1).toString().padStart(2, '0')}
               </td>
             </tr>
           ))}
