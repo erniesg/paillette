@@ -3,16 +3,24 @@ import { Link, useLoaderData } from '@remix-run/react';
 import type { ReactNode } from 'react';
 import { ArrowLeft, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
-import { formatDimensions } from '~/lib/utils';
+import {
+  getGeneratedCaptionRecord,
+  getNgsUrl,
+  getPublicCatalogueRows,
+  getPublicDescription,
+  getPublicImageUrl,
+  getRootsUrl,
+} from '~/lib/public-artwork-metadata';
 import type { Artwork } from '~/types';
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   const artwork = data?.artwork;
+  const description = artwork ? getPublicDescription(artwork) : null;
   return [
     { title: `${artwork?.title || 'Artwork'} - Paillette` },
     {
       name: 'description',
-      content: artwork?.description || 'Artwork detail and source metadata',
+      content: description || 'Artwork detail and source metadata',
     },
   ];
 };
@@ -38,84 +46,17 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   }
 }
 
-const asRecord = (value: unknown): Record<string, any> =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, any>)
-    : {};
-
-const asText = (value: unknown) =>
-  typeof value === 'string' && value.trim() ? value.trim() : null;
-
-const getCustomMetadata = (artwork: Artwork) =>
-  asRecord((artwork as Artwork & Record<string, any>).custom_metadata || artwork.metadata);
-
-const getImageUrl = (artwork: Artwork) =>
-  artwork.imageUrl || artwork.image_url || artwork.thumbnailUrl || artwork.thumbnail_url || null;
-
-const getGeneratedCaption = (artwork: Artwork) => {
-  const custom = getCustomMetadata(artwork);
-  return asRecord(custom.generated_caption || custom.generatedCaption);
-};
-
-const getSourceRecords = (artwork: Artwork) => {
-  const custom = getCustomMetadata(artwork);
-  return asRecord(custom.source_records || custom.sourceRecords);
-};
-
-const getRootsUrl = (artwork: Artwork) => {
-  const custom = getCustomMetadata(artwork);
-  const sourceRecords = getSourceRecords(artwork);
-  return (
-    asText(custom.roots_listing_url) ||
-    asText(sourceRecords.roots_listing_url) ||
-    asText(sourceRecords.rootsListingUrl)
-  );
-};
-
-const getNgsUrl = (artwork: Artwork) => {
-  const custom = getCustomMetadata(artwork);
-  const sourceRecords = getSourceRecords(artwork);
-  return (
-    artwork.source_url ||
-    asText(custom.ngs_detail_url) ||
-    asText(sourceRecords.ngs_detail_url) ||
-    asText(sourceRecords.ngsDetailUrl)
-  );
-};
-
 const compactRows = (rows: Array<[string, unknown]>) =>
   rows.filter(([, value]) => value !== null && value !== undefined && value !== '');
 
-const previewJson = (value: unknown) => JSON.stringify(value, null, 2);
-
 export default function ArtworkDetailPage() {
   const { gallery, artwork, preferredRouteId } = useLoaderData<typeof loader>();
-  const custom = getCustomMetadata(artwork);
-  const caption = getGeneratedCaption(artwork);
-  const sourceRecords = getSourceRecords(artwork);
-  const fieldSources = asRecord(artwork.field_sources || custom.field_sources);
-  const imageUrl = getImageUrl(artwork);
+  const caption = getGeneratedCaptionRecord(artwork);
+  const description = getPublicDescription(artwork);
+  const imageUrl = getPublicImageUrl(artwork);
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
-  const additionalMetadata = Object.entries(custom).filter(
-    ([key]) => !['generated_caption', 'generatedCaption', 'source_records', 'sourceRecords'].includes(key)
-  );
-
-  const catalogRows = compactRows([
-    ['Artist', artwork.artist],
-    ['Date', artwork.date_text || artwork.year],
-    ['Medium', artwork.medium],
-    ['Classification', artwork.classification],
-    ['Culture', artwork.culture],
-    ['Origin', artwork.origin],
-    ['Dimensions', formatDimensions(artwork.dimensions)],
-    ['Accession', artwork.accession_number],
-    ['Rights', artwork.rights],
-    ['Credit line', artwork.credit_line],
-    ['Source institution', artwork.source_institution],
-    ['Source collection', artwork.source_collection],
-    ['Source record ID', artwork.source_record_id],
-  ]);
+  const catalogRows = getPublicCatalogueRows(artwork);
 
   return (
     <div className="min-h-screen bg-[#0b0b0e] text-white">
@@ -171,20 +112,20 @@ export default function ArtworkDetailPage() {
             )}
           </div>
 
-          {artwork.description && (
+          {description && (
             <Section title="Description" eyebrow="Catalogue text">
-              <p className="leading-relaxed text-white/70">{artwork.description}</p>
+              <p className="leading-relaxed text-white/70">{description}</p>
             </Section>
           )}
 
-          <Section title="Catalogue Metadata" eyebrow="NGS / source fields">
+          <Section title="Catalogue Metadata" eyebrow="Public NGS / Roots fields">
             <dl className="grid gap-3 sm:grid-cols-2">
-              {catalogRows.map(([label, value]) => (
+              {catalogRows.map(({ label, value }) => (
                 <div key={label} className="rounded-md border border-white/[0.08] bg-black/20 p-3">
                   <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
                     {label}
                   </dt>
-                  <dd className="mt-1 text-sm text-white/75">{String(value)}</dd>
+                  <dd className="mt-1 text-sm text-white/75">{value}</dd>
                 </div>
               ))}
             </dl>
@@ -212,58 +153,15 @@ export default function ArtworkDetailPage() {
             </Section>
           )}
 
-          {Object.keys(fieldSources).length > 0 && (
-            <Section title="Field Sources" eyebrow="Per-field attribution">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {Object.entries(fieldSources).map(([field, source]) => (
-                  <div
-                    key={field}
-                    className="flex items-center justify-between gap-3 rounded-md border border-white/[0.08] bg-black/20 px-3 py-2"
-                  >
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">
-                      {field}
-                    </span>
-                    <span className="text-right text-xs text-white/65">
-                      {typeof source === 'string' ? source : previewJson(source)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {additionalMetadata.length > 0 && (
-            <Section title="Additional Metadata" eyebrow="Ingested custom fields">
-              <div className="space-y-2">
-                {additionalMetadata.map(([key, value]) => (
-                  <details
-                    key={key}
-                    className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2"
-                  >
-                    <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">
-                      {key}
-                    </summary>
-                    <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-white/60">
-                      {typeof value === 'string' ? value : previewJson(value)}
-                    </pre>
-                  </details>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {(sourceRecords.ngs || sourceRecords.roots) && (
-            <Section title="Raw Source Records" eyebrow="NGS and Roots payloads">
-              <div className="space-y-3">
-                {sourceRecords.ngs && (
-                  <RawRecord label="NGS raw record" value={sourceRecords.ngs} />
-                )}
-                {sourceRecords.roots && (
-                  <RawRecord label="Roots raw record" value={sourceRecords.roots} />
-                )}
-              </div>
-            </Section>
-          )}
+          <Section title="Public Records" eyebrow="NGS / Roots portal links">
+            <div className="flex flex-wrap gap-2">
+              {ngsUrl && <SourceLink href={ngsUrl} label="Open NGS record" />}
+              {rootsUrl && <SourceLink href={rootsUrl} label="Open Roots record" />}
+              {!ngsUrl && !rootsUrl && (
+                <p className="text-sm text-white/45">No public source links available.</p>
+              )}
+            </div>
+          </Section>
         </section>
       </main>
     </div>
@@ -301,18 +199,5 @@ function SourceLink({ href, label }: { href: string; label: string }) {
       {label}
       <ExternalLink className="h-3.5 w-3.5" />
     </a>
-  );
-}
-
-function RawRecord({ label, value }: { label: string; value: unknown }) {
-  return (
-    <details className="rounded-md border border-white/[0.08] bg-black/20 p-3">
-      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">
-        {label}
-      </summary>
-      <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-white/60">
-        {previewJson(value)}
-      </pre>
-    </details>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
+import * as Dialog from '@radix-ui/react-dialog';
 import {
   ArrowLeft,
   Camera,
@@ -24,6 +25,14 @@ import {
 } from 'lucide-react';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { Logo } from '~/components/ui/logo';
+import {
+  getGeneratedCaptionText,
+  getNgsUrl,
+  getPublicCatalogueRows,
+  getPublicDescription,
+  getPublicImageUrl,
+  getRootsUrl,
+} from '~/lib/public-artwork-metadata';
 import type {
   ApiResponse,
   ArtworkSearchResult,
@@ -258,10 +267,7 @@ const getCaption = (result: ArtworkSearchResult) => {
   return asText(caption);
 };
 
-const getSourceUrl = (result: ArtworkSearchResult) =>
-  asText(getMeta(result).sourceUrl) ||
-  asText(getMeta(result).source_url) ||
-  asText(getMeta(result).ngs_detail_url);
+const getSourceUrl = (result: ArtworkSearchResult) => getNgsUrl(result) || getRootsUrl(result);
 
 const collectPalette = (result: ArtworkSearchResult): string[] => {
   const meta = getMeta(result);
@@ -416,6 +422,7 @@ export default function SearchPage() {
   const [minScore, setMinScore] = useState(0.3);
   const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedArtwork, setSelectedArtwork] = useState<ArtworkSearchResult | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
@@ -921,8 +928,8 @@ export default function SearchPage() {
             <ResultsView
               view={view}
               results={results}
-              routeId={preferredRouteId}
               selectedColours={selectedColours}
+              onSelectArtwork={setSelectedArtwork}
             />
           )}
 
@@ -936,7 +943,162 @@ export default function SearchPage() {
           )}
         </section>
       </main>
+      <SearchArtworkDialog
+        artwork={selectedArtwork}
+        routeId={preferredRouteId}
+        onClose={() => setSelectedArtwork(null)}
+      />
     </div>
+  );
+}
+
+function SearchArtworkDialog({
+  artwork,
+  routeId,
+  onClose,
+}: {
+  artwork: ArtworkSearchResult | null;
+  routeId: string;
+  onClose: () => void;
+}) {
+  const imageUrl = artwork ? getPublicImageUrl(artwork) : null;
+  const description = artwork ? getPublicDescription(artwork) : null;
+  const caption = artwork ? getGeneratedCaptionText(artwork) : null;
+  const catalogRows = artwork ? getPublicCatalogueRows(artwork) : [];
+  const ngsUrl = artwork ? getNgsUrl(artwork) : null;
+  const rootsUrl = artwork ? getRootsUrl(artwork) : null;
+
+  return (
+    <Dialog.Root
+      open={Boolean(artwork)}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" />
+        {artwork && (
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none md:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+            <Dialog.Description className="sr-only">
+              Public catalogue metadata and AI caption for the selected artwork.
+            </Dialog.Description>
+            <div className="flex min-h-[280px] items-center justify-center bg-black/35 p-4 md:min-h-[620px]">
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt={artwork.title || 'Artwork'}
+                  className="max-h-[72vh] w-full rounded-md object-contain"
+                />
+              ) : (
+                <div className="flex h-full min-h-64 w-full items-center justify-center rounded-md bg-white/[0.04] text-white/30">
+                  <ImageIcon className="mr-2 h-5 w-5" />
+                  No image
+                </div>
+              )}
+            </div>
+            <div className="max-h-[90vh] overflow-y-auto p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-white/35">
+                    Artwork
+                  </p>
+                  <Dialog.Title className="mt-2 font-display text-3xl font-semibold leading-tight text-white">
+                    {artwork.title || 'Untitled'}
+                  </Dialog.Title>
+                  {artwork.artist && (
+                    <p className="mt-2 text-sm text-white/60">{artwork.artist}</p>
+                  )}
+                </div>
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-white/50 transition-colors hover:bg-white/[0.08] hover:text-white"
+                    aria-label="Close artwork details"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </Dialog.Close>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link
+                  to={`/${routeId}/artworks/${encodeURIComponent(artwork.id)}`}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
+                >
+                  Open full page
+                </Link>
+                {imageUrl && (
+                  <a
+                    href={imageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.09] hover:text-white"
+                  >
+                    Open image
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+                {ngsUrl && <PublicRecordLink href={ngsUrl} label="NGS record" />}
+                {rootsUrl && <PublicRecordLink href={rootsUrl} label="Roots record" />}
+              </div>
+
+              {description && (
+                <section className="mt-6">
+                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+                    Catalogue text
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-white/70">{description}</p>
+                </section>
+              )}
+
+              {catalogRows.length > 0 && (
+                <section className="mt-6">
+                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+                    Public NGS / Roots fields
+                  </h3>
+                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {catalogRows.map(({ label, value }) => (
+                      <div
+                        key={label}
+                        className="rounded-md border border-white/[0.08] bg-black/20 p-3"
+                      >
+                        <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
+                          {label}
+                        </dt>
+                        <dd className="mt-1 text-sm text-white/70">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
+
+              {caption && (
+                <section className="mt-6 rounded-md border border-cyan-200/10 bg-cyan-200/[0.04] p-4">
+                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-100/55">
+                    AI caption
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-white/68">{caption}</p>
+                </section>
+              )}
+            </div>
+          </Dialog.Content>
+        )}
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function PublicRecordLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-cyan-100/75 transition-colors hover:bg-white/[0.09] hover:text-cyan-100"
+    >
+      {label}
+      <ExternalLink className="h-3.5 w-3.5" />
+    </a>
   );
 }
 
@@ -1077,49 +1239,49 @@ function ColourStrip({
 function ResultsView({
   view,
   results,
-  routeId,
   selectedColours,
+  onSelectArtwork,
 }: {
   view: ViewMode;
   results: ArtworkSearchResult[];
-  routeId: string;
   selectedColours: string[];
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   if (view === 'table') {
     return (
       <TableResults
         results={results}
-        routeId={routeId}
         selectedColours={selectedColours}
+        onSelectArtwork={onSelectArtwork}
       />
     );
   }
 
   if (view === 'salon') {
-    return <SalonResults results={results} routeId={routeId} />;
+    return <SalonResults results={results} onSelectArtwork={onSelectArtwork} />;
   }
 
   if (view === 'atlas') {
-    return <AtlasResults results={results} routeId={routeId} />;
+    return <AtlasResults results={results} onSelectArtwork={onSelectArtwork} />;
   }
 
   return (
     <MasonryResults
       results={results}
-      routeId={routeId}
       selectedColours={selectedColours}
+      onSelectArtwork={onSelectArtwork}
     />
   );
 }
 
 function MasonryResults({
   results,
-  routeId,
   selectedColours,
+  onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
-  routeId: string;
   selectedColours: string[];
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
     <div className="columns-1 gap-4 pt-6 sm:columns-2 lg:columns-3 xl:columns-4">
@@ -1128,8 +1290,8 @@ function MasonryResults({
           key={result.id}
           result={result}
           rank={index + 1}
-          routeId={routeId}
           selectedColours={selectedColours}
+          onSelectArtwork={onSelectArtwork}
         />
       ))}
     </div>
@@ -1138,10 +1300,10 @@ function MasonryResults({
 
 function SalonResults({
   results,
-  routeId,
+  onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
-  routeId: string;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
     <div className="grid gap-x-8 gap-y-12 pt-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1150,10 +1312,11 @@ function SalonResults({
         const image = result.thumbnailUrl || result.imageUrl;
 
         return (
-          <Link
+          <button
             key={result.id}
-            to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`}
-            className="group block"
+            type="button"
+            onClick={() => onSelectArtwork(result)}
+            className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
             style={{ transform: `rotate(${rotation}deg)` }}
           >
             <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
@@ -1177,7 +1340,7 @@ function SalonResults({
               <br />
               {result.artist || 'Unknown artist'} / {getDateText(result) || 'undated'}
             </p>
-          </Link>
+          </button>
         );
       })}
     </div>
@@ -1186,10 +1349,10 @@ function SalonResults({
 
 function AtlasResults({
   results,
-  routeId,
+  onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
-  routeId: string;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
     <div className="relative mt-6 h-[70vh] min-h-[460px] overflow-hidden rounded-lg border border-white/[0.07] bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:64px_64px]">
@@ -1201,10 +1364,11 @@ function AtlasResults({
         const image = result.thumbnailUrl || result.imageUrl;
 
         return (
-          <Link
+          <button
             key={result.id}
-            to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`}
-            className="group absolute"
+            type="button"
+            onClick={() => onSelectArtwork(result)}
+            className="group absolute appearance-none border-0 bg-transparent p-0 text-left"
             style={{
               left: `${x}%`,
               top: `${y}%`,
@@ -1231,7 +1395,7 @@ function AtlasResults({
                 {result.title || 'Untitled'}
               </span>
             </div>
-          </Link>
+          </button>
         );
       })}
     </div>
@@ -1241,20 +1405,24 @@ function AtlasResults({
 function ResultCard({
   result,
   rank,
-  routeId,
   selectedColours,
+  onSelectArtwork,
 }: {
   result: ArtworkSearchResult;
   rank: number;
-  routeId: string;
   selectedColours: string[];
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const palette = collectPalette(result).slice(0, 5);
   const caption = getCaption(result);
 
   return (
     <article className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.025]">
-      <Link to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`} className="group block">
+      <button
+        type="button"
+        onClick={() => onSelectArtwork(result)}
+        className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
+      >
         <div className="bg-white/[0.03]">
           {result.thumbnailUrl || result.imageUrl ? (
             <img
@@ -1300,7 +1468,7 @@ function ResultCard({
             </span>
           </div>
         </div>
-      </Link>
+      </button>
     </article>
   );
 }
@@ -1315,9 +1483,9 @@ function MetadataLine({ result }: { result: ArtworkSearchResult }) {
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.slice(0, 4).map((item) => (
+      {items.slice(0, 4).map((item, index) => (
         <span
-          key={item}
+          key={`${item}-${index}`}
           className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-white/55"
         >
           {item}
@@ -1348,12 +1516,12 @@ function PaletteDots({ colours }: { colours: string[] }) {
 
 function TableResults({
   results,
-  routeId,
   selectedColours,
+  onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
-  routeId: string;
   selectedColours: string[];
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
     <div className="mt-6 overflow-x-auto rounded-lg border border-white/[0.08]">
@@ -1376,9 +1544,10 @@ function TableResults({
                 {(index + 1).toString().padStart(2, '0')}
               </td>
               <td className="px-3 py-3">
-                <Link
-                  to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`}
-                  className="flex items-center gap-3 text-white transition-colors hover:text-cyan-200"
+                <button
+                  type="button"
+                  onClick={() => onSelectArtwork(result)}
+                  className="flex items-center gap-3 text-left text-white transition-colors hover:text-cyan-200"
                 >
                   {result.thumbnailUrl || result.imageUrl ? (
                     <img
@@ -1400,7 +1569,7 @@ function TableResults({
                       </span>
                     )}
                   </span>
-                </Link>
+                </button>
               </td>
               <td className="px-3 py-3 text-white/65">{result.artist || 'Unknown'}</td>
               <td className="px-3 py-3 text-white/55">{getDateText(result) || '-'}</td>
