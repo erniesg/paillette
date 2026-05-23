@@ -23,26 +23,33 @@ import type {
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
 const getConfiguredApiUrl = () =>
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_URL;
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+    ?.VITE_API_URL;
 
 const getApiUrlForHostname = (hostname: string) => {
   const configuredApiUrl = getConfiguredApiUrl();
-  const isDev = hostname === 'localhost';
-  const isStaging = hostname === 'paillette-stg.berlayar.ai';
+  const isDev = hostname === 'localhost' || hostname === '127.0.0.1';
+  const usesStagingApi =
+    hostname === 'paillette-stg.berlayar.ai' ||
+    hostname === 'paillette.berlayar.ai';
 
-  return configuredApiUrl ||
-         (isDev
-           ? 'http://localhost:8787'
-           : isStaging
-             ? 'https://paillette-api-stg.berlayar.ai'
-             : 'https://paillette-api.berlayar.ai');
+  return (
+    configuredApiUrl ||
+    (isDev
+      ? 'http://localhost:8787'
+      : usesStagingApi
+        ? 'https://paillette-api-stg.berlayar.ai'
+        : 'https://paillette-api.berlayar.ai')
+  );
 };
 
 const getApiUrl = () => {
   if (typeof window !== 'undefined') {
     // Client-side
-    return (window as any).ENV?.API_URL ||
-           getApiUrlForHostname(window.location.hostname);
+    return (
+      (window as any).ENV?.API_URL ||
+      getApiUrlForHostname(window.location.hostname)
+    );
   }
 
   // Server-side
@@ -74,7 +81,8 @@ export const getPreferredOrgRouteId = (
 
 const normalizeArtwork = (artwork: Artwork): Artwork => {
   const raw = artwork as Artwork & Record<string, any>;
-  const orgId = raw.orgId || raw.org_id || raw.galleryId || raw.gallery_id || '';
+  const orgId =
+    raw.orgId || raw.org_id || raw.galleryId || raw.gallery_id || '';
   const metadata = {
     ...(raw.metadata || {}),
     ...(raw.custom_metadata || {}),
@@ -102,7 +110,9 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  private async getAuthHeaders(getAccessToken: AccessTokenProvider): Promise<Record<string, string>> {
+  private async getAuthHeaders(
+    getAccessToken: AccessTokenProvider
+  ): Promise<Record<string, string>> {
     const token = await getAccessToken();
 
     if (!token) {
@@ -176,7 +186,8 @@ class ApiClient {
       headers: await this.getAuthHeaders(getAccessToken),
     });
 
-    const data: ApiResponse<{ id: string; status: string }> = await response.json();
+    const data: ApiResponse<{ id: string; status: string }> =
+      await response.json();
 
     if (!data.success) {
       throw new Error(data.error?.message || 'Failed to revoke API key');
@@ -207,17 +218,14 @@ class ApiClient {
     request: SearchTextRequest,
     getAccessToken?: AccessTokenProvider
   ): Promise<SearchResponse> {
-    const response = await fetch(
-      `${this.baseUrl}/orgs/${orgId}/search/text`,
-      {
-        method: 'POST',
-        headers: {
-          ...(await this.getOptionalAuthHeaders(getAccessToken)),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-      }
-    );
+    const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/text`, {
+      method: 'POST',
+      headers: {
+        ...(await this.getOptionalAuthHeaders(getAccessToken)),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
 
     const data: ApiResponse<SearchResponse> = await response.json();
 
@@ -242,14 +250,11 @@ class ApiClient {
     if (request.minScore)
       formData.append('minScore', request.minScore.toString());
 
-    const response = await fetch(
-      `${this.baseUrl}/orgs/${orgId}/search/image`,
-      {
-        method: 'POST',
-        headers: await this.getOptionalAuthHeaders(getAccessToken),
-        body: formData,
-      }
-    );
+    const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/image`, {
+      method: 'POST',
+      headers: await this.getOptionalAuthHeaders(getAccessToken),
+      body: formData,
+    });
 
     const data: ApiResponse<SearchResponse> = await response.json();
 
@@ -298,22 +303,19 @@ class ApiClient {
     totalResults: number;
     took: number;
   }> {
-    const response = await fetch(
-      `${this.baseUrl}/orgs/${orgId}/search/color`,
-      {
-        method: 'POST',
-        headers: {
-          ...(await this.getOptionalAuthHeaders(getAccessToken)),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          colors: request.colors,
-          matchMode: request.matchMode || 'any',
-          threshold: request.threshold || 15,
-          limit: request.limit || 20,
-        }),
-      }
-    );
+    const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/color`, {
+      method: 'POST',
+      headers: {
+        ...(await this.getOptionalAuthHeaders(getAccessToken)),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        colors: request.colors,
+        matchMode: request.matchMode || 'any',
+        threshold: request.threshold || 15,
+        limit: request.limit || 20,
+      }),
+    });
 
     const data: ApiResponse<{
       results: Array<{
@@ -462,7 +464,9 @@ class ApiClient {
       throw new Error(data.error?.message || 'Failed to fetch artworks');
     }
 
-    const payload = data.data as { artworks?: Artwork[]; total?: number } | Artwork[];
+    const payload = data.data as
+      | { artworks?: Artwork[]; total?: number }
+      | Artwork[];
     const artworks = Array.isArray(payload) ? payload : payload.artworks || [];
 
     return {
@@ -853,7 +857,9 @@ class ApiClient {
     }> = await response.json();
 
     if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Failed to fetch processing status');
+      throw new Error(
+        data.error?.message || 'Failed to fetch processing status'
+      );
     }
 
     return data.data;
@@ -886,7 +892,9 @@ class ApiClient {
     }> = await response.json();
 
     if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Failed to fetch processing stats');
+      throw new Error(
+        data.error?.message || 'Failed to fetch processing stats'
+      );
     }
 
     return data.data;
@@ -900,11 +908,13 @@ import { MockApiClient } from './mock-api';
 const isE2ETest =
   typeof process !== 'undefined' &&
   (process.env.E2E_TEST_MODE === 'true' ||
-   process.env.PLAYWRIGHT_TEST_MODE === 'true');
+    process.env.PLAYWRIGHT_TEST_MODE === 'true');
 
 export const apiClient = isE2ETest ? new MockApiClient() : new ApiClient();
 
 export const getApiClientForRequest = (request: Request) =>
   isE2ETest
     ? new MockApiClient()
-    : new ApiClient(`${getApiUrlForHostname(new URL(request.url).hostname)}/api/v1`);
+    : new ApiClient(
+        `${getApiUrlForHostname(new URL(request.url).hostname)}/api/v1`
+      );
