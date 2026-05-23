@@ -92,10 +92,6 @@ export default function ArtworkDetailPage() {
                 </div>
               )}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {ngsUrl && <SourceLink href={ngsUrl} label="Open NGS record" />}
-              {rootsUrl && <SourceLink href={rootsUrl} label="Open Roots record" />}
-            </div>
           </div>
         </section>
 
@@ -153,10 +149,10 @@ export default function ArtworkDetailPage() {
             </Section>
           )}
 
-          <Section title="Public Records" eyebrow="NGS / Roots portal links">
+          <Section title="Public Portal Links" eyebrow="National Gallery Singapore / NHB Roots">
             <div className="flex flex-wrap gap-2">
-              {ngsUrl && <SourceLink href={ngsUrl} label="Open NGS record" />}
-              {rootsUrl && <SourceLink href={rootsUrl} label="Open Roots record" />}
+              {ngsUrl && <SourceLink href={ngsUrl} label="National Gallery Singapore record" />}
+              {rootsUrl && <SourceLink href={rootsUrl} label="NHB Roots record" />}
               {!ngsUrl && !rootsUrl && (
                 <p className="text-sm text-white/45">No public source links available.</p>
               )}

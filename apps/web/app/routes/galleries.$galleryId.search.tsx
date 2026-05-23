@@ -1066,8 +1066,8 @@ function SearchArtworkDialog({
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 )}
-                {ngsUrl && <PublicRecordLink href={ngsUrl} label="NGS record" />}
-                {rootsUrl && <PublicRecordLink href={rootsUrl} label="Roots record" />}
+                {ngsUrl && <PublicRecordLink href={ngsUrl} label="National Gallery Singapore" />}
+                {rootsUrl && <PublicRecordLink href={rootsUrl} label="NHB Roots" />}
               </div>
 
               {description && (
