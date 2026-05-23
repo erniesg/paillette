@@ -1,12 +1,20 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { Link, useLoaderData, useSearchParams } from '@remix-run/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   Camera,
+  ChevronDown,
   Clock,
   ExternalLink,
   Frame,
@@ -35,6 +43,10 @@ import {
   getPublicImageUrl,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
+import {
+  getUpcomingSingaporeHolidaySuggestions,
+  type HolidaySearchSuggestion,
+} from '~/lib/singapore-holidays.server';
 import type {
   ApiResponse,
   ArtworkSearchResult,
@@ -68,11 +80,15 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   }
 
   try {
-    const gallery = await getApiClientForRequest(request).getGallery(galleryId);
+    const [gallery, holidaySuggestions] = await Promise.all([
+      getApiClientForRequest(request).getGallery(galleryId),
+      getUpcomingSingaporeHolidaySuggestions(),
+    ]);
     return {
       gallery,
       galleryId: gallery.id,
       preferredRouteId: getPreferredOrgRouteId(galleryId, gallery.slug),
+      holidaySuggestions,
     };
   } catch {
     throw new Response('Gallery not found', { status: 404 });
@@ -106,7 +122,25 @@ type SortMode =
   | 'source-desc';
 type SortControlId = 'relevance' | 'colour' | 'time' | 'artist' | 'title';
 
-const EVAL_SUGGESTIONS = [
+type EvalSuggestion = {
+  type:
+    | 'keyword'
+    | 'occasion'
+    | 'motif'
+    | 'mood'
+    | 'style'
+    | 'medium'
+    | 'metadata'
+    | 'colour';
+  label: string;
+  query: string;
+  dot: string;
+  detail?: string;
+  colourId?: string;
+  source?: HolidaySearchSuggestion['source'];
+};
+
+const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'keyword',
     label: 'tropical fruit and flowers',
@@ -157,6 +191,36 @@ const EVAL_SUGGESTIONS = [
     colourId: 'sage',
   },
 ];
+
+const buildSuggestionPool = (
+  holidaySuggestions: HolidaySearchSuggestion[]
+): EvalSuggestion[] => {
+  const [firstSuggestion, ...remainingSuggestions] = EVAL_SUGGESTIONS;
+  const leadingSuggestions = firstSuggestion ? [firstSuggestion] : [];
+  const staticSuggestions = remainingSuggestions.filter(
+    (suggestion) => suggestion.type !== 'occasion'
+  );
+
+  if (!holidaySuggestions.length) {
+    return EVAL_SUGGESTIONS;
+  }
+
+  return [
+    ...leadingSuggestions,
+    ...holidaySuggestions.map((suggestion) => ({
+      type: suggestion.type,
+      label: suggestion.label,
+      query: suggestion.query,
+      dot: suggestion.dot,
+      detail: suggestion.detail,
+      source: suggestion.source,
+    })),
+    ...staticSuggestions,
+  ];
+};
+
+const getSuggestionKey = (suggestion: EvalSuggestion) =>
+  `${suggestion.type}-${suggestion.label}-${suggestion.query}`;
 
 const COLOURS = [
   { id: 'navy', hex: '#1a2f52', name: 'Navy' },
@@ -734,8 +798,12 @@ const getBrowseSort = (
 };
 
 export default function SearchPage() {
-  const { gallery, galleryId, preferredRouteId } =
-    useLoaderData<typeof loader>();
+  const {
+    gallery,
+    galleryId,
+    preferredRouteId,
+    holidaySuggestions = [],
+  } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, login } = useUser();
 
@@ -762,6 +830,21 @@ export default function SearchPage() {
   const [hasMounted, setHasMounted] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const colourRailRef = useRef<HTMLDivElement | null>(null);
+  const searchPanelRef = useRef<HTMLElement | null>(null);
+  const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
+  const resultsAreaRef = useRef<HTMLElement | null>(null);
+
+  const suggestionPool = useMemo(
+    () => buildSuggestionPool(holidaySuggestions),
+    [holidaySuggestions]
+  );
+  const hasActiveSearch =
+    isBrowsingCollection ||
+    shouldSearch ||
+    searchMode !== 'text' ||
+    textQuery.trim().length > 0 ||
+    imageFile !== null ||
+    searchColours.length > 0;
 
   const revealColourRail = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -832,6 +915,18 @@ export default function SearchPage() {
     enabled: hasMounted && isBrowsingCollection,
   });
 
+  const idleShowcaseQuery = useQuery({
+    queryKey: ['idle-showcase', galleryId],
+    queryFn: () =>
+      publicBrowseCollection(galleryId, {
+        limit: 12,
+        offset: 0,
+        sortBy: 'year',
+        sortOrder: 'desc',
+      }),
+    enabled: hasMounted && !hasActiveSearch,
+  });
+
   const currentQuery =
     searchMode === 'image' ? imageSearchQuery : textSearchQuery;
   const rawResults = isBrowsingCollection
@@ -856,6 +951,65 @@ export default function SearchPage() {
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
+  const idleShowcaseResults = idleShowcaseQuery.data?.results || [];
+
+  useEffect(() => {
+    if (!hasMounted) return undefined;
+
+    let context: { revert: () => void } | undefined;
+    let cancelled = false;
+
+    void import('gsap').then(({ gsap }) => {
+      if (cancelled) return;
+
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      context = gsap.context(() => {
+        if (reduceMotion) {
+          gsap.set([searchPanelRef.current, idleShowcaseRef.current], {
+            clearProps: 'all',
+          });
+          return;
+        }
+
+        const timeline = gsap.timeline({
+          defaults: { duration: 0.45, ease: 'power3.out', overwrite: 'auto' },
+        });
+
+        timeline.fromTo(
+          searchPanelRef.current,
+          {
+            y: hasActiveSearch ? 16 : -8,
+            scale: hasActiveSearch ? 1.015 : 0.99,
+          },
+          { y: 0, scale: 1 },
+          0
+        );
+
+        if (hasActiveSearch) {
+          timeline.fromTo(
+            resultsAreaRef.current,
+            { autoAlpha: 0, y: 24 },
+            { autoAlpha: 1, y: 0 },
+            0.08
+          );
+        } else {
+          timeline.fromTo(
+            idleShowcaseRef.current,
+            { autoAlpha: 0, y: 28 },
+            { autoAlpha: 1, y: 0 },
+            0.08
+          );
+        }
+      }, searchPanelRef);
+    });
+
+    return () => {
+      cancelled = true;
+      context?.revert();
+    };
+  }, [hasActiveSearch, hasMounted]);
 
   const loadMoreResults = useCallback(() => {
     if (isBrowsingCollection) {
@@ -1065,7 +1219,7 @@ export default function SearchPage() {
   const showColourRail = searchMode === 'colour' || sortMode === 'colour';
   const colourRailIsSearch = searchMode === 'colour';
 
-  const runEvalSearch = (suggestion: (typeof EVAL_SUGGESTIONS)[number]) => {
+  const runEvalSearch = (suggestion: EvalSuggestion) => {
     const active =
       textQuery.trim().toLowerCase() === suggestion.query.toLowerCase();
     if (active) {
@@ -1079,9 +1233,7 @@ export default function SearchPage() {
     }
 
     if (suggestion.type === 'colour') {
-      const colourId =
-        'colourId' in suggestion ? suggestion.colourId : undefined;
-      runColourSearch(colourId || `custom:${suggestion.dot}`);
+      runColourSearch(suggestion.colourId || `custom:${suggestion.dot}`);
       return;
     }
 
@@ -1137,14 +1289,29 @@ export default function SearchPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
-        <section className="mx-auto max-w-5xl">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35 }}
+      <main
+        className={`mx-auto max-w-7xl px-5 pb-14 lg:px-8 ${
+          hasActiveSearch ? 'pt-6' : 'pt-10'
+        }`}
+      >
+        <section
+          ref={searchPanelRef}
+          className={`mx-auto transition-[max-width] duration-300 ${
+            hasActiveSearch ? 'max-w-5xl' : 'max-w-6xl'
+          }`}
+        >
+          <div
+            className={
+              hasActiveSearch
+                ? 'rounded-lg border border-white/[0.08] bg-white/[0.025] px-4 py-3'
+                : ''
+            }
           >
-            <div className="mb-6 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
+            <div
+              className={`mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase text-white/35 ${
+                hasActiveSearch ? 'tracking-[0.2em]' : 'tracking-[0.3em]'
+              }`}
+            >
               <span>{gallery.name}</span>
               <span>/</span>
               <span>collection search</span>
@@ -1159,7 +1326,11 @@ export default function SearchPage() {
             <div className="space-y-4">
               {searchMode === 'text' && (
                 <div className="relative">
-                  <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
+                  <Search
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 text-white/30 ${
+                      hasActiveSearch ? 'h-5 w-5' : 'h-6 w-6'
+                    }`}
+                  />
                   <input
                     value={textQuery}
                     onChange={(event) => setTextQuery(event.target.value)}
@@ -1168,7 +1339,11 @@ export default function SearchPage() {
                     }}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
+                    className={`w-full border-b-2 border-white/20 bg-transparent pl-10 pr-4 font-display italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 ${
+                      hasActiveSearch
+                        ? 'py-3 text-2xl lg:text-3xl'
+                        : 'py-5 text-3xl lg:text-5xl'
+                    }`}
                   />
                 </div>
               )}
@@ -1218,34 +1393,11 @@ export default function SearchPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <span className="self-center pr-1 font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
-                Try instead
-              </span>
-              {EVAL_SUGGESTIONS.map((query) => {
-                const active =
-                  textQuery.trim().toLowerCase() === query.query.toLowerCase();
-                return (
-                  <button
-                    key={query.type}
-                    type="button"
-                    onClick={() => runEvalSearch(query)}
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                      active
-                        ? 'border-white/30 bg-white/[0.12] text-white'
-                        : 'border-white/10 bg-white/[0.04] text-white/65 hover:bg-white/[0.08] hover:text-white'
-                    }`}
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ background: query.dot }}
-                    />
-                    <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
-                      {query.type}
-                    </span>
-                    <span>{query.label}</span>
-                  </button>
-                );
-              })}
+              <SuggestionPicker
+                suggestions={suggestionPool}
+                currentQuery={textQuery}
+                onSelect={runEvalSearch}
+              />
               <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
                 <ModeButton
                   active={searchMode === 'text'}
@@ -1287,197 +1439,224 @@ export default function SearchPage() {
                 />
               </div>
             </div>
-          </motion.div>
+          </div>
         </section>
 
-        <section className="mt-8">
-          <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
-            <div className="mx-auto max-w-7xl">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
-                  {isBrowsingCollection
-                    ? isLoading && !results.length
-                      ? 'Loading collection'
-                      : `${visibleResults.length} / ${totalBrowseResults} works`
-                    : isLoading
-                      ? 'Searching'
-                      : results.length
-                        ? `${visibleResults.length} / ${results.length} works`
-                        : hasMounted && shouldSearch
-                          ? 'No works'
-                          : 'Ready'}
-                  {textQuery &&
-                    searchMode !== 'image' &&
-                    !isBrowsingCollection && (
+        {!hasActiveSearch && (
+          <IdleShowcase
+            ref={idleShowcaseRef}
+            artworks={idleShowcaseResults}
+            isLoading={idleShowcaseQuery.isLoading}
+            onSearch={runTextSearch}
+          />
+        )}
+
+        {hasActiveSearch && (
+          <section ref={resultsAreaRef} className="mt-8">
+            <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
+              <div className="mx-auto max-w-7xl">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
+                    {isBrowsingCollection
+                      ? isLoading && !results.length
+                        ? 'Loading collection'
+                        : `${visibleResults.length} / ${totalBrowseResults} works`
+                      : isLoading
+                        ? 'Searching'
+                        : results.length
+                          ? `${visibleResults.length} / ${results.length} works`
+                          : hasMounted && shouldSearch
+                            ? 'No works'
+                            : 'Ready'}
+                    {textQuery &&
+                      searchMode !== 'image' &&
+                      !isBrowsingCollection && (
+                        <span className="ml-2 normal-case tracking-normal text-white/70">
+                          "{textQuery}"
+                        </span>
+                      )}
+                    {isBrowsingCollection && (
                       <span className="ml-2 normal-case tracking-normal text-white/70">
-                        "{textQuery}"
+                        infinite browse
                       </span>
                     )}
-                  {isBrowsingCollection && (
-                    <span className="ml-2 normal-case tracking-normal text-white/70">
-                      infinite browse
-                    </span>
-                  )}
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
-                    <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
-                      Sort
-                    </span>
-                    <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
-                      {SORT_OPTIONS.map((option) => {
-                        const Icon = option.icon;
-                        const active =
-                          option.id === 'time'
-                            ? sortMode === 'time-desc' ||
-                              sortMode === 'time-asc'
-                            : sortMode === option.id ||
-                              SORT_ASC[sortMode] === option.id;
-                        const label =
-                          option.id === 'time'
-                            ? sortMode === 'time-asc'
-                              ? 'Oldest'
-                              : 'Newest'
-                            : option.label;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => {
-                              if (option.id === 'time') {
-                                setSortMode(
-                                  sortMode === 'time-desc'
-                                    ? 'time-asc'
-                                    : 'time-desc'
-                                );
-                                return;
-                              }
-
-                              if (option.id === 'colour') {
-                                if (sortMode === 'colour') {
-                                  clearColourSort();
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+                      <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
+                        Sort
+                      </span>
+                      <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
+                        {SORT_OPTIONS.map((option) => {
+                          const Icon = option.icon;
+                          const active =
+                            option.id === 'time'
+                              ? sortMode === 'time-desc' ||
+                                sortMode === 'time-asc'
+                              : sortMode === option.id ||
+                                SORT_ASC[sortMode] === option.id;
+                          const label =
+                            option.id === 'time'
+                              ? sortMode === 'time-asc'
+                                ? 'Oldest'
+                                : 'Newest'
+                              : option.label;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => {
+                                if (option.id === 'time') {
+                                  setSortMode(
+                                    sortMode === 'time-desc'
+                                      ? 'time-asc'
+                                      : 'time-desc'
+                                  );
                                   return;
                                 }
 
-                                setSortMode('colour');
-                                revealColourRail();
-                                return;
+                                if (option.id === 'colour') {
+                                  if (sortMode === 'colour') {
+                                    clearColourSort();
+                                    return;
+                                  }
+
+                                  setSortMode('colour');
+                                  revealColourRail();
+                                  return;
+                                }
+
+                                if (
+                                  sortMode === option.id ||
+                                  SORT_ASC[sortMode] === option.id
+                                ) {
+                                  setSortMode('relevance');
+                                  return;
+                                }
+
+                                setSortMode(option.id);
+                              }}
+                              title={
+                                option.id === 'time'
+                                  ? 'Toggle newest or oldest'
+                                  : `Sort by ${option.label.toLowerCase()}`
                               }
-
-                              if (
-                                sortMode === option.id ||
-                                SORT_ASC[sortMode] === option.id
-                              ) {
-                                setSortMode('relevance');
-                                return;
-                              }
-
-                              setSortMode(option.id);
-                            }}
-                            title={
-                              option.id === 'time'
-                                ? 'Toggle newest or oldest'
-                                : `Sort by ${option.label.toLowerCase()}`
-                            }
-                            className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                              active
-                                ? 'bg-white/[0.14] text-white'
-                                : 'text-white/45 hover:text-white/80'
-                            }`}
-                          >
-                            <Icon className="h-3.5 w-3.5" />
-                            <span className="hidden md:inline">{label}</span>
-                          </button>
-                        );
-                      })}
+                              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                                active
+                                  ? 'bg-white/[0.14] text-white'
+                                  : 'text-white/45 hover:text-white/80'
+                              }`}
+                            >
+                              <Icon className="h-3.5 w-3.5" />
+                              <span className="hidden md:inline">{label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
-                    <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
-                      View
-                    </span>
-                    <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
-                      {VIEW_OPTIONS.map((option) => {
-                        const Icon = option.icon;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => setView(option.id)}
-                            title={option.label}
-                            className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                              view === option.id
-                                ? 'bg-white/[0.14] text-white'
-                                : 'text-white/45 hover:text-white/80'
-                            }`}
-                          >
-                            <Icon className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">
-                              {option.label}
-                            </span>
-                          </button>
-                        );
-                      })}
+                    <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+                      <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
+                        View
+                      </span>
+                      <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
+                        {VIEW_OPTIONS.map((option) => {
+                          const Icon = option.icon;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => setView(option.id)}
+                              title={option.label}
+                              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                                view === option.id
+                                  ? 'bg-white/[0.14] text-white'
+                                  : 'text-white/45 hover:text-white/80'
+                              }`}
+                            >
+                              <Icon className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">
+                                {option.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsOpen((value) => !value)}
-                    aria-expanded={isSettingsOpen}
-                    aria-label="Search settings"
-                    className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
-                      isSettingsOpen
-                        ? 'border-white/20 bg-white/[0.12] text-white'
-                        : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                    }`}
-                  >
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
-                    <span>Settings</span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
-                      {isBrowsingCollection
-                        ? `${browsePageSize} / infinite`
-                        : `${topK} / ${Math.round(minScore * 100)}`}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {isSettingsOpen && (
-                <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
-                  <div className="md:col-span-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setIsBrowsingCollection((value) => !value);
-                        setShouldSearch(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
-                        isBrowsingCollection
-                          ? 'border-fuchsia-300/35 bg-fuchsia-300/10 text-white'
-                          : 'border-white/10 bg-white/[0.035] text-white/65 hover:bg-white/[0.07] hover:text-white'
+                      onClick={() => setIsSettingsOpen((value) => !value)}
+                      aria-expanded={isSettingsOpen}
+                      aria-label="Search settings"
+                      className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
+                        isSettingsOpen
+                          ? 'border-white/20 bg-white/[0.12] text-white'
+                          : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
                       }`}
                     >
-                      <span>
-                        <span className="block text-sm font-medium">
-                          Infinite browse
-                        </span>
-                        <span className="mt-0.5 block text-xs text-white/40">
-                          Show the full source-backed collection. Ranked AI
-                          search stays capped.
-                        </span>
-                      </span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                        {isBrowsingCollection ? 'Infinite' : 'Off'}
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      <span>Settings</span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+                        {isBrowsingCollection
+                          ? `${browsePageSize} / infinite`
+                          : `${topK} / ${Math.round(minScore * 100)}`}
                       </span>
                     </button>
                   </div>
-                  <label className="grid gap-2">
-                    <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                      {isBrowsingCollection
-                        ? 'Browse page size'
-                        : 'Ranked search cap'}
+                </div>
+
+                {isSettingsOpen && (
+                  <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsBrowsingCollection((value) => !value);
+                          setShouldSearch(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
+                          isBrowsingCollection
+                            ? 'border-fuchsia-300/35 bg-fuchsia-300/10 text-white'
+                            : 'border-white/10 bg-white/[0.035] text-white/65 hover:bg-white/[0.07] hover:text-white'
+                        }`}
+                      >
+                        <span>
+                          <span className="block text-sm font-medium">
+                            Infinite browse
+                          </span>
+                          <span className="mt-0.5 block text-xs text-white/40">
+                            Show the full source-backed collection. Ranked AI
+                            search stays capped.
+                          </span>
+                        </span>
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                          {isBrowsingCollection ? 'Infinite' : 'Off'}
+                        </span>
+                      </button>
+                    </div>
+                    <label className="grid gap-2">
+                      <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                        {isBrowsingCollection
+                          ? 'Browse page size'
+                          : 'Ranked search cap'}
+                        <input
+                          type="number"
+                          min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
+                          max={
+                            isBrowsingCollection
+                              ? MAX_BROWSE_PAGE_SIZE
+                              : MAX_SEARCH_RESULTS
+                          }
+                          value={isBrowsingCollection ? browsePageSize : topK}
+                          onChange={(event) =>
+                            isBrowsingCollection
+                              ? updateBrowsePageSize(Number(event.target.value))
+                              : updateTopK(Number(event.target.value))
+                          }
+                          className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                        />
+                      </span>
                       <input
-                        type="number"
+                        type="range"
                         min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
                         max={
                           isBrowsingCollection
@@ -1490,33 +1669,29 @@ export default function SearchPage() {
                             ? updateBrowsePageSize(Number(event.target.value))
                             : updateTopK(Number(event.target.value))
                         }
-                        className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                        className="w-full accent-fuchsia-300"
                       />
-                    </span>
-                    <input
-                      type="range"
-                      min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
-                      max={
-                        isBrowsingCollection
-                          ? MAX_BROWSE_PAGE_SIZE
-                          : MAX_SEARCH_RESULTS
-                      }
-                      value={isBrowsingCollection ? browsePageSize : topK}
-                      onChange={(event) =>
-                        isBrowsingCollection
-                          ? updateBrowsePageSize(Number(event.target.value))
-                          : updateTopK(Number(event.target.value))
-                      }
-                      className="w-full accent-fuchsia-300"
-                    />
-                  </label>
-                  <label
-                    className={`grid gap-2 ${isBrowsingCollection ? 'opacity-45' : ''}`}
-                  >
-                    <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                      Minimum score
+                    </label>
+                    <label
+                      className={`grid gap-2 ${isBrowsingCollection ? 'opacity-45' : ''}`}
+                    >
+                      <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                        Minimum score
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={Math.round(minScore * 100)}
+                          disabled={isBrowsingCollection}
+                          onChange={(event) =>
+                            updateMinScorePercent(Number(event.target.value))
+                          }
+                          className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                        />
+                      </span>
                       <input
-                        type="number"
+                        type="range"
                         min={0}
                         max={100}
                         step={5}
@@ -1525,112 +1700,102 @@ export default function SearchPage() {
                         onChange={(event) =>
                           updateMinScorePercent(Number(event.target.value))
                         }
-                        className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                        className="w-full accent-fuchsia-300"
                       />
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={Math.round(minScore * 100)}
-                      disabled={isBrowsingCollection}
-                      onChange={(event) =>
-                        updateMinScorePercent(Number(event.target.value))
-                      }
-                      className="w-full accent-fuchsia-300"
-                    />
-                  </label>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {showColourRail && (
-            <div ref={colourRailRef} className="mt-3">
-              <ColourRail
-                intent={colourRailIsSearch ? 'search' : 'sort'}
-                selected={colourRailIsSearch ? searchColours : sortColours}
-                activeSort={sortMode === 'colour'}
-                customColour={customColour}
-                onSelect={
-                  colourRailIsSearch ? runColourSearch : runTargetColourSort
-                }
-                onCustomChange={
-                  colourRailIsSearch
-                    ? updateCustomColour
-                    : updateSortCustomColour
-                }
-                onClear={
-                  colourRailIsSearch ? clearColourSearch : clearColourSortTarget
-                }
-              />
-            </div>
-          )}
-
-          {isLoading && (
-            <div className="py-16 text-center text-sm text-white/45">
-              Searching artworks...
-            </div>
-          )}
-
-          {error && (
-            <div className="py-16 text-center">
-              <p className="text-sm font-medium text-red-300">
-                {error instanceof Error ? error.message : 'Search failed'}
-              </p>
-            </div>
-          )}
-
-          {!isLoading && !error && results.length > 0 && (
-            <>
-              <ResultsView
-                view={view}
-                results={visibleResults}
-                selectedColours={activeSortColours}
-                sortMode={sortMode}
-                showSimilarity={!isBrowsingCollection}
-                onSortModeChange={setSortMode}
-                onFacetSearch={runTextSearch}
-                onPaletteColourSelect={useArtworkPaletteColour}
-                onSelectArtwork={setSelectedArtwork}
-              />
-              <div ref={loadMoreRef} className="flex justify-center py-8">
-                {hasMoreResults ? (
-                  <button
-                    type="button"
-                    onClick={loadMoreResults}
-                    disabled={
-                      isBrowsingCollection && browseQuery.isFetchingNextPage
-                    }
-                    className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
-                  >
-                    {isBrowsingCollection && browseQuery.isFetchingNextPage
-                      ? 'Loading more works'
-                      : 'Load more works'}
-                  </button>
-                ) : (
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
-                    End of results
-                  </p>
+                    </label>
+                  </div>
                 )}
               </div>
-            </>
-          )}
+            </div>
 
-          {!isLoading &&
-            !error &&
-            hasMounted &&
-            shouldSearch &&
-            results.length === 0 && (
+            {showColourRail && (
+              <div ref={colourRailRef} className="mt-3">
+                <ColourRail
+                  intent={colourRailIsSearch ? 'search' : 'sort'}
+                  selected={colourRailIsSearch ? searchColours : sortColours}
+                  activeSort={sortMode === 'colour'}
+                  customColour={customColour}
+                  onSelect={
+                    colourRailIsSearch ? runColourSearch : runTargetColourSort
+                  }
+                  onCustomChange={
+                    colourRailIsSearch
+                      ? updateCustomColour
+                      : updateSortCustomColour
+                  }
+                  onClear={
+                    colourRailIsSearch
+                      ? clearColourSearch
+                      : clearColourSortTarget
+                  }
+                />
+              </div>
+            )}
+
+            {isLoading && (
+              <div className="py-16 text-center text-sm text-white/45">
+                Searching artworks...
+              </div>
+            )}
+
+            {error && (
               <div className="py-16 text-center">
-                <p className="text-white/55">No artworks found.</p>
-                <p className="mt-1 text-sm text-white/35">
-                  Try a broader query or lower the minimum score.
+                <p className="text-sm font-medium text-red-300">
+                  {error instanceof Error ? error.message : 'Search failed'}
                 </p>
               </div>
             )}
-        </section>
+
+            {!isLoading && !error && results.length > 0 && (
+              <>
+                <ResultsView
+                  view={view}
+                  results={visibleResults}
+                  selectedColours={activeSortColours}
+                  sortMode={sortMode}
+                  showSimilarity={!isBrowsingCollection}
+                  onSortModeChange={setSortMode}
+                  onFacetSearch={runTextSearch}
+                  onPaletteColourSelect={useArtworkPaletteColour}
+                  onSelectArtwork={setSelectedArtwork}
+                />
+                <div ref={loadMoreRef} className="flex justify-center py-8">
+                  {hasMoreResults ? (
+                    <button
+                      type="button"
+                      onClick={loadMoreResults}
+                      disabled={
+                        isBrowsingCollection && browseQuery.isFetchingNextPage
+                      }
+                      className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {isBrowsingCollection && browseQuery.isFetchingNextPage
+                        ? 'Loading more works'
+                        : 'Load more works'}
+                    </button>
+                  ) : (
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
+                      End of results
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {!isLoading &&
+              !error &&
+              hasMounted &&
+              shouldSearch &&
+              results.length === 0 && (
+                <div className="py-16 text-center">
+                  <p className="text-white/55">No artworks found.</p>
+                  <p className="mt-1 text-sm text-white/35">
+                    Try a broader query or lower the minimum score.
+                  </p>
+                </div>
+              )}
+          </section>
+        )}
       </main>
       <SearchArtworkDialog
         artwork={selectedArtwork}
@@ -1640,6 +1805,217 @@ export default function SearchPage() {
     </div>
   );
 }
+
+function SuggestionPicker({
+  suggestions,
+  currentQuery,
+  onSelect,
+}: {
+  suggestions: EvalSuggestion[];
+  currentQuery: string;
+  onSelect: (suggestion: EvalSuggestion) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (!suggestions.length) return;
+    setIndex((value) => value % suggestions.length);
+  }, [suggestions.length]);
+
+  useEffect(() => {
+    if (open || paused || suggestions.length < 2) return undefined;
+
+    const handle = window.setInterval(() => {
+      setIndex((value) => (value + 1) % suggestions.length);
+    }, 4200);
+
+    return () => window.clearInterval(handle);
+  }, [open, paused, suggestions.length]);
+
+  if (!suggestions.length) return null;
+
+  const suggestion = suggestions[index] ?? suggestions[0];
+  if (!suggestion) return null;
+
+  const activeQuery = currentQuery.trim().toLowerCase();
+
+  return (
+    <div
+      className="flex min-w-0 items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.04]"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
+      <span className="shrink-0 border-r border-white/10 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
+        Try
+      </span>
+      <button
+        type="button"
+        onClick={() => onSelect(suggestion)}
+        className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
+          activeQuery === suggestion.query.toLowerCase()
+            ? 'bg-white/[0.12] text-white'
+            : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
+        }`}
+      >
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: suggestion.dot }}
+        />
+        <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+          {suggestion.type}
+        </span>
+        <span className="truncate">{suggestion.label}</span>
+        {suggestion.detail && (
+          <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
+            {suggestion.detail}
+          </span>
+        )}
+      </button>
+      <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border-l border-white/10 text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white"
+            aria-label="Choose another suggestion"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            sideOffset={8}
+            className="z-50 max-h-[min(440px,calc(100vh-96px))] w-80 overflow-y-auto rounded-lg border border-white/10 bg-[#151519] p-1.5 shadow-2xl"
+          >
+            {suggestions.map((option, optionIndex) => (
+              <DropdownMenu.Item
+                key={getSuggestionKey(option)}
+                onSelect={() => {
+                  setIndex(optionIndex);
+                  onSelect(option);
+                }}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-xs text-white/70 outline-none transition-colors focus:bg-white/[0.08] focus:text-white"
+              >
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: option.dot }}
+                />
+                <span className="w-16 shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                  {option.type}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                {option.detail && (
+                  <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35">
+                    {option.detail}
+                  </span>
+                )}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
+  );
+}
+
+const IdleShowcase = forwardRef<
+  HTMLDivElement,
+  {
+    artworks: ArtworkSearchResult[];
+    isLoading: boolean;
+    onSearch: (query: string) => void;
+  }
+>(function IdleShowcase({ artworks, isLoading, onSearch }, ref) {
+  const featured = artworks.filter(
+    (artwork) => artwork.thumbnailUrl || artwork.imageUrl
+  );
+  const lead = featured[0];
+  const salonWall = featured.slice(1, 7);
+
+  return (
+    <div ref={ref} className="mx-auto mt-10 max-w-7xl">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+        <section className="relative min-h-[360px] overflow-hidden border-y border-white/[0.08] bg-white/[0.025] lg:min-h-[520px]">
+          {lead ? (
+            <img
+              src={lead.thumbnailUrl || lead.imageUrl || undefined}
+              alt={lead.title || 'Artwork'}
+              className="absolute inset-0 h-full w-full object-cover opacity-35"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(205,166,54,0.18),transparent_32%),linear-gradient(135deg,rgba(110,142,168,0.16),transparent_45%)]" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0b0b0e] via-[#0b0b0e]/75 to-[#0b0b0e]/35" />
+          <div className="relative flex h-full min-h-[360px] max-w-2xl flex-col justify-end p-6 lg:min-h-[520px] lg:p-8">
+            <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-white/35">
+              National Gallery Singapore
+            </p>
+            <h1 className="mt-3 font-display text-4xl font-semibold leading-tight text-white lg:text-6xl">
+              Let the collection set the first direction.
+            </h1>
+            <div className="mt-6 flex flex-wrap gap-2">
+              {[
+                'architecture and geometry',
+                'figures in blue',
+                'quiet interiors',
+              ].map((query) => (
+                <button
+                  key={query}
+                  type="button"
+                  onClick={() => onSearch(query)}
+                  className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
+                >
+                  {query}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="min-h-[360px] border-y border-white/[0.08] py-4 lg:min-h-[520px]">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
+              Salon view
+            </p>
+            {isLoading && (
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">
+                Loading
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {(salonWall.length ? salonWall : new Array(6).fill(null)).map(
+              (artwork, index) => (
+                <div
+                  key={artwork?.id || index}
+                  className={`overflow-hidden border border-white/[0.08] bg-white/[0.03] ${
+                    index % 3 === 1 ? 'mt-8' : index % 3 === 2 ? 'mt-4' : ''
+                  }`}
+                >
+                  {artwork ? (
+                    <img
+                      src={
+                        artwork.thumbnailUrl || artwork.imageUrl || undefined
+                      }
+                      alt={artwork.title || 'Artwork'}
+                      className="aspect-[3/4] w-full object-cover"
+                    />
+                  ) : (
+                    <div className="aspect-[3/4] animate-pulse bg-white/[0.04]" />
+                  )}
+                </div>
+              )
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+});
 
 function SearchArtworkDialog({
   artwork,

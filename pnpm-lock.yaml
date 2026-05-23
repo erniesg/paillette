@@ -145,6 +145,9 @@ importers:
       framer-motion:
         specifier: ^11.15.0
         version: 11.18.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      gsap:
+        specifier: ^3.15.0
+        version: 3.15.0
       isbot:
         specifier: ^4
         version: 4.4.0
@@ -3716,6 +3719,9 @@ packages:
   gradient-string@2.0.2:
     resolution: {integrity: sha512-rEDCuqUQ4tbD78TpzsMtt5OIf0cBCSDWSJtUDaF6JsAh+k0v9r++NzxNEG87oDZx9ZwGhD8DaezR2L/yrw0Jdw==}
     engines: {node: '>=10'}
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   gunzip-maybe@1.4.2:
     resolution: {integrity: sha512-4haO1M4mLO91PW57BMsDFf75UmwoRX0GkdD+Faw+Lr+r/OZrOCS0pIBwOL1xCKQqnQzbNFGgK2V2CpBUPeFNTw==}
@@ -9612,6 +9618,8 @@ snapshots:
     dependencies:
       chalk: 4.1.2
       tinygradient: 1.1.5
+
+  gsap@3.15.0: {}
 
   gunzip-maybe@1.4.2:
     dependencies:
