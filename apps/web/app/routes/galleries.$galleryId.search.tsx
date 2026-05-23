@@ -502,6 +502,23 @@ const paletteBandSortKey = (result: ArtworkSearchResult) => {
   );
 };
 
+const getPaletteBandLabel = (result: ArtworkSearchResult) => {
+  const [dominantColour] = collectPalette(result);
+  if (!dominantColour) return 'No palette';
+  const fallbackColour = COLOURS[0];
+  if (!fallbackColour) return 'No palette';
+
+  const nearest = COLOURS.reduce(
+    (best, colour) => {
+      const distance = rgbDistance(dominantColour, colour.hex);
+      return distance < best.distance ? { colour, distance } : best;
+    },
+    { colour: fallbackColour, distance: Infinity }
+  );
+
+  return nearest.colour.name;
+};
+
 const sortResults = (
   results: ArtworkSearchResult[],
   sortMode: SortMode,
@@ -717,7 +734,8 @@ export default function SearchPage() {
   const [textQuery, setTextQuery] = useState(searchParams.get('q') || '');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [searchColours, setSearchColours] = useState<string[]>([]);
+  const [sortColours, setSortColours] = useState<string[]>([]);
   const [customColour, setCustomColour] = useState('#cda636');
   const [sortMode, setSortMode] = useState<SortMode>('relevance');
   const [view, setView] = useState<ViewMode>('masonry');
@@ -801,9 +819,10 @@ export default function SearchPage() {
     ? browseQuery.data?.pages.flatMap((page) => page.results) || []
     : currentQuery.data?.results || [];
   const results = useMemo(
-    () => sortResults(rawResults, sortMode, selectedColours),
-    [rawResults, selectedColours, sortMode]
+    () => sortResults(rawResults, sortMode, sortColours),
+    [rawResults, sortColours, sortMode]
   );
+  const activeSortColours = sortMode === 'colour' ? sortColours : [];
   const visibleResults = isBrowsingCollection
     ? results
     : results.slice(0, visibleCount);
@@ -839,6 +858,8 @@ export default function SearchPage() {
     imageFile?.name,
     minScore,
     searchMode,
+    sortMode,
+    sortColours,
     textQuery,
     topK,
     isBrowsingCollection,
@@ -898,6 +919,7 @@ export default function SearchPage() {
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
       setSearchMode('image');
+      setSearchColours([]);
       setIsBrowsingCollection(false);
       setShouldSearch(true);
     }
@@ -919,6 +941,7 @@ export default function SearchPage() {
 
     setIsBrowsingCollection(false);
     setSearchMode('text');
+    setSearchColours([]);
     setTextQuery(trimmed);
     setShouldSearch(true);
     setSearchParams({ q: trimmed });
@@ -938,39 +961,73 @@ export default function SearchPage() {
     setIsBrowsingCollection(false);
   };
 
-  const runColourSearch = (selection: string) => {
+  const selectColourSearch = (selection: string) => {
     const query = getColourSearchText(selection);
     if (!query) return;
 
     setSearchMode('colour');
     setIsBrowsingCollection(false);
-    setSelectedColours([selection]);
+    setSearchColours([selection]);
+    setSortColours([selection]);
     setSortMode('colour');
     setTextQuery(query);
     setShouldSearch(true);
     setSearchParams({ q: query });
   };
 
+  const clearColourSearch = () => {
+    const clearedColours = searchColours;
+    setSearchColours([]);
+    clearSearch();
+    if (
+      sortMode === 'colour' &&
+      clearedColours.some((colour) => sortColours.includes(colour))
+    ) {
+      setSortColours([]);
+      setSortMode('relevance');
+    }
+  };
+
+  const runColourSearch = (selection: string) => {
+    const active = searchMode === 'colour' && searchColours.includes(selection);
+    if (active) {
+      clearColourSearch();
+      return;
+    }
+
+    selectColourSearch(selection);
+  };
+
   const runSpectrumColourSort = () => {
+    if (sortMode === 'colour' && sortColours.length === 0) {
+      setSortMode('relevance');
+      return;
+    }
+
     setSortMode('colour');
-    setSelectedColours([]);
+    setSortColours([]);
   };
 
   const runTargetColourSort = (selection: string) => {
+    if (sortMode === 'colour' && sortColours.includes(selection)) {
+      setSortColours([]);
+      return;
+    }
+
     setSortMode('colour');
-    setSelectedColours([selection]);
+    setSortColours([selection]);
   };
 
   const updateSortCustomColour = (hex: string) => {
     setCustomColour(hex);
     setSortMode('colour');
-    setSelectedColours([`custom:${hex}`]);
+    setSortColours([`custom:${hex}`]);
   };
 
   const updateCustomColour = (hex: string) => {
     setCustomColour(hex);
     if (searchMode === 'colour') {
-      setSelectedColours([`custom:${hex}`]);
+      selectColourSearch(`custom:${hex}`);
     }
   };
 
@@ -980,7 +1037,9 @@ export default function SearchPage() {
     if (active) {
       clearSearch();
       if (suggestion.type === 'colour') {
-        setSelectedColours([]);
+        setSearchColours([]);
+        setSortColours([]);
+        setSortMode('relevance');
       }
       return;
     }
@@ -1133,15 +1192,11 @@ export default function SearchPage() {
               </div>
             ) : (
               <ColourSearchPanel
-                selected={selectedColours}
+                selected={searchColours}
                 customColour={customColour}
                 onSelect={runColourSearch}
                 onCustomChange={updateCustomColour}
-                onCustomSearch={() => runColourSearch(`custom:${customColour}`)}
-                onClear={() => {
-                  setSelectedColours([]);
-                  clearSearch();
-                }}
+                onClear={clearColourSearch}
               />
             )}
 
@@ -1209,8 +1264,20 @@ export default function SearchPage() {
 
         <section className="mt-8">
           <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
-            <div className="mx-auto max-w-7xl">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div
+              className={
+                view === 'table'
+                  ? 'relative left-1/2 w-[calc(100vw-2rem)] max-w-[1800px] -translate-x-1/2 lg:w-[calc(100vw-4rem)]'
+                  : 'mx-auto max-w-7xl'
+              }
+            >
+              <div
+                className={
+                  view === 'table'
+                    ? 'flex flex-col gap-3'
+                    : 'flex flex-wrap items-center justify-between gap-3'
+                }
+              >
                 <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
                   {isBrowsingCollection
                     ? isLoading && !results.length
@@ -1236,12 +1303,22 @@ export default function SearchPage() {
                     </span>
                   )}
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+                <div
+                  className={
+                    view === 'table'
+                      ? 'grid w-full gap-2 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.95fr)_auto]'
+                      : 'flex flex-wrap items-center gap-2'
+                  }
+                >
+                  <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
                     <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
                       Sort
                     </span>
-                    <div className="flex items-center gap-1 p-1">
+                    <div
+                      className={`flex min-w-0 flex-1 items-center gap-1 p-1 ${
+                        view === 'table' ? 'justify-between' : ''
+                      }`}
+                    >
                       {SORT_OPTIONS.map((option) => {
                         const Icon = option.icon;
                         const active =
@@ -1271,7 +1348,21 @@ export default function SearchPage() {
                               }
 
                               if (option.id === 'colour') {
+                                if (sortMode === 'colour') {
+                                  setSortMode('relevance');
+                                  setSortColours([]);
+                                  return;
+                                }
+
                                 setSortMode('colour');
+                                return;
+                              }
+
+                              if (
+                                sortMode === option.id ||
+                                SORT_ASC[sortMode] === option.id
+                              ) {
+                                setSortMode('relevance');
                                 return;
                               }
 
@@ -1295,11 +1386,15 @@ export default function SearchPage() {
                       })}
                     </div>
                   </div>
-                  <div className="flex items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+                  <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
                     <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
                       View
                     </span>
-                    <div className="flex items-center gap-1 p-1">
+                    <div
+                      className={`flex min-w-0 flex-1 items-center gap-1 p-1 ${
+                        view === 'table' ? 'justify-between' : ''
+                      }`}
+                    >
                       {VIEW_OPTIONS.map((option) => {
                         const Icon = option.icon;
                         return (
@@ -1332,7 +1427,7 @@ export default function SearchPage() {
                       isSettingsOpen
                         ? 'border-white/20 bg-white/[0.12] text-white'
                         : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                    }`}
+                    } ${view === 'table' ? 'justify-center' : ''}`}
                   >
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     <span>Settings</span>
@@ -1347,7 +1442,7 @@ export default function SearchPage() {
 
               {sortMode === 'colour' && (
                 <ColourSortControls
-                  selected={selectedColours}
+                  selected={sortColours}
                   customColour={customColour}
                   onSpectrum={runSpectrumColourSort}
                   onSelect={runTargetColourSort}
@@ -1478,7 +1573,7 @@ export default function SearchPage() {
               <ResultsView
                 view={view}
                 results={visibleResults}
-                selectedColours={selectedColours}
+                selectedColours={activeSortColours}
                 sortMode={sortMode}
                 showSimilarity={!isBrowsingCollection}
                 onSortModeChange={setSortMode}
@@ -1710,9 +1805,9 @@ function ColourSortControls({
   const activeColour = selected[0] ? getSelectedColour(selected[0]) : null;
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-white/[0.07] pt-3">
+    <div className="mt-3 grid gap-3 border-t border-white/[0.07] pt-3 lg:grid-cols-[auto_auto_minmax(280px,1fr)_auto] lg:items-center">
       <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-        Colour sort
+        Sort colour
       </span>
       <button
         type="button"
@@ -1725,43 +1820,15 @@ function ColourSortControls({
       >
         Spectrum
       </button>
-      <div className="flex h-8 min-w-[260px] flex-1 overflow-hidden rounded-md border border-white/10 sm:flex-none sm:basis-[420px]">
-        {COLOURS.map((colour) => {
-          const active = selected.includes(colour.id);
-          return (
-            <button
-              key={colour.id}
-              type="button"
-              onClick={() => onSelect(colour.id)}
-              title={`Nearest ${colour.name.toLowerCase()}`}
-              aria-label={`Sort by nearest ${colour.name.toLowerCase()}`}
-              aria-pressed={active}
-              className="relative min-w-6 flex-1 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none"
-              style={{ background: colour.hex }}
-            >
-              {active && (
-                <span className="absolute inset-0 flex items-center justify-center ring-2 ring-inset ring-white">
-                  <span className="h-2 w-2 rounded-full bg-white shadow-[0_1px_8px_rgba(0,0,0,0.8)]" />
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <label className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-2.5">
-        <input
-          type="color"
-          value={customColour}
-          onChange={(event) => onCustomChange(event.target.value)}
-          className="h-5 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
-          aria-label="Choose custom colour sort target"
-        />
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-white/55">
-          {activeColour?.id.startsWith('custom:')
-            ? activeColour.name
-            : customColour}
-        </span>
-      </label>
+      <ColourStrip
+        selected={selected}
+        onToggle={onSelect}
+        customColour={customColour}
+        onCustomChange={onCustomChange}
+        customAriaLabel="Choose custom colour sort target"
+        compact
+        className="min-w-[280px]"
+      />
       <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/28">
         {activeColour ? `Nearest ${activeColour.name}` : 'Palette band order'}
       </span>
@@ -1774,14 +1841,12 @@ function ColourSearchPanel({
   customColour,
   onSelect,
   onCustomChange,
-  onCustomSearch,
   onClear,
 }: {
   selected: string[];
   customColour: string;
   onSelect: (id: string) => void;
   onCustomChange: (hex: string) => void;
-  onCustomSearch: () => void;
   onClear: () => void;
 }) {
   const activeColour = selected[0] ? getSelectedColour(selected[0]) : null;
@@ -1814,32 +1879,13 @@ function ColourSearchPanel({
           </div>
         )}
       </div>
-      <ColourStrip selected={selected} onToggle={onSelect} />
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/10 bg-black/20 px-3 py-2">
-        <label className="flex items-center gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-            Custom
-          </span>
-          <input
-            type="color"
-            value={customColour}
-            onChange={(event) => onCustomChange(event.target.value)}
-            className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-            aria-label="Choose custom colour"
-          />
-          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-white/65">
-            {customColour}
-          </span>
-        </label>
-        <button
-          type="button"
-          onClick={onCustomSearch}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white/[0.12] px-3 text-xs font-medium text-white transition-colors hover:bg-white/[0.18]"
-        >
-          <Search className="h-3.5 w-3.5" />
-          Search
-        </button>
-      </div>
+      <ColourStrip
+        selected={selected}
+        onToggle={onSelect}
+        customColour={customColour}
+        onCustomChange={onCustomChange}
+        customAriaLabel="Choose custom colour search"
+      />
     </div>
   );
 }
@@ -1875,12 +1921,28 @@ function ModeButton({
 function ColourStrip({
   selected,
   onToggle,
+  customColour,
+  onCustomChange,
+  customAriaLabel = 'Choose custom colour',
+  compact = false,
+  className = '',
 }: {
   selected: string[];
   onToggle: (id: string) => void;
+  customColour?: string;
+  onCustomChange?: (hex: string) => void;
+  customAriaLabel?: string;
+  compact?: boolean;
+  className?: string;
 }) {
+  const customActive = selected.some((id) => id.startsWith('custom:'));
+  const heightClass = compact ? 'h-8' : 'h-11';
+  const dotClass = compact ? 'h-2 w-2' : 'h-2.5 w-2.5';
+
   return (
-    <div className="flex h-11 overflow-hidden rounded-md border border-white/10">
+    <div
+      className={`flex ${heightClass} overflow-hidden rounded-md border border-white/10 ${className}`}
+    >
       {COLOURS.map((colour, index) => {
         const active = selected.includes(colour.id);
         const grow = index === 9 ? 1.4 : index === 5 ? 1.25 : 1;
@@ -1896,12 +1958,44 @@ function ColourStrip({
           >
             {active && (
               <span className="absolute inset-0 flex items-center justify-center ring-2 ring-inset ring-white">
-                <span className="h-2.5 w-2.5 rounded-full bg-white shadow-[0_1px_8px_rgba(0,0,0,0.8)]" />
+                <span
+                  className={`${dotClass} rounded-full bg-white shadow-[0_1px_8px_rgba(0,0,0,0.8)]`}
+                />
               </span>
             )}
           </button>
         );
       })}
+      {customColour && onCustomChange && (
+        <label
+          title="Custom colour"
+          className="relative min-w-9 flex-[0.9_1_0] cursor-pointer overflow-hidden border-l border-white/10 transition-[filter] hover:brightness-125 focus-within:z-10 focus-within:ring-2 focus-within:ring-inset focus-within:ring-white"
+          style={{
+            background: customActive
+              ? customColour
+              : 'conic-gradient(from 90deg, #f7f7f7, #d24d57, #d7a931, #58a56b, #3a75c4, #8f55c7, #f7f7f7)',
+          }}
+        >
+          <input
+            type="color"
+            value={customColour}
+            onChange={(event) => onCustomChange(event.target.value)}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label={customAriaLabel}
+          />
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            {customActive ? (
+              <span className="absolute inset-0 flex items-center justify-center ring-2 ring-inset ring-white">
+                <span
+                  className={`${dotClass} rounded-full bg-white shadow-[0_1px_8px_rgba(0,0,0,0.8)]`}
+                />
+              </span>
+            ) : (
+              <Palette className="h-3.5 w-3.5 text-black/65 drop-shadow-[0_1px_3px_rgba(255,255,255,0.8)]" />
+            )}
+          </span>
+        </label>
+      )}
     </div>
   );
 }
@@ -2267,6 +2361,8 @@ function TableResults({
   onSortModeChange: (sortMode: SortMode) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
+  const isColourSort = sortMode === 'colour';
+
   return (
     <div className="relative left-1/2 mt-6 w-[calc(100vw-2rem)] max-w-[1800px] -translate-x-1/2 overflow-x-auto rounded-lg border border-white/[0.08] lg:w-[calc(100vw-4rem)]">
       <table className="w-full min-w-[1120px] border-collapse text-sm">
@@ -2312,12 +2408,14 @@ function TableResults({
             <TableSortHeader
               label={
                 showSimilarity
-                  ? selectedColours.length
-                    ? 'Colour match'
+                  ? isColourSort
+                    ? selectedColours.length
+                      ? 'Colour match'
+                      : 'Palette band'
                     : 'Score'
                   : 'Rank'
               }
-              column={selectedColours.length ? 'colour' : 'score'}
+              column={isColourSort ? 'colour' : 'score'}
               sortMode={sortMode}
               onSortModeChange={onSortModeChange}
             />
@@ -2394,13 +2492,17 @@ function TableResults({
                 title={
                   selectedColours.length
                     ? getColourMatchTitle(result, selectedColours)
-                    : undefined
+                    : isColourSort
+                      ? 'Nearest palette band for colour spectrum order'
+                      : undefined
                 }
               >
                 {showSimilarity
                   ? selectedColours.length
                     ? formatColourMatch(result, selectedColours)
-                    : `${Math.round(result.similarity * 100)}%`
+                    : isColourSort
+                      ? getPaletteBandLabel(result)
+                      : `${Math.round(result.similarity * 100)}%`
                   : (index + 1).toString().padStart(2, '0')}
               </td>
             </tr>
