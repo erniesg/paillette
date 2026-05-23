@@ -17,6 +17,7 @@ import {
   Network,
   Palette,
   Search,
+  SlidersHorizontal,
   Table2,
   X,
   type LucideIcon,
@@ -63,12 +64,55 @@ type SearchMode = 'text' | 'image';
 type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
 type SortMode = 'relevance' | 'colour' | 'time-desc' | 'time-asc' | 'artist' | 'title';
 
-const EXAMPLE_QUERIES = [
-  { label: 'pineapple', dot: '#cda636' },
-  { label: 'fishing boats', dot: '#365f9c' },
-  { label: 'self portrait', dot: '#6a5238' },
-  { label: 'batik patterns', dot: '#bf5631' },
-  { label: '1950s Singapore', dot: '#8a9a7a' },
+const EVAL_SUGGESTIONS = [
+  {
+    type: 'keyword',
+    label: 'tropical fruit and flowers',
+    query: 'a still life of tropical fruit and flowers',
+    dot: '#cda636',
+  },
+  {
+    type: 'occasion',
+    label: 'Mid-Autumn Festival',
+    query: 'Mid-Autumn Festival — lanterns and the moon',
+    dot: '#cdbfa2',
+  },
+  {
+    type: 'motif',
+    label: 'batik textile pattern',
+    query: 'batik or songket textile pattern',
+    dot: '#bf5631',
+  },
+  {
+    type: 'mood',
+    label: 'serene and contemplative',
+    query: 'serene, still and contemplative',
+    dot: '#8a9a7a',
+  },
+  {
+    type: 'style',
+    label: 'Nanyang style',
+    query: 'Nanyang-style fusion of Chinese and Southeast Asian',
+    dot: '#365f9c',
+  },
+  {
+    type: 'medium',
+    label: 'watercolour painting',
+    query: 'watercolour painting',
+    dot: '#6e8ea8',
+  },
+  {
+    type: 'metadata',
+    label: '1950s works',
+    query: 'artworks made in the 1950s',
+    dot: '#6a5238',
+  },
+  {
+    type: 'colour',
+    label: 'muted sage green',
+    query: 'muted sage green',
+    dot: '#8a9a7a',
+  },
 ];
 
 const COLOURS = [
@@ -130,6 +174,21 @@ const rgbDistance = (a: string, b: string) => {
       (rgbA[1] - rgbB[1]) ** 2 +
       (rgbA[2] - rgbB[2]) ** 2
   );
+};
+
+const getSelectedColour = (selection: string) => {
+  if (selection.startsWith('custom:')) {
+    const hex = selection.slice('custom:'.length);
+    if (hexToRgb(hex)) {
+      return {
+        id: selection,
+        hex,
+        name: hex.toUpperCase(),
+      };
+    }
+  }
+
+  return COLOURS.find((colour) => colour.id === selection) || null;
 };
 
 const asText = (value: unknown) =>
@@ -220,7 +279,7 @@ const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
   if (!palette.length) return Infinity;
 
   const total = selected.reduce((sum, colourId) => {
-    const selectedColour = COLOURS.find((colour) => colour.id === colourId);
+    const selectedColour = getSelectedColour(colourId);
     if (!selectedColour) return sum;
     const nearest = Math.min(
       ...palette.map((paletteColour) => rgbDistance(selectedColour.hex, paletteColour))
@@ -323,11 +382,19 @@ export default function SearchPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [customColour, setCustomColour] = useState('#cda636');
   const [sortMode, setSortMode] = useState<SortMode>('relevance');
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(0.3);
   const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
+  const [isColourPanelOpen, setIsColourPanelOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   const textSearchQuery = useQuery({
     queryKey: ['search', 'text', galleryId, textQuery, topK, minScore],
@@ -343,6 +410,7 @@ export default function SearchPage() {
       );
     },
     enabled:
+      hasMounted &&
       searchMode === 'text' &&
       shouldSearch &&
       textQuery.trim().length > 0,
@@ -361,7 +429,7 @@ export default function SearchPage() {
         }
       );
     },
-    enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
+    enabled: hasMounted && searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
   const currentQuery = searchMode === 'text' ? textSearchQuery : imageSearchQuery;
@@ -370,7 +438,7 @@ export default function SearchPage() {
     () => sortResults(rawResults, sortMode, selectedColours),
     [rawResults, selectedColours, sortMode]
   );
-  const isLoading = currentQuery.isLoading || currentQuery.isFetching;
+  const isLoading = hasMounted && (currentQuery.isLoading || currentQuery.isFetching);
   const error = currentQuery.error;
 
   useEffect(() => {
@@ -432,6 +500,25 @@ export default function SearchPage() {
       prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
     );
     setSortMode('colour');
+  };
+
+  const chooseCustomColour = (hex: string) => {
+    setCustomColour(hex);
+    setSelectedColours((prev) => [
+      `custom:${hex}`,
+      ...prev.filter((value) => !value.startsWith('custom:')),
+    ]);
+    setSortMode('colour');
+  };
+
+  const updateTopK = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    setTopK(Math.min(50, Math.max(1, Math.round(value))));
+  };
+
+  const updateMinScorePercent = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    setMinScore(Math.min(1, Math.max(0, value / 100)));
   };
 
   return (
@@ -555,13 +642,13 @@ export default function SearchPage() {
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <span className="self-center pr-1 font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
-                try
+                eval set
               </span>
-              {EXAMPLE_QUERIES.map((query) => {
-                const active = textQuery.trim().toLowerCase() === query.label.toLowerCase();
+              {EVAL_SUGGESTIONS.map((query) => {
+                const active = textQuery.trim().toLowerCase() === query.query.toLowerCase();
                 return (
                   <button
-                    key={query.label}
+                    key={query.type}
                     type="button"
                     onClick={() => {
                       if (active) {
@@ -571,7 +658,7 @@ export default function SearchPage() {
                         return;
                       }
 
-                      runTextSearch(query.label);
+                      runTextSearch(query.query);
                     }}
                     className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
                       active
@@ -580,7 +667,10 @@ export default function SearchPage() {
                     }`}
                   >
                     <span className="h-2 w-2 rounded-full" style={{ background: query.dot }} />
-                    {query.label}
+                    <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                      {query.type}
+                    </span>
+                    <span>{query.label}</span>
                   </button>
                 );
               })}
@@ -599,130 +689,223 @@ export default function SearchPage() {
                 />
               </div>
             </div>
-
-            <div className="mt-8 border-t border-white/[0.08] pt-5">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-white/45">
-                    Refine
-                  </span>
-                  <span className="text-sm font-medium text-white/75">Colour</span>
-                </div>
-                {selectedColours.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedColours([])}
-                    className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
-                  >
-                    Clear colours
-                  </button>
-                )}
-              </div>
-              <ColourStrip selected={selectedColours} onToggle={toggleColour} />
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-              {selectedColours.map((id) => {
-                const colour = COLOURS.find((item) => item.id === id);
-                if (!colour) return null;
-                return (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70"
-                  >
-                    <span className="h-3 w-3 rounded-full" style={{ background: colour.hex }} />
-                    {colour.name}
-                  </span>
-                );
-              })}
-              <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                Limit
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={topK}
-                  onChange={(event) => setTopK(Number(event.target.value))}
-                  className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
-                />
-              </label>
-              <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                Score
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={Math.round(minScore * 100)}
-                  onChange={(event) => setMinScore(Number(event.target.value) / 100)}
-                  className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
-                />
-              </label>
-            </div>
           </motion.div>
         </section>
 
         <section className="mt-8">
           <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
-            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
-                {isLoading
-                  ? 'Searching'
-                  : results.length
-                    ? `${results.length} works`
-                    : shouldSearch
-                      ? 'No works'
-                      : 'Ready'}
-                {textQuery && searchMode === 'text' && (
-                  <span className="ml-2 normal-case tracking-normal text-white/70">
-                    "{textQuery}"
-                  </span>
-                )}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
-                  {SORT_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setSortMode(option.id)}
-                        title={`Sort by ${option.label.toLowerCase()}`}
-                        className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                          sortMode === option.id
-                            ? 'bg-white/[0.14] text-white'
-                            : 'text-white/45 hover:text-white/80'
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        <span className="hidden md:inline">{option.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
-                  {VIEW_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setView(option.id)}
-                        title={option.label}
-                        className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                          view === option.id
-                            ? 'bg-white/[0.14] text-white'
-                            : 'text-white/45 hover:text-white/80'
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">{option.label}</span>
-                      </button>
-                    );
-                  })}
+            <div className="mx-auto max-w-7xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
+                  {isLoading
+                    ? 'Searching'
+                    : results.length
+                      ? `${results.length} works`
+                      : hasMounted && shouldSearch
+                        ? 'No works'
+                        : 'Ready'}
+                  {textQuery && searchMode === 'text' && (
+                    <span className="ml-2 normal-case tracking-normal text-white/70">
+                      "{textQuery}"
+                    </span>
+                  )}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsColourPanelOpen((value) => !value);
+                      setIsSettingsOpen(false);
+                    }}
+                    aria-expanded={isColourPanelOpen}
+                    aria-label="Colour controls"
+                    className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
+                      isColourPanelOpen || selectedColours.length
+                        ? 'border-white/20 bg-white/[0.12] text-white'
+                        : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
+                    }`}
+                  >
+                    <Palette className="h-3.5 w-3.5" />
+                    <span>Colour</span>
+                    <span className="flex items-center -space-x-1">
+                      {(selectedColours.length ? selectedColours : ['custom:#2f3540'])
+                        .slice(0, 4)
+                        .map((id) => {
+                          const colour = getSelectedColour(id);
+                          return (
+                            <span
+                              key={id}
+                              className="h-3.5 w-3.5 rounded-full border border-black/60"
+                              style={{ background: colour?.hex || '#2f3540' }}
+                            />
+                          );
+                        })}
+                    </span>
+                  </button>
+                  <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
+                    {SORT_OPTIONS.map((option) => {
+                      const Icon = option.icon;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setSortMode(option.id)}
+                          title={`Sort by ${option.label.toLowerCase()}`}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                            sortMode === option.id
+                              ? 'bg-white/[0.14] text-white'
+                              : 'text-white/45 hover:text-white/80'
+                          }`}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          <span className="hidden md:inline">{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
+                    {VIEW_OPTIONS.map((option) => {
+                      const Icon = option.icon;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setView(option.id)}
+                          title={option.label}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                            view === option.id
+                              ? 'bg-white/[0.14] text-white'
+                              : 'text-white/45 hover:text-white/80'
+                          }`}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSettingsOpen((value) => !value);
+                      setIsColourPanelOpen(false);
+                    }}
+                    aria-expanded={isSettingsOpen}
+                    aria-label="Search settings"
+                    className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
+                      isSettingsOpen
+                        ? 'border-white/20 bg-white/[0.12] text-white'
+                        : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
+                    }`}
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <span>Settings</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+                      {topK} / {Math.round(minScore * 100)}
+                    </span>
+                  </button>
                 </div>
               </div>
+
+              {isColourPanelOpen && (
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/35 p-3">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+                    <ColourStrip selected={selectedColours} onToggle={toggleColour} />
+                    <label className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 lg:min-w-56">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                        Custom
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={customColour}
+                          onChange={(event) => chooseCustomColour(event.target.value)}
+                          className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                          aria-label="Choose custom colour"
+                        />
+                        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-white/65">
+                          {customColour}
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      {selectedColours.map((id) => {
+                        const colour = getSelectedColour(id);
+                        if (!colour) return null;
+                        return (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70"
+                          >
+                            <span className="h-3 w-3 rounded-full" style={{ background: colour.hex }} />
+                            {colour.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    {selectedColours.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedColours([])}
+                        className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+                      >
+                        Clear colours
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {isSettingsOpen && (
+                <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                      Results returned
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={topK}
+                        onChange={(event) => updateTopK(Number(event.target.value))}
+                        className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                      />
+                    </span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={50}
+                      value={topK}
+                      onChange={(event) => updateTopK(Number(event.target.value))}
+                      className="w-full accent-fuchsia-300"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                      Minimum score
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round(minScore * 100)}
+                        onChange={(event) => updateMinScorePercent(Number(event.target.value))}
+                        className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                      />
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={Math.round(minScore * 100)}
+                      onChange={(event) => updateMinScorePercent(Number(event.target.value))}
+                      className="w-full accent-fuchsia-300"
+                    />
+                  </label>
+                </div>
+              )}
             </div>
           </div>
 
@@ -747,7 +930,7 @@ export default function SearchPage() {
             />
           )}
 
-          {!isLoading && !error && shouldSearch && results.length === 0 && (
+          {!isLoading && !error && hasMounted && shouldSearch && results.length === 0 && (
             <div className="py-16 text-center">
               <p className="text-white/55">No artworks found.</p>
               <p className="mt-1 text-sm text-white/35">
