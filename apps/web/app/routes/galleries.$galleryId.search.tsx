@@ -558,6 +558,77 @@ const getColourMatchTitle = (
   return `Nearest palette distance: ${Math.round(distance)}. Lower distance is closer.`;
 };
 
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const getMasonryColumnCount = (width: number) => {
+  if (width >= 1280) return 4;
+  if (width >= 1024) return 3;
+  if (width >= 640) return 2;
+  return 1;
+};
+
+const useMasonryColumnCount = () => {
+  const [columnCount, setColumnCount] = useState(4);
+
+  useEffect(() => {
+    const updateColumnCount = () => {
+      setColumnCount(getMasonryColumnCount(window.innerWidth));
+    };
+
+    updateColumnCount();
+    window.addEventListener('resize', updateColumnCount);
+    return () => window.removeEventListener('resize', updateColumnCount);
+  }, []);
+
+  return columnCount;
+};
+
+const getMasonryImageRatio = (result: ArtworkSearchResult) => {
+  const dimensions = getMeta(result).dimensions;
+  const width = asNumber(dimensions?.width);
+  const height = asNumber(dimensions?.height);
+
+  if (width && height) {
+    return clampNumber(height / width, 0.45, 2.25);
+  }
+
+  return 0.82 + (hashString(result.id) % 88) / 100;
+};
+
+const estimateMasonryCardHeight = (result: ArtworkSearchResult) => {
+  const titleLength = result.title?.length || 0;
+  const titleWeight = Math.min(0.42, titleLength / 150);
+  const metadataWeight = getMetadataFacets(result).length ? 0.34 : 0.18;
+
+  return getMasonryImageRatio(result) + 0.64 + titleWeight + metadataWeight;
+};
+
+const distributeMasonryResults = (
+  results: ArtworkSearchResult[],
+  columnCount: number
+) => {
+  const safeColumnCount = Math.max(1, columnCount);
+  const columns: Array<Array<{ result: ArtworkSearchResult; index: number }>> =
+    Array.from({ length: safeColumnCount }, () => []);
+  const heights = Array.from({ length: safeColumnCount }, () => 0);
+
+  results.forEach((result, index) => {
+    let targetColumn = 0;
+
+    for (let columnIndex = 1; columnIndex < safeColumnCount; columnIndex += 1) {
+      if (heights[columnIndex]! < heights[targetColumn]!) {
+        targetColumn = columnIndex;
+      }
+    }
+
+    columns[targetColumn]!.push({ result, index });
+    heights[targetColumn]! += estimateMasonryCardHeight(result);
+  });
+
+  return columns;
+};
+
 const paletteBandSortKey = (result: ArtworkSearchResult) => {
   const [dominantColour] = collectPalette(result);
   if (!dominantColour) {
@@ -2451,19 +2522,33 @@ function MasonryResults({
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
+  const columnCount = useMasonryColumnCount();
+  const effectiveColumnCount = Math.min(
+    columnCount,
+    Math.max(results.length, 1)
+  );
+  const columns = useMemo(
+    () => distributeMasonryResults(results, effectiveColumnCount),
+    [results, effectiveColumnCount]
+  );
+
   return (
-    <div className="grid grid-cols-1 items-start gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {results.map((result, index) => (
-        <ResultCard
-          key={result.id}
-          result={result}
-          rank={index + 1}
-          selectedColours={selectedColours}
-          showSimilarity={showSimilarity}
-          onFacetSearch={onFacetSearch}
-          onPaletteColourSelect={onPaletteColourSelect}
-          onSelectArtwork={onSelectArtwork}
-        />
+    <div className="flex items-start gap-4 pt-6">
+      {columns.map((column, columnIndex) => (
+        <div key={columnIndex} className="flex min-w-0 flex-1 flex-col gap-4">
+          {column.map(({ result, index }) => (
+            <ResultCard
+              key={result.id}
+              result={result}
+              rank={index + 1}
+              selectedColours={selectedColours}
+              showSimilarity={showSimilarity}
+              onFacetSearch={onFacetSearch}
+              onPaletteColourSelect={onPaletteColourSelect}
+              onSelectArtwork={onSelectArtwork}
+            />
+          ))}
+        </div>
       ))}
     </div>
   );
@@ -2601,7 +2686,7 @@ function ResultCard({
   const palette = collectPalette(result).slice(0, 5);
 
   return (
-    <article className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.025]">
+    <article className="break-inside-avoid overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.025]">
       <button
         type="button"
         onClick={() => onSelectArtwork(result)}
@@ -2771,7 +2856,7 @@ function TableResults({
   const isColourSort = sortMode === 'colour';
 
   return (
-    <div className="relative left-1/2 mt-6 w-[calc(100vw-2rem)] max-w-[1800px] -translate-x-1/2 overflow-x-auto rounded-lg border border-white/[0.08] lg:w-[calc(100vw-4rem)]">
+    <div className="mt-6 w-full overflow-x-auto rounded-lg border border-white/[0.08]">
       <table className="w-full min-w-[1120px] border-collapse text-sm">
         <thead className="border-b border-white/[0.08] bg-white/[0.04]">
           <tr className="text-left font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
