@@ -93,24 +93,46 @@ const stripHtml = (html: string) =>
       .replace(/\s+/g, ' ')
   );
 
+const parseHolidayName = (rowHtml: string) => {
+  const cell = rowHtml.match(
+    /<td[^>]*class=["'][^"']*cell-holiday-name[^"']*["'][^>]*>([\s\S]*?)<\/td>/i
+  )?.[1];
+  if (!cell) return null;
+
+  const text = stripHtml(
+    cell
+      .replace(
+        /<span[^>]*class=["']text-date-mobile["'][^>]*>[\s\S]*?<\/span>/gi,
+        ' '
+      )
+      .replace(
+        /<em[^>]*class=["']cell-holiday-alert["'][^>]*>[\s\S]*?<\/em>/gi,
+        ' '
+      )
+  ).trim();
+  return HOLIDAY_NAMES.find(
+    (holidayName) => holidayName.toLowerCase() === text.toLowerCase()
+  );
+};
+
 const parseMomHolidays = (html: string): SingaporeHoliday[] => {
-  const text = stripHtml(html);
   const datePattern =
     /\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})\b/gi;
   const holidays = new Map<string, SingaporeHoliday>();
-  let match: RegExpExecArray | null;
+  const rows = html.match(/<tr\b[\s\S]*?<\/tr>/gi) ?? [];
 
-  while ((match = datePattern.exec(text))) {
+  for (const row of rows) {
+    const match = datePattern.exec(row);
+    datePattern.lastIndex = 0;
+    if (!match) continue;
+
     const [day, month, year] = match.slice(1, 4);
     if (!day || !month || !year) continue;
 
     const isoDate = toIsoDate(day, month, year);
     if (!isoDate) continue;
 
-    const windowText = text.slice(match.index, match.index + 260);
-    const name = HOLIDAY_NAMES.find((holidayName) =>
-      windowText.toLowerCase().includes(holidayName.toLowerCase())
-    );
+    const name = parseHolidayName(row);
     if (!name) continue;
 
     holidays.set(`${isoDate}-${name}`, {

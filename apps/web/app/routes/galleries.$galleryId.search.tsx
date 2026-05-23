@@ -1933,29 +1933,32 @@ const IdleShowcase = forwardRef<
   const featured = artworks.filter(
     (artwork) => artwork.thumbnailUrl || artwork.imageUrl
   );
-  const lead = featured[0];
-  const salonWall = featured.slice(1, 7);
+  const previewWorks = featured.slice(0, 5);
+  const previewItems = Array.from(
+    { length: 5 },
+    (_, index) => previewWorks[index] ?? null
+  );
+  const previewLayout = [
+    'col-span-3 row-span-2',
+    'col-span-2',
+    'col-span-1',
+    'col-span-1',
+    'col-span-2',
+  ];
 
   return (
-    <div ref={ref} className="mx-auto mt-10 max-w-7xl">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-        <section className="relative min-h-[360px] overflow-hidden border-y border-white/[0.08] bg-white/[0.025] lg:min-h-[520px]">
-          {lead ? (
-            <img
-              src={lead.thumbnailUrl || lead.imageUrl || undefined}
-              alt={lead.title || 'Artwork'}
-              className="absolute inset-0 h-full w-full object-cover opacity-35"
-            />
-          ) : (
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(205,166,54,0.18),transparent_32%),linear-gradient(135deg,rgba(110,142,168,0.16),transparent_45%)]" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#0b0b0e] via-[#0b0b0e]/75 to-[#0b0b0e]/35" />
-          <div className="relative flex h-full min-h-[360px] max-w-2xl flex-col justify-end p-6 lg:min-h-[520px] lg:p-8">
+    <div
+      ref={ref}
+      className="mx-auto mt-8 max-w-7xl border-y border-white/[0.08] py-6"
+    >
+      <div className="grid gap-7 lg:grid-cols-[minmax(0,0.85fr)_minmax(480px,1.15fr)] lg:items-center">
+        <section className="py-2 lg:py-6">
+          <div className="max-w-2xl">
             <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-white/35">
               National Gallery Singapore
             </p>
-            <h1 className="mt-3 font-display text-4xl font-semibold leading-tight text-white lg:text-6xl">
-              Let the collection set the first direction.
+            <h1 className="mt-3 font-display text-3xl font-semibold leading-tight text-white lg:text-5xl">
+              Start with a collection direction.
             </h1>
             <div className="mt-6 flex flex-wrap gap-2">
               {[
@@ -1976,10 +1979,10 @@ const IdleShowcase = forwardRef<
           </div>
         </section>
 
-        <section className="min-h-[360px] border-y border-white/[0.08] py-4 lg:min-h-[520px]">
+        <section className="min-w-0">
           <div className="mb-4 flex items-center justify-between">
             <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
-              Salon view
+              Collection preview
             </p>
             {isLoading && (
               <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">
@@ -1987,30 +1990,52 @@ const IdleShowcase = forwardRef<
               </span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            {(salonWall.length ? salonWall : new Array(6).fill(null)).map(
-              (artwork, index) => (
-                <div
-                  key={artwork?.id || index}
-                  className={`overflow-hidden border border-white/[0.08] bg-white/[0.03] ${
-                    index % 3 === 1 ? 'mt-8' : index % 3 === 2 ? 'mt-4' : ''
-                  }`}
-                >
-                  {artwork ? (
-                    <img
-                      src={
-                        artwork.thumbnailUrl || artwork.imageUrl || undefined
-                      }
-                      alt={artwork.title || 'Artwork'}
-                      className="aspect-[3/4] w-full object-cover"
-                    />
-                  ) : (
-                    <div className="aspect-[3/4] animate-pulse bg-white/[0.04]" />
-                  )}
-                </div>
-              )
-            )}
+          <div className="grid h-[260px] grid-cols-6 grid-rows-2 gap-2 sm:h-[320px] lg:h-[360px]">
+            {previewItems.map((artwork, index) => (
+              <button
+                key={artwork?.id || `preview-${index}`}
+                type="button"
+                disabled={!artwork?.title}
+                onClick={() => artwork?.title && onSearch(artwork.title)}
+                aria-label={
+                  artwork?.title ? `Search ${artwork.title}` : 'Loading artwork'
+                }
+                className={`group min-h-0 overflow-hidden border border-white/[0.08] bg-white/[0.035] text-left transition-colors hover:border-white/20 disabled:cursor-default disabled:hover:border-white/[0.08] ${
+                  previewLayout[index] || ''
+                }`}
+              >
+                {artwork ? (
+                  <img
+                    src={artwork.thumbnailUrl || artwork.imageUrl || undefined}
+                    alt={artwork.title || 'Artwork'}
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  />
+                ) : (
+                  <div
+                    className="h-full w-full animate-pulse bg-white/[0.04]"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            ))}
           </div>
+          {featured.length > 0 && (
+            <div className="mt-3 grid grid-cols-5 gap-2">
+              {previewItems.map((artwork, index) => (
+                <button
+                  key={`${artwork?.id || `caption-${index}`}`}
+                  type="button"
+                  disabled={!artwork?.title}
+                  onClick={() => artwork?.title && onSearch(artwork.title)}
+                  className="min-w-0 text-left font-mono text-[9px] uppercase tracking-[0.1em] text-white/35 transition-colors hover:text-white/65 disabled:cursor-default disabled:text-white/20"
+                >
+                  <span className="block truncate">
+                    {artwork?.title || 'Loading'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </div>
