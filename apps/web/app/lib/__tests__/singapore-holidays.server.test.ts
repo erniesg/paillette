@@ -64,14 +64,15 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
     expect(
       suggestions.map((suggestion) => [
         suggestion.label,
+        suggestion.query,
         suggestion.detail,
         suggestion.source,
       ])
     ).toEqual([
-      ['Hari Raya Haji', '27 May', 'mom'],
-      ['Vesak Day', '31 May', 'mom'],
-      ['National Day', '9 Aug', 'mom'],
-      ['Deepavali', '8 Nov', 'mom'],
+      ['Hari Raya Haji', 'Hari Raya Haji', '27 May', 'mom'],
+      ['Vesak Day', 'Vesak Day', '31 May', 'mom'],
+      ['National Day', 'National Day', '9 Aug', 'mom'],
+      ['Deepavali', 'Deepavali', '8 Nov', 'mom'],
     ]);
   });
 });

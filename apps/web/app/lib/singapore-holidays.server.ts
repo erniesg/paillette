@@ -154,20 +154,6 @@ const formatHolidayDate = (date: string) =>
     month: 'short',
   }).format(new Date(`${date}T00:00:00.000Z`));
 
-const getHolidayQuery = (name: string) => {
-  if (name === 'National Day') return 'Singapore National Day celebration';
-  if (name === 'Chinese New Year')
-    return 'Chinese New Year reunion and festivity';
-  if (name === 'Hari Raya Haji') return 'Hari Raya Haji gathering and devotion';
-  if (name === 'Hari Raya Puasa') return 'Hari Raya Puasa celebration';
-  if (name === 'Vesak Day') return 'Vesak Day serenity and light';
-  if (name === 'Deepavali') return 'Deepavali light and celebration';
-  if (name === 'Christmas Day') return 'Christmas gathering and festivity';
-  if (name === 'Good Friday') return 'Good Friday reflection';
-  if (name === 'Labour Day') return 'workers and everyday labour';
-  return name;
-};
-
 const uniqueByName = (holidays: SingaporeHoliday[]) => {
   const seen = new Set<string>();
   return holidays.filter((holiday) => {
@@ -227,7 +213,7 @@ const buildSuggestions = (holidays: SingaporeHoliday[], now: Date) => {
     .map((holiday) => ({
       type: 'occasion' as const,
       label: holiday.name,
-      query: getHolidayQuery(holiday.name),
+      query: holiday.name,
       dot: HOLIDAY_DOTS[holiday.name] || '#cdbfa2',
       date: holiday.date,
       detail: formatHolidayDate(holiday.date),
