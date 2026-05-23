@@ -63,6 +63,7 @@ const JINA_EMBEDDINGS_ENDPOINT = 'https://api.jina.ai/v1/embeddings';
 const RRF_K = 60;
 const MAX_SEARCH_RESULTS = 100;
 const NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
+const VECTORIZE_QUERY_METADATA = 'indexed' as const;
 
 const BACKABLE_NGS_SEARCH_SQL = `
         AND source_url IS NOT NULL
@@ -373,7 +374,8 @@ async function searchJinaTextVectors(
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
     filter: orgId ? { galleryId: orgId } : undefined,
-    returnMetadata: true,
+    returnValues: false,
+    returnMetadata: VECTORIZE_QUERY_METADATA,
   });
 
   return canonicalizeMatches(
@@ -397,7 +399,8 @@ async function searchCaptionVectors(
   const queryEmbedding = await generateCaptionQueryEmbedding(env, query);
   const result = await env.CAPTION_VECTORIZE.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    returnMetadata: true,
+    returnValues: false,
+    returnMetadata: VECTORIZE_QUERY_METADATA,
   });
 
   return canonicalizeMatches(
@@ -445,7 +448,8 @@ async function searchJinaImageVectors(
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK, 1), MAX_SEARCH_RESULTS),
     filter: orgId ? { galleryId: orgId } : undefined,
-    returnMetadata: true,
+    returnValues: false,
+    returnMetadata: VECTORIZE_QUERY_METADATA,
   });
 
   return canonicalizeMatches(

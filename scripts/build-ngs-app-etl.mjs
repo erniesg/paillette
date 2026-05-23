@@ -138,6 +138,14 @@ for (const asset of sourceAssets) {
   assetsByArtwork.set(asset.artwork_id, byArtwork);
 }
 
+const dateTextOverrides = new Map([
+  // The Roots public record lists 1953; the source corpus currently has a malformed "153".
+  ['2019-00157', '1953'],
+]);
+
+const normalizedDateText = (artwork) =>
+  dateTextOverrides.get(artwork.id) || artwork.date_text || null;
+
 const sourceArtworks = candidateSourceArtworks.filter((artwork) =>
   hasText(artwork.accession_no) &&
   hasText(artwork.title) &&
@@ -315,8 +323,8 @@ const artworkRows = sourceArtworks.map((artwork) => {
     sqlValue(originalAsset ? artwork.id : null),
     sqlValue(artwork.title || 'Untitled'),
     sqlValue(artwork.artist || null),
-    sqlValue(firstYear(artwork.date_text)),
-    sqlValue(artwork.date_text || null),
+    sqlValue(firstYear(normalizedDateText(artwork))),
+    sqlValue(normalizedDateText(artwork)),
     sqlValue(artwork.medium || null),
     sqlValue(artwork.classification || null),
     sqlValue(artwork.description || null),

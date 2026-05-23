@@ -29,6 +29,7 @@ import {
   getGeneratedCaptionText,
   getGeographicAssociation,
   getNgsUrl,
+  getPublicDateText,
   getPublicAccession,
   getPublicCatalogueRows,
   getPublicDescription,
@@ -316,7 +317,7 @@ const getYear = (result: ArtworkSearchResult) =>
   asNumber(result.year) || asNumber(getMeta(result).year);
 
 const getDateText = (result: ArtworkSearchResult) =>
-  asText(getMeta(result).dateText) || asText(getMeta(result).date_text) || String(getYear(result) || '');
+  getPublicDateText(result) || String(getYear(result) || '');
 
 const getMedium = (result: ArtworkSearchResult) =>
   asText(getMeta(result).medium) || asText(getMeta(result).classification);
@@ -324,9 +325,15 @@ const getMedium = (result: ArtworkSearchResult) =>
 const getAccession = (result: ArtworkSearchResult) => getPublicAccession(result);
 
 const getSourceName = (result: ArtworkSearchResult) =>
-  asText(getMeta(result).sourceInstitution) ||
-  asText(getMeta(result).source_institution) ||
-  'National Gallery Singapore';
+  getNgsUrl(result)
+    ? asText(getMeta(result).sourceInstitution) ||
+      asText(getMeta(result).source_institution) ||
+      'National Gallery Singapore'
+    : getRootsUrl(result)
+      ? 'NHB Roots'
+      : asText(getMeta(result).sourceInstitution) ||
+        asText(getMeta(result).source_institution) ||
+        'National Gallery Singapore';
 
 const getPlace = (result: ArtworkSearchResult) => getGeographicAssociation(result);
 

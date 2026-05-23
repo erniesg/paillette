@@ -24,6 +24,34 @@ const firstText = (...values: unknown[]) => {
   return null;
 };
 
+const firstMatchingText = (
+  predicate: (text: string) => boolean,
+  ...values: unknown[]
+) => {
+  for (const value of values) {
+    const text = asText(value);
+    if (text && predicate(text)) return text;
+  }
+  return null;
+};
+
+const isNgsUrl = (value: string) => /nationalgallery\.sg/i.test(value);
+const isRootsUrl = (value: string) => /roots\.gov\.sg/i.test(value);
+
+export const isMalformedDateText = (value: unknown) => {
+  const text = asText(value);
+  return Boolean(text && (/^\d{1,3}$/.test(text) || /^\d{5,}$/.test(text)));
+};
+
+export const getPublicDateText = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  const dateText = firstText(artwork.date_text, meta.dateText, meta.date_text);
+  if (dateText && !isMalformedDateText(dateText)) return dateText;
+
+  const year = typeof artwork.year === 'number' ? artwork.year : Number(meta.year);
+  return Number.isFinite(year) && year >= 1000 && year <= 9999 ? String(year) : null;
+};
+
 export const isInternalRecordId = (value: unknown) => {
   const text = asText(value);
   return Boolean(text && /^data_aws\d*k_/i.test(text));
@@ -91,7 +119,11 @@ export const getSourceRecords = (artwork: PublicArtwork) => {
 export const getRootsUrl = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
   const sourceRecords = getSourceRecords(artwork);
-  return firstText(
+  return firstMatchingText(
+    isRootsUrl,
+    artwork.source_url,
+    meta.sourceUrl,
+    meta.source_url,
     meta.roots_listing_url,
     meta.rootsListingUrl,
     sourceRecords.roots_listing_url,
@@ -102,7 +134,8 @@ export const getRootsUrl = (artwork: PublicArtwork) => {
 export const getNgsUrl = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
   const sourceRecords = getSourceRecords(artwork);
-  return firstText(
+  return firstMatchingText(
+    isNgsUrl,
     artwork.source_url,
     meta.ngs_detail_url,
     meta.ngsDetailUrl,
@@ -154,7 +187,7 @@ export const getPublicCatalogueRows = (artwork: PublicArtwork): PublicMetadataRo
   const meta = getPublicMetadata(artwork);
   const rows: Array<[string, unknown]> = [
     ['Artist', artwork.artist],
-    ['Date', artwork.date_text || meta.dateText || meta.date_text || artwork.year],
+    ['Date', getPublicDateText(artwork)],
     ['Medium', artwork.medium || meta.medium],
     ['Classification', artwork.classification || meta.classification],
     ['Culture', artwork.culture || meta.culture],
