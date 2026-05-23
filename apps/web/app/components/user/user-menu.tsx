@@ -4,15 +4,24 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { Link } from '@remix-run/react';
+import { Link, useLocation } from '@remix-run/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Settings, LogOut, LogIn, UserPlus, LayoutDashboard } from 'lucide-react';
+import {
+  User,
+  Settings,
+  LogOut,
+  LogIn,
+  UserPlus,
+  LayoutDashboard,
+} from 'lucide-react';
 import { useUser } from '~/contexts/user-context';
 
 export function UserMenu() {
   const { user, login, logout, signup } = useUser();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const currentReturnTo = `${location.pathname}${location.search}${location.hash}`;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -24,18 +33,19 @@ export function UserMenu() {
 
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [isOpen]);
 
   const handleLogin = async () => {
     setIsOpen(false);
-    await login();
+    await login({ returnTo: currentReturnTo });
   };
 
   const handleSignup = async () => {
     setIsOpen(false);
-    await signup();
+    await signup({ returnTo: currentReturnTo });
   };
 
   const handleLogout = async () => {
@@ -67,7 +77,7 @@ export function UserMenu() {
               <User className="w-4 h-4" />
             </div>
             <span className="hidden sm:inline text-sm text-neutral-400">
-              Sign In
+              Log in
             </span>
           </>
         )}
@@ -89,7 +99,9 @@ export function UserMenu() {
                 {/* User Info */}
                 <div className="px-4 py-3 border-b border-neutral-800">
                   <p className="text-sm font-medium text-white">{user.name}</p>
-                  <p className="text-xs text-neutral-400 truncate">{user.email}</p>
+                  <p className="text-xs text-neutral-400 truncate">
+                    {user.email}
+                  </p>
                 </div>
 
                 {/* Menu Items */}
@@ -119,7 +131,7 @@ export function UserMenu() {
                     className="flex items-center gap-3 px-4 py-2 w-full hover:bg-neutral-800/50 transition-colors text-neutral-300 hover:text-red-400"
                   >
                     <LogOut className="w-4 h-4" />
-                    <span className="text-sm">Sign Out</span>
+                    <span className="text-sm">Log out</span>
                   </button>
                 </div>
               </>
@@ -132,7 +144,7 @@ export function UserMenu() {
                   className="flex w-full items-center gap-3 px-4 py-3 hover:bg-neutral-800/50 transition-colors text-left text-neutral-300 hover:text-white"
                 >
                   <LogIn className="w-4 h-4" />
-                  <span className="text-sm font-medium">Sign In</span>
+                  <span className="text-sm font-medium">Log in</span>
                 </button>
                 <button
                   type="button"

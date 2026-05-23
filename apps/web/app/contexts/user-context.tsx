@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  type ReactNode,
+} from 'react';
 import { useLogto, type UserInfoResponse } from '@logto/react';
 import {
   getLogtoPostSignInUri,
@@ -13,12 +19,16 @@ interface User {
   avatar?: string;
 }
 
+type AuthRedirectOptions = {
+  returnTo?: string;
+};
+
 interface UserContextType {
   user: User | null;
   isLoading: boolean;
-  login: () => Promise<void>;
+  login: (options?: AuthRedirectOptions) => Promise<void>;
   logout: () => Promise<void>;
-  signup: () => Promise<void>;
+  signup: (options?: AuthRedirectOptions) => Promise<void>;
   isAuthenticated: boolean;
   isLogtoConfigured: boolean;
   getAccessToken: (resource?: string) => Promise<string | undefined>;
@@ -100,11 +110,11 @@ export function UserProvider({
     }
   };
 
-  const login = async () => {
+  const login = async (options: AuthRedirectOptions = {}) => {
     ensureConfigured();
     await signIn({
       redirectUri: getLogtoRedirectUri(),
-      postRedirectUri: getLogtoPostSignInUri(),
+      postRedirectUri: getLogtoPostSignInUri(options.returnTo),
     });
   };
 
@@ -113,11 +123,11 @@ export function UserProvider({
     await signOut(getLogtoPostSignOutUri());
   };
 
-  const signup = async () => {
+  const signup = async (options: AuthRedirectOptions = {}) => {
     ensureConfigured();
     await signIn({
       redirectUri: getLogtoRedirectUri(),
-      postRedirectUri: getLogtoPostSignInUri(),
+      postRedirectUri: getLogtoPostSignInUri(options.returnTo),
       firstScreen: 'register',
     });
   };

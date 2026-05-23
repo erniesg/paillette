@@ -5,12 +5,18 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Copy, Download, Loader2, DollarSign } from 'lucide-react';
+import { ArrowRight, Copy, Download, Loader2 } from 'lucide-react';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import type { Language, TranslateTextResponse } from '~/types';
 import { apiClient } from '~/lib/api';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '~/components/ui/card';
 import { LanguageSelector } from './language-selector';
 import { cn } from '~/lib/utils';
 
@@ -28,7 +34,17 @@ interface TranslationHistoryItem {
   cost?: number;
 }
 
-export function TextTranslator() {
+type TextTranslatorProps = {
+  remainingUses?: number;
+  lifetimeLimit?: number;
+  onTranslationUsed?: () => void;
+};
+
+export function TextTranslator({
+  remainingUses = 10,
+  lifetimeLimit = 10,
+  onTranslationUsed,
+}: TextTranslatorProps) {
   const sourceLang: Language = 'en'; // Fixed to English only
   const [targetLang, setTargetLang] = useState<Language>('zh');
   const [inputText, setInputText] = useState('');
@@ -49,6 +65,7 @@ export function TextTranslator() {
     },
     onSuccess: (data: TranslateTextResponse) => {
       setTranslatedText(data.translatedText);
+      onTranslationUsed?.();
 
       // Add to history
       const historyItem: TranslationHistoryItem = {
@@ -74,6 +91,7 @@ export function TextTranslator() {
 
   const handleTranslate = () => {
     if (!inputText.trim()) return;
+    if (remainingUses <= 0) return;
     if (sourceLang === targetLang) {
       alert('Source and target languages must be different');
       return;
@@ -95,7 +113,9 @@ export function TextTranslator() {
 
     if (fileFormat === 'txt') {
       // Download as TXT
-      const blob = new Blob([translatedText], { type: 'text/plain;charset=utf-8' });
+      const blob = new Blob([translatedText], {
+        type: 'text/plain;charset=utf-8',
+      });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -146,17 +166,34 @@ export function TextTranslator() {
 
   const charCount = inputText.length;
   const isOverLimit = charCount > MAX_CHARS;
-  const canTranslate = inputText.trim() && !isOverLimit && sourceLang !== targetLang;
+  const canTranslate =
+    Boolean(inputText.trim()) &&
+    !isOverLimit &&
+    sourceLang !== targetLang &&
+    remainingUses > 0;
 
   return (
     <div className="space-y-6">
       {/* Language selector */}
       <Card>
         <CardContent className="p-6">
+          <div className="mb-5 flex flex-col gap-2 rounded-lg border border-primary-500/25 bg-primary-500/10 px-4 py-3 text-sm text-neutral-200 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-medium text-white">
+              {remainingUses > 0
+                ? `${remainingUses} of ${lifetimeLimit} free lifetime translations left`
+                : 'Free lifetime translations used'}
+            </span>
+            <span className="text-neutral-400">
+              Paid access is required after the free allowance.
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
             {/* Source language - fixed to English */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">Source Language</label>
+              <label className="text-sm font-medium text-neutral-200">
+                Source Language
+              </label>
               <div className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-base text-neutral-400">
                 🇬🇧 English (Fixed)
               </div>
@@ -190,7 +227,9 @@ export function TextTranslator() {
                 {charCount.toLocaleString()} / {MAX_CHARS.toLocaleString()}
               </span>
             </CardTitle>
-            <CardDescription>Enter the text you want to translate</CardDescription>
+            <CardDescription>
+              Enter the text you want to translate
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -223,25 +262,31 @@ export function TextTranslator() {
                   ) : (
                     <>
                       <ArrowRight className="h-4 w-4" />
-                      Translate
+                      {remainingUses > 0 ? 'Translate' : 'Free limit reached'}
                     </>
                   )}
                 </Button>
 
-                <Button variant="outline" onClick={handleReset} disabled={!inputText}>
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={!inputText}
+                >
                   Clear
                 </Button>
               </div>
 
-              {/* Cost estimate */}
               {inputText.trim() && !isOverLimit && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="text-sm text-neutral-400 flex items-center gap-2"
+                  className="text-sm text-neutral-400"
                 >
-                  <DollarSign className="h-4 w-4" />
-                  <span>Estimated cost: Calculating...</span>
+                  {remainingUses > 0
+                    ? `${remainingUses} free ${
+                        remainingUses === 1 ? 'translation' : 'translations'
+                      } available for this account.`
+                    : 'You have used the free lifetime translation allowance.'}
                 </motion.div>
               )}
             </div>
@@ -299,7 +344,8 @@ export function TextTranslator() {
                       exit={{ opacity: 0 }}
                       className="text-red-400"
                     >
-                      Error: {translateMutation.error?.message || 'Translation failed'}
+                      Error:{' '}
+                      {translateMutation.error?.message || 'Translation failed'}
                     </motion.div>
                   )}
 
@@ -324,7 +370,11 @@ export function TextTranslator() {
                   className="space-y-3"
                 >
                   <div className="flex items-center gap-3">
-                    <Button variant="outline" onClick={handleCopy} className="flex-1">
+                    <Button
+                      variant="outline"
+                      onClick={handleCopy}
+                      className="flex-1"
+                    >
                       <Copy className="h-4 w-4" />
                       {copiedResult ? 'Copied!' : 'Copy'}
                     </Button>
@@ -332,14 +382,20 @@ export function TextTranslator() {
                     <div className="flex gap-2 flex-1">
                       <select
                         value={fileFormat}
-                        onChange={(e) => setFileFormat(e.target.value as FileFormat)}
+                        onChange={(e) =>
+                          setFileFormat(e.target.value as FileFormat)
+                        }
                         className="bg-neutral-800 border-2 border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
                       >
                         <option value="docx">DOCX</option>
                         <option value="txt">TXT</option>
                       </select>
 
-                      <Button variant="outline" onClick={handleDownload} className="flex-1">
+                      <Button
+                        variant="outline"
+                        onClick={handleDownload}
+                        className="flex-1"
+                      >
                         <Download className="h-4 w-4" />
                         Download
                       </Button>
@@ -363,7 +419,9 @@ export function TextTranslator() {
         <Card>
           <CardHeader>
             <CardTitle>Recent Translations</CardTitle>
-            <CardDescription>Click to reuse a previous translation</CardDescription>
+            <CardDescription>
+              Click to reuse a previous translation
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -377,7 +435,8 @@ export function TextTranslator() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-neutral-400">
-                      {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()}
+                      {item.sourceLang.toUpperCase()} →{' '}
+                      {item.targetLang.toUpperCase()}
                     </span>
                     <span className="text-xs text-neutral-500">
                       {item.timestamp.toLocaleTimeString()}
@@ -385,7 +444,9 @@ export function TextTranslator() {
                   </div>
                   <p className="text-sm text-white line-clamp-2">{item.text}</p>
                   <ArrowRight className="h-3 w-3 inline mx-2 text-neutral-600" />
-                  <p className="text-sm text-neutral-400 line-clamp-2">{item.translatedText}</p>
+                  <p className="text-sm text-neutral-400 line-clamp-2">
+                    {item.translatedText}
+                  </p>
                 </motion.button>
               ))}
             </div>

@@ -6,7 +6,13 @@ import { X, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { apiClient } from '~/lib/api';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '~/components/ui/card';
 import { Logo } from '~/components/ui/logo';
 import { UserMenu } from '~/components/user/user-menu';
 
@@ -30,7 +36,11 @@ export default function GalleriesIndex() {
 
   const queryClient = useQueryClient();
 
-  const { data: galleries, isLoading, error } = useQuery({
+  const {
+    data: galleries,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['galleries'],
     queryFn: () => apiClient.listGalleries(),
   });
@@ -39,13 +49,19 @@ export default function GalleriesIndex() {
     mutationFn: async () => {
       return await apiClient.createGallery({
         name: formData.name,
-        slug: formData.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+        slug: formData.name
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, ''),
         description: formData.description || undefined,
         website: formData.website || undefined,
-        location: formData.country && formData.city ? {
-          country: formData.country,
-          city: formData.city,
-        } : undefined,
+        location:
+          formData.country && formData.city
+            ? {
+                country: formData.country,
+                city: formData.city,
+              }
+            : undefined,
         settings: {
           allowPublicAccess: true,
           enableEmbeddingProjector: true,
@@ -58,7 +74,13 @@ export default function GalleriesIndex() {
     onSuccess: (data) => {
       setApiKey(data.api_key);
       queryClient.invalidateQueries({ queryKey: ['galleries'] });
-      setFormData({ name: '', description: '', website: '', country: '', city: '' });
+      setFormData({
+        name: '',
+        description: '',
+        website: '',
+        country: '',
+        city: '',
+      });
     },
   });
 
@@ -85,7 +107,10 @@ export default function GalleriesIndex() {
               <Link to="/galleries" className="text-white font-semibold">
                 Galleries
               </Link>
-              <Link to="/translate" className="text-neutral-400 hover:text-white transition-colors">
+              <Link
+                to="/translate"
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
                 Translate
               </Link>
               <div className="ml-2 pl-4 border-l border-neutral-700">
@@ -124,7 +149,9 @@ export default function GalleriesIndex() {
           <div className="text-center py-12">
             <div className="text-6xl mb-4">⚠️</div>
             <p className="text-red-400">
-              {error instanceof Error ? error.message : 'Failed to load galleries'}
+              {error instanceof Error
+                ? error.message
+                : 'Failed to load galleries'}
             </p>
           </div>
         )}
@@ -141,54 +168,54 @@ export default function GalleriesIndex() {
               const galleryRouteId = gallery.slug || gallery.id;
 
               return (
-              <motion.div
-                key={gallery.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Card className="h-full hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>{gallery.name}</span>
-                      {gallery.isPublic && (
-                        <span className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/30">
-                          Public
-                        </span>
+                <motion.div
+                  key={gallery.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Card className="h-full hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10">
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span>{gallery.name}</span>
+                        {gallery.isPublic && (
+                          <span className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/30">
+                            Public
+                          </span>
+                        )}
+                      </CardTitle>
+                      {gallery.description && (
+                        <CardDescription className="line-clamp-2">
+                          {gallery.description}
+                        </CardDescription>
                       )}
-                    </CardTitle>
-                    {gallery.description && (
-                      <CardDescription className="line-clamp-2">
-                        {gallery.description}
-                      </CardDescription>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {gallery.website && (
-                      <a
-                        href={gallery.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-primary-400 hover:text-primary-300 block truncate"
-                      >
-                        🌐 {gallery.website}
-                      </a>
-                    )}
-                    <div className="flex gap-2">
-                      <Button asChild className="flex-1" size="sm">
-                        <Link to={`/galleries/${galleryRouteId}`}>
-                          📊 Dashboard
-                        </Link>
-                      </Button>
-                      <Button asChild variant="outline" className="flex-1" size="sm">
-                        <Link to={`/${galleryRouteId}/search`}>
-                          🔍 Search
-                        </Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {gallery.website && (
+                        <a
+                          href={gallery.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary-400 hover:text-primary-300 block truncate"
+                        >
+                          🌐 {gallery.website}
+                        </a>
+                      )}
+                      <div>
+                        <Button
+                          asChild
+                          variant="outline"
+                          className="w-full"
+                          size="sm"
+                        >
+                          <Link to={`/${galleryRouteId}/search`}>
+                            Search collection
+                          </Link>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               );
             })}
           </motion.div>
@@ -202,7 +229,9 @@ export default function GalleriesIndex() {
             <p className="text-neutral-400 mb-6">
               Be the first to create a gallery
             </p>
-            <Button onClick={() => setIsCreateModalOpen(true)}>+ Create Gallery</Button>
+            <Button onClick={() => setIsCreateModalOpen(true)}>
+              + Create Gallery
+            </Button>
           </div>
         )}
       </div>
@@ -228,9 +257,13 @@ export default function GalleriesIndex() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle className="text-2xl">Create New Gallery</CardTitle>
+                      <CardTitle className="text-2xl">
+                        Create New Gallery
+                      </CardTitle>
                       <CardDescription>
-                        {apiKey ? 'Save your API key - it will only be shown once!' : 'Set up your art gallery on Paillette'}
+                        {apiKey
+                          ? 'Save your API key - it will only be shown once!'
+                          : 'Set up your art gallery on Paillette'}
                       </CardDescription>
                     </div>
                     <button
@@ -246,9 +279,12 @@ export default function GalleriesIndex() {
                     /* API Key Display */
                     <div className="space-y-4">
                       <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/30">
-                        <p className="text-sm text-green-300 mb-2 font-semibold">Gallery created successfully!</p>
+                        <p className="text-sm text-green-300 mb-2 font-semibold">
+                          Gallery created successfully!
+                        </p>
                         <p className="text-sm text-neutral-300 mb-4">
-                          Save this API key securely. You won't be able to see it again.
+                          Save this API key securely. You won't be able to see
+                          it again.
                         </p>
                         <div className="bg-neutral-900 rounded-lg p-3 font-mono text-sm break-all border border-neutral-700">
                           {apiKey}
@@ -264,10 +300,7 @@ export default function GalleriesIndex() {
                         >
                           Copy API Key
                         </Button>
-                        <Button
-                          onClick={handleCloseModal}
-                          className="flex-1"
-                        >
+                        <Button onClick={handleCloseModal} className="flex-1">
                           Done
                         </Button>
                       </div>
@@ -277,14 +310,19 @@ export default function GalleriesIndex() {
                     <form onSubmit={handleSubmit} className="space-y-6">
                       {/* Name */}
                       <div className="space-y-2">
-                        <label htmlFor="name" className="text-sm font-medium text-neutral-200">
+                        <label
+                          htmlFor="name"
+                          className="text-sm font-medium text-neutral-200"
+                        >
                           Gallery Name <span className="text-red-400">*</span>
                         </label>
                         <input
                           id="name"
                           type="text"
                           value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          onChange={(e) =>
+                            setFormData({ ...formData, name: e.target.value })
+                          }
                           placeholder="e.g., National Gallery Singapore"
                           required
                           className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
@@ -293,13 +331,21 @@ export default function GalleriesIndex() {
 
                       {/* Description */}
                       <div className="space-y-2">
-                        <label htmlFor="description" className="text-sm font-medium text-neutral-200">
+                        <label
+                          htmlFor="description"
+                          className="text-sm font-medium text-neutral-200"
+                        >
                           Description
                         </label>
                         <textarea
                           id="description"
                           value={formData.description}
-                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              description: e.target.value,
+                            })
+                          }
                           placeholder="Brief description of your gallery..."
                           rows={3}
                           className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 resize-none focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
@@ -309,27 +355,40 @@ export default function GalleriesIndex() {
                       {/* Location */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <label htmlFor="country" className="text-sm font-medium text-neutral-200">
+                          <label
+                            htmlFor="country"
+                            className="text-sm font-medium text-neutral-200"
+                          >
                             Country
                           </label>
                           <input
                             id="country"
                             type="text"
                             value={formData.country}
-                            onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                country: e.target.value,
+                              })
+                            }
                             placeholder="e.g., Singapore"
                             className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
                           />
                         </div>
                         <div className="space-y-2">
-                          <label htmlFor="city" className="text-sm font-medium text-neutral-200">
+                          <label
+                            htmlFor="city"
+                            className="text-sm font-medium text-neutral-200"
+                          >
                             City
                           </label>
                           <input
                             id="city"
                             type="text"
                             value={formData.city}
-                            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                            onChange={(e) =>
+                              setFormData({ ...formData, city: e.target.value })
+                            }
                             placeholder="e.g., Singapore"
                             className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
                           />
@@ -338,14 +397,22 @@ export default function GalleriesIndex() {
 
                       {/* Website */}
                       <div className="space-y-2">
-                        <label htmlFor="website" className="text-sm font-medium text-neutral-200">
+                        <label
+                          htmlFor="website"
+                          className="text-sm font-medium text-neutral-200"
+                        >
                           Website
                         </label>
                         <input
                           id="website"
                           type="url"
                           value={formData.website}
-                          onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              website: e.target.value,
+                            })
+                          }
                           placeholder="https://example.com"
                           className="w-full bg-neutral-900/50 border-2 border-neutral-700 rounded-lg px-4 py-3 text-white placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all"
                         />
@@ -354,7 +421,8 @@ export default function GalleriesIndex() {
                       {/* Error Display */}
                       {createMutation.isError && (
                         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                          {createMutation.error?.message || 'Failed to create gallery'}
+                          {createMutation.error?.message ||
+                            'Failed to create gallery'}
                         </div>
                       )}
 
@@ -371,7 +439,9 @@ export default function GalleriesIndex() {
                         </Button>
                         <Button
                           type="submit"
-                          disabled={!formData.name.trim() || createMutation.isPending}
+                          disabled={
+                            !formData.name.trim() || createMutation.isPending
+                          }
                           className="flex-1"
                         >
                           {createMutation.isPending ? (

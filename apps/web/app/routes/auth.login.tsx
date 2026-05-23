@@ -1,11 +1,17 @@
 import type { MetaFunction } from '@remix-run/cloudflare';
 import { useState } from 'react';
-import { Link } from '@remix-run/react';
+import { Link, useSearchParams } from '@remix-run/react';
 import { motion } from 'framer-motion';
 import { LogIn, Loader2 } from 'lucide-react';
 import { useUser } from '~/contexts/user-context';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '~/components/ui/card';
 import { Logo } from '~/components/ui/logo';
 
 export const meta: MetaFunction = () => {
@@ -17,15 +23,20 @@ export const meta: MetaFunction = () => {
 
 export default function LoginPage() {
   const { login, isLogtoConfigured } = useUser();
+  const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const returnTo = searchParams.get('returnTo') || undefined;
+  const returnToQuery = returnTo
+    ? `?returnTo=${encodeURIComponent(returnTo)}`
+    : '';
 
   const handleSignIn = async () => {
     setError('');
     setIsLoading(true);
 
     try {
-      await login();
+      await login({ returnTo });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -42,14 +53,18 @@ export default function LoginPage() {
       >
         <div className="text-center mb-8">
           <Logo linkToHome className="mb-4 justify-center" />
-          <h1 className="text-3xl font-display font-bold text-white mb-2">Welcome Back</h1>
-          <p className="text-neutral-400">Sign in to your Paillette account</p>
+          <h1 className="text-3xl font-display font-bold text-white mb-2">
+            Welcome Back
+          </h1>
+          <p className="text-neutral-400">Log in to your Paillette account</p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>Continue with your Berlayar account</CardDescription>
+            <CardTitle>Log in</CardTitle>
+            <CardDescription>
+              Continue with your Berlayar account
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -70,12 +85,12 @@ export default function LoginPage() {
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Signing in...
+                    Logging in...
                   </>
                 ) : (
                   <>
                     <LogIn className="h-4 w-4" />
-                    Sign In
+                    Log in
                   </>
                 )}
               </Button>
@@ -90,7 +105,10 @@ export default function LoginPage() {
               <div className="text-center pt-4 border-t border-neutral-800">
                 <p className="text-sm text-neutral-400">
                   Don't have an account?{' '}
-                  <Link to="/auth/signup" className="text-primary-400 hover:text-primary-300 font-medium">
+                  <Link
+                    to={`/auth/signup${returnToQuery}`}
+                    className="text-primary-400 hover:text-primary-300 font-medium"
+                  >
                     Create one
                   </Link>
                 </p>

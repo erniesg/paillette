@@ -1,11 +1,17 @@
 import type { MetaFunction } from '@remix-run/cloudflare';
 import { useState } from 'react';
-import { Link } from '@remix-run/react';
+import { Link, useSearchParams } from '@remix-run/react';
 import { motion } from 'framer-motion';
 import { UserPlus, Loader2 } from 'lucide-react';
 import { useUser } from '~/contexts/user-context';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '~/components/ui/card';
 import { Logo } from '~/components/ui/logo';
 
 export const meta: MetaFunction = () => {
@@ -17,15 +23,20 @@ export const meta: MetaFunction = () => {
 
 export default function SignupPage() {
   const { signup, isLogtoConfigured } = useUser();
+  const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const returnTo = searchParams.get('returnTo') || undefined;
+  const returnToQuery = returnTo
+    ? `?returnTo=${encodeURIComponent(returnTo)}`
+    : '';
 
   const handleSignup = async () => {
     setError('');
     setIsLoading(true);
 
     try {
-      await signup();
+      await signup({ returnTo });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
@@ -42,14 +53,18 @@ export default function SignupPage() {
       >
         <div className="text-center mb-8">
           <Logo linkToHome className="mb-4 justify-center" />
-          <h1 className="text-3xl font-display font-bold text-white mb-2">Create Account</h1>
+          <h1 className="text-3xl font-display font-bold text-white mb-2">
+            Create Account
+          </h1>
           <p className="text-neutral-400">Get started with Paillette</p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>Sign Up</CardTitle>
-            <CardDescription>Create your Berlayar account to continue</CardDescription>
+            <CardDescription>
+              Create your Berlayar account to continue
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -90,8 +105,11 @@ export default function SignupPage() {
               <div className="text-center pt-4 border-t border-neutral-800">
                 <p className="text-sm text-neutral-400">
                   Already have an account?{' '}
-                  <Link to="/auth/login" className="text-primary-400 hover:text-primary-300 font-medium">
-                    Sign in
+                  <Link
+                    to={`/auth/login${returnToQuery}`}
+                    className="text-primary-400 hover:text-primary-300 font-medium"
+                  >
+                    Log in
                   </Link>
                 </p>
               </div>

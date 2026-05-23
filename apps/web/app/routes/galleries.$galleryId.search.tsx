@@ -27,6 +27,7 @@ import {
   Search,
   SlidersHorizontal,
   Table2,
+  UserPlus,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -56,6 +57,7 @@ import type {
   SearchTextRequest,
 } from '~/types';
 import { useUser } from '~/contexts/user-context';
+import { UserMenu } from '~/components/user/user-menu';
 
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
@@ -877,7 +879,7 @@ export default function SearchPage() {
     holidaySuggestions = [],
   } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthenticated, login } = useUser();
+  const { isAuthenticated, login, signup } = useUser();
 
   const [searchMode, setSearchMode] = useState<SearchMode>('text');
   const [textQuery, setTextQuery] = useState(searchParams.get('q') || '');
@@ -917,6 +919,8 @@ export default function SearchPage() {
     textQuery.trim().length > 0 ||
     imageFile !== null ||
     searchColours.length > 0;
+  const getCurrentReturnTo = () =>
+    `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
   const revealColourRail = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -1347,15 +1351,29 @@ export default function SearchPage() {
             </div>
           </div>
           <nav className="flex items-center gap-2">
-            {!isAuthenticated && (
-              <button
-                type="button"
-                onClick={() => void login()}
-                className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white"
-              >
-                <LogIn className="h-3.5 w-3.5" />
-                Sign in
-              </button>
+            {isAuthenticated ? (
+              <UserMenu />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void login({ returnTo: getCurrentReturnTo() })}
+                  className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white"
+                >
+                  <LogIn className="h-3.5 w-3.5" />
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void signup({ returnTo: getCurrentReturnTo() })
+                  }
+                  className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white px-3 py-1.5 text-xs font-semibold text-[#0b0b0e] transition-colors hover:bg-white/85"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Create account
+                </button>
+              </>
             )}
           </nav>
         </div>
