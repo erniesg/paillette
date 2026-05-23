@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getDominantSourceLabel,
   getPublicCatalogueRows,
   getPublicDescription,
   getPublicDescriptionDetails,
@@ -131,5 +132,27 @@ describe('getPublicDescription', () => {
         sourceLabel: 'NGS Art+ catalogue',
       },
     ]);
+  });
+
+  it('identifies the dominant source for catalogue fields', () => {
+    expect(
+      getDominantSourceLabel([
+        {
+          label: 'Artist',
+          value: 'Devi Sita',
+          sourceLabel: 'National Gallery Singapore',
+        },
+        {
+          label: 'Date',
+          value: 'Undated',
+          sourceLabel: 'National Gallery Singapore',
+        },
+        {
+          label: 'Medium',
+          value: 'Ink and colour on paper',
+          sourceLabel: 'NGS Art+ catalogue',
+        },
+      ])
+    ).toBe('National Gallery Singapore');
   });
 });

@@ -504,3 +504,21 @@ export const getPublicCatalogueRows = (
     }))
     .filter((row) => row.value.length > 0);
 };
+
+export const getDominantSourceLabel = (rows: PublicMetadataRow[]) => {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.sourceLabel, (counts.get(row.sourceLabel) || 0) + 1);
+  }
+
+  let dominant: string | null = null;
+  let dominantCount = 0;
+  for (const [sourceLabel, count] of counts) {
+    if (count > dominantCount) {
+      dominant = sourceLabel;
+      dominantCount = count;
+    }
+  }
+
+  return dominant;
+};

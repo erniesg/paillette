@@ -33,6 +33,7 @@ import {
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { Logo } from '~/components/ui/logo';
 import {
+  getDominantSourceLabel,
   getGeneratedCaptionText,
   getGeographicAssociation,
   getNgsUrl,
@@ -1289,29 +1290,10 @@ export default function SearchPage() {
         </div>
       </header>
 
-      <main
-        className={`mx-auto max-w-7xl px-5 pb-14 lg:px-8 ${
-          hasActiveSearch ? 'pt-6' : 'pt-10'
-        }`}
-      >
-        <section
-          ref={searchPanelRef}
-          className={`mx-auto transition-[max-width] duration-300 ${
-            hasActiveSearch ? 'max-w-5xl' : 'max-w-6xl'
-          }`}
-        >
-          <div
-            className={
-              hasActiveSearch
-                ? 'rounded-lg border border-white/[0.08] bg-white/[0.025] px-4 py-3'
-                : ''
-            }
-          >
-            <div
-              className={`mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase text-white/35 ${
-                hasActiveSearch ? 'tracking-[0.2em]' : 'tracking-[0.3em]'
-              }`}
-            >
+      <main className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
+        <section ref={searchPanelRef} className="mx-auto max-w-6xl">
+          <div>
+            <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
               <span>collection search</span>
@@ -1326,11 +1308,7 @@ export default function SearchPage() {
             <div className="space-y-4">
               {searchMode === 'text' && (
                 <div className="relative">
-                  <Search
-                    className={`absolute left-0 top-1/2 -translate-y-1/2 text-white/30 ${
-                      hasActiveSearch ? 'h-5 w-5' : 'h-6 w-6'
-                    }`}
-                  />
+                  <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
                   <input
                     value={textQuery}
                     onChange={(event) => setTextQuery(event.target.value)}
@@ -1339,11 +1317,7 @@ export default function SearchPage() {
                     }}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
-                    className={`w-full border-b-2 border-white/20 bg-transparent pl-10 pr-4 font-display italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 ${
-                      hasActiveSearch
-                        ? 'py-3 text-2xl lg:text-3xl'
-                        : 'py-5 text-3xl lg:text-5xl'
-                    }`}
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
                   />
                 </div>
               )}
@@ -2031,6 +2005,7 @@ function SearchArtworkDialog({
     : null;
   const caption = artwork ? getGeneratedCaptionText(artwork) : null;
   const catalogRows = artwork ? getPublicCatalogueRows(artwork) : [];
+  const catalogPrimarySource = getDominantSourceLabel(catalogRows);
   const ngsUrl = artwork ? getNgsUrl(artwork) : null;
   const rootsUrl = artwork ? getRootsUrl(artwork) : null;
 
@@ -2137,6 +2112,11 @@ function SearchArtworkDialog({
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
                     Catalogue fields
                   </h3>
+                  {catalogPrimarySource && (
+                    <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                      Mostly from {catalogPrimarySource}; exceptions marked
+                    </p>
+                  )}
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                     {catalogRows.map(({ label, value, sourceLabel }) => (
                       <div
@@ -2147,7 +2127,9 @@ function SearchArtworkDialog({
                           <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
                             {label}
                           </dt>
-                          <SourceBadge label={sourceLabel} compact />
+                          {sourceLabel !== catalogPrimarySource && (
+                            <SourceBadge label={sourceLabel} compact />
+                          )}
                         </div>
                         <dd className="mt-1 text-sm text-white/70">{value}</dd>
                       </div>
@@ -2186,7 +2168,7 @@ function SourceBadge({
 }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.06] font-mono uppercase tracking-[0.12em] text-cyan-100/60 ${
+      className={`inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.05] font-mono uppercase tracking-[0.12em] text-cyan-100/55 ${
         compact ? 'px-1.5 py-0.5 text-[8px]' : 'px-2 py-0.5 text-[9px]'
       }`}
     >

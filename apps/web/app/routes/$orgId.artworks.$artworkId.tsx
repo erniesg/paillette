@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { ArrowLeft, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import {
+  getDominantSourceLabel,
   getGeneratedCaptionRecord,
   getNgsUrl,
   getPublicCatalogueRows,
@@ -59,6 +60,7 @@ export default function ArtworkDetailPage() {
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
   const catalogRows = getPublicCatalogueRows(artwork);
+  const catalogPrimarySource = getDominantSourceLabel(catalogRows);
 
   return (
     <div className="min-h-screen bg-[#0b0b0e] text-white">
@@ -122,6 +124,11 @@ export default function ArtworkDetailPage() {
           )}
 
           <Section title="Catalogue fields" eyebrow="Source shown per field">
+            {catalogPrimarySource && (
+              <p className="-mt-1 mb-3 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                Mostly from {catalogPrimarySource}; exceptions marked
+              </p>
+            )}
             <dl className="grid gap-3 sm:grid-cols-2">
               {catalogRows.map(({ label, value, sourceLabel }) => (
                 <div
@@ -132,7 +139,9 @@ export default function ArtworkDetailPage() {
                     <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
                       {label}
                     </dt>
-                    <SourceBadge label={sourceLabel} />
+                    {sourceLabel !== catalogPrimarySource && (
+                      <SourceBadge label={sourceLabel} />
+                    )}
                   </div>
                   <dd className="mt-1 text-sm text-white/75">{value}</dd>
                 </div>
@@ -196,7 +205,7 @@ export default function ArtworkDetailPage() {
 
 function SourceBadge({ label }: { label: string }) {
   return (
-    <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cyan-100/60">
+    <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.05] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cyan-100/55">
       {label}
     </span>
   );
