@@ -1960,22 +1960,6 @@ const IdleShowcase = forwardRef<
             <h1 className="mt-3 font-display text-3xl font-semibold leading-tight text-white lg:text-5xl">
               Start with a collection direction.
             </h1>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {[
-                'architecture and geometry',
-                'figures in blue',
-                'quiet interiors',
-              ].map((query) => (
-                <button
-                  key={query}
-                  type="button"
-                  onClick={() => onSearch(query)}
-                  className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
-                >
-                  {query}
-                </button>
-              ))}
-            </div>
           </div>
         </section>
 
@@ -2000,16 +1984,23 @@ const IdleShowcase = forwardRef<
                 aria-label={
                   artwork?.title ? `Search ${artwork.title}` : 'Loading artwork'
                 }
-                className={`group min-h-0 overflow-hidden border border-white/[0.08] bg-white/[0.035] text-left transition-colors hover:border-white/20 disabled:cursor-default disabled:hover:border-white/[0.08] ${
+                className={`group relative min-h-0 overflow-hidden border border-white/[0.08] bg-white/[0.035] text-left transition-colors hover:border-white/20 disabled:cursor-default disabled:hover:border-white/[0.08] ${
                   previewLayout[index] || ''
                 }`}
               >
                 {artwork ? (
-                  <img
-                    src={artwork.thumbnailUrl || artwork.imageUrl || undefined}
-                    alt={artwork.title || 'Artwork'}
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                  />
+                  <>
+                    <img
+                      src={
+                        artwork.thumbnailUrl || artwork.imageUrl || undefined
+                      }
+                      alt={artwork.title || 'Artwork'}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                    />
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-2 pb-2 pt-8 font-mono text-[9px] uppercase tracking-[0.1em] text-white/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <span className="block truncate">{artwork.title}</span>
+                    </span>
+                  </>
                 ) : (
                   <div
                     className="h-full w-full animate-pulse bg-white/[0.04]"
@@ -2019,23 +2010,6 @@ const IdleShowcase = forwardRef<
               </button>
             ))}
           </div>
-          {featured.length > 0 && (
-            <div className="mt-3 grid grid-cols-5 gap-2">
-              {previewItems.map((artwork, index) => (
-                <button
-                  key={`${artwork?.id || `caption-${index}`}`}
-                  type="button"
-                  disabled={!artwork?.title}
-                  onClick={() => artwork?.title && onSearch(artwork.title)}
-                  className="min-w-0 text-left font-mono text-[9px] uppercase tracking-[0.1em] text-white/35 transition-colors hover:text-white/65 disabled:cursor-default disabled:text-white/20"
-                >
-                  <span className="block truncate">
-                    {artwork?.title || 'Loading'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </section>
       </div>
     </div>
