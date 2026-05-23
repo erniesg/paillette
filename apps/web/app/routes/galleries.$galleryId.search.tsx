@@ -1200,8 +1200,10 @@ function SearchArtworkDialog({
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 )}
-                {ngsUrl && <PublicRecordLink href={ngsUrl} label="National Gallery Singapore" />}
-                {rootsUrl && <PublicRecordLink href={rootsUrl} label="NHB Roots" />}
+                {ngsUrl && (
+                  <PublicRecordLink href={ngsUrl} label="National Gallery Singapore record" />
+                )}
+                {rootsUrl && <PublicRecordLink href={rootsUrl} label="NHB Roots record" />}
               </div>
 
               {description && (
@@ -1216,7 +1218,7 @@ function SearchArtworkDialog({
               {catalogRows.length > 0 && (
                 <section className="mt-6">
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                    Public NGS / Roots fields
+                    Public National Gallery Singapore / NHB Roots fields
                   </h3>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                     {catalogRows.map(({ label, value }) => (

@@ -114,7 +114,10 @@ export default function ArtworkDetailPage() {
             </Section>
           )}
 
-          <Section title="Catalogue Metadata" eyebrow="Public NGS / Roots fields">
+          <Section
+            title="Catalogue Metadata"
+            eyebrow="Public National Gallery Singapore / NHB Roots fields"
+          >
             <dl className="grid gap-3 sm:grid-cols-2">
               {catalogRows.map(({ label, value }) => (
                 <div key={label} className="rounded-md border border-white/[0.08] bg-black/20 p-3">
