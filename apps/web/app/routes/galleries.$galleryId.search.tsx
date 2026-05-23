@@ -9,10 +9,12 @@ import {
   Camera,
   Clock,
   ExternalLink,
+  Frame,
   Image as ImageIcon,
   LayoutGrid,
   ListFilter,
   LogIn,
+  Network,
   Palette,
   Search,
   Table2,
@@ -20,7 +22,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { apiClient, getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
-import { debounce } from '~/lib/utils';
 import type { ArtworkSearchResult } from '~/types';
 import { useUser } from '~/contexts/user-context';
 
@@ -53,15 +54,15 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 }
 
 type SearchMode = 'text' | 'image';
-type ViewMode = 'masonry' | 'table';
+type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
 type SortMode = 'relevance' | 'colour' | 'time-desc' | 'time-asc' | 'artist' | 'title';
 
 const EXAMPLE_QUERIES = [
-  'pineapple',
-  'fishing boats',
-  'self portrait',
-  'batik patterns',
-  '1950s Singapore',
+  { label: 'pineapple', dot: '#cda636' },
+  { label: 'fishing boats', dot: '#365f9c' },
+  { label: 'self portrait', dot: '#6a5238' },
+  { label: 'batik patterns', dot: '#bf5631' },
+  { label: '1950s Singapore', dot: '#8a9a7a' },
 ];
 
 const COLOURS = [
@@ -86,6 +87,21 @@ const SORT_OPTIONS: { id: SortMode; label: string; icon: LucideIcon }[] = [
   { id: 'artist', label: 'Artist', icon: ListFilter },
   { id: 'title', label: 'Title', icon: ListFilter },
 ];
+
+const VIEW_OPTIONS: { id: ViewMode; label: string; icon: LucideIcon }[] = [
+  { id: 'masonry', label: 'Masonry', icon: LayoutGrid },
+  { id: 'salon', label: 'Salon', icon: Frame },
+  { id: 'atlas', label: 'Atlas', icon: Network },
+  { id: 'table', label: 'Table', icon: Table2 },
+];
+
+const hashString = (value: string) => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash);
+};
 
 const hexToRgb = (hex: string): [number, number, number] | null => {
   const clean = hex.trim().replace('#', '');
@@ -308,21 +324,23 @@ export default function SearchPage() {
   const isLoading = currentQuery.isLoading || currentQuery.isFetching;
   const error = currentQuery.error;
 
-  const debouncedSearch = useCallback(
-    debounce(() => {
-      if (textQuery.trim()) {
-        setShouldSearch(true);
-      }
-    }, 450),
-    [textQuery]
-  );
-
   useEffect(() => {
-    if (searchMode === 'text' && textQuery.trim()) {
+    if (searchMode !== 'text') return undefined;
+
+    const trimmed = textQuery.trim();
+    if (!trimmed) {
       setShouldSearch(false);
-      debouncedSearch();
+      return undefined;
     }
-  }, [debouncedSearch, searchMode, textQuery]);
+
+    setShouldSearch(false);
+    const handle = window.setTimeout(() => {
+      setShouldSearch(true);
+      setSearchParams({ q: trimmed }, { replace: true });
+    }, 450);
+
+    return () => window.clearTimeout(handle);
+  }, [searchMode, setSearchParams, textQuery]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -412,14 +430,14 @@ export default function SearchPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 pb-14 pt-8 lg:px-8">
-        <section className="mx-auto max-w-4xl">
+      <main className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
+        <section className="mx-auto max-w-5xl">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
           >
-            <div className="mb-6 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.24em] text-white/35">
+            <div className="mb-6 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
               <span>registered search</span>
@@ -431,24 +449,9 @@ export default function SearchPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-center gap-2">
-              <ModeButton
-                active={searchMode === 'text'}
-                icon={Search}
-                label="Text"
-                onClick={() => setSearchMode('text')}
-              />
-              <ModeButton
-                active={searchMode === 'image'}
-                icon={ImageIcon}
-                label="Image"
-                onClick={() => setSearchMode('image')}
-              />
-            </div>
-
             {searchMode === 'text' ? (
-              <div className="relative mt-5">
-                <Search className="absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 text-white/30" />
+              <div className="relative">
+                <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
                 <input
                   value={textQuery}
                   onChange={(event) => setTextQuery(event.target.value)}
@@ -456,16 +459,16 @@ export default function SearchPage() {
                     if (event.key === 'Enter') runTextSearch();
                   }}
                   autoFocus
-                  placeholder="search by subject, artist, era, material"
-                  className="w-full border-b-2 border-white/20 bg-transparent py-4 pl-8 pr-4 font-display text-2xl italic outline-none transition-colors placeholder:text-white/25 focus:border-cyan-300 lg:text-3xl"
+                  placeholder="search by feeling, era, subject..."
+                  className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
                 />
               </div>
             ) : (
               <div
                 {...getRootProps()}
-                className={`mt-5 flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
+                className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
                   isDragActive
-                    ? 'border-cyan-300 bg-cyan-300/10'
+                    ? 'border-fuchsia-300 bg-fuchsia-300/10'
                     : 'border-white/15 bg-white/[0.025] hover:border-white/30'
                 }`}
               >
@@ -492,9 +495,7 @@ export default function SearchPage() {
                 ) : (
                   <div className="text-center">
                     <Camera className="mx-auto h-8 w-8 text-white/45" />
-                    <p className="mt-3 text-sm text-white/65">
-                      Drop an image to search visually
-                    </p>
+                    <p className="mt-3 text-sm text-white/65">Drop an image to search visually</p>
                     <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
                       jpg / png / webp
                     </p>
@@ -503,17 +504,51 @@ export default function SearchPage() {
               </div>
             )}
 
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {EXAMPLE_QUERIES.map((query) => (
-                <button
-                  key={query}
-                  type="button"
-                  onClick={() => runTextSearch(query)}
-                  className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white"
-                >
-                  {query}
-                </button>
-              ))}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <span className="self-center pr-1 font-mono text-[10px] uppercase tracking-[0.2em] text-white/30">
+                try
+              </span>
+              {EXAMPLE_QUERIES.map((query) => {
+                const active = textQuery.trim().toLowerCase() === query.label.toLowerCase();
+                return (
+                  <button
+                    key={query.label}
+                    type="button"
+                    onClick={() => {
+                      if (active) {
+                        setTextQuery('');
+                        setShouldSearch(false);
+                        setSearchParams({}, { replace: true });
+                        return;
+                      }
+
+                      runTextSearch(query.label);
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                      active
+                        ? 'border-white/30 bg-white/[0.12] text-white'
+                        : 'border-white/10 bg-white/[0.04] text-white/65 hover:bg-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full" style={{ background: query.dot }} />
+                    {query.label}
+                  </button>
+                );
+              })}
+              <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
+                <ModeButton
+                  active={searchMode === 'text'}
+                  icon={Search}
+                  label="Text"
+                  onClick={() => setSearchMode('text')}
+                />
+                <ModeButton
+                  active={searchMode === 'image'}
+                  icon={ImageIcon}
+                  label="Image"
+                  onClick={() => setSearchMode('image')}
+                />
+              </div>
             </div>
 
             {!isAuthenticated && (
@@ -534,105 +569,70 @@ export default function SearchPage() {
                 </button>
               </div>
             )}
-          </motion.div>
-        </section>
 
-        <section className="mt-7 rounded-lg border border-white/[0.08] bg-white/[0.025] p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-white/45">
-                Refine
-              </p>
-              <p className="mt-1 text-sm text-white/55">
-                Colour, time, artist, and title are result ordering controls.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <ViewButton
-                active={view === 'masonry'}
-                icon={LayoutGrid}
-                label="Masonry"
-                onClick={() => setView('masonry')}
-              />
-              <ViewButton
-                active={view === 'table'}
-                icon={Table2}
-                label="Table"
-                onClick={() => setView('table')}
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div>
-              <div className="mb-2 flex items-baseline gap-2">
-                <span className="text-sm font-medium text-white/80">Colour</span>
-                <span className="font-mono text-[10px] text-white/35">
-                  select swatches to sort by nearest palette match
-                </span>
+            <div className="mt-8 border-t border-white/[0.08] pt-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-white/45">
+                    Refine
+                  </span>
+                  <span className="text-sm font-medium text-white/75">Colour</span>
+                </div>
+                {selectedColours.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedColours([])}
+                    className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+                  >
+                    Clear colours
+                  </button>
+                )}
               </div>
               <ColourStrip selected={selectedColours} onToggle={toggleColour} />
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {SORT_OPTIONS.map((option) => {
-                const Icon = option.icon;
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              {selectedColours.map((id) => {
+                const colour = COLOURS.find((item) => item.id === id);
+                if (!colour) return null;
                 return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setSortMode(option.id)}
-                    className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium transition-colors ${
-                      sortMode === option.id
-                        ? 'border-white/25 bg-white/[0.14] text-white'
-                        : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white'
-                    }`}
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70"
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    {option.label}
-                  </button>
+                    <span className="h-3 w-3 rounded-full" style={{ background: colour.hex }} />
+                    {colour.name}
+                  </span>
                 );
               })}
+              <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                Limit
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={topK}
+                  onChange={(event) => setTopK(Number(event.target.value))}
+                  className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                />
+              </label>
+              <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+                Score
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={Math.round(minScore * 100)}
+                  onChange={(event) => setMinScore(Number(event.target.value) / 100)}
+                  className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                />
+              </label>
             </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
-            <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-              Limit
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={topK}
-                onChange={(event) => setTopK(Number(event.target.value))}
-                className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-cyan-300"
-              />
-            </label>
-            <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-              Min score
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={5}
-                value={Math.round(minScore * 100)}
-                onChange={(event) => setMinScore(Number(event.target.value) / 100)}
-                className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-cyan-300"
-              />
-            </label>
-            {selectedColours.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedColours([])}
-                className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                Clear colours
-              </button>
-            )}
-          </div>
+          </motion.div>
         </section>
 
-        <section className="mt-6">
+        <section className="mt-8">
           <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
             <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
               <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
@@ -649,9 +649,50 @@ export default function SearchPage() {
                   </span>
                 )}
               </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                sorted by {SORT_OPTIONS.find((option) => option.id === sortMode)?.label}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
+                  {SORT_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setSortMode(option.id)}
+                        title={`Sort by ${option.label.toLowerCase()}`}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                          sortMode === option.id
+                            ? 'bg-white/[0.14] text-white'
+                            : 'text-white/45 hover:text-white/80'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        <span className="hidden md:inline">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
+                  {VIEW_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setView(option.id)}
+                        title={option.label}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                          view === option.id
+                            ? 'bg-white/[0.14] text-white'
+                            : 'text-white/45 hover:text-white/80'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -668,11 +709,12 @@ export default function SearchPage() {
           )}
 
           {!isLoading && !error && results.length > 0 && (
-            view === 'masonry' ? (
-              <MasonryResults results={results} routeId={preferredRouteId} selectedColours={selectedColours} />
-            ) : (
-              <TableResults results={results} routeId={preferredRouteId} selectedColours={selectedColours} />
-            )
+            <ResultsView
+              view={view}
+              results={results}
+              routeId={preferredRouteId}
+              selectedColours={selectedColours}
+            />
           )}
 
           {!isLoading && !error && shouldSearch && isAuthenticated && results.length === 0 && (
@@ -704,42 +746,14 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
         active
-          ? 'border-white/25 bg-white/[0.14] text-white'
-          : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white'
+          ? 'bg-white/[0.14] text-white'
+          : 'text-white/45 hover:text-white/80'
       }`}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-3.5 w-3.5" />
       {label}
-    </button>
-  );
-}
-
-function ViewButton({
-  active,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors ${
-        active
-          ? 'border-white/25 bg-white/[0.14] text-white'
-          : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }
@@ -778,6 +792,44 @@ function ColourStrip({
   );
 }
 
+function ResultsView({
+  view,
+  results,
+  routeId,
+  selectedColours,
+}: {
+  view: ViewMode;
+  results: ArtworkSearchResult[];
+  routeId: string;
+  selectedColours: string[];
+}) {
+  if (view === 'table') {
+    return (
+      <TableResults
+        results={results}
+        routeId={routeId}
+        selectedColours={selectedColours}
+      />
+    );
+  }
+
+  if (view === 'salon') {
+    return <SalonResults results={results} routeId={routeId} />;
+  }
+
+  if (view === 'atlas') {
+    return <AtlasResults results={results} routeId={routeId} />;
+  }
+
+  return (
+    <MasonryResults
+      results={results}
+      routeId={routeId}
+      selectedColours={selectedColours}
+    />
+  );
+}
+
 function MasonryResults({
   results,
   routeId,
@@ -798,6 +850,108 @@ function MasonryResults({
           selectedColours={selectedColours}
         />
       ))}
+    </div>
+  );
+}
+
+function SalonResults({
+  results,
+  routeId,
+}: {
+  results: ArtworkSearchResult[];
+  routeId: string;
+}) {
+  return (
+    <div className="grid gap-x-8 gap-y-12 pt-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {results.map((result, index) => {
+        const rotation = ((hashString(`${result.id}-${index}`) % 50) - 25) / 10;
+        const image = result.thumbnailUrl || result.imageUrl;
+
+        return (
+          <Link
+            key={result.id}
+            to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`}
+            className="group block"
+            style={{ transform: `rotate(${rotation}deg)` }}
+          >
+            <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
+              {image ? (
+                <img
+                  src={image}
+                  alt={result.title || 'Artwork'}
+                  loading="lazy"
+                  className="aspect-[4/5] w-full object-cover"
+                />
+              ) : (
+                <div className="flex aspect-[4/5] items-center justify-center bg-white/[0.04] text-sm text-white/30">
+                  No image
+                </div>
+              )}
+            </div>
+            <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors group-hover:text-white/75">
+              <span className="font-display text-sm italic normal-case tracking-normal text-white/75">
+                {result.title || 'Untitled'}
+              </span>
+              <br />
+              {result.artist || 'Unknown artist'} / {getDateText(result) || 'undated'}
+            </p>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function AtlasResults({
+  results,
+  routeId,
+}: {
+  results: ArtworkSearchResult[];
+  routeId: string;
+}) {
+  return (
+    <div className="relative mt-6 h-[70vh] min-h-[460px] overflow-hidden rounded-lg border border-white/[0.07] bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:64px_64px]">
+      {results.map((result, index) => {
+        const hash = hashString(`${result.id}-${index}`);
+        const x = 4 + (hash % 82);
+        const y = 6 + (Math.floor(hash / 83) % 76);
+        const width = 58 + (hash % 76);
+        const image = result.thumbnailUrl || result.imageUrl;
+
+        return (
+          <Link
+            key={result.id}
+            to={`/${routeId}/artworks/${encodeURIComponent(result.id)}`}
+            className="group absolute"
+            style={{
+              left: `${x}%`,
+              top: `${y}%`,
+              width,
+              zIndex: 10 + index,
+            }}
+          >
+            <div className="relative aspect-[4/5] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-[#17171b] shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)] transition-transform duration-300 group-hover:scale-125">
+              {image ? (
+                <img
+                  src={image}
+                  alt={result.title || 'Artwork'}
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-white/25">
+                  <ImageIcon className="h-4 w-4" />
+                </div>
+              )}
+            </div>
+            <div className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-black/90 px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="text-[10px] italic text-white">
+                {result.title || 'Untitled'}
+              </span>
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }
