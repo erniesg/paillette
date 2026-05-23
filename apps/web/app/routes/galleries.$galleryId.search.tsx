@@ -1237,80 +1237,91 @@ export default function SearchPage() {
                   )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
-                    {SORT_OPTIONS.map((option) => {
-                      const Icon = option.icon;
-                      const active =
-                        option.id === 'time'
-                          ? sortMode === 'time-desc' || sortMode === 'time-asc'
-                          : sortMode === option.id ||
-                            SORT_ASC[sortMode] === option.id;
-                      const label =
-                        option.id === 'time'
-                          ? sortMode === 'time-asc'
-                            ? 'Oldest'
-                            : 'Newest'
-                          : option.label;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => {
-                            if (option.id === 'time') {
-                              setSortMode(
-                                sortMode === 'time-desc'
-                                  ? 'time-asc'
-                                  : 'time-desc'
-                              );
-                              return;
-                            }
+                  <div className="flex items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+                    <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
+                      Sort
+                    </span>
+                    <div className="flex items-center gap-1 p-1">
+                      {SORT_OPTIONS.map((option) => {
+                        const Icon = option.icon;
+                        const active =
+                          option.id === 'time'
+                            ? sortMode === 'time-desc' ||
+                              sortMode === 'time-asc'
+                            : sortMode === option.id ||
+                              SORT_ASC[sortMode] === option.id;
+                        const label =
+                          option.id === 'time'
+                            ? sortMode === 'time-asc'
+                              ? 'Oldest'
+                              : 'Newest'
+                            : option.label;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              if (option.id === 'time') {
+                                setSortMode(
+                                  sortMode === 'time-desc'
+                                    ? 'time-asc'
+                                    : 'time-desc'
+                                );
+                                return;
+                              }
 
-                            if (option.id === 'colour') {
-                              setSortMode('colour');
-                              return;
-                            }
+                              if (option.id === 'colour') {
+                                setSortMode('colour');
+                                return;
+                              }
 
-                            setSortMode(option.id);
-                          }}
-                          title={
-                            option.id === 'time'
-                              ? 'Toggle newest or oldest'
-                              : `Sort by ${option.label.toLowerCase()}`
-                          }
-                          className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                            active
-                              ? 'bg-white/[0.14] text-white'
-                              : 'text-white/45 hover:text-white/80'
-                          }`}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          <span className="hidden md:inline">{label}</span>
-                        </button>
-                      );
-                    })}
+                              setSortMode(option.id);
+                            }}
+                            title={
+                              option.id === 'time'
+                                ? 'Toggle newest or oldest'
+                                : `Sort by ${option.label.toLowerCase()}`
+                            }
+                            className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                              active
+                                ? 'bg-white/[0.14] text-white'
+                                : 'text-white/45 hover:text-white/80'
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                            <span className="hidden md:inline">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
-                    {VIEW_OPTIONS.map((option) => {
-                      const Icon = option.icon;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setView(option.id)}
-                          title={option.label}
-                          className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                            view === option.id
-                              ? 'bg-white/[0.14] text-white'
-                              : 'text-white/45 hover:text-white/80'
-                          }`}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">
-                            {option.label}
-                          </span>
-                        </button>
-                      );
-                    })}
+                  <div className="flex items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+                    <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
+                      View
+                    </span>
+                    <div className="flex items-center gap-1 p-1">
+                      {VIEW_OPTIONS.map((option) => {
+                        const Icon = option.icon;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setView(option.id)}
+                            title={option.label}
+                            className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                              view === option.id
+                                ? 'bg-white/[0.14] text-white'
+                                : 'text-white/45 hover:text-white/80'
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">
+                              {option.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -1960,7 +1971,7 @@ function MasonryResults({
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
-    <div className="columns-1 gap-4 pt-6 sm:columns-2 lg:columns-3 xl:columns-4">
+    <div className="grid grid-cols-1 items-start gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {results.map((result, index) => (
         <ResultCard
           key={result.id}
@@ -1988,6 +1999,7 @@ function SalonResults({
       {results.map((result, index) => {
         const rotation = ((hashString(`${result.id}-${index}`) % 50) - 25) / 10;
         const image = result.thumbnailUrl || result.imageUrl;
+        const rank = (index + 1).toString().padStart(2, '0');
 
         return (
           <button
@@ -2012,6 +2024,8 @@ function SalonResults({
               )}
             </div>
             <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors group-hover:text-white/75">
+              #{rank}
+              <br />
               <span className="font-display text-sm italic normal-case tracking-normal text-white/75">
                 {result.title || 'Untitled'}
               </span>
@@ -2041,6 +2055,7 @@ function AtlasResults({
         const y = 6 + (Math.floor(hash / 83) % 76);
         const width = 58 + (hash % 76);
         const image = result.thumbnailUrl || result.imageUrl;
+        const rank = (index + 1).toString().padStart(2, '0');
 
         return (
           <button
@@ -2052,10 +2067,13 @@ function AtlasResults({
               left: `${x}%`,
               top: `${y}%`,
               width,
-              zIndex: 10 + index,
+              zIndex: 1000 - index,
             }}
           >
             <div className="relative aspect-[4/5] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-[#17171b] shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)] transition-transform duration-300 group-hover:scale-125">
+              <span className="absolute left-1 top-1 z-10 rounded-sm bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-white/75">
+                #{rank}
+              </span>
               {image ? (
                 <img
                   src={image}
@@ -2250,8 +2268,8 @@ function TableResults({
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
-    <div className="mt-6 overflow-x-auto rounded-lg border border-white/[0.08]">
-      <table className="w-full min-w-[980px] border-collapse text-sm">
+    <div className="relative left-1/2 mt-6 w-[calc(100vw-2rem)] max-w-[1800px] -translate-x-1/2 overflow-x-auto rounded-lg border border-white/[0.08] lg:w-[calc(100vw-4rem)]">
+      <table className="w-full min-w-[1120px] border-collapse text-sm">
         <thead className="border-b border-white/[0.08] bg-white/[0.04]">
           <tr className="text-left font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
             <th className="px-3 py-3 font-normal">#</th>
