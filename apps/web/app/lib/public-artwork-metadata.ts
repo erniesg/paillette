@@ -37,6 +37,25 @@ const firstPublicText = (...values: unknown[]) => {
   return null;
 };
 
+const isInternalCatalogueText = (value: unknown) => {
+  const text = asText(value);
+  return Boolean(
+    text &&
+      (/^DO NOT REPRODUCE$/i.test(text) ||
+        /^[A-Z]{1,3}\s*-\s*copyright/i.test(text) ||
+        /copyright documents received/i.test(text) ||
+        /copyright denied/i.test(text))
+  );
+};
+
+const firstPublicCatalogueText = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = asText(value);
+    if (text && !isInternalCatalogueText(text)) return text;
+  }
+  return null;
+};
+
 export const getPublicMetadata = (artwork: PublicArtwork) =>
   asRecord(artwork.custom_metadata || artwork.metadata);
 
@@ -149,7 +168,7 @@ export const getPublicCatalogueRows = (artwork: PublicArtwork): PublicMetadataRo
         formatDimensions(artwork.dimensions),
     ],
     ['Accession', getPublicAccession(artwork)],
-    ['Credit line', artwork.credit_line || meta.creditLine || meta.credit_line],
+    ['Credit line', firstPublicCatalogueText(artwork.credit_line, meta.creditLine, meta.credit_line)],
     [
       'Source institution',
       artwork.source_institution || meta.sourceInstitution || meta.source_institution,
