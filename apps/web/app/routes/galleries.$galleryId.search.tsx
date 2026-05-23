@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import { Logo } from '~/components/ui/logo';
 import type {
   ApiResponse,
   ArtworkSearchResult,
@@ -589,13 +590,10 @@ export default function SearchPage() {
             <div className="min-w-0">
               <Link
                 to={`/${preferredRouteId}/search`}
-                className="font-display text-lg font-semibold leading-none tracking-normal"
+                className="inline-flex items-center transition-opacity hover:opacity-80"
               >
-                Paillette
+                <Logo size="sm" />
               </Link>
-              <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                {gallery.name}
-              </p>
             </div>
           </div>
           <nav className="flex items-center gap-2">
