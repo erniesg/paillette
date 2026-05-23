@@ -327,6 +327,33 @@ const getCaption = (result: ArtworkSearchResult) => {
 
 const getSourceUrl = (result: ArtworkSearchResult) => getNgsUrl(result) || getRootsUrl(result);
 
+type MetadataFacet = {
+  value: string;
+  query: string;
+};
+
+const getMetadataFacets = (result: ArtworkSearchResult): MetadataFacet[] => {
+  const candidates = [
+    getDateText(result),
+    getMedium(result),
+    asText(getMeta(result).classification),
+    getPlace(result),
+  ].filter(Boolean) as string[];
+  const seen = new Set<string>();
+
+  return candidates.flatMap((value) => {
+    const normalized = value.trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || key === '-' || seen.has(key)) return [];
+
+    seen.add(key);
+    return {
+      value: normalized,
+      query: normalized,
+    };
+  });
+};
+
 const collectPalette = (result: ArtworkSearchResult): string[] => {
   const meta = getMeta(result);
   const candidates = [
@@ -1063,6 +1090,7 @@ export default function SearchPage() {
               selectedColours={selectedColours}
               sortMode={sortMode}
               onSortModeChange={setSortMode}
+              onFacetSearch={runTextSearch}
               onSelectArtwork={setSelectedArtwork}
             />
           )}
@@ -1376,6 +1404,7 @@ function ResultsView({
   selectedColours,
   sortMode,
   onSortModeChange,
+  onFacetSearch,
   onSelectArtwork,
 }: {
   view: ViewMode;
@@ -1383,6 +1412,7 @@ function ResultsView({
   selectedColours: string[];
   sortMode: SortMode;
   onSortModeChange: (sortMode: SortMode) => void;
+  onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   if (view === 'table') {
@@ -1409,6 +1439,7 @@ function ResultsView({
     <MasonryResults
       results={results}
       selectedColours={selectedColours}
+      onFacetSearch={onFacetSearch}
       onSelectArtwork={onSelectArtwork}
     />
   );
@@ -1417,10 +1448,12 @@ function ResultsView({
 function MasonryResults({
   results,
   selectedColours,
+  onFacetSearch,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
   selectedColours: string[];
+  onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
@@ -1431,6 +1464,7 @@ function MasonryResults({
           result={result}
           rank={index + 1}
           selectedColours={selectedColours}
+          onFacetSearch={onFacetSearch}
           onSelectArtwork={onSelectArtwork}
         />
       ))}
@@ -1546,11 +1580,13 @@ function ResultCard({
   result,
   rank,
   selectedColours,
+  onFacetSearch,
   onSelectArtwork,
 }: {
   result: ArtworkSearchResult;
   rank: number;
   selectedColours: string[];
+  onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const palette = collectPalette(result).slice(0, 5);
@@ -1577,59 +1613,72 @@ function ResultCard({
             </div>
           )}
         </div>
-        <div className="space-y-3 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-display text-lg font-semibold leading-tight text-white">
-                {result.title || 'Untitled'}
-              </h2>
-              <p className="mt-1 text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
-            </div>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
-              #{rank.toString().padStart(2, '0')}
-            </span>
-          </div>
-
-          <MetadataLine result={result} />
-
-          {caption && (
-            <p className="line-clamp-3 text-sm leading-relaxed text-white/50">
-              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/65">
-                AI caption
-              </span>{' '}
-              {caption}
-            </p>
-          )}
-
-          <div className="flex items-center justify-between gap-3">
-            <PaletteDots colours={palette} />
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
-              {selectedColours.length ? `dE ${Math.round(colourScore(result, selectedColours))}` : `${Math.round(result.similarity * 100)}%`}
-            </span>
-          </div>
-        </div>
       </button>
+      <div className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => onSelectArtwork(result)}
+            className="min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
+          >
+            <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
+              {result.title || 'Untitled'}
+            </h2>
+            <p className="mt-1 text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+          </button>
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+            #{rank.toString().padStart(2, '0')}
+          </span>
+        </div>
+
+        <MetadataLine result={result} onFacetSearch={onFacetSearch} />
+
+        {caption && (
+          <p className="line-clamp-3 text-sm leading-relaxed text-white/50">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/65">
+              AI caption
+            </span>{' '}
+            {caption}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between gap-3">
+          <PaletteDots colours={palette} />
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+            {selectedColours.length ? `dE ${Math.round(colourScore(result, selectedColours))}` : `${Math.round(result.similarity * 100)}%`}
+          </span>
+        </div>
+      </div>
     </article>
   );
 }
 
-function MetadataLine({ result }: { result: ArtworkSearchResult }) {
-  const items = [
-    getDateText(result),
-    getMedium(result),
-    asText(getMeta(result).classification),
-    getPlace(result),
-    getAccession(result),
-  ].filter(Boolean);
+function MetadataLine({
+  result,
+  onFacetSearch,
+}: {
+  result: ArtworkSearchResult;
+  onFacetSearch: (query: string) => void;
+}) {
+  const facets = getMetadataFacets(result);
+
+  if (!facets.length) return null;
 
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.slice(0, 5).map((item, index) => (
-        <span
-          key={`${item}-${index}`}
-          className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-white/55"
-        >
-          {item}
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-white/45">
+      {facets.map((facet, index) => (
+        <span key={`${facet.value}-${index}`} className="inline-flex min-w-0 items-center gap-2">
+          {index > 0 && (
+            <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-white/18" />
+          )}
+          <button
+            type="button"
+            onClick={() => onFacetSearch(facet.query)}
+            className="min-w-0 max-w-full truncate text-left transition-colors hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+            title={`Search ${facet.value}`}
+          >
+            {facet.value}
+          </button>
         </span>
       ))}
     </div>
