@@ -260,9 +260,11 @@ const artworkRows = sourceArtworks.map((artwork) => {
   const sourceProvenance = jsonOrNull(artwork.provenance);
   const caption = captionsByArtwork.get(artwork.id);
   const grounding = groundingByArtwork.get(artwork.id);
+  const ngsRecord = jsonOrNull(grounding?.raw_ngs);
   const customMetadata = {
     artist_bio: artwork.artist_bio || null,
     dimensions_text: artwork.dimensions || null,
+    geographic_association: ngsRecord?.objAssociatedPlaceTxt || null,
     colour_palette: jsonOrNull(artwork.colour_palette) ?? artwork.colour_palette ?? null,
     subject_tags: jsonOrNull(artwork.subject_tags) ?? artwork.subject_tags ?? null,
     on_display: artwork.on_display === null ? null : Boolean(artwork.on_display),
@@ -281,7 +283,7 @@ const artworkRows = sourceArtworks.map((artwork) => {
       : null,
     source_records: grounding
       ? {
-          ngs: jsonOrNull(grounding.raw_ngs),
+          ngs: ngsRecord,
           roots: jsonOrNull(grounding.raw_roots),
           ngs_detail_url: grounding.ngs_detail_url || artwork.ngs_detail_url || null,
           roots_listing_url: grounding.roots_listing_url || artwork.roots_listing_url || null,

@@ -27,6 +27,7 @@ import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { Logo } from '~/components/ui/logo';
 import {
   getGeneratedCaptionText,
+  getGeographicAssociation,
   getNgsUrl,
   getPublicCatalogueRows,
   getPublicDescription,
@@ -257,6 +258,8 @@ const getSourceName = (result: ArtworkSearchResult) =>
   asText(getMeta(result).sourceInstitution) ||
   asText(getMeta(result).source_institution) ||
   'National Gallery Singapore';
+
+const getPlace = (result: ArtworkSearchResult) => getGeographicAssociation(result);
 
 const getCaption = (result: ArtworkSearchResult) => {
   const meta = getMeta(result);
@@ -1506,12 +1509,13 @@ function MetadataLine({ result }: { result: ArtworkSearchResult }) {
     getDateText(result),
     getMedium(result),
     asText(getMeta(result).classification),
+    getPlace(result),
     getAccession(result),
   ].filter(Boolean);
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.slice(0, 4).map((item, index) => (
+      {items.slice(0, 5).map((item, index) => (
         <span
           key={`${item}-${index}`}
           className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-white/55"
@@ -1560,6 +1564,7 @@ function TableResults({
             <th className="px-3 py-3 font-normal">Work</th>
             <th className="px-3 py-3 font-normal">Artist</th>
             <th className="px-3 py-3 font-normal">Date</th>
+            <th className="px-3 py-3 font-normal">Place</th>
             <th className="px-3 py-3 font-normal">Medium</th>
             <th className="px-3 py-3 font-normal">Source</th>
             <th className="px-3 py-3 font-normal">Score</th>
@@ -1601,6 +1606,7 @@ function TableResults({
               </td>
               <td className="px-3 py-3 text-white/65">{result.artist || 'Unknown'}</td>
               <td className="px-3 py-3 text-white/55">{getDateText(result) || '-'}</td>
+              <td className="px-3 py-3 text-white/55">{getPlace(result) || '-'}</td>
               <td className="px-3 py-3 text-white/55">{getMedium(result) || '-'}</td>
               <td className="px-3 py-3 text-white/55">
                 {getSourceUrl(result) ? (

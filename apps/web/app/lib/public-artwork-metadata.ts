@@ -86,6 +86,33 @@ export const getPublicDescription = (artwork: PublicArtwork) => {
   return firstText(artwork.description, meta.description, meta.catalogue_description);
 };
 
+export const getGeographicAssociation = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  const sourceRecords = getSourceRecords(artwork);
+  const ngsRecord = asRecord(sourceRecords.ngs);
+
+  return firstText(
+    artwork.geographic_association,
+    artwork.geographicAssociation,
+    artwork.geographical_association,
+    artwork.geographicalAssociation,
+    meta.geographic_association,
+    meta.geographicAssociation,
+    meta.geographical_association,
+    meta.geographicalAssociation,
+    meta.associated_place,
+    meta.associatedPlace,
+    meta.associated_country,
+    meta.associatedCountry,
+    meta.creation_place_original_location,
+    meta.creationPlaceOriginalLocation,
+    meta.documents_0_metadata_creation_place_original_location,
+    ngsRecord.objAssociatedPlaceTxt,
+    artwork.origin,
+    meta.origin
+  );
+};
+
 export const getPublicCatalogueRows = (artwork: PublicArtwork): PublicMetadataRow[] => {
   const meta = getPublicMetadata(artwork);
   const rows: Array<[string, unknown]> = [
@@ -94,7 +121,7 @@ export const getPublicCatalogueRows = (artwork: PublicArtwork): PublicMetadataRo
     ['Medium', artwork.medium || meta.medium],
     ['Classification', artwork.classification || meta.classification],
     ['Culture', artwork.culture || meta.culture],
-    ['Origin / place', artwork.origin || meta.origin || meta.associated_place],
+    ['Geographic association', getGeographicAssociation(artwork)],
     [
       'Dimensions',
       meta.dimensions_text ||
