@@ -315,15 +315,31 @@ class FakeSearchDb {
   }
 
   async all<T>(sql: string, params: unknown[]) {
+    const applySearchVisibility = (rows: typeof this.rows) => {
+      if (!sql.includes('source_url IS NOT NULL')) {
+        return rows;
+      }
+
+      return rows.filter(
+        (row) =>
+          row.source_url?.trim() &&
+          row.accession_number?.trim() &&
+          row.title?.trim()
+      );
+    };
+
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
-      return { success: true, results: this.rows } as { success: boolean; results: T[] };
+      return {
+        success: true,
+        results: applySearchVisibility(this.rows),
+      } as { success: boolean; results: T[] };
     }
 
     if (sql.includes('FROM artworks') && sql.includes('WHERE id IN')) {
       const ids = new Set(params as string[]);
       return {
         success: true,
-        results: this.rows.filter((row) => ids.has(row.id)),
+        results: applySearchVisibility(this.rows.filter((row) => ids.has(row.id))),
       } as { success: boolean; results: T[] };
     }
 
@@ -445,6 +461,60 @@ describe('Search API auth and quota behavior', () => {
       org_id: ORG_ID,
       rank: 1,
     });
+  });
+
+  it('keeps source-backed records searchable even when no image asset is available', async () => {
+    db = new FakeSearchDb([
+      {
+        ...artworkRow,
+        id: '1991-00255',
+        title: 'Running Script Calligraphy',
+        accession_number: '1991-00255',
+        source_record_id: '1991-00255',
+        image_url: null,
+        thumbnail_url: null,
+        match_score: 100,
+      },
+    ]);
+    env = makeEnv(db);
+
+    const res = await textSearch(app, env);
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(1);
+    expect(body.data.results[0]).toMatchObject({
+      id: '1991-00255',
+      title: 'Running Script Calligraphy',
+      imageUrl: null,
+      thumbnailUrl: null,
+      metadata: {
+        accessionNumber: '1991-00255',
+        sourceUrl: 'https://www.nationalgallery.sg/example',
+      },
+    });
+  });
+
+  it('excludes NGS rows that cannot link back to a public NGS or Roots source', async () => {
+    db = new FakeSearchDb([
+      {
+        ...artworkRow,
+        id: '1991-00227-001',
+        title: 'Complexity and Simplicity, 89',
+        accession_number: '1991-00227-001',
+        source_record_id: '1991-00227-001',
+        source_url: null,
+        match_score: 100,
+      },
+    ]);
+    env = makeEnv(db);
+
+    const res = await textSearch(app, env);
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(0);
+    expect(db.artworkEvents).toHaveLength(0);
   });
 
   it('tracks API key users against principal_type=api_key', async () => {

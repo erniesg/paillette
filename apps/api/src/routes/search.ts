@@ -61,10 +61,23 @@ const DEFAULT_JINA_TEXT_MODEL = 'jina-embeddings-v5-text-small';
 const DEFAULT_JINA_DIMENSIONS = 1024;
 const JINA_EMBEDDINGS_ENDPOINT = 'https://api.jina.ai/v1/embeddings';
 const RRF_K = 60;
+const NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
+
+const BACKABLE_NGS_SEARCH_SQL = `
+        AND source_url IS NOT NULL
+        AND trim(source_url) <> ''
+        AND accession_number IS NOT NULL
+        AND trim(accession_number) <> ''
+        AND title IS NOT NULL
+        AND trim(title) <> ''
+`;
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
 const canonicalArtworkId = (id: string) => id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
+
+const backableSearchSql = (orgId: string | undefined) =>
+  orgId === NGS_ORG_ID ? BACKABLE_NGS_SEARCH_SQL : '';
 
 type TemporalFilter = {
   startYear: number;
@@ -447,7 +460,8 @@ async function searchJinaImageVectors(
 
 async function getArtworksByIds(
   db: D1Database,
-  ids: string[]
+  ids: string[],
+  orgId?: string
 ): Promise<Map<string, ArtworkSearchRow>> {
   if (ids.length === 0) {
     return new Map();
@@ -494,6 +508,7 @@ async function getArtworksByIds(
       FROM artworks
       WHERE id IN (${placeholders})
         AND deleted_at IS NULL
+        ${backableSearchSql(orgId)}
       `
     )
       .bind(...chunk)
@@ -564,7 +579,7 @@ async function searchArtworksHybrid(
     ? rankedCandidateIds
     : rankedCandidateIds.slice(0, topK);
 
-  const artworkById = await getArtworksByIds(env.DB, rankedIds);
+  const artworkById = await getArtworksByIds(env.DB, rankedIds, orgId);
   const maxScore = Math.max(...[...scores.values()].map((value) => value.score), 0.001);
 
   const results = rankedIds.flatMap((id) => {
@@ -705,6 +720,7 @@ async function searchArtworksByMetadata(
     FROM artworks
     WHERE deleted_at IS NULL
       ${orgFilter}
+      ${backableSearchSql(orgId)}
       ${whereSql}
     ORDER BY match_score DESC, title COLLATE NOCASE ASC
     LIMIT ?
@@ -935,6 +951,8 @@ searchRoutes.post('/search/image', async (c) => {
         custom_metadata
       FROM artworks
       WHERE id IN (${placeholders})
+        AND deleted_at IS NULL
+        ${backableSearchSql(orgId)}
       `
     )
       .bind(...artworkIds)

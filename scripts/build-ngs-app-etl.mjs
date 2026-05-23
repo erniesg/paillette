@@ -76,7 +76,9 @@ const loadJsonlMap = (path) => {
 
 const institution = query("SELECT * FROM institutions WHERE id = 'ngs' LIMIT 1")[0];
 const collection = query("SELECT * FROM collections WHERE id = 'national-collection' LIMIT 1")[0];
-const sourceArtworks = query(`
+const hasText = (value) => String(value ?? '').trim().length > 0;
+
+const candidateSourceArtworks = query(`
   SELECT
     id,
     accession_no,
@@ -103,13 +105,12 @@ const sourceArtworks = query(`
     roots_listing_url,
     created_at
   FROM artworks
-  WHERE in_ngs_catalog = 1
-    OR coalesce(ngs_detail_url, '') <> ''
+  WHERE coalesce(ngs_detail_url, '') <> ''
     OR coalesce(roots_listing_url, '') <> ''
   ORDER BY id
 `);
-const sourceArtworkIds = new Set(sourceArtworks.map((artwork) => artwork.id));
-const sourceAssets = query(`
+const candidateSourceArtworkIds = new Set(candidateSourceArtworks.map((artwork) => artwork.id));
+let sourceAssets = query(`
   SELECT
     id,
     bucket,
@@ -128,7 +129,7 @@ const sourceAssets = query(`
     created_at
   FROM assets
   ORDER BY artwork_id, role
-`).filter((asset) => sourceArtworkIds.has(asset.artwork_id));
+`).filter((asset) => candidateSourceArtworkIds.has(asset.artwork_id));
 
 const assetsByArtwork = new Map();
 for (const asset of sourceAssets) {
@@ -136,6 +137,14 @@ for (const asset of sourceAssets) {
   byArtwork[asset.role] = asset;
   assetsByArtwork.set(asset.artwork_id, byArtwork);
 }
+
+const sourceArtworks = candidateSourceArtworks.filter((artwork) =>
+  hasText(artwork.accession_no) &&
+  hasText(artwork.title) &&
+  (hasText(artwork.ngs_detail_url) || hasText(artwork.roots_listing_url))
+);
+const sourceArtworkIds = new Set(sourceArtworks.map((artwork) => artwork.id));
+sourceAssets = sourceAssets.filter((asset) => sourceArtworkIds.has(asset.artwork_id));
 
 const captionsByArtwork = loadJsonlMap(captionsPath);
 const groundingByArtwork = loadJsonlMap(groundingPath);
