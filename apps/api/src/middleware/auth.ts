@@ -416,6 +416,10 @@ export const requireAuthOrApiKey = async (c: Context<AppBindings>, next: Next) =
       );
     }
 
+    if (auth.kind === 'user') {
+      await ensureUser(c, auth);
+    }
+
     c.set('auth', auth);
     await next();
   } catch (error) {

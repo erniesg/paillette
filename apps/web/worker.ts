@@ -4,6 +4,8 @@ import type { ServerBuild } from '@remix-run/cloudflare';
 
 type Env = {
   APP_ENV?: string;
+  PAILLETTE_API_URL?: string;
+  PAILLETTE_PUBLIC_SEARCH_API_KEY?: string;
   LOGTO_ENDPOINT?: string;
   LOGTO_APP_ID?: string;
   LOGTO_API_RESOURCE?: string;

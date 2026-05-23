@@ -21,8 +21,14 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { apiClient, getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
-import type { ArtworkSearchResult } from '~/types';
+import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import type {
+  ApiResponse,
+  ArtworkSearchResult,
+  SearchImageRequest,
+  SearchResponse,
+  SearchTextRequest,
+} from '~/types';
 import { useUser } from '~/contexts/user-context';
 
 export const meta: MetaFunction = () => {
@@ -260,11 +266,57 @@ const sortResults = (
   return sorted;
 };
 
+const readSearchResponse = async (response: Response) => {
+  const payload = (await response.json()) as ApiResponse<SearchResponse>;
+  if (!payload.success || !payload.data) {
+    throw new Error(payload.error?.message || 'Search failed');
+  }
+
+  return payload.data;
+};
+
+const publicSearchText = async (
+  orgId: string,
+  request: SearchTextRequest
+): Promise<SearchResponse> => {
+  const response = await fetch(
+    `/api/public-search/${encodeURIComponent(orgId)}/text`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    }
+  );
+
+  return readSearchResponse(response);
+};
+
+const publicSearchImage = async (
+  orgId: string,
+  request: SearchImageRequest
+): Promise<SearchResponse> => {
+  const body = new FormData();
+  body.set('image', request.image);
+  if (request.topK) body.set('topK', String(request.topK));
+  if (request.minScore) body.set('minScore', String(request.minScore));
+
+  const response = await fetch(
+    `/api/public-search/${encodeURIComponent(orgId)}/image`,
+    {
+      method: 'POST',
+      body,
+    }
+  );
+
+  return readSearchResponse(response);
+};
+
 export default function SearchPage() {
   const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getAccessToken, isAuthenticated, login } = useUser();
-  const optionalAccessToken = isAuthenticated ? getAccessToken : undefined;
+  const { isAuthenticated, login } = useUser();
 
   const [searchMode, setSearchMode] = useState<SearchMode>('text');
   const [textQuery, setTextQuery] = useState(searchParams.get('q') || '');
@@ -278,41 +330,38 @@ export default function SearchPage() {
   const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
 
   const textSearchQuery = useQuery({
-    queryKey: ['search', 'text', galleryId, textQuery, topK, minScore, isAuthenticated],
+    queryKey: ['search', 'text', galleryId, textQuery, topK, minScore],
     queryFn: async () => {
       if (!textQuery.trim()) return null;
-      return apiClient.searchText(
+      return publicSearchText(
         galleryId,
         {
           query: textQuery,
           topK,
           minScore,
-        },
-        optionalAccessToken
+        }
       );
     },
     enabled:
-      isAuthenticated &&
       searchMode === 'text' &&
       shouldSearch &&
       textQuery.trim().length > 0,
   });
 
   const imageSearchQuery = useQuery({
-    queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore, isAuthenticated],
+    queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore],
     queryFn: async () => {
       if (!imageFile) return null;
-      return apiClient.searchImage(
+      return publicSearchImage(
         galleryId,
         {
           image: imageFile,
           topK,
           minScore,
-        },
-        optionalAccessToken
+        }
       );
     },
-    enabled: isAuthenticated && searchMode === 'image' && shouldSearch && imageFile !== null,
+    enabled: searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
   const currentQuery = searchMode === 'text' ? textSearchQuery : imageSearchQuery;
@@ -551,25 +600,6 @@ export default function SearchPage() {
               </div>
             </div>
 
-            {!isAuthenticated && (
-              <div className="mt-6 flex items-center justify-between gap-4 rounded-lg border border-amber-200/20 bg-amber-200/[0.06] p-4">
-                <div>
-                  <p className="text-sm font-medium text-white">Sign in to search</p>
-                  <p className="mt-1 text-sm text-white/55">
-                    NGS search now counts against a registered user or API key quota.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void login()}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-medium text-black transition-opacity hover:opacity-85"
-                >
-                  <LogIn className="h-4 w-4" />
-                  Sign in
-                </button>
-              </div>
-            )}
-
             <div className="mt-8 border-t border-white/[0.08] pt-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-baseline gap-2">
@@ -717,7 +747,7 @@ export default function SearchPage() {
             />
           )}
 
-          {!isLoading && !error && shouldSearch && isAuthenticated && results.length === 0 && (
+          {!isLoading && !error && shouldSearch && results.length === 0 && (
             <div className="py-16 text-center">
               <p className="text-white/55">No artworks found.</p>
               <p className="mt-1 text-sm text-white/35">

@@ -15,6 +15,7 @@
   ],
   "vars": {
     "APP_ENV": "production",
+    "PAILLETTE_API_URL": "https://paillette-api.berlayar.ai",
     "LOGTO_ENDPOINT": "https://m2fmae.logto.app/",
     "LOGTO_APP_ID": "",
     "LOGTO_API_RESOURCE": ""
@@ -34,6 +35,7 @@
       ],
       "vars": {
         "APP_ENV": "staging",
+        "PAILLETTE_API_URL": "https://paillette-api-stg.berlayar.ai",
         "LOGTO_ENDPOINT": "https://m2fmae.logto.app/",
         "LOGTO_APP_ID": "zsrsuc0jkv9zhinog3bx5",
         "LOGTO_API_RESOURCE": ""
