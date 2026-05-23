@@ -74,8 +74,22 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
 type SearchMode = 'text' | 'image' | 'colour';
 type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
-type SortMode = 'relevance' | 'colour' | 'time-desc' | 'time-asc' | 'artist' | 'title';
-type SortControlId = Exclude<SortMode, 'time-desc' | 'time-asc'> | 'time';
+type SortMode =
+  | 'relevance'
+  | 'colour'
+  | 'time-desc'
+  | 'time-asc'
+  | 'artist'
+  | 'artist-desc'
+  | 'title'
+  | 'title-desc'
+  | 'medium'
+  | 'medium-desc'
+  | 'place'
+  | 'place-desc'
+  | 'source'
+  | 'source-desc';
+type SortControlId = 'relevance' | 'colour' | 'time' | 'artist' | 'title';
 
 const EVAL_SUGGESTIONS = [
   {
@@ -171,6 +185,47 @@ const VIEW_OPTIONS: { id: ViewMode; label: string; icon: LucideIcon }[] = [
   { id: 'atlas', label: 'Atlas', icon: Network },
   { id: 'table', label: 'Table', icon: Table2 },
 ];
+
+type TableSortColumn = 'title' | 'artist' | 'time' | 'place' | 'medium' | 'source' | 'score';
+
+const SORT_DESC: Partial<Record<SortMode, SortMode>> = {
+  title: 'title-desc',
+  artist: 'artist-desc',
+  medium: 'medium-desc',
+  place: 'place-desc',
+  source: 'source-desc',
+};
+
+const SORT_ASC: Partial<Record<SortMode, SortMode>> = {
+  'title-desc': 'title',
+  'artist-desc': 'artist',
+  'medium-desc': 'medium',
+  'place-desc': 'place',
+  'source-desc': 'source',
+};
+
+const tableColumnSortMode = (column: TableSortColumn, current: SortMode): SortMode => {
+  if (column === 'score') return 'relevance';
+  if (column === 'time') return current === 'time-asc' ? 'time-desc' : 'time-asc';
+
+  const mode = column;
+  if (current === mode) return SORT_DESC[current] || mode;
+  if (SORT_ASC[current] === mode) return mode;
+  return mode;
+};
+
+const tableSortDirection = (column: TableSortColumn, current: SortMode) => {
+  if (column === 'score') return current === 'relevance' ? 'desc' : null;
+  if (column === 'time') {
+    if (current === 'time-asc') return 'asc';
+    if (current === 'time-desc') return 'desc';
+    return null;
+  }
+
+  if (current === column) return 'asc';
+  if (SORT_ASC[current] === column) return 'desc';
+  return null;
+};
 
 const hashString = (value: string) => {
   let hash = 0;
@@ -350,6 +405,20 @@ const sortResults = (
   selectedColours: string[]
 ) => {
   const sorted = [...results];
+  const textCompare = (
+    a: ArtworkSearchResult,
+    b: ArtworkSearchResult,
+    getter: (result: ArtworkSearchResult) => string | null | undefined,
+    direction: 'asc' | 'desc' = 'asc'
+  ) => {
+    const valueA = getter(a) || '';
+    const valueB = getter(b) || '';
+    const delta = valueA.localeCompare(valueB, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+    return direction === 'desc' ? -delta : delta;
+  };
 
   sorted.sort((a, b) => {
     if (sortMode === 'colour') {
@@ -376,11 +445,43 @@ const sortResults = (
     }
 
     if (sortMode === 'artist') {
-      return (a.artist || '').localeCompare(b.artist || '') || b.similarity - a.similarity;
+      return textCompare(a, b, (result) => result.artist) || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'artist-desc') {
+      return textCompare(a, b, (result) => result.artist, 'desc') || b.similarity - a.similarity;
     }
 
     if (sortMode === 'title') {
-      return (a.title || '').localeCompare(b.title || '') || b.similarity - a.similarity;
+      return textCompare(a, b, (result) => result.title) || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'title-desc') {
+      return textCompare(a, b, (result) => result.title, 'desc') || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'medium') {
+      return textCompare(a, b, getMedium) || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'medium-desc') {
+      return textCompare(a, b, getMedium, 'desc') || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'place') {
+      return textCompare(a, b, getPlace) || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'place-desc') {
+      return textCompare(a, b, getPlace, 'desc') || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'source') {
+      return textCompare(a, b, getSourceName) || b.similarity - a.similarity;
+    }
+
+    if (sortMode === 'source-desc') {
+      return textCompare(a, b, getSourceName, 'desc') || b.similarity - a.similarity;
     }
 
     return b.similarity - a.similarity;
@@ -815,7 +916,7 @@ export default function SearchPage() {
                       const active =
                         option.id === 'time'
                           ? sortMode === 'time-desc' || sortMode === 'time-asc'
-                          : sortMode === option.id;
+                          : sortMode === option.id || SORT_ASC[sortMode] === option.id;
                       const label =
                         option.id === 'time'
                           ? sortMode === 'time-asc'
@@ -960,6 +1061,8 @@ export default function SearchPage() {
               view={view}
               results={results}
               selectedColours={selectedColours}
+              sortMode={sortMode}
+              onSortModeChange={setSortMode}
               onSelectArtwork={setSelectedArtwork}
             />
           )}
@@ -1271,11 +1374,15 @@ function ResultsView({
   view,
   results,
   selectedColours,
+  sortMode,
+  onSortModeChange,
   onSelectArtwork,
 }: {
   view: ViewMode;
   results: ArtworkSearchResult[];
   selectedColours: string[];
+  sortMode: SortMode;
+  onSortModeChange: (sortMode: SortMode) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   if (view === 'table') {
@@ -1283,6 +1390,8 @@ function ResultsView({
       <TableResults
         results={results}
         selectedColours={selectedColours}
+        sortMode={sortMode}
+        onSortModeChange={onSortModeChange}
         onSelectArtwork={onSelectArtwork}
       />
     );
@@ -1549,10 +1658,14 @@ function PaletteDots({ colours }: { colours: string[] }) {
 function TableResults({
   results,
   selectedColours,
+  sortMode,
+  onSortModeChange,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
   selectedColours: string[];
+  sortMode: SortMode;
+  onSortModeChange: (sortMode: SortMode) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
@@ -1561,13 +1674,48 @@ function TableResults({
         <thead className="border-b border-white/[0.08] bg-white/[0.04]">
           <tr className="text-left font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
             <th className="px-3 py-3 font-normal">#</th>
-            <th className="px-3 py-3 font-normal">Work</th>
-            <th className="px-3 py-3 font-normal">Artist</th>
-            <th className="px-3 py-3 font-normal">Date</th>
-            <th className="px-3 py-3 font-normal">Place</th>
-            <th className="px-3 py-3 font-normal">Medium</th>
-            <th className="px-3 py-3 font-normal">Source</th>
-            <th className="px-3 py-3 font-normal">Score</th>
+            <TableSortHeader
+              label="Work"
+              column="title"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
+            <TableSortHeader
+              label="Artist"
+              column="artist"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
+            <TableSortHeader
+              label="Date"
+              column="time"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
+            <TableSortHeader
+              label="Place"
+              column="place"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
+            <TableSortHeader
+              label="Medium"
+              column="medium"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
+            <TableSortHeader
+              label="Source"
+              column="source"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
+            <TableSortHeader
+              label="Score"
+              column="score"
+              sortMode={sortMode}
+              onSortModeChange={onSortModeChange}
+            />
           </tr>
         </thead>
         <tbody className="divide-y divide-white/[0.06]">
@@ -1633,5 +1781,40 @@ function TableResults({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function TableSortHeader({
+  label,
+  column,
+  sortMode,
+  onSortModeChange,
+}: {
+  label: string;
+  column: TableSortColumn;
+  sortMode: SortMode;
+  onSortModeChange: (sortMode: SortMode) => void;
+}) {
+  const direction = tableSortDirection(column, sortMode);
+  const nextSortMode = tableColumnSortMode(column, sortMode);
+
+  return (
+    <th className="px-3 py-3 font-normal">
+      <button
+        type="button"
+        onClick={() => onSortModeChange(nextSortMode)}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 transition-colors ${
+          direction
+            ? 'bg-white/[0.1] text-white'
+            : 'text-white/45 hover:bg-white/[0.06] hover:text-white/75'
+        }`}
+        aria-label={`Sort table by ${label.toLowerCase()}`}
+      >
+        {label}
+        <span className="text-[9px] tracking-[0.08em] text-white/35">
+          {direction === 'asc' ? 'ASC' : direction === 'desc' ? 'DESC' : ''}
+        </span>
+      </button>
+    </th>
   );
 }

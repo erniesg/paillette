@@ -66,6 +66,12 @@ const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
 const canonicalArtworkId = (id: string) => id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
 
+type TemporalFilter = {
+  startYear: number;
+  endYear: number;
+  textQuery: string;
+};
+
 const canonicalizeMatches = (matches: CaptionVectorMatch[]) => {
   const byId = new Map<string, CaptionVectorMatch>();
 
@@ -78,6 +84,45 @@ const canonicalizeMatches = (matches: CaptionVectorMatch[]) => {
   }
 
   return [...byId.values()];
+};
+
+const firstYearFromText = (value: string | null | undefined) => {
+  const match = String(value || '').match(/\b(1[0-9]{3}|20[0-9]{2})\b/);
+  return match ? Number(match[1]) : null;
+};
+
+const parseTemporalFilter = (query: string): TemporalFilter | null => {
+  const decadeMatch = query.match(/\b((?:1[0-9]{2}|20[0-9])0)'?s\b/i);
+  if (decadeMatch?.[1]) {
+    const startYear = Number(decadeMatch[1]);
+    return {
+      startYear,
+      endYear: startYear + 9,
+      textQuery: `${startYear}s`,
+    };
+  }
+
+  const yearMatch = query.match(/\b(1[0-9]{3}|20[0-9]{2})\b/);
+  if (yearMatch?.[1]) {
+    const year = Number(yearMatch[1]);
+    return {
+      startYear: year,
+      endYear: year,
+      textQuery: String(year),
+    };
+  }
+
+  return null;
+};
+
+const artworkMatchesTemporalFilter = (
+  artwork: ArtworkSearchRow,
+  temporalFilter: TemporalFilter
+) => {
+  const year = artwork.year ?? firstYearFromText(artwork.date_text);
+  return Boolean(
+    year && year >= temporalFilter.startYear && year <= temporalFilter.endYear
+  );
 };
 
 const normalizedTextSql = (expression: string) => `
@@ -408,49 +453,56 @@ async function getArtworksByIds(
     return new Map();
   }
 
-  const placeholders = ids.map(() => '?').join(',');
-  const { results } = await db.prepare(
-    `
-    SELECT
-      id,
-      org_id,
-      title,
-      artist,
-      year,
-      date_text,
-      medium,
-      classification,
-      culture,
-      origin,
-      dimensions_height,
-      dimensions_width,
-      dimensions_depth,
-      dimensions_unit,
-      description,
-      provenance,
-      credit_line,
-      rights,
-      accession_number,
-      source_url,
-      source_institution,
-      source_collection,
-      source_record_id,
-      field_sources,
-      dominant_colors,
-      color_palette,
-      citation,
-      image_url,
-      thumbnail_url,
-      custom_metadata
-    FROM artworks
-    WHERE id IN (${placeholders})
-      AND deleted_at IS NULL
-    `
-  )
-    .bind(...ids)
-    .all<ArtworkSearchRow>();
+  const artworks: ArtworkSearchRow[] = [];
+  const chunkSize = 80;
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const chunk = ids.slice(index, index + chunkSize);
+    const placeholders = chunk.map(() => '?').join(',');
+    const { results } = await db.prepare(
+      `
+      SELECT
+        id,
+        org_id,
+        title,
+        artist,
+        year,
+        date_text,
+        medium,
+        classification,
+        culture,
+        origin,
+        dimensions_height,
+        dimensions_width,
+        dimensions_depth,
+        dimensions_unit,
+        description,
+        provenance,
+        credit_line,
+        rights,
+        accession_number,
+        source_url,
+        source_institution,
+        source_collection,
+        source_record_id,
+        field_sources,
+        dominant_colors,
+        color_palette,
+        citation,
+        image_url,
+        thumbnail_url,
+        custom_metadata
+      FROM artworks
+      WHERE id IN (${placeholders})
+        AND deleted_at IS NULL
+      `
+    )
+      .bind(...chunk)
+      .all<ArtworkSearchRow>();
 
-  return new Map(results.map((artwork) => [artwork.id, artwork]));
+    artworks.push(...results);
+  }
+
+  return new Map(artworks.map((artwork) => [artwork.id, artwork]));
 }
 
 async function searchArtworksHybrid(
@@ -459,6 +511,7 @@ async function searchArtworksHybrid(
   query: string,
   topK: number
 ): Promise<ArtworkSearchResult[]> {
+  const temporalFilter = parseTemporalFilter(query);
   const jinaConfig = getJinaConfig(env);
   const jinaMatchesPromise = searchJinaTextVectors(
     env.VECTORIZE,
@@ -497,26 +550,36 @@ async function searchArtworksHybrid(
   metadataMatches.forEach((match, index) => {
     const existing = scores.get(match.id);
     scores.set(match.id, {
-      score: (existing?.score || 0) + 1 / (RRF_K + index + 1),
+      score:
+        (existing?.score || 0) +
+        (temporalFilter ? 4 : 1) / (RRF_K + index + 1),
       vectorScore: existing?.vectorScore,
     });
   });
 
-  const rankedIds = [...scores.entries()]
+  const rankedCandidateIds = [...scores.entries()]
     .sort(([, a], [, b]) => b.score - a.score)
-    .slice(0, topK)
     .map(([id]) => id);
+  const rankedIds = temporalFilter
+    ? rankedCandidateIds
+    : rankedCandidateIds.slice(0, topK);
 
   const artworkById = await getArtworksByIds(env.DB, rankedIds);
   const maxScore = Math.max(...[...scores.values()].map((value) => value.score), 0.001);
 
-  return rankedIds.flatMap((id) => {
+  const results = rankedIds.flatMap((id) => {
     const artwork = artworkById.get(id);
     const fused = scores.get(id);
     if (!artwork || !fused) return [];
 
+    if (temporalFilter && !artworkMatchesTemporalFilter(artwork, temporalFilter)) {
+      return [];
+    }
+
     return mapSearchRow(artwork, Math.min(fused.score / maxScore, 1));
   });
+
+  return results.slice(0, topK);
 }
 
 async function searchArtworksByMetadata(
@@ -526,6 +589,7 @@ async function searchArtworksByMetadata(
   topK: number
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
+  const temporalFilter = parseTemporalFilter(query);
   const likeQuery = `%${escapeLike(normalizedQuery)}%`;
   const tokens = normalizedQuery
     .split(/\s+/)
@@ -541,14 +605,25 @@ async function searchArtworksByMetadata(
     : [likeQuery];
   const titleText = normalizedTextSql('title');
   const artistText = normalizedTextSql('artist');
+  const dateText = normalizedTextSql('date_text');
   const descriptionText = normalizedTextSql('description');
   const mediumText = normalizedTextSql('medium');
   const classificationText = normalizedTextSql('classification');
   const accessionText = normalizedTextSql('accession_number');
   const searchableExpression = `
-    (${titleText} || ${artistText} || ${descriptionText} ||
+    (${titleText} || ${artistText} || ${dateText} || ${descriptionText} ||
      ${mediumText} || ${classificationText} || ${accessionText})
   `;
+  const temporalLikeQuery = temporalFilter
+    ? `%${escapeLike(temporalFilter.textQuery)}%`
+    : null;
+  const temporalScoreSql = temporalFilter
+    ? `CASE WHEN year BETWEEN ? AND ? THEN 120 ELSE 0 END +
+       CASE WHEN ${dateText} LIKE ? ESCAPE '\\' THEN 80 ELSE 0 END +`
+    : '';
+  const temporalWhereSql = temporalFilter
+    ? `(year BETWEEN ? AND ? OR ${dateText} LIKE ? ESCAPE '\\')`
+    : '';
   const tokenScoreSql = tokenQueries
     .map(() => `CASE WHEN ${searchableExpression} LIKE ? ESCAPE '\\' THEN 8 ELSE 0 END`)
     .join(' + ');
@@ -563,13 +638,22 @@ async function searchArtworksByMetadata(
     phraseQuery,
     phraseQuery,
     phraseQuery,
+    ...(temporalFilter && temporalLikeQuery
+      ? [temporalFilter.startYear, temporalFilter.endYear, temporalLikeQuery]
+      : []),
     ...tokenQueries,
   ];
 
   const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const whereSql = temporalFilter
+    ? `AND (${temporalWhereSql} OR (${tokenWhereSql}))`
+    : `AND (${tokenWhereSql})`;
   const params = [
     ...scoreParams,
     ...(orgId ? [orgId] : []),
+    ...(temporalFilter && temporalLikeQuery
+      ? [temporalFilter.startYear, temporalFilter.endYear, temporalLikeQuery]
+      : []),
     ...tokenQueries,
     topK,
   ];
@@ -615,12 +699,13 @@ async function searchArtworksByMetadata(
         CASE WHEN ${mediumText} LIKE ? ESCAPE '\\' THEN 25 ELSE 0 END +
         CASE WHEN ${classificationText} LIKE ? ESCAPE '\\' THEN 25 ELSE 0 END +
         CASE WHEN ${accessionText} LIKE ? ESCAPE '\\' THEN 35 ELSE 0 END +
+        ${temporalScoreSql}
         ${tokenScoreSql}
       ) AS match_score
     FROM artworks
     WHERE deleted_at IS NULL
       ${orgFilter}
-      AND (${tokenWhereSql})
+      ${whereSql}
     ORDER BY match_score DESC, title COLLATE NOCASE ASC
     LIMIT ?
     `
