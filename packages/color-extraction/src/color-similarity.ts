@@ -99,14 +99,15 @@ export class ColorSimilarity {
   ): { color: ColorPaletteItem; distance: number } | null {
     if (palette.length === 0) return null;
 
-    let closestColor = palette[0];
+    let closestColor = palette[0]!;
     let minDistance = this.deltaE2000(searchColor, closestColor.color);
 
     for (let i = 1; i < palette.length; i++) {
-      const distance = this.deltaE2000(searchColor, palette[i].color);
+      const candidate = palette[i]!;
+      const distance = this.deltaE2000(searchColor, candidate.color);
       if (distance < minDistance) {
         minDistance = distance;
-        closestColor = palette[i];
+        closestColor = candidate;
       }
     }
 

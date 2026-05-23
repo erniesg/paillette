@@ -56,7 +56,8 @@ export const meta: MetaFunction = () => {
     { title: 'Search Artworks - Paillette' },
     {
       name: 'description',
-      content: 'Search and discover artworks using AI-powered multimodal search',
+      content:
+        'Search and discover artworks using AI-powered multimodal search',
     },
   ];
 };
@@ -201,7 +202,14 @@ const VIEW_OPTIONS: { id: ViewMode; label: string; icon: LucideIcon }[] = [
   { id: 'table', label: 'Table', icon: Table2 },
 ];
 
-type TableSortColumn = 'title' | 'artist' | 'time' | 'place' | 'medium' | 'source' | 'score';
+type TableSortColumn =
+  | 'title'
+  | 'artist'
+  | 'time'
+  | 'place'
+  | 'medium'
+  | 'source'
+  | 'score';
 
 const SORT_DESC: Partial<Record<SortMode, SortMode>> = {
   title: 'title-desc',
@@ -219,9 +227,13 @@ const SORT_ASC: Partial<Record<SortMode, SortMode>> = {
   'source-desc': 'source',
 };
 
-const tableColumnSortMode = (column: TableSortColumn, current: SortMode): SortMode => {
+const tableColumnSortMode = (
+  column: TableSortColumn,
+  current: SortMode
+): SortMode => {
   if (column === 'score') return 'relevance';
-  if (column === 'time') return current === 'time-asc' ? 'time-desc' : 'time-asc';
+  if (column === 'time')
+    return current === 'time-asc' ? 'time-desc' : 'time-asc';
 
   const mode = column;
   if (current === mode) return SORT_DESC[current] || mode;
@@ -296,7 +308,9 @@ const getColourSearchText = (selection: string) => {
     return `${colour.hex} colour`;
   }
 
-  return COLOUR_SEARCH_TERMS[selection] || `${colour.name.toLowerCase()} colour`;
+  return (
+    COLOUR_SEARCH_TERMS[selection] || `${colour.name.toLowerCase()} colour`
+  );
 };
 
 const asText = (value: unknown) =>
@@ -322,7 +336,8 @@ const getDateText = (result: ArtworkSearchResult) =>
 const getMedium = (result: ArtworkSearchResult) =>
   asText(getMeta(result).medium) || asText(getMeta(result).classification);
 
-const getAccession = (result: ArtworkSearchResult) => getPublicAccession(result);
+const getAccession = (result: ArtworkSearchResult) =>
+  getPublicAccession(result);
 
 const getSourceName = (result: ArtworkSearchResult) =>
   getNgsUrl(result)
@@ -335,7 +350,8 @@ const getSourceName = (result: ArtworkSearchResult) =>
         asText(getMeta(result).source_institution) ||
         'National Gallery Singapore';
 
-const getPlace = (result: ArtworkSearchResult) => getGeographicAssociation(result);
+const getPlace = (result: ArtworkSearchResult) =>
+  getGeographicAssociation(result);
 
 const getCaption = (result: ArtworkSearchResult) => {
   const meta = getMeta(result);
@@ -346,7 +362,8 @@ const getCaption = (result: ArtworkSearchResult) => {
   return asText(caption);
 };
 
-const getSourceUrl = (result: ArtworkSearchResult) => getNgsUrl(result) || getRootsUrl(result);
+const getSourceUrl = (result: ArtworkSearchResult) =>
+  getNgsUrl(result) || getRootsUrl(result);
 
 type MetadataFacet = {
   value: string;
@@ -421,7 +438,9 @@ const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
     const selectedColour = getSelectedColour(colourId);
     if (!selectedColour) return sum;
     const nearest = Math.min(
-      ...palette.map((paletteColour) => rgbDistance(selectedColour.hex, paletteColour))
+      ...palette.map((paletteColour) =>
+        rgbDistance(selectedColour.hex, paletteColour)
+      )
     );
     return sum + nearest;
   }, 0);
@@ -471,7 +490,8 @@ const sortResults = (
   sorted.sort((a, b) => {
     if (sortMode === 'colour') {
       if (selectedColours.length) {
-        const delta = colourScore(a, selectedColours) - colourScore(b, selectedColours);
+        const delta =
+          colourScore(a, selectedColours) - colourScore(b, selectedColours);
         if (Number.isFinite(delta) && delta !== 0) return delta;
       } else {
         const paletteA = paletteBandSortKey(a);
@@ -480,7 +500,8 @@ const sortResults = (
         if (Number.isFinite(bandDelta) && bandDelta !== 0) return bandDelta;
 
         const distanceDelta = paletteA.distance - paletteB.distance;
-        if (Number.isFinite(distanceDelta) && distanceDelta !== 0) return distanceDelta;
+        if (Number.isFinite(distanceDelta) && distanceDelta !== 0)
+          return distanceDelta;
       }
     }
 
@@ -493,19 +514,31 @@ const sortResults = (
     }
 
     if (sortMode === 'artist') {
-      return textCompare(a, b, (result) => result.artist) || b.similarity - a.similarity;
+      return (
+        textCompare(a, b, (result) => result.artist) ||
+        b.similarity - a.similarity
+      );
     }
 
     if (sortMode === 'artist-desc') {
-      return textCompare(a, b, (result) => result.artist, 'desc') || b.similarity - a.similarity;
+      return (
+        textCompare(a, b, (result) => result.artist, 'desc') ||
+        b.similarity - a.similarity
+      );
     }
 
     if (sortMode === 'title') {
-      return textCompare(a, b, (result) => result.title) || b.similarity - a.similarity;
+      return (
+        textCompare(a, b, (result) => result.title) ||
+        b.similarity - a.similarity
+      );
     }
 
     if (sortMode === 'title-desc') {
-      return textCompare(a, b, (result) => result.title, 'desc') || b.similarity - a.similarity;
+      return (
+        textCompare(a, b, (result) => result.title, 'desc') ||
+        b.similarity - a.similarity
+      );
     }
 
     if (sortMode === 'medium') {
@@ -513,7 +546,9 @@ const sortResults = (
     }
 
     if (sortMode === 'medium-desc') {
-      return textCompare(a, b, getMedium, 'desc') || b.similarity - a.similarity;
+      return (
+        textCompare(a, b, getMedium, 'desc') || b.similarity - a.similarity
+      );
     }
 
     if (sortMode === 'place') {
@@ -529,7 +564,9 @@ const sortResults = (
     }
 
     if (sortMode === 'source-desc') {
-      return textCompare(a, b, getSourceName, 'desc') || b.similarity - a.similarity;
+      return (
+        textCompare(a, b, getSourceName, 'desc') || b.similarity - a.similarity
+      );
     }
 
     return b.similarity - a.similarity;
@@ -586,7 +623,8 @@ const publicSearchImage = async (
 };
 
 const readBrowseResponse = async (response: Response) => {
-  const payload = (await response.json()) as ApiResponse<BrowseCollectionResponse>;
+  const payload =
+    (await response.json()) as ApiResponse<BrowseCollectionResponse>;
   if (!payload.success || !payload.data) {
     throw new Error(payload.error?.message || 'Failed to browse collection');
   }
@@ -616,13 +654,16 @@ const publicBrowseCollection = async (
   return readBrowseResponse(response);
 };
 
-const getBrowseSort = (sortMode: SortMode): {
+const getBrowseSort = (
+  sortMode: SortMode
+): {
   sortBy: 'title' | 'artist' | 'year' | 'created_at' | 'updated_at';
   sortOrder: 'asc' | 'desc';
 } => {
   if (sortMode === 'time-desc') return { sortBy: 'year', sortOrder: 'desc' };
   if (sortMode === 'time-asc') return { sortBy: 'year', sortOrder: 'asc' };
-  if (sortMode === 'artist-desc') return { sortBy: 'artist', sortOrder: 'desc' };
+  if (sortMode === 'artist-desc')
+    return { sortBy: 'artist', sortOrder: 'desc' };
   if (sortMode === 'artist') return { sortBy: 'artist', sortOrder: 'asc' };
   if (sortMode === 'title-desc') return { sortBy: 'title', sortOrder: 'desc' };
   if (sortMode === 'title') return { sortBy: 'title', sortOrder: 'asc' };
@@ -631,7 +672,8 @@ const getBrowseSort = (sortMode: SortMode): {
 };
 
 export default function SearchPage() {
-  const { gallery, galleryId, preferredRouteId } = useLoaderData<typeof loader>();
+  const { gallery, galleryId, preferredRouteId } =
+    useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, login } = useUser();
 
@@ -648,9 +690,12 @@ export default function SearchPage() {
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
   const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
   const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
-  const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
+  const [shouldSearch, setShouldSearch] = useState(
+    Boolean(searchParams.get('q'))
+  );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedArtwork, setSelectedArtwork] = useState<ArtworkSearchResult | null>(null);
+  const [selectedArtwork, setSelectedArtwork] =
+    useState<ArtworkSearchResult | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
@@ -662,14 +707,11 @@ export default function SearchPage() {
     queryKey: ['search', 'text', galleryId, textQuery, topK, minScore],
     queryFn: async () => {
       if (!textQuery.trim()) return null;
-      return publicSearchText(
-        galleryId,
-        {
-          query: textQuery,
-          topK,
-          minScore,
-        }
-      );
+      return publicSearchText(galleryId, {
+        query: textQuery,
+        topK,
+        minScore,
+      });
     },
     enabled:
       hasMounted &&
@@ -682,16 +724,17 @@ export default function SearchPage() {
     queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore],
     queryFn: async () => {
       if (!imageFile) return null;
-      return publicSearchImage(
-        galleryId,
-        {
-          image: imageFile,
-          topK,
-          minScore,
-        }
-      );
+      return publicSearchImage(galleryId, {
+        image: imageFile,
+        topK,
+        minScore,
+      });
     },
-    enabled: hasMounted && searchMode === 'image' && shouldSearch && imageFile !== null,
+    enabled:
+      hasMounted &&
+      searchMode === 'image' &&
+      shouldSearch &&
+      imageFile !== null,
   });
 
   const browseSort = useMemo(() => getBrowseSort(sortMode), [sortMode]);
@@ -716,7 +759,8 @@ export default function SearchPage() {
     enabled: hasMounted && isBrowsingCollection,
   });
 
-  const currentQuery = searchMode === 'image' ? imageSearchQuery : textSearchQuery;
+  const currentQuery =
+    searchMode === 'image' ? imageSearchQuery : textSearchQuery;
   const rawResults = isBrowsingCollection
     ? browseQuery.data?.pages.flatMap((page) => page.results) || []
     : currentQuery.data?.results || [];
@@ -724,13 +768,16 @@ export default function SearchPage() {
     () => sortResults(rawResults, sortMode, selectedColours),
     [rawResults, selectedColours, sortMode]
   );
-  const visibleResults = isBrowsingCollection ? results : results.slice(0, visibleCount);
-  const totalBrowseResults = browseQuery.data?.pages[0]?.total ?? results.length;
-  const isLoading = hasMounted && (
-    isBrowsingCollection
+  const visibleResults = isBrowsingCollection
+    ? results
+    : results.slice(0, visibleCount);
+  const totalBrowseResults =
+    browseQuery.data?.pages[0]?.total ?? results.length;
+  const isLoading =
+    hasMounted &&
+    (isBrowsingCollection
       ? browseQuery.isLoading
-      : currentQuery.isLoading || currentQuery.isFetching
-  );
+      : currentQuery.isLoading || currentQuery.isFetching);
   const error = isBrowsingCollection ? browseQuery.error : currentQuery.error;
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
@@ -744,20 +791,31 @@ export default function SearchPage() {
       return;
     }
 
-    setVisibleCount((count) => Math.min(count + SEARCH_DISPLAY_INCREMENT, results.length));
-  }, [
-    browseQuery,
-    isBrowsingCollection,
-    results.length,
-  ]);
+    setVisibleCount((count) =>
+      Math.min(count + SEARCH_DISPLAY_INCREMENT, results.length)
+    );
+  }, [browseQuery, isBrowsingCollection, results.length]);
 
   useEffect(() => {
     setVisibleCount(SEARCH_DISPLAY_INCREMENT);
-  }, [galleryId, imageFile?.name, minScore, searchMode, textQuery, topK, isBrowsingCollection]);
+  }, [
+    galleryId,
+    imageFile?.name,
+    minScore,
+    searchMode,
+    textQuery,
+    topK,
+    isBrowsingCollection,
+  ]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
-    if (!node || !hasMoreResults || isLoading || (isBrowsingCollection && browseQuery.isFetchingNextPage)) {
+    if (
+      !node ||
+      !hasMoreResults ||
+      isLoading ||
+      (isBrowsingCollection && browseQuery.isFetchingNextPage)
+    ) {
       return undefined;
     }
 
@@ -857,6 +915,22 @@ export default function SearchPage() {
     setSearchParams({ q: query });
   };
 
+  const runSpectrumColourSort = () => {
+    setSortMode('colour');
+    setSelectedColours([]);
+  };
+
+  const runTargetColourSort = (selection: string) => {
+    setSortMode('colour');
+    setSelectedColours([selection]);
+  };
+
+  const updateSortCustomColour = (hex: string) => {
+    setCustomColour(hex);
+    setSortMode('colour');
+    setSelectedColours([`custom:${hex}`]);
+  };
+
   const updateCustomColour = (hex: string) => {
     setCustomColour(hex);
     if (searchMode === 'colour') {
@@ -865,7 +939,8 @@ export default function SearchPage() {
   };
 
   const runEvalSearch = (suggestion: (typeof EVAL_SUGGESTIONS)[number]) => {
-    const active = textQuery.trim().toLowerCase() === suggestion.query.toLowerCase();
+    const active =
+      textQuery.trim().toLowerCase() === suggestion.query.toLowerCase();
     if (active) {
       clearSearch();
       if (suggestion.type === 'colour') {
@@ -875,7 +950,8 @@ export default function SearchPage() {
     }
 
     if (suggestion.type === 'colour') {
-      const colourId = 'colourId' in suggestion ? suggestion.colourId : undefined;
+      const colourId =
+        'colourId' in suggestion ? suggestion.colourId : undefined;
       runColourSearch(colourId || `custom:${suggestion.dot}`);
       return;
     }
@@ -891,7 +967,10 @@ export default function SearchPage() {
   const updateBrowsePageSize = (value: number) => {
     if (!Number.isFinite(value)) return;
     setBrowsePageSize(
-      Math.min(MAX_BROWSE_PAGE_SIZE, Math.max(MIN_BROWSE_PAGE_SIZE, Math.round(value)))
+      Math.min(
+        MAX_BROWSE_PAGE_SIZE,
+        Math.max(MIN_BROWSE_PAGE_SIZE, Math.round(value))
+      )
     );
   };
 
@@ -1007,7 +1086,9 @@ export default function SearchPage() {
                 ) : (
                   <div className="text-center">
                     <Camera className="mx-auto h-8 w-8 text-white/45" />
-                    <p className="mt-3 text-sm text-white/65">Drop an image to search visually</p>
+                    <p className="mt-3 text-sm text-white/65">
+                      Drop an image to search visually
+                    </p>
                     <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
                       jpg / png / webp
                     </p>
@@ -1033,7 +1114,8 @@ export default function SearchPage() {
                 eval set
               </span>
               {EVAL_SUGGESTIONS.map((query) => {
-                const active = textQuery.trim().toLowerCase() === query.query.toLowerCase();
+                const active =
+                  textQuery.trim().toLowerCase() === query.query.toLowerCase();
                 return (
                   <button
                     key={query.type}
@@ -1045,7 +1127,10 @@ export default function SearchPage() {
                         : 'border-white/10 bg-white/[0.04] text-white/65 hover:bg-white/[0.08] hover:text-white'
                     }`}
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ background: query.dot }} />
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: query.dot }}
+                    />
                     <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
                       {query.type}
                     </span>
@@ -1102,11 +1187,13 @@ export default function SearchPage() {
                         : hasMounted && shouldSearch
                           ? 'No works'
                           : 'Ready'}
-                  {textQuery && searchMode !== 'image' && !isBrowsingCollection && (
-                    <span className="ml-2 normal-case tracking-normal text-white/70">
-                      "{textQuery}"
-                    </span>
-                  )}
+                  {textQuery &&
+                    searchMode !== 'image' &&
+                    !isBrowsingCollection && (
+                      <span className="ml-2 normal-case tracking-normal text-white/70">
+                        "{textQuery}"
+                      </span>
+                    )}
                   {isBrowsingCollection && (
                     <span className="ml-2 normal-case tracking-normal text-white/70">
                       infinite browse
@@ -1120,7 +1207,8 @@ export default function SearchPage() {
                       const active =
                         option.id === 'time'
                           ? sortMode === 'time-desc' || sortMode === 'time-asc'
-                          : sortMode === option.id || SORT_ASC[sortMode] === option.id;
+                          : sortMode === option.id ||
+                            SORT_ASC[sortMode] === option.id;
                       const label =
                         option.id === 'time'
                           ? sortMode === 'time-asc'
@@ -1133,7 +1221,16 @@ export default function SearchPage() {
                           type="button"
                           onClick={() => {
                             if (option.id === 'time') {
-                              setSortMode(sortMode === 'time-desc' ? 'time-asc' : 'time-desc');
+                              setSortMode(
+                                sortMode === 'time-desc'
+                                  ? 'time-asc'
+                                  : 'time-desc'
+                              );
+                              return;
+                            }
+
+                            if (option.id === 'colour') {
+                              setSortMode('colour');
                               return;
                             }
 
@@ -1172,7 +1269,9 @@ export default function SearchPage() {
                           }`}
                         >
                           <Icon className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">{option.label}</span>
+                          <span className="hidden sm:inline">
+                            {option.label}
+                          </span>
                         </button>
                       );
                     })}
@@ -1199,6 +1298,16 @@ export default function SearchPage() {
                 </div>
               </div>
 
+              {sortMode === 'colour' && (
+                <ColourSortControls
+                  selected={selectedColours}
+                  customColour={customColour}
+                  onSpectrum={runSpectrumColourSort}
+                  onSelect={runTargetColourSort}
+                  onCustomChange={updateSortCustomColour}
+                />
+              )}
+
               {isSettingsOpen && (
                 <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
                   <div className="md:col-span-2">
@@ -1215,9 +1324,12 @@ export default function SearchPage() {
                       }`}
                     >
                       <span>
-                        <span className="block text-sm font-medium">Infinite browse</span>
+                        <span className="block text-sm font-medium">
+                          Infinite browse
+                        </span>
                         <span className="mt-0.5 block text-xs text-white/40">
-                          Show the full source-backed collection. Ranked AI search stays capped.
+                          Show the full source-backed collection. Ranked AI
+                          search stays capped.
                         </span>
                       </span>
                       <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
@@ -1227,11 +1339,17 @@ export default function SearchPage() {
                   </div>
                   <label className="grid gap-2">
                     <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                      {isBrowsingCollection ? 'Browse page size' : 'Ranked search cap'}
+                      {isBrowsingCollection
+                        ? 'Browse page size'
+                        : 'Ranked search cap'}
                       <input
                         type="number"
                         min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
-                        max={isBrowsingCollection ? MAX_BROWSE_PAGE_SIZE : MAX_SEARCH_RESULTS}
+                        max={
+                          isBrowsingCollection
+                            ? MAX_BROWSE_PAGE_SIZE
+                            : MAX_SEARCH_RESULTS
+                        }
                         value={isBrowsingCollection ? browsePageSize : topK}
                         onChange={(event) =>
                           isBrowsingCollection
@@ -1244,7 +1362,11 @@ export default function SearchPage() {
                     <input
                       type="range"
                       min={isBrowsingCollection ? MIN_BROWSE_PAGE_SIZE : 1}
-                      max={isBrowsingCollection ? MAX_BROWSE_PAGE_SIZE : MAX_SEARCH_RESULTS}
+                      max={
+                        isBrowsingCollection
+                          ? MAX_BROWSE_PAGE_SIZE
+                          : MAX_SEARCH_RESULTS
+                      }
                       value={isBrowsingCollection ? browsePageSize : topK}
                       onChange={(event) =>
                         isBrowsingCollection
@@ -1254,7 +1376,9 @@ export default function SearchPage() {
                       className="w-full accent-fuchsia-300"
                     />
                   </label>
-                  <label className={`grid gap-2 ${isBrowsingCollection ? 'opacity-45' : ''}`}>
+                  <label
+                    className={`grid gap-2 ${isBrowsingCollection ? 'opacity-45' : ''}`}
+                  >
                     <span className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
                       Minimum score
                       <input
@@ -1264,7 +1388,9 @@ export default function SearchPage() {
                         step={5}
                         value={Math.round(minScore * 100)}
                         disabled={isBrowsingCollection}
-                        onChange={(event) => updateMinScorePercent(Number(event.target.value))}
+                        onChange={(event) =>
+                          updateMinScorePercent(Number(event.target.value))
+                        }
                         className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
                       />
                     </span>
@@ -1275,7 +1401,9 @@ export default function SearchPage() {
                       step={5}
                       value={Math.round(minScore * 100)}
                       disabled={isBrowsingCollection}
-                      onChange={(event) => updateMinScorePercent(Number(event.target.value))}
+                      onChange={(event) =>
+                        updateMinScorePercent(Number(event.target.value))
+                      }
                       className="w-full accent-fuchsia-300"
                     />
                   </label>
@@ -1285,7 +1413,9 @@ export default function SearchPage() {
           </div>
 
           {isLoading && (
-            <div className="py-16 text-center text-sm text-white/45">Searching artworks...</div>
+            <div className="py-16 text-center text-sm text-white/45">
+              Searching artworks...
+            </div>
           )}
 
           {error && (
@@ -1313,7 +1443,9 @@ export default function SearchPage() {
                   <button
                     type="button"
                     onClick={loadMoreResults}
-                    disabled={isBrowsingCollection && browseQuery.isFetchingNextPage}
+                    disabled={
+                      isBrowsingCollection && browseQuery.isFetchingNextPage
+                    }
                     className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
                   >
                     {isBrowsingCollection && browseQuery.isFetchingNextPage
@@ -1329,14 +1461,18 @@ export default function SearchPage() {
             </>
           )}
 
-          {!isLoading && !error && hasMounted && shouldSearch && results.length === 0 && (
-            <div className="py-16 text-center">
-              <p className="text-white/55">No artworks found.</p>
-              <p className="mt-1 text-sm text-white/35">
-                Try a broader query or lower the minimum score.
-              </p>
-            </div>
-          )}
+          {!isLoading &&
+            !error &&
+            hasMounted &&
+            shouldSearch &&
+            results.length === 0 && (
+              <div className="py-16 text-center">
+                <p className="text-white/55">No artworks found.</p>
+                <p className="mt-1 text-sm text-white/35">
+                  Try a broader query or lower the minimum score.
+                </p>
+              </div>
+            )}
         </section>
       </main>
       <SearchArtworkDialog
@@ -1402,7 +1538,9 @@ function SearchArtworkDialog({
                     {artwork.title || 'Untitled'}
                   </Dialog.Title>
                   {artwork.artist && (
-                    <p className="mt-2 text-sm text-white/60">{artwork.artist}</p>
+                    <p className="mt-2 text-sm text-white/60">
+                      {artwork.artist}
+                    </p>
                   )}
                 </div>
                 <Dialog.Close asChild>
@@ -1435,9 +1573,14 @@ function SearchArtworkDialog({
                   </a>
                 )}
                 {ngsUrl && (
-                  <PublicRecordLink href={ngsUrl} label="National Gallery Singapore record" />
+                  <PublicRecordLink
+                    href={ngsUrl}
+                    label="National Gallery Singapore record"
+                  />
                 )}
-                {rootsUrl && <PublicRecordLink href={rootsUrl} label="NHB Roots record" />}
+                {rootsUrl && (
+                  <PublicRecordLink href={rootsUrl} label="NHB Roots record" />
+                )}
               </div>
 
               {description && (
@@ -1445,7 +1588,9 @@ function SearchArtworkDialog({
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
                     Catalogue text
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-white/70">{description}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-white/70">
+                    {description}
+                  </p>
                 </section>
               )}
 
@@ -1475,7 +1620,9 @@ function SearchArtworkDialog({
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-100/55">
                     AI caption
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-white/68">{caption}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-white/68">
+                    {caption}
+                  </p>
                 </section>
               )}
             </div>
@@ -1497,6 +1644,81 @@ function PublicRecordLink({ href, label }: { href: string; label: string }) {
       {label}
       <ExternalLink className="h-3.5 w-3.5" />
     </a>
+  );
+}
+
+function ColourSortControls({
+  selected,
+  customColour,
+  onSpectrum,
+  onSelect,
+  onCustomChange,
+}: {
+  selected: string[];
+  customColour: string;
+  onSpectrum: () => void;
+  onSelect: (id: string) => void;
+  onCustomChange: (hex: string) => void;
+}) {
+  const activeColour = selected[0] ? getSelectedColour(selected[0]) : null;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-white/[0.07] pt-3">
+      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+        Colour sort
+      </span>
+      <button
+        type="button"
+        onClick={onSpectrum}
+        className={`inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
+          selected.length
+            ? 'text-white/45 hover:bg-white/[0.06] hover:text-white/80'
+            : 'bg-white/[0.12] text-white'
+        }`}
+      >
+        Spectrum
+      </button>
+      <div className="flex h-8 min-w-[260px] flex-1 overflow-hidden rounded-md border border-white/10 sm:flex-none sm:basis-[420px]">
+        {COLOURS.map((colour) => {
+          const active = selected.includes(colour.id);
+          return (
+            <button
+              key={colour.id}
+              type="button"
+              onClick={() => onSelect(colour.id)}
+              title={`Nearest ${colour.name.toLowerCase()}`}
+              aria-label={`Sort by nearest ${colour.name.toLowerCase()}`}
+              aria-pressed={active}
+              className="relative min-w-6 flex-1 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none"
+              style={{ background: colour.hex }}
+            >
+              {active && (
+                <span className="absolute inset-0 flex items-center justify-center ring-2 ring-inset ring-white">
+                  <span className="h-2 w-2 rounded-full bg-white shadow-[0_1px_8px_rgba(0,0,0,0.8)]" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <label className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-2.5">
+        <input
+          type="color"
+          value={customColour}
+          onChange={(event) => onCustomChange(event.target.value)}
+          className="h-5 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
+          aria-label="Choose custom colour sort target"
+        />
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-white/55">
+          {activeColour?.id.startsWith('custom:')
+            ? activeColour.name
+            : customColour}
+        </span>
+      </label>
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/28">
+        {activeColour ? `Nearest ${activeColour.name}` : 'Palette band order'}
+      </span>
+    </div>
   );
 }
 
@@ -1529,7 +1751,10 @@ function ColourSearchPanel({
         {activeColour && (
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70">
-              <span className="h-3 w-3 rounded-full" style={{ background: activeColour.hex }} />
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{ background: activeColour.hex }}
+              />
               {activeColour.name}
             </span>
             <button
@@ -1755,7 +1980,8 @@ function SalonResults({
                 {result.title || 'Untitled'}
               </span>
               <br />
-              {result.artist || 'Unknown artist'} / {getDateText(result) || 'undated'}
+              {result.artist || 'Unknown artist'} /{' '}
+              {getDateText(result) || 'undated'}
             </p>
           </button>
         );
@@ -1869,7 +2095,9 @@ function ResultCard({
             <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
               {result.title || 'Untitled'}
             </h2>
-            <p className="mt-1 text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+            <p className="mt-1 text-sm text-white/60">
+              {result.artist || 'Unknown artist'}
+            </p>
           </button>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
             #{rank.toString().padStart(2, '0')}
@@ -1916,9 +2144,15 @@ function MetadataLine({
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-white/45">
       {facets.map((facet, index) => (
-        <span key={`${facet.value}-${index}`} className="inline-flex min-w-0 items-center gap-2">
+        <span
+          key={`${facet.value}-${index}`}
+          className="inline-flex min-w-0 items-center gap-2"
+        >
           {index > 0 && (
-            <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-white/18" />
+            <span
+              aria-hidden="true"
+              className="h-1 w-1 shrink-0 rounded-full bg-white/18"
+            />
           )}
           <button
             type="button"
@@ -1936,7 +2170,11 @@ function MetadataLine({
 
 function PaletteDots({ colours }: { colours: string[] }) {
   if (!colours.length) {
-    return <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">No palette</span>;
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">
+        No palette
+      </span>
+    );
   }
 
   return (
@@ -2020,7 +2258,10 @@ function TableResults({
         </thead>
         <tbody className="divide-y divide-white/[0.06]">
           {results.map((result, index) => (
-            <tr key={result.id} className="transition-colors hover:bg-white/[0.035]">
+            <tr
+              key={result.id}
+              className="transition-colors hover:bg-white/[0.035]"
+            >
               <td className="px-3 py-3 font-mono text-white/35">
                 {(index + 1).toString().padStart(2, '0')}
               </td>
@@ -2043,7 +2284,9 @@ function TableResults({
                     </span>
                   )}
                   <span>
-                    <span className="block font-medium">{result.title || 'Untitled'}</span>
+                    <span className="block font-medium">
+                      {result.title || 'Untitled'}
+                    </span>
                     {getAccession(result) && (
                       <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
                         {getAccession(result)}
@@ -2052,10 +2295,18 @@ function TableResults({
                   </span>
                 </button>
               </td>
-              <td className="px-3 py-3 text-white/65">{result.artist || 'Unknown'}</td>
-              <td className="px-3 py-3 text-white/55">{getDateText(result) || '-'}</td>
-              <td className="px-3 py-3 text-white/55">{getPlace(result) || '-'}</td>
-              <td className="px-3 py-3 text-white/55">{getMedium(result) || '-'}</td>
+              <td className="px-3 py-3 text-white/65">
+                {result.artist || 'Unknown'}
+              </td>
+              <td className="px-3 py-3 text-white/55">
+                {getDateText(result) || '-'}
+              </td>
+              <td className="px-3 py-3 text-white/55">
+                {getPlace(result) || '-'}
+              </td>
+              <td className="px-3 py-3 text-white/55">
+                {getMedium(result) || '-'}
+              </td>
               <td className="px-3 py-3 text-white/55">
                 {getSourceUrl(result) ? (
                   <a
