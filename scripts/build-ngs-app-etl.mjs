@@ -103,8 +103,12 @@ const sourceArtworks = query(`
     roots_listing_url,
     created_at
   FROM artworks
+  WHERE in_ngs_catalog = 1
+    OR coalesce(ngs_detail_url, '') <> ''
+    OR coalesce(roots_listing_url, '') <> ''
   ORDER BY id
 `);
+const sourceArtworkIds = new Set(sourceArtworks.map((artwork) => artwork.id));
 const sourceAssets = query(`
   SELECT
     id,
@@ -124,7 +128,7 @@ const sourceAssets = query(`
     created_at
   FROM assets
   ORDER BY artwork_id, role
-`);
+`).filter((asset) => sourceArtworkIds.has(asset.artwork_id));
 
 const assetsByArtwork = new Map();
 for (const asset of sourceAssets) {

@@ -24,6 +24,19 @@ const firstText = (...values: unknown[]) => {
   return null;
 };
 
+export const isInternalRecordId = (value: unknown) => {
+  const text = asText(value);
+  return Boolean(text && /^data_aws\d*k_/i.test(text));
+};
+
+const firstPublicText = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = asText(value);
+    if (text && !isInternalRecordId(text)) return text;
+  }
+  return null;
+};
+
 export const getPublicMetadata = (artwork: PublicArtwork) =>
   asRecord(artwork.custom_metadata || artwork.metadata);
 
@@ -86,6 +99,11 @@ export const getPublicDescription = (artwork: PublicArtwork) => {
   return firstText(artwork.description, meta.description, meta.catalogue_description);
 };
 
+export const getPublicAccession = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  return firstPublicText(artwork.accession_number, meta.accessionNumber, meta.accession_number);
+};
+
 export const getGeographicAssociation = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
   const sourceRecords = getSourceRecords(artwork);
@@ -130,14 +148,13 @@ export const getPublicCatalogueRows = (artwork: PublicArtwork): PublicMetadataRo
         meta.publishedDimension ||
         formatDimensions(artwork.dimensions),
     ],
-    ['Accession', artwork.accession_number || meta.accessionNumber || meta.accession_number],
+    ['Accession', getPublicAccession(artwork)],
     ['Credit line', artwork.credit_line || meta.creditLine || meta.credit_line],
     [
       'Source institution',
       artwork.source_institution || meta.sourceInstitution || meta.source_institution,
     ],
     ['Source collection', artwork.source_collection || meta.sourceCollection || meta.source_collection],
-    ['Source record ID', artwork.source_record_id || meta.sourceRecordId || meta.source_record_id],
   ];
 
   return rows

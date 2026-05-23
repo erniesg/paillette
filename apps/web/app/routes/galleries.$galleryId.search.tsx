@@ -29,6 +29,7 @@ import {
   getGeneratedCaptionText,
   getGeographicAssociation,
   getNgsUrl,
+  getPublicAccession,
   getPublicCatalogueRows,
   getPublicDescription,
   getPublicImageUrl,
@@ -251,8 +252,7 @@ const getDateText = (result: ArtworkSearchResult) =>
 const getMedium = (result: ArtworkSearchResult) =>
   asText(getMeta(result).medium) || asText(getMeta(result).classification);
 
-const getAccession = (result: ArtworkSearchResult) =>
-  asText(getMeta(result).accessionNumber) || asText(getMeta(result).accession_number);
+const getAccession = (result: ArtworkSearchResult) => getPublicAccession(result);
 
 const getSourceName = (result: ArtworkSearchResult) =>
   asText(getMeta(result).sourceInstitution) ||
