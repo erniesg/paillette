@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getPublicCatalogueRows,
   getPublicDescription,
   getPublicDescriptionDetails,
 } from '../public-artwork-metadata';
@@ -77,8 +78,58 @@ describe('getPublicDescription', () => {
       })
     ).toEqual({
       source: 'ngs',
-      sourceLabel: 'National Gallery Singapore source fields',
+      sourceLabel: 'From National Gallery Singapore',
       text: 'Public catalogue text.',
     });
+  });
+
+  it('uses field source provenance for top-level catalogue text', () => {
+    expect(
+      getPublicDescriptionDetails({
+        metadata: {
+          description: 'Top-level public text from the catalogue.',
+          field_sources: {
+            description: 'ngs',
+          },
+        },
+      })
+    ).toEqual({
+      source: 'metadata',
+      sourceLabel: 'From National Gallery Singapore',
+      text: 'Top-level public text from the catalogue.',
+    });
+  });
+
+  it('reports source labels for public catalogue fields', () => {
+    expect(
+      getPublicCatalogueRows({
+        artist: 'Lim Tze Peng',
+        metadata: {
+          date_text: '1975',
+          medium: 'Ink and colour pigments on paper',
+          field_sources: {
+            artist: 'ngs',
+            date_text: 'ngs',
+            medium: 'ngs_artplus_catalog',
+          },
+        },
+      }).slice(0, 3)
+    ).toEqual([
+      {
+        label: 'Artist',
+        value: 'Lim Tze Peng',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Date',
+        value: '1975',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Medium',
+        value: 'Ink and colour pigments on paper',
+        sourceLabel: 'NGS Art+ catalogue',
+      },
+    ]);
   });
 });

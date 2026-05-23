@@ -7,6 +7,7 @@ type PublicArtwork = Partial<Artwork & ArtworkSearchResult> &
 export type PublicMetadataRow = {
   label: string;
   value: string;
+  sourceLabel: string;
 };
 
 export type PublicDescriptionDetails = {
@@ -58,6 +59,55 @@ const firstMatchingText = (
 
 const isNgsUrl = (value: string) => /nationalgallery\.sg/i.test(value);
 const isRootsUrl = (value: string) => /roots\.gov\.sg/i.test(value);
+
+const NGS_SOURCE_LABEL = 'National Gallery Singapore';
+const ROOTS_SOURCE_LABEL = 'NHB Roots';
+const METADATA_SOURCE_LABEL = 'Public metadata';
+
+const SOURCE_LABELS: Record<string, string> = {
+  ngs: NGS_SOURCE_LABEL,
+  national_gallery_singapore: NGS_SOURCE_LABEL,
+  roots: ROOTS_SOURCE_LABEL,
+  nhb_roots: ROOTS_SOURCE_LABEL,
+  ngs_artplus_catalog: 'NGS Art+ catalogue',
+  artplus: 'NGS Art+ catalogue',
+  df_10K: 'Colour dataset',
+  '12class_model': 'AI tag model',
+  metadata: METADATA_SOURCE_LABEL,
+};
+
+const formatSourceLabel = (value: unknown) => {
+  const text = asText(value);
+  if (!text) return null;
+  return (
+    SOURCE_LABELS[text] ||
+    text.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+};
+
+const getPublicFieldSources = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  return {
+    ...asRecord(meta.fieldSources),
+    ...asRecord(meta.field_sources),
+    ...asRecord(artwork.fieldSources),
+    ...asRecord(artwork.field_sources),
+  };
+};
+
+const getFieldSourceLabel = (
+  fieldSources: Record<string, unknown>,
+  ...keys: string[]
+) => {
+  for (const key of keys) {
+    const label = formatSourceLabel(fieldSources[key]);
+    if (label) return label;
+  }
+  return null;
+};
+
+const asFromSourceLabel = (label: string) =>
+  label.toLowerCase().startsWith('from ') ? label : `From ${label}`;
 
 export const isMalformedDateText = (value: unknown) => {
   const text = asText(value);
@@ -225,11 +275,27 @@ export const getPublicDescriptionDetails = (
   const sourceRecords = getSourceRecords(artwork);
   const ngsRecord = asRecord(sourceRecords.ngs);
   const rootsRecord = asRecord(sourceRecords.roots);
+  const fieldSources = getPublicFieldSources(artwork);
+  const metadataTextSource = getFieldSourceLabel(
+    fieldSources,
+    'description',
+    'catalogue_description',
+    'catalogueDescription',
+    'catalogue_text',
+    'catalogueText',
+    'source_description',
+    'sourceDescription',
+    'source_caption',
+    'sourceCaption',
+    'label_text',
+    'labelText',
+    'caption'
+  );
 
   return firstPublicCatalogueDetails(
     {
       source: 'ngs',
-      sourceLabel: 'National Gallery Singapore source fields',
+      sourceLabel: 'From National Gallery Singapore',
       values: [
         ngsRecord.objDescriptionClb,
         ngsRecord.ocspWebText,
@@ -243,7 +309,7 @@ export const getPublicDescriptionDetails = (
     },
     {
       source: 'roots',
-      sourceLabel: 'NHB Roots source fields',
+      sourceLabel: 'From NHB Roots',
       values: [
         rootsRecord.description,
         rootsRecord.caption,
@@ -255,7 +321,9 @@ export const getPublicDescriptionDetails = (
     },
     {
       source: 'metadata',
-      sourceLabel: 'Public catalogue metadata',
+      sourceLabel: asFromSourceLabel(
+        metadataTextSource || METADATA_SOURCE_LABEL
+      ),
       values: [
         artwork.description,
         meta.description,
@@ -318,45 +386,121 @@ export const getPublicCatalogueRows = (
   artwork: PublicArtwork
 ): PublicMetadataRow[] => {
   const meta = getPublicMetadata(artwork);
-  const rows: Array<[string, unknown]> = [
-    ['Artist', artwork.artist],
-    ['Date', getPublicDateText(artwork)],
-    ['Medium', artwork.medium || meta.medium],
-    ['Classification', artwork.classification || meta.classification],
-    ['Culture', artwork.culture || meta.culture],
-    ['Geographic association', getGeographicAssociation(artwork)],
-    [
-      'Dimensions',
-      meta.dimensions_text ||
+  const fieldSources = getPublicFieldSources(artwork);
+  const inferredRecordSource =
+    getFieldSourceLabel(fieldSources, 'title') ||
+    (getNgsUrl(artwork)
+      ? NGS_SOURCE_LABEL
+      : getRootsUrl(artwork)
+        ? ROOTS_SOURCE_LABEL
+        : METADATA_SOURCE_LABEL);
+  const rows: Array<{
+    label: string;
+    value: unknown;
+    sourceLabel?: string | null;
+  }> = [
+    {
+      label: 'Artist',
+      value: artwork.artist,
+      sourceLabel: getFieldSourceLabel(fieldSources, 'artist'),
+    },
+    {
+      label: 'Date',
+      value: getPublicDateText(artwork),
+      sourceLabel: getFieldSourceLabel(fieldSources, 'date_text', 'dateText'),
+    },
+    {
+      label: 'Medium',
+      value: artwork.medium || meta.medium,
+      sourceLabel: getFieldSourceLabel(fieldSources, 'medium'),
+    },
+    {
+      label: 'Classification',
+      value: artwork.classification || meta.classification,
+      sourceLabel: getFieldSourceLabel(fieldSources, 'classification'),
+    },
+    {
+      label: 'Culture',
+      value: artwork.culture || meta.culture,
+      sourceLabel: getFieldSourceLabel(fieldSources, 'culture'),
+    },
+    {
+      label: 'Geographic association',
+      value: getGeographicAssociation(artwork),
+      sourceLabel: getFieldSourceLabel(
+        fieldSources,
+        'geographic_association',
+        'geographicAssociation',
+        'geographical_association',
+        'geographicalAssociation',
+        'associated_place',
+        'associatedPlace',
+        'creation_place_original_location',
+        'creationPlaceOriginalLocation'
+      ),
+    },
+    {
+      label: 'Dimensions',
+      value:
+        meta.dimensions_text ||
         meta.dimensionsText ||
         meta.published_dimension ||
         meta.publishedDimension ||
         formatDimensions(artwork.dimensions),
-    ],
-    ['Accession', getPublicAccession(artwork)],
-    [
-      'Credit line',
-      firstPublicCatalogueText(
+      sourceLabel: getFieldSourceLabel(
+        fieldSources,
+        'dimensions',
+        'dimensions_text',
+        'dimensionsText',
+        'published_dimension',
+        'publishedDimension'
+      ),
+    },
+    {
+      label: 'Accession',
+      value: getPublicAccession(artwork),
+      sourceLabel: getFieldSourceLabel(
+        fieldSources,
+        'accession_number',
+        'accessionNumber'
+      ),
+    },
+    {
+      label: 'Credit line',
+      value: firstPublicCatalogueText(
         artwork.credit_line,
         meta.creditLine,
         meta.credit_line
       ),
-    ],
-    [
-      'Source institution',
-      artwork.source_institution ||
+      sourceLabel: getFieldSourceLabel(
+        fieldSources,
+        'credit_line',
+        'creditLine'
+      ),
+    },
+    {
+      label: 'Source institution',
+      value:
+        artwork.source_institution ||
         meta.sourceInstitution ||
         meta.source_institution,
-    ],
-    [
-      'Source collection',
-      artwork.source_collection ||
+      sourceLabel: inferredRecordSource,
+    },
+    {
+      label: 'Source collection',
+      value:
+        artwork.source_collection ||
         meta.sourceCollection ||
         meta.source_collection,
-    ],
+      sourceLabel: inferredRecordSource,
+    },
   ];
 
   return rows
-    .map(([label, value]) => ({ label, value: String(value ?? '').trim() }))
+    .map(({ label, value, sourceLabel }) => ({
+      label,
+      value: String(value ?? '').trim(),
+      sourceLabel: sourceLabel || inferredRecordSource,
+    }))
     .filter((row) => row.value.length > 0);
 };

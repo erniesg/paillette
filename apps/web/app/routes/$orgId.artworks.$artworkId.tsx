@@ -121,19 +121,19 @@ export default function ArtworkDetailPage() {
             </Section>
           )}
 
-          <Section
-            title="Catalogue Metadata"
-            eyebrow="Public National Gallery Singapore / NHB Roots fields"
-          >
+          <Section title="Catalogue fields" eyebrow="Source shown per field">
             <dl className="grid gap-3 sm:grid-cols-2">
-              {catalogRows.map(({ label, value }) => (
+              {catalogRows.map(({ label, value, sourceLabel }) => (
                 <div
                   key={label}
                   className="rounded-md border border-white/[0.08] bg-black/20 p-3"
                 >
-                  <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                    {label}
-                  </dt>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+                      {label}
+                    </dt>
+                    <SourceBadge label={sourceLabel} />
+                  </div>
                   <dd className="mt-1 text-sm text-white/75">{value}</dd>
                 </div>
               ))}
@@ -142,8 +142,8 @@ export default function ArtworkDetailPage() {
 
           {Object.keys(caption).length > 0 && (
             <Section
-              title="AI caption"
-              eyebrow="AI generated, not catalogue metadata"
+              title="Generated caption"
+              eyebrow="Paillette AI, not catalogue metadata"
             >
               <p className="leading-relaxed text-white/70">
                 {caption.text || 'No caption text available.'}
@@ -191,6 +191,14 @@ export default function ArtworkDetailPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+function SourceBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.06] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cyan-100/60">
+      {label}
+    </span>
   );
 }
 

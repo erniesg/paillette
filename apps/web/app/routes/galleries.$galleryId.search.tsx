@@ -2046,8 +2046,8 @@ function SearchArtworkDialog({
         {artwork && (
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none md:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
             <Dialog.Description className="sr-only">
-              Public catalogue metadata, catalogue text, and AI caption for the
-              selected artwork.
+              Source-labelled catalogue text, public fields, and generated
+              caption for the selected artwork.
             </Dialog.Description>
             <div className="flex min-h-[280px] items-center justify-center bg-black/35 p-4 md:min-h-[620px]">
               {imageUrl ? (
@@ -2120,12 +2120,12 @@ function SearchArtworkDialog({
 
               {descriptionDetails && (
                 <section className="mt-6">
-                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                    Catalogue text
-                  </h3>
-                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100/45">
-                    {descriptionDetails.sourceLabel}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+                      Catalogue text
+                    </h3>
+                    <SourceBadge label={descriptionDetails.sourceLabel} />
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-white/70">
                     {descriptionDetails.text}
                   </p>
@@ -2135,17 +2135,20 @@ function SearchArtworkDialog({
               {catalogRows.length > 0 && (
                 <section className="mt-6">
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                    Public National Gallery Singapore / NHB Roots fields
+                    Catalogue fields
                   </h3>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {catalogRows.map(({ label, value }) => (
+                    {catalogRows.map(({ label, value, sourceLabel }) => (
                       <div
                         key={label}
                         className="rounded-md border border-white/[0.08] bg-black/20 p-3"
                       >
-                        <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
-                          {label}
-                        </dt>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
+                            {label}
+                          </dt>
+                          <SourceBadge label={sourceLabel} compact />
+                        </div>
                         <dd className="mt-1 text-sm text-white/70">{value}</dd>
                       </div>
                     ))}
@@ -2155,9 +2158,12 @@ function SearchArtworkDialog({
 
               {caption && (
                 <section className="mt-6 rounded-md border border-cyan-200/10 bg-cyan-200/[0.04] p-4">
-                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-100/55">
-                    AI caption
-                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-100/55">
+                      Generated caption
+                    </h3>
+                    <SourceBadge label="Paillette AI" />
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-white/68">
                     {caption}
                   </p>
@@ -2168,6 +2174,24 @@ function SearchArtworkDialog({
         )}
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function SourceBadge({
+  label,
+  compact = false,
+}: {
+  label: string;
+  compact?: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.06] font-mono uppercase tracking-[0.12em] text-cyan-100/60 ${
+        compact ? 'px-1.5 py-0.5 text-[8px]' : 'px-2 py-0.5 text-[9px]'
+      }`}
+    >
+      {label}
+    </span>
   );
 }
 
