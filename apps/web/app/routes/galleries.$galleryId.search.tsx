@@ -60,9 +60,10 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   }
 }
 
-type SearchMode = 'text' | 'image';
+type SearchMode = 'text' | 'image' | 'colour';
 type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
 type SortMode = 'relevance' | 'colour' | 'time-desc' | 'time-asc' | 'artist' | 'title';
+type SortControlId = Exclude<SortMode, 'time-desc' | 'time-asc'> | 'time';
 
 const EVAL_SUGGESTIONS = [
   {
@@ -112,6 +113,7 @@ const EVAL_SUGGESTIONS = [
     label: 'muted sage green',
     query: 'muted sage green',
     dot: '#8a9a7a',
+    colourId: 'sage',
   },
 ];
 
@@ -129,11 +131,24 @@ const COLOURS = [
   { id: 'charcoal', hex: '#221e1a', name: 'Charcoal' },
 ];
 
-const SORT_OPTIONS: { id: SortMode; label: string; icon: LucideIcon }[] = [
+const COLOUR_SEARCH_TERMS: Record<string, string> = {
+  navy: 'dark navy blue',
+  cobalt: 'cobalt blue',
+  steel: 'cool steel blue grey',
+  sage: 'muted sage green',
+  olive: 'olive green',
+  gold: 'golden ochre yellow',
+  amber: 'warm amber orange',
+  rust: 'rust red orange',
+  umber: 'warm earth-tone browns',
+  bone: 'warm bone beige',
+  charcoal: 'near-black high-contrast monochrome',
+};
+
+const SORT_OPTIONS: { id: SortControlId; label: string; icon: LucideIcon }[] = [
   { id: 'relevance', label: 'Relevance', icon: ListFilter },
   { id: 'colour', label: 'Colour', icon: Palette },
-  { id: 'time-desc', label: 'Newest', icon: Clock },
-  { id: 'time-asc', label: 'Oldest', icon: Clock },
+  { id: 'time', label: 'Time', icon: Clock },
   { id: 'artist', label: 'Artist', icon: ListFilter },
   { id: 'title', label: 'Title', icon: ListFilter },
 ];
@@ -189,6 +204,17 @@ const getSelectedColour = (selection: string) => {
   }
 
   return COLOURS.find((colour) => colour.id === selection) || null;
+};
+
+const getColourSearchText = (selection: string) => {
+  const colour = getSelectedColour(selection);
+  if (!colour) return '';
+
+  if (selection.startsWith('custom:')) {
+    return `${colour.hex} colour`;
+  }
+
+  return COLOUR_SEARCH_TERMS[selection] || `${colour.name.toLowerCase()} colour`;
 };
 
 const asText = (value: unknown) =>
@@ -388,7 +414,6 @@ export default function SearchPage() {
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(0.3);
   const [shouldSearch, setShouldSearch] = useState(Boolean(searchParams.get('q')));
-  const [isColourPanelOpen, setIsColourPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -411,7 +436,7 @@ export default function SearchPage() {
     },
     enabled:
       hasMounted &&
-      searchMode === 'text' &&
+      (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
       textQuery.trim().length > 0,
   });
@@ -432,7 +457,7 @@ export default function SearchPage() {
     enabled: hasMounted && searchMode === 'image' && shouldSearch && imageFile !== null,
   });
 
-  const currentQuery = searchMode === 'text' ? textSearchQuery : imageSearchQuery;
+  const currentQuery = searchMode === 'image' ? imageSearchQuery : textSearchQuery;
   const rawResults = currentQuery.data?.results || [];
   const results = useMemo(
     () => sortResults(rawResults, sortMode, selectedColours),
@@ -489,26 +514,54 @@ export default function SearchPage() {
     setSearchParams({ q: trimmed });
   };
 
+  const clearSearch = () => {
+    setTextQuery('');
+    setShouldSearch(false);
+    setSearchParams({}, { replace: true });
+  };
+
   const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
     setShouldSearch(false);
   };
 
-  const toggleColour = (id: string) => {
-    setSelectedColours((prev) =>
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
-    );
+  const runColourSearch = (selection: string) => {
+    const query = getColourSearchText(selection);
+    if (!query) return;
+
+    setSearchMode('colour');
+    setSelectedColours([selection]);
     setSortMode('colour');
+    setTextQuery(query);
+    setShouldSearch(true);
+    setSearchParams({ q: query });
   };
 
-  const chooseCustomColour = (hex: string) => {
+  const updateCustomColour = (hex: string) => {
     setCustomColour(hex);
-    setSelectedColours((prev) => [
-      `custom:${hex}`,
-      ...prev.filter((value) => !value.startsWith('custom:')),
-    ]);
-    setSortMode('colour');
+    if (searchMode === 'colour') {
+      setSelectedColours([`custom:${hex}`]);
+    }
+  };
+
+  const runEvalSearch = (suggestion: (typeof EVAL_SUGGESTIONS)[number]) => {
+    const active = textQuery.trim().toLowerCase() === suggestion.query.toLowerCase();
+    if (active) {
+      clearSearch();
+      if (suggestion.type === 'colour') {
+        setSelectedColours([]);
+      }
+      return;
+    }
+
+    if (suggestion.type === 'colour') {
+      const colourId = 'colourId' in suggestion ? suggestion.colourId : undefined;
+      runColourSearch(colourId || `custom:${suggestion.dot}`);
+      return;
+    }
+
+    runTextSearch(suggestion.query);
   };
 
   const updateTopK = (value: number) => {
@@ -599,7 +652,7 @@ export default function SearchPage() {
                   className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
                 />
               </div>
-            ) : (
+            ) : searchMode === 'image' ? (
               <div
                 {...getRootProps()}
                 className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
@@ -638,6 +691,18 @@ export default function SearchPage() {
                   </div>
                 )}
               </div>
+            ) : (
+              <ColourSearchPanel
+                selected={selectedColours}
+                customColour={customColour}
+                onSelect={runColourSearch}
+                onCustomChange={updateCustomColour}
+                onCustomSearch={() => runColourSearch(`custom:${customColour}`)}
+                onClear={() => {
+                  setSelectedColours([]);
+                  clearSearch();
+                }}
+              />
             )}
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -650,16 +715,7 @@ export default function SearchPage() {
                   <button
                     key={query.type}
                     type="button"
-                    onClick={() => {
-                      if (active) {
-                        setTextQuery('');
-                        setShouldSearch(false);
-                        setSearchParams({}, { replace: true });
-                        return;
-                      }
-
-                      runTextSearch(query.query);
-                    }}
+                    onClick={() => runEvalSearch(query)}
                     className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
                       active
                         ? 'border-white/30 bg-white/[0.12] text-white'
@@ -687,6 +743,12 @@ export default function SearchPage() {
                   label="Image"
                   onClick={() => setSearchMode('image')}
                 />
+                <ModeButton
+                  active={searchMode === 'colour'}
+                  icon={Palette}
+                  label="Colour"
+                  onClick={() => setSearchMode('colour')}
+                />
               </div>
             </div>
           </motion.div>
@@ -704,61 +766,51 @@ export default function SearchPage() {
                       : hasMounted && shouldSearch
                         ? 'No works'
                         : 'Ready'}
-                  {textQuery && searchMode === 'text' && (
+                  {textQuery && searchMode !== 'image' && (
                     <span className="ml-2 normal-case tracking-normal text-white/70">
                       "{textQuery}"
                     </span>
                   )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsColourPanelOpen((value) => !value);
-                      setIsSettingsOpen(false);
-                    }}
-                    aria-expanded={isColourPanelOpen}
-                    aria-label="Colour controls"
-                    className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
-                      isColourPanelOpen || selectedColours.length
-                        ? 'border-white/20 bg-white/[0.12] text-white'
-                        : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                    }`}
-                  >
-                    <Palette className="h-3.5 w-3.5" />
-                    <span>Colour</span>
-                    <span className="flex items-center -space-x-1">
-                      {(selectedColours.length ? selectedColours : ['custom:#2f3540'])
-                        .slice(0, 4)
-                        .map((id) => {
-                          const colour = getSelectedColour(id);
-                          return (
-                            <span
-                              key={id}
-                              className="h-3.5 w-3.5 rounded-full border border-black/60"
-                              style={{ background: colour?.hex || '#2f3540' }}
-                            />
-                          );
-                        })}
-                    </span>
-                  </button>
                   <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
                     {SORT_OPTIONS.map((option) => {
                       const Icon = option.icon;
+                      const active =
+                        option.id === 'time'
+                          ? sortMode === 'time-desc' || sortMode === 'time-asc'
+                          : sortMode === option.id;
+                      const label =
+                        option.id === 'time'
+                          ? sortMode === 'time-asc'
+                            ? 'Oldest'
+                            : 'Newest'
+                          : option.label;
                       return (
                         <button
                           key={option.id}
                           type="button"
-                          onClick={() => setSortMode(option.id)}
-                          title={`Sort by ${option.label.toLowerCase()}`}
+                          onClick={() => {
+                            if (option.id === 'time') {
+                              setSortMode(sortMode === 'time-desc' ? 'time-asc' : 'time-desc');
+                              return;
+                            }
+
+                            setSortMode(option.id);
+                          }}
+                          title={
+                            option.id === 'time'
+                              ? 'Toggle newest or oldest'
+                              : `Sort by ${option.label.toLowerCase()}`
+                          }
                           className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                            sortMode === option.id
+                            active
                               ? 'bg-white/[0.14] text-white'
                               : 'text-white/45 hover:text-white/80'
                           }`}
                         >
                           <Icon className="h-3.5 w-3.5" />
-                          <span className="hidden md:inline">{option.label}</span>
+                          <span className="hidden md:inline">{label}</span>
                         </button>
                       );
                     })}
@@ -786,10 +838,7 @@ export default function SearchPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsSettingsOpen((value) => !value);
-                      setIsColourPanelOpen(false);
-                    }}
+                    onClick={() => setIsSettingsOpen((value) => !value)}
                     aria-expanded={isSettingsOpen}
                     aria-label="Search settings"
                     className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
@@ -806,57 +855,6 @@ export default function SearchPage() {
                   </button>
                 </div>
               </div>
-
-              {isColourPanelOpen && (
-                <div className="mt-3 rounded-lg border border-white/10 bg-black/35 p-3">
-                  <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-                    <ColourStrip selected={selectedColours} onToggle={toggleColour} />
-                    <label className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 lg:min-w-56">
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-                        Custom
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={customColour}
-                          onChange={(event) => chooseCustomColour(event.target.value)}
-                          className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-                          aria-label="Choose custom colour"
-                        />
-                        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-white/65">
-                          {customColour}
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      {selectedColours.map((id) => {
-                        const colour = getSelectedColour(id);
-                        if (!colour) return null;
-                        return (
-                          <span
-                            key={id}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70"
-                          >
-                            <span className="h-3 w-3 rounded-full" style={{ background: colour.hex }} />
-                            {colour.name}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    {selectedColours.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedColours([])}
-                        className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
-                      >
-                        Clear colours
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {isSettingsOpen && (
                 <div className="mt-3 grid gap-4 rounded-lg border border-white/10 bg-black/35 p-3 md:grid-cols-2">
@@ -944,6 +942,78 @@ export default function SearchPage() {
   );
 }
 
+function ColourSearchPanel({
+  selected,
+  customColour,
+  onSelect,
+  onCustomChange,
+  onCustomSearch,
+  onClear,
+}: {
+  selected: string[];
+  customColour: string;
+  onSelect: (id: string) => void;
+  onCustomChange: (hex: string) => void;
+  onCustomSearch: () => void;
+  onClear: () => void;
+}) {
+  const activeColour = selected[0] ? getSelectedColour(selected[0]) : null;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Palette className="h-4 w-4 text-white/45" />
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/45">
+            colour search
+          </span>
+        </div>
+        {activeColour && (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/70">
+              <span className="h-3 w-3 rounded-full" style={{ background: activeColour.hex }} />
+              {activeColour.name}
+            </span>
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
+      <ColourStrip selected={selected} onToggle={onSelect} />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/10 bg-black/20 px-3 py-2">
+        <label className="flex items-center gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+            Custom
+          </span>
+          <input
+            type="color"
+            value={customColour}
+            onChange={(event) => onCustomChange(event.target.value)}
+            className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+            aria-label="Choose custom colour"
+          />
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-white/65">
+            {customColour}
+          </span>
+        </label>
+        <button
+          type="button"
+          onClick={onCustomSearch}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white/[0.12] px-3 text-xs font-medium text-white transition-colors hover:bg-white/[0.18]"
+        >
+          <Search className="h-3.5 w-3.5" />
+          Search
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ModeButton({
   active,
   icon: Icon,
@@ -959,6 +1029,7 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
+      aria-label={`${label} search mode`}
       className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
         active
           ? 'bg-white/[0.14] text-white'
