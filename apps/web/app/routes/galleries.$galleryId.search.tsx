@@ -323,6 +323,24 @@ const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
   return total / selected.length;
 };
 
+const paletteBandSortKey = (result: ArtworkSearchResult) => {
+  const [dominantColour] = collectPalette(result);
+  if (!dominantColour) {
+    return { band: Infinity, distance: Infinity };
+  }
+
+  return COLOURS.reduce(
+    (best, colour, index) => {
+      const distance = rgbDistance(dominantColour, colour.hex);
+      if (distance < best.distance) {
+        return { band: index, distance };
+      }
+      return best;
+    },
+    { band: Infinity, distance: Infinity }
+  );
+};
+
 const sortResults = (
   results: ArtworkSearchResult[],
   sortMode: SortMode,
@@ -332,8 +350,18 @@ const sortResults = (
 
   sorted.sort((a, b) => {
     if (sortMode === 'colour') {
-      const delta = colourScore(a, selectedColours) - colourScore(b, selectedColours);
-      if (Number.isFinite(delta) && delta !== 0) return delta;
+      if (selectedColours.length) {
+        const delta = colourScore(a, selectedColours) - colourScore(b, selectedColours);
+        if (Number.isFinite(delta) && delta !== 0) return delta;
+      } else {
+        const paletteA = paletteBandSortKey(a);
+        const paletteB = paletteBandSortKey(b);
+        const bandDelta = paletteA.band - paletteB.band;
+        if (Number.isFinite(bandDelta) && bandDelta !== 0) return bandDelta;
+
+        const distanceDelta = paletteA.distance - paletteB.distance;
+        if (Number.isFinite(distanceDelta) && distanceDelta !== 0) return distanceDelta;
+      }
     }
 
     if (sortMode === 'time-desc') {
