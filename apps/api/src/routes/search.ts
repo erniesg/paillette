@@ -64,6 +64,22 @@ const RRF_K = 60;
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
+const canonicalArtworkId = (id: string) => id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
+
+const canonicalizeMatches = (matches: CaptionVectorMatch[]) => {
+  const byId = new Map<string, CaptionVectorMatch>();
+
+  for (const match of matches) {
+    const id = canonicalArtworkId(match.id);
+    const existing = byId.get(id);
+    if (!existing || match.score > existing.score) {
+      byId.set(id, { ...match, id });
+    }
+  }
+
+  return [...byId.values()];
+};
+
 const normalizedTextSql = (expression: string) => `
   (' ' || lower(
     replace(
@@ -301,11 +317,13 @@ async function searchJinaTextVectors(
     returnMetadata: true,
   });
 
-  return result.matches.map((match) => ({
-    id: match.id,
-    score: match.score,
-    metadata: match.metadata as Record<string, unknown> | undefined,
-  }));
+  return canonicalizeMatches(
+    result.matches.map((match) => ({
+      id: match.id,
+      score: match.score,
+      metadata: match.metadata as Record<string, unknown> | undefined,
+    }))
+  );
 }
 
 async function searchCaptionVectors(
@@ -323,11 +341,13 @@ async function searchCaptionVectors(
     returnMetadata: true,
   });
 
-  return result.matches.map((match) => ({
-    id: match.id,
-    score: match.score,
-    metadata: match.metadata as Record<string, unknown> | undefined,
-  }));
+  return canonicalizeMatches(
+    result.matches.map((match) => ({
+      id: match.id,
+      score: match.score,
+      metadata: match.metadata as Record<string, unknown> | undefined,
+    }))
+  );
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -369,13 +389,15 @@ async function searchJinaImageVectors(
     returnMetadata: true,
   });
 
-  return result.matches
-    .filter((match) => match.score >= minScore)
-    .map((match) => ({
-      id: match.id,
-      score: match.score,
-      metadata: match.metadata as Record<string, unknown> | undefined,
-    }));
+  return canonicalizeMatches(
+    result.matches
+      .filter((match) => match.score >= minScore)
+      .map((match) => ({
+        id: match.id,
+        score: match.score,
+        metadata: match.metadata as Record<string, unknown> | undefined,
+      }))
+  );
 }
 
 async function getArtworksByIds(
