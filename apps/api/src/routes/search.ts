@@ -11,6 +11,7 @@ import type {
   SearchResponse,
   ArtworkSearchResult,
 } from '../types';
+import { NGS_ORG_ID, resolveOrgIdentifier } from '../utils/orgs';
 
 interface ArtworkSearchRow {
   id: string;
@@ -62,7 +63,6 @@ const DEFAULT_JINA_DIMENSIONS = 1024;
 const JINA_EMBEDDINGS_ENDPOINT = 'https://api.jina.ai/v1/embeddings';
 const RRF_K = 60;
 const MAX_SEARCH_RESULTS = 100;
-const NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 const VECTORIZE_QUERY_METADATA = 'indexed' as const;
 
 const BACKABLE_NGS_SEARCH_SQL = `
@@ -76,7 +76,8 @@ const BACKABLE_NGS_SEARCH_SQL = `
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
-const canonicalArtworkId = (id: string) => id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
+const canonicalArtworkId = (id: string) =>
+  id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
 
 const backableSearchSql = (orgId: string | undefined) =>
   orgId === NGS_ORG_ID ? BACKABLE_NGS_SEARCH_SQL : '';
@@ -173,7 +174,9 @@ const parseJsonObject = (value: string | null) => {
 
 const compactObject = <T extends Record<string, unknown>>(value: T) =>
   Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null)
+    Object.entries(value).filter(
+      ([, entry]) => entry !== undefined && entry !== null
+    )
   ) as Partial<T>;
 
 const buildDimensions = (artwork: ArtworkSearchRow) => {
@@ -302,13 +305,17 @@ async function generateJinaQueryEmbedding(
 
   if (!response.ok) {
     throw new Error(
-      payload.detail || payload.code || `Jina embeddings request failed with ${response.status}`
+      payload.detail ||
+        payload.code ||
+        `Jina embeddings request failed with ${response.status}`
     );
   }
 
   const embedding = payload.data?.[0]?.embedding;
   if (!Array.isArray(embedding) || embedding.length !== dimensions) {
-    throw new Error('Jina query embedding was empty or had the wrong dimensions');
+    throw new Error(
+      'Jina query embedding was empty or had the wrong dimensions'
+    );
   }
 
   return l2Normalize(embedding);
@@ -477,8 +484,9 @@ async function getArtworksByIds(
   for (let index = 0; index < ids.length; index += chunkSize) {
     const chunk = ids.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
-    const { results } = await db.prepare(
-      `
+    const { results } = await db
+      .prepare(
+        `
       SELECT
         id,
         org_id,
@@ -515,7 +523,7 @@ async function getArtworksByIds(
         AND deleted_at IS NULL
         ${backableSearchSql(orgId)}
       `
-    )
+      )
       .bind(...chunk)
       .all<ArtworkSearchRow>();
 
@@ -540,7 +548,10 @@ async function searchArtworksHybrid(
     query,
     topK
   ).catch((error) => {
-    console.warn('Jina text query embedding failed; falling back to caption search', error);
+    console.warn(
+      'Jina text query embedding failed; falling back to caption search',
+      error
+    );
     return [] as CaptionVectorMatch[];
   });
 
@@ -576,8 +587,7 @@ async function searchArtworksHybrid(
     const existing = scores.get(match.id);
     scores.set(match.id, {
       score:
-        (existing?.score || 0) +
-        (temporalFilter ? 4 : 1) / (RRF_K + index + 1),
+        (existing?.score || 0) + (temporalFilter ? 4 : 1) / (RRF_K + index + 1),
       vectorScore: existing?.vectorScore,
     });
   });
@@ -590,14 +600,20 @@ async function searchArtworksHybrid(
     : rankedCandidateIds.slice(0, topK);
 
   const artworkById = await getArtworksByIds(env.DB, rankedIds, orgId);
-  const maxScore = Math.max(...[...scores.values()].map((value) => value.score), 0.001);
+  const maxScore = Math.max(
+    ...[...scores.values()].map((value) => value.score),
+    0.001
+  );
 
   const results = rankedIds.flatMap((id) => {
     const artwork = artworkById.get(id);
     const fused = scores.get(id);
     if (!artwork || !fused) return [];
 
-    if (temporalFilter && !artworkMatchesTemporalFilter(artwork, temporalFilter)) {
+    if (
+      temporalFilter &&
+      !artworkMatchesTemporalFilter(artwork, temporalFilter)
+    ) {
       return [];
     }
 
@@ -650,7 +666,10 @@ async function searchArtworksByMetadata(
     ? `(year BETWEEN ? AND ? OR ${dateText} LIKE ? ESCAPE '\\')`
     : '';
   const tokenScoreSql = tokenQueries
-    .map(() => `CASE WHEN ${searchableExpression} LIKE ? ESCAPE '\\' THEN 8 ELSE 0 END`)
+    .map(
+      () =>
+        `CASE WHEN ${searchableExpression} LIKE ? ESCAPE '\\' THEN 8 ELSE 0 END`
+    )
     .join(' + ');
   const tokenWhereSql = tokenQueries
     .map(() => `${searchableExpression} LIKE ? ESCAPE '\\'`)
@@ -683,8 +702,9 @@ async function searchArtworksByMetadata(
     topK,
   ];
 
-  const { results } = await db.prepare(
-    `
+  const { results } = await db
+    .prepare(
+      `
     SELECT
       id,
       org_id,
@@ -735,19 +755,28 @@ async function searchArtworksByMetadata(
     ORDER BY match_score DESC, title COLLATE NOCASE ASC
     LIMIT ?
     `
-  )
+    )
     .bind(...params)
     .all<ArtworkMetadataSearchRow>();
 
   return results.map((artwork) =>
-    mapSearchRow(artwork, Math.min(Math.max(artwork.match_score / 100, 0.01), 1))
+    mapSearchRow(
+      artwork,
+      Math.min(Math.max(artwork.match_score / 100, 0.01), 1)
+    )
   );
 }
 
 // Validation schemas
 const textSearchSchema = z.object({
   query: z.string().min(1, 'Query cannot be empty').max(500),
-  topK: z.number().int().positive().max(MAX_SEARCH_RESULTS).optional().default(10),
+  topK: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_SEARCH_RESULTS)
+    .optional()
+    .default(10),
   minScore: z.number().min(0).max(1).optional().default(0.7),
 });
 
@@ -768,7 +797,10 @@ searchRoutes.post('/search/text', async (c) => {
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
 
     // Parse and validate request body
     const body = await c.req.json();
@@ -845,7 +877,10 @@ searchRoutes.post('/search/image', async (c) => {
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
 
     // Parse multipart form data
     const formData = await c.req.formData();
@@ -975,25 +1010,27 @@ searchRoutes.post('/search/image', async (c) => {
       .all<ArtworkSearchRow>();
 
     // Combine vector results with artwork details
-    const enrichedResults: ArtworkSearchResult[] = vectorResults.flatMap((vectorResult) => {
-      const artwork = artworks.find((a) => a.id === vectorResult.id);
-      if (!artwork) return [];
+    const enrichedResults: ArtworkSearchResult[] = vectorResults.flatMap(
+      (vectorResult) => {
+        const artwork = artworks.find((a) => a.id === vectorResult.id);
+        if (!artwork) return [];
 
-      return [
-        {
-          id: artwork.id,
-          orgId: artwork.org_id,
-          galleryId: artwork.org_id,
-          title: artwork.title || undefined,
-          artist: artwork.artist || undefined,
-          year: artwork.year || undefined,
-          imageUrl: artwork.image_url,
-          thumbnailUrl: artwork.thumbnail_url,
-          similarity: vectorResult.score,
-          metadata: mapSearchRow(artwork, vectorResult.score).metadata,
-        },
-      ];
-    });
+        return [
+          {
+            id: artwork.id,
+            orgId: artwork.org_id,
+            galleryId: artwork.org_id,
+            title: artwork.title || undefined,
+            artist: artwork.artist || undefined,
+            year: artwork.year || undefined,
+            imageUrl: artwork.image_url,
+            thumbnailUrl: artwork.thumbnail_url,
+            similarity: vectorResult.score,
+            metadata: mapSearchRow(artwork, vectorResult.score).metadata,
+          },
+        ];
+      }
+    );
 
     const queryTime = performance.now() - startTime;
 

@@ -8,6 +8,10 @@ interface LogoProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
    */
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /**
+   * Whether to render the compact V0 frame behind "ai".
+   */
+  framed?: boolean;
+  /**
    * Whether to render as a link to home
    */
   linkToHome?: boolean;
@@ -26,6 +30,7 @@ const sizeClasses = {
  */
 export function Logo({
   size = 'md',
+  framed = true,
   linkToHome = false,
   className,
   ...props
@@ -40,7 +45,27 @@ export function Logo({
       {...props}
     >
       <span className="text-white">P</span>
-      <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+      <span
+        className={cn(
+          'relative isolate inline-block',
+          framed && 'ml-[0.07em] mr-[0.04em] px-[0.04em]'
+        )}
+      >
+        {framed && (
+          <span
+            aria-hidden="true"
+            className="absolute bottom-[-0.24em] left-[-0.02em] right-[-0.02em] top-[-0.34em] z-0 bg-[#07070a] shadow-[0_0_24px_rgba(168,85,247,0.32)]"
+          />
+        )}
+        <span
+          className={cn(
+            'relative z-10 bg-gradient-accent bg-clip-text text-transparent',
+            framed && 'drop-shadow-[0_0_9px_rgba(217,70,239,0.36)]'
+          )}
+        >
+          ai
+        </span>
+      </span>
       <span className="text-white">llette</span>
     </div>
   );
@@ -49,7 +74,7 @@ export function Logo({
     return (
       <Link
         to="/"
-        className="hover:opacity-80 transition-opacity inline-block"
+        className="inline-block transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/50 focus-visible:ring-offset-4 focus-visible:ring-offset-[#08080b]"
       >
         {logoElement}
       </Link>

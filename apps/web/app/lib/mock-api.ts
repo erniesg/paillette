@@ -242,17 +242,25 @@ export class MockApiClient {
   }
 
   // Translation methods (mock)
+  async getTranslationUsage(): Promise<any> {
+    return {
+      used: 0,
+      quota: 10,
+      remaining: 10,
+    };
+  }
+
   async translateText(request: any): Promise<any> {
     await new Promise((resolve) => setTimeout(resolve, 100));
     return {
-      success: true,
-      data: {
-        translations: request.texts.map((text: string) => ({
-          sourceText: text,
-          translatedText: `Translated: ${text}`,
-          sourceLang: 'en',
-          targetLang: request.target,
-        })),
+      translatedText: `Translated: ${request.text}`,
+      provider: 'mock',
+      cached: false,
+      cost: 0,
+      usage: {
+        used: 1,
+        quota: 10,
+        remaining: 9,
       },
     };
   }

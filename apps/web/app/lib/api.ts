@@ -15,6 +15,7 @@ import type {
   TranslateCostEstimate,
   TranslateDocumentResponse,
   TranslationJobStatus,
+  TranslationUsageSummary,
   PailletteApiKeyList,
   CreatedPailletteApiKey,
   DailyUsageSummary,
@@ -58,6 +59,8 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 const API_BASE = `${API_URL}/api/v1`;
+
+export const getPublicApiBaseUrl = () => API_BASE;
 
 type AccessTokenProvider = () => Promise<string | undefined>;
 
@@ -672,12 +675,30 @@ class ApiClient {
   /**
    * Translate text
    */
+  async getTranslationUsage(
+    getAccessToken: AccessTokenProvider
+  ): Promise<TranslationUsageSummary> {
+    const response = await fetch(`${this.baseUrl}/translate/usage`, {
+      headers: await this.getAuthHeaders(getAccessToken),
+    });
+
+    const data: ApiResponse<TranslationUsageSummary> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error?.message || 'Failed to fetch translation usage');
+    }
+
+    return data.data;
+  }
+
   async translateText(
-    request: TranslateTextRequest
+    request: TranslateTextRequest,
+    getAccessToken: AccessTokenProvider
   ): Promise<TranslateTextResponse> {
     const response = await fetch(`${this.baseUrl}/translate/text`, {
       method: 'POST',
       headers: {
+        ...(await this.getAuthHeaders(getAccessToken)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),

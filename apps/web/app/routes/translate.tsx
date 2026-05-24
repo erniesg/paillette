@@ -5,8 +5,8 @@
 
 import type { MetaFunction } from '@remix-run/cloudflare';
 import { Link } from '@remix-run/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
 import { Languages, Lock, LogIn, UserPlus } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
@@ -14,17 +14,8 @@ import { TextTranslator } from '~/components/translate/text-translator';
 import { Logo } from '~/components/ui/logo';
 import { UserMenu } from '~/components/user/user-menu';
 import { useUser } from '~/contexts/user-context';
-
-const FREE_TRANSLATION_LIMIT = 10;
-
-const getTranslationUsageKey = (userId: string) =>
-  `paillette:translation-free-uses:${userId}`;
-
-const readStoredUsage = (userId: string) => {
-  const parsed = Number(localStorage.getItem(getTranslationUsageKey(userId)));
-  if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return Math.min(FREE_TRANSLATION_LIMIT, Math.floor(parsed));
-};
+import { apiClient } from '~/lib/api';
+import type { TranslationUsageSummary } from '~/types';
 
 export const meta: MetaFunction = () => {
   return [
@@ -37,35 +28,27 @@ export const meta: MetaFunction = () => {
 };
 
 export default function TranslatePage() {
-  const { user, isAuthenticated, isLoading, login, signup } = useUser();
-  const [usedCount, setUsedCount] = useState(0);
-
-  useEffect(() => {
-    if (!user) {
-      setUsedCount(0);
-      return;
-    }
-
-    setUsedCount(readStoredUsage(user.id));
-  }, [user?.id]);
-
-  const remainingUses = Math.max(0, FREE_TRANSLATION_LIMIT - usedCount);
+  const { user, isAuthenticated, isLoading, login, signup, getAccessToken } =
+    useUser();
+  const queryClient = useQueryClient();
+  const usageQueryKey = ['translation-usage', user?.id];
+  const usageQuery = useQuery({
+    queryKey: usageQueryKey,
+    queryFn: () => apiClient.getTranslationUsage(getAccessToken),
+    enabled: Boolean(isAuthenticated && user),
+    retry: false,
+  });
+  const usage = usageQuery.data ?? { used: 0, quota: 10, remaining: 10 };
 
   const getCurrentReturnTo = () =>
     `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
-  const recordTranslationUse = () => {
-    if (!user) return;
-
-    setUsedCount((current) => {
-      const next = Math.min(FREE_TRANSLATION_LIMIT, current + 1);
-      localStorage.setItem(getTranslationUsageKey(user.id), String(next));
-      return next;
-    });
+  const recordTranslationUse = (nextUsage: TranslationUsageSummary) => {
+    queryClient.setQueryData(usageQueryKey, nextUsage);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-primary-950 text-white">
+    <div className="themeable-surface min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-primary-950 text-white">
       {/* Header */}
       <header className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4">
@@ -180,11 +163,24 @@ export default function TranslatePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <TextTranslator
-              remainingUses={remainingUses}
-              lifetimeLimit={FREE_TRANSLATION_LIMIT}
-              onTranslationUsed={recordTranslationUse}
-            />
+            {usageQuery.isLoading ? (
+              <Card className="p-8 text-center text-neutral-300">
+                Loading translation allowance...
+              </Card>
+            ) : usageQuery.isError ? (
+              <Card className="p-8 text-center text-red-300">
+                {usageQuery.error instanceof Error
+                  ? usageQuery.error.message
+                  : 'Failed to load translation allowance'}
+              </Card>
+            ) : (
+              <TextTranslator
+                remainingUses={usage.remaining}
+                lifetimeLimit={usage.quota}
+                getAccessToken={getAccessToken}
+                onTranslationUsed={recordTranslationUse}
+              />
+            )}
           </motion.div>
         )}
 

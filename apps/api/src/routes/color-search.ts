@@ -14,6 +14,7 @@ import {
   requireAuthOrApiKey,
 } from '../middleware/auth';
 import type { ApiResponse } from '../types';
+import { resolveOrgIdentifier } from '../utils/orgs';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
 
@@ -31,7 +32,10 @@ colorSearchRoutes.post('/search/color', async (c) => {
   const startTime = performance.now();
 
   try {
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
 
     // Parse and validate request body
     const body = await c.req.json();
@@ -196,7 +200,10 @@ colorSearchRoutes.post('/search/color', async (c) => {
  */
 colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
   try {
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
     const artworkId = c.req.param('artworkId');
 
     const artwork = await c.env.DB.prepare(
@@ -264,7 +271,10 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
  */
 colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
   try {
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
     const artworkId = c.req.param('artworkId');
 
     // Verify artwork exists
@@ -330,7 +340,10 @@ colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
  */
 colorSearchRoutes.post('/artworks/batch-extract-colors', async (c) => {
   try {
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
 
     // Get all artworks without color data
     const artworks = await c.env.DB.prepare(

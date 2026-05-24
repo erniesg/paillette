@@ -15,17 +15,14 @@ import {
   type ArtworkListResponse,
   type ArtworkUploadResponse,
 } from '../types/artwork';
-import {
-  uploadImage,
-  uploadThumbnail,
-  deleteImage,
-} from '../utils/r2';
+import { uploadImage, uploadThumbnail, deleteImage } from '../utils/r2';
 import {
   validateImage,
   extractImageMetadata,
   checkDuplicateImage,
   parseFilename,
 } from '../utils/image';
+import { resolveOrgIdentifier } from '../utils/orgs';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -258,7 +255,9 @@ app.post('/upload', async (c) => {
       color_extracted_at: null,
       color_extraction_version: 'v1',
       custom_metadata: JSON.stringify(uploadData.custom_metadata || {}),
-      citation: uploadData.citation ? JSON.stringify(uploadData.citation) : null,
+      citation: uploadData.citation
+        ? JSON.stringify(uploadData.citation)
+        : null,
       created_at: now,
       updated_at: now,
       uploaded_by: 'system', // TODO: Get from auth context
@@ -348,7 +347,10 @@ app.post('/upload', async (c) => {
         uploadResult.url,
         uploadResult.contentType,
         uploadResult.size,
-        JSON.stringify({ originalFilename: file.name, imageHash: imageMetadata.hash || null }),
+        JSON.stringify({
+          originalFilename: file.name,
+          imageHash: imageMetadata.hash || null,
+        }),
         now,
         now
       )
@@ -382,7 +384,8 @@ app.post('/upload', async (c) => {
         success: false,
         error: {
           code: 'UPLOAD_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to upload artwork',
+          message:
+            error instanceof Error ? error.message : 'Failed to upload artwork',
         },
       },
       500
@@ -397,9 +400,16 @@ app.post('/upload', async (c) => {
 app.get('/', async (c) => {
   try {
     const query = c.req.query();
-    const routeOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const routeOrgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
+    const queryOrgId =
+      query.org_id || query.gallery_id
+        ? await resolveOrgIdentifier(c.env.DB, query.org_id || query.gallery_id)
+        : routeOrgId;
     const validatedQuery = ArtworkQuerySchema.parse({
-      org_id: query.org_id || query.gallery_id || routeOrgId,
+      org_id: queryOrgId,
       collection_id: query.collection_id,
       artist: query.artist,
       year: query.year ? parseInt(query.year) : undefined,
@@ -419,10 +429,10 @@ app.get('/', async (c) => {
     let sql = 'SELECT * FROM artworks WHERE 1=1';
     const params: any[] = [];
 
-    const queryOrgId = validatedQuery.org_id || validatedQuery.gallery_id;
-    if (queryOrgId) {
+    const validatedOrgId = validatedQuery.org_id || validatedQuery.gallery_id;
+    if (validatedOrgId) {
       sql += ' AND org_id = ?';
-      params.push(queryOrgId);
+      params.push(validatedOrgId);
     }
 
     if (validatedQuery.collection_id) {
@@ -466,7 +476,9 @@ app.get('/', async (c) => {
     }
 
     // Get total count
-    const countResult = await c.env.DB.prepare(sql.replace('SELECT *', 'SELECT COUNT(*) as count'))
+    const countResult = await c.env.DB.prepare(
+      sql.replace('SELECT *', 'SELECT COUNT(*) as count')
+    )
       .bind(...params)
       .first<{ count: number }>();
 
@@ -478,7 +490,9 @@ app.get('/', async (c) => {
     params.push(validatedQuery.limit, validatedQuery.offset);
 
     // Execute query
-    const result = await c.env.DB.prepare(sql).bind(...params).all<ArtworkRow>();
+    const result = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<ArtworkRow>();
 
     const artworks = result.results.map(mapArtworkRowToResponse);
 
@@ -501,7 +515,8 @@ app.get('/', async (c) => {
         success: false,
         error: {
           code: 'QUERY_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to query artworks',
+          message:
+            error instanceof Error ? error.message : 'Failed to query artworks',
         },
       },
       500
@@ -517,7 +532,9 @@ app.get('/:id', async (c) => {
   try {
     const id = c.req.param('id');
 
-    const artwork = await c.env.DB.prepare('SELECT * FROM artworks WHERE id = ?')
+    const artwork = await c.env.DB.prepare(
+      'SELECT * FROM artworks WHERE id = ?'
+    )
       .bind(id)
       .first<ArtworkRow>();
 
@@ -545,7 +562,8 @@ app.get('/:id', async (c) => {
         success: false,
         error: {
           code: 'QUERY_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to get artwork',
+          message:
+            error instanceof Error ? error.message : 'Failed to get artwork',
         },
       },
       500
@@ -581,7 +599,9 @@ app.patch('/:id', async (c) => {
     const updateData = validationResult.data;
 
     // Check if artwork exists
-    const existing = await c.env.DB.prepare('SELECT * FROM artworks WHERE id = ?')
+    const existing = await c.env.DB.prepare(
+      'SELECT * FROM artworks WHERE id = ?'
+    )
       .bind(id)
       .first<ArtworkRow>();
 
@@ -637,7 +657,9 @@ app.patch('/:id', async (c) => {
       .run();
 
     // Fetch updated artwork
-    const updated = await c.env.DB.prepare('SELECT * FROM artworks WHERE id = ?')
+    const updated = await c.env.DB.prepare(
+      'SELECT * FROM artworks WHERE id = ?'
+    )
       .bind(id)
       .first<ArtworkRow>();
 
@@ -652,7 +674,8 @@ app.patch('/:id', async (c) => {
         success: false,
         error: {
           code: 'UPDATE_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to update artwork',
+          message:
+            error instanceof Error ? error.message : 'Failed to update artwork',
         },
       },
       500
@@ -669,7 +692,9 @@ app.delete('/:id', async (c) => {
     const id = c.req.param('id');
 
     // Get artwork to delete images
-    const artwork = await c.env.DB.prepare('SELECT * FROM artworks WHERE id = ?')
+    const artwork = await c.env.DB.prepare(
+      'SELECT * FROM artworks WHERE id = ?'
+    )
       .bind(id)
       .first<ArtworkRow>();
 
@@ -706,7 +731,8 @@ app.delete('/:id', async (c) => {
         success: false,
         error: {
           code: 'DELETE_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to delete artwork',
+          message:
+            error instanceof Error ? error.message : 'Failed to delete artwork',
         },
       },
       500

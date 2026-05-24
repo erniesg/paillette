@@ -4,7 +4,13 @@ import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
 import { orgQueries } from '@paillette/database';
 import { CreateOrgInputSchema } from '@paillette/types';
-import { generateId, generateSlug, generateApiKey, hashApiKey } from '../utils/crypto';
+import {
+  generateId,
+  generateSlug,
+  generateApiKey,
+  hashApiKey,
+} from '../utils/crypto';
+import { NGS_ORG_ID, NGS_ORG_KEY, resolveOrgIdentifier } from '../utils/orgs';
 
 const orgs = new Hono<{ Bindings: Env }>();
 
@@ -40,7 +46,10 @@ orgs.get(
 
       return c.json({
         success: true,
-        data: result.results,
+        data: result.results.map((org: any) => ({
+          key: org.id === NGS_ORG_ID ? NGS_ORG_KEY : org.slug || org.id,
+          ...org,
+        })),
         metadata: {
           page: pageNum,
           pageSize: limitNum,
@@ -82,9 +91,22 @@ orgs.get(
  * Get a single org by ID
  */
 orgs.get('/:id', async (c) => {
-  const id = c.req.param('id');
+  const id = await resolveOrgIdentifier(c.env.DB, c.req.param('id'));
 
   try {
+    if (!id) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'Org key is required',
+          },
+        },
+        400
+      );
+    }
+
     const query = orgQueries.findById(id);
     const org = await c.env.DB.prepare(query.sql)
       .bind(...query.params)
@@ -105,6 +127,8 @@ orgs.get('/:id', async (c) => {
 
     // Parse JSON fields
     const orgData = {
+      key:
+        (org as any).id === NGS_ORG_ID ? NGS_ORG_KEY : (org as any).slug || id,
       ...org,
       settings: org.settings ? JSON.parse(org.settings as string) : {},
     };
@@ -220,7 +244,9 @@ orgs.post('/', zValidator('json', CreateOrgInputSchema), async (c) => {
     };
 
     const query = orgQueries.create(org as any);
-    await c.env.DB.prepare(query.sql).bind(...query.params).run();
+    await c.env.DB.prepare(query.sql)
+      .bind(...query.params)
+      .run();
 
     // Return created org (with API key visible only on creation)
     return c.json(
@@ -256,10 +282,7 @@ orgs.post('/', zValidator('json', CreateOrgInputSchema), async (c) => {
  */
 orgs.patch(
   '/:id',
-  zValidator(
-    'json',
-    CreateOrgInputSchema.partial().omit({ ownerId: true })
-  ),
+  zValidator('json', CreateOrgInputSchema.partial().omit({ ownerId: true })),
   async (c) => {
     const id = c.req.param('id');
     const updates = c.req.valid('json');
@@ -288,7 +311,8 @@ orgs.patch(
       const dbUpdates: any = {};
       if (updates.name !== undefined) dbUpdates.name = updates.name;
       if (updates.slug !== undefined) dbUpdates.slug = updates.slug;
-      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.description !== undefined)
+        dbUpdates.description = updates.description;
       if (updates.website !== undefined) dbUpdates.website = updates.website;
       if (updates.location) {
         if (updates.location.country !== undefined)
@@ -298,12 +322,15 @@ orgs.patch(
         if (updates.location.address !== undefined)
           dbUpdates.location_address = updates.location.address;
       }
-      if (updates.settings) dbUpdates.settings = JSON.stringify(updates.settings);
+      if (updates.settings)
+        dbUpdates.settings = JSON.stringify(updates.settings);
 
       // Update org
       if (Object.keys(dbUpdates).length > 0) {
         const query = orgQueries.update(id, dbUpdates);
-        await c.env.DB.prepare(query.sql).bind(...query.params).run();
+        await c.env.DB.prepare(query.sql)
+          .bind(...query.params)
+          .run();
       }
 
       // Fetch updated org
@@ -379,7 +406,9 @@ orgs.delete('/:id', async (c) => {
 
     // Delete org
     const query = orgQueries.delete(id);
-    await c.env.DB.prepare(query.sql).bind(...query.params).run();
+    await c.env.DB.prepare(query.sql)
+      .bind(...query.params)
+      .run();
 
     return c.json({
       success: true,

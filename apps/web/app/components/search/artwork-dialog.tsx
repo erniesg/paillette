@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ArtworkSearchResult } from '~/types';
-import { formatSimilarity, formatDimensions, copyToClipboard } from '~/lib/utils';
+import {
+  formatSimilarity,
+  formatDimensions,
+  copyToClipboard,
+} from '~/lib/utils';
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
 
@@ -17,8 +21,7 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
 
   const handleCopyCitation = async () => {
     const citation =
-      artwork.metadata?.citation?.text ||
-      generateBasicCitation(artwork);
+      artwork.metadata?.citation?.text || generateBasicCitation(artwork);
     const success = await copyToClipboard(citation);
     if (success) {
       setCopiedCitation(true);
@@ -53,7 +56,7 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
                 <img
                   src={artwork.imageUrl}
                   alt={artwork.title || 'Artwork'}
-                  className="max-w-full max-h-[60vh] object-contain rounded-lg"
+                  className="max-w-full max-h-[60vh] object-contain"
                 />
               ) : (
                 <div className="flex h-64 w-full items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
@@ -90,7 +93,9 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
                 {artwork.metadata?.medium && (
                   <div>
                     <div className="text-sm text-neutral-500">Medium</div>
-                    <div className="text-white mt-1">{artwork.metadata.medium}</div>
+                    <div className="text-white mt-1">
+                      {artwork.metadata.medium}
+                    </div>
                   </div>
                 )}
                 {artwork.metadata?.dimensions && (
@@ -200,7 +205,9 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
                             <div className="mt-3 space-y-2 text-sm">
                               {translation.title && (
                                 <div>
-                                  <span className="text-neutral-500">Title: </span>
+                                  <span className="text-neutral-500">
+                                    Title:{' '}
+                                  </span>
                                   <span className="text-neutral-300">
                                     {translation.title}
                                   </span>
@@ -263,7 +270,8 @@ function formatMetadataForCopy(artwork: ArtworkSearchResult): string {
   if (artwork.title) lines.push(`Title: ${artwork.title}`);
   if (artwork.artist) lines.push(`Artist: ${artwork.artist}`);
   if (artwork.year) lines.push(`Year: ${artwork.year}`);
-  if (artwork.metadata?.medium) lines.push(`Medium: ${artwork.metadata.medium}`);
+  if (artwork.metadata?.medium)
+    lines.push(`Medium: ${artwork.metadata.medium}`);
 
   if (artwork.metadata?.dimensions) {
     const dims = formatDimensions(artwork.metadata.dimensions);

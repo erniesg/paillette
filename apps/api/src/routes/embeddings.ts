@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../index';
 import type { ApiResponse } from '../types';
+import { resolveOrgIdentifier } from '../utils/orgs';
 
 // Validation schema
 const embeddingsQuerySchema = z.object({
@@ -41,7 +42,10 @@ embeddingsRoutes.get('/embeddings', async (c) => {
   const startTime = performance.now();
 
   try {
-    const orgId = c.req.param('orgId') || c.req.param('galleryId');
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      c.req.param('orgId') || c.req.param('galleryId')
+    );
     const query = c.req.query();
 
     // Validate query parameters
@@ -67,9 +71,7 @@ embeddingsRoutes.get('/embeddings', async (c) => {
     const { limit, offset } = validation.data;
 
     // First, verify org exists
-    const orgCheck = await c.env.DB.prepare(
-      'SELECT id FROM orgs WHERE id = ?'
-    )
+    const orgCheck = await c.env.DB.prepare('SELECT id FROM orgs WHERE id = ?')
       .bind(orgId)
       .first();
 

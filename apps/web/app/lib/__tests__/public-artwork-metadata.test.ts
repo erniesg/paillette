@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   getDominantSourceLabel,
   getPublicCatalogueRows,
+  getPublicCitation,
+  getPublicCitationParts,
   getPublicDescription,
   getPublicDescriptionDetails,
 } from '../public-artwork-metadata';
@@ -66,7 +68,7 @@ describe('getPublicDescription', () => {
     ).toBe('A public-facing catalogue caption.');
   });
 
-  it('reports the public source for catalogue text', () => {
+  it('reports stored NGS source data for raw NGS catalogue text', () => {
     expect(
       getPublicDescriptionDetails({
         metadata: {
@@ -79,7 +81,7 @@ describe('getPublicDescription', () => {
       })
     ).toEqual({
       source: 'ngs',
-      sourceLabel: 'From National Gallery Singapore',
+      sourceLabel: 'National Gallery Singapore',
       text: 'Public catalogue text.',
     });
   });
@@ -129,9 +131,61 @@ describe('getPublicDescription', () => {
       {
         label: 'Medium',
         value: 'Ink and colour pigments on paper',
-        sourceLabel: 'NGS Art+ catalogue',
+        sourceLabel: 'National Gallery Singapore',
       },
     ]);
+  });
+
+  it('does not show internal facets as public NGS page fields', () => {
+    const labels = getPublicCatalogueRows({
+      classification: 'Paintings',
+      culture: 'Modern',
+      source_institution: 'National Gallery Singapore',
+      source_collection: 'National Collection',
+      metadata: {
+        classification: 'Paintings',
+        sourceInstitution: 'National Gallery Singapore',
+        sourceCollection: 'National Collection',
+      },
+    }).map((row) => row.label);
+
+    expect(labels).not.toContain('Classification');
+    expect(labels).not.toContain('Culture');
+    expect(labels).not.toContain('Source institution');
+    expect(labels).not.toContain('Source collection');
+  });
+
+  it('builds an NGS-style Chicago citation from public fields', () => {
+    expect(
+      getPublicCitation({
+        artist: 'Le Huy Toan',
+        title: 'Not titled (Celebrating Victory at Dien Bien Phu)',
+        metadata: {
+          date_text: '1958',
+          medium: 'Silk',
+          dimensions_text: 'Image measure: 39.5 × 56 cm',
+          source_institution: 'National Gallery Singapore',
+        },
+      })
+    ).toBe(
+      'Le Huy Toan. Not titled (Celebrating Victory at Dien Bien Phu). 1958. Silk, 39.5 x 56 cm. National Gallery Singapore, Singapore.'
+    );
+  });
+
+  it('builds rich Chicago citation markup with an italic title', () => {
+    expect(
+      getPublicCitationParts({
+        artist: 'Khalil Ibrahim Hj. Ibrahim',
+        title: 'Monsoon',
+        metadata: {
+          date_text: '1989',
+          medium: 'Watercolour on paper',
+          source_institution: 'National Gallery Singapore',
+        },
+      }).htmlText
+    ).toBe(
+      'Khalil Ibrahim Hj. Ibrahim. <cite>Monsoon</cite>. 1989. Watercolour on paper. National Gallery Singapore, Singapore.'
+    );
   });
 
   it('identifies the dominant source for catalogue fields', () => {
@@ -150,7 +204,7 @@ describe('getPublicDescription', () => {
         {
           label: 'Medium',
           value: 'Ink and colour on paper',
-          sourceLabel: 'NGS Art+ catalogue',
+          sourceLabel: 'National Gallery Singapore',
         },
       ])
     ).toBe('National Gallery Singapore');

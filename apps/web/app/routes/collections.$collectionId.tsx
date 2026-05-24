@@ -10,7 +10,7 @@ import {
   Settings,
   ExternalLink,
 } from 'lucide-react';
-import { apiClient } from '~/lib/api';
+import { apiClient, getApiClientForRequest } from '~/lib/api';
 import { Button } from '~/components/ui/button';
 import {
   Card,
@@ -33,14 +33,16 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ params, request }: LoaderFunctionArgs) {
   const { collectionId } = params;
   if (!collectionId) {
     throw new Response('Collection ID is required', { status: 400 });
   }
 
   try {
-    const collection = await apiClient.getGallery(collectionId);
+    const collection = await getApiClientForRequest(request).getGallery(
+      collectionId
+    );
     return { collection, collectionId };
   } catch (error) {
     throw new Response('Collection not found', { status: 404 });

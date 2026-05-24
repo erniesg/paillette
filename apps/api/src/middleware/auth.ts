@@ -55,6 +55,29 @@ const getScopes = (payload: JWTPayload) => {
   return typeof scope === 'string' ? scope.split(' ').filter(Boolean) : [];
 };
 
+const getUserInfoEndpoint = (issuer: string) => `${trimTrailingSlash(issuer)}/me`;
+
+const fetchLogtoUserInfo = async (issuer: string, token: string): Promise<JWTPayload> => {
+  const response = await fetch(getUserInfoEndpoint(issuer), {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Logto userinfo rejected token with ${response.status}`);
+  }
+
+  const payload = (await response.json()) as JWTPayload;
+
+  if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
+    throw new Error('Missing subject in Logto userinfo response');
+  }
+
+  return payload;
+};
+
 const getApiKeyHashInput = (apiKey: string, env: Env) =>
   env.API_KEY_PEPPER ? `${env.API_KEY_PEPPER}.${apiKey}` : apiKey;
 
@@ -255,10 +278,22 @@ const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
   const jwks = getJwks(issuer, c.env.LOGTO_JWKS_URI);
   const audience = c.env.LOGTO_API_RESOURCE || undefined;
 
-  const { payload } = await jwtVerify(token, jwks, {
-    issuer,
-    ...(audience ? { audience } : {}),
-  });
+  let payload: JWTPayload;
+
+  if (audience) {
+    const verified = await jwtVerify(token, jwks, {
+      issuer,
+      audience,
+    });
+    payload = verified.payload;
+  } else {
+    try {
+      const verified = await jwtVerify(token, jwks, { issuer });
+      payload = verified.payload;
+    } catch {
+      payload = await fetchLogtoUserInfo(issuer, token);
+    }
+  }
 
   const auth: AuthPrincipal = {
     kind: 'user',
@@ -344,13 +379,14 @@ const getDevPrincipal = (c: Context<AppBindings>) => {
   if (!userId) {
     return null;
   }
+  const isPublicSearchProxy = userId === 'public-search-web';
 
   return {
     kind: 'user',
     userId,
     email: c.req.header('X-User-Email') || `${userId}@dev.local`,
     name: c.req.header('X-User-Name') || userId,
-    scopes: ['dev'],
+    scopes: isPublicSearchProxy ? ['dev', 'public_search'] : ['dev'],
   } satisfies AuthPrincipal;
 };
 
@@ -444,6 +480,12 @@ export const enforceDailyQuota = (
 ): MiddlewareHandler<AppBindings> => {
   return async (c, next) => {
     const auth = getAuth(c);
+
+    if (auth.scopes.includes('public_search')) {
+      await next();
+      return;
+    }
+
     const cost = options.cost ?? 1;
     const quota = Number(c.env.DAILY_FREE_QUERY_LIMIT || 100);
     const principalType = auth.apiKeyId ? 'api_key' : 'user';

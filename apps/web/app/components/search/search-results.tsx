@@ -37,9 +37,11 @@ export function SearchResults({ results, queryTime }: SearchResultsProps) {
         <div className="w-24 h-24 flex items-center justify-center">
           {row.original.thumbnailUrl || row.original.imageUrl ? (
             <img
-              src={row.original.thumbnailUrl || row.original.imageUrl || undefined}
+              src={
+                row.original.thumbnailUrl || row.original.imageUrl || undefined
+              }
               alt={row.original.title || 'Artwork'}
-              className="max-w-full max-h-full object-contain rounded-lg cursor-pointer hover:scale-105 transition-transform"
+              className="max-w-full max-h-full object-contain cursor-pointer hover:scale-105 transition-transform"
               onClick={() => setSelectedArtwork(row.original)}
             />
           ) : (
@@ -104,9 +106,7 @@ export function SearchResults({ results, queryTime }: SearchResultsProps) {
               : score >= 0.7
                 ? 'warning'
                 : 'secondary';
-        return (
-          <Badge variant={variant}>{formatSimilarity(score)}</Badge>
-        );
+        return <Badge variant={variant}>{formatSimilarity(score)}</Badge>;
       },
       sortingFn: 'basic',
     },

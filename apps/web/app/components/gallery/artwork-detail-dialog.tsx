@@ -56,7 +56,7 @@ export function ArtworkDetailDialog({
                 <img
                   src={artwork.imageUrl}
                   alt={artwork.title || 'Artwork'}
-                  className="max-w-full max-h-[60vh] object-contain rounded-lg"
+                  className="max-w-full max-h-[60vh] object-contain"
                 />
               ) : (
                 <div className="flex h-64 w-full items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
@@ -128,8 +128,12 @@ export function ArtworkDetailDialog({
 
                   {artwork.metadata.provenance && (
                     <div className="mb-4">
-                      <div className="text-sm text-neutral-500 mb-1">Provenance</div>
-                      <p className="text-neutral-300">{artwork.metadata.provenance}</p>
+                      <div className="text-sm text-neutral-500 mb-1">
+                        Provenance
+                      </div>
+                      <p className="text-neutral-300">
+                        {artwork.metadata.provenance}
+                      </p>
                     </div>
                   )}
 
@@ -140,14 +144,16 @@ export function ArtworkDetailDialog({
                           Dominant Colors
                         </div>
                         <div className="flex gap-2">
-                          {artwork.metadata.dominantColors.map((color: string, i: number) => (
-                            <div
-                              key={i}
-                              className="w-12 h-12 rounded-lg border border-neutral-700"
-                              style={{ backgroundColor: color }}
-                              title={color}
-                            />
-                          ))}
+                          {artwork.metadata.dominantColors.map(
+                            (color: string, i: number) => (
+                              <div
+                                key={i}
+                                className="w-12 h-12 rounded-lg border border-neutral-700"
+                                style={{ backgroundColor: color }}
+                                title={color}
+                              />
+                            )
+                          )}
                         </div>
                       </div>
                     )}

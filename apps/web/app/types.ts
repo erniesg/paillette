@@ -172,6 +172,13 @@ export interface TranslateTextResponse {
   provider: string;
   cached: boolean;
   cost?: number;
+  usage?: TranslationUsageSummary;
+}
+
+export interface TranslationUsageSummary {
+  used: number;
+  quota: number;
+  remaining: number;
 }
 
 export interface TranslateCostEstimate {

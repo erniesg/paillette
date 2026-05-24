@@ -16,6 +16,7 @@ import {
   Camera,
   ChevronDown,
   Clock,
+  Github,
   ExternalLink,
   Frame,
   Image as ImageIcon,
@@ -25,6 +26,7 @@ import {
   Network,
   Palette,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Table2,
   UserPlus,
@@ -32,17 +34,20 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import { CitationPanel } from '~/components/artwork/citation-panel';
+import { SourceIndicator } from '~/components/artwork/source-indicator';
 import { Logo } from '~/components/ui/logo';
 import {
-  getDominantSourceLabel,
   getGeneratedCaptionText,
   getGeographicAssociation,
+  getDominantSourceLabel,
   getNgsUrl,
   getPublicAccession,
   getPublicCatalogueRows,
   getPublicDateText,
   getPublicDescriptionDetails,
   getPublicImageUrl,
+  getPublicRecordSourceLabel,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import {
@@ -64,6 +69,7 @@ const BROWSE_PAGE_SIZE = 60;
 const MIN_BROWSE_PAGE_SIZE = 12;
 const MAX_BROWSE_PAGE_SIZE = 100;
 const MAX_SEARCH_RESULTS = 100;
+const GITHUB_URL = 'https://github.com/erniesg/paillette';
 
 export const meta: MetaFunction = () => {
   return [
@@ -414,7 +420,7 @@ const getSourceName = (result: ArtworkSearchResult) =>
       asText(getMeta(result).source_institution) ||
       'National Gallery Singapore'
     : getRootsUrl(result)
-      ? 'NHB Roots'
+      ? 'Roots NHB'
       : asText(getMeta(result).sourceInstitution) ||
         asText(getMeta(result).source_institution) ||
         'National Gallery Singapore';
@@ -424,6 +430,19 @@ const getPlace = (result: ArtworkSearchResult) =>
 
 const getSourceUrl = (result: ArtworkSearchResult) =>
   getNgsUrl(result) || getRootsUrl(result);
+
+const clickableCatalogueLabels = new Set([
+  'artist',
+  'date',
+  'medium',
+  'geographic association',
+  'credit line',
+]);
+
+const getCatalogueRowSearchQuery = (label: string, value: string) => {
+  if (!clickableCatalogueLabels.has(label.toLowerCase())) return null;
+  return value.trim() || null;
+};
 
 type MetadataFacet = {
   value: string;
@@ -907,6 +926,11 @@ export default function SearchPage() {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
+  const urlQuery = searchParams.get('q') || '';
+  const previousUrlQueryRef = useRef(urlQuery);
+  const [idleSuggestion, setIdleSuggestion] = useState<EvalSuggestion | null>(
+    null
+  );
 
   const suggestionPool = useMemo(
     () => buildSuggestionPool(holidaySuggestions),
@@ -934,6 +958,24 @@ export default function SearchPage() {
   useEffect(() => {
     setHasMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (previousUrlQueryRef.current === urlQuery) return;
+
+    previousUrlQueryRef.current = urlQuery;
+    setTextQuery(urlQuery);
+    setShouldSearch(Boolean(urlQuery));
+    setIsBrowsingCollection(false);
+
+    if (!urlQuery) {
+      setImageFile(null);
+      setImagePreview(null);
+      setSearchColours([]);
+      setSortColours([]);
+      setSearchMode('text');
+      setSortMode('relevance');
+    }
+  }, [urlQuery]);
 
   const textSearchQuery = useQuery({
     queryKey: ['search', 'text', galleryId, textQuery, topK, minScore],
@@ -991,16 +1033,18 @@ export default function SearchPage() {
     enabled: hasMounted && isBrowsingCollection,
   });
 
+  const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
   const idleShowcaseQuery = useQuery({
-    queryKey: ['idle-showcase', galleryId],
+    queryKey: ['idle-showcase', galleryId, activeIdleSuggestion?.query],
     queryFn: () =>
-      publicBrowseCollection(galleryId, {
-        limit: 12,
-        offset: 0,
-        sortBy: 'year',
-        sortOrder: 'desc',
+      publicSearchText(galleryId, {
+        query: activeIdleSuggestion?.query || '',
+        topK: 9,
+        minScore: 0,
       }),
-    enabled: hasMounted && !hasActiveSearch,
+    enabled:
+      hasMounted && !hasActiveSearch && Boolean(activeIdleSuggestion?.query),
+    placeholderData: (previousData) => previousData,
   });
 
   const currentQuery =
@@ -1203,6 +1247,16 @@ export default function SearchPage() {
     setSearchParams({}, { replace: true });
   };
 
+  const resetSearchHome = () => {
+    clearSearch();
+    setSearchMode('text');
+    setImageFile(null);
+    setImagePreview(null);
+    setSearchColours([]);
+    setSortColours([]);
+    setSortMode('relevance');
+  };
+
   const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
@@ -1337,16 +1391,17 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0b0e] text-white">
+    <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="min-w-0">
               <Link
                 to={`/${preferredRouteId}/search`}
+                onClick={resetSearchHome}
                 className="inline-flex items-center transition-opacity hover:opacity-80"
               >
-                <Logo size="sm" />
+                <Logo size="sm" framed />
               </Link>
             </div>
           </div>
@@ -1380,8 +1435,30 @@ export default function SearchPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
-        <section ref={searchPanelRef} className="mx-auto max-w-6xl">
-          <div>
+        <section
+          ref={searchPanelRef}
+          className={
+            hasActiveSearch
+              ? 'mx-auto max-w-6xl'
+              : 'relative -mx-5 -mt-10 flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
+          }
+        >
+          {!hasActiveSearch && (
+            <IdleShowcaseBackdrop
+              ref={idleShowcaseRef}
+              artworks={idleShowcaseResults}
+              isLoading={idleShowcaseQuery.isLoading}
+              onSelectArtwork={setSelectedArtwork}
+            />
+          )}
+
+          <div
+            className={
+              hasActiveSearch
+                ? 'relative z-10 w-full'
+                : 'relative z-10 mx-auto w-full max-w-5xl py-12'
+            }
+          >
             <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
@@ -1426,7 +1503,7 @@ export default function SearchPage() {
                       <img
                         src={imagePreview}
                         alt="Query preview"
-                        className="max-h-64 w-full rounded-md object-contain"
+                        className="max-h-64 w-full object-contain"
                       />
                       <button
                         type="button"
@@ -1455,11 +1532,16 @@ export default function SearchPage() {
               )}
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <div
+              className={`mt-4 flex flex-wrap items-center gap-2 ${
+                hasActiveSearch ? 'justify-center' : 'justify-center'
+              }`}
+            >
               <SuggestionPicker
                 suggestions={suggestionPool}
                 currentQuery={textQuery}
                 onSelect={runEvalSearch}
+                onPreviewChange={setIdleSuggestion}
               />
               <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
                 <ModeButton
@@ -1504,15 +1586,6 @@ export default function SearchPage() {
             </div>
           </div>
         </section>
-
-        {!hasActiveSearch && (
-          <IdleShowcase
-            ref={idleShowcaseRef}
-            artworks={idleShowcaseResults}
-            isLoading={idleShowcaseQuery.isLoading}
-            onSearch={runTextSearch}
-          />
-        )}
 
         {hasActiveSearch && (
           <section ref={resultsAreaRef} className="mt-8">
@@ -1859,6 +1932,7 @@ export default function SearchPage() {
               )}
           </section>
         )}
+        <SearchInfoFooter />
       </main>
       <SearchArtworkDialog
         artwork={selectedArtwork}
@@ -1869,18 +1943,58 @@ export default function SearchPage() {
   );
 }
 
+function SearchInfoFooter() {
+  return (
+    <section className="mt-12 border-t border-white/[0.08] pt-8">
+      <div className="flex flex-col gap-3 text-sm leading-6 text-white/55 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex max-w-4xl items-start gap-2">
+          <ShieldCheck className="mt-1 h-3.5 w-3.5 shrink-0 text-white/35" />
+          <p>
+            Experimental search, not an official catalogue; verify important
+            details with linked source records.
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-4 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+          <Link
+            to="/docs/api"
+            className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
+          >
+            <Network className="h-3.5 w-3.5" />
+            Docs
+          </Link>
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
+          >
+            <Github className="h-3.5 w-3.5" />
+            GitHub
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SuggestionPicker({
   suggestions,
   currentQuery,
   onSelect,
+  onPreviewChange,
 }: {
   suggestions: EvalSuggestion[];
   currentQuery: string;
   onSelect: (suggestion: EvalSuggestion) => void;
+  onPreviewChange?: (suggestion: EvalSuggestion) => void;
 }) {
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const [paused, setPaused] = useState(false);
+  const activeSuggestionRef = useRef<HTMLButtonElement | null>(null);
+  const suggestion = suggestions[index] ?? suggestions[0] ?? null;
 
   useEffect(() => {
     if (!suggestions.length) return;
@@ -1892,14 +2006,52 @@ function SuggestionPicker({
 
     const handle = window.setInterval(() => {
       setIndex((value) => (value + 1) % suggestions.length);
-    }, 4200);
+    }, 9000);
 
     return () => window.clearInterval(handle);
   }, [open, paused, suggestions.length]);
 
-  if (!suggestions.length) return null;
+  useEffect(() => {
+    if (suggestion) {
+      onPreviewChange?.(suggestion);
+    }
+  }, [onPreviewChange, suggestion]);
 
-  const suggestion = suggestions[index] ?? suggestions[0];
+  useEffect(() => {
+    if (!suggestion || !activeSuggestionRef.current) return undefined;
+
+    let context: { revert: () => void } | undefined;
+    let cancelled = false;
+
+    void import('gsap').then(({ gsap }) => {
+      if (cancelled || !activeSuggestionRef.current) return;
+
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      if (reduceMotion) return;
+
+      context = gsap.context(() => {
+        gsap.fromTo(
+          activeSuggestionRef.current,
+          { autoAlpha: 0, y: 6 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.35,
+            ease: 'power3.out',
+            overwrite: 'auto',
+          }
+        );
+      }, activeSuggestionRef);
+    });
+
+    return () => {
+      cancelled = true;
+      context?.revert();
+    };
+  }, [suggestion]);
+
   if (!suggestion) return null;
 
   const activeQuery = currentQuery.trim().toLowerCase();
@@ -1916,6 +2068,7 @@ function SuggestionPicker({
         Try
       </span>
       <button
+        ref={activeSuggestionRef}
         type="button"
         onClick={() => onSelect(suggestion)}
         className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
@@ -1985,95 +2138,277 @@ function SuggestionPicker({
   );
 }
 
-const IdleShowcase = forwardRef<
+const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
+  artwork?.thumbnailUrl || artwork?.imageUrl || null;
+
+const preloadShowcaseImage = (src: string) =>
+  new Promise<void>((resolve) => {
+    const image = new Image();
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    const decodeThenFinish = () => {
+      if (typeof image.decode === 'function') {
+        void image.decode().catch(() => undefined).finally(finish);
+        return;
+      }
+
+      finish();
+    };
+
+    image.decoding = 'async';
+    image.onload = decodeThenFinish;
+    image.onerror = finish;
+    image.src = src;
+
+    if (image.complete) {
+      decodeThenFinish();
+    }
+  });
+
+const IdleShowcaseBackdrop = forwardRef<
   HTMLDivElement,
   {
     artworks: ArtworkSearchResult[];
     isLoading: boolean;
-    onSearch: (query: string) => void;
+    onSelectArtwork: (artwork: ArtworkSearchResult) => void;
   }
->(function IdleShowcase({ artworks, isLoading, onSearch }, ref) {
-  const featured = artworks.filter(
-    (artwork) => artwork.thumbnailUrl || artwork.imageUrl
+>(function IdleShowcaseBackdrop(
+  { artworks, isLoading, onSelectArtwork },
+  ref
+) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const transitionRunRef = useRef(0);
+  const previewWorks = useMemo(
+    () =>
+      artworks
+        .filter((artwork) => artwork.thumbnailUrl || artwork.imageUrl)
+        .slice(0, 4),
+    [artworks]
   );
-  const previewWorks = featured.slice(0, 5);
+  const previewKey = useMemo(
+    () =>
+      previewWorks
+        .map((artwork) => `${artwork.id}:${getShowcaseImageUrl(artwork)}`)
+        .join('|'),
+    [previewWorks]
+  );
+  const displayedKeyRef = useRef(previewKey);
+  const [displayedWorks, setDisplayedWorks] =
+    useState<ArtworkSearchResult[]>(previewWorks);
+  const [stageVersion, setStageVersion] = useState(0);
   const previewItems = Array.from(
-    { length: 5 },
-    (_, index) => previewWorks[index] ?? null
+    { length: 4 },
+    (_, index) => displayedWorks[index] ?? null
   );
   const previewLayout = [
-    'col-span-3 row-span-2',
-    'col-span-2',
-    'col-span-1',
-    'col-span-1',
-    'col-span-2',
+    {
+      top: '8%',
+      left: '7%',
+      width: 'clamp(9rem, 15vw, 18rem)',
+      rotate: -2,
+      mobile: true,
+    },
+    {
+      top: '8%',
+      right: '8%',
+      width: 'clamp(9rem, 15vw, 18rem)',
+      rotate: 2,
+      mobile: true,
+    },
+    {
+      bottom: '8%',
+      left: '10%',
+      width: 'clamp(8rem, 13vw, 16rem)',
+      rotate: 1.5,
+      mobile: false,
+    },
+    {
+      bottom: '8%',
+      right: '11%',
+      width: 'clamp(8rem, 13vw, 16rem)',
+      rotate: -1.5,
+      mobile: false,
+    },
   ];
+
+  useEffect(() => {
+    if (!previewWorks.length) {
+      transitionRunRef.current += 1;
+      displayedKeyRef.current = '';
+      setDisplayedWorks([]);
+      setStageVersion((version) => version + 1);
+      return undefined;
+    }
+
+    if (previewKey === displayedKeyRef.current) return undefined;
+
+    let cancelled = false;
+    const runId = transitionRunRef.current + 1;
+    transitionRunRef.current = runId;
+
+    const transitionToBufferedWorks = async () => {
+      await Promise.allSettled(
+        previewWorks
+          .map(getShowcaseImageUrl)
+          .filter((src): src is string => Boolean(src))
+          .map(preloadShowcaseImage)
+      );
+
+      if (cancelled || runId !== transitionRunRef.current) return;
+
+      const stage = stageRef.current;
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+
+      if (stage && !reduceMotion && displayedKeyRef.current) {
+        const { gsap } = await import('gsap');
+        if (cancelled || runId !== transitionRunRef.current) return;
+
+        const works = Array.from(
+          stage.querySelectorAll('[data-showcase-work]')
+        );
+
+        if (works.length) {
+          await new Promise<void>((resolve) => {
+            gsap.to(works, {
+              autoAlpha: 0,
+              y: -10,
+              scale: 0.985,
+              duration: 0.32,
+              ease: 'power2.out',
+              overwrite: 'auto',
+              onComplete: resolve,
+            });
+          });
+        }
+      }
+
+      if (cancelled || runId !== transitionRunRef.current) return;
+      displayedKeyRef.current = previewKey;
+      setDisplayedWorks(previewWorks);
+      setStageVersion((version) => version + 1);
+    };
+
+    void transitionToBufferedWorks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewKey, previewWorks]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !displayedWorks.length) return undefined;
+
+    let animation: { kill: () => void } | undefined;
+    let cancelled = false;
+
+    void import('gsap').then(({ gsap }) => {
+      if (cancelled || !stageRef.current) return;
+
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches;
+      if (reduceMotion) return;
+
+      const works = Array.from(
+        stageRef.current.querySelectorAll('[data-showcase-work]')
+      );
+
+      gsap.set(works, { autoAlpha: 0, y: 14, scale: 0.985 });
+      animation = gsap.to(works, {
+        autoAlpha: 1,
+        y: 0,
+        scale: 1,
+        duration: 0.52,
+        ease: 'power3.out',
+        overwrite: 'auto',
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      animation?.kill();
+    };
+  }, [displayedWorks.length, stageVersion]);
 
   return (
     <div
       ref={ref}
-      className="mx-auto mt-8 max-w-7xl border-y border-white/[0.08] py-6"
+      className="absolute inset-0 overflow-hidden bg-[#0b0b0e]"
+      aria-label="Suggested artworks"
     >
-      <div className="grid gap-7 lg:grid-cols-[minmax(0,0.85fr)_minmax(480px,1.15fr)] lg:items-center">
-        <section className="py-2 lg:py-6">
-          <div className="max-w-2xl">
-            <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-white/35">
-              National Gallery Singapore
-            </p>
-            <h1 className="mt-3 font-display text-3xl font-semibold leading-tight text-white lg:text-5xl">
-              Start with a collection direction.
-            </h1>
-          </div>
-        </section>
+      <div ref={stageRef} className="pointer-events-none absolute inset-0">
+        {previewItems.map((artwork, index) => {
+          const layout = previewLayout[index];
+          const imageUrl = getShowcaseImageUrl(artwork);
+          const title = artwork?.title || 'Artwork';
 
-        <section className="min-w-0">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
-              Collection preview
-            </p>
-            {isLoading && (
-              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/25">
-                Loading
-              </span>
-            )}
-          </div>
-          <div className="grid h-[260px] grid-cols-6 grid-rows-2 gap-2 sm:h-[320px] lg:h-[360px]">
-            {previewItems.map((artwork, index) => (
-              <button
-                key={artwork?.id || `preview-${index}`}
-                type="button"
-                disabled={!artwork?.title}
-                onClick={() => artwork?.title && onSearch(artwork.title)}
-                aria-label={
-                  artwork?.title ? `Search ${artwork.title}` : 'Loading artwork'
-                }
-                className={`group relative min-h-0 overflow-hidden border border-white/[0.08] bg-white/[0.035] text-left transition-colors hover:border-white/20 disabled:cursor-default disabled:hover:border-white/[0.08] ${
-                  previewLayout[index] || ''
-                }`}
-              >
-                {artwork ? (
-                  <>
-                    <img
-                      src={
-                        artwork.thumbnailUrl || artwork.imageUrl || undefined
-                      }
-                      alt={artwork.title || 'Artwork'}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                    />
-                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-2 pb-2 pt-8 font-mono text-[9px] uppercase tracking-[0.1em] text-white/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
-                      <span className="block truncate">{artwork.title}</span>
-                    </span>
-                  </>
-                ) : (
-                  <div
-                    className="h-full w-full animate-pulse bg-white/[0.04]"
-                    aria-hidden="true"
+          return (
+            <button
+              key={artwork?.id || `showcase-${index}`}
+              type="button"
+              data-showcase-work="true"
+              disabled={!artwork}
+              onClick={() => {
+                if (artwork) onSelectArtwork(artwork);
+              }}
+              className={`group pointer-events-auto absolute flex w-fit justify-center overflow-hidden text-left shadow-2xl outline-none transition-transform duration-300 hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-fuchsia-300 ${
+                layout?.mobile ? '' : 'hidden md:block'
+              }`}
+              aria-label={`View ${title}`}
+              title={
+                artwork
+                  ? `${title}${artwork.artist ? ` - ${artwork.artist}` : ''}`
+                  : undefined
+              }
+              style={{
+                top: layout?.top,
+                right: layout?.right,
+                bottom: layout?.bottom,
+                left: layout?.left,
+                maxWidth: layout?.width,
+                transform: `rotate(${layout?.rotate || 0}deg)`,
+              }}
+            >
+              {imageUrl ? (
+                <span className="relative block w-fit max-w-full overflow-hidden">
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    loading="eager"
+                    decoding="async"
+                    className="block max-w-full object-contain"
+                    style={{ height: 'min(22vh, 20rem)', width: 'auto' }}
                   />
-                )}
-              </button>
-            ))}
-          </div>
-        </section>
+                  <span className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 max-w-full overflow-hidden bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 opacity-95 transition duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+                    <span className="line-clamp-2 max-w-full whitespace-normal break-words text-xs font-semibold leading-tight text-white drop-shadow [overflow-wrap:anywhere]">
+                      {title}
+                    </span>
+                    {artwork?.artist && (
+                      <span className="mt-1 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-tight text-white/72 drop-shadow">
+                        {artwork.artist}
+                      </span>
+                    )}
+                  </span>
+                </span>
+              ) : (
+                <div
+                  className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
+                    isLoading ? 'animate-pulse' : ''
+                  }`}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -2094,7 +2429,9 @@ function SearchArtworkDialog({
     : null;
   const caption = artwork ? getGeneratedCaptionText(artwork) : null;
   const catalogRows = artwork ? getPublicCatalogueRows(artwork) : [];
-  const catalogPrimarySource = getDominantSourceLabel(catalogRows);
+  const catalogueSourceLabel = getPublicRecordSourceLabel(
+    getDominantSourceLabel(catalogRows)
+  );
   const ngsUrl = artwork ? getNgsUrl(artwork) : null;
   const rootsUrl = artwork ? getRootsUrl(artwork) : null;
 
@@ -2108,7 +2445,7 @@ function SearchArtworkDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" />
         {artwork && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none md:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+          <Dialog.Content className="themeable-surface fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none md:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
             <Dialog.Description className="sr-only">
               Source-labelled catalogue text, public fields, and generated
               caption for the selected artwork.
@@ -2118,7 +2455,7 @@ function SearchArtworkDialog({
                 <img
                   src={imageUrl}
                   alt={artwork.title || 'Artwork'}
-                  className="max-h-[72vh] w-full rounded-md object-contain"
+                  className="max-h-[72vh] w-full object-contain"
                 />
               ) : (
                 <div className="flex h-full min-h-64 w-full items-center justify-center rounded-md bg-white/[0.04] text-white/30">
@@ -2178,7 +2515,7 @@ function SearchArtworkDialog({
                   />
                 )}
                 {rootsUrl && (
-                  <PublicRecordLink href={rootsUrl} label="NHB Roots record" />
+                  <PublicRecordLink href={rootsUrl} label="Roots NHB record" />
                 )}
               </div>
 
@@ -2188,7 +2525,10 @@ function SearchArtworkDialog({
                     <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
                       Catalogue text
                     </h3>
-                    <SourceBadge label={descriptionDetails.sourceLabel} />
+                    <SourceIndicator
+                      label={descriptionDetails.sourceLabel}
+                      showLabel
+                    />
                   </div>
                   <p className="mt-2 text-sm leading-relaxed text-white/70">
                     {descriptionDetails.text}
@@ -2198,34 +2538,58 @@ function SearchArtworkDialog({
 
               {catalogRows.length > 0 && (
                 <section className="mt-6">
-                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                    Catalogue fields
-                  </h3>
-                  {catalogPrimarySource && (
-                    <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
-                      Mostly from {catalogPrimarySource}; exceptions marked
-                    </p>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+                      Catalogue fields
+                    </h3>
+                    {catalogueSourceLabel && (
+                      <SourceIndicator label={catalogueSourceLabel} compact />
+                    )}
+                  </div>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {catalogRows.map(({ label, value, sourceLabel }) => (
-                      <div
-                        key={label}
-                        className="rounded-md border border-white/[0.08] bg-black/20 p-3"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
-                            {label}
-                          </dt>
-                          {sourceLabel !== catalogPrimarySource && (
-                            <SourceBadge label={sourceLabel} compact />
-                          )}
+                    {catalogRows.map(({ label, value, sourceLabel }) => {
+                      const searchQuery = getCatalogueRowSearchQuery(
+                        label,
+                        value
+                      );
+
+                      return (
+                        <div
+                          key={label}
+                          className="rounded-md border border-white/[0.08] bg-black/20 p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
+                              {label}
+                            </dt>
+                            {getPublicRecordSourceLabel(sourceLabel) &&
+                              getPublicRecordSourceLabel(sourceLabel) !==
+                                catalogueSourceLabel && (
+                                <SourceIndicator label={sourceLabel} compact />
+                              )}
+                          </div>
+                          <dd className="mt-1 text-sm text-white/70">
+                            {searchQuery ? (
+                              <Link
+                                to={`/${routeId}/search?q=${encodeURIComponent(
+                                  searchQuery
+                                )}`}
+                                className="underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/60"
+                              >
+                                {value}
+                              </Link>
+                            ) : (
+                              value
+                            )}
+                          </dd>
                         </div>
-                        <dd className="mt-1 text-sm text-white/70">{value}</dd>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </dl>
                 </section>
               )}
+
+              <CitationPanel artwork={artwork} className="mt-6" />
 
               {caption && (
                 <section className="mt-6 rounded-md border border-cyan-200/10 bg-cyan-200/[0.04] p-4">
@@ -2233,7 +2597,7 @@ function SearchArtworkDialog({
                     <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-100/55">
                       Generated caption
                     </h3>
-                    <SourceBadge label="Paillette AI" />
+                    <SourceIndicator label="Paillette AI" showLabel />
                   </div>
                   <p className="mt-2 text-sm leading-relaxed text-white/68">
                     {caption}
@@ -2245,24 +2609,6 @@ function SearchArtworkDialog({
         )}
       </Dialog.Portal>
     </Dialog.Root>
-  );
-}
-
-function SourceBadge({
-  label,
-  compact = false,
-}: {
-  label: string;
-  compact?: boolean;
-}) {
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.05] font-mono uppercase tracking-[0.12em] text-cyan-100/55 ${
-        compact ? 'px-1.5 py-0.5 text-[8px]' : 'px-2 py-0.5 text-[9px]'
-      }`}
-    >
-      {label}
-    </span>
   );
 }
 
@@ -2704,7 +3050,7 @@ function ResultCard({
   const palette = collectPalette(result).slice(0, 5);
 
   return (
-    <article className="break-inside-avoid overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.025]">
+    <article className="break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]">
       <button
         type="button"
         onClick={() => onSelectArtwork(result)}
@@ -2945,7 +3291,7 @@ function TableResults({
                       src={result.thumbnailUrl || result.imageUrl || undefined}
                       alt=""
                       loading="lazy"
-                      className="h-12 w-12 rounded-md object-cover"
+                      className="h-12 w-12 object-cover"
                     />
                   ) : (
                     <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">

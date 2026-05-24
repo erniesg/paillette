@@ -16,6 +16,16 @@ export type PublicDescriptionDetails = {
   sourceLabel: string;
 };
 
+export type PublicCitationParts = {
+  artist: string;
+  title: string;
+  date: string;
+  physical: string | null;
+  institution: string | null;
+  plainText: string;
+  htmlText: string;
+};
+
 export const asRecord = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, any>)
@@ -61,28 +71,47 @@ const isNgsUrl = (value: string) => /nationalgallery\.sg/i.test(value);
 const isRootsUrl = (value: string) => /roots\.gov\.sg/i.test(value);
 
 const NGS_SOURCE_LABEL = 'National Gallery Singapore';
-const ROOTS_SOURCE_LABEL = 'NHB Roots';
+const ROOTS_SOURCE_LABEL = 'Roots NHB';
 const METADATA_SOURCE_LABEL = 'Public metadata';
 
 const SOURCE_LABELS: Record<string, string> = {
   ngs: NGS_SOURCE_LABEL,
+  ngs_source_data: NGS_SOURCE_LABEL,
+  stored_ngs_source_data: NGS_SOURCE_LABEL,
   national_gallery_singapore: NGS_SOURCE_LABEL,
+  nationalgallerysingapore: NGS_SOURCE_LABEL,
   roots: ROOTS_SOURCE_LABEL,
   nhb_roots: ROOTS_SOURCE_LABEL,
-  ngs_artplus_catalog: 'NGS Art+ catalogue',
-  artplus: 'NGS Art+ catalogue',
-  df_10K: 'Colour dataset',
-  '12class_model': 'AI tag model',
+  roots_nhb: ROOTS_SOURCE_LABEL,
+  ngs_artplus_catalog: NGS_SOURCE_LABEL,
+  artplus: NGS_SOURCE_LABEL,
+  'ngs art+ catalogue': NGS_SOURCE_LABEL,
   metadata: METADATA_SOURCE_LABEL,
 };
 
 const formatSourceLabel = (value: unknown) => {
   const text = asText(value);
   if (!text) return null;
-  return (
-    SOURCE_LABELS[text] ||
-    text.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-  );
+  const cleaned = text.replace(/^from\s+/i, '').trim();
+  const key = cleaned.toLowerCase().replace(/[\s-]+/g, '_');
+
+  if (SOURCE_LABELS[cleaned] || SOURCE_LABELS[key]) {
+    return SOURCE_LABELS[cleaned] || SOURCE_LABELS[key];
+  }
+
+  if (/national\s*gallery\s*singapore|^ngs\b|art\+|artplus/i.test(cleaned)) {
+    return NGS_SOURCE_LABEL;
+  }
+
+  if (/roots|nhb/i.test(cleaned)) {
+    return ROOTS_SOURCE_LABEL;
+  }
+
+  if (/^metadata$|^public metadata$/i.test(cleaned)) {
+    return METADATA_SOURCE_LABEL;
+  }
+
+  return null;
 };
 
 const getPublicFieldSources = (artwork: PublicArtwork) => {
@@ -198,6 +227,127 @@ export const getPublicThumbnailUrl = (artwork: PublicArtwork) =>
     artwork.image_url
   );
 
+const getPublicMediumText = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  const sourceRecords = getSourceRecords(artwork);
+  const ngsRecord = asRecord(sourceRecords.ngs);
+
+  return firstPublicCatalogueText(
+    artwork.medium,
+    meta.medium,
+    ngsRecord.objMaterialTechniqueTxt
+  );
+};
+
+const getFirstDimensionSummary = (groups: unknown) => {
+  if (!Array.isArray(groups)) return null;
+
+  for (const group of groups) {
+    const record = asRecord(group);
+    const summary = firstPublicCatalogueText(record.summary);
+    if (summary) return summary;
+  }
+
+  return null;
+};
+
+export const getPublicDimensionsText = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  const sourceRecords = getSourceRecords(artwork);
+  const ngsRecord = asRecord(sourceRecords.ngs);
+
+  return firstPublicCatalogueText(
+    meta.dimensions_text,
+    meta.dimensionsText,
+    meta.published_dimension,
+    meta.publishedDimension,
+    getFirstDimensionSummary(ngsRecord.objDim2DGrp),
+    getFirstDimensionSummary(ngsRecord.objDim3DGrp),
+    formatDimensions(artwork.dimensions)
+  );
+};
+
+const normalizeCitationDimension = (value: string | null) =>
+  value
+    ?.replace(/^(image|object|frame)\s+measure:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[×x]\s*/g, ' x ')
+    .trim() || null;
+
+const trimCitationPart = (value: string | null) =>
+  value?.replace(/[.;,\s]+$/g, '').trim() || null;
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const getCitationInstitution = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  const institution = firstPublicCatalogueText(
+    artwork.source_institution,
+    meta.sourceInstitution,
+    meta.source_institution
+  );
+
+  if (institution?.toLowerCase().includes('national gallery singapore')) {
+    return 'National Gallery Singapore, Singapore';
+  }
+
+  return institution;
+};
+
+export const getPublicCitationParts = (
+  artwork: PublicArtwork
+): PublicCitationParts => {
+  const meta = getPublicMetadata(artwork);
+  const artist = trimCitationPart(
+    firstPublicCatalogueText(artwork.artist, meta.artist)
+  ) || 'Unknown artist';
+  const title = trimCitationPart(
+    firstPublicCatalogueText(artwork.title, meta.title)
+  ) || 'Untitled';
+  const date = trimCitationPart(getPublicDateText(artwork)) || 'n.d.';
+  const medium = trimCitationPart(getPublicMediumText(artwork));
+  const dimensions = trimCitationPart(
+    normalizeCitationDimension(getPublicDimensionsText(artwork))
+  );
+  const institution = trimCitationPart(getCitationInstitution(artwork));
+
+  const physical = [medium, dimensions].filter(Boolean).join(', ');
+  const parts = [
+    artist,
+    title,
+    date,
+    physical || null,
+    institution,
+  ].filter((part): part is string => Boolean(part));
+
+  const htmlParts = [
+    escapeHtml(artist),
+    `<cite>${escapeHtml(title)}</cite>`,
+    escapeHtml(date),
+    physical ? escapeHtml(physical) : null,
+    institution ? escapeHtml(institution) : null,
+  ].filter((part): part is string => Boolean(part));
+
+  return {
+    artist,
+    title,
+    date,
+    physical: physical || null,
+    institution,
+    plainText: `${parts.join('. ')}.`,
+    htmlText: `${htmlParts.join('. ')}.`,
+  };
+};
+
+export const getPublicCitation = (artwork: PublicArtwork) =>
+  getPublicCitationParts(artwork).plainText;
+
 export const getGeneratedCaptionRecord = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
   return asRecord(meta.generated_caption || meta.generatedCaption);
@@ -295,7 +445,7 @@ export const getPublicDescriptionDetails = (
   return firstPublicCatalogueDetails(
     {
       source: 'ngs',
-      sourceLabel: 'From National Gallery Singapore',
+      sourceLabel: NGS_SOURCE_LABEL,
       values: [
         ngsRecord.objDescriptionClb,
         ngsRecord.ocspWebText,
@@ -309,7 +459,7 @@ export const getPublicDescriptionDetails = (
     },
     {
       source: 'roots',
-      sourceLabel: 'From NHB Roots',
+      sourceLabel: ROOTS_SOURCE_LABEL,
       values: [
         rootsRecord.description,
         rootsRecord.caption,
@@ -411,18 +561,8 @@ export const getPublicCatalogueRows = (
     },
     {
       label: 'Medium',
-      value: artwork.medium || meta.medium,
+      value: getPublicMediumText(artwork),
       sourceLabel: getFieldSourceLabel(fieldSources, 'medium'),
-    },
-    {
-      label: 'Classification',
-      value: artwork.classification || meta.classification,
-      sourceLabel: getFieldSourceLabel(fieldSources, 'classification'),
-    },
-    {
-      label: 'Culture',
-      value: artwork.culture || meta.culture,
-      sourceLabel: getFieldSourceLabel(fieldSources, 'culture'),
     },
     {
       label: 'Geographic association',
@@ -441,12 +581,7 @@ export const getPublicCatalogueRows = (
     },
     {
       label: 'Dimensions',
-      value:
-        meta.dimensions_text ||
-        meta.dimensionsText ||
-        meta.published_dimension ||
-        meta.publishedDimension ||
-        formatDimensions(artwork.dimensions),
+      value: getPublicDimensionsText(artwork),
       sourceLabel: getFieldSourceLabel(
         fieldSources,
         'dimensions',
@@ -478,22 +613,6 @@ export const getPublicCatalogueRows = (
         'creditLine'
       ),
     },
-    {
-      label: 'Source institution',
-      value:
-        artwork.source_institution ||
-        meta.sourceInstitution ||
-        meta.source_institution,
-      sourceLabel: inferredRecordSource,
-    },
-    {
-      label: 'Source collection',
-      value:
-        artwork.source_collection ||
-        meta.sourceCollection ||
-        meta.source_collection,
-      sourceLabel: inferredRecordSource,
-    },
   ];
 
   return rows
@@ -521,4 +640,11 @@ export const getDominantSourceLabel = (rows: PublicMetadataRow[]) => {
   }
 
   return dominant;
+};
+
+export const getPublicRecordSourceLabel = (sourceLabel?: string | null) => {
+  const label = formatSourceLabel(sourceLabel);
+  return label === NGS_SOURCE_LABEL || label === ROOTS_SOURCE_LABEL
+    ? label
+    : null;
 };

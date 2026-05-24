@@ -16,18 +16,78 @@ export const links: LinksFunction = () => [
 
 // Every variant route, newest first. This is the master index.
 const ALL_VARIANTS = [
-  { round: 'R4', href: '/home-2', name: 'Home 2', note: 'Search + Refine (colour facet) × layout (Masonry / Salon / Atlas / Table) × group-by-colour. The synthesis.' },
-  { round: 'R3', href: '/find', name: 'Find', note: 'Search-as-hero — the landing IS the product. No marketing copy.' },
-  { round: 'R3', href: '/spectrum', name: 'Spectrum', note: '12 color bars fill the viewport. Color is the navigation.' },
-  { round: 'R3', href: '/atlas', name: 'Atlas', note: 'The embedding atlas itself is the hero — paintings in style clusters.' },
-  { round: 'R3', href: '/raw', name: 'Raw', note: 'Brutalist wiki. Monospace, sortable table, anti-design.' },
-  { round: 'R2', href: '/noir', name: 'Noir', note: 'Tech-product. Linear / Vercel / Cursor coded, near-black, Inter only.' },
-  { round: 'R2', href: '/mubi', name: 'Cinema', note: 'MUBI / Criterion coded. Painting framed as the "now showing" poster.' },
-  { round: 'R2', href: '/chrome', name: 'Chrome', note: 'Y2K iridescent anti-museum. Glass cards, oversaturated gradient.' },
-  { round: 'R1', href: '/salon', name: 'Salon hang', note: 'Petersburg hang on a cream linen wall, hero text in the clear band.' },
-  { round: 'R1', href: '/cinematic', name: 'Cinematic', note: 'Full-bleed Van Gogh with Ken Burns drift, film-title-card hero.' },
-  { round: 'R1', href: '/cube', name: 'White cube', note: 'Museum-minimal. One small artwork plate, huge serif wordmark.' },
-  { round: 'orig', href: '/', name: 'V0 Current', note: 'The original homepage — dark gradient, floating orbs, feature grid.' },
+  {
+    round: 'R4',
+    href: '/home-2',
+    name: 'Home 2',
+    note: 'Search + Refine (colour facet) × layout (Masonry / Salon / Atlas / Table) × group-by-colour. The synthesis.',
+  },
+  {
+    round: 'R3',
+    href: '/find',
+    name: 'Find',
+    note: 'Search-as-hero — the landing IS the product. No marketing copy.',
+  },
+  {
+    round: 'R3',
+    href: '/spectrum',
+    name: 'Spectrum',
+    note: '12 color bars fill the viewport. Color is the navigation.',
+  },
+  {
+    round: 'R3',
+    href: '/atlas',
+    name: 'Atlas',
+    note: 'The embedding atlas itself is the hero — paintings in style clusters.',
+  },
+  {
+    round: 'R3',
+    href: '/raw',
+    name: 'Raw',
+    note: 'Brutalist wiki. Monospace, sortable table, anti-design.',
+  },
+  {
+    round: 'R2',
+    href: '/noir',
+    name: 'Noir',
+    note: 'Tech-product. Linear / Vercel / Cursor coded, near-black, Inter only.',
+  },
+  {
+    round: 'R2',
+    href: '/mubi',
+    name: 'Cinema',
+    note: 'MUBI / Criterion coded. Painting framed as the "now showing" poster.',
+  },
+  {
+    round: 'R2',
+    href: '/chrome',
+    name: 'Chrome',
+    note: 'Y2K iridescent anti-museum. Glass cards, oversaturated gradient.',
+  },
+  {
+    round: 'R1',
+    href: '/salon',
+    name: 'Salon hang',
+    note: 'Petersburg hang on a cream linen wall, hero text in the clear band.',
+  },
+  {
+    round: 'R1',
+    href: '/cinematic',
+    name: 'Cinematic',
+    note: 'Full-bleed Van Gogh with Ken Burns drift, film-title-card hero.',
+  },
+  {
+    round: 'R1',
+    href: '/cube',
+    name: 'White cube',
+    note: 'Museum-minimal. One small artwork plate, huge serif wordmark.',
+  },
+  {
+    round: 'orig',
+    href: '/',
+    name: 'V0 Current',
+    note: 'The original homepage — dark gradient, floating orbs, feature grid.',
+  },
 ];
 
 type System = {
@@ -284,10 +344,13 @@ export default function Design() {
           <p className="text-sm uppercase tracking-[0.3em] text-accent-300 mb-2">
             Round 3 · divergent
           </p>
-          <h2 className="text-3xl font-display">Four routes that aren't "hero + CTA + features"</h2>
+          <h2 className="text-3xl font-display">
+            Four routes that aren't "hero + CTA + features"
+          </h2>
           <p className="text-neutral-400 mt-3 max-w-2xl mx-auto">
-            Each one departs structurally — the search is the page, the page is a wall of color,
-            the hero is the product itself, or the whole site refuses to be designed.
+            Each one departs structurally — the search is the page, the page is
+            a wall of color, the hero is the product itself, or the whole site
+            refuses to be designed.
           </p>
         </div>
 
@@ -303,15 +366,15 @@ export default function Design() {
             {
               href: '/spectrum',
               label: 'Spectrum',
-              vibe: '12 vertical color bars fill the viewport. Each one is a painting\'s dominant color. Hover to reveal the work. Color IS navigation.',
+              vibe: "12 vertical color bars fill the viewport. Each one is a painting's dominant color. Hover to reveal the work. Color IS navigation.",
               tag: 'no traditional hero',
               bg: 'linear-gradient(90deg, #1e3a5f, #c89f3a, #c8542e, #8a2a6a)',
             },
             {
               href: '/atlas',
               label: 'Atlas',
-              vibe: 'The hero is the embedding atlas itself — a galaxy of paintings clustered by style, similarity edges drawn between them. Show the product, don\'t describe it.',
-              tag: 'show, don\'t tell',
+              vibe: "The hero is the embedding atlas itself — a galaxy of paintings clustered by style, similarity edges drawn between them. Show the product, don't describe it.",
+              tag: "show, don't tell",
               bg: 'radial-gradient(ellipse at 30% 30%, rgba(168,85,247,0.3), #08070d 60%)',
             },
             {
@@ -328,19 +391,34 @@ export default function Design() {
               to={v.href}
               className="group rounded-2xl border border-neutral-800 hover:border-accent-400/60 overflow-hidden transition-colors"
             >
-              <div className="aspect-[4/5] relative overflow-hidden" style={{ background: v.bg }}>
+              <div
+                className="aspect-[4/5] relative overflow-hidden"
+                style={{ background: v.bg }}
+              >
                 <div className="absolute top-5 left-5 right-5">
-                  <p className={`text-[10px] uppercase tracking-[0.3em] font-mono ${v.isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  <p
+                    className={`text-[10px] uppercase tracking-[0.3em] font-mono ${v.isLight ? 'text-black/60' : 'text-white/60'}`}
+                  >
                     {v.tag}
                   </p>
-                  <p className={`mt-1 font-display font-bold text-2xl ${v.isLight ? 'text-black' : 'text-white'}`}>
+                  <p
+                    className={`mt-1 font-display font-bold text-2xl ${v.isLight ? 'text-black' : 'text-white'}`}
+                  >
                     {v.label}
                   </p>
                 </div>
-                <div className={`absolute bottom-5 left-5 right-5 font-display font-bold text-xl`}>
-                  <span className={v.isLight ? 'text-black' : 'text-white'}>P</span>
-                  <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
-                  <span className={v.isLight ? 'text-black' : 'text-white'}>llette</span>
+                <div
+                  className={`absolute bottom-5 left-5 right-5 font-display font-bold text-xl`}
+                >
+                  <span className={v.isLight ? 'text-black' : 'text-white'}>
+                    P
+                  </span>
+                  <span className="bg-gradient-accent bg-clip-text text-transparent">
+                    ai
+                  </span>
+                  <span className={v.isLight ? 'text-black' : 'text-white'}>
+                    llette
+                  </span>
                 </div>
               </div>
               <div className="p-4 bg-neutral-900/60 backdrop-blur-sm">
@@ -352,7 +430,9 @@ export default function Design() {
                     open →
                   </div>
                 </div>
-                <p className="text-[12px] text-neutral-400 leading-relaxed">{v.vibe}</p>
+                <p className="text-[12px] text-neutral-400 leading-relaxed">
+                  {v.vibe}
+                </p>
               </div>
             </Link>
           ))}
@@ -363,10 +443,13 @@ export default function Design() {
           <p className="text-sm uppercase tracking-[0.3em] text-neutral-500 mb-2">
             Round 2 · system swaps (kept for reference)
           </p>
-          <h2 className="text-2xl font-display text-neutral-300">Three system shifts (same shape)</h2>
+          <h2 className="text-2xl font-display text-neutral-300">
+            Three system shifts (same shape)
+          </h2>
           <p className="text-neutral-400 mt-3 max-w-2xl mx-auto">
-            Dropping the museum-reference framing (Frieze / Tate / Zwirner / NGS were all wrong).
-            All three keep the V0 purple gradient as the only accent. Click into each — they're real pages, not swatch cards.
+            Dropping the museum-reference framing (Frieze / Tate / Zwirner / NGS
+            were all wrong). All three keep the V0 purple gradient as the only
+            accent. Click into each — they're real pages, not swatch cards.
           </p>
         </div>
 
@@ -402,7 +485,10 @@ export default function Design() {
               to={v.href}
               className="group rounded-2xl border border-neutral-800 hover:border-primary-400/60 overflow-hidden transition-colors"
             >
-              <div className="aspect-[4/5] relative overflow-hidden" style={{ background: v.bg }}>
+              <div
+                className="aspect-[4/5] relative overflow-hidden"
+                style={{ background: v.bg }}
+              >
                 <img
                   src={v.painting.src}
                   alt=""
@@ -415,7 +501,9 @@ export default function Design() {
                 <div className="absolute top-5 left-5">
                   <div className="font-display font-bold text-xl">
                     <span className="text-white">P</span>
-                    <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+                    <span className="bg-gradient-accent bg-clip-text text-transparent">
+                      ai
+                    </span>
                     <span className="text-white">llette</span>
                   </div>
                   <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/60 font-mono">
@@ -432,16 +520,18 @@ export default function Design() {
                     open →
                   </div>
                 </div>
-                <p className="text-[13px] text-neutral-400 leading-relaxed">{v.vibe}</p>
+                <p className="text-[13px] text-neutral-400 leading-relaxed">
+                  {v.vibe}
+                </p>
               </div>
             </Link>
           ))}
         </div>
 
         <p className="text-neutral-500 text-xs text-center mb-20 max-w-2xl mx-auto leading-relaxed">
-          Paintings are Wikimedia placeholders. Nanyang School works (Liu Kang, Georgette Chen,
-          Cheong Soo Pieng) are still under SG copyright into the 2050s–2070s, so production
-          will need NGS to authorize images.
+          Paintings are Wikimedia placeholders. Nanyang School works (Liu Kang,
+          Georgette Chen, Cheong Soo Pieng) are still under SG copyright into
+          the 2050s–2070s, so production will need NGS to authorize images.
         </p>
 
         {/* Layout directions — kept below for reference */}
@@ -449,10 +539,13 @@ export default function Design() {
           <p className="text-sm uppercase tracking-[0.3em] text-neutral-400 mb-2">
             Layout directions
           </p>
-          <h2 className="text-3xl font-display">Layouts (separate axis from system)</h2>
+          <h2 className="text-3xl font-display">
+            Layouts (separate axis from system)
+          </h2>
           <p className="text-neutral-400 mt-3 max-w-xl mx-auto">
-            You said you'd use Salon + Cinematic in different places. Open each to see them in V0's palette;
-            once you pick a system above, both get reskinned.
+            You said you'd use Salon + Cinematic in different places. Open each
+            to see them in V0's palette; once you pick a system above, both get
+            reskinned.
           </p>
         </div>
 
@@ -463,7 +556,10 @@ export default function Design() {
               to={v.href}
               className="group relative rounded-3xl border border-neutral-800 hover:border-primary-400/50 overflow-hidden transition-colors"
             >
-              <div className="aspect-[16/10] relative overflow-hidden" style={{ background: v.bg }}>
+              <div
+                className="aspect-[16/10] relative overflow-hidden"
+                style={{ background: v.bg }}
+              >
                 {/* Mini "salon" decoration — a single painting peeking */}
                 <img
                   src={PAINTINGS[v.accent].src}
@@ -471,14 +567,21 @@ export default function Design() {
                   className="absolute -bottom-6 -right-8 w-48 h-48 object-cover rounded-sm opacity-80 group-hover:opacity-100 transition-opacity"
                   style={{
                     transform: 'rotate(-3deg)',
-                    boxShadow: '0 20px 40px -12px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(20,10,4,0.3)',
+                    boxShadow:
+                      '0 20px 40px -12px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(20,10,4,0.3)',
                   }}
                 />
                 {/* Wordmark stamp */}
                 <div className="absolute top-6 left-6 font-display font-bold text-2xl">
-                  <span className={v.light ? 'text-[#0d0a08]' : 'text-white'}>P</span>
-                  <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
-                  <span className={v.light ? 'text-[#0d0a08]' : 'text-white'}>llette</span>
+                  <span className={v.light ? 'text-[#0d0a08]' : 'text-white'}>
+                    P
+                  </span>
+                  <span className="bg-gradient-accent bg-clip-text text-transparent">
+                    ai
+                  </span>
+                  <span className={v.light ? 'text-[#0d0a08]' : 'text-white'}>
+                    llette
+                  </span>
                 </div>
               </div>
               <div className="p-5 bg-neutral-900/60 backdrop-blur-sm">
@@ -490,7 +593,9 @@ export default function Design() {
                     open →
                   </div>
                 </div>
-                <p className="text-sm text-neutral-400 leading-relaxed">{v.note}</p>
+                <p className="text-sm text-neutral-400 leading-relaxed">
+                  {v.note}
+                </p>
               </div>
             </Link>
           ))}
@@ -501,20 +606,23 @@ export default function Design() {
           <p className="text-sm uppercase tracking-[0.3em] text-neutral-400 mb-2">
             Logo treatments
           </p>
-          <h2 className="text-3xl font-display">"ai" detail (V0 is the chosen baseline)</h2>
+          <h2 className="text-3xl font-display">
+            "ai" detail (V0 is the chosen baseline)
+          </h2>
           <p className="text-neutral-400 mt-3 max-w-xl mx-auto">
-            Alternate stylings for the AI inside Paillette. V0 stays unless we want to revisit.
+            Alternate stylings for the AI inside Paillette. V0 stays unless we
+            want to revisit.
           </p>
         </div>
 
         <div className="space-y-6">
           <Variant
             label="V0 · Current"
-            note="Single gradient sweep + soft glow shadow on the wordmark."
+            note="Black plate behind the AI detail, with enough air so it never cuts into the P."
           >
             <Logo>
               <span className="text-white">P</span>
-              <span className="bg-gradient-accent bg-clip-text text-transparent animate-glow">ai</span>
+              <AiPlate />
               <span className="text-white">llette</span>
             </Logo>
           </Variant>
@@ -544,7 +652,8 @@ export default function Design() {
         </div>
 
         <div className="mt-16 text-center text-neutral-500 text-sm">
-          Tell me which one (or which combo) you want and I'll wire it into the homepage.
+          Tell me which one (or which combo) you want and I'll wire it into the
+          homepage.
         </div>
       </div>
     </div>
@@ -573,7 +682,9 @@ function Variant({
           <div className="text-xs uppercase tracking-[0.2em] text-accent-300 font-mono">
             {label}
           </div>
-          <p className="text-sm text-neutral-400 mt-2 leading-relaxed">{note}</p>
+          <p className="text-sm text-neutral-400 mt-2 leading-relaxed">
+            {note}
+          </p>
         </div>
         <div className="flex items-center justify-center min-h-[140px] lg:min-h-[180px]">
           {children}
@@ -588,6 +699,20 @@ function Logo({ children }: { children: React.ReactNode }) {
     <h1 className="text-6xl lg:text-8xl font-display font-bold tracking-tight leading-none">
       {children}
     </h1>
+  );
+}
+
+function AiPlate() {
+  return (
+    <span className="relative isolate ml-[0.07em] mr-[0.04em] inline-block px-[0.04em]">
+      <span
+        aria-hidden="true"
+        className="absolute bottom-[-0.24em] left-[-0.02em] right-[-0.02em] top-[-0.34em] z-0 bg-[#07070a] shadow-[0_0_34px_rgba(168,85,247,0.38)]"
+      />
+      <span className="relative z-10 bg-gradient-accent bg-clip-text text-transparent animate-glow drop-shadow-[0_0_10px_rgba(217,70,239,0.38)]">
+        ai
+      </span>
+    </span>
   );
 }
 

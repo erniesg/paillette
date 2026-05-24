@@ -3,13 +3,52 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --app-bg: #0b0b0e;
+    --app-bg-soft: #101014;
+    --app-surface: #151519;
+    --app-surface-strong: #1b1b21;
+    --app-text: #ffffff;
+    --app-text-strong: #ffffff;
+    --app-muted: rgba(255, 255, 255, 0.58);
+    --app-muted-strong: rgba(255, 255, 255, 0.72);
+    --app-faint: rgba(255, 255, 255, 0.38);
+    --app-line: rgba(255, 255, 255, 0.1);
+    --app-line-strong: rgba(255, 255, 255, 0.16);
+    --app-control: rgba(255, 255, 255, 0.055);
+    --app-control-strong: rgba(255, 255, 255, 0.12);
+    --app-shadow: rgba(0, 0, 0, 0.42);
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --app-bg: #f7f4ef;
+    --app-bg-soft: #efe9df;
+    --app-surface: #fffaf2;
+    --app-surface-strong: #ffffff;
+    --app-text: #171717;
+    --app-text-strong: #050505;
+    --app-muted: rgba(23, 23, 23, 0.62);
+    --app-muted-strong: rgba(23, 23, 23, 0.76);
+    --app-faint: rgba(23, 23, 23, 0.42);
+    --app-line: rgba(23, 23, 23, 0.12);
+    --app-line-strong: rgba(23, 23, 23, 0.2);
+    --app-control: rgba(23, 23, 23, 0.055);
+    --app-control-strong: rgba(23, 23, 23, 0.1);
+    --app-shadow: rgba(23, 23, 23, 0.12);
+  }
+
   * {
     @apply border-gray-200;
   }
 
   body {
-    @apply bg-white text-gray-900;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    background: var(--app-bg);
+    color: var(--app-text);
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
   }
 }
 
@@ -33,4 +72,229 @@
   .card {
     @apply bg-white rounded-lg shadow-md p-6;
   }
+}
+
+.theme-toggle-control {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 70;
+  display: inline-flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--app-line);
+  background: color-mix(in srgb, var(--app-surface-strong) 88%, transparent);
+  color: var(--app-muted-strong);
+  box-shadow: 0 16px 40px var(--app-shadow);
+  backdrop-filter: blur(14px);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.theme-toggle-control:hover {
+  border-color: var(--app-line-strong);
+  background: var(--app-surface-strong);
+  color: var(--app-text-strong);
+  transform: translateY(-1px);
+}
+
+.theme-toggle-control:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 3px;
+}
+
+.themeable-surface {
+  background: var(--app-bg);
+  color: var(--app-text);
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+html[data-theme='light'] .themeable-surface {
+  background: var(--app-bg) !important;
+  color: var(--app-text) !important;
+}
+
+html[data-theme='light'] .themeable-surface.bg-gradient-to-br,
+html[data-theme='light'] .themeable-surface .bg-gradient-to-br {
+  background-image: linear-gradient(
+    135deg,
+    #fbf8f1 0%,
+    #f2ebe2 58%,
+    #f7efff 100%
+  ) !important;
+}
+
+html[data-theme='light'] .themeable-surface [class*='bg-[#0b0b0e]'],
+html[data-theme='light'] .themeable-surface [class*='bg-[#08080b]'],
+html[data-theme='light'] .themeable-surface [class*='bg-[#0d0d11]'],
+html[data-theme='light'] .themeable-surface [class*='bg-[#06080f]'] {
+  background-color: var(--app-bg) !important;
+}
+
+html[data-theme='light'] .themeable-surface [style*='rgba(11,11,14'] {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(247, 244, 239, 0.72),
+      rgba(247, 244, 239, 0.18) 34%,
+      rgba(247, 244, 239, 0.24) 62%,
+      rgba(247, 244, 239, 0.86)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(247, 244, 239, 0.82),
+      rgba(247, 244, 239, 0.16) 36%,
+      rgba(247, 244, 239, 0.16) 64%,
+      rgba(247, 244, 239, 0.82)
+    ) !important;
+}
+
+html[data-theme='light'] .themeable-surface [class*='from-[#0b0b0e]'] {
+  --tw-gradient-from: rgb(247 244 239 / 1) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(247 244 239 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops:
+    var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+html[data-theme='light'] .themeable-surface [class*='bg-[#101014]'],
+html[data-theme='light'] .themeable-surface [class*='bg-[#101016]'],
+html[data-theme='light'] .themeable-surface [class*='bg-[#111116]'],
+html[data-theme='light'] .themeable-surface [class*='bg-[#151519]'],
+html[data-theme='light'] .themeable-surface .bg-neutral-950,
+html[data-theme='light'] .themeable-surface .bg-neutral-900,
+html[data-theme='light'] .themeable-surface [class~='bg-neutral-900/80'],
+html[data-theme='light'] .themeable-surface [class~='bg-neutral-900/50'],
+html[data-theme='light'] .themeable-surface .bg-neutral-800,
+html[data-theme='light'] .themeable-surface [class~='bg-neutral-800/50'],
+html[data-theme='light'] .themeable-surface [class~='bg-black/20'],
+html[data-theme='light'] .themeable-surface [class~='bg-black/30'],
+html[data-theme='light'] .themeable-surface [class~='bg-black/35'],
+html[data-theme='light'] .themeable-surface [class~='bg-black/40'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.035]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.04]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.045]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.05]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.06]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.08]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.09]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.1]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.12]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/[0.14]'],
+html[data-theme='light'] .themeable-surface [class~='bg-white/10'] {
+  background-color: var(--app-control) !important;
+}
+
+html[data-theme='light'] .themeable-surface .bg-gradient-accent {
+  background-image: linear-gradient(
+    135deg,
+    #a855f7 0%,
+    #d946ef 50%,
+    #ec4899 100%
+  ) !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-white {
+  color: var(--app-text-strong) !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-white\/85,
+html[data-theme='light'] .themeable-surface .text-white\/80,
+html[data-theme='light'] .themeable-surface .text-white\/75,
+html[data-theme='light'] .themeable-surface .text-neutral-300 {
+  color: var(--app-muted-strong) !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-white\/70,
+html[data-theme='light'] .themeable-surface .text-white\/68,
+html[data-theme='light'] .themeable-surface .text-white\/65,
+html[data-theme='light'] .themeable-surface .text-white\/62,
+html[data-theme='light'] .themeable-surface .text-white\/60,
+html[data-theme='light'] .themeable-surface .text-neutral-400 {
+  color: var(--app-muted) !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-white\/55,
+html[data-theme='light'] .themeable-surface .text-white\/50,
+html[data-theme='light'] .themeable-surface .text-white\/45,
+html[data-theme='light'] .themeable-surface .text-white\/40,
+html[data-theme='light'] .themeable-surface .text-white\/35,
+html[data-theme='light'] .themeable-surface .text-white\/30,
+html[data-theme='light'] .themeable-surface .text-white\/25,
+html[data-theme='light'] .themeable-surface .text-neutral-500 {
+  color: var(--app-faint) !important;
+}
+
+html[data-theme='light'] .themeable-surface .bg-gradient-accent.text-white,
+html[data-theme='light'] .themeable-surface .bg-gradient-accent .text-white,
+html[data-theme='light']
+  .themeable-surface
+  .bg-gradient-accent
+  [class^='text-white'],
+html[data-theme='light']
+  .themeable-surface
+  .bg-gradient-accent
+  [class*=' text-white'] {
+  color: #ffffff !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-cyan-100,
+html[data-theme='light'] .themeable-surface .text-cyan-100\/55,
+html[data-theme='light'] .themeable-surface .text-cyan-100\/75,
+html[data-theme='light'] .themeable-surface .text-cyan-200,
+html[data-theme='light'] .themeable-surface .text-cyan-200\/60,
+html[data-theme='light'] .themeable-surface .text-cyan-200\/75,
+html[data-theme='light'] .themeable-surface .text-cyan-200\/70 {
+  color: #08707f !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-primary-300,
+html[data-theme='light'] .themeable-surface .text-primary-400 {
+  color: #7e22ce !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-fuchsia-100 {
+  color: #a21caf !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-amber-200 {
+  color: #a16207 !important;
+}
+
+html[data-theme='light'] .themeable-surface .text-red-300 {
+  color: #b91c1c !important;
+}
+
+html[data-theme='light'] .themeable-surface [class~='border-white/[0.06]'],
+html[data-theme='light'] .themeable-surface [class~='border-white/[0.08]'],
+html[data-theme='light'] .themeable-surface [class~='border-white/[0.1]'],
+html[data-theme='light'] .themeable-surface [class~='border-white/10'],
+html[data-theme='light'] .themeable-surface [class~='border-white/12'],
+html[data-theme='light'] .themeable-surface [class~='border-white/20'],
+html[data-theme='light'] .themeable-surface [class~='border-neutral-800'],
+html[data-theme='light'] .themeable-surface [class~='border-neutral-700'] {
+  border-color: var(--app-line) !important;
+}
+
+html[data-theme='light'] .themeable-surface input,
+html[data-theme='light'] .themeable-surface textarea,
+html[data-theme='light'] .themeable-surface select {
+  color: var(--app-text-strong) !important;
+}
+
+html[data-theme='light'] .themeable-surface input::placeholder,
+html[data-theme='light'] .themeable-surface textarea::placeholder {
+  color: rgba(23, 23, 23, 0.38) !important;
+}
+
+html[data-theme='light'] .themeable-surface pre,
+html[data-theme='light'] .themeable-surface code {
+  border-color: var(--app-line) !important;
 }

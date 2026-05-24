@@ -36,13 +36,68 @@ export function formatDimensions(dimensions?: {
  * Copy text to clipboard
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
+  const copyWithFallback = () => {
+    if (typeof document === 'undefined') return false;
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
   try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (error) {
-    console.error('Failed to copy to clipboard:', error);
-    return false;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    return copyWithFallback();
   }
+
+  return copyWithFallback();
+}
+
+export async function copyRichTextToClipboard({
+  text,
+  html,
+}: {
+  text: string;
+  html: string;
+}): Promise<boolean> {
+  try {
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard?.write &&
+      typeof ClipboardItem !== 'undefined'
+    ) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+          'text/html': new Blob([html], { type: 'text/html' }),
+        }),
+      ]);
+      return true;
+    }
+  } catch {
+    // Fall back to plain text below.
+  }
+
+  return copyToClipboard(text);
 }
 
 /**

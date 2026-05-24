@@ -1,7 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { Env } from '../types';
+import type { Env } from '../index';
+import {
+  getAuth,
+  requireAuthOrApiKey,
+  type AuthPrincipal,
+} from '../middleware/auth';
 
 // Request schemas
 const TranslateTextSchema = z.object({
@@ -10,13 +15,139 @@ const TranslateTextSchema = z.object({
   targetLang: z.enum(['zh', 'ms', 'ta']), // Target: Mandarin, Malay, or Tamil
 });
 
-const DocumentUploadSchema = z.object({
-  filename: z.string(),
-  sourceLang: z.literal('en'), // Only English source allowed
-  targetLang: z.enum(['zh', 'ms', 'ta']), // Target: Mandarin, Malay, or Tamil
+type Variables = {
+  auth: AuthPrincipal;
+};
+
+type AppBindings = {
+  Bindings: Env;
+  Variables: Variables;
+};
+
+type TranslationUsage = {
+  used: number;
+  quota: number;
+  remaining: number;
+};
+
+const DEFAULT_FREE_TRANSLATION_LIMIT = 10;
+
+const getTranslationQuota = (env: Env) => {
+  const parsed = Number(
+    env.TRANSLATION_FREE_LIFETIME_LIMIT || DEFAULT_FREE_TRANSLATION_LIMIT
+  );
+
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.floor(parsed)
+    : DEFAULT_FREE_TRANSLATION_LIMIT;
+};
+
+const normalizeUsage = (used: number, quota: number): TranslationUsage => ({
+  used,
+  quota,
+  remaining: Math.max(quota - used, 0),
 });
 
-const translation = new Hono<{ Bindings: Env }>();
+const ensureTranslationUsage = async (env: Env, userId: string) => {
+  const quota = getTranslationQuota(env);
+
+  await env.DB.prepare(
+    `
+    INSERT INTO translation_usage_lifetime (user_id, used, quota)
+    VALUES (?, 0, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      quota = excluded.quota,
+      updated_at = datetime('now')
+    `
+  )
+    .bind(userId, quota)
+    .run();
+};
+
+const getTranslationUsage = async (
+  env: Env,
+  userId: string
+): Promise<TranslationUsage> => {
+  await ensureTranslationUsage(env, userId);
+
+  const row = await env.DB.prepare(
+    `
+    SELECT used, quota
+    FROM translation_usage_lifetime
+    WHERE user_id = ?
+    `
+  )
+    .bind(userId)
+    .first<{ used: number; quota: number }>();
+
+  return normalizeUsage(row?.used ?? 0, row?.quota ?? getTranslationQuota(env));
+};
+
+const reserveTranslationUse = async (
+  env: Env,
+  userId: string
+): Promise<TranslationUsage | null> => {
+  await ensureTranslationUsage(env, userId);
+
+  const update = await env.DB.prepare(
+    `
+    UPDATE translation_usage_lifetime
+    SET used = used + 1,
+        updated_at = datetime('now')
+    WHERE user_id = ?
+      AND used + 1 <= quota
+    `
+  )
+    .bind(userId)
+    .run();
+
+  if (!update.meta.changes) {
+    return null;
+  }
+
+  return getTranslationUsage(env, userId);
+};
+
+const rollbackTranslationUse = async (env: Env, userId: string) => {
+  await env.DB.prepare(
+    `
+    UPDATE translation_usage_lifetime
+    SET used = CASE WHEN used > 0 THEN used - 1 ELSE 0 END,
+        updated_at = datetime('now')
+    WHERE user_id = ?
+    `
+  )
+    .bind(userId)
+    .run();
+};
+
+const setTranslationQuotaHeaders = (
+  c: Context<AppBindings>,
+  usage: TranslationUsage
+) => {
+  c.header('X-Translation-Limit', String(usage.quota));
+  c.header('X-Translation-Remaining', String(usage.remaining));
+};
+
+const translation = new Hono<AppBindings>();
+
+translation.use('/text', requireAuthOrApiKey as any);
+translation.use('/usage', requireAuthOrApiKey as any);
+
+/**
+ * GET /api/v1/translate/usage
+ * Get lifetime free translation usage for the authenticated principal.
+ */
+translation.get('/usage', async (c) => {
+  const auth = getAuth(c as any);
+  const usage = await getTranslationUsage(c.env, auth.userId);
+  setTranslationQuotaHeaders(c, usage);
+
+  return c.json({
+    success: true,
+    data: usage,
+  });
+});
 
 /**
  * POST /api/v1/translate/text
@@ -25,6 +156,27 @@ const translation = new Hono<{ Bindings: Env }>();
 translation.post('/text', zValidator('json', TranslateTextSchema), async (c) => {
   const { text, sourceLang, targetLang } = c.req.valid('json');
   const start = Date.now();
+  const auth = getAuth(c as any);
+  const usage = await reserveTranslationUse(c.env, auth.userId);
+
+  if (!usage) {
+    const currentUsage = await getTranslationUsage(c.env, auth.userId);
+    setTranslationQuotaHeaders(c, currentUsage);
+
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'TRANSLATION_QUOTA_EXCEEDED',
+          message: `Free lifetime translation limit reached (${currentUsage.quota} total).`,
+          details: currentUsage,
+        },
+      },
+      429
+    );
+  }
+
+  setTranslationQuotaHeaders(c, usage);
 
   try {
     // Import translation service dynamically
@@ -51,6 +203,7 @@ translation.post('/text', zValidator('json', TranslateTextSchema), async (c) => 
         provider: result.provider,
         cached: result.cached,
         cost: result.cost,
+        usage,
       },
       metadata: {
         took: Date.now() - start,
@@ -58,6 +211,7 @@ translation.post('/text', zValidator('json', TranslateTextSchema), async (c) => 
       },
     });
   } catch (error) {
+    await rollbackTranslationUse(c.env, auth.userId);
     console.error('Translation error:', error);
 
     return c.json(
@@ -334,7 +488,11 @@ translation.get('/document/:jobId/download', async (c) => {
        WHERE id = ?`
     )
       .bind(jobId)
-      .first();
+      .first<{
+        filename: string;
+        translated_file_url: string | null;
+        status: string;
+      }>();
 
     if (!result) {
       return c.json(

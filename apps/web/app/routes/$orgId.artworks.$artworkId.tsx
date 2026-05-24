@@ -2,6 +2,8 @@ import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { Link, useLoaderData } from '@remix-run/react';
 import type { ReactNode } from 'react';
 import { ArrowLeft, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { CitationPanel } from '~/components/artwork/citation-panel';
+import { SourceIndicator } from '~/components/artwork/source-indicator';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import {
   getDominantSourceLabel,
@@ -11,6 +13,7 @@ import {
   getPublicDescription,
   getPublicDescriptionDetails,
   getPublicImageUrl,
+  getPublicRecordSourceLabel,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 
@@ -52,6 +55,19 @@ const compactRows = (rows: Array<[string, unknown]>) =>
     ([, value]) => value !== null && value !== undefined && value !== ''
   );
 
+const clickableCatalogueLabels = new Set([
+  'artist',
+  'date',
+  'medium',
+  'geographic association',
+  'credit line',
+]);
+
+const getCatalogueRowSearchQuery = (label: string, value: string) => {
+  if (!clickableCatalogueLabels.has(label.toLowerCase())) return null;
+  return value.trim() || null;
+};
+
 export default function ArtworkDetailPage() {
   const { gallery, artwork, preferredRouteId } = useLoaderData<typeof loader>();
   const caption = getGeneratedCaptionRecord(artwork);
@@ -60,10 +76,12 @@ export default function ArtworkDetailPage() {
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
   const catalogRows = getPublicCatalogueRows(artwork);
-  const catalogPrimarySource = getDominantSourceLabel(catalogRows);
+  const catalogueSourceLabel = getPublicRecordSourceLabel(
+    getDominantSourceLabel(catalogRows)
+  );
 
   return (
-    <div className="min-h-screen bg-[#0b0b0e] text-white">
+    <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
           <Link
@@ -87,7 +105,7 @@ export default function ArtworkDetailPage() {
                 <img
                   src={imageUrl}
                   alt={artwork.title || 'Artwork'}
-                  className="max-h-[76vh] w-full rounded-md object-contain"
+                  className="max-h-[76vh] w-full object-contain"
                 />
               ) : (
                 <div className="flex h-80 w-full items-center justify-center rounded-md bg-white/[0.03] text-white/35">
@@ -115,7 +133,12 @@ export default function ArtworkDetailPage() {
           {descriptionDetails && (
             <Section
               title="Catalogue text"
-              eyebrow={descriptionDetails.sourceLabel}
+              eyebrow={
+                <SourceIndicator
+                  label={descriptionDetails.sourceLabel}
+                  showLabel
+                />
+              }
             >
               <p className="leading-relaxed text-white/70">
                 {descriptionDetails.text}
@@ -123,36 +146,59 @@ export default function ArtworkDetailPage() {
             </Section>
           )}
 
-          <Section title="Catalogue fields" eyebrow="Source shown per field">
-            {catalogPrimarySource && (
-              <p className="-mt-1 mb-3 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
-                Mostly from {catalogPrimarySource}; exceptions marked
-              </p>
-            )}
+          <Section
+            title="Catalogue fields"
+            eyebrow={
+              catalogueSourceLabel ? (
+                <SourceIndicator label={catalogueSourceLabel} compact />
+              ) : null
+            }
+          >
             <dl className="grid gap-3 sm:grid-cols-2">
-              {catalogRows.map(({ label, value, sourceLabel }) => (
-                <div
-                  key={label}
-                  className="rounded-md border border-white/[0.08] bg-black/20 p-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                      {label}
-                    </dt>
-                    {sourceLabel !== catalogPrimarySource && (
-                      <SourceBadge label={sourceLabel} />
-                    )}
+              {catalogRows.map(({ label, value, sourceLabel }) => {
+                const searchQuery = getCatalogueRowSearchQuery(label, value);
+
+                return (
+                  <div
+                    key={label}
+                    className="rounded-md border border-white/[0.08] bg-black/20 p-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+                        {label}
+                      </dt>
+                      {getPublicRecordSourceLabel(sourceLabel) &&
+                        getPublicRecordSourceLabel(sourceLabel) !==
+                          catalogueSourceLabel && (
+                          <SourceIndicator label={sourceLabel} compact />
+                        )}
+                    </div>
+                    <dd className="mt-1 text-sm text-white/75">
+                      {searchQuery ? (
+                        <Link
+                          to={`/${preferredRouteId}/search?q=${encodeURIComponent(
+                            searchQuery
+                          )}`}
+                          className="underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/60"
+                        >
+                          {value}
+                        </Link>
+                      ) : (
+                        value
+                      )}
+                    </dd>
                   </div>
-                  <dd className="mt-1 text-sm text-white/75">{value}</dd>
-                </div>
-              ))}
+                );
+              })}
             </dl>
           </Section>
+
+          <CitationPanel artwork={artwork} />
 
           {Object.keys(caption).length > 0 && (
             <Section
               title="Generated caption"
-              eyebrow="Paillette AI, not catalogue metadata"
+              eyebrow={<SourceIndicator label="Paillette AI" showLabel />}
             >
               <p className="leading-relaxed text-white/70">
                 {caption.text || 'No caption text available.'}
@@ -178,7 +224,7 @@ export default function ArtworkDetailPage() {
 
           <Section
             title="Public Portal Links"
-            eyebrow="National Gallery Singapore / NHB Roots"
+            eyebrow="National Gallery Singapore / Roots NHB"
           >
             <div className="flex flex-wrap gap-2">
               {ngsUrl && (
@@ -188,7 +234,7 @@ export default function ArtworkDetailPage() {
                 />
               )}
               {rootsUrl && (
-                <SourceLink href={rootsUrl} label="NHB Roots record" />
+                <SourceLink href={rootsUrl} label="Roots NHB record" />
               )}
               {!ngsUrl && !rootsUrl && (
                 <p className="text-sm text-white/45">
@@ -203,29 +249,31 @@ export default function ArtworkDetailPage() {
   );
 }
 
-function SourceBadge({ label }: { label: string }) {
-  return (
-    <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-200/10 bg-cyan-200/[0.05] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cyan-100/55">
-      {label}
-    </span>
-  );
-}
-
 function Section({
   eyebrow,
   title,
   children,
 }: {
-  eyebrow: string;
+  eyebrow?: ReactNode;
   title: string;
   children: ReactNode;
 }) {
   return (
     <section className="rounded-lg border border-white/[0.08] bg-white/[0.025] p-5">
-      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
-        {eyebrow}
-      </p>
-      <h2 className="mt-1 text-lg font-semibold text-white">{title}</h2>
+      {eyebrow ? (
+        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
+          {eyebrow}
+        </p>
+      ) : null}
+      <h2
+        className={
+          eyebrow
+            ? 'mt-1 text-lg font-semibold text-white'
+            : 'text-lg font-semibold text-white'
+        }
+      >
+        {title}
+      </h2>
       <div className="mt-4">{children}</div>
     </section>
   );

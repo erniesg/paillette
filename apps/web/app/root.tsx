@@ -10,7 +10,9 @@ import {
 import { LogtoProvider, UserScope, type LogtoConfig } from '@logto/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { ThemeToggle } from './components/theme/theme-toggle';
 import { UserProvider } from './contexts/user-context';
+import { ThemeProvider } from './contexts/theme-context';
 import type { LogtoRuntimeEnv } from './lib/logto';
 
 import styles from './tailwind.css?url';
@@ -83,7 +85,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(() => { try { const theme = localStorage.getItem('paillette-theme') === 'light' ? 'light' : 'dark'; document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme; } catch (_) { document.documentElement.dataset.theme = 'dark'; document.documentElement.style.colorScheme = 'dark'; } })();",
+          }}
+        />
         <Links />
       </head>
       <body suppressHydrationWarning>
@@ -121,14 +130,17 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <LogtoProvider config={logtoConfig}>
-        <UserProvider
-          apiResource={env.apiResource || undefined}
-          isLogtoConfigured={Boolean(env.endpoint && env.appId)}
-        >
-          <Outlet />
-        </UserProvider>
-      </LogtoProvider>
+      <ThemeProvider>
+        <LogtoProvider config={logtoConfig}>
+          <UserProvider
+            apiResource={env.apiResource || undefined}
+            isLogtoConfigured={Boolean(env.endpoint && env.appId)}
+          >
+            <Outlet />
+            <ThemeToggle />
+          </UserProvider>
+        </LogtoProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

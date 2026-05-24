@@ -378,6 +378,19 @@ CREATE INDEX idx_artwork_usage_org ON artwork_usage_events(org_id, created_at DE
 CREATE INDEX idx_artwork_usage_interaction ON artwork_usage_events(interaction, created_at DESC);
 
 -- ============================================================================
+-- Translation Lifetime Usage
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS translation_usage_lifetime (
+  user_id TEXT PRIMARY KEY,
+  used INTEGER NOT NULL DEFAULT 0,
+  quota INTEGER NOT NULL DEFAULT 10,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
 -- Translation Jobs
 -- ============================================================================
 

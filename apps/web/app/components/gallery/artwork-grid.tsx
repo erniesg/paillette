@@ -19,7 +19,7 @@ export function ArtworkGrid({ artworks }: ArtworkGridProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
-            className="group relative bg-neutral-900/80 border border-neutral-800 rounded-xl overflow-hidden hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 cursor-pointer"
+            className="group relative bg-neutral-900/80 border border-neutral-800 overflow-hidden hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 cursor-pointer"
             onClick={() => setSelectedArtwork(artwork)}
           >
             <div className="aspect-square bg-neutral-950 flex items-center justify-center overflow-hidden">
@@ -50,7 +50,9 @@ export function ArtworkGrid({ artworks }: ArtworkGridProps) {
               <div className="flex items-center justify-between mt-3 text-xs text-neutral-500">
                 <span>{artwork.year || '—'}</span>
                 {artwork.metadata?.medium && (
-                  <span className="truncate ml-2">{artwork.metadata.medium}</span>
+                  <span className="truncate ml-2">
+                    {artwork.metadata.medium}
+                  </span>
                 )}
               </div>
             </div>

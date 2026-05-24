@@ -24,10 +24,16 @@ export default function Index() {
           <div className="flex items-center justify-between">
             <Logo size="md" />
             <nav className="flex items-center gap-4">
-              <Link to="/collections" className="text-neutral-400 hover:text-white transition-colors">
+              <Link
+                to="/collections"
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
                 Collections
               </Link>
-              <Link to="/translate" className="text-neutral-400 hover:text-white transition-colors">
+              <Link
+                to="/translate"
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
                 Translate
               </Link>
               <div className="ml-2 pl-4 border-l border-neutral-700">
@@ -59,13 +65,7 @@ export default function Index() {
           >
             {/* Artistic logo */}
             <div className="mb-8 lg:mb-12">
-              <h1 className="text-7xl lg:text-9xl font-display font-bold tracking-tight">
-                <span className="text-white">P</span>
-                <span className="bg-gradient-accent bg-clip-text text-transparent animate-glow">
-                  ai
-                </span>
-                <span className="text-white">llette</span>
-              </h1>
+              <Logo size="xl" className="leading-none" />
             </div>
 
             <motion.p
@@ -159,11 +159,18 @@ export default function Index() {
         </div>
 
         {/* Footer */}
-        <footer className="container mx-auto px-6 py-12 text-center border-t border-neutral-800">
-          <p className="text-neutral-500">
-            © {new Date().getFullYear()} Paillette. Making collections shine
-            with AI.
-          </p>
+        <footer className="container mx-auto flex justify-center gap-6 border-t border-neutral-800 px-6 py-10 text-sm text-neutral-500">
+          <Link to="/docs/api" className="hover:text-white">
+            Docs
+          </Link>
+          <a
+            href="https://github.com/erniesg/paillette"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-white"
+          >
+            GitHub
+          </a>
         </footer>
       </div>
     </div>
@@ -214,9 +221,7 @@ function FeatureCard({
           {content}
         </a>
       ) : (
-        <div className={className}>
-          {content}
-        </div>
+        <div className={className}>{content}</div>
       )}
     </motion.div>
   );

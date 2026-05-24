@@ -37,12 +37,14 @@ interface TranslationHistoryItem {
 type TextTranslatorProps = {
   remainingUses?: number;
   lifetimeLimit?: number;
-  onTranslationUsed?: () => void;
+  getAccessToken: () => Promise<string | undefined>;
+  onTranslationUsed?: (usage: NonNullable<TranslateTextResponse['usage']>) => void;
 };
 
 export function TextTranslator({
   remainingUses = 10,
   lifetimeLimit = 10,
+  getAccessToken,
   onTranslationUsed,
 }: TextTranslatorProps) {
   const sourceLang: Language = 'en'; // Fixed to English only
@@ -60,12 +62,14 @@ export function TextTranslator({
         text: inputText,
         sourceLang,
         targetLang,
-      });
+      }, getAccessToken);
       return response;
     },
     onSuccess: (data: TranslateTextResponse) => {
       setTranslatedText(data.translatedText);
-      onTranslationUsed?.();
+      if (data.usage) {
+        onTranslationUsed?.(data.usage);
+      }
 
       // Add to history
       const historyItem: TranslationHistoryItem = {
