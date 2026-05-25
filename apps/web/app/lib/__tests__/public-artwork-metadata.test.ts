@@ -5,7 +5,13 @@ import {
   getPublicCitation,
   getPublicCitationParts,
   getPublicDescription,
+  getPublicDescriptionDetailList,
   getPublicDescriptionDetails,
+  getPublicImageUrl,
+  getPublicThumbnailUrl,
+  getPublicTitle,
+  getRootsUrl,
+  hasPublicSourceMismatch,
 } from '../public-artwork-metadata';
 
 describe('getPublicDescription', () => {
@@ -136,6 +142,136 @@ describe('getPublicDescription', () => {
     ]);
   });
 
+  it('keeps both NGS and Roots catalogue captions when both records match', () => {
+    expect(
+      getPublicDescriptionDetailList({
+        title: 'Singapore',
+        artist: 'John Turnbull Thomson',
+        metadata: {
+          source_records: {
+            ngs: {
+              objObjectTitleTxt: 'Singapore',
+              artistAvailableNames: ['John Turnbull Thomson'],
+              objDescriptionClb: 'NGS catalogue text.',
+            },
+            roots: {
+              title: 'Singapore',
+              creator: 'John Turnbull Thomson',
+              caption: 'Roots catalogue text.',
+            },
+          },
+        },
+      })
+    ).toEqual([
+      {
+        source: 'ngs',
+        sourceLabel: 'National Gallery Singapore',
+        text: 'NGS catalogue text.',
+      },
+      {
+        source: 'roots',
+        sourceLabel: 'Roots NHB',
+        text: 'Roots catalogue text.',
+      },
+    ]);
+  });
+
+  it('labels a trusted Roots caption as Roots when the raw NGS payload duplicates it', () => {
+    const rootsCaption =
+      'Pech Song was commissioned to create paintings used as propaganda by successive Cambodian regimes.';
+
+    expect(
+      getPublicDescriptionDetailList({
+        title:
+          '7 Makara 1979 - 7 Makara 1984 (7 January 1979 - 7 January 1984)',
+        artist: 'Pech Song',
+        metadata: {
+          field_sources: {
+            description: 'roots',
+          },
+          source_records: {
+            ngs: {
+              objObjectTitleTxt:
+                '7 Makara 1979 - 7 Makara 1984 (7 January 1979 - 7 January 1984)',
+              artistAvailableNames: ['Pech Song'],
+              objDescriptionClb: rootsCaption,
+            },
+            roots: {
+              pageid: '1470665',
+              caption: rootsCaption,
+            },
+          },
+        },
+      })
+    ).toEqual([
+      {
+        source: 'roots',
+        sourceLabel: 'Roots NHB',
+        text: rootsCaption,
+      },
+    ]);
+  });
+
+  it('shows a verified Roots caption when the NGS record has no catalogue text', () => {
+    const rootsCaption =
+      'Born in 1923, Lim Tze Peng is largely a self-taught artist. Bali has remained a source of inspiration for generations of Singapore artists.';
+
+    expect(
+      getPublicDescriptionDetails({
+        title: 'Untitled (Bali Scene)',
+        artist: 'Lim Tze Peng',
+        metadata: {
+          field_sources: {
+            description: 'roots',
+          },
+          source_records: {
+            ngs: {
+              objObjectTitleTxt: 'Untitled (Bali Scene)',
+              artistAvailableNames: ['Lim Tze Peng'],
+              objDescriptionClb: '',
+            },
+            roots: {
+              pageid: '1034363',
+              title: 'Untitled (Bali Scene)',
+              caption: rootsCaption,
+            },
+          },
+        },
+      })
+    ).toEqual({
+      source: 'roots',
+      sourceLabel: 'Roots NHB',
+      text: rootsCaption,
+    });
+  });
+
+  it('does not surface top-level Roots descriptions when the Roots record conflicts', () => {
+    expect(
+      getPublicDescriptionDetails({
+        title: 'Singapore River',
+        artist: 'Foo Chee San (1921-2017)',
+        description:
+          'This book is part of a collection owned by John Bastin, a renowned scholar and historian.',
+        metadata: {
+          field_sources: {
+            description: 'roots',
+          },
+          source_records: {
+            ngs: {
+              objObjectTitleTxt: 'Singapore River',
+              artistAvailableNames: ['Foo Chee San (1921-2017)'],
+            },
+            roots: {
+              title: '‘The Singapore and Malayan Rough Diary for 1930’',
+              caption:
+                'This book is part of a collection owned by John Bastin, a renowned scholar and historian.',
+            },
+          },
+        },
+      })
+    ).toBeNull();
+  });
+
   it('does not show internal facets as public NGS page fields', () => {
     const labels = getPublicCatalogueRows({
       classification: 'Paintings',
@@ -208,5 +344,121 @@ describe('getPublicDescription', () => {
         },
       ])
     ).toBe('National Gallery Singapore');
+  });
+
+  it('prioritizes NGS record data and image over a conflicting Roots title', () => {
+    const artwork = {
+      id: '2010-01598',
+      title: 'Singapore River',
+      artist: 'Foo Chee San (1921-2017)',
+      date_text: 'Undated',
+      medium: 'Ink on paper',
+      accession_number: '2010-01598',
+      credit_line: 'Collection of National Gallery Singapore',
+      source_institution: 'National Gallery Singapore',
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/roots-diary/content',
+      metadata: {
+        ngs_image_url:
+          'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/foo-chee-san/2010/2010-01598.tif',
+        ngs_detail_url:
+          'https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/foo-chee-san/2010/2010-01598.tif.html',
+        roots_listing_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1240385',
+        source_records: {
+          ngs: {
+            objObjectTitleTxt: 'Singapore River',
+            artistAvailableNames: ['Foo Chee San (1921-2017)'],
+            objDateDatingTxt: 'Undated',
+            objMaterialTechniqueTxt: 'Ink on paper',
+            objAssociatedPlaceTxt: 'Singapore',
+            objDescriptionClb:
+              'An NGS catalogue caption about Singapore River.',
+          },
+          roots: {
+            title: '‘The Singapore and Malayan Rough Diary for 1930’',
+            caption:
+              'This book is part of a collection owned by John Bastin, a renowned scholar and historian.',
+            year_period: '1930',
+            region: 'Singapore and Malaysia',
+            object_type: 'books',
+            material: 'ink, paper (fiber product)',
+            technique: 'bookbinding (process), writing (processes)',
+            dimension: 'Unknown Type: Refer to parts.',
+            collection_of: 'National Museum of Singapore',
+          },
+        },
+        generated_caption: {
+          text: 'The verified facts provided for "Singapore River" by Foo Chee San are not related to the visual content of this image.',
+        },
+      },
+    };
+
+    expect(hasPublicSourceMismatch(artwork)).toBe(true);
+    expect(getPublicTitle(artwork)).toBe('Singapore River');
+    expect(getPublicImageUrl(artwork)).toBe(
+      'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/foo-chee-san/2010/2010-01598.tif'
+    );
+    expect(getPublicThumbnailUrl(artwork)).toBe(
+      'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/foo-chee-san/2010/2010-01598.tif'
+    );
+    expect(getRootsUrl(artwork)).toBeNull();
+    expect(getPublicDescription(artwork)).toBe(
+      'An NGS catalogue caption about Singapore River.'
+    );
+    expect(getPublicCitationParts(artwork).plainText).toBe(
+      'Foo Chee San (1921-2017). Singapore River. Undated. Ink on paper. National Gallery Singapore, Singapore.'
+    );
+    expect(getPublicCatalogueRows(artwork)).toEqual([
+      {
+        label: 'Artist',
+        value: 'Foo Chee San (1921-2017)',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Date',
+        value: 'Undated',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Medium',
+        value: 'Ink on paper',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Geographic association',
+        value: 'Singapore',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Accession',
+        value: '2010-01598',
+        sourceLabel: 'National Gallery Singapore',
+      },
+      {
+        label: 'Credit line',
+        value: 'Collection of National Gallery Singapore',
+        sourceLabel: 'National Gallery Singapore',
+      },
+    ]);
+  });
+
+  it('suppresses conflicting Roots imagery when no NGS image exists', () => {
+    const artwork = {
+      title: 'Singapore River',
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/roots-diary/content',
+      metadata: {
+        source_records: {
+          roots: {
+            title: '‘The Singapore and Malayan Rough Diary for 1930’',
+          },
+        },
+      },
+    };
+
+    expect(hasPublicSourceMismatch(artwork)).toBe(true);
+    expect(getPublicImageUrl(artwork)).toBeNull();
+    expect(getPublicThumbnailUrl(artwork)).toBeNull();
   });
 });

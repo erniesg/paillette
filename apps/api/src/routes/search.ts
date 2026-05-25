@@ -11,7 +11,7 @@ import type {
   SearchResponse,
   ArtworkSearchResult,
 } from '../types';
-import { NGS_ORG_ID, resolveOrgIdentifier } from '../utils/orgs';
+import { isNgsPublicOrg, resolveOrgIdentifier } from '../utils/orgs';
 
 interface ArtworkSearchRow {
   id: string;
@@ -80,7 +80,7 @@ const canonicalArtworkId = (id: string) =>
   id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
 
 const backableSearchSql = (orgId: string | undefined) =>
-  orgId === NGS_ORG_ID ? BACKABLE_NGS_SEARCH_SQL : '';
+  isNgsPublicOrg(orgId) ? BACKABLE_NGS_SEARCH_SQL : '';
 
 type TemporalFilter = {
   startYear: number;

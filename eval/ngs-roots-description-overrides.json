@@ -1,0 +1,1506 @@
+{
+  "generated_at": "2026-05-25T03:00:00+08:00",
+  "basis": "Live Roots HTML audit: description text was found on the actual Roots listing page for these NGS accession rows. Use only to attribute the public catalogue description label; NGS title, artist, object metadata, and image remain authoritative for NGS records.",
+  "verified_roots_description_records": [
+    {
+      "id": "1991-00236",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1027827"
+    },
+    {
+      "id": "1991-00261",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1023919"
+    },
+    {
+      "id": "1991-00279",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025831"
+    },
+    {
+      "id": "1993-01701",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1026433"
+    },
+    {
+      "id": "1993-01708",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025827"
+    },
+    {
+      "id": "1994-05654",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025458"
+    },
+    {
+      "id": "1998-00953",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029639"
+    },
+    {
+      "id": "2000-05600",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1034817"
+    },
+    {
+      "id": "2003-02700",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1028396"
+    },
+    {
+      "id": "2003-03268",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1032766"
+    },
+    {
+      "id": "2003-03290",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1033264"
+    },
+    {
+      "id": "2003-03667",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1032870"
+    },
+    {
+      "id": "2007-00059",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1028431"
+    },
+    {
+      "id": "2014-00518",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1270884"
+    },
+    {
+      "id": "2014-01416",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1251225"
+    },
+    {
+      "id": "2015-00621",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1320810"
+    },
+    {
+      "id": "2017-00533",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1342390"
+    },
+    {
+      "id": "2017-01078",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1323223"
+    },
+    {
+      "id": "2018-00047",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1399736"
+    },
+    {
+      "id": "2018-00048",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1399743"
+    },
+    {
+      "id": "2018-00050",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1399660"
+    },
+    {
+      "id": "2018-00051",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1399661"
+    },
+    {
+      "id": "2018-00054",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1399691"
+    },
+    {
+      "id": "2018-00055",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1399692"
+    },
+    {
+      "id": "2018-00415",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411919"
+    },
+    {
+      "id": "2018-00418",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1395362"
+    },
+    {
+      "id": "2018-00423",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1395367"
+    },
+    {
+      "id": "2018-00442",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1395477"
+    },
+    {
+      "id": "2018-00443",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1395478"
+    },
+    {
+      "id": "2018-00444",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1395479"
+    },
+    {
+      "id": "2018-00460",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411869"
+    },
+    {
+      "id": "2018-00462",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411597"
+    },
+    {
+      "id": "2018-00463",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411598"
+    },
+    {
+      "id": "2018-00468",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411603"
+    },
+    {
+      "id": "2018-00469",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411604"
+    },
+    {
+      "id": "2018-00470",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411605"
+    },
+    {
+      "id": "2018-00471",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411606"
+    },
+    {
+      "id": "2018-00472",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411607"
+    },
+    {
+      "id": "2018-00473",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411608"
+    },
+    {
+      "id": "2018-00474",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411609"
+    },
+    {
+      "id": "2018-00475",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411610"
+    },
+    {
+      "id": "2018-00476",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411611"
+    },
+    {
+      "id": "2018-00477",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411612"
+    },
+    {
+      "id": "2018-00478",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411613"
+    },
+    {
+      "id": "2018-00479",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411617"
+    },
+    {
+      "id": "2018-00634",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1411917"
+    },
+    {
+      "id": "2018-00742",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1412590"
+    },
+    {
+      "id": "2018-00921",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420234"
+    },
+    {
+      "id": "2018-00922",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420235"
+    },
+    {
+      "id": "2018-00923",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420237"
+    },
+    {
+      "id": "2018-01090",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1426938"
+    },
+    {
+      "id": "2018-01098",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433715"
+    },
+    {
+      "id": "2018-01099",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433716"
+    },
+    {
+      "id": "2018-01102",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433719"
+    },
+    {
+      "id": "2018-01103",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433721"
+    },
+    {
+      "id": "2018-01104",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433722"
+    },
+    {
+      "id": "2018-01107",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433725"
+    },
+    {
+      "id": "2018-01109",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433727"
+    },
+    {
+      "id": "2018-01110",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433728"
+    },
+    {
+      "id": "2018-01111",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433729"
+    },
+    {
+      "id": "2018-01112",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433730"
+    },
+    {
+      "id": "2018-01113",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1433731"
+    },
+    {
+      "id": "2018-01115",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420338"
+    },
+    {
+      "id": "2018-01117",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1426682"
+    },
+    {
+      "id": "2018-01118",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1426683"
+    },
+    {
+      "id": "2018-01119",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1426684"
+    },
+    {
+      "id": "2018-01120",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1426685"
+    },
+    {
+      "id": "2018-01122",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1426688"
+    },
+    {
+      "id": "2018-01242",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420083"
+    },
+    {
+      "id": "2018-01243",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1412672"
+    },
+    {
+      "id": "2018-01258",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1435051"
+    },
+    {
+      "id": "2018-01259",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1435052"
+    },
+    {
+      "id": "2019-00002",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436845"
+    },
+    {
+      "id": "2019-00003",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436846"
+    },
+    {
+      "id": "2019-00005",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436848"
+    },
+    {
+      "id": "2019-00006",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436849"
+    },
+    {
+      "id": "2019-00008",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436858"
+    },
+    {
+      "id": "2019-00009",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436859"
+    },
+    {
+      "id": "2019-00012",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436862"
+    },
+    {
+      "id": "2019-00013",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436863"
+    },
+    {
+      "id": "2019-00014",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436864"
+    },
+    {
+      "id": "2019-00015",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436865"
+    },
+    {
+      "id": "2019-00016",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436866"
+    },
+    {
+      "id": "2019-00017",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436867"
+    },
+    {
+      "id": "2019-00020",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436874"
+    },
+    {
+      "id": "2019-00021",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436875"
+    },
+    {
+      "id": "2019-00023",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436899"
+    },
+    {
+      "id": "2019-00024",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436900"
+    },
+    {
+      "id": "2019-00025",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436901"
+    },
+    {
+      "id": "2019-00027",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436903"
+    },
+    {
+      "id": "2019-00029",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436905"
+    },
+    {
+      "id": "2019-00030",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436906"
+    },
+    {
+      "id": "2019-00031",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436907"
+    },
+    {
+      "id": "2019-00033",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436909"
+    },
+    {
+      "id": "2019-00034",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436910"
+    },
+    {
+      "id": "2019-00035",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436911"
+    },
+    {
+      "id": "2019-00036",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436912"
+    },
+    {
+      "id": "2019-00037",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436913"
+    },
+    {
+      "id": "2019-00038",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1436914"
+    },
+    {
+      "id": "2019-00039",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437602"
+    },
+    {
+      "id": "2019-00040",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437603"
+    },
+    {
+      "id": "2019-00041",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437604"
+    },
+    {
+      "id": "2019-00042",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437605"
+    },
+    {
+      "id": "2019-00043",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437609"
+    },
+    {
+      "id": "2019-00044",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437610"
+    },
+    {
+      "id": "2019-00045",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437612"
+    },
+    {
+      "id": "2019-00046",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1437613"
+    },
+    {
+      "id": "2019-00084",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420342"
+    },
+    {
+      "id": "2019-00085",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420343"
+    },
+    {
+      "id": "2019-00087",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420346"
+    },
+    {
+      "id": "2019-00114",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1442721"
+    },
+    {
+      "id": "2019-00118",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1442725"
+    },
+    {
+      "id": "2019-00142",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1420350"
+    },
+    {
+      "id": "2019-00403",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1453593"
+    },
+    {
+      "id": "2019-00406",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454628"
+    },
+    {
+      "id": "2019-00508",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1443756"
+    },
+    {
+      "id": "2019-00511",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454601"
+    },
+    {
+      "id": "2019-00515",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454605"
+    },
+    {
+      "id": "2019-00516",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454606"
+    },
+    {
+      "id": "2019-00532",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1443751"
+    },
+    {
+      "id": "2019-00533",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1443752"
+    },
+    {
+      "id": "2019-00543",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454647"
+    },
+    {
+      "id": "2019-00546",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454589"
+    },
+    {
+      "id": "2019-00547",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454590"
+    },
+    {
+      "id": "2019-00549",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454592"
+    },
+    {
+      "id": "2019-00550",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454596"
+    },
+    {
+      "id": "2019-00551",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1454597"
+    },
+    {
+      "id": "2019-00552",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1429599"
+    },
+    {
+      "id": "2019-00553",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1429600"
+    },
+    {
+      "id": "2019-00592",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457592"
+    },
+    {
+      "id": "2019-00611",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457589"
+    },
+    {
+      "id": "2019-00650",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467014"
+    },
+    {
+      "id": "2019-00651",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467015"
+    },
+    {
+      "id": "2019-00696",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457608"
+    },
+    {
+      "id": "2019-00698",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457610"
+    },
+    {
+      "id": "2019-00699",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457611"
+    },
+    {
+      "id": "2019-00700",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457614"
+    },
+    {
+      "id": "2019-00701",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457618"
+    },
+    {
+      "id": "2019-00702",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457619"
+    },
+    {
+      "id": "2019-00703",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457620"
+    },
+    {
+      "id": "2019-00704",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457621"
+    },
+    {
+      "id": "2019-00705",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457622"
+    },
+    {
+      "id": "2019-00706",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457623"
+    },
+    {
+      "id": "2019-00707",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457624"
+    },
+    {
+      "id": "2019-00708",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457625"
+    },
+    {
+      "id": "2019-00709",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467029"
+    },
+    {
+      "id": "2019-00710",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467629"
+    },
+    {
+      "id": "2019-00711",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467630"
+    },
+    {
+      "id": "2019-00712",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467695"
+    },
+    {
+      "id": "2019-00713",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467696"
+    },
+    {
+      "id": "2019-00714",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467697"
+    },
+    {
+      "id": "2019-00715",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467698"
+    },
+    {
+      "id": "2019-00716",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467699"
+    },
+    {
+      "id": "2019-00717",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467700"
+    },
+    {
+      "id": "2019-00718",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467701"
+    },
+    {
+      "id": "2019-00745",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467009"
+    },
+    {
+      "id": "2019-00747",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1467011"
+    },
+    {
+      "id": "2019-00766",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1459670"
+    },
+    {
+      "id": "2019-00776",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457594"
+    },
+    {
+      "id": "2019-00778",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1457599"
+    },
+    {
+      "id": "2020-00026",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1470852"
+    },
+    {
+      "id": "2020-00027",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1470853"
+    },
+    {
+      "id": "2020-00037",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472605"
+    },
+    {
+      "id": "2020-00076",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1476832"
+    },
+    {
+      "id": "2020-00077",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460097"
+    },
+    {
+      "id": "2020-00224",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460984"
+    },
+    {
+      "id": "2020-00262",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1470665"
+    },
+    {
+      "id": "2020-00263",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1470666"
+    },
+    {
+      "id": "2020-00264",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1470667"
+    },
+    {
+      "id": "2020-00265",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1470668"
+    },
+    {
+      "id": "2020-00266",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469038"
+    },
+    {
+      "id": "2020-00268",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469046"
+    },
+    {
+      "id": "2020-00269",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469048"
+    },
+    {
+      "id": "2020-00271",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469051"
+    },
+    {
+      "id": "2020-00272",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469052"
+    },
+    {
+      "id": "2020-00273",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469053"
+    },
+    {
+      "id": "2020-00274",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469056"
+    },
+    {
+      "id": "2020-00275",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1469058"
+    },
+    {
+      "id": "2020-00277",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460090"
+    },
+    {
+      "id": "2020-00283",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460096"
+    },
+    {
+      "id": "2020-00284",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473674"
+    },
+    {
+      "id": "2020-00285",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473676"
+    },
+    {
+      "id": "2020-00286",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473677"
+    },
+    {
+      "id": "2020-00287",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473678"
+    },
+    {
+      "id": "2020-00291",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473738"
+    },
+    {
+      "id": "2020-00349",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473609"
+    },
+    {
+      "id": "2020-00350",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473610"
+    },
+    {
+      "id": "2020-00417",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481590"
+    },
+    {
+      "id": "2020-00418",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481591"
+    },
+    {
+      "id": "2020-00420",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481593"
+    },
+    {
+      "id": "2020-00421",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481594"
+    },
+    {
+      "id": "2020-00422",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481595"
+    },
+    {
+      "id": "2020-00423",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481596"
+    },
+    {
+      "id": "2020-00424",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481597"
+    },
+    {
+      "id": "2020-00425",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481598"
+    },
+    {
+      "id": "2020-00439",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1475609"
+    },
+    {
+      "id": "2020-00487",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1479614"
+    },
+    {
+      "id": "2020-00488",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1479615"
+    },
+    {
+      "id": "2020-00490",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473762"
+    },
+    {
+      "id": "2020-00491",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473763"
+    },
+    {
+      "id": "2020-00493",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473765"
+    },
+    {
+      "id": "2020-00497",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473769"
+    },
+    {
+      "id": "2020-00498",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1473770"
+    },
+    {
+      "id": "2020-00547",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1479609"
+    },
+    {
+      "id": "2020-00559",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1438606"
+    },
+    {
+      "id": "2021-00002",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1487609"
+    },
+    {
+      "id": "2021-00003",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1487610"
+    },
+    {
+      "id": "2021-00051",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1498784"
+    },
+    {
+      "id": "2021-00053",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489585"
+    },
+    {
+      "id": "2021-00054",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489586"
+    },
+    {
+      "id": "2021-00055",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489587"
+    },
+    {
+      "id": "2021-00056",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489588"
+    },
+    {
+      "id": "2021-00057",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489589"
+    },
+    {
+      "id": "2021-00061",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489593"
+    },
+    {
+      "id": "2021-00062",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489594"
+    },
+    {
+      "id": "2021-00080",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460668"
+    },
+    {
+      "id": "2021-00082",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460670"
+    },
+    {
+      "id": "2021-00100",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489676"
+    },
+    {
+      "id": "2021-00242",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1480596"
+    },
+    {
+      "id": "2021-00243",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1480597"
+    },
+    {
+      "id": "2021-00246",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1480600"
+    },
+    {
+      "id": "2021-00247",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489663"
+    },
+    {
+      "id": "2021-00248",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489664"
+    },
+    {
+      "id": "2021-00249",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489665"
+    },
+    {
+      "id": "2021-00251",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489667"
+    },
+    {
+      "id": "2021-00252",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489668"
+    },
+    {
+      "id": "2021-00253",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489669"
+    },
+    {
+      "id": "2021-00254",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489670"
+    },
+    {
+      "id": "2021-00255",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489671"
+    },
+    {
+      "id": "2021-00256",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489672"
+    },
+    {
+      "id": "2021-00258",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489674"
+    },
+    {
+      "id": "2021-00259",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489675"
+    },
+    {
+      "id": "2021-00260",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489677"
+    },
+    {
+      "id": "2021-00261",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489678"
+    },
+    {
+      "id": "2021-00262",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489679"
+    },
+    {
+      "id": "2021-00263",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489680"
+    },
+    {
+      "id": "2021-00264",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489681"
+    },
+    {
+      "id": "2021-00265",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489682"
+    },
+    {
+      "id": "2021-00266",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489683"
+    },
+    {
+      "id": "2021-00268",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489685"
+    },
+    {
+      "id": "2021-00496",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508751"
+    },
+    {
+      "id": "2021-00497",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508752"
+    },
+    {
+      "id": "2021-00500",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508755"
+    },
+    {
+      "id": "2021-00502",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508757"
+    },
+    {
+      "id": "2021-00505",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508760"
+    },
+    {
+      "id": "2021-00506",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508762"
+    },
+    {
+      "id": "2021-00563",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481644"
+    },
+    {
+      "id": "2021-00564",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481645"
+    },
+    {
+      "id": "2021-00566",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481647"
+    },
+    {
+      "id": "2021-00567",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481648"
+    },
+    {
+      "id": "2021-00568",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481649"
+    },
+    {
+      "id": "2021-00570",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481651"
+    },
+    {
+      "id": "2021-00572",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481653"
+    },
+    {
+      "id": "2021-00573",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481654"
+    },
+    {
+      "id": "2021-00574",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481655"
+    },
+    {
+      "id": "2021-00630",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494797"
+    },
+    {
+      "id": "2021-00631",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494798"
+    },
+    {
+      "id": "2021-00632",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494799"
+    },
+    {
+      "id": "2021-00633",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494800"
+    },
+    {
+      "id": "2021-00634",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494801"
+    },
+    {
+      "id": "2021-00635",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494802"
+    },
+    {
+      "id": "2021-00636",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494803"
+    },
+    {
+      "id": "2021-00637",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494804"
+    },
+    {
+      "id": "2021-00638",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494805"
+    },
+    {
+      "id": "2021-00639",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494806"
+    },
+    {
+      "id": "2021-00640",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494807"
+    },
+    {
+      "id": "2021-00641",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494808"
+    },
+    {
+      "id": "2021-00642",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494809"
+    },
+    {
+      "id": "2021-00643",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494810"
+    },
+    {
+      "id": "2021-00644",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494811"
+    },
+    {
+      "id": "2021-00645",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494812"
+    },
+    {
+      "id": "2021-00647",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494814"
+    },
+    {
+      "id": "2021-00650",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494817"
+    },
+    {
+      "id": "2021-00655",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494822"
+    },
+    {
+      "id": "2021-00665",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1500780"
+    },
+    {
+      "id": "2021-00666",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1500781"
+    },
+    {
+      "id": "2021-00667",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1500782"
+    },
+    {
+      "id": "2021-00724",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1503749"
+    },
+    {
+      "id": "2021-00725",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1503750"
+    },
+    {
+      "id": "2021-00726",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1503751"
+    },
+    {
+      "id": "2021-00727",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1515780"
+    },
+    {
+      "id": "2021-00728",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1515781"
+    },
+    {
+      "id": "2021-00729",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1515782"
+    },
+    {
+      "id": "2021-00730",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1515783"
+    },
+    {
+      "id": "2021-00731",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505778"
+    },
+    {
+      "id": "2021-00732",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505779"
+    },
+    {
+      "id": "2021-00733",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505780"
+    },
+    {
+      "id": "2021-00734",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505781"
+    },
+    {
+      "id": "2021-00735",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505782"
+    },
+    {
+      "id": "2021-00736",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505783"
+    },
+    {
+      "id": "2021-00737",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1515784"
+    },
+    {
+      "id": "2021-00738",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505757"
+    },
+    {
+      "id": "2021-00739",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505758"
+    },
+    {
+      "id": "2021-00740",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505759"
+    },
+    {
+      "id": "2021-00743",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505773"
+    },
+    {
+      "id": "2021-00744",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505774"
+    },
+    {
+      "id": "2021-00835",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499780"
+    },
+    {
+      "id": "2021-00838",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499783"
+    },
+    {
+      "id": "2021-00839",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499784"
+    },
+    {
+      "id": "2021-00842",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499787"
+    },
+    {
+      "id": "2021-00844",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499789"
+    },
+    {
+      "id": "2021-00845",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499863"
+    },
+    {
+      "id": "2021-00846",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499864"
+    },
+    {
+      "id": "2021-00847",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1499865"
+    },
+    {
+      "id": "2021-00848",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517777"
+    },
+    {
+      "id": "2021-00849",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517778"
+    },
+    {
+      "id": "2021-00850",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517779"
+    },
+    {
+      "id": "2021-00851",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517780"
+    },
+    {
+      "id": "2021-00852",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517781"
+    },
+    {
+      "id": "2021-00853",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517782"
+    },
+    {
+      "id": "2021-00854",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517783"
+    },
+    {
+      "id": "2021-00855",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517784"
+    },
+    {
+      "id": "2021-00856",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517785"
+    },
+    {
+      "id": "2021-00857",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521792"
+    },
+    {
+      "id": "2021-00858",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521793"
+    },
+    {
+      "id": "2021-00859",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521794"
+    },
+    {
+      "id": "2021-00860",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521795"
+    },
+    {
+      "id": "2021-00861",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521796"
+    },
+    {
+      "id": "2021-00862",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521797"
+    },
+    {
+      "id": "2021-00864",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521799"
+    },
+    {
+      "id": "2021-00866",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521801"
+    },
+    {
+      "id": "2021-00867",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521802"
+    },
+    {
+      "id": "2021-00868",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521803"
+    },
+    {
+      "id": "2021-00869",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521804"
+    },
+    {
+      "id": "2021-00870",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521805"
+    },
+    {
+      "id": "2021-00871",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521806"
+    },
+    {
+      "id": "2021-00872",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521807"
+    },
+    {
+      "id": "2021-00873",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521808"
+    },
+    {
+      "id": "2021-00874",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501881"
+    },
+    {
+      "id": "2021-00876",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501883"
+    },
+    {
+      "id": "2021-00877",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501884"
+    },
+    {
+      "id": "2021-00878",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501885"
+    },
+    {
+      "id": "2021-00880",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501887"
+    },
+    {
+      "id": "2021-00881",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501888"
+    },
+    {
+      "id": "2021-00882",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501889"
+    },
+    {
+      "id": "2021-00915",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472612"
+    },
+    {
+      "id": "2021-00916",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472613"
+    },
+    {
+      "id": "2021-00923",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472626"
+    },
+    {
+      "id": "2021-00952",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472657"
+    },
+    {
+      "id": "2021-00953",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472658"
+    },
+    {
+      "id": "2021-00954",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472660"
+    },
+    {
+      "id": "2021-00955",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472661"
+    },
+    {
+      "id": "2021-00956",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472662"
+    },
+    {
+      "id": "2021-00957",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472663"
+    },
+    {
+      "id": "2021-00958",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472664"
+    },
+    {
+      "id": "2021-00959",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472665"
+    },
+    {
+      "id": "2021-00963",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472751"
+    },
+    {
+      "id": "2021-00964",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472752"
+    },
+    {
+      "id": "2021-00965",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472753"
+    },
+    {
+      "id": "2021-00966",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472754"
+    },
+    {
+      "id": "2021-00967",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472755"
+    },
+    {
+      "id": "2021-00968",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472756"
+    },
+    {
+      "id": "2021-00969",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472757"
+    },
+    {
+      "id": "2021-00970",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472758"
+    },
+    {
+      "id": "2021-00971",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472759"
+    },
+    {
+      "id": "2021-01024",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472856"
+    },
+    {
+      "id": "2021-01025",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472857"
+    },
+    {
+      "id": "2021-01026",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472858"
+    },
+    {
+      "id": "2021-01027",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472859"
+    },
+    {
+      "id": "2021-01028",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472860"
+    },
+    {
+      "id": "2021-01030",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472865"
+    },
+    {
+      "id": "2021-01031",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1472867"
+    },
+    {
+      "id": "2021-01042",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1525923"
+    },
+    {
+      "id": "2021-01044",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1525926"
+    },
+    {
+      "id": "2021-01056",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508776"
+    },
+    {
+      "id": "2021-01064",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517837"
+    },
+    {
+      "id": "2021-01065",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1517838"
+    },
+    {
+      "id": "2021-01067",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508764"
+    },
+    {
+      "id": "2021-01068",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508765"
+    },
+    {
+      "id": "2021-01069",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508766"
+    },
+    {
+      "id": "2021-01072",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1508769"
+    },
+    {
+      "id": "2021-01173",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1496883"
+    },
+    {
+      "id": "P-1004",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1034909"
+    },
+    {
+      "id": "P-1012",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1031801"
+    },
+    {
+      "id": "P-1131",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1032867"
+    }
+  ]
+}

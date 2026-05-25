@@ -45,9 +45,11 @@ import {
   getPublicAccession,
   getPublicCatalogueRows,
   getPublicDateText,
-  getPublicDescriptionDetails,
+  getPublicDescriptionDetailList,
   getPublicImageUrl,
+  getPublicArtist,
   getPublicRecordSourceLabel,
+  getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import {
@@ -414,6 +416,11 @@ const getMedium = (result: ArtworkSearchResult) =>
 const getAccession = (result: ArtworkSearchResult) =>
   getPublicAccession(result);
 
+const getDisplayTitle = (result: ArtworkSearchResult) => getPublicTitle(result);
+
+const getDisplayArtist = (result: ArtworkSearchResult) =>
+  getPublicArtist(result) || 'Unknown artist';
+
 const getSourceName = (result: ArtworkSearchResult) =>
   getNgsUrl(result)
     ? asText(getMeta(result).sourceInstitution) ||
@@ -618,7 +625,7 @@ const getMasonryImageRatio = (result: ArtworkSearchResult) => {
 };
 
 const estimateMasonryCardHeight = (result: ArtworkSearchResult) => {
-  const titleLength = result.title?.length || 0;
+  const titleLength = getDisplayTitle(result).length;
   const titleWeight = Math.min(0.42, titleLength / 150);
   const metadataWeight = getMetadataFacets(result).length ? 0.34 : 0.18;
 
@@ -733,30 +740,23 @@ const sortResults = (
     }
 
     if (sortMode === 'artist') {
-      return (
-        textCompare(a, b, (result) => result.artist) ||
-        b.similarity - a.similarity
-      );
+      return textCompare(a, b, getPublicArtist) || b.similarity - a.similarity;
     }
 
     if (sortMode === 'artist-desc') {
       return (
-        textCompare(a, b, (result) => result.artist, 'desc') ||
+        textCompare(a, b, getPublicArtist, 'desc') ||
         b.similarity - a.similarity
       );
     }
 
     if (sortMode === 'title') {
-      return (
-        textCompare(a, b, (result) => result.title) ||
-        b.similarity - a.similarity
-      );
+      return textCompare(a, b, getPublicTitle) || b.similarity - a.similarity;
     }
 
     if (sortMode === 'title-desc') {
       return (
-        textCompare(a, b, (result) => result.title, 'desc') ||
-        b.similarity - a.similarity
+        textCompare(a, b, getPublicTitle, 'desc') || b.similarity - a.similarity
       );
     }
 
@@ -2154,7 +2154,10 @@ const preloadShowcaseImage = (src: string) =>
 
     const decodeThenFinish = () => {
       if (typeof image.decode === 'function') {
-        void image.decode().catch(() => undefined).finally(finish);
+        void image
+          .decode()
+          .catch(() => undefined)
+          .finally(finish);
         return;
       }
 
@@ -2178,10 +2181,7 @@ const IdleShowcaseBackdrop = forwardRef<
     isLoading: boolean;
     onSelectArtwork: (artwork: ArtworkSearchResult) => void;
   }
->(function IdleShowcaseBackdrop(
-  { artworks, isLoading, onSelectArtwork },
-  ref
-) {
+>(function IdleShowcaseBackdrop({ artworks, isLoading, onSelectArtwork }, ref) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const transitionRunRef = useRef(0);
   const previewWorks = useMemo(
@@ -2349,7 +2349,8 @@ const IdleShowcaseBackdrop = forwardRef<
         {previewItems.map((artwork, index) => {
           const layout = previewLayout[index];
           const imageUrl = getShowcaseImageUrl(artwork);
-          const title = artwork?.title || 'Artwork';
+          const title = artwork ? getDisplayTitle(artwork) : 'Artwork';
+          const artist = artwork ? getPublicArtist(artwork) : null;
 
           return (
             <button
@@ -2365,9 +2366,7 @@ const IdleShowcaseBackdrop = forwardRef<
               }`}
               aria-label={`View ${title}`}
               title={
-                artwork
-                  ? `${title}${artwork.artist ? ` - ${artwork.artist}` : ''}`
-                  : undefined
+                artwork ? `${title}${artist ? ` - ${artist}` : ''}` : undefined
               }
               style={{
                 top: layout?.top,
@@ -2392,9 +2391,9 @@ const IdleShowcaseBackdrop = forwardRef<
                     <span className="line-clamp-2 max-w-full whitespace-normal break-words text-xs font-semibold leading-tight text-white drop-shadow [overflow-wrap:anywhere]">
                       {title}
                     </span>
-                    {artwork?.artist && (
+                    {artist && (
                       <span className="mt-1 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-tight text-white/72 drop-shadow">
-                        {artwork.artist}
+                        {artist}
                       </span>
                     )}
                   </span>
@@ -2424,9 +2423,9 @@ function SearchArtworkDialog({
   onClose: () => void;
 }) {
   const imageUrl = artwork ? getPublicImageUrl(artwork) : null;
-  const descriptionDetails = artwork
-    ? getPublicDescriptionDetails(artwork)
-    : null;
+  const descriptionDetailsList = artwork
+    ? getPublicDescriptionDetailList(artwork)
+    : [];
   const caption = artwork ? getGeneratedCaptionText(artwork) : null;
   const catalogRows = artwork ? getPublicCatalogueRows(artwork) : [];
   const catalogueSourceLabel = getPublicRecordSourceLabel(
@@ -2434,6 +2433,8 @@ function SearchArtworkDialog({
   );
   const ngsUrl = artwork ? getNgsUrl(artwork) : null;
   const rootsUrl = artwork ? getRootsUrl(artwork) : null;
+  const title = artwork ? getDisplayTitle(artwork) : 'Untitled';
+  const artist = artwork ? getPublicArtist(artwork) : null;
 
   return (
     <Dialog.Root
@@ -2454,7 +2455,7 @@ function SearchArtworkDialog({
               {imageUrl ? (
                 <img
                   src={imageUrl}
-                  alt={artwork.title || 'Artwork'}
+                  alt={title}
                   className="max-h-[72vh] w-full object-contain"
                 />
               ) : (
@@ -2471,12 +2472,10 @@ function SearchArtworkDialog({
                     Artwork
                   </p>
                   <Dialog.Title className="mt-2 font-display text-3xl font-semibold leading-tight text-white">
-                    {artwork.title || 'Untitled'}
+                    {title}
                   </Dialog.Title>
-                  {artwork.artist && (
-                    <p className="mt-2 text-sm text-white/60">
-                      {artwork.artist}
-                    </p>
+                  {artist && (
+                    <p className="mt-2 text-sm text-white/60">{artist}</p>
                   )}
                 </div>
                 <Dialog.Close asChild>
@@ -2519,20 +2518,27 @@ function SearchArtworkDialog({
                 )}
               </div>
 
-              {descriptionDetails && (
+              {descriptionDetailsList.length > 0 && (
                 <section className="mt-6">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                      Catalogue text
-                    </h3>
-                    <SourceIndicator
-                      label={descriptionDetails.sourceLabel}
-                      showLabel
-                    />
+                  <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+                    Catalogue text
+                  </h3>
+                  <div className="mt-2 divide-y divide-white/[0.08] border-y border-white/[0.08]">
+                    {descriptionDetailsList.map((descriptionDetails) => (
+                      <div
+                        key={`${descriptionDetails.sourceLabel}-${descriptionDetails.text}`}
+                        className="py-3"
+                      >
+                        <SourceIndicator
+                          label={descriptionDetails.sourceLabel}
+                          showLabel
+                        />
+                        <p className="mt-2 text-sm leading-relaxed text-white/70">
+                          {descriptionDetails.text}
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                  <p className="mt-2 text-sm leading-relaxed text-white/70">
-                    {descriptionDetails.text}
-                  </p>
                 </section>
               )}
 
@@ -2931,6 +2937,8 @@ function SalonResults({
         const rotation = ((hashString(`${result.id}-${index}`) % 50) - 25) / 10;
         const image = result.thumbnailUrl || result.imageUrl;
         const rank = (index + 1).toString().padStart(2, '0');
+        const title = getDisplayTitle(result);
+        const artist = getDisplayArtist(result);
 
         return (
           <button
@@ -2944,7 +2952,7 @@ function SalonResults({
               {image ? (
                 <img
                   src={image}
-                  alt={result.title || 'Artwork'}
+                  alt={title}
                   loading="lazy"
                   className="aspect-[4/5] w-full object-cover"
                 />
@@ -2958,11 +2966,10 @@ function SalonResults({
               #{rank}
               <br />
               <span className="font-display text-sm italic normal-case tracking-normal text-white/75">
-                {result.title || 'Untitled'}
+                {title}
               </span>
               <br />
-              {result.artist || 'Unknown artist'} /{' '}
-              {getDateText(result) || 'undated'}
+              {artist} / {getDateText(result) || 'undated'}
             </p>
           </button>
         );
@@ -2987,6 +2994,7 @@ function AtlasResults({
         const width = 58 + (hash % 76);
         const image = result.thumbnailUrl || result.imageUrl;
         const rank = (index + 1).toString().padStart(2, '0');
+        const title = getDisplayTitle(result);
 
         return (
           <button
@@ -3008,7 +3016,7 @@ function AtlasResults({
               {image ? (
                 <img
                   src={image}
-                  alt={result.title || 'Artwork'}
+                  alt={title}
                   loading="lazy"
                   className="h-full w-full object-cover"
                 />
@@ -3019,9 +3027,7 @@ function AtlasResults({
               )}
             </div>
             <div className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-black/90 px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <span className="text-[10px] italic text-white">
-                {result.title || 'Untitled'}
-              </span>
+              <span className="text-[10px] italic text-white">{title}</span>
             </div>
           </button>
         );
@@ -3048,6 +3054,8 @@ function ResultCard({
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const palette = collectPalette(result).slice(0, 5);
+  const title = getDisplayTitle(result);
+  const artist = getDisplayArtist(result);
 
   return (
     <article className="break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]">
@@ -3060,7 +3068,7 @@ function ResultCard({
           {result.thumbnailUrl || result.imageUrl ? (
             <img
               src={result.thumbnailUrl || result.imageUrl || undefined}
-              alt={result.title || 'Artwork'}
+              alt={title}
               loading="lazy"
               className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             />
@@ -3079,11 +3087,9 @@ function ResultCard({
             className="min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
           >
             <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
-              {result.title || 'Untitled'}
+              {title}
             </h2>
-            <p className="mt-1 text-sm text-white/60">
-              {result.artist || 'Unknown artist'}
-            </p>
+            <p className="mt-1 text-sm text-white/60">{artist}</p>
           </button>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
             #{rank.toString().padStart(2, '0')}
@@ -3272,91 +3278,94 @@ function TableResults({
           </tr>
         </thead>
         <tbody className="divide-y divide-white/[0.06]">
-          {results.map((result, index) => (
-            <tr
-              key={result.id}
-              className="transition-colors hover:bg-white/[0.035]"
-            >
-              <td className="px-3 py-3 font-mono text-white/35">
-                {(index + 1).toString().padStart(2, '0')}
-              </td>
-              <td className="px-3 py-3">
-                <button
-                  type="button"
-                  onClick={() => onSelectArtwork(result)}
-                  className="flex items-center gap-3 text-left text-white transition-colors hover:text-cyan-200"
-                >
-                  {result.thumbnailUrl || result.imageUrl ? (
-                    <img
-                      src={result.thumbnailUrl || result.imageUrl || undefined}
-                      alt=""
-                      loading="lazy"
-                      className="h-12 w-12 object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">
-                      <ImageIcon className="h-4 w-4" />
-                    </span>
-                  )}
-                  <span>
-                    <span className="block font-medium">
-                      {result.title || 'Untitled'}
-                    </span>
-                    {getAccession(result) && (
-                      <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
-                        {getAccession(result)}
+          {results.map((result, index) => {
+            const title = getDisplayTitle(result);
+            const artist = getDisplayArtist(result);
+
+            return (
+              <tr
+                key={result.id}
+                className="transition-colors hover:bg-white/[0.035]"
+              >
+                <td className="px-3 py-3 font-mono text-white/35">
+                  {(index + 1).toString().padStart(2, '0')}
+                </td>
+                <td className="px-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => onSelectArtwork(result)}
+                    className="flex items-center gap-3 text-left text-white transition-colors hover:text-cyan-200"
+                  >
+                    {result.thumbnailUrl || result.imageUrl ? (
+                      <img
+                        src={
+                          result.thumbnailUrl || result.imageUrl || undefined
+                        }
+                        alt=""
+                        loading="lazy"
+                        className="h-12 w-12 object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">
+                        <ImageIcon className="h-4 w-4" />
                       </span>
                     )}
-                  </span>
-                </button>
-              </td>
-              <td className="px-3 py-3 text-white/65">
-                {result.artist || 'Unknown'}
-              </td>
-              <td className="px-3 py-3 text-white/55">
-                {getDateText(result) || '-'}
-              </td>
-              <td className="px-3 py-3 text-white/55">
-                {getPlace(result) || '-'}
-              </td>
-              <td className="px-3 py-3 text-white/55">
-                {getMedium(result) || '-'}
-              </td>
-              <td className="px-3 py-3 text-white/55">
-                {getSourceUrl(result) ? (
-                  <a
-                    href={getSourceUrl(result) || undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-cyan-200/75 hover:text-cyan-200"
-                  >
-                    {getSourceName(result)}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                ) : (
-                  getSourceName(result)
-                )}
-              </td>
-              <td
-                className="px-3 py-3 font-mono text-white/55"
-                title={
-                  selectedColours.length
-                    ? getColourMatchTitle(result, selectedColours)
-                    : isColourSort
-                      ? 'Nearest palette band for colour spectrum order'
-                      : undefined
-                }
-              >
-                {showSimilarity
-                  ? selectedColours.length
-                    ? formatColourMatch(result, selectedColours)
-                    : isColourSort
-                      ? getPaletteBandLabel(result)
-                      : `${Math.round(result.similarity * 100)}%`
-                  : (index + 1).toString().padStart(2, '0')}
-              </td>
-            </tr>
-          ))}
+                    <span>
+                      <span className="block font-medium">{title}</span>
+                      {getAccession(result) && (
+                        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+                          {getAccession(result)}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </td>
+                <td className="px-3 py-3 text-white/65">{artist}</td>
+                <td className="px-3 py-3 text-white/55">
+                  {getDateText(result) || '-'}
+                </td>
+                <td className="px-3 py-3 text-white/55">
+                  {getPlace(result) || '-'}
+                </td>
+                <td className="px-3 py-3 text-white/55">
+                  {getMedium(result) || '-'}
+                </td>
+                <td className="px-3 py-3 text-white/55">
+                  {getSourceUrl(result) ? (
+                    <a
+                      href={getSourceUrl(result) || undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-cyan-200/75 hover:text-cyan-200"
+                    >
+                      {getSourceName(result)}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : (
+                    getSourceName(result)
+                  )}
+                </td>
+                <td
+                  className="px-3 py-3 font-mono text-white/55"
+                  title={
+                    selectedColours.length
+                      ? getColourMatchTitle(result, selectedColours)
+                      : isColourSort
+                        ? 'Nearest palette band for colour spectrum order'
+                        : undefined
+                  }
+                >
+                  {showSimilarity
+                    ? selectedColours.length
+                      ? formatColourMatch(result, selectedColours)
+                      : isColourSort
+                        ? getPaletteBandLabel(result)
+                        : `${Math.round(result.similarity * 100)}%`
+                    : (index + 1).toString().padStart(2, '0')}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -67,8 +67,15 @@ type AccessTokenProvider = () => Promise<string | undefined>;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
+const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
+const NGS_ORG_SLUG = 'national-gallery-singapore';
+const NGS_ORG_KEY = 'ngs';
+
 const ORG_ID_ALIASES: Record<string, string> = {
-  ngs: '00000000-0000-4000-8000-000000000101',
+  [NGS_ORG_KEY]: NGS_ORG_ID,
+  [NGS_ORG_SLUG]: NGS_ORG_ID,
+  [LEGACY_NGS_ORG_ID]: NGS_ORG_ID,
 };
 
 export const resolveOrgIdentifier = (orgId: string) =>
@@ -77,10 +84,12 @@ export const resolveOrgIdentifier = (orgId: string) =>
 export const getPreferredOrgRouteId = (
   requestedOrgId: string,
   canonicalSlug?: string | null
-) =>
-  ORG_ID_ALIASES[requestedOrgId.toLowerCase()]
-    ? requestedOrgId.toLowerCase()
+) => {
+  const requested = requestedOrgId.toLowerCase();
+  return ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID
+    ? NGS_ORG_KEY
     : canonicalSlug || requestedOrgId;
+};
 
 const normalizeArtwork = (artwork: Artwork): Artwork => {
   const raw = artwork as Artwork & Record<string, any>;
@@ -685,7 +694,9 @@ class ApiClient {
     const data: ApiResponse<TranslationUsageSummary> = await response.json();
 
     if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Failed to fetch translation usage');
+      throw new Error(
+        data.error?.message || 'Failed to fetch translation usage'
+      );
     }
 
     return data.data;

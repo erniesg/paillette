@@ -26,7 +26,7 @@ if (!sharp) {
   throw new Error('Could not load sharp');
 }
 
-const DEFAULT_ORG_ID = '00000000-0000-4000-8000-000000000101';
+const DEFAULT_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 
 const args = new Map();
 const flags = new Set();

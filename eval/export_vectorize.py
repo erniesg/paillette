@@ -12,7 +12,7 @@ from pathlib import Path
 from lib import load_corpus, load_vectors
 
 
-DEFAULT_NGS_ORG_ID = "00000000-0000-4000-8000-000000000101"
+DEFAULT_NGS_ORG_ID = "cf98791d-f3cc-4f9f-b40c-a350efadbd05"
 
 
 def year_from_date_text(value):

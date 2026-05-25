@@ -8,7 +8,10 @@ type WorkerContext = {
 };
 
 const ORG_ID_ALIASES: Record<string, string> = {
-  ngs: '00000000-0000-4000-8000-000000000101',
+  ngs: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+  'national-gallery-singapore': 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+  '00000000-0000-4000-8000-000000000101':
+    'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
 };
 
 export const resolvePublicSearchOrgId = (orgId: string) =>
@@ -43,7 +46,9 @@ export const getApiBaseUrl = (env: Record<string, string | undefined>) => {
   return `${apiUrl.replace(/\/+$/, '')}/api/v1`;
 };
 
-const getPublicSearchAuthHeaders = (env: Record<string, string | undefined>) => {
+const getPublicSearchAuthHeaders = (
+  env: Record<string, string | undefined>
+): Record<string, string> | null => {
   const apiKey = env.PAILLETTE_PUBLIC_SEARCH_API_KEY;
   if (apiKey) {
     return { 'X-API-Key': apiKey };

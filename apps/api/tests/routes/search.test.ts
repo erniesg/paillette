@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { searchRoutes } from '../../src/routes/search';
 import type { Env } from '../../src/index';
 
-const ORG_ID = '00000000-0000-4000-8000-000000000101';
+const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 
 type DailyUsage = {
   used: number;
@@ -80,7 +80,8 @@ const artworkRow = {
   thumbnail_url: 'https://r2.example.com/artworks/1993-01678-thumb.jpg',
   custom_metadata: JSON.stringify({
     dimensions_text: '49 x 39 cm',
-    roots_listing_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+    roots_listing_url:
+      'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
     generated_caption: {
       text: 'Generated caption text for Mangrove Tree.',
       model: 'mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit',
@@ -91,8 +92,11 @@ const artworkRow = {
   match_score: 100,
 };
 
-const usageKey = (principalType: string, principalId: string, usageDate: string) =>
-  `${principalType}:${principalId}:${usageDate}`;
+const usageKey = (
+  principalType: string,
+  principalId: string,
+  usageDate: string
+) => `${principalType}:${principalId}:${usageDate}`;
 
 class FakeStatement {
   private params: unknown[] = [];
@@ -124,11 +128,14 @@ class FakeSearchDb {
   daily = new Map<string, DailyUsage>();
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
-  apiKeyRow: { id: string; user_id: string; email: string; name: string } | null = null;
+  apiKeyRow: {
+    id: string;
+    user_id: string;
+    email: string;
+    name: string;
+  } | null = null;
 
-  constructor(
-    private readonly rows = [artworkRow]
-  ) {}
+  constructor(private readonly rows = [artworkRow]) {}
 
   prepare(sql: string) {
     return new FakeStatement(this, sql);
@@ -153,7 +160,10 @@ class FakeSearchDb {
       return { success: true, meta: { changes: 1 } };
     }
 
-    if (sql.includes('UPDATE api_usage_daily') && sql.includes('used = used +')) {
+    if (
+      sql.includes('UPDATE api_usage_daily') &&
+      sql.includes('used = used +')
+    ) {
       const [cost, principalType, principalId, usageDate] = params as [
         number,
         string,
@@ -306,7 +316,11 @@ class FakeSearchDb {
     }
 
     if (sql.includes('FROM api_usage_daily')) {
-      const [principalType, principalId, usageDate] = params as [string, string, string];
+      const [principalType, principalId, usageDate] = params as [
+        string,
+        string,
+        string,
+      ];
       return (this.daily.get(usageKey(principalType, principalId, usageDate)) ??
         null) as T | null;
     }
@@ -339,7 +353,9 @@ class FakeSearchDb {
       const ids = new Set(params as string[]);
       return {
         success: true,
-        results: applySearchVisibility(this.rows.filter((row) => ids.has(row.id))),
+        results: applySearchVisibility(
+          this.rows.filter((row) => ids.has(row.id))
+        ),
       } as { success: boolean; results: T[] };
     }
 
@@ -406,7 +422,7 @@ describe('Search API auth and quota behavior', () => {
 
   it('returns 401 for unauthenticated text search', async () => {
     const res = await textSearch(app, env, {});
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
 
     expect(res.status).toBe(401);
     expect(body.success).toBe(false);
@@ -417,7 +433,7 @@ describe('Search API auth and quota behavior', () => {
 
   it('returns results, rate limit headers, and one usage record for a registered user', async () => {
     const res = await textSearch(app, env);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     const today = new Date().toISOString().slice(0, 10);
 
     expect(res.status).toBe(200);
@@ -479,7 +495,7 @@ describe('Search API auth and quota behavior', () => {
     env = makeEnv(db);
 
     const res = await textSearch(app, env);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
 
     expect(res.status).toBe(200);
     expect(body.data.results).toHaveLength(1);
@@ -510,7 +526,7 @@ describe('Search API auth and quota behavior', () => {
     env = makeEnv(db);
 
     const res = await textSearch(app, env);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
 
     expect(res.status).toBe(200);
     expect(body.data.results).toHaveLength(0);
@@ -526,7 +542,7 @@ describe('Search API auth and quota behavior', () => {
     };
 
     const res = await textSearch(app, env, { 'X-API-Key': 'plt_stg_test' });
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     const today = new Date().toISOString().slice(0, 10);
 
     expect(res.status).toBe(200);
@@ -543,7 +559,12 @@ describe('Search API auth and quota behavior', () => {
   });
 
   it('does not consume quota or keep usage events for invalid requests', async () => {
-    const res = await textSearch(app, env, { 'X-User-Id': 'user-1' }, { query: '' });
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: '' }
+    );
     const today = new Date().toISOString().slice(0, 10);
 
     expect(res.status).toBe(400);
@@ -562,7 +583,7 @@ describe('Search API auth and quota behavior', () => {
     }
 
     const res = await textSearch(app, env);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     const today = new Date().toISOString().slice(0, 10);
 
     expect(res.status).toBe(429);
@@ -577,10 +598,13 @@ describe('Search API auth and quota behavior', () => {
   it('keeps concurrent 110 requests capped at the atomic daily quota', async () => {
     const requests = Array.from({ length: 110 }, () => textSearch(app, env));
     const responses = await Promise.all(requests);
-    const statusCounts = responses.reduce<Record<number, number>>((counts, response) => {
-      counts[response.status] = (counts[response.status] || 0) + 1;
-      return counts;
-    }, {});
+    const statusCounts = responses.reduce<Record<number, number>>(
+      (counts, response) => {
+        counts[response.status] = (counts[response.status] || 0) + 1;
+        return counts;
+      },
+      {}
+    );
     const today = new Date().toISOString().slice(0, 10);
 
     expect(statusCounts[200]).toBe(100);

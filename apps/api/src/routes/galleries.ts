@@ -10,7 +10,11 @@ import {
   generateApiKey,
   hashApiKey,
 } from '../utils/crypto';
-import { NGS_ORG_ID, NGS_ORG_KEY, resolveOrgIdentifier } from '../utils/orgs';
+import {
+  NGS_ORG_KEY,
+  isNgsPublicOrg,
+  resolveOrgIdentifier,
+} from '../utils/orgs';
 
 const orgs = new Hono<{ Bindings: Env }>();
 
@@ -47,7 +51,7 @@ orgs.get(
       return c.json({
         success: true,
         data: result.results.map((org: any) => ({
-          key: org.id === NGS_ORG_ID ? NGS_ORG_KEY : org.slug || org.id,
+          key: isNgsPublicOrg(org.id) ? NGS_ORG_KEY : org.slug || org.id,
           ...org,
         })),
         metadata: {
@@ -127,8 +131,9 @@ orgs.get('/:id', async (c) => {
 
     // Parse JSON fields
     const orgData = {
-      key:
-        (org as any).id === NGS_ORG_ID ? NGS_ORG_KEY : (org as any).slug || id,
+      key: isNgsPublicOrg((org as any).id)
+        ? NGS_ORG_KEY
+        : (org as any).slug || id,
       ...org,
       settings: org.settings ? JSON.parse(org.settings as string) : {},
     };

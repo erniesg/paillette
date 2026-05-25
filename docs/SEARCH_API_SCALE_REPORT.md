@@ -71,7 +71,7 @@ k6 run scripts/search-load.k6.js
 Useful overrides:
 
 - `API_BASE=https://paillette-api-stg.berlayar.ai`
-- `ORG_ID=00000000-0000-4000-8000-000000000101`
+- `ORG_ID=cf98791d-f3cc-4f9f-b40c-a350efadbd05`
 - `QUERIES="pineapple,fishing boats,self portrait"`
 - `TOP_K=10`
 - `MIN_SCORE=0.3`

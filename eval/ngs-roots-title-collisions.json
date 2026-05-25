@@ -1,0 +1,700 @@
+{
+  "generated_at": "2026-05-25T03:00:00+08:00",
+  "basis": "Source DB artwork title compared with paired Roots raw title using the app ETL normalisation. These are treated as Roots conflicts: Roots fields/assets are suppressed for the generated app ETL unless separately verified for non-identity fields.",
+  "count": 77,
+  "collisions": [
+    {
+      "id": "1991-00312",
+      "ngsTitle": "Lotus",
+      "ngsArtist": "Wu Tsai Yen  (1911–2001)",
+      "rootsTitle": "Receipt",
+      "rootsPage": "1003116",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1003116"
+    },
+    {
+      "id": "1991-00313",
+      "ngsTitle": "Orchid",
+      "ngsArtist": "Wu Tsai Yen  (1911–2001)",
+      "rootsTitle": "Receipt",
+      "rootsPage": "1001086",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1001086"
+    },
+    {
+      "id": "1993-00975",
+      "ngsTitle": "Orchids and the Rock",
+      "ngsArtist": "Fan Chang Tien",
+      "rootsTitle": "Orchids and Rock",
+      "rootsPage": "1025992",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/fan-chang-tien/1993/1993-00975 (cropped).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025992"
+    },
+    {
+      "id": "1994-04128",
+      "ngsTitle": "Punjabi Man (The Fuchsia Turban)",
+      "ngsArtist": "Georgette Chen",
+      "rootsTitle": "Punjabi Man (The Fuschia Turban)",
+      "rootsPage": "1025103",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/georgette-chen/1994/1994-04128.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025103"
+    },
+    {
+      "id": "1994-04129",
+      "ngsTitle": "Pangetuk Gendang",
+      "ngsArtist": "Georgette Chen",
+      "rootsTitle": "Pengetuk Gendang",
+      "rootsPage": "1028934",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/georgette-chen/1994/1994-04129(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1028934"
+    },
+    {
+      "id": "1994-05265",
+      "ngsTitle": "Dance",
+      "ngsArtist": "Wang Sui Pick",
+      "rootsTitle": "Chinese Calligraphy (Dance)",
+      "rootsPage": "1029536",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/wang-sui-pick/1994/1994-05265.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029536"
+    },
+    {
+      "id": "1994-05403",
+      "ngsTitle": "[Not Titled] (Village Scene)",
+      "ngsArtist": "Chia Yu Chian",
+      "rootsTitle": "Untitled (Kampong Scene)",
+      "rootsPage": "1025166",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/chia-yu-chian/1994/1994-05403 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025166"
+    },
+    {
+      "id": "1995-01802",
+      "ngsTitle": "Pagoda II",
+      "ngsArtist": "Latiff Mohidin",
+      "rootsTitle": "Pagoda I (Pago-Pago Series)",
+      "rootsPage": "1029702",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/latiff-mohidin/1995/1995-01802 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029702"
+    },
+    {
+      "id": "1995-01947",
+      "ngsTitle": "Sketch #1 Nude",
+      "ngsArtist": "Liu Kang",
+      "rootsTitle": "Sketch #2 Nude",
+      "rootsPage": "1027009",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/liu-kang/1995/1995-01947(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1027009"
+    },
+    {
+      "id": "1995-02509",
+      "ngsTitle": "Bumi V (Earth V)",
+      "ngsArtist": "Gregorius Sidharta Soegijo",
+      "rootsTitle": "Earth V",
+      "rootsPage": "1028526",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/gregorius-sidharta-soegijo/1995/1995-02509.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1028526"
+    },
+    {
+      "id": "1997-02955",
+      "ngsTitle": "Rama, Sita and Laksamana in the Forest",
+      "ngsArtist": "Anak Agung Gede Meregeg",
+      "rootsTitle": "Rama, Sita and Lakshma in the Forest",
+      "rootsPage": "1029807",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/anak-agung-gede-meregeg/1997/1997-02955 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029807"
+    },
+    {
+      "id": "1997-03481",
+      "ngsTitle": "Tagubilin Ng Isang Patrono (Bequest of a Patriarch)",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Tagubilin Ng Isang Patrono (Edition of 125)",
+      "rootsPage": "1025641",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03481(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025641"
+    },
+    {
+      "id": "1997-03482",
+      "ngsTitle": "Ninuno II (Forefathers II)",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Forefathers II (Edition of 200)",
+      "rootsPage": "1026861",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03482_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1026861"
+    },
+    {
+      "id": "1997-03483",
+      "ngsTitle": "Mga Ninunong Tagalog (Tagalog Ancestors)",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Mga Ninunong Tagalog (Edition of 25) (Translation: Tagalog Ancestors)",
+      "rootsPage": "1026847",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03483_N(20190912)(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1026847"
+    },
+    {
+      "id": "1997-03484",
+      "ngsTitle": "Ninunong Yakan (Yakan Ancestors)",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Ninunong Yakan (Edition of 25) (Translation: Yakan Ancestors)",
+      "rootsPage": "1026452",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03484_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1026452"
+    },
+    {
+      "id": "1997-03485",
+      "ngsTitle": "Saan Ka Nanggaling, Saan Ka Darating? (Where Have You Been, Where Are You Going?)",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Saan Ka Nannggaling, Saan Ka Darating (Edition of 25) (Translation: Where Did You Come From, Where Are You Headed)",
+      "rootsPage": "1026489",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03485_N(20190912)(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1026489"
+    },
+    {
+      "id": "1997-03486",
+      "ngsTitle": "Zambál",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Zambal (Edition of 25)",
+      "rootsPage": "1025611",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03486_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025611"
+    },
+    {
+      "id": "1997-03487",
+      "ngsTitle": "Mga Ninuno VII (Ancestors VII)",
+      "ngsArtist": "Imelda Cajipe Endaya",
+      "rootsTitle": "Mga Ninuno VII (Edition of 25) (Translation: Ancestors VII)",
+      "rootsPage": "1029053",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/imelda-cajipe-endaya/1997/1997-03487_N(20190912)(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029053"
+    },
+    {
+      "id": "1998-00129",
+      "ngsTitle": "Sarong-Making Shop",
+      "ngsArtist": "Chuah Thean Teng",
+      "rootsTitle": "Untitled (Batik workers)",
+      "rootsPage": "1029238",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/chuah-thean-teng/1998/1998-00129 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029238"
+    },
+    {
+      "id": "1998-00135",
+      "ngsTitle": "Head and Rear Shoulder of Chinese Lady",
+      "ngsArtist": "Peter Harris",
+      "rootsTitle": "Head and Rear Shoulder Chinese Lady",
+      "rootsPage": "1025289",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/peter-harris/1998/1998-00135.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025289"
+    },
+    {
+      "id": "1999-00334",
+      "ngsTitle": "Henri Listening to Birds",
+      "ngsArtist": "Jimmy Ong  (1964–)",
+      "rootsTitle": "Henri Listening to the Birds",
+      "rootsPage": "1025081",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025081"
+    },
+    {
+      "id": "1999-01627",
+      "ngsTitle": "Portrait of King Nangklao",
+      "ngsArtist": "Phra Soralaklikhit",
+      "rootsTitle": "King Rama III",
+      "rootsPage": "1025865",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/phra-soralaklikhit/1999/1999-01627 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1025865"
+    },
+    {
+      "id": "1999-01643",
+      "ngsTitle": "Pasar",
+      "ngsArtist": "Hendra Gunawan",
+      "rootsTitle": "Pasar (Market)",
+      "rootsPage": "1028421",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/hendra-gunawan/1999/1999-01643 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1028421"
+    },
+    {
+      "id": "2000-05989",
+      "ngsTitle": "Black Stupa",
+      "ngsArtist": "Montien Boonma (1953–2000)",
+      "rootsTitle": "Haw Par Villa exhibit",
+      "rootsPage": "1131376",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1131376"
+    },
+    {
+      "id": "2001-01258",
+      "ngsTitle": "Burong Hitam, Matahari, Manusia (Black Bird, Sun, Man)",
+      "ngsArtist": "Affandi",
+      "rootsTitle": "Beggar",
+      "rootsPage": "1033169",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/affandi/2001/2001-01258 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1033169"
+    },
+    {
+      "id": "2001-01260",
+      "ngsTitle": "Lukisan (Painting)",
+      "ngsArtist": "Ahmad Sadali",
+      "rootsTitle": "Lukisan",
+      "rootsPage": "1030999",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/ahmad-sadali/2001/2001-01260 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1030999"
+    },
+    {
+      "id": "2002-00216",
+      "ngsTitle": "Moro Dance",
+      "ngsArtist": "Galo B. Ocampo",
+      "rootsTitle": "Dancer",
+      "rootsPage": "1032407",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/galo-b--ocampo/2002/2002-00216 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1032407"
+    },
+    {
+      "id": "2002-00219",
+      "ngsTitle": "Portrait of Jose Rizal",
+      "ngsArtist": "Fabian de la Rosa",
+      "rootsTitle": "Rizal",
+      "rootsPage": "1032782",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/fabian-de-la-rosa/2002/2002-00219 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1032782"
+    },
+    {
+      "id": "2002-00408",
+      "ngsTitle": "Portrait of a Man",
+      "ngsArtist": "Tran Trung Tin",
+      "rootsTitle": "Man Portrait",
+      "rootsPage": "1031964",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/tran-trung-tin/2002/2002-00408 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1031964"
+    },
+    {
+      "id": "2003-03479",
+      "ngsTitle": "[Not titled] (Balinese Women Making Batik)",
+      "ngsArtist": "Liu Kang",
+      "rootsTitle": "Balinese Women Making Batik, Sketch 2",
+      "rootsPage": "1029209",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/liu-kang/2003/2003-03479.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1029209"
+    },
+    {
+      "id": "2003-04164",
+      "ngsTitle": "Balinese Woman Seated",
+      "ngsArtist": "Liu Kang",
+      "rootsTitle": "Balinese Women Seated",
+      "rootsPage": "1033618",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/liu-kang/2003/2003-04164.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1033618"
+    },
+    {
+      "id": "2008-00310",
+      "ngsTitle": "Rhythm in Blue II",
+      "ngsArtist": "Yusman Aman",
+      "rootsTitle": "Rhythm in Blue 2",
+      "rootsPage": "1192901",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/yusman-aman/2008/2008-00310 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1192901"
+    },
+    {
+      "id": "2009-01620",
+      "ngsTitle": "Orchestra in Equator Art Society",
+      "ngsArtist": "Koeh Sia Yong",
+      "rootsTitle": "Orchestra in the Equator Art Society",
+      "rootsPage": "1217678",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/koeh-sia-yong/2009/2009-01620(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1217678"
+    },
+    {
+      "id": "2009-02953",
+      "ngsTitle": "Orphans and Negotiations of 1973",
+      "ngsArtist": "Le Huy Tiep",
+      "rootsTitle": "Orphans and the Negotiation of 1973",
+      "rootsPage": "1124776",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/le-huy-tiep/2009/2009-02953_S.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1124776"
+    },
+    {
+      "id": "2009-03386",
+      "ngsTitle": "[Not Titled] (In Conversation)",
+      "ngsArtist": "Cheong Soo Pieng",
+      "rootsTitle": "(Untitled) Inconversation",
+      "rootsPage": "1232480",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/cheong-soo-pieng/2009/2009-03386_rephoto (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1232480"
+    },
+    {
+      "id": "2009-03513",
+      "ngsTitle": "\"Ein Knabe\" 1 Berlin",
+      "ngsArtist": "Latiff Mohidin",
+      "rootsTitle": "Ein Knabe (A Boy), Berlin",
+      "rootsPage": "1002403",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/latiff-mohidin/2009/2009-03513.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1002403"
+    },
+    {
+      "id": "2009-03517",
+      "ngsTitle": "Imago",
+      "ngsArtist": "Latiff Mohidin",
+      "rootsTitle": "Imago, Bangkok",
+      "rootsPage": "1083295",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/latiff-mohidin/2009/2009-03517 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1083295"
+    },
+    {
+      "id": "2009-03545",
+      "ngsTitle": "Rumpair (Seaweed)",
+      "ngsArtist": "Latiff Mohidin",
+      "rootsTitle": "Rumpair, Kuala Lumpur",
+      "rootsPage": "1108279",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/latiff-mohidin/2009/2009-03545.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1108279"
+    },
+    {
+      "id": "2009-03551",
+      "ngsTitle": "Pago Pago – Bali",
+      "ngsArtist": "Latiff Mohidin",
+      "rootsTitle": "Pago-Pago, Pesakih Bali",
+      "rootsPage": "1114370",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/latiff-mohidin/2009/2009-03551.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1114370"
+    },
+    {
+      "id": "2009-03552",
+      "ngsTitle": "Shadow Play III Wayang Kulit",
+      "ngsArtist": "Latiff Mohidin",
+      "rootsTitle": "Wayang Kulit Siam III (Siamese Shadow Play III)",
+      "rootsPage": "1003177",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/latiff-mohidin/2009/2009-03552_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1003177"
+    },
+    {
+      "id": "2010-01598",
+      "ngsTitle": "Singapore River",
+      "ngsArtist": "Foo Chee San  (1921–2017)",
+      "rootsTitle": "‘The Singapore and Malayan Rough Diary for 1930’",
+      "rootsPage": "1240385",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1240385"
+    },
+    {
+      "id": "2010-02039",
+      "ngsTitle": "Spring Scene",
+      "ngsArtist": "Foo Chee San  (1921–2017)",
+      "rootsTitle": "'The Singapore Visitor'",
+      "rootsPage": "1242297",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1242297"
+    },
+    {
+      "id": "2011-02256",
+      "ngsTitle": "Abstrak (Abstract)",
+      "ngsArtist": "Fadjar Sidik",
+      "rootsTitle": "Abstrak",
+      "rootsPage": "1249253",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/fadjar-sidik/2011/2011-02256 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1249253"
+    },
+    {
+      "id": "2012-00450",
+      "ngsTitle": "Wajah Monumen Pembebasan Irian Barat (Head of the Monument\nfor the Liberation of West Irian)",
+      "ngsArtist": "Edhi Sunarso",
+      "rootsTitle": "Monumen Wajah Pembebasan Irian Barat (Bust – Monument for the Independence of West Irian)",
+      "rootsPage": "1004210",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/edhi-sunarso/2012/2012-00450.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1004210"
+    },
+    {
+      "id": "2012-00733",
+      "ngsTitle": "Defend Thy Honour",
+      "ngsArtist": "Fernando Cueto Amorsolo",
+      "rootsTitle": "Defensa de Honor (Defend Thy Honor)",
+      "rootsPage": "1254405",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/fernando-cueto-amorsolo/2012/2012-00733 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1254405"
+    },
+    {
+      "id": "2013-00175",
+      "ngsTitle": "Brickworkers at Alexandra Brickworks",
+      "ngsArtist": "Choo Keng Kwang",
+      "rootsTitle": "Making Bricks at Alexander Brick Factory",
+      "rootsPage": "1272685",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/choo-keng-kwang/2013/2013-00175 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1272685"
+    },
+    {
+      "id": "2013-00177",
+      "ngsTitle": "Oyster Omelette Stall",
+      "ngsArtist": "Choo Keng Kwang",
+      "rootsTitle": "Fried Oyster Stall",
+      "rootsPage": "1273292",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/choo-keng-kwang/2013/2013-00177 (cropped).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1273292"
+    },
+    {
+      "id": "2013-00318",
+      "ngsTitle": "Legends (Huang Junbi)",
+      "ngsArtist": "Chua Soo Bin",
+      "rootsTitle": "Legends - Huang Chun-Pi #4",
+      "rootsPage": "1271044",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/chua-soo-bin/2013/2013-00318.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1271044"
+    },
+    {
+      "id": "2014-01303",
+      "ngsTitle": "Draw & Paint sketchbook",
+      "ngsArtist": "S. Sudjojono (1917–1986)",
+      "rootsTitle": "S.Sudjojono's sketchbook",
+      "rootsPage": "1278264",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1278264"
+    },
+    {
+      "id": "2015-00518",
+      "ngsTitle": "Lunchtime",
+      "ngsArtist": "Yip Cheong Fun (1903–1989)",
+      "rootsTitle": "Sarasvati",
+      "rootsPage": "1322605",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1322605"
+    },
+    {
+      "id": "2016-00238",
+      "ngsTitle": "Cloud Canyons No. 24",
+      "ngsArtist": "David Medalla",
+      "rootsTitle": "Cloud Canyon No. 24",
+      "rootsPage": "1319772",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/david-medalla/2016/2016-00238_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1319772"
+    },
+    {
+      "id": "2017-00814",
+      "ngsTitle": "Self-Portrait",
+      "ngsArtist": "Lim Mu Hue",
+      "rootsTitle": "Self-Expression",
+      "rootsPage": "1388594",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/lim-mu-hue/2017/14. Lim Mu Hue-Self Portrait.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1388594"
+    },
+    {
+      "id": "2020-00222",
+      "ngsTitle": "Nude Woman",
+      "ngsArtist": "Georgette Chen  (1906–1993)",
+      "rootsTitle": "Femme nue (Nude)",
+      "rootsPage": "1480609",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1480609"
+    },
+    {
+      "id": "2020-00415",
+      "ngsTitle": "Photograph album of albumen prints by Felice Beato",
+      "ngsArtist": "Felice Beato",
+      "rootsTitle": "Felice Beato, Photography album (1)",
+      "rootsPage": "1460748",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/felice-beato/2020/2020-00415_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460748"
+    },
+    {
+      "id": "2020-00416",
+      "ngsTitle": "Photograph album of albumen prints by Felice Beato",
+      "ngsArtist": "Felice Beato",
+      "rootsTitle": "Felice Beato, Photography album (2)",
+      "rootsPage": "1460749",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/felice-beato/2020/2020-00416_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1460749"
+    },
+    {
+      "id": "2020-00419",
+      "ngsTitle": "Not titled (Bupaya Pagoda, Bagan)",
+      "ngsArtist": "M. T. Hla",
+      "rootsTitle": "Not titled (Bagan Riverside)",
+      "rootsPage": "1481592",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/m.-t.-hla/2020/2020-00419_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481592"
+    },
+    {
+      "id": "2021-00250",
+      "ngsTitle": "Seaside Fantasy",
+      "ngsArtist": "Yip Cheong Fun",
+      "rootsTitle": "Having Fun",
+      "rootsPage": "1489666",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/yip-cheong-fun/2021/2021-00250_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1489666"
+    },
+    {
+      "id": "2021-00562",
+      "ngsTitle": "Extracurricular Political Science Class Organised for 50 Officials Working Undercover in the Enemy's Territory – Năm Căn Mangrove Forest",
+      "ngsArtist": "Võ An Khánh",
+      "rootsTitle": "Extra curricular political science class organized for 50 officials working undercover in the Enemy’s territory – Nam Ca...",
+      "rootsPage": "1481643",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/vo-an-khanh/2021/2021-00562(2).jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481643"
+    },
+    {
+      "id": "2021-00569",
+      "ngsTitle": "Guerilla Students from Kinh Hàng Hamlet, Khánh Hưng Commune, Trần Văn Thời District, Cà Mau, Seated on Makeshift Wooden Boards which are Later Removed Once Class is Over, Leaving No Traces Behind",
+      "ngsArtist": "Võ An Khánh",
+      "rootsTitle": "Guerilla students from Kinh Hang Hamlet, Khanh Hung Commune, Tran Thoi District, Ca Mau, seated on makeshift wooden boar...",
+      "rootsPage": "1481650",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/võ-an-khánh/2021/2021-00569_cropped.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481650"
+    },
+    {
+      "id": "2021-00571",
+      "ngsTitle": "Music and Dance Class Organised by the Southwestern Region’s Propaganda Department in U Minh Forest",
+      "ngsArtist": "Võ An Khánh",
+      "rootsTitle": "Music and dance class organized by the Southwestern Region’s Propaganda Dept in U Minh Forest",
+      "rootsPage": "1481652",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/võ-an-khánh/2021/2021-00571_cropped.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1481652"
+    },
+    {
+      "id": "2021-00653",
+      "ngsTitle": "Ricebarn of the Raja of Badung, Bali",
+      "ngsArtist": "Wijnand Otto Jan Nieuwenkamp",
+      "rootsTitle": "Detail of the Den Pasar Palace Doors, Bali",
+      "rootsPage": "1494820",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1494820"
+    },
+    {
+      "id": "2021-00742",
+      "ngsTitle": "Untitled lI",
+      "ngsArtist": "Lee Sik Khoon (1939–2015)",
+      "rootsTitle": "Untitled ll",
+      "rootsPage": "1505769",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1505769"
+    },
+    {
+      "id": "2021-00863",
+      "ngsTitle": "Une porte d'Angkor Thom (A Gate of Angkor Thom)",
+      "ngsArtist": "Louis Delaporte",
+      "rootsTitle": "Cambodge: Une porte d'Angkor Thom (Cambodia: A Gate of Angkor Thom)",
+      "rootsPage": "1521798",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/louis-delaporte/2021/2021-00863_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521798"
+    },
+    {
+      "id": "2021-00865",
+      "ngsTitle": "Ruines du Bayon, monument aux 42 tours (Ruins of the Bayon, Monument of 42 Towers)",
+      "ngsArtist": "Louis Delaporte",
+      "rootsTitle": "Cambodge: Ruines du Bayon (monument aux 42 tours) (Cambodia: Ruins of the Bayon, Monument of 42 Towers)",
+      "rootsPage": "1521800",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/louis-delaporte/2021/2021-00865_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1521800"
+    },
+    {
+      "id": "2021-00879",
+      "ngsTitle": "Manila - A Suburb of Manila with a Bamboo Bridge and Boats",
+      "ngsArtist": "Artist unknown",
+      "rootsTitle": "Manila - A Group of Filipinos in the Suburbs",
+      "rootsPage": "1501886",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/artist-unknown/2021/2021-00879_cropped.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1501886"
+    },
+    {
+      "id": "2022-00085",
+      "ngsTitle": "U.S. Marine Hurling a Grenade Seconds before Being Shot through the Left Hand, Huế",
+      "ngsArtist": "Don McCullin",
+      "rootsTitle": "US Marine hurling a Grenade Seconds before being Shot through the Left Hand, Hue",
+      "rootsPage": "1513808",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/don-mccullin/2022/2022-00085_cropped.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1513808"
+    },
+    {
+      "id": "ASB-0003",
+      "ngsTitle": "Agonising Form",
+      "ngsArtist": "Joseph McNally",
+      "rootsTitle": "Agonizing Form",
+      "rootsPage": "1032882",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/joseph-mcnally/asb/ASB-0003.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1032882"
+    },
+    {
+      "id": "ASB-0035",
+      "ngsTitle": "Longhouse",
+      "ngsArtist": "Shui Tit Sing",
+      "rootsTitle": "Long House",
+      "rootsPage": "1030379",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/shui-tit-sing/asb/ASB-0035.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1030379"
+    },
+    {
+      "id": "GI-0047",
+      "ngsTitle": "Bouquet - 17",
+      "ngsArtist": "Yeo Hoe Koon",
+      "rootsTitle": "Bouqnet - 17",
+      "rootsPage": "1034175",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/yeo-hoe-koon/gi/GI-0047.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1034175"
+    },
+    {
+      "id": "GI-0048",
+      "ngsTitle": "Bouquet - 15",
+      "ngsArtist": "Yeo Hoe Koon",
+      "rootsTitle": "Bouqnet - 15",
+      "rootsPage": "1031065",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/yeo-hoe-koon/gi/GI-0048.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1031065"
+    },
+    {
+      "id": "GI-0262-(AB)",
+      "ngsTitle": "Singapore River South Boat Quay",
+      "ngsArtist": "Lai Kui Fang  (1936–)",
+      "rootsTitle": "S'pore River South Boat Quay",
+      "rootsPage": "1033957",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1033957"
+    },
+    {
+      "id": "GI-0263-(PC)",
+      "ngsTitle": "Singapore River Boat Quay",
+      "ngsArtist": "Lai Kui Fang",
+      "rootsTitle": "S'pore River Boat Quay",
+      "rootsPage": "1031367",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/lai-kui-fang/gi/GI-0263-(PC).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1031367"
+    },
+    {
+      "id": "GI-0405",
+      "ngsTitle": "Lillies with Carps",
+      "ngsArtist": "Teng Nee Cheong (1951–2013)",
+      "rootsTitle": "Lilies with Carps",
+      "rootsPage": "1034402",
+      "ngsUrl": null,
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1034402"
+    },
+    {
+      "id": "P-0191",
+      "ngsTitle": "Untitled (The Malay Women and Boy)",
+      "ngsArtist": "Cheong Soo Pieng",
+      "rootsTitle": "Untitled (Three Malay Women and Boy)",
+      "rootsPage": "1034162",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/cheong-soo-pieng/p/P-0191.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1034162"
+    },
+    {
+      "id": "P-0514",
+      "ngsTitle": "The Onlooker Stays Sober",
+      "ngsArtist": "Lim Mu Hue",
+      "rootsTitle": "Game Players",
+      "rootsPage": "1030795",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/lim-mu-hue/p/P-0514.tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1030795"
+    },
+    {
+      "id": "P-0816",
+      "ngsTitle": "Terengganu Market Scene",
+      "ngsArtist": "Georgette Chen",
+      "rootsTitle": "Trengganu Market Scene",
+      "rootsPage": "1034791",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/georgette-chen/p/P-0816(1).tif.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1034791"
+    },
+    {
+      "id": "P-1142",
+      "ngsTitle": "Deserted Island",
+      "ngsArtist": "Thomas Yeo",
+      "rootsTitle": "Desert Island",
+      "rootsPage": "1031994",
+      "ngsUrl": "https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/thomas-yeo/p/P-1142_Cropped.jpg.html",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1031994"
+    }
+  ]
+}

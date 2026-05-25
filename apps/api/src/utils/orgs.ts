@@ -1,4 +1,5 @@
-export const NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
+export const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
+export const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 export const NGS_ORG_SLUG = 'national-gallery-singapore';
 export const NGS_ORG_KEY = 'ngs';
 
@@ -9,7 +10,12 @@ export const isNgsPublicOrg = (value: string | null | undefined) => {
   const key = String(value || '')
     .trim()
     .toLowerCase();
-  return key === NGS_ORG_ID || key === NGS_ORG_SLUG || key === NGS_ORG_KEY;
+  return (
+    key === NGS_ORG_ID ||
+    key === LEGACY_NGS_ORG_ID ||
+    key === NGS_ORG_SLUG ||
+    key === NGS_ORG_KEY
+  );
 };
 
 export async function resolveOrgIdentifier(
@@ -23,7 +29,18 @@ export async function resolveOrgIdentifier(
   const key = decoded.toLowerCase();
 
   if (isNgsPublicOrg(key)) {
-    return NGS_ORG_ID;
+    try {
+      const org = await db
+        .prepare(
+          'SELECT id FROM orgs WHERE id IN (?, ?) ORDER BY id = ? DESC LIMIT 1'
+        )
+        .bind(NGS_ORG_ID, LEGACY_NGS_ORG_ID, NGS_ORG_ID)
+        .first<{ id: string }>();
+
+      return org?.id || NGS_ORG_ID;
+    } catch {
+      return NGS_ORG_ID;
+    }
   }
 
   if (UUID_RE.test(decoded)) {

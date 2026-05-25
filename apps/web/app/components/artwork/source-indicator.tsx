@@ -57,6 +57,16 @@ export const getSourceIndicatorDetails = (label: string): SourceDetails => {
     };
   }
 
+  if (key.includes('national museum singapore')) {
+    return {
+      title: 'National Museum of Singapore',
+      shortLabel: 'NMS',
+      description: 'Public collection record surfaced through Roots/NHB.',
+      icon: Archive,
+      tone: 'roots',
+    };
+  }
+
   if (key.includes('paillette') || key.includes('ai tag')) {
     return {
       title,

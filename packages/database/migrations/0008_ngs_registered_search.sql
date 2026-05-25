@@ -13,4 +13,4 @@ SET settings = json_set(
   '$.allowPublicAccess',
   json('false')
 )
-WHERE id = '00000000-0000-4000-8000-000000000101';
+WHERE id = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';

@@ -2,8 +2,10 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
-const API_BASE = (__ENV.API_BASE || 'https://paillette-api-stg.berlayar.ai').replace(/\/+$/, '');
-const ORG_ID = __ENV.ORG_ID || '00000000-0000-4000-8000-000000000101';
+const API_BASE = (
+  __ENV.API_BASE || 'https://paillette-api-stg.berlayar.ai'
+).replace(/\/+$/, '');
+const ORG_ID = __ENV.ORG_ID || 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const API_KEY = __ENV.API_KEY || '';
 const TOKEN = __ENV.TOKEN || '';
 const TOP_K = Number(__ENV.TOP_K || 10);
@@ -42,15 +44,35 @@ export const options =
           warmup_ramp_sustain_spike: {
             executor: 'ramping-vus',
             stages: [
-              { duration: __ENV.WARMUP || '30s', target: Number(__ENV.WARMUP_VUS || 1) },
-              { duration: __ENV.RAMP || '1m', target: Number(__ENV.SUSTAIN_VUS || 3) },
-              { duration: __ENV.SUSTAIN || '2m', target: Number(__ENV.SUSTAIN_VUS || 3) },
-              { duration: __ENV.SPIKE || '30s', target: Number(__ENV.SPIKE_VUS || 8) },
+              {
+                duration: __ENV.WARMUP || '30s',
+                target: Number(__ENV.WARMUP_VUS || 1),
+              },
+              {
+                duration: __ENV.RAMP || '1m',
+                target: Number(__ENV.SUSTAIN_VUS || 3),
+              },
+              {
+                duration: __ENV.SUSTAIN || '2m',
+                target: Number(__ENV.SUSTAIN_VUS || 3),
+              },
+              {
+                duration: __ENV.SPIKE || '30s',
+                target: Number(__ENV.SPIKE_VUS || 8),
+              },
               { duration: __ENV.RAMP_DOWN || '30s', target: 0 },
             ],
           },
         },
-        summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
+        summaryTrendStats: [
+          'avg',
+          'min',
+          'med',
+          'p(90)',
+          'p(95)',
+          'p(99)',
+          'max',
+        ],
         thresholds: {
           http_req_duration: ['p(95)<5000', 'p(99)<10000'],
           search_server_errors: ['rate<0.01'],
@@ -66,7 +88,15 @@ export const options =
             maxDuration: __ENV.MAX_DURATION || '1m',
           },
         },
-        summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
+        summaryTrendStats: [
+          'avg',
+          'min',
+          'med',
+          'p(90)',
+          'p(95)',
+          'p(99)',
+          'max',
+        ],
         thresholds: {
           search_server_errors: ['rate<0.01'],
           search_failed_checks: ['rate<0.05'],

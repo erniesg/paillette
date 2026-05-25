@@ -9,19 +9,22 @@ import {
   getDominantSourceLabel,
   getGeneratedCaptionRecord,
   getNgsUrl,
+  getPublicArtist,
   getPublicCatalogueRows,
   getPublicDescription,
-  getPublicDescriptionDetails,
+  getPublicDescriptionDetailList,
   getPublicImageUrl,
   getPublicRecordSourceLabel,
+  getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   const artwork = data?.artwork;
   const description = artwork ? getPublicDescription(artwork) : null;
+  const title = artwork ? getPublicTitle(artwork) : 'Artwork';
   return [
-    { title: `${artwork?.title || 'Artwork'} - Paillette` },
+    { title: `${title} - Paillette` },
     {
       name: 'description',
       content: description || 'Artwork detail and source metadata',
@@ -71,7 +74,7 @@ const getCatalogueRowSearchQuery = (label: string, value: string) => {
 export default function ArtworkDetailPage() {
   const { gallery, artwork, preferredRouteId } = useLoaderData<typeof loader>();
   const caption = getGeneratedCaptionRecord(artwork);
-  const descriptionDetails = getPublicDescriptionDetails(artwork);
+  const descriptionDetailsList = getPublicDescriptionDetailList(artwork);
   const imageUrl = getPublicImageUrl(artwork);
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
@@ -79,6 +82,8 @@ export default function ArtworkDetailPage() {
   const catalogueSourceLabel = getPublicRecordSourceLabel(
     getDominantSourceLabel(catalogRows)
   );
+  const title = getPublicTitle(artwork);
+  const artist = getPublicArtist(artwork);
 
   return (
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
@@ -104,7 +109,7 @@ export default function ArtworkDetailPage() {
               {imageUrl ? (
                 <img
                   src={imageUrl}
-                  alt={artwork.title || 'Artwork'}
+                  alt={title}
                   className="max-h-[76vh] w-full object-contain"
                 />
               ) : (
@@ -123,26 +128,29 @@ export default function ArtworkDetailPage() {
               Artwork
             </p>
             <h1 className="mt-2 font-display text-4xl font-semibold leading-tight text-white">
-              {artwork.title || 'Untitled'}
+              {title}
             </h1>
-            {artwork.artist && (
-              <p className="mt-2 text-lg text-white/65">{artwork.artist}</p>
-            )}
+            {artist && <p className="mt-2 text-lg text-white/65">{artist}</p>}
           </div>
 
-          {descriptionDetails && (
-            <Section
-              title="Catalogue text"
-              eyebrow={
-                <SourceIndicator
-                  label={descriptionDetails.sourceLabel}
-                  showLabel
-                />
-              }
-            >
-              <p className="leading-relaxed text-white/70">
-                {descriptionDetails.text}
-              </p>
+          {descriptionDetailsList.length > 0 && (
+            <Section title="Catalogue text">
+              <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
+                {descriptionDetailsList.map((descriptionDetails) => (
+                  <div
+                    key={`${descriptionDetails.sourceLabel}-${descriptionDetails.text}`}
+                    className="py-3"
+                  >
+                    <SourceIndicator
+                      label={descriptionDetails.sourceLabel}
+                      showLabel
+                    />
+                    <p className="mt-2 leading-relaxed text-white/70">
+                      {descriptionDetails.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </Section>
           )}
 
