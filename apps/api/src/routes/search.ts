@@ -72,6 +72,7 @@ const BACKABLE_NGS_SEARCH_SQL = `
         AND trim(accession_number) <> ''
         AND title IS NOT NULL
         AND trim(title) <> ''
+        AND source_url LIKE 'https://www.nationalgallery.sg/%'
 `;
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
@@ -162,6 +163,15 @@ const normalizedTextSql = (expression: string) => `
   ) || ' ')
 `;
 
+const searchDescriptionSql = (orgId: string | undefined) =>
+  isNgsPublicOrg(orgId)
+    ? `CASE
+        WHEN lower(coalesce(json_extract(field_sources, '$.description'), '')) LIKE '%roots%'
+          THEN ''
+        ELSE coalesce(description, '')
+      END`
+    : 'description';
+
 const parseJsonObject = (value: string | null) => {
   if (!value) return undefined;
 
@@ -170,6 +180,104 @@ const parseJsonObject = (value: string | null) => {
   } catch {
     return undefined;
   }
+};
+
+const normalizeSourceLabel = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const removeRootsMetadataForNgsSearch = (
+  artwork: ArtworkSearchRow,
+  customMetadata: Record<string, unknown>,
+  fieldSources: Record<string, unknown> | undefined
+) => {
+  if (!isNgsPublicOrg(artwork.org_id)) {
+    return {
+      description: artwork.description,
+      customMetadata,
+      fieldSources,
+    };
+  }
+
+  const sanitizedMetadata: Record<string, unknown> = { ...customMetadata };
+  const sanitizedFieldSources = fieldSources ? { ...fieldSources } : undefined;
+  let description = artwork.description;
+
+  if (
+    sanitizedFieldSources &&
+    normalizeSourceLabel(sanitizedFieldSources.description).includes('roots')
+  ) {
+    description = null;
+    delete sanitizedFieldSources.description;
+  }
+
+  delete sanitizedMetadata.roots_listing_url;
+
+  const sourceRecords = sanitizedMetadata.source_records;
+  if (
+    sourceRecords &&
+    typeof sourceRecords === 'object' &&
+    !Array.isArray(sourceRecords)
+  ) {
+    const sanitizedSourceRecords = {
+      ...(sourceRecords as Record<string, unknown>),
+    };
+    delete sanitizedSourceRecords.roots;
+    delete sanitizedSourceRecords.roots_listing_url;
+    sanitizedMetadata.source_records = sanitizedSourceRecords;
+  }
+
+  const sourceProvenance = sanitizedMetadata.source_provenance;
+  if (
+    sourceProvenance &&
+    typeof sourceProvenance === 'object' &&
+    !Array.isArray(sourceProvenance)
+  ) {
+    const sanitizedProvenance = {
+      ...(sourceProvenance as Record<string, unknown>),
+    };
+    const descriptionProvenance = sanitizedProvenance.description;
+    if (
+      descriptionProvenance &&
+      typeof descriptionProvenance === 'object' &&
+      /roots\.gov\.sg/i.test(
+        String(
+          (descriptionProvenance as Record<string, unknown>).ref ||
+            (descriptionProvenance as Record<string, unknown>).source ||
+            ''
+        )
+      )
+    ) {
+      delete sanitizedProvenance.description;
+    }
+    sanitizedMetadata.source_provenance = sanitizedProvenance;
+  }
+
+  const generatedCaption = sanitizedMetadata.generated_caption;
+  if (
+    generatedCaption &&
+    typeof generatedCaption === 'object' &&
+    !Array.isArray(generatedCaption)
+  ) {
+    const sanitizedCaption = {
+      ...(generatedCaption as Record<string, unknown>),
+    };
+    const sources = sanitizedCaption.sources;
+    if (Array.isArray(sources)) {
+      sanitizedCaption.sources = sources.filter(
+        (source) => !/roots\.gov\.sg/i.test(String(source || ''))
+      );
+    }
+    sanitizedMetadata.generated_caption = sanitizedCaption;
+  }
+
+  return {
+    description,
+    customMetadata: sanitizedMetadata,
+    fieldSources: sanitizedFieldSources,
+  };
 };
 
 const compactObject = <T extends Record<string, unknown>>(value: T) =>
@@ -194,8 +302,16 @@ const mapSearchRow = (
   artwork: ArtworkSearchRow,
   similarity: number
 ): ArtworkSearchResult => {
-  const customMetadata = parseJsonObject(artwork.custom_metadata) ?? {};
-  const fieldSources = parseJsonObject(artwork.field_sources);
+  const customMetadata =
+    (parseJsonObject(artwork.custom_metadata) as Record<string, unknown>) ?? {};
+  const fieldSources = parseJsonObject(artwork.field_sources) as
+    | Record<string, unknown>
+    | undefined;
+  const sanitized = removeRootsMetadataForNgsSearch(
+    artwork,
+    customMetadata,
+    fieldSources
+  );
   const dominantColors = parseJsonObject(artwork.dominant_colors);
   const colorPalette = parseJsonObject(artwork.color_palette);
   const citation = parseJsonObject(artwork.citation);
@@ -212,7 +328,7 @@ const mapSearchRow = (
     thumbnailUrl: artwork.thumbnail_url,
     similarity,
     metadata: compactObject({
-      ...customMetadata,
+      ...sanitized.customMetadata,
       medium: artwork.medium,
       dateText: artwork.date_text,
       date_text: artwork.date_text,
@@ -220,7 +336,7 @@ const mapSearchRow = (
       culture: artwork.culture,
       origin: artwork.origin,
       dimensions,
-      description: artwork.description,
+      description: sanitized.description,
       provenance: artwork.provenance,
       creditLine: artwork.credit_line,
       credit_line: artwork.credit_line,
@@ -235,8 +351,8 @@ const mapSearchRow = (
       source_collection: artwork.source_collection,
       sourceRecordId: artwork.source_record_id,
       source_record_id: artwork.source_record_id,
-      fieldSources,
-      field_sources: fieldSources,
+      fieldSources: sanitized.fieldSources,
+      field_sources: sanitized.fieldSources,
       dominantColors,
       dominant_colors: dominantColors,
       colorPalette,
@@ -399,7 +515,7 @@ async function searchCaptionVectors(
   query: string,
   topK: number
 ): Promise<CaptionVectorMatch[]> {
-  if (!env.CAPTION_VECTORIZE) {
+  if (!env.CAPTION_VECTORIZE || env.CAPTION_VECTOR_SEARCH_ENABLED !== 'true') {
     return [];
   }
 
@@ -539,6 +655,10 @@ async function searchArtworksHybrid(
   query: string,
   topK: number
 ): Promise<ArtworkSearchResult[]> {
+  if (isNgsPublicOrg(orgId)) {
+    return searchArtworksByMetadata(env.DB, orgId, query, topK);
+  }
+
   const temporalFilter = parseTemporalFilter(query);
   const jinaConfig = getJinaConfig(env);
   const jinaMatchesPromise = searchJinaTextVectors(
@@ -647,7 +767,7 @@ async function searchArtworksByMetadata(
   const titleText = normalizedTextSql('title');
   const artistText = normalizedTextSql('artist');
   const dateText = normalizedTextSql('date_text');
-  const descriptionText = normalizedTextSql('description');
+  const descriptionText = normalizedTextSql(searchDescriptionSql(orgId));
   const mediumText = normalizedTextSql('medium');
   const classificationText = normalizedTextSql('classification');
   const accessionText = normalizedTextSql('accession_number');

@@ -12,6 +12,7 @@ import apiKeyRoutes from './routes/api-keys';
 import impactRoutes from './routes/impact';
 import assetRoutes from './routes/assets';
 import mcpRoutes from './routes/mcp';
+import ngsReviewRoutes from './routes/ngs-review';
 
 // Environment bindings
 export interface Env {
@@ -39,9 +40,11 @@ export interface Env {
   JINA_API_KEY?: string;
   JINA_MULTIMODAL_MODEL?: string;
   JINA_EMBEDDING_DIMENSIONS?: string;
+  CAPTION_VECTOR_SEARCH_ENABLED?: string;
   CAPTION_EMBEDDING_PROVIDER?: string;
   JINA_TEXT_MODEL?: string;
   JINA_TEXT_EMBEDDING_DIMENSIONS?: string;
+  ENABLE_NGS_REVIEW?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -96,6 +99,7 @@ api.route('/metadata', metadataRoutes);
 api.route('/translate', translationRoutes);
 api.route('/assets', assetRoutes);
 api.route('/mcp', mcpRoutes as any);
+api.route('/ngs-review', ngsReviewRoutes);
 
 // Nested routes under orgs. /galleries remains as a legacy alias while the
 // frontend and API clients move over.

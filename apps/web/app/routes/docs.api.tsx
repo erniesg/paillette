@@ -8,14 +8,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   Activity,
+  BookOpen,
+  Braces,
   Check,
   Copy,
+  Database,
+  FileJson,
   KeyRound,
   Loader2,
   LogIn,
   Play,
+  Search,
+  Server,
+  ShieldCheck,
+  TerminalSquare,
   Trash2,
   UserPlus,
+  Workflow,
 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Button } from '~/components/ui/button';
@@ -443,18 +452,51 @@ const mcpTools = [
 ];
 
 const primaryMcpTool =
-  mcpTools.find((tool) => tool.name === 'search_artworks') || mcpTools[0];
+  mcpTools.find((tool) => tool.name === 'search_artworks') ?? mcpTools[0]!;
 const secondaryMcpTools = mcpTools.filter(
   (tool) => tool.name !== primaryMcpTool.name
 );
 
 const docsNav = [
-  { href: '#overview', label: 'Overview' },
-  { href: '#quickstart', label: 'Quickstart' },
-  { href: '#endpoints', label: 'Endpoints' },
-  { href: '#keys', label: 'API keys' },
-  { href: '#try-it', label: 'Try it' },
+  { href: '#start', label: 'Start' },
+  { href: '#sources', label: 'Sources' },
+  { href: '#rest', label: 'REST' },
+  { href: '#keys', label: 'Keys' },
+  { href: '#console', label: 'Console' },
   { href: '#mcp', label: 'MCP' },
+];
+
+const integrationSteps = [
+  {
+    icon: Workflow,
+    title: 'Choose transport',
+    body: 'Use REST for product flows and MCP for agent clients.',
+    code: 'REST or MCP',
+  },
+  {
+    icon: Database,
+    title: 'Resolve the source',
+    body: 'Call /orgs and use the short key in every search request.',
+    code: 'GET /api/v1/orgs?limit=20',
+  },
+  {
+    icon: Search,
+    title: 'Search artworks',
+    body: 'Send a natural-language query to the selected source.',
+    code: 'POST /api/v1/orgs/ngs/search/text',
+  },
+  {
+    icon: FileJson,
+    title: 'Trust the field sources',
+    body: 'Read metadata.field_sources and source_provenance before displaying catalogue text.',
+    code: 'metadata.field_sources.description',
+  },
+];
+
+const authNotes = [
+  'Use X-API-Key for server-to-server calls.',
+  'Public source discovery endpoints do not require a key.',
+  'Never expose a personal key in client-side code.',
 ];
 
 const sampleSearchResponse = {
@@ -549,6 +591,224 @@ const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 
 const defaultDailyUsage = { used: 0, quota: 100 };
 const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
+const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
+type EndpointDefinition = (typeof endpoints)[number];
+
+const methodClasses: Record<string, string> = {
+  GET: 'border-emerald-300/30 bg-emerald-300/10 text-emerald-100',
+  POST: 'border-fuchsia-300/30 bg-fuchsia-300/10 text-fuchsia-100',
+};
+
+const publicEndpointPaths = new Set(['/orgs', '/orgs/slug/{slug}']);
+
+const truncateText = (value: unknown, length = 220) => {
+  const text =
+    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return text.length > length ? `${text.slice(0, length - 1)}...` : text;
+};
+
+const getOrgKey = (org: OrgDirectoryItem) =>
+  org.key || (org.id === NGS_ORG_ID ? NGS_ORG_SHORTCODE : org.slug || org.id);
+
+const getFieldDefault = (endpoint: EndpointDefinition, field: SchemaField) => {
+  const samples: Record<string, string> = {
+    artworkId: '2018-00743',
+    colors: '#cda636, #365f9c',
+    image: '',
+    query: 'batik textile pattern',
+    slug: NGS_ORG_SLUG,
+    targetLang: 'zh',
+    text: 'Gallery label text',
+  };
+
+  if (endpoint.path === '/orgs' && field.name === 'limit') return '20';
+  return samples[field.name] ?? field.defaultValue ?? '';
+};
+
+const getInitialEndpointValues = (endpoint: EndpointDefinition) =>
+  endpoint.schema.reduce<Record<string, string>>((values, field) => {
+    values[field.name] = getFieldDefault(endpoint, field);
+    return values;
+  }, {});
+
+const endpointRequiresAuth = (endpoint: EndpointDefinition) =>
+  !publicEndpointPaths.has(endpoint.path);
+
+const isPathField = (endpoint: EndpointDefinition, field: SchemaField) =>
+  endpoint.path.includes(`{${field.name}}`);
+
+const getFieldLocation = (endpoint: EndpointDefinition, field: SchemaField) => {
+  if (isPathField(endpoint, field)) return 'path';
+  if (endpoint.method === 'GET') return 'query';
+  if (field.type === 'File') return 'form';
+  return endpoint.schema.some((candidate) => candidate.type === 'File')
+    ? 'form'
+    : 'body';
+};
+
+const coerceFieldValue = (field: SchemaField, value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (field.type === 'string[]') {
+    return trimmed
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (field.type === 'integer') {
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : trimmed;
+  }
+  if (field.type === 'number') {
+    const parsed = Number.parseFloat(trimmed);
+    return Number.isFinite(parsed) ? parsed : trimmed;
+  }
+  return trimmed;
+};
+
+const enumOptionsFor = (field: SchemaField) =>
+  [...field.type.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+
+const shellQuote = (value: string) => `'${value.replace(/'/g, `'\"'\"'`)}'`;
+
+const buildEndpointRequest = ({
+  apiBase,
+  apiKey,
+  endpoint,
+  files = {},
+  values,
+}: {
+  apiBase: string;
+  apiKey: string;
+  endpoint: EndpointDefinition;
+  files?: Record<string, File | null>;
+  values: Record<string, string>;
+}) => {
+  const requiresAuth = endpointRequiresAuth(endpoint);
+  const isMultipart = endpoint.schema.some((field) => field.type === 'File');
+  const missingFiles: string[] = [];
+  let path = endpoint.path.replace(/\{([^}]+)\}/g, (_, fieldName: string) => {
+    const field = endpoint.schema.find(
+      (candidate) => candidate.name === fieldName
+    );
+    const value =
+      values[fieldName] || (field ? getFieldDefault(endpoint, field) : '');
+    return encodeURIComponent(value || fieldName);
+  });
+  const url = new URL(`${apiBase}${path}`);
+  const jsonBody: Record<string, unknown> = {};
+  const formBody =
+    isMultipart && typeof FormData !== 'undefined' ? new FormData() : null;
+  const displayBody: Record<string, unknown> = {};
+
+  endpoint.schema.forEach((field) => {
+    const location = getFieldLocation(endpoint, field);
+    if (location === 'path') return;
+
+    const rawValue = values[field.name] ?? getFieldDefault(endpoint, field);
+    const value = coerceFieldValue(field, rawValue);
+
+    if (location === 'query' && value !== undefined) {
+      url.searchParams.set(field.name, String(value));
+      return;
+    }
+
+    if (location === 'form') {
+      if (field.type === 'File') {
+        const file = files[field.name];
+        if (file) {
+          formBody?.append(field.name, file);
+          displayBody[field.name] = file.name;
+        } else if (field.required) {
+          missingFiles.push(field.name);
+          displayBody[field.name] = '<select a file>';
+        }
+        return;
+      }
+
+      if (value !== undefined) {
+        formBody?.append(field.name, String(value));
+        displayBody[field.name] = value;
+      }
+      return;
+    }
+
+    if (value !== undefined) {
+      jsonBody[field.name] = value;
+      displayBody[field.name] = value;
+    }
+  });
+
+  const headers: Record<string, string> = {};
+  if (requiresAuth && apiKey) headers['X-API-Key'] = apiKey;
+  if (endpoint.method !== 'GET' && !isMultipart) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const body =
+    endpoint.method === 'GET'
+      ? undefined
+      : isMultipart
+        ? (formBody ?? undefined)
+        : JSON.stringify(jsonBody);
+  const curlLines = [`curl -s ${url.toString()}`];
+  if (requiresAuth)
+    curlLines.push(`  -H "X-API-Key: ${apiKey || maskKey(null)}"`);
+  if (endpoint.method !== 'GET' && isMultipart) {
+    endpoint.schema.forEach((field) => {
+      if (field.type === 'File') {
+        curlLines.push(`  -F "${field.name}=@/path/to/image.jpg"`);
+        return;
+      }
+      const value = values[field.name] ?? getFieldDefault(endpoint, field);
+      if (value.trim()) curlLines.push(`  -F "${field.name}=${value.trim()}"`);
+    });
+  } else if (endpoint.method !== 'GET') {
+    curlLines.push('  -H "Content-Type: application/json"');
+    curlLines.push(`  -d ${shellQuote(JSON.stringify(jsonBody))}`);
+  }
+
+  path = url.pathname.replace('/api/v1', '');
+
+  return {
+    body,
+    curl: curlLines.join(' \\\n'),
+    displayBody,
+    headers,
+    isMultipart,
+    missingFiles,
+    path,
+    requiresAuth,
+    url: url.toString(),
+  };
+};
+
+const compactSearchResponse = (response: SearchResponse) => ({
+  count: response.count,
+  queryTime: response.queryTime,
+  results: response.results.slice(0, 2).map((result) => {
+    const metadata = (result.metadata || {}) as Record<string, any>;
+
+    return {
+      id: result.id,
+      title: result.title,
+      artist: result.artist,
+      year: result.year ?? metadata.dateText ?? metadata.date_text ?? null,
+      similarity: result.similarity,
+      imageUrl: result.imageUrl ?? result.thumbnailUrl ?? null,
+      metadata: {
+        medium: metadata.medium ?? null,
+        description: truncateText(metadata.description, 160),
+        field_sources: metadata.field_sources ?? metadata.fieldSources ?? null,
+        source_provenance: metadata.source_provenance
+          ? {
+              description: metadata.source_provenance.description ?? null,
+            }
+          : null,
+      },
+    };
+  }),
+});
 
 export default function ApiDocsPage() {
   const { apiBase, initialOrgDirectory } = useLoaderData<typeof loader>();
@@ -563,6 +823,20 @@ export default function ApiDocsPage() {
   const [testApiKey, setTestApiKey] = useState('');
   const [testResponse, setTestResponse] = useState<SearchResponse | null>(null);
   const [orgsExecutedAt, setOrgsExecutedAt] = useState<string | null>(null);
+  const [builderEndpointPath, setBuilderEndpointPath] = useState(
+    defaultBuilderEndpointPath
+  );
+  const [builderValuesByPath, setBuilderValuesByPath] = useState<
+    Record<string, Record<string, string>>
+  >(() => {
+    const endpoint =
+      endpoints.find((item) => item.path === defaultBuilderEndpointPath) ??
+      endpoints[0]!;
+    return { [endpoint.path]: getInitialEndpointValues(endpoint) };
+  });
+  const [builderFiles, setBuilderFiles] = useState<Record<string, File | null>>(
+    {}
+  );
 
   const orgsQuery = useQuery({
     queryKey: ['api-docs-orgs', apiBase],
@@ -666,7 +940,6 @@ export default function ApiDocsPage() {
       void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });
-
   const keys = apiKeysQuery.data?.keys ?? [];
   const activeKey = keys.find((key) => key.status === 'active');
   const dailyUsage = usageQuery.data ?? defaultDailyUsage;
@@ -771,6 +1044,11 @@ export default function ApiDocsPage() {
     Boolean(testQuery.trim()) &&
     Boolean(selectedOrgId);
   const shownResponse = testResponse ?? sampleSearchResponse;
+  const compactResponse = compactSearchResponse(shownResponse);
+  const responseMode = testResponse ? 'Live response' : 'Example response';
+  const textSearchEndpoint =
+    endpoints.find((endpoint) => endpoint.path === '/orgs/ngs/search/text') ||
+    endpoints[2]!;
   const orgListStatus = orgsQuery.isFetching
     ? 'Fetching live /orgs'
     : orgsQuery.isError
@@ -778,6 +1056,100 @@ export default function ApiDocsPage() {
       : orgsExecutedAt
         ? `Executed at ${orgsExecutedAt}`
         : 'Loaded from /orgs';
+  const orgOptions = orgDirectory.map((org) => ({
+    key: getOrgKey(org),
+    label: org.name,
+  }));
+  const builderEndpoint =
+    endpoints.find((endpoint) => endpoint.path === builderEndpointPath) ??
+    endpoints[0]!;
+  const builderValues =
+    builderValuesByPath[builderEndpoint.path] ??
+    getInitialEndpointValues(builderEndpoint);
+  const liveBuilderKey = (testApiKey.trim() || createdKey || '').trim();
+  const builderPreview = buildEndpointRequest({
+    apiBase,
+    apiKey: shownApiKey,
+    endpoint: builderEndpoint,
+    files: builderFiles,
+    values: builderValues,
+  });
+  const builderMutation = useMutation({
+    mutationFn: async () => {
+      const request = buildEndpointRequest({
+        apiBase,
+        apiKey: liveBuilderKey,
+        endpoint: builderEndpoint,
+        files: builderFiles,
+        values: builderValues,
+      });
+
+      if (request.requiresAuth && !liveBuilderKey) {
+        throw new Error('Paste an API key to run this endpoint.');
+      }
+
+      if (request.missingFiles.length) {
+        throw new Error(
+          `Select ${request.missingFiles.join(', ')} before running.`
+        );
+      }
+
+      const proxyBody = request.isMultipart
+        ? new FormData()
+        : JSON.stringify({
+            apiKey: liveBuilderKey,
+            endpointPath: builderEndpoint.path,
+            values: builderValues,
+          });
+
+      if (proxyBody instanceof FormData) {
+        proxyBody.set('_apiKey', liveBuilderKey);
+        proxyBody.set('_endpointPath', builderEndpoint.path);
+        builderEndpoint.schema.forEach((field) => {
+          if (field.type === 'File') {
+            const file = builderFiles[field.name];
+            if (file) proxyBody.set(field.name, file);
+            return;
+          }
+          proxyBody.set(
+            field.name,
+            builderValues[field.name] ?? getFieldDefault(builderEndpoint, field)
+          );
+        });
+      }
+
+      const response = await fetch('/api/docs/proxy', {
+        method: 'POST',
+        headers: request.isMultipart
+          ? undefined
+          : { 'Content-Type': 'application/json' },
+        body: proxyBody,
+      });
+      const contentType = response.headers.get('content-type') ?? '';
+      const payload = contentType.includes('application/json')
+        ? await response.json()
+        : await response.text();
+      const apiPayload = payload as ApiResponse<unknown>;
+
+      if (
+        !response.ok ||
+        (typeof apiPayload === 'object' &&
+          apiPayload !== null &&
+          'success' in apiPayload &&
+          apiPayload.success === false)
+      ) {
+        throw new Error(
+          apiPayload.error?.message || `Request failed (${response.status})`
+        );
+      }
+
+      return payload;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
+      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+    },
+  });
 
   const copyText = async (id: string, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -843,7 +1215,7 @@ export default function ApiDocsPage() {
 
         <div className="min-w-0">
           <motion.section
-            id="overview"
+            id="start"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             className="scroll-mt-24 border-b border-white/[0.08] pb-6"
@@ -856,18 +1228,51 @@ export default function ApiDocsPage() {
               Search source-backed artwork records over REST or MCP. Public
               samples use source keys; live search calls use a personal API key.
             </p>
-            <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
-              <OverviewFact label="Base URL" value={apiBase} />
-              <OverviewFact label="Auth header" value="X-API-Key" />
-              <OverviewFact label="Current source" value="ngs" />
+            <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+              <OverviewFact
+                icon={<Server className="h-4 w-4" />}
+                label="Base URL"
+                value={apiBase}
+              />
+              <OverviewFact
+                icon={<TerminalSquare className="h-4 w-4" />}
+                label="Auth header"
+                value="X-API-Key"
+              />
+              <OverviewFact
+                icon={<BookOpen className="h-4 w-4" />}
+                label="Default source"
+                value="ngs"
+              />
+              <OverviewFact
+                icon={<Braces className="h-4 w-4" />}
+                label="Response format"
+                value="JSON with field_sources"
+              />
+            </div>
+            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {integrationSteps.map((step, index) => (
+                <IntegrationStep key={step.title} index={index} step={step} />
+              ))}
+            </div>
+            <div className="mt-5 grid gap-2 border-y border-white/[0.08] py-3 lg:grid-cols-3">
+              {authNotes.map((note) => (
+                <div
+                  key={note}
+                  className="flex min-w-0 items-start gap-2 text-sm leading-6 text-white/58"
+                >
+                  <ShieldCheck className="mt-1 h-3.5 w-3.5 shrink-0 text-cyan-100/70" />
+                  <span>{note}</span>
+                </div>
+              ))}
             </div>
           </motion.section>
 
           <DocSection
-            id="quickstart"
+            id="sources"
             eyebrow="No key needed"
-            title="Quickstart"
-            description="Resolve the source key first, then use it in REST and MCP calls."
+            title="Sources"
+            description="Resolve the source key first, then use it consistently in REST paths and MCP tool arguments."
           >
             <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
               <div className="space-y-3">
@@ -928,10 +1333,161 @@ export default function ApiDocsPage() {
           </DocSection>
 
           <DocSection
-            id="endpoints"
+            id="rest"
             title="REST Endpoints"
-            description="Authenticated calls accept `X-API-Key` or `Authorization: Bearer`."
+            description={
+              <>
+                Authenticated calls accept <code>X-API-Key</code> or{' '}
+                <code>Authorization: Bearer</code>.
+              </>
+            }
           >
+            <div className="mb-6 grid items-start gap-5 border-y border-white/[0.08] py-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <label
+                    htmlFor="builder-endpoint"
+                    className="text-sm text-white/70"
+                  >
+                    Endpoint
+                  </label>
+                  <select
+                    id="builder-endpoint"
+                    value={builderEndpoint.path}
+                    onChange={(event) => {
+                      const nextEndpoint =
+                        endpoints.find(
+                          (endpoint) => endpoint.path === event.target.value
+                        ) ?? endpoints[0]!;
+                      setBuilderEndpointPath(nextEndpoint.path);
+                      setBuilderValuesByPath((previous) =>
+                        previous[nextEndpoint.path]
+                          ? previous
+                          : {
+                              ...previous,
+                              [nextEndpoint.path]:
+                                getInitialEndpointValues(nextEndpoint),
+                            }
+                      );
+                      builderMutation.reset();
+                    }}
+                    className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
+                  >
+                    {endpoints.map((endpoint) => (
+                      <option key={endpoint.path} value={endpoint.path}>
+                        {endpoint.method} {endpoint.path}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {builderPreview.requiresAuth && (
+                  <div className="grid gap-2">
+                    <label
+                      htmlFor="builder-api-key"
+                      className="text-sm text-white/70"
+                    >
+                      API key
+                    </label>
+                    <input
+                      id="builder-api-key"
+                      type="password"
+                      value={testApiKey}
+                      onChange={(event) => {
+                        setTestApiKey(event.target.value);
+                        builderMutation.reset();
+                      }}
+                      placeholder="plt_stg_..."
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="h-11 rounded-md border border-white/10 bg-black/30 px-3 font-mono text-sm text-white outline-none focus:border-cyan-200"
+                    />
+                  </div>
+                )}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {builderEndpoint.schema.map((field) => (
+                    <EndpointFieldControl
+                      key={field.name}
+                      endpoint={builderEndpoint}
+                      field={field}
+                      file={builderFiles[field.name] ?? null}
+                      value={
+                        builderValues[field.name] ??
+                        getFieldDefault(builderEndpoint, field)
+                      }
+                      onChange={(value) => {
+                        setBuilderValuesByPath((previous) => ({
+                          ...previous,
+                          [builderEndpoint.path]: {
+                            ...getInitialEndpointValues(builderEndpoint),
+                            ...(previous[builderEndpoint.path] ?? {}),
+                            [field.name]: value,
+                          },
+                        }));
+                        builderMutation.reset();
+                      }}
+                      onFileChange={(file) => {
+                        setBuilderFiles((previous) => ({
+                          ...previous,
+                          [field.name]: file,
+                        }));
+                        builderMutation.reset();
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <Button
+                  type="button"
+                  disabled={
+                    builderMutation.isPending ||
+                    (builderPreview.requiresAuth && !liveBuilderKey) ||
+                    builderPreview.missingFiles.length > 0
+                  }
+                  onClick={() => builderMutation.mutate()}
+                >
+                  {builderMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  Run request
+                </Button>
+
+                {builderMutation.isError && (
+                  <p className="border-y border-red-400/20 bg-red-400/10 py-3 text-sm text-red-200">
+                    {builderMutation.error instanceof Error
+                      ? builderMutation.error.message
+                      : 'Request failed'}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <CodeBlock
+                  id="builder-curl"
+                  label="Generated request"
+                  copied={copiedValue === 'builder-curl'}
+                  value={builderPreview.curl}
+                  onCopy={copyText}
+                />
+                <CodeBlock
+                  id="builder-response"
+                  label={
+                    builderMutation.data ? 'Live response' : 'Request body'
+                  }
+                  copied={copiedValue === 'builder-response'}
+                  value={
+                    builderMutation.data
+                      ? stringify(builderMutation.data)
+                      : stringify(builderPreview.displayBody)
+                  }
+                  onCopy={copyText}
+                />
+              </div>
+            </div>
+
             <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
               {endpoints.map((endpoint) => (
                 <div
@@ -939,10 +1495,8 @@ export default function ApiDocsPage() {
                   className="grid gap-3 px-1 py-4 md:grid-cols-[76px_minmax(170px,0.35fr)_minmax(0,1fr)] md:items-start"
                 >
                   <span
-                    className={`inline-flex w-fit rounded-md px-2 py-1 text-xs font-semibold ${
-                      endpoint.method === 'GET'
-                        ? 'bg-emerald-300/15 text-emerald-100'
-                        : 'bg-fuchsia-300/15 text-fuchsia-100'
+                    className={`inline-flex w-fit rounded-md border px-2 py-1 text-xs font-semibold ${
+                      methodClasses[endpoint.method] || methodClasses.POST
                     }`}
                   >
                     {endpoint.method}
@@ -1191,9 +1745,9 @@ export default function ApiDocsPage() {
           </DocSection>
 
           <DocSection
-            id="try-it"
-            title="Try it"
-            description="Paste a key and run a live text search against the selected source."
+            id="console"
+            title="Console"
+            description="Run the exact text-search request shape and inspect a compact response with source labels."
           >
             <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
               <div className="space-y-4">
@@ -1204,22 +1758,18 @@ export default function ApiDocsPage() {
                   >
                     Source key
                   </label>
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <input
-                      id="test-org-id"
-                      value={testOrgId}
-                      onChange={(event) => setTestOrgId(event.target.value)}
-                      spellCheck={false}
-                      className="h-11 rounded-md border border-white/10 bg-black/30 px-3 font-mono text-xs text-white outline-none focus:border-cyan-200"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setTestOrgId(NGS_ORG_SHORTCODE)}
-                      className="h-11 rounded-md border border-white/10 px-3 text-sm text-white/65 hover:bg-white/[0.06] hover:text-white"
-                    >
-                      NGS
-                    </button>
-                  </div>
+                  <select
+                    id="test-org-id"
+                    value={testOrgId}
+                    onChange={(event) => setTestOrgId(event.target.value)}
+                    className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
+                  >
+                    {orgOptions.map((org) => (
+                      <option key={org.key} value={org.key}>
+                        {org.label} ({org.key})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="grid gap-2">
                   <label
@@ -1266,11 +1816,7 @@ export default function ApiDocsPage() {
                 </div>
                 <SchemaList
                   title="Request body"
-                  fields={
-                    endpoints.find(
-                      (endpoint) => endpoint.path === '/orgs/ngs/search/text'
-                    )?.schema || []
-                  }
+                  fields={textSearchEndpoint.schema}
                   compact
                 />
                 <Button
@@ -1299,25 +1845,31 @@ export default function ApiDocsPage() {
                   onCopy={copyText}
                 />
               </div>
-              <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/[0.08] bg-black/40 p-4 text-xs leading-5 text-white/70">
-                {stringify({
-                  count: shownResponse.count,
-                  queryTime: shownResponse.queryTime,
-                  results: shownResponse.results.slice(0, 3),
-                })}
-              </pre>
+              <CodeBlock
+                id="search-response"
+                label={responseMode}
+                copied={copiedValue === 'search-response'}
+                value={stringify(compactResponse)}
+                onCopy={copyText}
+              />
             </div>
           </DocSection>
 
           <DocSection
             id="mcp"
             title="MCP"
-            description='Point an MCP client at `/api/v1/mcp`; use `collection: "ngs"`.'
+            description={
+              <>
+                Point an MCP client at <code>/api/v1/mcp</code>; use{' '}
+                <code>collection: "ngs"</code>.
+              </>
+            }
           >
             <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
               <div className="space-y-4">
                 <CodeBlock
                   id="mcp-config"
+                  label="MCP client config"
                   copied={copiedValue === 'mcp-config'}
                   value={mcpConfig}
                   onCopy={copyText}
@@ -1347,7 +1899,7 @@ export default function ApiDocsPage() {
                 </div>
                 <div className="border-y border-white/[0.08] py-3">
                   <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                    Other MCP tools
+                    Tool reference
                   </p>
                   <div className="mt-2 divide-y divide-white/[0.06]">
                     {secondaryMcpTools.map((tool) => (
@@ -1368,6 +1920,7 @@ export default function ApiDocsPage() {
               </div>
               <CodeBlock
                 id="mcp-call"
+                label="tools/call request"
                 copied={copiedValue === 'mcp-call'}
                 value={`curl -s ${apiBase}/mcp \\
   -H "${apiKeyHeader}" \\
@@ -1395,14 +1948,53 @@ export default function ApiDocsPage() {
   );
 }
 
-function OverviewFact({ label, value }: { label: string; value: string }) {
+function OverviewFact({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="border-y border-white/[0.08] py-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-        {label}
-      </p>
+      <div className="flex items-center gap-2 text-cyan-100/65">
+        {icon}
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+          {label}
+        </p>
+      </div>
       <code className="mt-1 block break-all text-sm text-cyan-100/75">
         {value}
+      </code>
+    </div>
+  );
+}
+
+function IntegrationStep({
+  index,
+  step,
+}: {
+  index: number;
+  step: (typeof integrationSteps)[number];
+}) {
+  const StepIcon = step.icon;
+
+  return (
+    <div className="min-w-0 border-y border-white/[0.08] py-3">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-xs font-semibold text-white/55">
+          {index + 1}
+        </span>
+        <StepIcon className="h-4 w-4 shrink-0 text-cyan-100/75" />
+        <h2 className="min-w-0 text-sm font-semibold text-white">
+          {step.title}
+        </h2>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-white/55">{step.body}</p>
+      <code className="mt-2 block overflow-x-auto whitespace-nowrap rounded-md bg-black/30 px-2 py-1.5 text-xs text-cyan-100/70">
+        {step.code}
       </code>
     </div>
   );
@@ -1502,6 +2094,90 @@ function SchemaList({
   );
 }
 
+function EndpointFieldControl({
+  endpoint,
+  field,
+  file,
+  onChange,
+  onFileChange,
+  value,
+}: {
+  endpoint: EndpointDefinition;
+  field: SchemaField;
+  file: File | null;
+  onChange: (value: string) => void;
+  onFileChange: (file: File | null) => void;
+  value: string;
+}) {
+  const location = getFieldLocation(endpoint, field);
+  const enumOptions = enumOptionsFor(field).filter(Boolean);
+  const inputId = `builder-field-${endpoint.path}-${field.name}`.replace(
+    /[^a-z0-9_-]+/gi,
+    '-'
+  );
+  const isNumber = field.type === 'integer' || field.type === 'number';
+
+  return (
+    <label htmlFor={inputId} className="grid min-w-0 gap-2">
+      <span className="flex min-w-0 items-center justify-between gap-3">
+        <span className="min-w-0">
+          <code className="break-all font-mono text-sm text-cyan-100">
+            {field.name}
+          </code>
+          <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.12em] text-white/35">
+            {location}
+          </span>
+        </span>
+        {field.required && (
+          <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-amber-100/80">
+            required
+          </span>
+        )}
+      </span>
+
+      {field.type === 'File' ? (
+        <input
+          id={inputId}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) =>
+            onFileChange(event.currentTarget.files?.[0] ?? null)
+          }
+          className="min-h-11 rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:text-white hover:file:bg-white/15"
+        />
+      ) : enumOptions.length ? (
+        <select
+          id={inputId}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
+        >
+          {enumOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id={inputId}
+          type={isNumber ? 'number' : 'text'}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.type === 'string[]' ? '#cda636, #365f9c' : ''}
+          className="h-11 min-w-0 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
+        />
+      )}
+
+      <span className="text-xs leading-5 text-white/45">
+        {field.type === 'File' && file
+          ? `Selected: ${file.name}`
+          : field.description}
+      </span>
+    </label>
+  );
+}
+
 function UsageMeter({
   icon,
   label,
@@ -1571,12 +2247,16 @@ function CodeBlock({
   return (
     <div className="min-w-0 max-w-full overflow-hidden border-y border-white/[0.08] bg-black/25 py-3">
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-          {label}
-        </p>
+        {label ? (
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
+            {label}
+          </p>
+        ) : (
+          <span aria-hidden="true" />
+        )}
         <CopyButton copied={copied} onClick={() => onCopy(id, value)} />
       </div>
-      <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words px-1 text-xs leading-5 text-white/68">
+      <pre className="max-h-[520px] max-w-full overflow-auto whitespace-pre-wrap break-words px-1 text-xs leading-5 text-white/68">
         {value}
       </pre>
     </div>

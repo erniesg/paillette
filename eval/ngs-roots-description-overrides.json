@@ -3,6 +3,14 @@
   "basis": "Live Roots HTML audit: description text was found on the actual Roots listing page for these NGS accession rows. Use only to attribute the public catalogue description label; NGS title, artist, object metadata, and image remain authoritative for NGS records.",
   "verified_roots_description_records": [
     {
+      "id": "GI-0120-(PC)",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1030358"
+    },
+    {
+      "id": "GI-0519-(PC)",
+      "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1031174"
+    },
+    {
       "id": "1991-00236",
       "rootsUrl": "https://www.roots.gov.sg/Collection-Landing/listing/1027827"
     },

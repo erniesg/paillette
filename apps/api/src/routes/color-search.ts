@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import { Env } from '../index';
 import {
   ColorSearchQuerySchema,
@@ -14,9 +13,20 @@ import {
   requireAuthOrApiKey,
 } from '../middleware/auth';
 import type { ApiResponse } from '../types';
-import { resolveOrgIdentifier } from '../utils/orgs';
+import { isNgsPublicOrg, resolveOrgIdentifier } from '../utils/orgs';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
+
+const BACKABLE_NGS_COLOR_SQL = `
+        AND accession_number IS NOT NULL
+        AND trim(accession_number) <> ''
+        AND title IS NOT NULL
+        AND trim(title) <> ''
+        AND source_url LIKE 'https://www.nationalgallery.sg/%'
+`;
+
+const backableColorSearchSql = (orgId: string | undefined) =>
+  isNgsPublicOrg(orgId) ? BACKABLE_NGS_COLOR_SQL : '';
 
 colorSearchRoutes.use(
   '/search/*',
@@ -72,6 +82,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
         AND dominant_colors IS NOT NULL
         AND image_url IS NOT NULL
         AND deleted_at IS NULL
+        ${backableColorSearchSql(orgId)}
       `
     )
       .bind(orgId)
@@ -186,7 +197,9 @@ colorSearchRoutes.post('/search/color', async (c) => {
         error: {
           code: 'INTERNAL_ERROR',
           message: 'Failed to perform color search',
-          details: error instanceof Error ? error.message : 'Unknown error',
+          details: {
+            message: error instanceof Error ? error.message : 'Unknown error',
+          },
         },
       },
       500
@@ -218,6 +231,7 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
       WHERE id = ?
         AND org_id = ?
         AND deleted_at IS NULL
+        ${backableColorSearchSql(orgId)}
       `
     )
       .bind(artworkId, orgId)

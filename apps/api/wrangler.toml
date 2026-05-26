@@ -79,6 +79,7 @@ database_id = "ebe8ae51-30bb-40e4-9532-5b1c9bd748d3"
 [[env.staging.r2_buckets]]
 binding = "IMAGES"
 bucket_name = "paillette-assets-stg"
+preview_bucket_name = "paillette-assets-stg"
 
 [[env.staging.vectorize]]
 binding = "VECTORIZE"
@@ -91,6 +92,7 @@ index_name = "paillette-caption-embeddings-stg"
 [[env.staging.kv_namespaces]]
 binding = "CACHE"
 id = "db13cd8536b34765a7a7be64401cf0b7"
+preview_id = "db13cd8536b34765a7a7be64401cf0b7"
 
 [env.staging.ai]
 binding = "AI"
