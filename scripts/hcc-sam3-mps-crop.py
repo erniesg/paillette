@@ -78,6 +78,8 @@ def parse_args():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--include")
     parser.add_argument("--from-report")
+    parser.add_argument("--postprocess-loaded", action="store_true")
+    parser.add_argument("--border-refine", action="store_true")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--write-unchanged", action="store_true")
     parser.add_argument("--sheet-size", type=int, default=20)
@@ -88,13 +90,15 @@ def main():
     args = parse_args()
     if args.from_report:
         results = json.loads(Path(args.from_report).read_text())
+        if args.postprocess_loaded:
+            results = [postprocess_loaded_result(row, args) for row in results]
         if args.apply:
             if not args.output_dir:
                 raise SystemExit("--output-dir is required with --apply")
             for row in results:
                 if row.get("ok") and (row.get("action") == "crop" or args.write_unchanged):
                     row["output_path"] = write_output(row["file"], row, args)
-            write_json(args.report, results)
+        write_json(args.report, results)
         Path(args.contact_dir).mkdir(parents=True, exist_ok=True)
         sheets = write_contact_sheets(results, args.contact_dir, args.sheet_size)
         print("SHEETS " + json.dumps(sheets, indent=2))
@@ -202,6 +206,7 @@ def process_image(file_path, args, processor):
     action = "keep"
     final_box = [0, 0, preview_size[0], preview_size[1]]
     refined = None
+    border_refined = None
 
     if selected:
         final_box = selected["box"]
@@ -215,6 +220,10 @@ def process_image(file_path, args, processor):
             if refined:
                 final_box = refined["box"]
                 reason = f"{reason}+frame_refine"
+            border_refined = refine_inner_border_box(preview_arr, final_box, selected, args)
+            if border_refined:
+                final_box = border_refined["box"]
+                reason = f"{reason}+border_refine"
     else:
         selected = {}
 
@@ -235,8 +244,37 @@ def process_image(file_path, args, processor):
         "final_box": final_box,
         "source_box": source_box,
         "refined": refined,
+        "border_refined": border_refined,
         "top": candidates[:30],
     }
+
+
+def postprocess_loaded_result(row, args):
+    if not row.get("ok"):
+        return row
+    if row.get("reason") in {"keep_clean_studio", "near_full_sam3"}:
+        return row
+
+    image = ImageOps.exif_transpose(Image.open(row["file"])).convert("RGB")
+    image.thumbnail(tuple(row["preview_size"]), Image.Resampling.LANCZOS)
+    image_arr = np.asarray(image)
+    full_size = tuple(row["full_size"])
+    preview_size = tuple(row["preview_size"])
+    current_box = row.get("final_box") or [0, 0, preview_size[0], preview_size[1]]
+    refined = refine_inner_border_box(image_arr, current_box, row.get("selected") or {}, args, row)
+    if not refined:
+        return row
+
+    updated = dict(row)
+    updated["action"] = "crop"
+    reason = updated.get("reason") or "postprocess"
+    if "border_refine" not in reason:
+        reason = f"{reason}+border_refine"
+    updated["reason"] = reason
+    updated["final_box"] = refined["box"]
+    updated["source_box"] = map_preview_box_to_source(refined["box"], preview_size, full_size)
+    updated["border_refined"] = refined
+    return updated
 
 
 def make_candidate(prompt, idx, raw_box, scores, preview_size):
@@ -381,6 +419,344 @@ def refine_frame_box(image_arr, box, edge):
         "area_ratio": round(area_ratio, 6),
         "insets": {key: round(value, 6) for key, value in insets.items()},
         "lines": {"left": left, "right": right, "top": top, "bottom": bottom},
+    }
+
+
+def refine_inner_border_box(image_arr, box, selected=None, args=None, row=None):
+    if not args or not getattr(args, "border_refine", False):
+        return None
+
+    selected = selected or {}
+    reason = (row or {}).get("reason") or ""
+    if "keep_clean_studio" in reason or "near_full" in reason:
+        return None
+
+    x1, y1, x2, y2 = [int(value) for value in box]
+    crop = image_arr[y1:y2, x1:x2]
+    if crop.shape[0] < 100 or crop.shape[1] < 100:
+        return None
+
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    gx = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3))
+    gy = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
+    mag = cv2.magnitude(gx, gy)
+    local_mean = cv2.blur(gray, (15, 15))
+    local_var = cv2.blur(gray * gray, (15, 15)) - local_mean * local_mean
+    local_std = np.sqrt(np.maximum(local_var, 0))
+    activity = ((mag > 22) | (local_std > 8)).astype(np.float32)
+
+    vertical_profile = smooth(gx.mean(axis=0), 5)
+    vertical_coverage = smooth((gx > 24).mean(axis=0), 5)
+    horizontal_profile = smooth(gy.mean(axis=1), 5)
+    horizontal_coverage = smooth((gy > 24).mean(axis=1), 5)
+
+    height, width = gray.shape
+    wide_crop = width / height >= 2.2
+    mode = border_refine_mode(selected, reason, width, height)
+    if not mode:
+        return None
+
+    cuts = {}
+    for side, profile, side_coverage in (
+        ("left", vertical_profile, vertical_coverage),
+        ("right", vertical_profile, vertical_coverage),
+        ("top", horizontal_profile, horizontal_coverage),
+        ("bottom", horizontal_profile, horizontal_coverage),
+    ):
+        side_options = border_side_options(mode, side, wide_crop)
+        if not side_options:
+            continue
+        cuts[side] = quiet_border_cut(
+            crop,
+            activity,
+            profile,
+            side_coverage,
+            side,
+            side_options["max_fraction"],
+            side_options.get("dark_only", False),
+            side_options.get("light_edge_ok", False),
+        )
+    accepted = {key: value for key, value in cuts.items() if value}
+    accepted = filter_border_cuts(accepted, mode)
+    if not accepted:
+        return None
+
+    non_dark_sides = [value for value in accepted.values() if value["kind"] != "dark_border"]
+    dark_sides = [value for value in accepted.values() if value["kind"] == "dark_border"]
+    if len(non_dark_sides) == 1 and not dark_sides:
+        only = non_dark_sides[0]
+        if only["distance"] > 0.045:
+            return None
+
+    left = accepted.get("left", {}).get("index", 0)
+    top = accepted.get("top", {}).get("index", 0)
+    right = accepted.get("right", {}).get("index", width)
+    bottom = accepted.get("bottom", {}).get("index", height)
+    if right <= left or bottom <= top:
+        return None
+
+    area_ratio = ((right - left) * (bottom - top)) / (width * height)
+    min_area_ratio = {
+        "dark_only": 0.76,
+        "wide_art": 0.66,
+        "framed_or_print": 0.70,
+        "art_thin": 0.78,
+    }[mode]
+    if area_ratio < min_area_ratio or area_ratio > 0.995:
+        return None
+
+    insets = {
+        "left": left / width,
+        "top": top / height,
+        "right": (width - right) / width,
+        "bottom": (height - bottom) / height,
+    }
+    max_inset = {
+        "dark_only": 0.22,
+        "wide_art": 0.22,
+        "framed_or_print": 0.13,
+        "art_thin": 0.08,
+    }[mode]
+    if max(insets.values()) > max_inset:
+        return None
+
+    new_box = [x1 + left, y1 + top, x1 + right, y1 + bottom]
+    if new_box == [x1, y1, x2, y2]:
+        return None
+
+    return {
+        "box": new_box,
+        "area_ratio": round(area_ratio, 6),
+        "insets": {key: round(value, 6) for key, value in insets.items()},
+        "mode": mode,
+        "cuts": accepted,
+    }
+
+
+def border_refine_mode(selected, reason, width, height):
+    prompt = (selected or {}).get("prompt") or ""
+    no_candidate = "no_usable_sam3_candidate" in reason
+    if no_candidate:
+        return "dark_only"
+
+    prompt_is_photo = any(
+        term in prompt for term in ("photograph", "photo", "photographic", "printed image")
+    )
+    if "frame_refine" in reason or prompt_is_photo:
+        return "framed_or_print"
+
+    aspect = width / max(1, height)
+    prompt_is_art = any(term in prompt for term in ("artwork", "painting", "drawing", "picture"))
+    if prompt_is_art and aspect >= 2.2:
+        return "wide_art"
+    if prompt_is_art:
+        return "art_thin"
+    return None
+
+
+def border_side_options(mode, side, wide_crop):
+    if mode == "dark_only":
+        return {"max_fraction": 0.22, "dark_only": True}
+    if mode == "wide_art":
+        if side not in {"top", "bottom"}:
+            return None
+        return {"max_fraction": 0.22 if wide_crop else 0.16}
+    if mode == "framed_or_print":
+        return {"max_fraction": 0.13, "light_edge_ok": True}
+    if mode == "art_thin":
+        return {"max_fraction": 0.08}
+    return None
+
+
+def filter_border_cuts(accepted, mode):
+    if mode == "dark_only":
+        return {
+            side: cut for side, cut in accepted.items() if cut["kind"] == "dark_border"
+        }
+
+    if mode == "wide_art":
+        vertical = {
+            side: cut
+            for side, cut in accepted.items()
+            if side in {"top", "bottom"} and cut["kind"] != "dark_border"
+        }
+        if not vertical:
+            return {}
+        large = [cut for cut in vertical.values() if cut["distance"] > 0.06]
+        if large and not all(side in vertical for side in ("top", "bottom")):
+            return {}
+        return vertical
+
+    if mode == "framed_or_print":
+        large_non_dark = [
+            cut
+            for cut in accepted.values()
+            if cut["kind"] != "dark_border" and cut["distance"] > 0.055
+        ]
+        if len(large_non_dark) == 1 and len(accepted) == 1:
+            return {}
+        return accepted
+
+    if mode == "art_thin":
+        thin = {
+            side: cut
+            for side, cut in accepted.items()
+            if cut["kind"] == "dark_border" or cut["distance"] <= 0.07
+        }
+        non_dark = [cut for cut in thin.values() if cut["kind"] != "dark_border"]
+        if len(non_dark) == 1 and non_dark[0]["distance"] > 0.035:
+            return {}
+        return thin
+
+    return {}
+
+
+def quiet_border_cut(
+    image,
+    activity,
+    profile,
+    coverage,
+    side,
+    max_fraction,
+    dark_only=False,
+    light_edge_ok=False,
+):
+    axis_length = image.shape[1] if side in {"left", "right"} else image.shape[0]
+    min_index = max(3, int(axis_length * 0.008))
+    max_index = max(min_index + 1, int(axis_length * max_fraction))
+    if side in {"left", "top"}:
+        iterator = range(min_index, max_index)
+    else:
+        iterator = range(axis_length - min_index, axis_length - max_index, -1)
+
+    candidates = []
+    for index in iterator:
+        low = max(0, index - 7)
+        high = min(axis_length, index + 8)
+        if profile[index] < np.max(profile[low:high]) - 1e-6:
+            continue
+        if profile[index] < 8 or coverage[index] < 0.035:
+            continue
+        candidate = score_quiet_border_cut(
+            image,
+            activity,
+            index,
+            side,
+            profile[index],
+            coverage[index],
+            dark_only,
+            light_edge_ok,
+        )
+        if candidate:
+            candidates.append(candidate)
+
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: item["rank"], reverse=True)[0]
+
+
+def score_quiet_border_cut(
+    image,
+    activity,
+    index,
+    side,
+    strength,
+    line_coverage,
+    dark_only=False,
+    light_edge_ok=False,
+):
+    height, width = activity.shape
+    axis_length = width if side in {"left", "right"} else height
+    distance = index / axis_length if side in {"left", "top"} else (axis_length - index) / axis_length
+    if distance <= 0:
+        return None
+
+    if side == "left":
+        strip = image[:, :index]
+        strip_activity = activity[:, :index]
+        rest_activity = activity[:, index:]
+    elif side == "right":
+        strip = image[:, index:]
+        strip_activity = activity[:, index:]
+        rest_activity = activity[:, :index]
+    elif side == "top":
+        strip = image[:index, :]
+        strip_activity = activity[:index, :]
+        rest_activity = activity[index:, :]
+    else:
+        strip = image[index:, :]
+        strip_activity = activity[index:, :]
+        rest_activity = activity[:index, :]
+
+    if strip.size == 0 or rest_activity.size == 0:
+        return None
+
+    strip_activity_mean = float(strip_activity.mean())
+    rest_activity_mean = float(rest_activity.mean())
+    quiet_delta = rest_activity_mean - strip_activity_mean
+    strip_stats = color_stats(strip)
+    is_dark = strip_stats["dark_frac"] >= 0.60 and line_coverage >= 0.035
+    is_quiet = (
+        strip_activity_mean < 0.46
+        and (quiet_delta >= 0.075 or line_coverage >= 0.16 or strength >= 34)
+    )
+    is_thin_supported = (
+        distance <= 0.055
+        and strip_activity_mean < 0.60
+        and (line_coverage >= 0.15 or strength >= 24)
+    )
+    is_light_print_edge = (
+        light_edge_ok
+        and distance <= 0.040
+        and strip_stats["light_neutral_frac"] >= 0.74
+        and strip_stats["dark_frac"] <= 0.035
+        and line_coverage >= 0.15
+        and strength >= 12
+    )
+
+    if dark_only and not is_dark:
+        return None
+    if not (is_dark or is_quiet or is_thin_supported or is_light_print_edge):
+        return None
+    if distance > 0.12 and not (is_dark or (quiet_delta >= 0.18 and strip_activity_mean < 0.44)):
+        return None
+
+    kind = "dark_border" if is_dark else "quiet_border"
+    rank = (
+        max(0.0, quiet_delta) * 2.0
+        + float(line_coverage)
+        + float(strength) / 100.0
+        + (0.35 if is_dark else 0.0)
+        + (0.20 if is_light_print_edge else 0.0)
+        - distance * 0.45
+    )
+    return {
+        "index": int(index),
+        "distance": round(float(distance), 6),
+        "strength": round(float(strength), 6),
+        "coverage": round(float(line_coverage), 6),
+        "strip_activity": round(strip_activity_mean, 6),
+        "rest_activity": round(rest_activity_mean, 6),
+        "quiet_delta": round(quiet_delta, 6),
+        "kind": kind,
+        "rank": round(rank, 6),
+        "strip_stats": strip_stats,
+    }
+
+
+def color_stats(region):
+    pixels = region.reshape(-1, 3).astype(np.float32)
+    lum = 0.2126 * pixels[:, 0] + 0.7152 * pixels[:, 1] + 0.0722 * pixels[:, 2]
+    maxc = pixels.max(axis=1)
+    minc = pixels.min(axis=1)
+    sat = np.zeros_like(maxc)
+    np.divide(maxc - minc, maxc, out=sat, where=maxc != 0)
+    return {
+        "mean_lum": round(float(lum.mean()), 6),
+        "std_lum": round(float(lum.std()), 6),
+        "dark_frac": round(float((lum < 35).mean()), 6),
+        "light_neutral_frac": round(float(((lum > 190) & (sat < 0.18)).mean()), 6),
     }
 
 
