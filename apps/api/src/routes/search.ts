@@ -65,6 +65,30 @@ const RRF_K = 60;
 const MAX_SEARCH_RESULTS = 100;
 const VECTORIZE_QUERY_METADATA = 'indexed' as const;
 
+type EmbeddingIndexVersion = 'v1' | 'v2';
+type SearchFusionMode = 'legacy' | 'metadata' | 'hybrid';
+type RoutedSearchIntent =
+  | 'balanced'
+  | 'accession_exact'
+  | 'artist_exact'
+  | 'title_exact'
+  | 'color_visual'
+  | 'medium_exact'
+  | 'temporal'
+  | 'formal_visual';
+
+type RoutedSearchWeights = {
+  jinaImage: number;
+  caption: number;
+  metadata: number;
+};
+
+type RoutedSearchPlan = {
+  intent: RoutedSearchIntent;
+  weights: RoutedSearchWeights;
+  metadataQuery?: string;
+};
+
 const BACKABLE_NGS_SEARCH_SQL = `
         AND source_url IS NOT NULL
         AND trim(source_url) <> ''
@@ -80,8 +104,125 @@ const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 const canonicalArtworkId = (id: string) =>
   id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
 
+const ACCESSION_RE =
+  /\b(?:\d{4}-\d{5}(?:-\d{3})?|[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]+)?)\b/i;
+const HEX_COLOR_RE = /#[0-9a-fA-F]{6}\b/;
+const COLOR_TERMS = new Set([
+  'black',
+  'blue',
+  'brown',
+  'crimson',
+  'earth',
+  'green',
+  'grey',
+  'gray',
+  'monochrome',
+  'navy',
+  'ochre',
+  'red',
+  'sage',
+  'yellow',
+]);
+const MEDIUM_TERMS = new Set([
+  'batik',
+  'bronze',
+  'canvas',
+  'charcoal',
+  'graphite',
+  'ink',
+  'linocut',
+  'oil',
+  'pencil',
+  'print',
+  'screenprint',
+  'sculpture',
+  'watercolour',
+  'watercolor',
+  'woodcut',
+]);
+const FORMAL_VISUAL_TERMS = new Set([
+  'brushwork',
+  'calligraphic',
+  'gestural',
+]);
+const SEARCH_CONTROL_WORDS = new Set([
+  'a',
+  'an',
+  'accession',
+  'and',
+  'artist',
+  'artwork',
+  'by',
+  'for',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'title',
+  'titled',
+  'to',
+  'with',
+  'work',
+]);
+
+const extractAccession = (query: string) =>
+  query.match(ACCESSION_RE)?.[0]?.toUpperCase();
+
+const normalizeSearchWords = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const searchQueryTokens = (query: string) =>
+  normalizeSearchWords(query)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(
+      (token) =>
+        token &&
+        token.length > 1 &&
+        !SEARCH_CONTROL_WORDS.has(token)
+    );
+
+const extractTitlePhrase = (query: string) => {
+  const quoted = query.match(/["“”]([^"“”]+)["“”]/);
+  if (quoted?.[1]) return normalizeSearchWords(quoted[1]);
+
+  const titled = query.match(/\b(?:work\s+titled|titled|title)\s+(.+)$/i);
+  return titled?.[1] ? normalizeSearchWords(titled[1]) : undefined;
+};
+
 const backableSearchSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId) ? BACKABLE_NGS_SEARCH_SQL : '';
+
+const getEmbeddingIndexVersion = (env: Env): EmbeddingIndexVersion =>
+  env.EMBEDDING_INDEX_VERSION === 'v2' ? 'v2' : 'v1';
+
+const getSearchFusionMode = (
+  env: Env,
+  orgId: string | undefined
+): SearchFusionMode => {
+  if (env.SEARCH_FUSION_MODE === 'metadata') return 'metadata';
+  if (env.SEARCH_FUSION_MODE === 'hybrid') return 'hybrid';
+  if (env.SEARCH_FUSION_MODE === 'legacy') return 'legacy';
+
+  if (isNgsPublicOrg(orgId)) {
+    return 'legacy';
+  }
+
+  return 'hybrid';
+};
+
+const getImageVectorize = (env: Env): Vectorize | undefined =>
+  getEmbeddingIndexVersion(env) === 'v2' ? env.VECTORIZE_V2 : env.VECTORIZE;
+
+const getCaptionVectorize = (env: Env): Vectorize | undefined =>
+  getEmbeddingIndexVersion(env) === 'v2'
+    ? env.CAPTION_VECTORIZE_V2
+    : env.CAPTION_VECTORIZE;
 
 type TemporalFilter = {
   startYear: number;
@@ -109,6 +250,10 @@ const firstYearFromText = (value: string | null | undefined) => {
 };
 
 const parseTemporalFilter = (query: string): TemporalFilter | null => {
+  if (extractAccession(query)) {
+    return null;
+  }
+
   const decadeMatch = query.match(/\b((?:1[0-9]{2}|20[0-9])0)'?s\b/i);
   if (decadeMatch?.[1]) {
     const startYear = Number(decadeMatch[1]);
@@ -162,6 +307,125 @@ const normalizedTextSql = (expression: string) => `
     )
   ) || ' ')
 `;
+
+const normalizedFieldExists = async (
+  db: D1Database,
+  orgId: string | undefined,
+  field: 'artist' | 'title',
+  value: string
+) => {
+  if (!value) return false;
+
+  const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const params = [...(orgId ? [orgId] : []), ` ${value} `];
+  const { results } = await db
+    .prepare(
+      `
+      SELECT id
+      FROM artworks
+      WHERE deleted_at IS NULL
+        ${orgFilter}
+        ${backableSearchSql(orgId)}
+        AND ${normalizedTextSql(field)} = ?
+      LIMIT 1
+      `
+    )
+    .bind(...params)
+    .all<{ id: string }>();
+
+  return results.length > 0;
+};
+
+const buildRoutedSearchPlan = async (
+  db: D1Database,
+  orgId: string | undefined,
+  query: string
+): Promise<RoutedSearchPlan> => {
+  const accession = extractAccession(query);
+  if (accession) {
+    return {
+      intent: 'accession_exact',
+      metadataQuery: accession,
+      weights: { jinaImage: 0, caption: 0, metadata: 8 },
+    };
+  }
+
+  const titlePhrase = extractTitlePhrase(query);
+  if (
+    titlePhrase &&
+    (await normalizedFieldExists(db, orgId, 'title', titlePhrase))
+  ) {
+    return {
+      intent: 'title_exact',
+      weights: { jinaImage: 0.15, caption: 1.2, metadata: 4 },
+    };
+  }
+
+  const entityQuery = normalizeSearchWords(
+    query.replace(/\b(?:works?\s+by|artist|by)\b/gi, ' ')
+  );
+  const [artistExact, titleExact] = await Promise.all([
+    normalizedFieldExists(db, orgId, 'artist', entityQuery),
+    normalizedFieldExists(db, orgId, 'title', entityQuery),
+  ]);
+
+  if (artistExact) {
+    return {
+      intent: 'artist_exact',
+      weights: { jinaImage: 0.1, caption: 1.5, metadata: 2.5 },
+    };
+  }
+
+  if (titleExact) {
+    return {
+      intent: 'title_exact',
+      weights: { jinaImage: 0.15, caption: 1.2, metadata: 4 },
+    };
+  }
+
+  const tokens = searchQueryTokens(query);
+  const normalizedQueryForRoute = normalizeSearchWords(query);
+  if (
+    HEX_COLOR_RE.test(query) ||
+    tokens.some((token) => COLOR_TERMS.has(token))
+  ) {
+    return {
+      intent: 'color_visual',
+      weights: { jinaImage: 1.5, caption: 0.25, metadata: 0 },
+    };
+  }
+
+  const hasMediumTerm = tokens.some((token) => MEDIUM_TERMS.has(token));
+  const hasMediumContext =
+    /\b(oil\s+on|watercolou?r|bronze|batik|woodcut|linocut|charcoal|graphite|screenprint|sculpture|medium|canvas)\b/i.test(
+      query
+    ) && !/\boil\s+lamps?\b/i.test(normalizedQueryForRoute);
+  if (hasMediumTerm && hasMediumContext) {
+    return {
+      intent: 'medium_exact',
+      weights: { jinaImage: 0.2, caption: 0.8, metadata: 3 },
+    };
+  }
+
+  if (parseTemporalFilter(query)) {
+    return {
+      intent: 'temporal',
+      weights: { jinaImage: 0.2, caption: 0.6, metadata: 4 },
+    };
+  }
+
+  if (tokens.some((token) => FORMAL_VISUAL_TERMS.has(token))) {
+    return {
+      intent: 'formal_visual',
+      weights: { jinaImage: 1.2, caption: 0.8, metadata: 0.2 },
+    };
+  }
+
+  return {
+    intent: 'balanced',
+    weights: { jinaImage: 1, caption: 1, metadata: 1 },
+  };
+};
 
 const searchDescriptionSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId)
@@ -512,15 +776,16 @@ async function searchJinaTextVectors(
 
 async function searchCaptionVectors(
   env: Env,
+  vectorize: Vectorize | undefined,
   query: string,
   topK: number
 ): Promise<CaptionVectorMatch[]> {
-  if (!env.CAPTION_VECTORIZE || env.CAPTION_VECTOR_SEARCH_ENABLED !== 'true') {
+  if (!vectorize || env.CAPTION_VECTOR_SEARCH_ENABLED !== 'true') {
     return [];
   }
 
   const queryEmbedding = await generateCaptionQueryEmbedding(env, query);
-  const result = await env.CAPTION_VECTORIZE.query(queryEmbedding, {
+  const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
@@ -655,62 +920,70 @@ async function searchArtworksHybrid(
   query: string,
   topK: number
 ): Promise<ArtworkSearchResult[]> {
-  if (isNgsPublicOrg(orgId)) {
+  const fusionMode = getSearchFusionMode(env, orgId);
+  if (fusionMode === 'legacy' || fusionMode === 'metadata') {
     return searchArtworksByMetadata(env.DB, orgId, query, topK);
   }
 
-  const temporalFilter = parseTemporalFilter(query);
+  const route = await buildRoutedSearchPlan(env.DB, orgId, query);
+  const metadataQuery = route.metadataQuery || query;
+  const temporalFilter = parseTemporalFilter(metadataQuery);
   const jinaConfig = getJinaConfig(env);
-  const jinaMatchesPromise = searchJinaTextVectors(
-    env.VECTORIZE,
-    jinaConfig,
-    orgId,
-    query,
-    topK
-  ).catch((error) => {
-    console.warn(
-      'Jina text query embedding failed; falling back to caption search',
-      error
-    );
-    return [] as CaptionVectorMatch[];
-  });
+  const imageVectorize = getImageVectorize(env);
+  const captionVectorize = getCaptionVectorize(env);
+  const jinaMatchesPromise =
+    route.weights.jinaImage > 0
+      ? searchJinaTextVectors(
+          imageVectorize,
+          jinaConfig,
+          orgId,
+          query,
+          topK
+        ).catch((error) => {
+          console.warn(
+            'Jina text query embedding failed; falling back to caption search',
+            error
+          );
+          return [] as CaptionVectorMatch[];
+        })
+      : Promise.resolve([] as CaptionVectorMatch[]);
 
   const [jinaMatches, captionMatches, metadataMatches] = await Promise.all([
     jinaMatchesPromise,
-    searchCaptionVectors(env, query, topK),
-    searchArtworksByMetadata(
-      env.DB,
-      orgId,
-      query,
-      Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS)
-    ),
+    route.weights.caption > 0
+      ? searchCaptionVectors(env, captionVectorize, query, topK)
+      : Promise.resolve([] as CaptionVectorMatch[]),
+    route.weights.metadata > 0
+      ? searchArtworksByMetadata(
+          env.DB,
+          orgId,
+          metadataQuery,
+          Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS)
+        )
+      : Promise.resolve([] as ArtworkSearchResult[]),
   ]);
 
   const scores = new Map<string, { score: number; vectorScore?: number }>();
 
-  jinaMatches.forEach((match, index) => {
-    scores.set(match.id, {
-      score: (scores.get(match.id)?.score || 0) + 1 / (RRF_K + index + 1),
-      vectorScore: match.score,
-    });
-  });
+  const addRankedMatches = (
+    matches: Array<{ id: string; score?: number }>,
+    weight: number
+  ) => {
+    if (weight <= 0) return;
 
-  captionMatches.forEach((match, index) => {
-    const existing = scores.get(match.id);
-    scores.set(match.id, {
-      score: (existing?.score || 0) + 1 / (RRF_K + index + 1),
-      vectorScore: existing?.vectorScore ?? match.score,
+    matches.forEach((match, index) => {
+      const existing = scores.get(match.id);
+      scores.set(match.id, {
+        score:
+          (existing?.score || 0) + weight / (RRF_K + index + 1),
+        vectorScore: existing?.vectorScore ?? match.score,
+      });
     });
-  });
+  };
 
-  metadataMatches.forEach((match, index) => {
-    const existing = scores.get(match.id);
-    scores.set(match.id, {
-      score:
-        (existing?.score || 0) + (temporalFilter ? 4 : 1) / (RRF_K + index + 1),
-      vectorScore: existing?.vectorScore,
-    });
-  });
+  addRankedMatches(jinaMatches, route.weights.jinaImage);
+  addRankedMatches(captionMatches, route.weights.caption);
+  addRankedMatches(metadataMatches, route.weights.metadata);
 
   const rankedCandidateIds = [...scores.entries()]
     .sort(([, a], [, b]) => b.score - a.score)
@@ -750,17 +1023,15 @@ async function searchArtworksByMetadata(
   topK: number
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
+  const normalizedWordQuery = normalizeSearchWords(query);
   const temporalFilter = parseTemporalFilter(query);
-  const likeQuery = `%${escapeLike(normalizedQuery)}%`;
-  const tokens = normalizedQuery
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean)
+  const likeQuery = `%${escapeLike(normalizedWordQuery || normalizedQuery)}%`;
+  const tokens = searchQueryTokens(query)
     .slice(0, 8);
   const phraseQuery =
     tokens.length === 1
       ? `% ${escapeLike(tokens[0] as string)} %`
-      : `%${escapeLike(normalizedQuery)}%`;
+      : `%${escapeLike(normalizedWordQuery || normalizedQuery)}%`;
   const tokenQueries = tokens.length
     ? tokens.map((token) => `% ${escapeLike(token)} %`)
     : [likeQuery];
@@ -1048,6 +1319,7 @@ searchRoutes.post('/search/image', async (c) => {
     const imageBuffer = await imageFile.arrayBuffer();
 
     const jinaConfig = getJinaConfig(c.env);
+    const imageVectorize = getImageVectorize(c.env);
     if (!jinaConfig.apiKey) {
       return c.json<ApiResponse>(
         {
@@ -1060,9 +1332,21 @@ searchRoutes.post('/search/image', async (c) => {
         501
       );
     }
+    if (!imageVectorize) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'IMAGE_INDEX_UNAVAILABLE',
+            message: `No image vector index is configured for embedding version ${getEmbeddingIndexVersion(c.env)}.`,
+          },
+        },
+        501
+      );
+    }
 
     const vectorResults = await searchJinaImageVectors(
-      c.env.VECTORIZE,
+      imageVectorize,
       jinaConfig,
       orgId,
       imageBuffer,

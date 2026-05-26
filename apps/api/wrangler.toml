@@ -68,7 +68,7 @@ TRANSLATION_FREE_LIFETIME_LIMIT = "10"
 [env.staging]
 name = "paillette-api-stg"
 routes = [{ pattern = "paillette-api-stg.berlayar.ai", custom_domain = true }]
-vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10" }
+vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v1", SEARCH_FUSION_MODE = "legacy" }
 
 # Staging resources (separate from production)
 [[env.staging.d1_databases]]
@@ -88,6 +88,14 @@ index_name = "paillette-embeddings-stg"
 [[env.staging.vectorize]]
 binding = "CAPTION_VECTORIZE"
 index_name = "paillette-caption-embeddings-stg"
+
+[[env.staging.vectorize]]
+binding = "VECTORIZE_V2"
+index_name = "paillette-embeddings-v2-stg"
+
+[[env.staging.vectorize]]
+binding = "CAPTION_VECTORIZE_V2"
+index_name = "paillette-caption-embeddings-v2-stg"
 
 [[env.staging.kv_namespaces]]
 binding = "CACHE"

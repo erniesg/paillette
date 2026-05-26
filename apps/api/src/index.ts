@@ -19,7 +19,9 @@ export interface Env {
   DB: D1Database;
   IMAGES: R2Bucket;
   VECTORIZE: Vectorize;
+  VECTORIZE_V2?: Vectorize;
   CAPTION_VECTORIZE?: Vectorize;
+  CAPTION_VECTORIZE_V2?: Vectorize;
   CACHE: KVNamespace;
   AI: Ai;
   EMBEDDING_QUEUE: Queue;
@@ -44,6 +46,8 @@ export interface Env {
   CAPTION_EMBEDDING_PROVIDER?: string;
   JINA_TEXT_MODEL?: string;
   JINA_TEXT_EMBEDDING_DIMENSIONS?: string;
+  EMBEDDING_INDEX_VERSION?: string;
+  SEARCH_FUSION_MODE?: string;
   ENABLE_NGS_REVIEW?: string;
 }
 

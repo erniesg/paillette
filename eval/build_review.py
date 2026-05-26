@@ -27,6 +27,20 @@ LABELS = {
     "v5_omni_small": "Jina v5 omni small",
     "caption_v5_text_small": "caption→Jina v5 text small",
 }
+V2_CANDIDATES = [
+    "v2_metadata_only_text_enriched",
+    "v2_jina_image_filtered",
+    "v2_caption_filtered",
+    "v2_hybrid_rrf_jina_caption_metadata",
+    "v2_routed_rrf_jina_caption_metadata",
+]
+V2_LABELS = {
+    "v2_metadata_only_text_enriched": "v2 metadata enriched",
+    "v2_jina_image_filtered": "v2 Jina image",
+    "v2_caption_filtered": "v2 caption",
+    "v2_hybrid_rrf_jina_caption_metadata": "v2 hybrid RRF",
+    "v2_routed_rrf_jina_caption_metadata": "v2 routed RRF",
+}
 INTENTS = ["keyword", "occasion", "motif", "mood", "style", "medium", "metadata", "color"]
 TOPN = 8
 SCORE_COLOR = {3: "#3f7d52", 2: "#7a8a3a", 1: "#9a7320", 0: "#a8492f"}
@@ -43,6 +57,27 @@ main{max-width:1300px;margin:0 auto;padding:22px 28px 90px}
 .matrix td.win{background:#eef4ee;font-weight:700;color:#3f7d52}
 .legend{font-size:12px;color:#6f6a62;margin:8px 0 18px;max-width:940px}
 .legend b{color:#211f1c}
+.v2{margin:18px 0 22px}
+.v2-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}
+.v2 h2{font-size:18px;margin-bottom:4px}
+.v2 .sub{font-size:12px;color:#6f6a62}
+.v2-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+.v2-panel{background:#fffefb;border:1px solid #e4dfd5;border-radius:12px;padding:14px 16px}
+.v2-panel h3{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#6f6a62;margin-bottom:10px}
+.v2-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.v2-kpi{background:#f6f4ef;border:1px solid #e4dfd5;border-radius:9px;padding:9px}
+.v2-kpi b{display:block;font-size:18px;line-height:1.1}
+.v2-kpi span{font-size:11px;color:#6f6a62}
+.v2-table{width:100%;border-collapse:collapse;font-size:12px}
+.v2-table th,.v2-table td{border-top:1px solid #e4dfd5;padding:7px 8px;text-align:left;vertical-align:top}
+.v2-table th{color:#6f6a62;font-weight:700;background:#fbfaf7}
+.v2-table td.num,.v2-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+.v2-table tr.winner td{background:#eef4ee;font-weight:700}
+.v2-badge{display:inline-block;border-radius:99px;padding:3px 8px;font-size:11px;font-weight:700;background:#eef4ee;color:#3f7d52;border:1px solid #c8dccb}
+.v2-warn{background:#fff7e8;border:1px solid #efd6a7;color:#6a4a12;border-radius:9px;padding:9px 11px;font-size:12px;margin-top:10px}
+.v2-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.v2-links a{font-size:12px;color:#403a6e;text-decoration:none;border:1px solid #d8d3c8;border-radius:7px;padding:5px 8px;background:#fff}
+.v2-review{font-size:12px;color:#3f3b35;background:#f1f0ec;border-radius:9px;padding:10px 11px;margin-top:10px}
 .bar{position:sticky;top:0;background:#f6f4ef;padding:10px 0;z-index:5;border-bottom:1px solid #e4dfd5;margin-bottom:14px}
 .bar button{font:13px inherit;padding:6px 12px;border:1px solid #cfcabe;border-radius:7px;background:#fff;cursor:pointer}
 .card{background:#fffefb;border:1px solid #e4dfd5;border-radius:12px;padding:16px 18px;margin-bottom:16px}
@@ -53,12 +88,24 @@ body.disonly .card[data-dis="false"]{display:none}
 .flag{font-size:12px;font-weight:700;color:#a8492f;background:#f6e9e4;padding:3px 9px;border-radius:99px}
 .mrow{display:flex;gap:12px;align-items:flex-start;margin:6px 0;padding:6px;border-radius:8px}
 .mrow.win{background:#f1f5f1}
+.mrow.v2result{background:#fbfaf7;border:1px dashed #ded8cb}
+.mrow.v2result.win{background:#eef4ee;border-color:#c8dccb}
 .mlabel{width:152px;flex:none;font-size:12px;font-weight:700;color:#403a6e;display:flex;flex-direction:column;gap:3px}
 .mlabel span{font-size:11px;font-weight:600;color:#6f6a62}
+.v2-divider{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#6f6a62;margin:12px 0 4px;padding-top:10px;border-top:1px solid #e4dfd5}
 .strip{display:flex;gap:5px;flex-wrap:wrap}
 .cell{position:relative;width:116px;cursor:zoom-in}
 .cell img{width:116px;height:116px;object-fit:cover;border:1px solid #d8d3c8;border-radius:5px;background:#efebe2;display:block}
 .cell:hover img{border-color:#403a6e}
+.cell.v2hit{width:168px;min-height:154px;background:#fff;border:1px solid #e0dbd1;border-radius:7px;padding:4px}
+.cell.v2hit:hover{border-color:#403a6e}
+.cell.v2hit img{width:158px;height:82px;margin-bottom:5px}
+.cell.v2hit .noimg{width:158px;height:82px;margin-bottom:5px;border-radius:5px;background:#efebe2;border:1px solid #d8d3c8;display:flex;align-items:center;justify-content:center;color:#8a8a8a;font-size:11px;font-weight:700}
+.cell.v2hit .t{font-size:11px;font-weight:750;line-height:1.15;color:#211f1c;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cell.v2hit .a{font-size:10px;line-height:1.2;color:#6f6a62;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.cell.v2hit .id{font-size:10px;color:#403a6e;font-weight:700;margin-top:2px}
+.cell.v2hit .channels{font-size:10px;color:#6f6a62;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell.v2hit .cap{font-size:10px;color:#3f3b35;line-height:1.15;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .rank{position:absolute;top:2px;left:2px;background:rgba(0,0,0,.78);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px}
 .modal{display:none;position:fixed;inset:0;background:rgba(22,20,17,.86);z-index:50;align-items:center;justify-content:center;padding:30px}
 .modal.open{display:flex}
@@ -71,6 +118,7 @@ body.disonly .card[data-dis="false"]{display:none}
 .modal-meta dl{display:grid;grid-template-columns:78px 1fr;gap:5px 10px;font-size:13px;margin-bottom:14px}
 .modal-meta dt{color:#8a8a8a;font-weight:600}
 .modal-meta .desc{font-size:13px;line-height:1.55;color:#3f3b35;border-top:1px solid #e4dfd5;padding-top:12px}
+.modal-meta .caption{font-size:13px;line-height:1.45;color:#3f3b35;background:#f6f4ef;border-radius:8px;padding:10px 11px;margin-bottom:14px}
 .modal-meta .ctx{font-size:12px;color:#6f6a62;background:#f1f0ec;border-radius:7px;padding:9px 11px;margin-bottom:14px}
 .modal-x{position:absolute;top:18px;right:22px;color:#fff;font-size:30px;cursor:pointer;line-height:1}
 """
@@ -85,6 +133,9 @@ function openModal(el){
   document.getElementById('m-date').textContent=a.date||'\\u2013';
   document.getElementById('m-cls').textContent=a.cls||'\\u2013';
   document.getElementById('m-desc').textContent=a.desc||'No curatorial description.';
+  var cap=document.getElementById('m-caption');
+  if(a.caption){cap.style.display='block';cap.textContent='Generated caption: '+a.caption;}
+  else{cap.style.display='none';cap.textContent='';}
   document.getElementById('m-ctx').textContent=
     'rank '+el.dataset.rank+' for \\u201c'+el.dataset.q+'\\u201d \\u00b7 '+el.dataset.model;
   document.getElementById('modal').classList.add('open');
@@ -96,6 +147,114 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal()
 
 def load(p, default):
     return json.loads(p.read_text()) if p.exists() else default
+
+
+def esc(value):
+    return html.escape(str(value or ""), quote=True)
+
+
+def pct(value):
+    return f"{float(value) * 100:.2f}%"
+
+
+def render_v2_bakeoff():
+    path = HERE / "v2-bakeoff-results.json"
+    if not path.exists():
+        return ""
+
+    data = load(path, {})
+    coverage = data.get("coverage", {})
+    metrics = data.get("metrics", [])
+    ratings = {r["name"]: r for r in data.get("codex_ratings", [])}
+    winner = data.get("recommendation", {}).get("winner")
+    active_excluded = data.get("active_exclude_from_v2", [])
+
+    rows = ""
+    for metric in metrics:
+        name = metric["name"]
+        rating = ratings.get(name, {})
+        is_winner = name == winner
+        winner_badge = ' <span class="v2-badge">winner</span>' if is_winner else ""
+        rows += (
+            f'<tr class="{"winner" if is_winner else ""}">'
+            f'<td>{esc(name)}{winner_badge}</td>'
+            f'<td class="num">{pct(metric.get("source_backed_top10_rate", 0))}</td>'
+            f'<td class="num">{pct(metric.get("no_title_top10_rate", 0))}</td>'
+            f'<td class="num">{pct(metric.get("metadata_exact_top10", 0))}</td>'
+            f'<td class="num">{pct(metric.get("medium_exact_top10", 0))}</td>'
+            f'<td class="num">{rating.get("rating", "–")}/3</td>'
+            f'<td>{esc(rating.get("approval", ""))}</td>'
+            "</tr>"
+        )
+
+    ratings_rows = ""
+    for rating in data.get("codex_ratings", []):
+        ratings_rows += (
+            "<tr>"
+            f'<td>{esc(rating["name"])}</td>'
+            f'<td class="num">{rating["rating"]}/3</td>'
+            f'<td>{esc(rating["rationale"])}</td>'
+            "</tr>"
+        )
+
+    return (
+        '<section class="v2" id="v2-bakeoff">'
+        '<div class="v2-head"><div><h2>V2 Embedding Bakeoff</h2>'
+        '<p class="sub">Staging-only v2 corpus/index comparison, appended from eval/v2-bakeoff-results.json.</p></div>'
+        f'<div><span class="v2-badge">Codex pick: {esc(winner)}</span></div></div>'
+        '<div class="v2-grid">'
+        '<div class="v2-panel"><h3>Corpus gate</h3>'
+        '<div class="v2-kpis">'
+        f'<div class="v2-kpi"><b>{coverage.get("v2_artworks", "–")}</b><span>v2 artworks</span></div>'
+        f'<div class="v2-kpi"><b>{coverage.get("v2_imageable_artworks", "–")}</b><span>imageable</span></div>'
+        f'<div class="v2-kpi"><b>{coverage.get("v2_captioned_artworks", "–")}</b><span>captioned</span></div>'
+        f'<div class="v2-kpi"><b>{coverage.get("jina_vectors_missing_for_v2", "–")}</b><span>missing vectors</span></div>'
+        '</div>'
+        f'<div class="v2-warn">Not cutover-approved: {coverage.get("jina_vectors_missing_for_v2", "–")} v2 rows still need embeddings, and actual v2-index hits still need to be measured. Active excluded rows: {len(active_excluded)}.</div>'
+        '<div class="v2-links"><a href="v2-bakeoff-report.md">report</a>'
+        '<a href="methodology.html">methodology</a>'
+        '<a href="v2-bakeoff-codex-review.md">Codex ratings</a>'
+        '<a href="v2-bakeoff-claude-review.md">Claude review</a>'
+        '<a href="v2-bakeoff-results.json">raw JSON</a></div>'
+        '</div>'
+        '<div class="v2-panel"><h3>Review summary</h3>'
+        '<div class="v2-review"><b>Codex:</b> conservative routed RRF is the staging pick at 2.6/3: fixed hybrid by default, with narrow overrides for exact, colour, medium/date, and formal-visual queries. Traffic cutover still waits on missing embeddings and real v2-index measurement.</div>'
+        '<div class="v2-review"><b>Claude:</b> useful staging analysis, not a cutover gate; complete the v2 indices and re-judge actual hybrid output before routing traffic.</div>'
+        '</div></div>'
+        '<div class="v2-panel" style="margin-top:12px"><h3>Candidate metrics</h3>'
+        '<table class="v2-table"><tr><th>candidate</th><th class="num">source top10</th>'
+        '<th class="num">no-title top10</th><th class="num">metadata @10</th>'
+        '<th class="num">medium @10</th><th class="num">Codex</th><th>status</th></tr>'
+        f'{rows}</table></div>'
+        '<div class="v2-panel" style="margin-top:12px"><h3>Codex ratings rationale</h3>'
+        '<table class="v2-table"><tr><th>candidate</th><th class="num">rating</th><th>rationale</th></tr>'
+        f'{ratings_rows}</table></div>'
+        '</section>'
+    )
+
+
+def render_methodology():
+    out = (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<title>Paillette · Eval Methodology</title><style>' + CSS + '</style></head><body>'
+        '<header><h1>Paillette · Eval Methodology</h1>'
+        '<p>Grounding, NGS validation, caption, routing, and frame-removal notes for the v2 bakeoff.</p></header>'
+        '<main><section class="card"><h2>Grounded Captions</h2>'
+        '<p class="legend">Generated captions should be treated as derived metadata, not source facts. A caption may describe visible content only when it is supported by the artwork image and should prefer source metadata for artist, title, date, medium, accession number, and collection. If the source metadata is ambiguous, sparse, or conflicts with the visible image, the caption job should fetch and cite the National Gallery Singapore source URL before adding factual claims.</p>'
+        '<p class="legend">Recommended caption payload: text, source artwork id, source URL, image URL, model, prompt version, generated timestamp, and grounded fields used. Do not write uncited biographical, iconographic, or event claims into captions.</p>'
+        '</section><section class="card"><h2>NGS Validation</h2>'
+        '<p class="legend">The v2 corpus gate requires source-backed NGS rows: non-empty accession number, non-empty title, National Gallery Singapore source URL, and active in-catalog metadata. Rows that fail this are retained only as diagnostics and should not enter v2 embeddings.</p>'
+        '</section><section class="card"><h2>Fusion Policy</h2>'
+        '<p class="legend">Use fixed hybrid RRF as the default for broad semantic, occasion, mood, and motif queries. Override only for high-confidence exact routes: accession, artist, exact title, colour, medium, date, and formal-style queries. Colour should use palette distance plus Jina image; exact metadata should not be diluted by vector noise.</p>'
+        '</section><section class="card"><h2>Image Normalization</h2>'
+        '<p class="legend">Before embedding, use the canonical source image, convert to sRGB, preserve aspect ratio, and crop scanner borders, frames, mats, colour checkers, and blank surround when confidence is high. Do not apply contrast or colour normalization that changes palette search semantics. TIFF-to-TIFF processing should keep a lossless output path for HCC source folders.</p>'
+        '</section><section class="card"><h2>SAM3 / Remote Segmentation</h2>'
+        '<p class="legend">Use the local edge/component cropper as the first pass because it is deterministic, cheap, and works on TIFF/JPEG/PNG/WebP folders without uploading collection files. For ambiguous framed works, mats, colour cards, or non-rectangular crops, the adjacent Aether Modal SAM3 endpoint is a relevant reference: accept a URL or data URL, return a mask and bounding box, then apply the crop locally and keep TIFF output for HCC masters. Local development should run a local service; Modal is only for GPU-backed remote inference when credentials and data-handling rules allow it.</p>'
+        '</section><section class="card"><h2>Frame/Border Scan Tool</h2>'
+        '<p class="legend">Use <code>node scripts/hcc-frame-crop-tiff.mjs --input-dir=/path/to/images --output-dir=/path/to/cropped --report=frame-report.jsonl --recursive --apply</code>. Run without <code>--apply</code> first to review detections. The tool writes JSONL diagnostics, supports TIFF/JPEG/PNG/WebP input, writes TIFF output by default, and only crops files above the confidence threshold unless <code>--force</code> is passed.</p>'
+        '</section></main></body></html>'
+    )
+    (HERE / "methodology.html").write_text(out)
 
 
 def main():
@@ -115,6 +274,11 @@ def main():
             if line.strip():
                 r = json.loads(line)
                 corpus[r["id"]] = r
+    v2_data = load(HERE / "v2-bakeoff-results.json", {})
+    v2_candidates = v2_data.get("candidates", {})
+    v2_ratings = {r["name"]: r for r in v2_data.get("codex_ratings", [])}
+    v2_winner = v2_data.get("recommendation", {}).get("winner")
+    v2_art = {}
 
     def jscore(j, a, qid):
         v = j.get(a, {}).get(qid)
@@ -136,6 +300,59 @@ def main():
 
     def fmt(v):
         return f"{v:.2f}" if isinstance(v, float) else ("–" if v is None else str(v))
+
+    def remember_art(rid, r):
+        base = corpus.get(rid, {})
+        existing = v2_art.get(rid, {})
+        merged = {
+            "title": r.get("title") or base.get("title"),
+            "artist": r.get("artist") or base.get("artist"),
+            "date": r.get("date_text") or base.get("date_text"),
+            "cls": r.get("classification") or base.get("classification"),
+            "desc": r.get("description") or r.get("caption") or base.get("description"),
+            "caption": r.get("generated_caption_text") or r.get("caption") or base.get("generated_caption_text"),
+        }
+        v2_art[rid] = {k: existing.get(k) or v for k, v in merged.items()}
+
+    def old_cell(r, qtext, model, rank):
+        rid = r["id"]
+        used.add(rid)
+        return (
+            f'<figure class="cell" onclick="openModal(this)" data-id="{esc(rid)}" '
+            f'data-q="{qtext}" data-model="{esc(model)}" data-rank="{rank}">'
+            f'<img loading="lazy" src="images/{esc(rid)}.webp">'
+            f'<span class="rank">{rank}</span></figure>'
+        )
+
+    def v2_cell(r, qtext, model, rank):
+        rid = r["id"]
+        used.add(rid)
+        remember_art(rid, r)
+        title = r.get("title") or corpus.get(rid, {}).get("title") or "(untitled)"
+        artist = r.get("artist") or corpus.get(rid, {}).get("artist") or "artist unknown"
+        img_path = HERE / "images" / f"{rid}.webp"
+        if img_path.exists():
+            image = f'<img loading="lazy" src="images/{esc(rid)}.webp">'
+        else:
+            image = '<div class="noimg">no image</div>'
+        details = []
+        caption = r.get("generated_caption_text")
+        channels = r.get("channels")
+        if channels:
+            details.append("/".join(str(c) for c in channels))
+        if r.get("route"):
+            details.append(f'route {r["route"]}')
+        if r.get("score") is not None:
+            details.append(f'score {float(r["score"]):.4g}')
+        detail_html = f'<div class="channels">{esc(" · ".join(details))}</div>' if details else ""
+        caption_html = f'<div class="cap">{esc(caption)}</div>' if caption else ""
+        return (
+            f'<figure class="cell v2hit" onclick="openModal(this)" data-id="{esc(rid)}" '
+            f'data-q="{qtext}" data-model="{esc(model)}" data-rank="{rank}">'
+            f'{image}<span class="rank">{rank}</span>'
+            f'<figcaption><div class="t">{esc(title)}</div><div class="a">{esc(artist)}</div>'
+            f'<div class="id">{esc(rid)}</div>{detail_html}{caption_html}</figcaption></figure>'
+        )
 
     rows = ""
     for intent in INTENTS:
@@ -166,12 +383,7 @@ def main():
             cc, cx = jscore(claude, a, qid), jscore(codex, a, qid)
             cells = ""
             for rank, r in enumerate(results.get(a, {}).get(qid, {}).get("results", [])[:TOPN], 1):
-                rid = r["id"]
-                used.add(rid)
-                cells += (f'<figure class="cell" onclick="openModal(this)" data-id="{rid}" '
-                          f'data-q="{qtext}" data-model="{LABELS.get(a, a)}" data-rank="{rank}">'
-                          f'<img loading="lazy" src="images/{rid}.webp">'
-                          f'<span class="rank">{rank}</span></figure>')
+                cells += old_cell(r, qtext, LABELS.get(a, a), rank)
 
             def sc(v):
                 return (f'<b style="color:{SCORE_COLOR.get(int(v), "#888")}">{v}</b>'
@@ -180,17 +392,41 @@ def main():
                         f'<div class="mlabel">{LABELS.get(a, a)}'
                         f'<span>Claude {sc(cc)} · Codex {sc(cx)}</span></div>'
                         f'<div class="strip">{cells}</div></div>')
+        v2_rows = ""
+        for cname in V2_CANDIDATES:
+            hits = v2_candidates.get(cname, {}).get(qid, [])[:TOPN]
+            if not hits:
+                continue
+            label = V2_LABELS.get(cname, cname)
+            rating = v2_ratings.get(cname, {})
+            cells = "".join(v2_cell(hit, qtext, label, rank) for rank, hit in enumerate(hits, 1))
+            v2_rows += (
+                f'<div class="mrow v2result{" win" if cname == v2_winner else ""}">'
+                f'<div class="mlabel">{esc(label)}'
+                f'<span>Codex {rating.get("rating", "–")}/3 · {esc(rating.get("approval", ""))}</span></div>'
+                f'<div class="strip">{cells}</div></div>'
+            )
+        if v2_rows:
+            modrows += '<div class="v2-divider">v2 bakeoff candidates</div>' + v2_rows
         flag = '<span class="flag">judges disagree on the winner</span>' if dis else ''
         cards += (f'<section class="card" data-dis="{str(dis).lower()}">'
                   f'<div class="qhead"><span class="q">"{q["text"]}"</span>'
                   f'<span class="chip-i">{q["type"]}</span>{flag}</div>{modrows}</section>')
 
-    art = {rid: {"title": corpus.get(rid, {}).get("title"),
-                 "artist": corpus.get(rid, {}).get("artist"),
-                 "date": corpus.get(rid, {}).get("date_text"),
-                 "cls": corpus.get(rid, {}).get("classification"),
-                 "desc": corpus.get(rid, {}).get("description")} for rid in used}
+    art = {}
+    for rid in used:
+        base = corpus.get(rid, {})
+        extra = v2_art.get(rid, {})
+        art[rid] = {
+            "title": extra.get("title") or base.get("title"),
+            "artist": extra.get("artist") or base.get("artist"),
+            "date": extra.get("date") or base.get("date_text"),
+            "cls": extra.get("cls") or base.get("classification"),
+            "desc": extra.get("desc") or base.get("description"),
+            "caption": extra.get("caption") or base.get("generated_caption_text"),
+        }
     judged = " + ".join([n for n, d in (("Claude", claude), ("Codex", codex)) if d]) or "none yet"
+    v2_bakeoff = render_v2_bakeoff()
     modal = ('<div class="modal" id="modal" onclick="if(event.target===this)closeModal()">'
              '<span class="modal-x" onclick="closeModal()">&times;</span>'
              '<div class="modal-inner"><div class="modal-img"><img id="m-img"></div>'
@@ -198,6 +434,7 @@ def main():
              '<div class="artist" id="m-artist"></div><div class="ctx" id="m-ctx"></div>'
              '<dl><dt>accession</dt><dd id="m-acc"></dd><dt>date</dt><dd id="m-date"></dd>'
              '<dt>classification</dt><dd id="m-cls"></dd></dl>'
+             '<div class="caption" id="m-caption" style="display:none"></div>'
              '<div class="desc" id="m-desc"></div></div></div></div>')
     out = (
         '<!doctype html><html><head><meta charset="utf-8">'
@@ -208,11 +445,12 @@ def main():
         '<p class="legend">Matrix = mean relevance 0–3 (Claude + Codex averaged); '
         '<b>green</b> = best approach for that intent. Each model row shows both judges\' '
         'holistic scores; <b>green row</b> = winner. <b style="color:#a8492f">judges disagree</b> '
-        '= Claude and Codex pick different winners — your call.</p>'
+        '= Claude and Codex pick different winners — your call.</p>' + v2_bakeoff +
         '<div class="bar"><button onclick="document.body.classList.toggle(\'disonly\')">'
         'toggle: disagreements only</button></div>' + cards + '</main>' + modal +
         '<script>const ART=' + json.dumps(art) + ';' + JS + '</script></body></html>')
     (HERE / "review.html").write_text(out)
+    render_methodology()
     print(f"-> eval/review.html  ({len(queries)} queries, {len(approaches)} approaches, {len(art)} artworks, judged: {judged})")
 
 
