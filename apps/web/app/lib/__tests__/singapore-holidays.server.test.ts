@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getUpcomingSingaporeHolidaySuggestions } from '../singapore-holidays.server';
+import {
+  __resetSingaporeHolidayCacheForTests,
+  getUpcomingSingaporeHolidaySuggestions,
+} from '../singapore-holidays.server';
 
 const holidayRow = (
   date: string,
@@ -22,6 +25,7 @@ const holidayRow = (
 
 describe('getUpcomingSingaporeHolidaySuggestions', () => {
   afterEach(() => {
+    __resetSingaporeHolidayCacheForTests();
     vi.unstubAllGlobals();
   });
 
@@ -66,13 +70,44 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
         suggestion.label,
         suggestion.query,
         suggestion.detail,
+        suggestion.isToday,
         suggestion.source,
       ])
     ).toEqual([
-      ['Hari Raya Haji', 'Hari Raya Haji', '27 May', 'mom'],
-      ['Vesak Day', 'Vesak Day', '31 May', 'mom'],
-      ['National Day', 'National Day', '9 Aug', 'mom'],
-      ['Deepavali', 'Deepavali', '8 Nov', 'mom'],
+      ['Hari Raya Haji', 'Hari Raya Haji', '27 May', false, 'mom'],
+      ['Vesak Day', 'Vesak Day', '31 May', false, 'mom'],
+      ['National Day', 'National Day', '9 Aug', false, 'mom'],
+      ['Deepavali', 'Deepavali', '8 Nov', false, 'mom'],
     ]);
+  });
+
+  it('uses the Singapore calendar day for today and removes past holidays', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        text: async () => `
+          <table>
+            ${holidayRow('26 May 2026', 'Tuesday', 'Labour Day')}
+            ${holidayRow('27 May 2026', 'Wednesday', 'Hari Raya Haji')}
+            ${holidayRow('31 May 2026', 'Sunday', 'Vesak Day')}
+          </table>
+        `,
+      }))
+    );
+
+    const suggestions = await getUpcomingSingaporeHolidaySuggestions(
+      new Date('2026-05-26T16:30:00.000Z')
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Hari Raya Haji',
+      'Vesak Day',
+    ]);
+    expect(suggestions[0]).toMatchObject({
+      label: 'Hari Raya Haji',
+      detail: 'Today',
+      isToday: true,
+    });
   });
 });

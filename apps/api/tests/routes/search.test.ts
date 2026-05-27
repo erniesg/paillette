@@ -511,6 +511,40 @@ describe('Search API auth and quota behavior', () => {
     });
   });
 
+  it('filters caption vector search by the resolved org id', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: artworkRow.id, score: 0.9, metadata: {} }],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      CAPTION_VECTOR_SEARCH_ENABLED: 'true',
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(app, env, { 'X-User-Id': 'user-1' }, {
+      query: 'mangrove tree by the shore',
+      topK: 1,
+    });
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].id).toBe(artworkRow.id);
+    expect(captionVectorize.query).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        filter: { galleryId: ORG_ID },
+      })
+    );
+  });
+
   it('excludes NGS rows that cannot link back to a public NGS or Roots source', async () => {
     db = new FakeSearchDb([
       {

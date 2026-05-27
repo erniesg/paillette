@@ -11,3 +11,5 @@ montages/
 corpus.jsonl
 fetch_failures.txt
 review.html
+live-search-eval-results.json
+live-search-eval-report.md

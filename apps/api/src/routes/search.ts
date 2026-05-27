@@ -777,6 +777,7 @@ async function searchJinaTextVectors(
 async function searchCaptionVectors(
   env: Env,
   vectorize: Vectorize | undefined,
+  orgId: string | undefined,
   query: string,
   topK: number
 ): Promise<CaptionVectorMatch[]> {
@@ -787,6 +788,7 @@ async function searchCaptionVectors(
   const queryEmbedding = await generateCaptionQueryEmbedding(env, query);
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
+    filter: orgId ? { galleryId: orgId } : undefined,
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -865,6 +867,7 @@ async function getArtworksByIds(
   for (let index = 0; index < ids.length; index += chunkSize) {
     const chunk = ids.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
+    const orgFilter = orgId ? 'AND org_id = ?' : '';
     const { results } = await db
       .prepare(
         `
@@ -902,10 +905,11 @@ async function getArtworksByIds(
       FROM artworks
       WHERE id IN (${placeholders})
         AND deleted_at IS NULL
+        ${orgFilter}
         ${backableSearchSql(orgId)}
       `
       )
-      .bind(...chunk)
+      .bind(...chunk, ...(orgId ? [orgId] : []))
       .all<ArtworkSearchRow>();
 
     artworks.push(...results);
@@ -951,7 +955,7 @@ async function searchArtworksHybrid(
   const [jinaMatches, captionMatches, metadataMatches] = await Promise.all([
     jinaMatchesPromise,
     route.weights.caption > 0
-      ? searchCaptionVectors(env, captionVectorize, query, topK)
+      ? searchCaptionVectors(env, captionVectorize, orgId, query, topK)
       : Promise.resolve([] as CaptionVectorMatch[]),
     route.weights.metadata > 0
       ? searchArtworksByMetadata(

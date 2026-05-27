@@ -54,8 +54,12 @@ import {
 } from '~/lib/public-artwork-metadata';
 import {
   getUpcomingSingaporeHolidaySuggestions,
-  type HolidaySearchSuggestion,
 } from '~/lib/singapore-holidays.server';
+import {
+  buildSuggestionPool,
+  getSuggestionKey,
+  type EvalSuggestion,
+} from '~/lib/search-suggestions';
 import type {
   ApiResponse,
   ArtworkSearchResult,
@@ -132,106 +136,6 @@ type SortMode =
   | 'source'
   | 'source-desc';
 type SortControlId = 'relevance' | 'colour' | 'time' | 'artist' | 'title';
-
-type EvalSuggestion = {
-  type:
-    | 'keyword'
-    | 'occasion'
-    | 'motif'
-    | 'mood'
-    | 'style'
-    | 'medium'
-    | 'metadata'
-    | 'colour';
-  label: string;
-  query: string;
-  dot: string;
-  detail?: string;
-  colourId?: string;
-  source?: HolidaySearchSuggestion['source'];
-};
-
-const EVAL_SUGGESTIONS: EvalSuggestion[] = [
-  {
-    type: 'keyword',
-    label: 'tropical fruit and flowers',
-    query: 'a still life of tropical fruit and flowers',
-    dot: '#cda636',
-  },
-  {
-    type: 'occasion',
-    label: 'Mid-Autumn Festival',
-    query: 'Mid-Autumn Festival — lanterns and the moon',
-    dot: '#cdbfa2',
-  },
-  {
-    type: 'motif',
-    label: 'batik textile pattern',
-    query: 'batik or songket textile pattern',
-    dot: '#bf5631',
-  },
-  {
-    type: 'mood',
-    label: 'serene and contemplative',
-    query: 'serene, still and contemplative',
-    dot: '#8a9a7a',
-  },
-  {
-    type: 'style',
-    label: 'Nanyang style',
-    query: 'Nanyang-style fusion of Chinese and Southeast Asian',
-    dot: '#365f9c',
-  },
-  {
-    type: 'medium',
-    label: 'watercolour painting',
-    query: 'watercolour painting',
-    dot: '#6e8ea8',
-  },
-  {
-    type: 'metadata',
-    label: '1950s works',
-    query: 'artworks made in the 1950s',
-    dot: '#6a5238',
-  },
-  {
-    type: 'colour',
-    label: 'muted sage green',
-    query: 'muted sage green',
-    dot: '#8a9a7a',
-    colourId: 'sage',
-  },
-];
-
-const buildSuggestionPool = (
-  holidaySuggestions: HolidaySearchSuggestion[]
-): EvalSuggestion[] => {
-  const [firstSuggestion, ...remainingSuggestions] = EVAL_SUGGESTIONS;
-  const leadingSuggestions = firstSuggestion ? [firstSuggestion] : [];
-  const staticSuggestions = remainingSuggestions.filter(
-    (suggestion) => suggestion.type !== 'occasion'
-  );
-
-  if (!holidaySuggestions.length) {
-    return EVAL_SUGGESTIONS;
-  }
-
-  return [
-    ...leadingSuggestions,
-    ...holidaySuggestions.map((suggestion) => ({
-      type: suggestion.type,
-      label: suggestion.label,
-      query: suggestion.query,
-      dot: suggestion.dot,
-      detail: suggestion.detail,
-      source: suggestion.source,
-    })),
-    ...staticSuggestions,
-  ];
-};
-
-const getSuggestionKey = (suggestion: EvalSuggestion) =>
-  `${suggestion.type}-${suggestion.label}-${suggestion.query}`;
 
 const COLOURS = [
   { id: 'navy', hex: '#1a2f52', name: 'Navy' },

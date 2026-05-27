@@ -5,6 +5,7 @@ export type HolidaySearchSuggestion = {
   dot: string;
   date: string;
   detail: string;
+  isToday: boolean;
   source: 'mom' | 'fallback';
 };
 
@@ -62,6 +63,13 @@ const MONTHS: Record<string, number> = {
   november: 10,
   december: 11,
 };
+
+const SINGAPORE_DATE_FORMAT = new Intl.DateTimeFormat('en-SG', {
+  timeZone: 'Asia/Singapore',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 let holidayCache:
   | {
@@ -148,6 +156,19 @@ const parseMomHolidays = (html: string): SingaporeHoliday[] => {
 const dateToTime = (date: string) =>
   new Date(`${date}T00:00:00.000Z`).getTime();
 
+const toSingaporeIsoDate = (date: Date) => {
+  const parts = SINGAPORE_DATE_FORMAT.formatToParts(date).reduce<
+    Record<string, string>
+  >((result, part) => {
+    if (part.type !== 'literal') {
+      result[part.type] = part.value;
+    }
+    return result;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
 const formatHolidayDate = (date: string) =>
   new Intl.DateTimeFormat('en-SG', {
     day: 'numeric',
@@ -198,25 +219,30 @@ export const getUpcomingSingaporeHolidaySuggestions = async (
 };
 
 const buildSuggestions = (holidays: SingaporeHoliday[], now: Date) => {
-  const today = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate()
-  );
+  const today = toSingaporeIsoDate(now);
 
   return uniqueByName(
     holidays
-      .filter((holiday) => dateToTime(holiday.date) >= today)
+      .filter((holiday) => holiday.date >= today)
       .sort((a, b) => dateToTime(a.date) - dateToTime(b.date))
   )
     .slice(0, 4)
-    .map((holiday) => ({
-      type: 'occasion' as const,
-      label: holiday.name,
-      query: holiday.name,
-      dot: HOLIDAY_DOTS[holiday.name] || '#cdbfa2',
-      date: holiday.date,
-      detail: formatHolidayDate(holiday.date),
-      source: holiday.source,
-    }));
+    .map((holiday) => {
+      const isToday = holiday.date === today;
+
+      return {
+        type: 'occasion' as const,
+        label: holiday.name,
+        query: holiday.name,
+        dot: HOLIDAY_DOTS[holiday.name] || '#cdbfa2',
+        date: holiday.date,
+        detail: isToday ? 'Today' : formatHolidayDate(holiday.date),
+        isToday,
+        source: holiday.source,
+      };
+    });
+};
+
+export const __resetSingaporeHolidayCacheForTests = () => {
+  holidayCache = undefined;
 };

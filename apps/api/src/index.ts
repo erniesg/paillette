@@ -83,6 +83,27 @@ app.use(
   })
 );
 
+app.get('/', (c) => {
+  return c.json({
+    success: true,
+    data: {
+      service: 'paillette-api',
+      environment: c.env.ENVIRONMENT,
+      version: c.env.API_VERSION,
+      health: '/health',
+      api: '/api/v1',
+      endpoints: {
+        textSearch: 'POST /api/v1/orgs/:orgId/search/text',
+        imageSearch: 'POST /api/v1/orgs/:orgId/search/image',
+        colorSearch: 'POST /api/v1/orgs/:orgId/search/color',
+      },
+    },
+    meta: {
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
 // Health check
 app.get('/health', (c) => {
   return c.json({

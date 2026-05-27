@@ -15,6 +15,7 @@ from lib import load_corpus, load_vectors
 
 
 DEFAULT_NGS_ORG_ID = "cf98791d-f3cc-4f9f-b40c-a350efadbd05"
+LEGACY_NGS_ORG_ID = "00000000-0000-4000-8000-000000000101"
 
 
 def year_from_date_text(value):
@@ -50,6 +51,7 @@ def load_app_rows(app_db):
           source_institution,
           source_collection,
           embedding_id,
+          image_url,
           custom_metadata
         FROM artworks
         WHERE deleted_at IS NULL
@@ -84,8 +86,18 @@ def main():
     parser.add_argument("--app-db", type=Path, help="app SQLite DB used to filter/export v2 rows")
     parser.add_argument("--created-at", help="metadata timestamp for exported vectors")
     parser.add_argument("--org-id", default=DEFAULT_NGS_ORG_ID)
+    parser.add_argument(
+        "--metadata-org-id",
+        help="override orgId/galleryId metadata written to every vector",
+    )
     parser.add_argument("--out", type=Path)
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--expected-count", type=int)
+    parser.add_argument(
+        "--allow-legacy-metadata-org-id",
+        action="store_true",
+        help="allow writing the deprecated zero-series NGS org id into vector metadata",
+    )
     args = parser.parse_args()
     created_at = args.created_at or datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -99,6 +111,7 @@ def main():
                 (artwork_id, vector)
                 for artwork_id, vector in ids_and_vecs
                 if app_rows[artwork_id].get("embedding_id")
+                and app_rows[artwork_id].get("image_url")
             ]
         if args.channel == "caption":
             ids_and_vecs = [
@@ -111,6 +124,25 @@ def main():
     if args.limit:
         ids = ids[:args.limit]
         vecs = vecs[:args.limit]
+    if args.expected_count is not None and len(ids) != args.expected_count:
+        raise SystemExit(
+            f"expected {args.expected_count} {args.channel} vectors, got {len(ids)}"
+        )
+
+    metadata_org_ids = set()
+    for artwork_id in ids:
+        app_row = app_rows.get(artwork_id) if app_rows is not None else None
+        row = app_row or corpus_by_id.get(artwork_id, {})
+        metadata_org_ids.add(args.metadata_org_id or row.get("org_id") or args.org_id)
+    if (
+        LEGACY_NGS_ORG_ID in metadata_org_ids
+        and not args.allow_legacy_metadata_org_id
+    ):
+        raise SystemExit(
+            f"refusing to export vectors with deprecated NGS metadata org id "
+            f"{LEGACY_NGS_ORG_ID}; use {DEFAULT_NGS_ORG_ID} or pass "
+            "--allow-legacy-metadata-org-id for an intentional legacy export"
+        )
 
     out = args.out or Path(f"/tmp/paillette-vectorize-{args.name}.ndjson")
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -119,9 +151,14 @@ def main():
         for artwork_id, vector in zip(ids, vecs):
             app_row = app_rows.get(artwork_id) if app_rows is not None else None
             row = app_row or corpus_by_id.get(artwork_id, {})
+            metadata_org_id = (
+                args.metadata_org_id
+                or row.get("org_id")
+                or args.org_id
+            )
             metadata = {
-                "orgId": row.get("org_id") or args.org_id,
-                "galleryId": row.get("org_id") or args.org_id,
+                "orgId": metadata_org_id,
+                "galleryId": metadata_org_id,
                 "artworkId": artwork_id,
                 "channel": args.channel,
                 "model": args.model,
