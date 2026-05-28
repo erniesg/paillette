@@ -54,6 +54,10 @@ import {
 } from '~/lib/public-artwork-metadata';
 import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
 import {
+  IDLE_SHOWCASE_ARTWORK_COUNT,
+  selectIdleShowcaseArtworks,
+} from '~/lib/idle-showcase';
+import {
   buildSuggestionPool,
   getSuggestionKey,
   type EvalSuggestion,
@@ -70,6 +74,7 @@ import { UserMenu } from '~/components/user/user-menu';
 
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
+const IDLE_SHOWCASE_FETCH_LIMIT = 12;
 const MIN_BROWSE_PAGE_SIZE = 12;
 const MAX_BROWSE_PAGE_SIZE = 100;
 const MAX_SEARCH_RESULTS = 100;
@@ -936,17 +941,30 @@ export default function SearchPage() {
   });
 
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
+  const shouldLoadIdleShowcase = hasMounted && !hasActiveSearch;
   const idleShowcaseQuery = useQuery({
     queryKey: ['idle-showcase', galleryId, activeIdleSuggestion?.query],
     queryFn: () =>
       publicSearchText(galleryId, {
         query: activeIdleSuggestion?.query || '',
-        topK: 9,
+        topK: IDLE_SHOWCASE_FETCH_LIMIT,
         minScore: 0,
       }),
-    enabled:
-      hasMounted && !hasActiveSearch && Boolean(activeIdleSuggestion?.query),
+    enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
     placeholderData: (previousData) => previousData,
+    staleTime: 5 * 60 * 1000,
+  });
+  const idleShowcaseFallbackQuery = useQuery({
+    queryKey: ['idle-showcase-fallback', galleryId],
+    queryFn: () =>
+      publicBrowseCollection(galleryId, {
+        limit: IDLE_SHOWCASE_FETCH_LIMIT,
+        offset: 0,
+        sortBy: 'title',
+        sortOrder: 'asc',
+      }),
+    enabled: shouldLoadIdleShowcase,
+    staleTime: 5 * 60 * 1000,
   });
 
   const currentQuery =
@@ -973,7 +991,18 @@ export default function SearchPage() {
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
-  const idleShowcaseResults = idleShowcaseQuery.data?.results || [];
+  const idleShowcaseResults = useMemo(
+    () =>
+      selectIdleShowcaseArtworks(
+        idleShowcaseQuery.data?.results || [],
+        idleShowcaseFallbackQuery.data?.results || []
+      ),
+    [idleShowcaseFallbackQuery.data?.results, idleShowcaseQuery.data?.results]
+  );
+  const isIdleShowcaseLoading =
+    idleShowcaseQuery.isLoading ||
+    (idleShowcaseResults.length < IDLE_SHOWCASE_ARTWORK_COUNT &&
+      idleShowcaseFallbackQuery.isLoading);
 
   useEffect(() => {
     if (!hasMounted) return undefined;
@@ -1345,11 +1374,11 @@ export default function SearchPage() {
               : 'relative -mx-5 -mt-10 flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
           }
         >
-          {!hasActiveSearch && (
+          {!hasActiveSearch && hasMounted && (
             <IdleShowcaseBackdrop
               ref={idleShowcaseRef}
               artworks={idleShowcaseResults}
-              isLoading={idleShowcaseQuery.isLoading}
+              isLoading={isIdleShowcaseLoading}
               onSelectArtwork={setSelectedArtwork}
             />
           )}

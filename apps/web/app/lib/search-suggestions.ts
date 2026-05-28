@@ -1,5 +1,7 @@
 import type { HolidaySearchSuggestion } from './singapore-holidays.server';
 
+const OCCASION_DOT = '#cda636';
+
 export type EvalSuggestion = {
   type:
     | 'keyword'
@@ -72,7 +74,7 @@ const toEvalHolidaySuggestion = (
   type: suggestion.type,
   label: suggestion.label,
   query: suggestion.query,
-  dot: suggestion.dot,
+  dot: OCCASION_DOT,
   detail: suggestion.detail,
   date: suggestion.date,
   isToday: suggestion.isToday,

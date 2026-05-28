@@ -61,4 +61,33 @@ describe('buildSuggestionPool', () => {
       'Mid-Autumn Festival'
     );
   });
+
+  it('uses one dot colour for occasion suggestions', () => {
+    const suggestions = buildSuggestionPool([
+      holiday({
+        label: 'Vesak Day',
+        query: 'Vesak Day',
+        dot: '#cda636',
+        isToday: false,
+      }),
+      holiday({
+        label: 'Dragon Boat Festival',
+        query: 'Dragon Boat Festival dragon boats zongzi river race',
+        dot: '#365f9c',
+        isToday: false,
+      }),
+      holiday({
+        label: 'National Day',
+        query: 'National Day',
+        dot: '#bf5631',
+        isToday: false,
+      }),
+    ]);
+
+    const occasionDots = suggestions
+      .filter((suggestion) => suggestion.type === 'occasion')
+      .map((suggestion) => suggestion.dot);
+
+    expect(new Set(occasionDots)).toEqual(new Set(['#cda636']));
+  });
 });
