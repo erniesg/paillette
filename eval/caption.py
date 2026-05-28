@@ -94,7 +94,7 @@ def main():
             q = QUESTION.format(facts=facts_block(art, grounding.get(art["id"], {})))
             prompt = apply_chat_template(processor, config, q, num_images=1)
             try:
-                res = generate(model, processor, prompt, image=img,
+                res = generate(model, processor, prompt, image=[img],
                                max_tokens=220, temperature=0.2, verbose=False)
                 text = (res.text if hasattr(res, "text") else str(res)).strip()
             except Exception as e:
