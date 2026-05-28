@@ -33,17 +33,33 @@ describe('buildSuggestionPool', () => {
 
   it('keeps the serene mood showcase query', () => {
     const suggestions = buildSuggestionPool([]);
+    const moodSuggestions = suggestions.filter(
+      (suggestion) => suggestion.type === 'mood'
+    );
 
-    expect(suggestions).toContainEqual(
+    expect(moodSuggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'serene and contemplative',
+          query: 'serene, still and contemplative',
+        }),
+      ])
+    );
+    expect(moodSuggestions).toHaveLength(1);
+  });
+
+  it('keeps the evergreen showcase keywords curated', () => {
+    const suggestions = buildSuggestionPool([]);
+    const keywordSuggestions = suggestions.filter(
+      (suggestion) => suggestion.type === 'keyword'
+    );
+
+    expect(keywordSuggestions).toEqual([
       expect.objectContaining({
-        type: 'mood',
-        label: 'serene and contemplative',
-        query: 'serene, still and contemplative',
-      })
-    );
-    expect(suggestions.map((suggestion) => suggestion.label)).not.toContain(
-      'wistful and tender'
-    );
+        label: 'tropical fruit and flowers',
+        query: 'a still life of tropical fruit and flowers',
+      }),
+    ]);
   });
 
   it('uses a same-day public holiday as the first showcase suggestion', () => {
