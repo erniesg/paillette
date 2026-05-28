@@ -78,7 +78,7 @@ const endpoints: ProxyEndpoint[] = [
   },
   {
     method: 'POST',
-    path: '/image-extractions',
+    path: '/extract',
     fields: [
       { name: 'imageUrls', type: 'string[]', required: true },
       { name: 'target', type: 'string' },

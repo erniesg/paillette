@@ -52,7 +52,7 @@ describe('API Health Check', () => {
     expect(data.scopes_supported).toContain('mcp:write');
     expect(data.scopes_supported).toContain('artworks:read');
     expect(data.scopes_supported).toContain('translations:create');
-    expect(data.scopes_supported).toContain('image_extractions:create');
+    expect(data.scopes_supported).toContain('extract:create');
   });
 
   it('should challenge unauthenticated MCP requests with resource metadata', async () => {

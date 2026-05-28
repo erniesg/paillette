@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import imageExtractionRoutes from '../../src/routes/image-extractions';
+import extractRoutes from '../../src/routes/extract';
 import type { Env } from '../../src/index';
 
 class FakeStatement {
   private params: unknown[] = [];
 
   constructor(
-    private readonly db: FakeImageExtractionDb,
+    private readonly db: FakeExtractDb,
     private readonly sql: string
   ) {}
 
@@ -29,7 +29,7 @@ class FakeStatement {
   }
 }
 
-class FakeImageExtractionDb {
+class FakeExtractDb {
   jobs = new Map<string, any>();
   items: any[] = [];
   usage = new Map<string, { used: number; quota: number }>();
@@ -43,7 +43,7 @@ class FakeImageExtractionDb {
       return { success: true, meta: { changes: 1 } };
     }
 
-    if (sql.includes('INSERT INTO image_extraction_usage_lifetime')) {
+    if (sql.includes('INSERT INTO extract_usage_lifetime')) {
       const [userId, quota] = params as [string, number];
       const current = this.usage.get(userId) ?? { used: 0, quota };
       current.quota = quota;
@@ -52,7 +52,7 @@ class FakeImageExtractionDb {
     }
 
     if (
-      sql.includes('UPDATE image_extraction_usage_lifetime') &&
+      sql.includes('UPDATE extract_usage_lifetime') &&
       sql.includes('used = used +')
     ) {
       const [cost, userId] = params as [number, string, number];
@@ -65,7 +65,7 @@ class FakeImageExtractionDb {
     }
 
     if (
-      sql.includes('UPDATE image_extraction_usage_lifetime') &&
+      sql.includes('UPDATE extract_usage_lifetime') &&
       sql.includes('used = CASE')
     ) {
       const [cost, , userId] = params as [number, number, string];
@@ -76,7 +76,7 @@ class FakeImageExtractionDb {
       return { success: true, meta: { changes: current ? 1 : 0 } };
     }
 
-    if (sql.includes('INSERT INTO image_extraction_jobs')) {
+    if (sql.includes('INSERT INTO extract_jobs')) {
       const [
         id,
         principalType,
@@ -113,7 +113,7 @@ class FakeImageExtractionDb {
       return { success: true, meta: { changes: 1 } };
     }
 
-    if (sql.includes('INSERT INTO image_extraction_items')) {
+    if (sql.includes('INSERT INTO extract_items')) {
       const [
         id,
         jobId,
@@ -143,7 +143,39 @@ class FakeImageExtractionDb {
       return { success: true, meta: { changes: 1 } };
     }
 
-    if (sql.includes('UPDATE image_extraction_jobs')) {
+    if (
+      sql.includes('UPDATE extract_items') &&
+      sql.includes('output_key')
+    ) {
+      const [status, outputKey, previewKey, warning, errorMessage, id] = params;
+      const item = this.items.find((candidate) => candidate.id === id);
+      if (item) {
+        item.status = status;
+        item.output_key = outputKey;
+        item.preview_key = previewKey;
+        item.warning = warning;
+        item.error_message = errorMessage;
+      }
+      return { success: true, meta: { changes: item ? 1 : 0 } };
+    }
+
+    if (
+      sql.includes('UPDATE extract_jobs') &&
+      sql.includes('processed_count')
+    ) {
+      const [status, processedCount, warningsJson, errorMessage, id] = params;
+      const job = this.jobs.get(String(id));
+      if (job) {
+        job.status = status;
+        job.processed_count = processedCount;
+        job.warnings_json = warningsJson;
+        job.error_message = errorMessage;
+        job.completed_at = '2026-05-28 11:01:00';
+      }
+      return { success: true, meta: { changes: job ? 1 : 0 } };
+    }
+
+    if (sql.includes('UPDATE extract_jobs')) {
       const [status, errorMessage, id] = params;
       const job = this.jobs.get(String(id));
       if (job) {
@@ -157,18 +189,18 @@ class FakeImageExtractionDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
-    if (sql.includes('FROM image_extraction_usage_lifetime')) {
+    if (sql.includes('FROM extract_usage_lifetime')) {
       return (this.usage.get(String(params[0])) ?? null) as T | null;
     }
 
-    if (sql.includes('FROM image_extraction_jobs')) {
+    if (sql.includes('FROM extract_jobs')) {
       return (this.jobs.get(String(params[0])) ?? null) as T | null;
     }
     return null;
   }
 
   async all<T>(sql: string, params: unknown[]) {
-    if (sql.includes('FROM image_extraction_items')) {
+    if (sql.includes('FROM extract_items')) {
       return {
         results: this.items.filter((item) => item.job_id === params[0]),
       } as { results: T[] };
@@ -177,41 +209,85 @@ class FakeImageExtractionDb {
   }
 }
 
+class FakeR2Bucket {
+  objects = new Map<
+    string,
+    { body: Uint8Array; httpMetadata?: { contentType?: string } }
+  >();
+
+  async put(
+    key: string,
+    value: string | ArrayBuffer | ArrayBufferView | Blob,
+    options?: { httpMetadata?: { contentType?: string } }
+  ) {
+    let body: Uint8Array;
+    if (typeof value === 'string') {
+      body = new TextEncoder().encode(value);
+    } else if (value instanceof ArrayBuffer) {
+      body = new Uint8Array(value);
+    } else if (ArrayBuffer.isView(value)) {
+      body = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    } else {
+      body = new Uint8Array(await value.arrayBuffer());
+    }
+
+    this.objects.set(key, {
+      body,
+      httpMetadata: options?.httpMetadata,
+    });
+    return null;
+  }
+
+  async get(key: string) {
+    const object = this.objects.get(key);
+    if (!object) return null;
+    return {
+      size: object.body.byteLength,
+      httpMetadata: object.httpMetadata,
+      arrayBuffer: async () =>
+        object.body.buffer.slice(
+          object.body.byteOffset,
+          object.body.byteOffset + object.body.byteLength
+        ),
+    };
+  }
+}
+
 const makeApp = () => {
   const app = new Hono<{ Bindings: Env }>();
-  app.route('/api/v1/image-extractions', imageExtractionRoutes as any);
+  app.route('/api/v1/extract', extractRoutes as any);
   return app;
 };
 
 const makeEnv = (
-  db: FakeImageExtractionDb,
+  db: FakeExtractDb,
   overrides: Partial<Env> = {}
 ): Env =>
   ({
     DB: db as unknown as D1Database,
-    IMAGES: {} as R2Bucket,
+    IMAGES: new FakeR2Bucket() as unknown as R2Bucket,
     VECTORIZE: undefined as unknown as Vectorize,
     CACHE: {} as KVNamespace,
     AI: { run: vi.fn() } as unknown as Ai,
     EMBEDDING_QUEUE: {} as Queue,
     ENVIRONMENT: 'test',
     API_VERSION: 'v1',
-    IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT: '10',
+    EXTRACT_FREE_LIFETIME_LIMIT: '10',
     ...overrides,
   }) as Env;
 
-describe('image extraction routes', () => {
+describe('extract routes', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('creates a URL-backed extraction job and dispatches it to the worker', async () => {
-    const db = new FakeImageExtractionDb();
+  it('creates a URL-backed extract job and dispatches it to the worker', async () => {
+    const db = new FakeExtractDb();
     const dispatch = vi.fn(async () => new Response('{}', { status: 202 }));
     vi.stubGlobal('fetch', dispatch);
 
     const res = await makeApp().request(
-      '/api/v1/image-extractions',
+      '/api/v1/extract',
       {
         method: 'POST',
         headers: {
@@ -223,8 +299,8 @@ describe('image extraction routes', () => {
         }),
       },
       makeEnv(db, {
-        IMAGE_EXTRACTION_WORKER_URL: 'https://worker.example/jobs',
-        IMAGE_EXTRACTION_WORKER_TOKEN: 'worker-token',
+        EXTRACT_WORKER_URL: 'https://worker.example/jobs',
+        EXTRACT_WORKER_TOKEN: 'worker-token',
       })
     );
     const data = (await res.json()) as any;
@@ -238,7 +314,7 @@ describe('image extraction routes', () => {
       warnings: [],
       usage: { used: 1, quota: 10, remaining: 9 },
     });
-    expect(res.headers.get('X-Image-Extraction-Remaining')).toBe('9');
+    expect(res.headers.get('X-Extract-Remaining')).toBe('9');
     expect(data.data.items[0]).toMatchObject({
       sourceType: 'url',
       originalFilename: 'artwork.tif',
@@ -260,7 +336,7 @@ describe('image extraction routes', () => {
       jobId: data.data.id,
       target: 'object',
       preserveFilenames: true,
-      outputZipKey: `image-extractions/${data.data.id}/output.zip`,
+      outputZipKey: `extract/${data.data.id}/output.zip`,
       inputs: [
         expect.objectContaining({
           sourceType: 'url',
@@ -272,10 +348,10 @@ describe('image extraction routes', () => {
   });
 
   it('records jobs without dispatch when no worker is configured', async () => {
-    const db = new FakeImageExtractionDb();
+    const db = new FakeExtractDb();
 
     const res = await makeApp().request(
-      '/api/v1/image-extractions',
+      '/api/v1/extract',
       {
         method: 'POST',
         headers: {
@@ -301,15 +377,147 @@ describe('image extraction routes', () => {
       filenamePrefix: 'crop-',
       usage: { used: 1, quota: 10, remaining: 9 },
     });
-    expect(data.data.warnings[0]).toContain('worker is not configured');
+    expect(data.data.warnings[0]).toContain('fal provider are not configured');
   });
 
-  it('returns lifetime image extraction usage', async () => {
-    const db = new FakeImageExtractionDb();
+  it('processes URL-backed jobs directly through fal when configured', async () => {
+    const db = new FakeExtractDb();
+    const bucket = new FakeR2Bucket();
+    const pngBytes = new TextEncoder().encode('fake-png');
+    const falFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === 'https://queue.fal.run/fal-ai/sam-3/image') {
+        return new Response(
+          JSON.stringify({
+            request_id: 'fal-request-1',
+            status_url: 'https://queue.fal.run/status/fal-request-1',
+            response_url: 'https://queue.fal.run/result/fal-request-1',
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === 'https://queue.fal.run/status/fal-request-1') {
+        return new Response(
+          JSON.stringify({
+            status: 'COMPLETED',
+            response_url: 'https://queue.fal.run/result/fal-request-1',
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === 'https://queue.fal.run/result/fal-request-1') {
+        return new Response(
+          JSON.stringify({
+            image: {
+              url: 'https://fal.media/output.png',
+              content_type: 'image/png',
+            },
+            masks: [{ url: 'https://fal.media/mask.png' }],
+            metadata: [{ score: 0.91 }],
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === 'https://fal.media/output.png') {
+        return new Response(pngBytes, {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', falFetch);
+
+    const res = await makeApp().request(
+      '/api/v1/extract',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'user-1',
+        },
+        body: JSON.stringify({
+          imageUrls: ['https://example.com/artwork.jpg'],
+        }),
+      },
+      makeEnv(db, {
+        FAL_KEY: 'test-fal-key',
+        IMAGES: bucket as unknown as R2Bucket,
+      })
+    );
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(202);
+    expect(data.data).toMatchObject({
+      status: 'completed',
+      counts: { inputs: 1, processed: 1, items: 1 },
+      downloadUrl: `/api/v1/extract/${data.data.id}/download`,
+      usage: { used: 1, quota: 10, remaining: 9 },
+    });
+    expect(data.data.items[0]).toMatchObject({
+      status: 'completed',
+      hasOutput: true,
+    });
+    expect([...bucket.objects.keys()]).toEqual(
+      expect.arrayContaining([
+        `extract/${data.data.id}/output.zip`,
+      ])
+    );
+
+    const zip = bucket.objects.get(
+      `extract/${data.data.id}/output.zip`
+    );
+    expect(new TextDecoder().decode(zip?.body.slice(0, 2))).toBe('PK');
+
+    const [falUrl, falInit] = falFetch.mock.calls[0]!;
+    expect(String(falUrl)).toBe('https://queue.fal.run/fal-ai/sam-3/image');
+    expect((falInit as RequestInit).body).toContain(
+      'https://example.com/artwork.jpg'
+    );
+    expect(
+      new Headers((falInit as RequestInit).headers).get('Authorization')
+    ).toBe('Key test-fal-key');
+  });
+
+  it('does not send TIFF inputs directly to fal', async () => {
+    const db = new FakeExtractDb();
+    const falFetch = vi.fn();
+    vi.stubGlobal('fetch', falFetch);
+
+    const res = await makeApp().request(
+      '/api/v1/extract',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'user-1',
+        },
+        body: JSON.stringify({
+          imageUrls: ['https://example.com/artwork.tif'],
+        }),
+      },
+      makeEnv(db, {
+        FAL_KEY: 'test-fal-key',
+      })
+    );
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(502);
+    expect(data.data).toMatchObject({
+      status: 'failed',
+      counts: { inputs: 1, processed: 0, items: 1 },
+      usage: { used: 0, quota: 10, remaining: 10 },
+    });
+    expect(data.data.items[0].error).toContain('TIFF inputs require conversion');
+    expect(falFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns lifetime extract usage', async () => {
+    const db = new FakeExtractDb();
     db.usage.set('user-1', { used: 4, quota: 10 });
 
     const res = await makeApp().request(
-      '/api/v1/image-extractions/usage',
+      '/api/v1/extract/usage',
       {
         headers: {
           'X-User-Id': 'user-1',
@@ -321,15 +529,15 @@ describe('image extraction routes', () => {
 
     expect(res.status).toBe(200);
     expect(data.data).toEqual({ used: 4, quota: 10, remaining: 6 });
-    expect(res.headers.get('X-Image-Extraction-Limit')).toBe('10');
+    expect(res.headers.get('X-Extract-Limit')).toBe('10');
   });
 
-  it('rejects image extraction jobs after the lifetime input quota is exhausted', async () => {
-    const db = new FakeImageExtractionDb();
+  it('rejects extract jobs after the lifetime input quota is exhausted', async () => {
+    const db = new FakeExtractDb();
     db.usage.set('user-1', { used: 10, quota: 10 });
 
     const res = await makeApp().request(
-      '/api/v1/image-extractions',
+      '/api/v1/extract',
       {
         method: 'POST',
         headers: {
@@ -345,16 +553,16 @@ describe('image extraction routes', () => {
     const data = (await res.json()) as any;
 
     expect(res.status).toBe(429);
-    expect(data.error.code).toBe('IMAGE_EXTRACTION_QUOTA_EXCEEDED');
+    expect(data.error.code).toBe('EXTRACT_QUOTA_EXCEEDED');
     expect(data.error.details).toEqual({ used: 10, quota: 10, remaining: 0 });
     expect(db.jobs.size).toBe(0);
   });
 
   it('counts each submitted URL input against the lifetime quota', async () => {
-    const db = new FakeImageExtractionDb();
+    const db = new FakeExtractDb();
 
     const res = await makeApp().request(
-      '/api/v1/image-extractions',
+      '/api/v1/extract',
       {
         method: 'POST',
         headers: {
@@ -378,9 +586,9 @@ describe('image extraction routes', () => {
   });
 
   it('does not expose job status across principals', async () => {
-    const db = new FakeImageExtractionDb();
+    const db = new FakeExtractDb();
     const createRes = await makeApp().request(
-      '/api/v1/image-extractions',
+      '/api/v1/extract',
       {
         method: 'POST',
         headers: {
@@ -396,7 +604,7 @@ describe('image extraction routes', () => {
     const created = (await createRes.json()) as any;
 
     const lookupRes = await makeApp().request(
-      `/api/v1/image-extractions/${created.data.id}`,
+      `/api/v1/extract/${created.data.id}`,
       {
         headers: {
           'X-User-Id': 'user-2',

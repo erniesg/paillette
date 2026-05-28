@@ -66,7 +66,7 @@ wrangler kv:namespace create CACHE --env staging
 wrangler queues create embedding-jobs-staging
 
 # Secrets
-wrangler secret put REPLICATE_API_KEY --env staging
+wrangler secret put FAL_KEY --env staging
 ```
 
 ### Production Environment
@@ -90,7 +90,7 @@ wrangler kv:namespace create CACHE --env production
 wrangler queues create embedding-jobs
 
 # Secrets
-wrangler secret put REPLICATE_API_KEY --env production
+wrangler secret put FAL_KEY --env production
 ```
 
 ## Database Migrations

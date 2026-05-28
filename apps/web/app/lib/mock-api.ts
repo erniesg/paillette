@@ -250,7 +250,7 @@ export class MockApiClient {
     };
   }
 
-  async getImageExtractionUsage(): Promise<any> {
+  async getExtractUsage(): Promise<any> {
     return {
       used: 0,
       quota: 10,

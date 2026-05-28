@@ -13,7 +13,7 @@ import impactRoutes from './routes/impact';
 import assetRoutes from './routes/assets';
 import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
-import imageExtractionRoutes from './routes/image-extractions';
+import extractRoutes from './routes/extract';
 
 // Environment bindings
 export interface Env {
@@ -43,7 +43,8 @@ export interface Env {
   PAILLETTE_PUBLIC_SEARCH_API_KEY?: string;
   DAILY_FREE_QUERY_LIMIT?: string;
   TRANSLATION_FREE_LIFETIME_LIMIT?: string;
-  IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT?: string;
+  EXTRACT_FREE_LIFETIME_LIMIT?: string;
+  FAL_KEY?: string;
   JINA_API_KEY?: string;
   JINA_MULTIMODAL_MODEL?: string;
   JINA_EMBEDDING_DIMENSIONS?: string;
@@ -54,8 +55,8 @@ export interface Env {
   EMBEDDING_INDEX_VERSION?: string;
   SEARCH_FUSION_MODE?: string;
   ENABLE_NGS_REVIEW?: string;
-  IMAGE_EXTRACTION_WORKER_URL?: string;
-  IMAGE_EXTRACTION_WORKER_TOKEN?: string;
+  EXTRACT_WORKER_URL?: string;
+  EXTRACT_WORKER_TOKEN?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -85,6 +86,8 @@ app.use(
       'X-Request-ID',
       'X-RateLimit-Limit',
       'X-RateLimit-Remaining',
+      'X-Extract-Limit',
+      'X-Extract-Remaining',
     ],
     maxAge: 600,
     credentials: true,
@@ -104,7 +107,7 @@ app.get('/', (c) => {
         textSearch: 'POST /api/v1/orgs/:orgId/search/text',
         imageSearch: 'POST /api/v1/orgs/:orgId/search/image',
         colorSearch: 'POST /api/v1/orgs/:orgId/search/color',
-        imageExtraction: 'POST /api/v1/image-extractions',
+        extract: 'POST /api/v1/extract',
       },
     },
     meta: {
@@ -143,7 +146,7 @@ api.route('/galleries', orgs);
 api.route('/metadata', metadataRoutes);
 api.route('/translate', translationRoutes);
 api.route('/assets', assetRoutes);
-api.route('/image-extractions', imageExtractionRoutes as any);
+api.route('/extract', extractRoutes as any);
 api.route('/mcp', mcpRoutes as any);
 api.route('/ngs-review', ngsReviewRoutes);
 

@@ -49,7 +49,7 @@ CLOUDFLARE_API_TOKEN=your-api-token-here
 
 # Optional: External API keys (if not using Cloudflare AI)
 OPENAI_API_KEY=your-openai-key
-REPLICATE_API_TOKEN=your-replicate-token
+FAL_KEY=your-fal-key
 GOOGLE_TRANSLATE_API_KEY=your-google-key
 DEEPL_API_KEY=your-deepl-key
 ```

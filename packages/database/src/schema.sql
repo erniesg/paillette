@@ -390,7 +390,7 @@ CREATE TABLE IF NOT EXISTS translation_usage_lifetime (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS image_extraction_usage_lifetime (
+CREATE TABLE IF NOT EXISTS extract_usage_lifetime (
   user_id TEXT PRIMARY KEY,
   used INTEGER NOT NULL DEFAULT 0,
   quota INTEGER NOT NULL DEFAULT 10,
@@ -433,10 +433,10 @@ CREATE INDEX idx_translation_jobs_completed ON translation_jobs(status, complete
 WHERE status = 'completed' AND deleted_at IS NULL;
 
 -- ============================================================================
--- Image Extraction Jobs
+-- Extract Jobs
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS image_extraction_jobs (
+CREATE TABLE IF NOT EXISTS extract_jobs (
   id TEXT PRIMARY KEY,
   principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'api_key')),
   principal_id TEXT NOT NULL,
@@ -457,7 +457,7 @@ CREATE TABLE IF NOT EXISTS image_extraction_jobs (
   deleted_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS image_extraction_items (
+CREATE TABLE IF NOT EXISTS extract_items (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL,
   source_type TEXT NOT NULL CHECK (source_type IN ('r2', 'url')),
@@ -474,19 +474,19 @@ CREATE TABLE IF NOT EXISTS image_extraction_items (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
-  FOREIGN KEY (job_id) REFERENCES image_extraction_jobs(id) ON DELETE CASCADE
+  FOREIGN KEY (job_id) REFERENCES extract_jobs(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_image_extraction_jobs_owner
-ON image_extraction_jobs(principal_type, principal_id, created_at DESC)
+CREATE INDEX idx_extract_jobs_owner
+ON extract_jobs(principal_type, principal_id, created_at DESC)
 WHERE deleted_at IS NULL;
 
-CREATE INDEX idx_image_extraction_jobs_status
-ON image_extraction_jobs(status, created_at)
+CREATE INDEX idx_extract_jobs_status
+ON extract_jobs(status, created_at)
 WHERE deleted_at IS NULL;
 
-CREATE INDEX idx_image_extraction_items_job
-ON image_extraction_items(job_id, created_at);
+CREATE INDEX idx_extract_items_job
+ON extract_items(job_id, created_at);
 
 -- ============================================================================
 -- Triggers (auto-update timestamps)
@@ -513,18 +513,18 @@ BEGIN
   UPDATE assets SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_image_extraction_jobs_timestamp
-AFTER UPDATE ON image_extraction_jobs
+CREATE TRIGGER update_extract_jobs_timestamp
+AFTER UPDATE ON extract_jobs
 FOR EACH ROW
 BEGIN
-  UPDATE image_extraction_jobs SET updated_at = datetime('now') WHERE id = NEW.id;
+  UPDATE extract_jobs SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER update_image_extraction_items_timestamp
-AFTER UPDATE ON image_extraction_items
+CREATE TRIGGER update_extract_items_timestamp
+AFTER UPDATE ON extract_items
 FOR EACH ROW
 BEGIN
-  UPDATE image_extraction_items SET updated_at = datetime('now') WHERE id = NEW.id;
+  UPDATE extract_items SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
 -- ============================================================================

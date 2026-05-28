@@ -26,14 +26,14 @@ const MCP_READ_SCOPE = 'mcp:read';
 const MCP_WRITE_SCOPE = 'mcp:write';
 const ARTWORKS_READ_SCOPE = 'artworks:read';
 const TRANSLATIONS_CREATE_SCOPE = 'translations:create';
-const IMAGE_EXTRACTIONS_CREATE_SCOPE = 'image_extractions:create';
+const EXTRACT_CREATE_SCOPE = 'extract:create';
 const MCP_SCOPES_SUPPORTED = [
   MCP_ALL_SCOPE,
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
   ARTWORKS_READ_SCOPE,
   TRANSLATIONS_CREATE_SCOPE,
-  IMAGE_EXTRACTIONS_CREATE_SCOPE,
+  EXTRACT_CREATE_SCOPE,
 ];
 
 export const getMcpResourceUri = (
@@ -278,9 +278,9 @@ const tools = [
   {
     name: 'extract_images',
     title: 'Extract images',
-    requiredScopeGroups: [[MCP_WRITE_SCOPE], [IMAGE_EXTRACTIONS_CREATE_SCOPE]],
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [EXTRACT_CREATE_SCOPE]],
     description:
-      'Create an image extraction job from image URLs. Defaults to target=object so mounted artwork objects, scrolls, and visible supports are preserved. Counts against the authenticated user lifetime image extraction allowance.',
+      'Create an extract job from image URLs. Defaults to target=object so mounted artwork objects, scrolls, and visible supports are preserved. Counts against the authenticated user lifetime extract allowance.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -289,7 +289,7 @@ const tools = [
           minItems: 1,
           maxItems: 50,
           items: { type: 'string', format: 'uri' },
-          description: 'Public image URLs for the extraction job.',
+          description: 'Public image URLs for the /extract job.',
         },
         target: {
           type: 'string',
@@ -524,7 +524,7 @@ const callTool = async (
 
   if (name === 'extract_images') {
     const input = ExtractImagesArgsSchema.parse(args ?? {});
-    const data = await callApi(c, '/image-extractions', {
+    const data = await callApi(c, '/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

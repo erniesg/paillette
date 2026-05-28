@@ -16,7 +16,7 @@ import type {
   TranslateDocumentResponse,
   TranslationJobStatus,
   TranslationUsageSummary,
-  ImageExtractionUsageSummary,
+  ExtractUsageSummary,
   PailletteApiKeyList,
   CreatedPailletteApiKey,
   DailyUsageSummary,
@@ -703,19 +703,19 @@ class ApiClient {
     return data.data;
   }
 
-  async getImageExtractionUsage(
+  async getExtractUsage(
     getAccessToken: AccessTokenProvider
-  ): Promise<ImageExtractionUsageSummary> {
-    const response = await fetch(`${this.baseUrl}/image-extractions/usage`, {
+  ): Promise<ExtractUsageSummary> {
+    const response = await fetch(`${this.baseUrl}/extract/usage`, {
       headers: await this.getAuthHeaders(getAccessToken),
     });
 
-    const data: ApiResponse<ImageExtractionUsageSummary> =
+    const data: ApiResponse<ExtractUsageSummary> =
       await response.json();
 
     if (!data.success || !data.data) {
       throw new Error(
-        data.error?.message || 'Failed to fetch image extraction usage'
+        data.error?.message || 'Failed to fetch extract usage'
       );
     }
 

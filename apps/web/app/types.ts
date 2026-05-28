@@ -181,7 +181,7 @@ export interface TranslationUsageSummary {
   remaining: number;
 }
 
-export interface ImageExtractionUsageSummary {
+export interface ExtractUsageSummary {
   used: number;
   quota: number;
   remaining: number;

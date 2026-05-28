@@ -281,8 +281,8 @@ const endpoints = [
   },
   {
     method: 'POST',
-    path: '/image-extractions',
-    title: 'Image extraction',
+    path: '/extract',
+    title: 'Extract',
     body: `{
   "imageUrls": ["https://example.com/artwork.tif"],
   "target": "object",
@@ -295,7 +295,7 @@ const endpoints = [
         type: 'string[]',
         required: true,
         description:
-          'Public image URLs. Each submitted URL or uploaded file counts against the free lifetime image extraction allowance.',
+          'Public image URLs. Each submitted URL or uploaded file counts against the free lifetime /extract allowance.',
       },
       {
         name: 'target',
@@ -503,7 +503,7 @@ const mcpTools = [
   {
     name: 'extract_images',
     description:
-      'Create an image extraction job from image URLs. target defaults to object. Counts against the lifetime image extraction allowance.',
+      'Create an /extract job from image URLs. target defaults to object. Counts against the lifetime /extract allowance.',
     schema: [
       {
         name: 'imageUrls',
@@ -631,7 +631,7 @@ const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 
 const defaultDailyUsage = { used: 0, quota: 100 };
 const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
-const defaultImageExtractionUsage = { used: 0, quota: 10, remaining: 10 };
+const defaultExtractUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
 type EndpointDefinition = (typeof endpoints)[number];
 
@@ -865,7 +865,7 @@ const endpointIdByPath: Record<string, string> = {
   '/orgs/ngs/search/color': 'search-colour',
   '/orgs/ngs/artworks/{artworkId}': 'artwork-lookup',
   '/translate/text': 'translate-text',
-  '/image-extractions': 'image-extraction',
+  '/extract': 'extract',
 };
 
 const endpointSummaryByPath: Record<string, string> = {
@@ -883,8 +883,8 @@ const endpointSummaryByPath: Record<string, string> = {
     'Fetch one artwork record with source-labelled metadata and imagery.',
   '/translate/text':
     'Translate English catalogue text to Chinese, Malay, or Tamil.',
-  '/image-extractions':
-    'Create a batch image extraction job. target=object is the default for preserving mounted artworks, scrolls, and visible supports. Free accounts get 10 submitted inputs lifetime.',
+  '/extract':
+    'Create a batch /extract job. target=object is the default for preserving mounted artworks, scrolls, and visible supports. Live jobs use fal SAM3 when configured. Free accounts get 10 submitted inputs lifetime.',
 };
 
 const endpointNavLabelByPath: Record<string, string> = {
@@ -895,7 +895,7 @@ const endpointNavLabelByPath: Record<string, string> = {
   '/orgs/ngs/search/color': 'colour',
   '/orgs/ngs/artworks/{artworkId}': 'by ID',
   '/translate/text': 'translate text',
-  '/image-extractions': 'image extraction',
+  '/extract': 'extract',
 };
 
 const baseResponseFields: SchemaField[] = [
@@ -959,11 +959,11 @@ const translationResponseFields: SchemaField[] = [
   },
 ];
 
-const imageExtractionResponseFields: SchemaField[] = [
+const extractResponseFields: SchemaField[] = [
   {
     name: 'id',
     type: 'string',
-    description: 'Image extraction job ID.',
+    description: 'Extract job ID.',
   },
   {
     name: 'status',
@@ -973,7 +973,7 @@ const imageExtractionResponseFields: SchemaField[] = [
   {
     name: 'target',
     type: '"object" | "content"',
-    description: 'Requested extraction target.',
+    description: 'Requested extract target.',
   },
   {
     name: 'counts.inputs',
@@ -989,7 +989,7 @@ const imageExtractionResponseFields: SchemaField[] = [
     name: 'usage.remaining',
     type: 'integer',
     description:
-      'Free image extraction inputs remaining after job creation, when returned.',
+      'Free /extract inputs remaining after job creation, when returned.',
   },
   {
     name: 'warnings[]',
@@ -1051,8 +1051,8 @@ type EndpointDoc = {
 const getResponseFields = (endpoint: EndpointDefinition) => {
   if (endpoint.path.includes('/search/')) return searchResponseFields;
   if (endpoint.path === '/translate/text') return translationResponseFields;
-  if (endpoint.path === '/image-extractions')
-    return imageExtractionResponseFields;
+  if (endpoint.path === '/extract')
+    return extractResponseFields;
   if (endpoint.path === '/orgs') return sourceResponseFields;
   if (endpoint.path === '/orgs/slug/{slug}') return sourceResponseFields;
   if (endpoint.path.includes('/artworks/')) return artworkResponseFields;
@@ -1080,13 +1080,13 @@ const buildDocsMarkdown = (apiBase: string) => {
     '',
     '## Authentication',
     '',
-    'Server-to-server calls use `X-API-Key: <key>`. Source discovery endpoints are public; search, artwork lookup, translation, and image extraction require a key.',
+    'Server-to-server calls use `X-API-Key: <key>`. Source discovery endpoints are public; search, artwork lookup, translation, and extract require a key.',
     '',
     '## Usage',
     '',
     '- Search API: daily free query quota shown on `/me/usage/today`.',
     '- Translation: 10 free lifetime translations by default.',
-    '- Image extraction: 10 free lifetime submitted inputs by default; each URL or uploaded file counts as one input.',
+    '- /extract: 10 free lifetime submitted inputs by default; each URL or uploaded file counts as one input.',
     '',
     '## REST endpoints',
   ];
@@ -1239,9 +1239,9 @@ const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
     title: 'Tools',
     items: [
       {
-        href: '#image-extraction',
-        id: 'image-extraction',
-        label: 'image extraction',
+        href: '#extract',
+        id: 'extract',
+        label: 'extract',
         method: 'POST',
       },
     ],
@@ -1549,7 +1549,7 @@ const buildMcpSample = (
     });
   }
 
-  if (endpoint.path === '/image-extractions') {
+  if (endpoint.path === '/extract') {
     const { preview, ...rest } = args;
     return stringify({
       jsonrpc: '2.0',
@@ -1661,7 +1661,7 @@ const buildExampleResponse = (
       usage: { used: 2, quota: 10, remaining: 8 },
     };
   }
-  if (endpoint.path === '/image-extractions') {
+  if (endpoint.path === '/extract') {
     return {
       id: 'imgx_01hxyz',
       status: 'queued',
@@ -1741,9 +1741,9 @@ export default function ApiDocsPage() {
     retry: false,
   });
 
-  const imageExtractionUsageQuery = useQuery({
-    queryKey: ['image-extraction-usage', user?.id],
-    queryFn: () => apiClient.getImageExtractionUsage(getAccessToken),
+  const extractUsageQuery = useQuery({
+    queryKey: ['extract-usage', user?.id],
+    queryFn: () => apiClient.getExtractUsage(getAccessToken),
     enabled: Boolean(user),
     retry: false,
   });
@@ -1756,8 +1756,8 @@ export default function ApiDocsPage() {
   const dailyUsage = usageQuery.data ?? defaultDailyUsage;
   const translationUsage =
     translationUsageQuery.data ?? defaultTranslationUsage;
-  const imageExtractionUsage =
-    imageExtractionUsageQuery.data ?? defaultImageExtractionUsage;
+  const extractUsage =
+    extractUsageQuery.data ?? defaultExtractUsage;
   const dailyPercent =
     dailyUsage.quota > 0
       ? Math.min((dailyUsage.used / dailyUsage.quota) * 100, 100)
@@ -1766,10 +1766,10 @@ export default function ApiDocsPage() {
     translationUsage.quota > 0
       ? Math.min((translationUsage.used / translationUsage.quota) * 100, 100)
       : 0;
-  const imageExtractionPercent =
-    imageExtractionUsage.quota > 0
+  const extractPercent =
+    extractUsage.quota > 0
       ? Math.min(
-          (imageExtractionUsage.used / imageExtractionUsage.quota) * 100,
+          (extractUsage.used / extractUsage.quota) * 100,
           100
         )
       : 0;
@@ -1787,26 +1787,26 @@ export default function ApiDocsPage() {
       : translationUsageQuery.isError
         ? 'Refresh'
         : `${translationUsage.remaining} left`;
-  const imageExtractionUsageValue = !user
+  const extractUsageValue = !user
     ? 'Sign in'
-    : imageExtractionUsageQuery.isLoading
+    : extractUsageQuery.isLoading
       ? 'Checking'
-      : imageExtractionUsageQuery.isError
+      : extractUsageQuery.isError
         ? 'Refresh'
-        : `${imageExtractionUsage.remaining} left`;
+        : `${extractUsage.remaining} left`;
   const hasUsageError = Boolean(
     user &&
       (usageQuery.isError ||
         translationUsageQuery.isError ||
-        imageExtractionUsageQuery.isError)
+        extractUsageQuery.isError)
   );
   const usageErrorMessage =
     usageQuery.error instanceof Error
       ? usageQuery.error.message
       : translationUsageQuery.error instanceof Error
         ? translationUsageQuery.error.message
-        : imageExtractionUsageQuery.error instanceof Error
-          ? imageExtractionUsageQuery.error.message
+        : extractUsageQuery.error instanceof Error
+          ? extractUsageQuery.error.message
           : 'Token check failed';
   const orgDirectory = orgsQuery.data?.orgs?.length
     ? orgsQuery.data.orgs
@@ -1970,7 +1970,7 @@ export default function ApiDocsPage() {
       }));
       void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
       void queryClient.invalidateQueries({
-        queryKey: ['image-extraction-usage', user?.id],
+        queryKey: ['extract-usage', user?.id],
       });
       void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
@@ -2024,7 +2024,7 @@ export default function ApiDocsPage() {
       queryKey: ['translation-usage', user?.id],
     });
     void queryClient.invalidateQueries({
-      queryKey: ['image-extraction-usage', user?.id],
+      queryKey: ['extract-usage', user?.id],
     });
     void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
   };
@@ -2112,8 +2112,8 @@ export default function ApiDocsPage() {
             />
             <UsageChip
               label="EXTRACT"
-              value={imageExtractionUsageValue}
-              percent={imageExtractionPercent}
+              value={extractUsageValue}
+              percent={extractPercent}
             />
           </div>
           <label className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 max-[520px]:px-2">
@@ -2221,8 +2221,8 @@ export default function ApiDocsPage() {
             dailyPercent={dailyPercent}
             dailyUsageValue={dailyUsageValue}
             hasUsageError={hasUsageError}
-            imageExtractionPercent={imageExtractionPercent}
-            imageExtractionUsageValue={imageExtractionUsageValue}
+            extractPercent={extractPercent}
+            extractUsageValue={extractUsageValue}
             isLoading={isLoading}
             keyName={keyName}
             keys={keys}
@@ -2486,8 +2486,8 @@ function AccountSections({
   dailyPercent,
   dailyUsageValue,
   hasUsageError,
-  imageExtractionPercent,
-  imageExtractionUsageValue,
+  extractPercent,
+  extractUsageValue,
   isLoading,
   keyName,
   keys,
@@ -2520,8 +2520,8 @@ function AccountSections({
   dailyPercent: number;
   dailyUsageValue: string;
   hasUsageError: boolean;
-  imageExtractionPercent: number;
-  imageExtractionUsageValue: string;
+  extractPercent: number;
+  extractUsageValue: string;
   isLoading: boolean;
   keyName: string;
   keys: Array<{ id: string; key_prefix: string; name: string; status: string }>;
@@ -2718,9 +2718,9 @@ function AccountSections({
             value={translationUsageValue}
           />
           <UsageMeter
-            label="Free image extraction"
-            percent={imageExtractionPercent}
-            value={imageExtractionUsageValue}
+            label="Free /extract"
+            percent={extractPercent}
+            value={extractUsageValue}
           />
         </div>
         {hasUsageError && (

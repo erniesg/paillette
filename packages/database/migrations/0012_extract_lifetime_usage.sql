@@ -1,7 +1,7 @@
--- Migration: Add server-side lifetime image extraction free-use tracking
+-- Migration: Add server-side lifetime extract free-use tracking
 -- Created: 2026-05-28
 
-CREATE TABLE IF NOT EXISTS image_extraction_usage_lifetime (
+CREATE TABLE IF NOT EXISTS extract_usage_lifetime (
   user_id TEXT PRIMARY KEY,
   used INTEGER NOT NULL DEFAULT 0,
   quota INTEGER NOT NULL DEFAULT 10,

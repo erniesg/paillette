@@ -80,7 +80,7 @@ Paillette is a multimodal AI-powered platform for art gallery management, design
 2. **Fallback**: OpenAI API (CLIP via embeddings API)
 
 #### Frame Removal
-1. **Primary**: External SAM (Segment Anything Model) via Replicate API
+1. **Primary**: fal SAM3 image segmentation via `FAL_KEY`
 2. **Fallback**: Cloudflare AI image segmentation (if available)
 
 #### Translation Providers (Multi-provider strategy)
