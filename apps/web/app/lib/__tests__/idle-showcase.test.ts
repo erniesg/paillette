@@ -16,7 +16,7 @@ const artwork = (
   }) as ArtworkSearchResult;
 
 describe('selectIdleShowcaseArtworks', () => {
-  it('uses browse fallback artworks when search returns no imageable results', () => {
+  it('does not mix fallback artworks into an active suggestion showcase', () => {
     const results = selectIdleShowcaseArtworks(
       [artwork('empty-search-result')],
       [
@@ -25,31 +25,24 @@ describe('selectIdleShowcaseArtworks', () => {
       ]
     );
 
-    expect(results.map((result) => result.id)).toEqual([
-      'fallback-1',
-      'fallback-2',
-    ]);
+    expect(results).toEqual([]);
   });
 
-  it('deduplicates primary and fallback artworks while keeping primary order', () => {
-    const results = selectIdleShowcaseArtworks(
-      [
-        artwork('primary-1', { thumbnailUrl: '/primary-1.webp' }),
-        artwork('shared', { thumbnailUrl: '/shared-primary.webp' }),
-      ],
-      [
-        artwork('shared', { thumbnailUrl: '/shared-fallback.webp' }),
-        artwork('fallback-1', { thumbnailUrl: '/fallback-1.webp' }),
-        artwork('fallback-2', { thumbnailUrl: '/fallback-2.webp' }),
-        artwork('fallback-3', { thumbnailUrl: '/fallback-3.webp' }),
-      ]
-    );
+  it('filters to imageable active suggestion artworks while keeping order', () => {
+    const results = selectIdleShowcaseArtworks([
+      artwork('primary-1', { thumbnailUrl: '/primary-1.webp' }),
+      artwork('no-image'),
+      artwork('shared', { thumbnailUrl: '/shared-primary.webp' }),
+      artwork('primary-2', { thumbnailUrl: '/primary-2.webp' }),
+      artwork('primary-3', { thumbnailUrl: '/primary-3.webp' }),
+      artwork('primary-4', { thumbnailUrl: '/primary-4.webp' }),
+    ]);
 
     expect(results.map((result) => result.id)).toEqual([
       'primary-1',
       'shared',
-      'fallback-1',
-      'fallback-2',
+      'primary-2',
+      'primary-3',
     ]);
   });
 });

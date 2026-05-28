@@ -951,19 +951,6 @@ export default function SearchPage() {
         minScore: 0,
       }),
     enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
-    placeholderData: (previousData) => previousData,
-    staleTime: 5 * 60 * 1000,
-  });
-  const idleShowcaseFallbackQuery = useQuery({
-    queryKey: ['idle-showcase-fallback', galleryId],
-    queryFn: () =>
-      publicBrowseCollection(galleryId, {
-        limit: IDLE_SHOWCASE_FETCH_LIMIT,
-        offset: 0,
-        sortBy: 'title',
-        sortOrder: 'asc',
-      }),
-    enabled: shouldLoadIdleShowcase,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -993,16 +980,13 @@ export default function SearchPage() {
     : visibleCount < results.length;
   const idleShowcaseResults = useMemo(
     () =>
-      selectIdleShowcaseArtworks(
-        idleShowcaseQuery.data?.results || [],
-        idleShowcaseFallbackQuery.data?.results || []
-      ),
-    [idleShowcaseFallbackQuery.data?.results, idleShowcaseQuery.data?.results]
+      idleShowcaseQuery.isFetching
+        ? []
+        : selectIdleShowcaseArtworks(idleShowcaseQuery.data?.results || []),
+    [idleShowcaseQuery.data?.results, idleShowcaseQuery.isFetching]
   );
   const isIdleShowcaseLoading =
-    idleShowcaseQuery.isLoading ||
-    (idleShowcaseResults.length < IDLE_SHOWCASE_ARTWORK_COUNT &&
-      idleShowcaseFallbackQuery.isLoading);
+    idleShowcaseQuery.isLoading || idleShowcaseQuery.isFetching;
 
   useEffect(() => {
     if (!hasMounted) return undefined;

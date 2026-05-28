@@ -115,14 +115,21 @@ const CHINESE_FESTIVALS: SingaporeHoliday[] = [
 ];
 
 const HOLIDAY_QUERY_OVERRIDES: Record<string, string> = {
-  'Chinese New Year':
-    'Chinese New Year red lanterns lion dance spring festival',
-  'Lantern Festival': 'Lantern Festival yuanxiao lanterns full moon',
-  'Qing Ming Festival': 'Qing Ming ancestors spring landscape',
-  'Dragon Boat Festival': 'Dragon Boat Festival dragon boats zongzi river race',
-  'Qixi Festival': 'Qixi Festival weaving stars lovers',
-  'Mid-Autumn Festival':
-    "Mid-Autumn Festival mooncakes lanterns full moon Chang'e reunion",
+  "New Year's Day": 'new year',
+  'Chinese New Year': 'lantern',
+  'Lantern Festival': 'lantern',
+  'Qing Ming Festival': 'spring landscape',
+  'Dragon Boat Festival': 'boat',
+  'Qixi Festival': 'weaving',
+  'Mid-Autumn Festival': 'moon',
+  'Hari Raya Puasa': 'mosque',
+  'Good Friday': 'crucifixion',
+  'Labour Day': 'workers',
+  'Hari Raya Haji': 'mosque',
+  'Vesak Day': 'Buddha',
+  'National Day': 'National Day',
+  Deepavali: 'lamp',
+  'Christmas Day': 'nativity',
 };
 
 const SOURCE_PRIORITY: Record<HolidaySuggestionSource, number> = {

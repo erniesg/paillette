@@ -18,6 +18,16 @@ const holiday = (
 });
 
 describe('buildSuggestionPool', () => {
+  it('starts with a concise result-bearing evergreen query', () => {
+    const suggestions = buildSuggestionPool([]);
+
+    expect(suggestions[0]).toMatchObject({
+      type: 'keyword',
+      label: 'tropical studies',
+      query: 'tropical',
+    });
+  });
+
   it('uses a same-day public holiday as the first showcase suggestion', () => {
     const suggestions = buildSuggestionPool([holiday()]);
 
@@ -28,7 +38,7 @@ describe('buildSuggestionPool', () => {
     });
     expect(suggestions[1]).toMatchObject({
       type: 'keyword',
-      label: 'tropical fruit and flowers',
+      label: 'tropical studies',
     });
   });
 
@@ -45,7 +55,7 @@ describe('buildSuggestionPool', () => {
 
     expect(suggestions[0]).toMatchObject({
       type: 'keyword',
-      label: 'tropical fruit and flowers',
+      label: 'tropical studies',
     });
     expect(suggestions[1]).toMatchObject({
       type: 'occasion',

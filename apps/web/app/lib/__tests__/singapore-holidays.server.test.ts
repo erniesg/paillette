@@ -68,14 +68,14 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
     expect(suggestions.slice(0, 2)).toEqual([
       expect.objectContaining({
         label: 'Hari Raya Haji',
-        query: 'Hari Raya Haji',
+        query: 'mosque',
         detail: '27 May',
         isToday: false,
         source: 'mom',
       }),
       expect.objectContaining({
         label: 'Vesak Day',
-        query: 'Vesak Day',
+        query: 'Buddha',
         detail: '31 May',
         isToday: false,
         source: 'mom',
@@ -159,7 +159,7 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
     expect(suggestions).toContainEqual(
       expect.objectContaining({
         label: 'Dragon Boat Festival',
-        query: 'Dragon Boat Festival dragon boats zongzi river race',
+        query: 'boat',
         detail: '19 Jun',
         source: 'chinese-festival',
       })
@@ -167,8 +167,7 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
     expect(suggestions).toContainEqual(
       expect.objectContaining({
         label: 'Mid-Autumn Festival',
-        query:
-          "Mid-Autumn Festival mooncakes lanterns full moon Chang'e reunion",
+        query: 'moon',
         detail: '25 Sept',
         source: 'chinese-festival',
       })

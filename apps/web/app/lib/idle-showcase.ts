@@ -6,14 +6,13 @@ const hasShowcaseImage = (artwork: ArtworkSearchResult) =>
   Boolean(artwork.thumbnailUrl || artwork.imageUrl);
 
 export const selectIdleShowcaseArtworks = (
-  primaryArtworks: ArtworkSearchResult[],
-  fallbackArtworks: ArtworkSearchResult[],
+  artworks: ArtworkSearchResult[],
   limit = IDLE_SHOWCASE_ARTWORK_COUNT
 ) => {
   const selected: ArtworkSearchResult[] = [];
   const seenIds = new Set<string>();
 
-  for (const artwork of [...primaryArtworks, ...fallbackArtworks]) {
+  for (const artwork of artworks) {
     if (!hasShowcaseImage(artwork) || seenIds.has(artwork.id)) continue;
 
     selected.push(artwork);

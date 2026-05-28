@@ -25,26 +25,26 @@ export type EvalSuggestion = {
 const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'keyword',
-    label: 'tropical fruit and flowers',
-    query: 'a still life of tropical fruit and flowers',
+    label: 'tropical studies',
+    query: 'tropical',
     dot: '#cda636',
   },
   {
     type: 'motif',
     label: 'batik textile pattern',
-    query: 'batik or songket textile pattern',
+    query: 'batik',
     dot: '#bf5631',
   },
   {
     type: 'mood',
-    label: 'serene and contemplative',
-    query: 'serene, still and contemplative',
+    label: 'serene landscapes',
+    query: 'serene',
     dot: '#8a9a7a',
   },
   {
     type: 'style',
     label: 'Nanyang style',
-    query: 'Nanyang-style fusion of Chinese and Southeast Asian',
+    query: 'Nanyang',
     dot: '#365f9c',
   },
   {
@@ -56,13 +56,13 @@ const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'metadata',
     label: '1950s works',
-    query: 'artworks made in the 1950s',
+    query: '1950s',
     dot: '#6a5238',
   },
   {
     type: 'colour',
-    label: 'muted sage green',
-    query: 'muted sage green',
+    label: 'landscape greens',
+    query: 'landscape',
     dot: '#8a9a7a',
     colourId: 'sage',
   },
@@ -86,7 +86,9 @@ export const buildSuggestionPool = (
 ): EvalSuggestion[] => {
   const [firstSuggestion, ...remainingSuggestions] = EVAL_SUGGESTIONS;
   const leadingSuggestions = firstSuggestion ? [firstSuggestion] : [];
-  const holidayEvalSuggestions = holidaySuggestions.map(toEvalHolidaySuggestion);
+  const holidayEvalSuggestions = holidaySuggestions.map(
+    toEvalHolidaySuggestion
+  );
 
   if (!holidayEvalSuggestions.length) {
     return EVAL_SUGGESTIONS;
