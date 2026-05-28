@@ -2,7 +2,7 @@ import type { MetaFunction } from '@remix-run/cloudflare';
 import { useState } from 'react';
 import { Link, useSearchParams } from '@remix-run/react';
 import { motion } from 'framer-motion';
-import { LogIn, Loader2 } from 'lucide-react';
+import { KeyRound, LogIn, Loader2 } from 'lucide-react';
 import { useUser } from '~/contexts/user-context';
 import { Button } from '~/components/ui/button';
 import {
@@ -22,9 +22,10 @@ export const meta: MetaFunction = () => {
 };
 
 export default function LoginPage() {
-  const { login, isLogtoConfigured } = useUser();
+  const { login, resetPassword, isLogtoConfigured } = useUser();
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [error, setError] = useState('');
   const returnTo = searchParams.get('returnTo') || undefined;
   const returnToQuery = returnTo
@@ -41,6 +42,19 @@ export default function LoginPage() {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setError('');
+    setIsResetting(true);
+
+    try {
+      await resetPassword({ returnTo });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Password reset failed');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -79,7 +93,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 onClick={handleSignIn}
-                disabled={isLoading || !isLogtoConfigured}
+                disabled={isLoading || isResetting || !isLogtoConfigured}
                 className="w-full"
               >
                 {isLoading ? (
@@ -91,6 +105,26 @@ export default function LoginPage() {
                   <>
                     <LogIn className="h-4 w-4" />
                     Log in
+                  </>
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleResetPassword}
+                disabled={isLoading || isResetting || !isLogtoConfigured}
+                className="w-full"
+              >
+                {isResetting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Opening reset...
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="h-4 w-4" />
+                    Reset password
                   </>
                 )}
               </Button>

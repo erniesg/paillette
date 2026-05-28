@@ -63,12 +63,13 @@ LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks"
 LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai"
 DAILY_FREE_QUERY_LIMIT = "100"
 TRANSLATION_FREE_LIFETIME_LIMIT = "10"
+IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT = "10"
 
 # Staging environment (deploy from 'staging' branch)
 [env.staging]
 name = "paillette-api-stg"
 routes = [{ pattern = "paillette-api-stg.berlayar.ai", custom_domain = true }]
-vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024" }
+vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024" }
 
 # Staging resources (separate from production)
 [[env.staging.d1_databases]]
@@ -112,6 +113,6 @@ queue = "paillette-embedding-jobs-stg"
 # Production environment (deploy from 'master' branch)
 [env.production]
 name = "paillette-api"
-vars = { ENVIRONMENT = "production", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100", TRANSLATION_FREE_LIFETIME_LIMIT = "10" }
+vars = { ENVIRONMENT = "production", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100", TRANSLATION_FREE_LIFETIME_LIMIT = "10", IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT = "10" }
 
 # Production uses the main bindings defined above

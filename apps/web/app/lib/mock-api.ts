@@ -250,6 +250,14 @@ export class MockApiClient {
     };
   }
 
+  async getImageExtractionUsage(): Promise<any> {
+    return {
+      used: 0,
+      quota: 10,
+      remaining: 10,
+    };
+  }
+
   async translateText(request: any): Promise<any> {
     await new Promise((resolve) => setTimeout(resolve, 100));
     return {

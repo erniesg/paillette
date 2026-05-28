@@ -28,6 +28,7 @@ interface UserContextType {
   isLoading: boolean;
   login: (options?: AuthRedirectOptions) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (options?: AuthRedirectOptions) => Promise<void>;
   signup: (options?: AuthRedirectOptions) => Promise<void>;
   isAuthenticated: boolean;
   isLogtoConfigured: boolean;
@@ -132,6 +133,16 @@ export function UserProvider({
     });
   };
 
+  const resetPassword = async (options: AuthRedirectOptions = {}) => {
+    ensureConfigured();
+    await signIn({
+      redirectUri: getLogtoRedirectUri(),
+      postRedirectUri: getLogtoPostSignInUri(options.returnTo),
+      firstScreen: 'reset_password',
+      identifiers: ['email'],
+    });
+  };
+
   const getConfiguredAccessToken = (resource?: string) =>
     getAccessToken(resource || apiResource || undefined);
 
@@ -142,6 +153,7 @@ export function UserProvider({
         isLoading: isLogtoLoading || isProfileLoading,
         login,
         logout,
+        resetPassword,
         signup,
         isAuthenticated,
         isLogtoConfigured,

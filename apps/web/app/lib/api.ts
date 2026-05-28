@@ -16,6 +16,7 @@ import type {
   TranslateDocumentResponse,
   TranslationJobStatus,
   TranslationUsageSummary,
+  ImageExtractionUsageSummary,
   PailletteApiKeyList,
   CreatedPailletteApiKey,
   DailyUsageSummary,
@@ -696,6 +697,25 @@ class ApiClient {
     if (!data.success || !data.data) {
       throw new Error(
         data.error?.message || 'Failed to fetch translation usage'
+      );
+    }
+
+    return data.data;
+  }
+
+  async getImageExtractionUsage(
+    getAccessToken: AccessTokenProvider
+  ): Promise<ImageExtractionUsageSummary> {
+    const response = await fetch(`${this.baseUrl}/image-extractions/usage`, {
+      headers: await this.getAuthHeaders(getAccessToken),
+    });
+
+    const data: ApiResponse<ImageExtractionUsageSummary> =
+      await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(
+        data.error?.message || 'Failed to fetch image extraction usage'
       );
     }
 

@@ -32,6 +32,7 @@ class FakeStatement {
 class FakeImageExtractionDb {
   jobs = new Map<string, any>();
   items: any[] = [];
+  usage = new Map<string, { used: number; quota: number }>();
 
   prepare(sql: string) {
     return new FakeStatement(this, sql);
@@ -40,6 +41,39 @@ class FakeImageExtractionDb {
   async run(sql: string, params: unknown[]) {
     if (sql.includes('INSERT INTO users')) {
       return { success: true, meta: { changes: 1 } };
+    }
+
+    if (sql.includes('INSERT INTO image_extraction_usage_lifetime')) {
+      const [userId, quota] = params as [string, number];
+      const current = this.usage.get(userId) ?? { used: 0, quota };
+      current.quota = quota;
+      this.usage.set(userId, current);
+      return { success: true, meta: { changes: 1 } };
+    }
+
+    if (
+      sql.includes('UPDATE image_extraction_usage_lifetime') &&
+      sql.includes('used = used +')
+    ) {
+      const [cost, userId] = params as [number, string, number];
+      const current = this.usage.get(userId);
+      if (!current || current.used + cost > current.quota) {
+        return { success: true, meta: { changes: 0 } };
+      }
+      current.used += cost;
+      return { success: true, meta: { changes: 1 } };
+    }
+
+    if (
+      sql.includes('UPDATE image_extraction_usage_lifetime') &&
+      sql.includes('used = CASE')
+    ) {
+      const [cost, , userId] = params as [number, number, string];
+      const current = this.usage.get(userId);
+      if (current) {
+        current.used = Math.max(current.used - cost, 0);
+      }
+      return { success: true, meta: { changes: current ? 1 : 0 } };
     }
 
     if (sql.includes('INSERT INTO image_extraction_jobs')) {
@@ -123,6 +157,10 @@ class FakeImageExtractionDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes('FROM image_extraction_usage_lifetime')) {
+      return (this.usage.get(String(params[0])) ?? null) as T | null;
+    }
+
     if (sql.includes('FROM image_extraction_jobs')) {
       return (this.jobs.get(String(params[0])) ?? null) as T | null;
     }
@@ -158,6 +196,7 @@ const makeEnv = (
     EMBEDDING_QUEUE: {} as Queue,
     ENVIRONMENT: 'test',
     API_VERSION: 'v1',
+    IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT: '10',
     ...overrides,
   }) as Env;
 
@@ -197,7 +236,9 @@ describe('image extraction routes', () => {
       preserveFilenames: true,
       counts: { inputs: 1, processed: 0, items: 1 },
       warnings: [],
+      usage: { used: 1, quota: 10, remaining: 9 },
     });
+    expect(res.headers.get('X-Image-Extraction-Remaining')).toBe('9');
     expect(data.data.items[0]).toMatchObject({
       sourceType: 'url',
       originalFilename: 'artwork.tif',
@@ -258,8 +299,82 @@ describe('image extraction routes', () => {
       target: 'content',
       preserveFilenames: false,
       filenamePrefix: 'crop-',
+      usage: { used: 1, quota: 10, remaining: 9 },
     });
     expect(data.data.warnings[0]).toContain('worker is not configured');
+  });
+
+  it('returns lifetime image extraction usage', async () => {
+    const db = new FakeImageExtractionDb();
+    db.usage.set('user-1', { used: 4, quota: 10 });
+
+    const res = await makeApp().request(
+      '/api/v1/image-extractions/usage',
+      {
+        headers: {
+          'X-User-Id': 'user-1',
+        },
+      },
+      makeEnv(db)
+    );
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(data.data).toEqual({ used: 4, quota: 10, remaining: 6 });
+    expect(res.headers.get('X-Image-Extraction-Limit')).toBe('10');
+  });
+
+  it('rejects image extraction jobs after the lifetime input quota is exhausted', async () => {
+    const db = new FakeImageExtractionDb();
+    db.usage.set('user-1', { used: 10, quota: 10 });
+
+    const res = await makeApp().request(
+      '/api/v1/image-extractions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'user-1',
+        },
+        body: JSON.stringify({
+          imageUrls: ['https://example.com/artwork.jpg'],
+        }),
+      },
+      makeEnv(db)
+    );
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(429);
+    expect(data.error.code).toBe('IMAGE_EXTRACTION_QUOTA_EXCEEDED');
+    expect(data.error.details).toEqual({ used: 10, quota: 10, remaining: 0 });
+    expect(db.jobs.size).toBe(0);
+  });
+
+  it('counts each submitted URL input against the lifetime quota', async () => {
+    const db = new FakeImageExtractionDb();
+
+    const res = await makeApp().request(
+      '/api/v1/image-extractions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'user-1',
+        },
+        body: JSON.stringify({
+          imageUrls: [
+            'https://example.com/artwork-1.jpg',
+            'https://example.com/artwork-2.jpg',
+          ],
+        }),
+      },
+      makeEnv(db)
+    );
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(202);
+    expect(data.data.usage).toEqual({ used: 2, quota: 10, remaining: 8 });
+    expect(db.usage.get('user-1')?.used).toBe(2);
   });
 
   it('does not expose job status across principals', async () => {

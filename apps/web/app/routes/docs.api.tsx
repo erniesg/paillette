@@ -295,7 +295,7 @@ const endpoints = [
         type: 'string[]',
         required: true,
         description:
-          'Public image URLs. For file, zip, or folder uploads, send multipart form-data with files[].',
+          'Public image URLs. Each submitted URL or uploaded file counts against the free lifetime image extraction allowance.',
       },
       {
         name: 'target',
@@ -503,7 +503,7 @@ const mcpTools = [
   {
     name: 'extract_images',
     description:
-      'Create an image extraction job from image URLs. target defaults to object.',
+      'Create an image extraction job from image URLs. target defaults to object. Counts against the lifetime image extraction allowance.',
     schema: [
       {
         name: 'imageUrls',
@@ -631,6 +631,7 @@ const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 
 const defaultDailyUsage = { used: 0, quota: 100 };
 const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
+const defaultImageExtractionUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
 type EndpointDefinition = (typeof endpoints)[number];
 
@@ -883,7 +884,7 @@ const endpointSummaryByPath: Record<string, string> = {
   '/translate/text':
     'Translate English catalogue text to Chinese, Malay, or Tamil.',
   '/image-extractions':
-    'Create a batch image extraction job. target=object is the default for preserving mounted artworks, scrolls, and visible supports.',
+    'Create a batch image extraction job. target=object is the default for preserving mounted artworks, scrolls, and visible supports. Free accounts get 10 submitted inputs lifetime.',
 };
 
 const endpointNavLabelByPath: Record<string, string> = {
@@ -985,6 +986,12 @@ const imageExtractionResponseFields: SchemaField[] = [
     description: 'Zip download URL once the job is completed.',
   },
   {
+    name: 'usage.remaining',
+    type: 'integer',
+    description:
+      'Free image extraction inputs remaining after job creation, when returned.',
+  },
+  {
     name: 'warnings[]',
     type: 'string',
     description:
@@ -1059,6 +1066,88 @@ const endpointDocs: EndpointDoc[] = endpoints.map((endpoint) => ({
   responseFields: getResponseFields(endpoint),
   summary: endpointSummaryByPath[endpoint.path] ?? endpoint.body,
 }));
+
+const fieldToMarkdown = (field: SchemaField) =>
+  `| \`${field.name}\` | \`${field.type}\` | ${
+    field.required ? 'yes' : field.defaultValue ? `default ${field.defaultValue}` : ''
+  } | ${field.description.replace(/\|/g, '\\|')} |`;
+
+const buildDocsMarkdown = (apiBase: string) => {
+  const lines = [
+    '# Paillette API',
+    '',
+    `Base URL: \`${apiBase}\``,
+    '',
+    '## Authentication',
+    '',
+    'Server-to-server calls use `X-API-Key: <key>`. Source discovery endpoints are public; search, artwork lookup, translation, and image extraction require a key.',
+    '',
+    '## Usage',
+    '',
+    '- Search API: daily free query quota shown on `/me/usage/today`.',
+    '- Translation: 10 free lifetime translations by default.',
+    '- Image extraction: 10 free lifetime submitted inputs by default; each URL or uploaded file counts as one input.',
+    '',
+    '## REST endpoints',
+  ];
+
+  for (const doc of endpointDocs) {
+    const request = buildEndpointRequest({
+      apiBase,
+      apiKey: maskKey(null),
+      endpoint: doc.endpoint,
+      values: getInitialEndpointValues(doc.endpoint),
+    });
+
+    lines.push(
+      '',
+      `### ${doc.endpoint.method} ${displayPath(doc.endpoint)}`,
+      '',
+      doc.summary,
+      '',
+      'Request fields:',
+      '',
+      '| field | type | required/default | notes |',
+      '| --- | --- | --- | --- |',
+      ...(doc.endpoint.schema.length
+        ? doc.endpoint.schema.map(fieldToMarkdown)
+        : ['| none | - | - | - |']),
+      '',
+      'Response fields:',
+      '',
+      '| field | type | required/default | notes |',
+      '| --- | --- | --- | --- |',
+      ...doc.responseFields.map(fieldToMarkdown),
+      '',
+      '```bash',
+      request.curl,
+      '```'
+    );
+  }
+
+  lines.push('', '## MCP tools');
+  for (const tool of mcpTools) {
+    lines.push(
+      '',
+      `### ${tool.name}`,
+      '',
+      tool.description,
+      '',
+      '| argument | type | required/default | notes |',
+      '| --- | --- | --- | --- |',
+      ...tool.schema.map(fieldToMarkdown)
+    );
+  }
+
+  lines.push(
+    '',
+    '## Field sources',
+    '',
+    'Search and artwork responses include `metadata.field_sources` and `metadata.source_provenance` so clients can distinguish NGS catalogue text, Roots/NHB fallback captions, public metadata, and generated captions.'
+  );
+
+  return `${lines.join('\n')}\n`;
+};
 
 type NavItem = {
   href: string;
@@ -1572,6 +1661,18 @@ const buildExampleResponse = (
       usage: { used: 2, quota: 10, remaining: 8 },
     };
   }
+  if (endpoint.path === '/image-extractions') {
+    return {
+      id: 'imgx_01hxyz',
+      status: 'queued',
+      target: 'object',
+      preserveFilenames: true,
+      counts: { inputs: 1, processed: 0, items: 1 },
+      warnings: [],
+      downloadUrl: null,
+      usage: { used: 1, quota: 10, remaining: 9 },
+    };
+  }
   return { success: true };
 };
 
@@ -1640,6 +1741,13 @@ export default function ApiDocsPage() {
     retry: false,
   });
 
+  const imageExtractionUsageQuery = useQuery({
+    queryKey: ['image-extraction-usage', user?.id],
+    queryFn: () => apiClient.getImageExtractionUsage(getAccessToken),
+    enabled: Boolean(user),
+    retry: false,
+  });
+
   const keys = apiKeysQuery.data?.keys ?? [];
   const activeKey = keys.find((key) => key.status === 'active');
   const liveApiKey = testApiKey.trim();
@@ -1648,6 +1756,8 @@ export default function ApiDocsPage() {
   const dailyUsage = usageQuery.data ?? defaultDailyUsage;
   const translationUsage =
     translationUsageQuery.data ?? defaultTranslationUsage;
+  const imageExtractionUsage =
+    imageExtractionUsageQuery.data ?? defaultImageExtractionUsage;
   const dailyPercent =
     dailyUsage.quota > 0
       ? Math.min((dailyUsage.used / dailyUsage.quota) * 100, 100)
@@ -1655,6 +1765,13 @@ export default function ApiDocsPage() {
   const translationPercent =
     translationUsage.quota > 0
       ? Math.min((translationUsage.used / translationUsage.quota) * 100, 100)
+      : 0;
+  const imageExtractionPercent =
+    imageExtractionUsage.quota > 0
+      ? Math.min(
+          (imageExtractionUsage.used / imageExtractionUsage.quota) * 100,
+          100
+        )
       : 0;
   const dailyUsageValue = !user
     ? 'Sign in'
@@ -1670,15 +1787,27 @@ export default function ApiDocsPage() {
       : translationUsageQuery.isError
         ? 'Refresh'
         : `${translationUsage.remaining} left`;
+  const imageExtractionUsageValue = !user
+    ? 'Sign in'
+    : imageExtractionUsageQuery.isLoading
+      ? 'Checking'
+      : imageExtractionUsageQuery.isError
+        ? 'Refresh'
+        : `${imageExtractionUsage.remaining} left`;
   const hasUsageError = Boolean(
-    user && (usageQuery.isError || translationUsageQuery.isError)
+    user &&
+      (usageQuery.isError ||
+        translationUsageQuery.isError ||
+        imageExtractionUsageQuery.isError)
   );
   const usageErrorMessage =
     usageQuery.error instanceof Error
       ? usageQuery.error.message
       : translationUsageQuery.error instanceof Error
         ? translationUsageQuery.error.message
-        : 'Token check failed';
+        : imageExtractionUsageQuery.error instanceof Error
+          ? imageExtractionUsageQuery.error.message
+          : 'Token check failed';
   const orgDirectory = orgsQuery.data?.orgs?.length
     ? orgsQuery.data.orgs
     : fallbackOrgs;
@@ -1752,6 +1881,10 @@ export default function ApiDocsPage() {
         },
       }),
     [selectedApiBase, shownApiKey]
+  );
+  const docsMarkdown = useMemo(
+    () => buildDocsMarkdown(selectedApiBase),
+    [selectedApiBase]
   );
 
   const createApiKeyMutation = useMutation({
@@ -1836,6 +1969,9 @@ export default function ApiDocsPage() {
         [result.endpointPath]: result,
       }));
       void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['image-extraction-usage', user?.id],
+      });
       void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });
@@ -1887,11 +2023,41 @@ export default function ApiDocsPage() {
     void queryClient.invalidateQueries({
       queryKey: ['translation-usage', user?.id],
     });
+    void queryClient.invalidateQueries({
+      queryKey: ['image-extraction-usage', user?.id],
+    });
     void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
   };
 
   const copyText = async (id: string, value: string) => {
-    await navigator.clipboard.writeText(value);
+    let didCopy = false;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        didCopy = true;
+      }
+    } catch {
+      didCopy = false;
+    }
+
+    if (!didCopy) {
+      const textArea = document.createElement('textarea');
+      textArea.value = value;
+      textArea.setAttribute('readonly', '');
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      textArea.style.top = '0';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      textArea.setSelectionRange(0, value.length);
+      didCopy = document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+
+    if (!didCopy) return;
+
     setCopiedValue(id);
     window.setTimeout(() => setCopiedValue(null), 1500);
   };
@@ -1944,6 +2110,11 @@ export default function ApiDocsPage() {
               value={translationUsageValue}
               percent={translationPercent}
             />
+            <UsageChip
+              label="EXTRACT"
+              value={imageExtractionUsageValue}
+              percent={imageExtractionPercent}
+            />
           </div>
           <label className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 max-[520px]:px-2">
             <span
@@ -1985,6 +2156,22 @@ export default function ApiDocsPage() {
             <option value="stg">stg</option>
             <option value="prod">prod</option>
           </select>
+          <button
+            type="button"
+            onClick={() => void copyText('docs-markdown', docsMarkdown)}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 text-xs text-[var(--app-muted-strong)] transition hover:border-[var(--app-line-strong)] hover:text-[var(--app-text)] max-[620px]:px-2"
+            aria-label="Copy API docs as Markdown"
+            title="Copy API docs as Markdown"
+          >
+            {copiedValue === 'docs-markdown' ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+            <span className="max-[1080px]:hidden">
+              {copiedValue === 'docs-markdown' ? 'Copied' : 'Copy MD'}
+            </span>
+          </button>
           <button
             type="button"
             onClick={toggleTheme}
@@ -2034,6 +2221,8 @@ export default function ApiDocsPage() {
             dailyPercent={dailyPercent}
             dailyUsageValue={dailyUsageValue}
             hasUsageError={hasUsageError}
+            imageExtractionPercent={imageExtractionPercent}
+            imageExtractionUsageValue={imageExtractionUsageValue}
             isLoading={isLoading}
             keyName={keyName}
             keys={keys}
@@ -2297,6 +2486,8 @@ function AccountSections({
   dailyPercent,
   dailyUsageValue,
   hasUsageError,
+  imageExtractionPercent,
+  imageExtractionUsageValue,
   isLoading,
   keyName,
   keys,
@@ -2329,6 +2520,8 @@ function AccountSections({
   dailyPercent: number;
   dailyUsageValue: string;
   hasUsageError: boolean;
+  imageExtractionPercent: number;
+  imageExtractionUsageValue: string;
   isLoading: boolean;
   keyName: string;
   keys: Array<{ id: string; key_prefix: string; name: string; status: string }>;
@@ -2513,7 +2706,7 @@ function AccountSections({
         className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
       >
         <SectionHeading title="Usage & billing" />
-        <div className="grid gap-5 border-y border-[var(--app-line)] py-4 md:grid-cols-2">
+        <div className="grid gap-5 border-y border-[var(--app-line)] py-4 md:grid-cols-3">
           <UsageMeter
             label="Search API today"
             percent={dailyPercent}
@@ -2523,6 +2716,11 @@ function AccountSections({
             label="Free translations"
             percent={translationPercent}
             value={translationUsageValue}
+          />
+          <UsageMeter
+            label="Free image extraction"
+            percent={imageExtractionPercent}
+            value={imageExtractionUsageValue}
           />
         </div>
         {hasUsageError && (

@@ -280,7 +280,7 @@ const tools = [
     title: 'Extract images',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [IMAGE_EXTRACTIONS_CREATE_SCOPE]],
     description:
-      'Create an image extraction job from image URLs. Defaults to target=object so mounted artwork objects, scrolls, and visible supports are preserved.',
+      'Create an image extraction job from image URLs. Defaults to target=object so mounted artwork objects, scrolls, and visible supports are preserved. Counts against the authenticated user lifetime image extraction allowance.',
     inputSchema: {
       type: 'object',
       properties: {

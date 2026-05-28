@@ -181,6 +181,12 @@ export interface TranslationUsageSummary {
   remaining: number;
 }
 
+export interface ImageExtractionUsageSummary {
+  used: number;
+  quota: number;
+  remaining: number;
+}
+
 export interface TranslateCostEstimate {
   estimatedCost: number;
   provider: string;

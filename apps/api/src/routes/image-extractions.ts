@@ -30,8 +30,15 @@ type NormalizedExtractionInput = {
   sizeBytes: number | null;
 };
 
+type ImageExtractionUsage = {
+  used: number;
+  quota: number;
+  remaining: number;
+};
+
 const TARGETS = ['object', 'content'] as const;
 const DEFAULT_TARGET: ExtractionTarget = 'object';
+const DEFAULT_FREE_IMAGE_EXTRACTION_LIMIT = 10;
 const MAX_INPUTS = 50;
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 const IMAGE_EXTRACTION_PREFIX = 'image-extractions';
@@ -132,6 +139,115 @@ const getPrincipalRef = (auth: AuthPrincipal) => ({
   principalType: auth.kind === 'api_key' ? 'api_key' : 'user',
   principalId: auth.apiKeyId || auth.userId,
 });
+
+const getImageExtractionQuota = (env: Env) => {
+  const parsed = Number(
+    env.IMAGE_EXTRACTION_FREE_LIFETIME_LIMIT ||
+      DEFAULT_FREE_IMAGE_EXTRACTION_LIMIT
+  );
+
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.floor(parsed)
+    : DEFAULT_FREE_IMAGE_EXTRACTION_LIMIT;
+};
+
+const normalizeUsage = (
+  used: number,
+  quota: number
+): ImageExtractionUsage => ({
+  used,
+  quota,
+  remaining: Math.max(quota - used, 0),
+});
+
+const ensureImageExtractionUsage = async (env: Env, userId: string) => {
+  const quota = getImageExtractionQuota(env);
+
+  await env.DB.prepare(
+    `
+    INSERT INTO image_extraction_usage_lifetime (user_id, used, quota)
+    VALUES (?, 0, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      quota = excluded.quota,
+      updated_at = datetime('now')
+    `
+  )
+    .bind(userId, quota)
+    .run();
+};
+
+const getImageExtractionUsage = async (
+  env: Env,
+  userId: string
+): Promise<ImageExtractionUsage> => {
+  await ensureImageExtractionUsage(env, userId);
+
+  const row = await env.DB.prepare(
+    `
+    SELECT used, quota
+    FROM image_extraction_usage_lifetime
+    WHERE user_id = ?
+    `
+  )
+    .bind(userId)
+    .first<{ used: number; quota: number }>();
+
+  return normalizeUsage(
+    row?.used ?? 0,
+    row?.quota ?? getImageExtractionQuota(env)
+  );
+};
+
+const reserveImageExtractionUse = async (
+  env: Env,
+  userId: string,
+  cost: number
+): Promise<ImageExtractionUsage | null> => {
+  await ensureImageExtractionUsage(env, userId);
+
+  const update = await env.DB.prepare(
+    `
+    UPDATE image_extraction_usage_lifetime
+    SET used = used + ?,
+        updated_at = datetime('now')
+    WHERE user_id = ?
+      AND used + ? <= quota
+    `
+  )
+    .bind(cost, userId, cost)
+    .run();
+
+  if (!update.meta.changes) {
+    return null;
+  }
+
+  return getImageExtractionUsage(env, userId);
+};
+
+const rollbackImageExtractionUse = async (
+  env: Env,
+  userId: string,
+  cost: number
+) => {
+  await env.DB.prepare(
+    `
+    UPDATE image_extraction_usage_lifetime
+    SET used = CASE WHEN used >= ? THEN used - ? ELSE 0 END,
+        updated_at = datetime('now')
+    WHERE user_id = ?
+    `
+  )
+    .bind(cost, cost, userId)
+    .run();
+};
+
+const setImageExtractionQuotaHeaders = (
+  c: Context<AppBindings>,
+  usage: ImageExtractionUsage
+) => {
+  c.header('X-Image-Extraction-Limit', String(usage.quota));
+  c.header('X-Image-Extraction-Remaining', String(usage.remaining));
+};
 
 const canAccessJob = (
   auth: AuthPrincipal,
@@ -566,6 +682,17 @@ const readMultipartRequest = async (c: Context<AppBindings>) => {
 
 imageExtractions.use('*', requireAuthOrApiKey as any);
 
+imageExtractions.get('/usage', async (c) => {
+  const auth = getAuth(c as any);
+  const usage = await getImageExtractionUsage(c.env, auth.userId);
+  setImageExtractionQuotaHeaders(c as any, usage);
+
+  return c.json({
+    success: true,
+    data: usage,
+  });
+});
+
 imageExtractions.post('/', async (c) => {
   const auth = getAuth(c as any);
   const contentType = c.req.header('content-type') ?? '';
@@ -623,8 +750,36 @@ imageExtractions.post('/', async (c) => {
     return c.json(inputs.body, inputs.status);
   }
 
+  const usageCost = inputs.length;
+  const usage = await reserveImageExtractionUse(
+    c.env,
+    auth.userId,
+    usageCost
+  );
+
+  if (!usage) {
+    const currentUsage = await getImageExtractionUsage(c.env, auth.userId);
+    setImageExtractionQuotaHeaders(c as any, currentUsage);
+
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'IMAGE_EXTRACTION_QUOTA_EXCEEDED',
+          message: `Free lifetime image extraction limit reached (${currentUsage.quota} inputs total).`,
+          details: currentUsage,
+        },
+      },
+      429
+    );
+  }
+
+  setImageExtractionQuotaHeaders(c as any, usage);
+
   const warnings: string[] = [];
   let status: 'pending' | 'queued' | 'failed' = 'pending';
+  let jobRecorded = false;
+  let failureMessage: string | null = null;
 
   if (!c.env.IMAGE_EXTRACTION_WORKER_URL?.trim()) {
     warnings.push(
@@ -632,23 +787,24 @@ imageExtractions.post('/', async (c) => {
     );
   }
 
-  await insertJob({
-    env: c.env,
-    jobId,
-    auth,
-    target,
-    preserveFilenames,
-    filenamePrefix,
-    filenameSuffix,
-    preview,
-    inputCount: inputs.length,
-    status,
-    outputZipKey,
-    warnings,
-  });
-  await insertItems(c.env, jobId, inputs);
-
   try {
+    await insertJob({
+      env: c.env,
+      jobId,
+      auth,
+      target,
+      preserveFilenames,
+      filenamePrefix,
+      filenameSuffix,
+      preview,
+      inputCount: inputs.length,
+      status,
+      outputZipKey,
+      warnings,
+    });
+    jobRecorded = true;
+    await insertItems(c.env, jobId, inputs);
+
     const dispatchResult = await dispatchToWorker({
       env: c.env,
       jobId,
@@ -667,14 +823,38 @@ imageExtractions.post('/', async (c) => {
     }
   } catch (error) {
     status = 'failed';
-    await updateJobStatus(
-      c.env,
-      jobId,
-      status,
+    failureMessage =
       error instanceof Error
         ? error.message
-        : 'Image extraction dispatch failed'
-    );
+        : 'Image extraction dispatch failed';
+
+    if (jobRecorded) {
+      await updateJobStatus(c.env, jobId, status, failureMessage).catch(
+        () => undefined
+      );
+    }
+  }
+
+  let currentUsage = usage;
+
+  if (status === 'failed') {
+    await rollbackImageExtractionUse(c.env, auth.userId, usageCost);
+    currentUsage = await getImageExtractionUsage(c.env, auth.userId);
+    setImageExtractionQuotaHeaders(c as any, currentUsage);
+
+    if (!jobRecorded) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'IMAGE_EXTRACTION_CREATE_FAILED',
+            message: failureMessage ?? 'Image extraction job could not be created.',
+            details: { usage: currentUsage },
+          },
+        },
+        500
+      );
+    }
   }
 
   const data = await serializeJob(c.env, jobId);
@@ -682,7 +862,7 @@ imageExtractions.post('/', async (c) => {
   return c.json(
     {
       success: true,
-      data,
+      data: data ? { ...data, usage: currentUsage } : data,
     },
     status === 'failed' ? 502 : 202
   );
