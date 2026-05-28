@@ -1,7 +1,7 @@
 import type { MetaFunction } from '@remix-run/cloudflare';
 import { motion } from 'framer-motion';
 import { Link } from '@remix-run/react';
-import { PAINTINGS, PAINTING_LIST } from '~/lib/paintings';
+import { PAINTINGS } from '~/lib/paintings';
 
 export const meta: MetaFunction = () => [{ title: 'Paillette · MUBI-coded' }];
 
@@ -23,15 +23,30 @@ const S = {
 const HERO = PAINTINGS.starry;
 
 // Featured "this week" carousel selections
-const FEATURED = [PAINTINGS.pearl, PAINTINGS.wave, PAINTINGS.kiss, PAINTINGS.mona, PAINTINGS.scream];
+const FEATURED = [
+  PAINTINGS.pearl,
+  PAINTINGS.wave,
+  PAINTINGS.kiss,
+  PAINTINGS.mona,
+  PAINTINGS.scream,
+];
 
 export default function Mubi() {
   return (
-    <div style={{ background: S.bg, color: S.text, fontFamily: S.body }} className="min-h-screen">
+    <div
+      style={{ background: S.bg, color: S.text, fontFamily: S.body }}
+      className="min-h-screen"
+    >
       {/* Header */}
-      <header style={{ borderBottom: `1px solid ${S.rule}` }} className="relative z-30">
+      <header
+        style={{ borderBottom: `1px solid ${S.rule}` }}
+        className="relative z-30"
+      >
         <div className="container mx-auto px-6 py-5 flex items-center justify-between">
-          <div style={{ fontFamily: S.display }} className="text-2xl font-bold tracking-tight">
+          <div
+            style={{ fontFamily: S.display }}
+            className="text-2xl font-bold tracking-tight"
+          >
             <span>P</span>
             <span
               style={{
@@ -45,10 +60,19 @@ export default function Mubi() {
             </span>
             <span>llette</span>
           </div>
-          <nav style={{ fontFamily: S.mono, color: S.textMuted }} className="flex items-center gap-6 text-[11px] uppercase tracking-[0.2em]">
-            <Link to="/collections" className="hover:text-white">Collection</Link>
-            <Link to="/translate" className="hover:text-white">Library</Link>
-            <Link to="/design" className="hover:text-white">Notebook</Link>
+          <nav
+            style={{ fontFamily: S.mono, color: S.textMuted }}
+            className="flex items-center gap-6 text-[11px] uppercase tracking-[0.2em]"
+          >
+            <Link to="/collections" className="hover:text-white">
+              Collection
+            </Link>
+            <Link to="/translate" className="hover:text-white">
+              Library
+            </Link>
+            <Link to="/design" className="hover:text-white">
+              Notebook
+            </Link>
           </nav>
         </div>
       </header>
@@ -80,13 +104,22 @@ export default function Mubi() {
             {/* Film-credit caption bottom-left */}
             <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between gap-4">
               <div>
-                <p style={{ fontFamily: S.mono, color: S.textMuted }} className="text-[10px] uppercase tracking-[0.3em] mb-2">
+                <p
+                  style={{ fontFamily: S.mono, color: S.textMuted }}
+                  className="text-[10px] uppercase tracking-[0.3em] mb-2"
+                >
                   Now showing · this week
                 </p>
-                <p style={{ fontFamily: S.display }} className="text-3xl lg:text-4xl italic font-medium leading-tight">
+                <p
+                  style={{ fontFamily: S.display }}
+                  className="text-3xl lg:text-4xl italic font-medium leading-tight"
+                >
                   {HERO.title}
                 </p>
-                <p style={{ fontFamily: S.mono, color: S.textMuted }} className="text-[11px] uppercase tracking-[0.18em] mt-2">
+                <p
+                  style={{ fontFamily: S.mono, color: S.textMuted }}
+                  className="text-[11px] uppercase tracking-[0.18em] mt-2"
+                >
                   {HERO.artist} · {HERO.year} · {HERO.size}
                 </p>
               </div>
@@ -100,11 +133,17 @@ export default function Mubi() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="flex flex-col justify-center px-8 lg:px-12 py-16"
           >
-            <p style={{ fontFamily: S.mono, color: S.textMuted }} className="text-[11px] uppercase tracking-[0.3em] mb-6">
+            <p
+              style={{ fontFamily: S.mono, color: S.textMuted }}
+              className="text-[11px] uppercase tracking-[0.3em] mb-6"
+            >
               ── est. 2026
             </p>
 
-            <h1 style={{ fontFamily: S.display }} className="font-bold tracking-tight leading-[0.95] text-6xl lg:text-7xl">
+            <h1
+              style={{ fontFamily: S.display }}
+              className="font-bold tracking-tight leading-[0.95] text-6xl lg:text-7xl"
+            >
               <span>P</span>
               <span
                 style={{
@@ -119,7 +158,10 @@ export default function Mubi() {
               <span>llette</span>
             </h1>
 
-            <p style={{ color: S.textMuted }} className="mt-6 text-lg leading-relaxed max-w-md">
+            <p
+              style={{ color: S.textMuted }}
+              className="mt-6 text-lg leading-relaxed max-w-md"
+            >
               A curated index for collections. Search by text, image, or color.
               Read by curators, registered by registrars, looked at by anyone.
             </p>
@@ -142,15 +184,29 @@ export default function Mubi() {
             </div>
 
             {/* Coming up — like MUBI's calendar */}
-            <div style={{ borderTop: `1px solid ${S.rule}`, fontFamily: S.mono }} className="mt-12 pt-6">
-              <p style={{ color: S.textMuted }} className="text-[10px] uppercase tracking-[0.3em] mb-4">
+            <div
+              style={{ borderTop: `1px solid ${S.rule}`, fontFamily: S.mono }}
+              className="mt-12 pt-6"
+            >
+              <p
+                style={{ color: S.textMuted }}
+                className="text-[10px] uppercase tracking-[0.3em] mb-4"
+              >
                 In the wings
               </p>
               <ul className="space-y-2 text-sm">
                 {FEATURED.slice(0, 3).map((p) => (
-                  <li key={p.id} className="flex items-center justify-between gap-4">
-                    <span style={{ fontFamily: S.display }} className="italic">{p.title}</span>
-                    <span style={{ color: S.textFaint }} className="text-[10px] uppercase tracking-wider">
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between gap-4"
+                  >
+                    <span style={{ fontFamily: S.display }} className="italic">
+                      {p.title}
+                    </span>
+                    <span
+                      style={{ color: S.textFaint }}
+                      className="text-[10px] uppercase tracking-wider"
+                    >
                       {p.artist}
                     </span>
                   </li>
@@ -165,41 +221,101 @@ export default function Mubi() {
       <section id="features" style={{ borderTop: `1px solid ${S.rule}` }}>
         <div className="container mx-auto px-6 py-20 lg:py-28 max-w-6xl">
           <div className="mb-14 flex items-baseline justify-between gap-6 flex-wrap">
-            <h2 style={{ fontFamily: S.display }} className="text-4xl lg:text-5xl font-bold leading-none">
+            <h2
+              style={{ fontFamily: S.display }}
+              className="text-4xl lg:text-5xl font-bold leading-none"
+            >
               The room behind the wall
             </h2>
-            <span style={{ fontFamily: S.mono, color: S.textFaint }} className="text-[11px] uppercase tracking-[0.3em]">
+            <span
+              style={{ fontFamily: S.mono, color: S.textFaint }}
+              className="text-[11px] uppercase tracking-[0.3em]"
+            >
               06 capabilities
             </span>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px" style={{ background: S.rule }}>
+          <div
+            className="grid md:grid-cols-2 lg:grid-cols-3 gap-px"
+            style={{ background: S.rule }}
+          >
             {[
-              ['01', 'Multimodal search', 'Find by text, image, or color. CLIP embeddings, no fine-tuning.'],
-              ['02', 'Metadata at scale', 'Bulk CSV ingest, edit in place, sync to your CMS.'],
-              ['03', 'Embedding atlas', '2D / 3D field. Cluster, browse, surface the unlooked-at.'],
-              ['04', 'Frame removal', 'Strip frames from archival photographs. Reversible.'],
-              ['05', 'Four languages', 'EN · 中文 · தமிழ் · BM — wall labels in your visitors\' tongues.'],
-              ['06', 'REST + API key', 'Plug Paillette into your studio, OPAC, or kiosk.'],
+              [
+                '01',
+                'Multimodal search',
+                'Find by text, image, or color. CLIP embeddings, no fine-tuning.',
+              ],
+              [
+                '02',
+                'Metadata at scale',
+                'Bulk CSV ingest, edit in place, sync to your CMS.',
+              ],
+              [
+                '03',
+                'Embedding atlas',
+                '2D / 3D field. Cluster, browse, surface the unlooked-at.',
+              ],
+              [
+                '04',
+                'Frame removal',
+                'Strip frames from archival photographs. Reversible.',
+              ],
+              [
+                '05',
+                'Four languages',
+                "EN · 中文 · தமிழ் · BM — wall labels in your visitors' tongues.",
+              ],
+              [
+                '06',
+                'REST + API key',
+                'Plug Paillette into your studio, OPAC, or kiosk.',
+              ],
             ].map(([num, title, body]) => (
-              <div key={num} style={{ background: S.bg }} className="p-8 lg:p-10">
-                <p style={{ fontFamily: S.mono, color: S.textFaint }} className="text-[11px] uppercase tracking-[0.2em] mb-4">
+              <div
+                key={num}
+                style={{ background: S.bg }}
+                className="p-8 lg:p-10"
+              >
+                <p
+                  style={{ fontFamily: S.mono, color: S.textFaint }}
+                  className="text-[11px] uppercase tracking-[0.2em] mb-4"
+                >
                   {num}
                 </p>
-                <h3 style={{ fontFamily: S.display }} className="text-2xl font-bold mb-3 leading-tight">{title}</h3>
-                <p style={{ color: S.textMuted }} className="text-sm leading-relaxed">{body}</p>
+                <h3
+                  style={{ fontFamily: S.display }}
+                  className="text-2xl font-bold mb-3 leading-tight"
+                >
+                  {title}
+                </h3>
+                <p
+                  style={{ color: S.textMuted }}
+                  className="text-sm leading-relaxed"
+                >
+                  {body}
+                </p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <footer style={{ borderTop: `1px solid ${S.rule}`, fontFamily: S.mono }} className="py-8">
+      <footer
+        style={{ borderTop: `1px solid ${S.rule}`, fontFamily: S.mono }}
+        className="py-8"
+      >
         <div className="container mx-auto px-6 flex items-center justify-between">
-          <p style={{ color: S.textFaint }} className="text-[11px] uppercase tracking-[0.2em]">
+          <p
+            style={{ color: S.textFaint }}
+            className="text-[11px] uppercase tracking-[0.2em]"
+          >
             © {new Date().getFullYear()} paillette — making collections shine
           </p>
-          <Link to="/design" style={{ color: S.textMuted }} className="text-[11px] uppercase tracking-[0.2em] hover:text-white">
+          <Link
+            to="/design"
+            style={{ color: S.textMuted }}
+            className="text-[11px] uppercase tracking-[0.2em] hover:text-white"
+          >
             ↩ design index
           </Link>
         </div>

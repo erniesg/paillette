@@ -2,7 +2,14 @@ import type { MetaFunction } from '@remix-run/cloudflare';
 import { Link } from '@remix-run/react';
 import { motion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
-import { Frame, Layers, LayoutGrid, Network, Search, Table2 } from 'lucide-react';
+import {
+  Frame,
+  Layers,
+  LayoutGrid,
+  Network,
+  Search,
+  Table2,
+} from 'lucide-react';
 import { PAINTING_LIST, type Painting } from '~/lib/paintings';
 
 export const meta: MetaFunction = () => [
@@ -41,8 +48,16 @@ const CLUSTER_LABELS = [
 
 // Text example queries.
 const CHIPS: { label: string; dot: string; ids: string[] }[] = [
-  { label: 'melancholic blue', dot: '#1e3a5f', ids: ['pearl', 'starry', 'wave'] },
-  { label: 'sunset glow', dot: '#c87850', ids: ['sunrise', 'starry', 'scream'] },
+  {
+    label: 'melancholic blue',
+    dot: '#1e3a5f',
+    ids: ['pearl', 'starry', 'wave'],
+  },
+  {
+    label: 'sunset glow',
+    dot: '#c87850',
+    ids: ['sunrise', 'starry', 'scream'],
+  },
   { label: 'portraits', dot: '#6a4030', ids: ['pearl', 'mona', 'olympia'] },
   { label: 'sea & wave', dot: '#2a6a8a', ids: ['wave', 'sunrise'] },
   { label: 'gold & ornament', dot: '#c89f3a', ids: ['kiss', 'sunflowers'] },
@@ -77,16 +92,46 @@ const COLOURS: { id: string; hex: string; name: string }[] = [
 // characteristic colour the work groups under (a COLOURS id). Hand-extracted
 // for the prototype — production runs a colour-quantisation pass per work.
 const ARTWORK_COLOUR: Record<string, { palette: string[]; primary: string }> = {
-  pearl: { palette: ['#161812', '#3a5a7a', '#b8923e', '#dcc4a0'], primary: 'cobalt' },
-  starry: { palette: ['#0e1a3a', '#2e5a9a', '#e0c054', '#1a2a1a'], primary: 'navy' },
-  wave: { palette: ['#1a3a52', '#5a8aa8', '#e8e0c8', '#d0c8b0'], primary: 'steel' },
-  kiss: { palette: ['#c89a2e', '#e8c860', '#6a7a3a', '#2a2418'], primary: 'gold' },
-  sunrise: { palette: ['#6a7a88', '#8a9aa5', '#d4843a', '#46566a'], primary: 'steel' },
-  mona: { palette: ['#3a2e1c', '#6a5638', '#8a7a52', '#c0a075'], primary: 'umber' },
-  scream: { palette: ['#c85a2e', '#e09a3a', '#2a3a5a', '#7a4a3a'], primary: 'rust' },
-  venus: { palette: ['#8a9a7a', '#cdc8b0', '#d8c0a0', '#b89858'], primary: 'sage' },
-  sunflowers: { palette: ['#e0b32e', '#c8902a', '#b8a858', '#5a4a2a'], primary: 'gold' },
-  olympia: { palette: ['#c8b89c', '#2a2420', '#d8c4a8', '#7a5a4a'], primary: 'bone' },
+  pearl: {
+    palette: ['#161812', '#3a5a7a', '#b8923e', '#dcc4a0'],
+    primary: 'cobalt',
+  },
+  starry: {
+    palette: ['#0e1a3a', '#2e5a9a', '#e0c054', '#1a2a1a'],
+    primary: 'navy',
+  },
+  wave: {
+    palette: ['#1a3a52', '#5a8aa8', '#e8e0c8', '#d0c8b0'],
+    primary: 'steel',
+  },
+  kiss: {
+    palette: ['#c89a2e', '#e8c860', '#6a7a3a', '#2a2418'],
+    primary: 'gold',
+  },
+  sunrise: {
+    palette: ['#6a7a88', '#8a9aa5', '#d4843a', '#46566a'],
+    primary: 'steel',
+  },
+  mona: {
+    palette: ['#3a2e1c', '#6a5638', '#8a7a52', '#c0a075'],
+    primary: 'umber',
+  },
+  scream: {
+    palette: ['#c85a2e', '#e09a3a', '#2a3a5a', '#7a4a3a'],
+    primary: 'rust',
+  },
+  venus: {
+    palette: ['#8a9a7a', '#cdc8b0', '#d8c0a0', '#b89858'],
+    primary: 'sage',
+  },
+  sunflowers: {
+    palette: ['#e0b32e', '#c8902a', '#b8a858', '#5a4a2a'],
+    primary: 'gold',
+  },
+  olympia: {
+    palette: ['#c8b89c', '#2a2420', '#d8c4a8', '#7a5a4a'],
+    primary: 'bone',
+  },
 };
 
 type Lab = [number, number, number];
@@ -105,9 +150,10 @@ function rgbToLab([r, g, b]: [number, number, number]): Lab {
     const s = c / 255;
     return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   });
-  let x = (lin[0] * 0.4124 + lin[1] * 0.3576 + lin[2] * 0.1805) / 0.95047;
-  let y = lin[0] * 0.2126 + lin[1] * 0.7152 + lin[2] * 0.0722;
-  let z = (lin[0] * 0.0193 + lin[1] * 0.1192 + lin[2] * 0.9505) / 1.08883;
+  const [lr = 0, lg = 0, lb = 0] = lin;
+  let x = (lr * 0.4124 + lg * 0.3576 + lb * 0.1805) / 0.95047;
+  let y = lr * 0.2126 + lg * 0.7152 + lb * 0.0722;
+  let z = (lr * 0.0193 + lg * 0.1192 + lb * 0.9505) / 1.08883;
   const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
   [x, y, z] = [f(x), f(y), f(z)];
   return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
@@ -117,7 +163,9 @@ const labOf = (hex: string): Lab => rgbToLab(hexToRgb(hex));
 
 // ΔE76 — Euclidean distance in Lab. Production: upgrade to CIEDE2000.
 function deltaE(a: Lab, b: Lab): number {
-  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+  return Math.sqrt(
+    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
+  );
 }
 
 const COLOUR_LAB: Record<string, Lab> = Object.fromEntries(
@@ -133,16 +181,19 @@ const COLOUR_FREQ: Record<string, number> = (() => {
   for (const c of COLOURS) freq[c.id] = 0;
   for (const cols of Object.values(PALETTE_LAB)) {
     for (const lab of cols) {
-      let best = COLOURS[0].id;
+      let best = COLOURS[0]?.id ?? 'navy';
       let bestD = Infinity;
       for (const c of COLOURS) {
-        const d = deltaE(lab, COLOUR_LAB[c.id]);
+        const taxonomyLab = COLOUR_LAB[c.id];
+        if (!taxonomyLab) continue;
+
+        const d = deltaE(lab, taxonomyLab);
         if (d < bestD) {
           bestD = d;
           best = c.id;
         }
       }
-      freq[best]++;
+      freq[best] = (freq[best] ?? 0) + 1;
     }
   }
   return freq;
@@ -156,6 +207,8 @@ function colourScore(paintingId: string, selected: string[]): number {
   let total = 0;
   for (const id of selected) {
     const q = COLOUR_LAB[id];
+    if (!q) continue;
+
     let nearest = Infinity;
     for (const c of pal) {
       const d = deltaE(q, c);
@@ -176,7 +229,9 @@ function readableInk(hex: string): string {
 /* ---------- layout helpers ---------- */
 
 function ratioToHW(ratio: string): number {
-  const [w, h] = ratio.split('/').map((s) => parseFloat(s.trim()));
+  const [wText = '1', hText = '1'] = ratio.split('/');
+  const w = parseFloat(wText.trim()) || 1;
+  const h = parseFloat(hText.trim()) || 1;
   return h / w;
 }
 
@@ -193,10 +248,12 @@ function distribute(items: Result[], colCount: number): Result[][] {
   for (const item of items) {
     let shortest = 0;
     for (let i = 1; i < colCount; i++) {
-      if (heights[i] < heights[shortest]) shortest = i;
+      if ((heights[i] ?? Infinity) < (heights[shortest] ?? Infinity)) {
+        shortest = i;
+      }
     }
-    cols[shortest].push(item);
-    heights[shortest] += ratioToHW(item.ratio);
+    cols[shortest]?.push(item);
+    heights[shortest] = (heights[shortest] ?? 0) + ratioToHW(item.ratio);
   }
   return cols;
 }
@@ -240,7 +297,8 @@ export default function HomeTwo() {
     if (selectedColours.length) {
       set = [...set].sort(
         (a, b) =>
-          colourScore(a.id, selectedColours) - colourScore(b.id, selectedColours)
+          colourScore(a.id, selectedColours) -
+          colourScore(b.id, selectedColours)
       );
     }
     return set;
@@ -262,9 +320,14 @@ export default function HomeTwo() {
       <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#0b0b0e]/85 backdrop-blur-md">
         <div className="container mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-baseline gap-3">
-            <Link to="/" className="font-display font-bold text-xl tracking-tight">
+            <Link
+              to="/"
+              className="font-display font-bold text-xl tracking-tight"
+            >
               <span className="text-white">P</span>
-              <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+              <span className="bg-gradient-accent bg-clip-text text-transparent">
+                ai
+              </span>
               <span className="text-white">llette</span>
             </Link>
             <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/30">
@@ -272,9 +335,21 @@ export default function HomeTwo() {
             </span>
           </div>
           <nav className="flex items-center gap-5 text-[11px] font-mono uppercase tracking-[0.2em] text-white/55">
-            <Link to="/collections" className="hover:text-white transition-colors hidden sm:inline">Collections</Link>
-            <Link to="/translate" className="hover:text-white transition-colors hidden sm:inline">Translate</Link>
-            <Link to="/design" className="hover:text-white transition-colors">Design</Link>
+            <Link
+              to="/collections"
+              className="hover:text-white transition-colors hidden sm:inline"
+            >
+              Collections
+            </Link>
+            <Link
+              to="/translate"
+              className="hover:text-white transition-colors hidden sm:inline"
+            >
+              Translate
+            </Link>
+            <Link to="/design" className="hover:text-white transition-colors">
+              Design
+            </Link>
             <Link
               to="/auth/signin"
               className="px-3 py-1.5 rounded-md bg-white/[0.06] border border-white/10 hover:bg-white/10 text-white/80 transition-colors"
@@ -329,7 +404,10 @@ export default function HomeTwo() {
                       : 'bg-white/[0.04] border-white/10 text-white/70 hover:bg-white/[0.08] hover:text-white'
                   }`}
                 >
-                  <span className="w-2 h-2 rounded-full" style={{ background: chip.dot }} />
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: chip.dot }}
+                  />
                   {chip.label}
                 </button>
               );
@@ -355,9 +433,12 @@ export default function HomeTwo() {
 
             {/* Colour facet */}
             <div className="flex items-baseline gap-2 mb-2">
-              <span className="text-[12px] font-medium text-white/75">Colour</span>
+              <span className="text-[12px] font-medium text-white/75">
+                Colour
+              </span>
               <span className="text-[10px] font-mono text-white/35">
-                — pick one or more · segment width = how common in the collection
+                — pick one or more · segment width = how common in the
+                collection
               </span>
             </div>
             <ColourStrip selected={selectedColours} onToggle={toggleColour} />
@@ -370,7 +451,10 @@ export default function HomeTwo() {
                       key={id}
                       className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/15"
                     >
-                      <span className="w-3 h-3 rounded-full" style={{ background: c?.hex }} />
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{ background: c?.hex }}
+                      />
                       {c?.name}
                     </span>
                   );
@@ -495,8 +579,13 @@ export default function HomeTwo() {
 
       <footer className="border-t border-white/[0.07] py-6">
         <div className="container mx-auto px-6 flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.2em] text-white/35">
-          <span>© {new Date().getFullYear()} paillette · prototype · results padded with repeats</span>
-          <Link to="/design" className="hover:text-white transition-colors">↩ design index</Link>
+          <span>
+            © {new Date().getFullYear()} paillette · prototype · results padded
+            with repeats
+          </span>
+          <Link to="/design" className="hover:text-white transition-colors">
+            ↩ design index
+          </Link>
         </div>
       </footer>
     </div>
@@ -521,7 +610,8 @@ function LayoutView({
     return <SalonView results={results} columns={Math.max(2, columns - 1)} />;
   }
   if (view === 'atlas') return <AtlasView results={results} />;
-  if (view === 'table') return <TableView results={results} selected={selected} />;
+  if (view === 'table')
+    return <TableView results={results} selected={selected} />;
   return <MasonryView results={results} columns={columns} />;
 }
 
@@ -588,7 +678,13 @@ function GroupedResults({
   );
 }
 
-function MasonryView({ results, columns }: { results: Result[]; columns: number }) {
+function MasonryView({
+  results,
+  columns,
+}: {
+  results: Result[];
+  columns: number;
+}) {
   const cols = distribute(results, columns);
   return (
     <div className="flex gap-3 lg:gap-4 items-start">
@@ -600,7 +696,10 @@ function MasonryView({ results, columns }: { results: Result[]; columns: number 
               to="/collections"
               className="group relative block overflow-hidden rounded-lg"
             >
-              <div style={{ aspectRatio: item.ratio }} className="bg-white/[0.03]">
+              <div
+                style={{ aspectRatio: item.ratio }}
+                className="bg-white/[0.03]"
+              >
                 <img
                   src={item.src}
                   alt={item.title}
@@ -609,7 +708,9 @@ function MasonryView({ results, columns }: { results: Result[]; columns: number 
                 />
               </div>
               <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-[12px] italic text-white leading-tight">{item.title}</p>
+                <p className="text-[12px] italic text-white leading-tight">
+                  {item.title}
+                </p>
                 <p className="text-[9px] font-mono uppercase tracking-[0.15em] text-white/65 mt-0.5">
                   {item.artist} · {item.year}
                 </p>
@@ -622,12 +723,21 @@ function MasonryView({ results, columns }: { results: Result[]; columns: number 
   );
 }
 
-function SalonView({ results, columns }: { results: Result[]; columns: number }) {
+function SalonView({
+  results,
+  columns,
+}: {
+  results: Result[];
+  columns: number;
+}) {
   const cols = distribute(results, columns);
   return (
     <div className="flex gap-8 lg:gap-14 items-start px-2 lg:px-6">
       {cols.map((col, ci) => (
-        <div key={ci} className="flex-1 flex flex-col gap-10 lg:gap-16 pt-4 min-w-0">
+        <div
+          key={ci}
+          className="flex-1 flex flex-col gap-10 lg:gap-16 pt-4 min-w-0"
+        >
           {col.map((item) => {
             const rot = ((hash(item.key) % 50) - 25) / 10;
             return (
@@ -691,10 +801,13 @@ function AtlasView({ results }: { results: Result[] }) {
         </span>
       ))}
       {results.map((item) => {
-        const c = ATLAS_CENTROID[item.id];
+        const c = ATLAS_CENTROID[item.id] ?? { x: 50, y: 50 };
         const j = hash(item.key);
         const x = Math.min(89, Math.max(2, c.x + ((j % 15) - 7)));
-        const y = Math.min(82, Math.max(3, c.y + ((Math.floor(j / 15) % 15) - 7)));
+        const y = Math.min(
+          82,
+          Math.max(3, c.y + ((Math.floor(j / 15) % 15) - 7))
+        );
         const w = 56 + (j % 56);
         return (
           <Link
@@ -719,7 +832,9 @@ function AtlasView({ results }: { results: Result[] }) {
               />
             </div>
             <div className="absolute top-full mt-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 backdrop-blur-md px-2 py-1 rounded-sm whitespace-nowrap pointer-events-none">
-              <span className="text-[10px] italic text-white">{item.title}</span>
+              <span className="text-[10px] italic text-white">
+                {item.title}
+              </span>
             </div>
           </Link>
         );
@@ -766,7 +881,11 @@ function TableView({
               ? Math.round(colourScore(item.id, selected))
               : 0;
             const scoreColor =
-              score < 25 ? '#7ee0a0' : score < 45 ? '#e0c060' : 'rgba(255,255,255,0.4)';
+              score < 25
+                ? '#7ee0a0'
+                : score < 45
+                  ? '#e0c060'
+                  : 'rgba(255,255,255,0.4)';
             return (
               <tr
                 key={item.key}
@@ -791,7 +910,9 @@ function TableView({
                 <td className="py-2 px-3 font-mono text-white/40">
                   {item.ratio.replace(/\s/g, '')}
                 </td>
-                <td className="py-2 px-3 font-mono text-white/55">{item.size}</td>
+                <td className="py-2 px-3 font-mono text-white/55">
+                  {item.size}
+                </td>
                 {showDelta && (
                   <td
                     className="py-2 px-3 font-mono tabular-nums"
@@ -818,7 +939,7 @@ function ColourStrip({
   selected: string[];
   onToggle: (id: string) => void;
 }) {
-  const maxFreq = Math.max(...COLOURS.map((c) => COLOUR_FREQ[c.id]), 1);
+  const maxFreq = Math.max(...COLOURS.map((c) => COLOUR_FREQ[c.id] ?? 0), 1);
   return (
     <div className="flex h-11 rounded-lg overflow-hidden border border-white/10">
       {COLOURS.map((c) => {
@@ -828,12 +949,12 @@ function ColourStrip({
             key={c.id}
             type="button"
             onClick={() => onToggle(c.id)}
-            title={`${c.name} · ${COLOUR_FREQ[c.id]} colour matches`}
+            title={`${c.name} · ${COLOUR_FREQ[c.id] ?? 0} colour matches`}
             aria-pressed={isSel}
             className="relative transition-[filter] duration-200 hover:brightness-125 focus:outline-none focus:z-10"
             style={{
               background: c.hex,
-              flexGrow: 0.5 + COLOUR_FREQ[c.id] / maxFreq,
+              flexGrow: 0.5 + (COLOUR_FREQ[c.id] ?? 0) / maxFreq,
               flexBasis: 0,
               minWidth: 26,
             }}

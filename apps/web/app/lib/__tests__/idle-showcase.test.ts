@@ -17,13 +17,9 @@ const artwork = (
 
 describe('selectIdleShowcaseArtworks', () => {
   it('does not mix fallback artworks into an active suggestion showcase', () => {
-    const results = selectIdleShowcaseArtworks(
-      [artwork('empty-search-result')],
-      [
-        artwork('fallback-1', { thumbnailUrl: '/fallback-1.webp' }),
-        artwork('fallback-2', { imageUrl: '/fallback-2.jpg' }),
-      ]
-    );
+    const results = selectIdleShowcaseArtworks([
+      artwork('empty-search-result'),
+    ]);
 
     expect(results).toEqual([]);
   });

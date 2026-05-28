@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import { setupApiMocks } from './fixtures/mock-api';
 
 test.describe('Debug Search Page', () => {
@@ -17,7 +17,10 @@ test.describe('Debug Search Page', () => {
     console.log('All buttons:', allButtons);
 
     // Take a screenshot
-    await page.screenshot({ path: '/tmp/search-page-debug.png', fullPage: true });
+    await page.screenshot({
+      path: '/tmp/search-page-debug.png',
+      fullPage: true,
+    });
 
     // Try to find color tab
     const colorButtons = await page.getByText('Color').count();

@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { setupApiMocks } from './fixtures/mock-api';
 
 test.describe('Performance Tests', () => {
   test('homepage should load within acceptable time', async ({ page }) => {
@@ -14,12 +13,22 @@ test.describe('Performance Tests', () => {
 
     // Check Web Vitals
     const performanceMetrics = await page.evaluate(() => {
-      const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+      const navigation = performance.getEntriesByType(
+        'navigation'
+      )[0] as PerformanceNavigationTiming;
       return {
-        domContentLoaded: navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart,
+        domContentLoaded:
+          navigation.domContentLoadedEventEnd -
+          navigation.domContentLoadedEventStart,
         loadComplete: navigation.loadEventEnd - navigation.loadEventStart,
-        firstPaint: performance.getEntriesByType('paint').find(e => e.name === 'first-paint')?.startTime || 0,
-        firstContentfulPaint: performance.getEntriesByType('paint').find(e => e.name === 'first-contentful-paint')?.startTime || 0,
+        firstPaint:
+          performance
+            .getEntriesByType('paint')
+            .find((e) => e.name === 'first-paint')?.startTime || 0,
+        firstContentfulPaint:
+          performance
+            .getEntriesByType('paint')
+            .find((e) => e.name === 'first-contentful-paint')?.startTime || 0,
       };
     });
 
@@ -32,13 +41,17 @@ test.describe('Performance Tests', () => {
     expect(performanceMetrics.firstContentfulPaint).toBeLessThan(1500);
   });
 
-  test.skip('frame removal page should handle large datasets', async ({ page }) => {
+  test.skip('frame removal page should handle large datasets', async ({
+    page,
+  }) => {
     const startTime = Date.now();
 
     await page.goto('/galleries/test-gallery-id/frame-removal');
 
     // Wait for artwork list to load
-    await page.waitForSelector('[data-testid="artwork-list"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="artwork-list"]', {
+      timeout: 10000,
+    });
 
     const loadTime = Date.now() - startTime;
 
@@ -46,7 +59,9 @@ test.describe('Performance Tests', () => {
     expect(loadTime).toBeLessThan(5000);
 
     // Check if virtual scrolling is working (should not render all items)
-    const renderedItems = await page.locator('[data-testid="artwork-item"]').count();
+    const renderedItems = await page
+      .locator('[data-testid="artwork-item"]')
+      .count();
 
     // With virtual scrolling, should render only visible items (typically 10-20)
     // Not the full 100+ items
@@ -76,7 +91,7 @@ test.describe('Performance Tests', () => {
     expect(searchTime).toBeLessThan(1000);
   });
 
-  test.skip('api response times should be acceptable', async ({ page }) => {
+  test.skip('api response times should be acceptable', async () => {
     // Note: Skipped - Remix apps don't have a /api/health route by default.
     // API health checks should be tested at the backend API layer (apps/api).
   });

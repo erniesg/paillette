@@ -9,13 +9,13 @@ export type Painting = {
   artist: string;
   year: string | number;
   ratio: string; // CSS aspect-ratio, e.g. "4 / 5"
-  size: string;  // French F/P/M canvas analogue, decorative only
+  size: string; // French F/P/M canvas analogue, decorative only
 };
 
 const W = (path: string) =>
   `https://upload.wikimedia.org/wikipedia/commons/thumb/${path}`;
 
-export const PAINTINGS: Record<string, Painting> = {
+export const PAINTINGS = {
   pearl: {
     id: 'pearl',
     src: W(
@@ -126,6 +126,8 @@ export const PAINTINGS: Record<string, Painting> = {
     ratio: '190 / 130',
     size: '60M',
   },
-};
+} satisfies Record<string, Painting>;
+
+export type PaintingId = keyof typeof PAINTINGS;
 
 export const PAINTING_LIST: Painting[] = Object.values(PAINTINGS);

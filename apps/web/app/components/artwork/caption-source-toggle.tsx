@@ -11,6 +11,7 @@ type CaptionSource = {
 type CaptionOption = CaptionSource & {
   id: 'roots' | 'generated';
   label: string;
+  text: string;
 };
 
 const hasText = (value: unknown): value is string =>
@@ -21,6 +22,21 @@ const detailRows = (details: Array<[string, unknown]> = []) =>
     ([, value]) => value !== null && value !== undefined && value !== ''
   );
 
+const captionOption = (
+  source: CaptionSource | null | undefined,
+  id: CaptionOption['id'],
+  label: string
+): CaptionOption | null =>
+  hasText(source?.text)
+    ? {
+        id,
+        label,
+        text: source.text,
+        sourceLabel: source.sourceLabel,
+        details: source.details,
+      }
+    : null;
+
 export function CaptionSourceToggle({
   rootsCaption,
   generatedCaption,
@@ -30,25 +46,9 @@ export function CaptionSourceToggle({
   generatedCaption?: CaptionSource | null;
   className?: string;
 }) {
-  const options: CaptionOption[] = [
-    hasText(rootsCaption?.text)
-      ? {
-          id: 'roots',
-          label: 'Roots catalogue',
-          text: rootsCaption.text,
-          sourceLabel: rootsCaption.sourceLabel,
-          details: rootsCaption.details,
-        }
-      : null,
-    hasText(generatedCaption?.text)
-      ? {
-          id: 'generated',
-          label: 'Generated caption',
-          text: generatedCaption.text,
-          sourceLabel: generatedCaption.sourceLabel,
-          details: generatedCaption.details,
-        }
-      : null,
+  const options = [
+    captionOption(rootsCaption, 'roots', 'Roots catalogue'),
+    captionOption(generatedCaption, 'generated', 'Generated caption'),
   ].filter((option): option is CaptionOption => Boolean(option));
   const [activeId, setActiveId] = useState<CaptionOption['id'] | null>(
     options[0]?.id ?? null

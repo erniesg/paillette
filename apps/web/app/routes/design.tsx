@@ -1,7 +1,7 @@
 import type { LinksFunction, MetaFunction } from '@remix-run/cloudflare';
 import { motion } from 'framer-motion';
 import { Link } from '@remix-run/react';
-import { PAINTINGS } from '~/lib/paintings';
+import { PAINTINGS, type PaintingId } from '~/lib/paintings';
 
 export const meta: MetaFunction = () => [
   { title: 'Paillette - Design Exploration' },
@@ -237,7 +237,16 @@ function aiStyle(accent: string): React.CSSProperties {
   return { color: accent };
 }
 
-const PAGE_VARIANTS = [
+type PageVariant = {
+  href: string;
+  label: string;
+  note: string;
+  bg: string;
+  accent: PaintingId;
+  light?: boolean;
+};
+
+const PAGE_VARIANTS: PageVariant[] = [
   {
     href: '/',
     label: 'V0 · Current',
@@ -598,6 +607,13 @@ export default function Design() {
                 </p>
               </div>
             </Link>
+          ))}
+        </div>
+
+        {/* System cards — kept for reference */}
+        <div className="grid md:grid-cols-2 gap-5 mb-20">
+          {SYSTEMS.map((system) => (
+            <SystemCard key={system.id} system={system} />
           ))}
         </div>
 

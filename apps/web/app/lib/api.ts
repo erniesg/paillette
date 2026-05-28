@@ -4,6 +4,7 @@
 
 import type {
   ApiResponse,
+  CreateOrgInput,
   SearchResponse,
   SearchTextRequest,
   SearchImageRequest,
@@ -365,9 +366,7 @@ class ApiClient {
   /**
    * Create a new org
    */
-  async createOrg(
-    input: Omit<Org, 'id' | 'apiKey' | 'apiKeyHash' | 'createdAt'>
-  ): Promise<Org & { api_key: string }> {
+  async createOrg(input: CreateOrgInput): Promise<Org & { api_key: string }> {
     const response = await fetch(`${this.baseUrl}/orgs`, {
       method: 'POST',
       headers: {
@@ -387,7 +386,7 @@ class ApiClient {
 
   /** @deprecated Use createOrg. */
   async createGallery(
-    input: Omit<Gallery, 'id' | 'apiKey' | 'apiKeyHash' | 'createdAt'>
+    input: CreateOrgInput
   ): Promise<Gallery & { api_key: string }> {
     return this.createOrg(input);
   }
@@ -708,13 +707,10 @@ class ApiClient {
       headers: await this.getAuthHeaders(getAccessToken),
     });
 
-    const data: ApiResponse<ExtractUsageSummary> =
-      await response.json();
+    const data: ApiResponse<ExtractUsageSummary> = await response.json();
 
     if (!data.success || !data.data) {
-      throw new Error(
-        data.error?.message || 'Failed to fetch extract usage'
-      );
+      throw new Error(data.error?.message || 'Failed to fetch extract usage');
     }
 
     return data.data;

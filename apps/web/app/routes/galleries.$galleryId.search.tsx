@@ -54,10 +54,7 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
-import {
-  IDLE_SHOWCASE_ARTWORK_COUNT,
-  selectIdleShowcaseArtworks,
-} from '~/lib/idle-showcase';
+import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import {
   buildSuggestionPool,
   getSuggestionKey,
@@ -2525,7 +2522,6 @@ function SearchArtworkDialog({
               )}
 
               <CitationPanel artwork={artwork} className="mt-6" />
-
             </div>
           </Dialog.Content>
         )}

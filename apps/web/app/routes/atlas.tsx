@@ -27,7 +27,13 @@ const NODES: Node[] = [
   // Impressionists / Post-impressionists — top-right
   { painting: 'starry', top: '14%', left: '70%', width: '170px', rotate: 1.8 },
   { painting: 'sunrise', top: '30%', left: '86%', width: '110px', rotate: -2 },
-  { painting: 'sunflowers', top: '46%', left: '88%', width: '74px', rotate: 2.4 },
+  {
+    painting: 'sunflowers',
+    top: '46%',
+    left: '88%',
+    width: '74px',
+    rotate: 2.4,
+  },
 
   // Symbolism / Modernism — bottom-left
   { painting: 'kiss', top: '64%', left: '16%', width: '95px', rotate: -2 },
@@ -78,8 +84,8 @@ export default function Atlas() {
         preserveAspectRatio="none"
       >
         {EDGES.map(([a, b], i) => {
-          const na = NODES[a];
-          const nb = NODES[b];
+          const na = NODES[a]!;
+          const nb = NODES[b]!;
           return (
             <line
               key={i}
@@ -112,15 +118,26 @@ export default function Atlas() {
       {/* Header */}
       <header className="absolute top-0 inset-x-0 z-40">
         <div className="container mx-auto px-6 py-5 flex items-center justify-between">
-          <Link to="/" className="font-display font-bold text-2xl tracking-tight">
+          <Link
+            to="/"
+            className="font-display font-bold text-2xl tracking-tight"
+          >
             <span className="text-white">P</span>
-            <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+            <span className="bg-gradient-accent bg-clip-text text-transparent">
+              ai
+            </span>
             <span className="text-white">llette</span>
           </Link>
           <nav className="flex items-center gap-5 text-[11px] font-mono uppercase tracking-[0.2em] text-white/60">
-            <Link to="/collections" className="hover:text-white">Collections</Link>
-            <Link to="/translate" className="hover:text-white">Translate</Link>
-            <Link to="/design" className="hover:text-white">Design</Link>
+            <Link to="/collections" className="hover:text-white">
+              Collections
+            </Link>
+            <Link to="/translate" className="hover:text-white">
+              Translate
+            </Link>
+            <Link to="/design" className="hover:text-white">
+              Design
+            </Link>
           </nav>
         </div>
       </header>
@@ -140,7 +157,9 @@ export default function Atlas() {
             </p>
             <h1 className="text-6xl lg:text-8xl font-display font-bold tracking-tight leading-[0.95]">
               <span className="text-white">P</span>
-              <span className="bg-gradient-accent bg-clip-text text-transparent animate-glow">ai</span>
+              <span className="bg-gradient-accent bg-clip-text text-transparent animate-glow">
+                ai
+              </span>
               <span className="text-white">llette</span>
             </h1>
             <p className="mt-5 text-base lg:text-lg text-white/80 leading-relaxed">
@@ -168,7 +187,10 @@ export default function Atlas() {
       {/* Mini-legend bottom */}
       <div className="absolute bottom-4 inset-x-0 z-30 flex items-center justify-between px-6 text-[10px] font-mono uppercase tracking-[0.2em] text-white/35 pointer-events-none">
         <span>· · · dotted line = similarity edge</span>
-        <Link to="/design" className="pointer-events-auto hover:text-white transition-colors">
+        <Link
+          to="/design"
+          className="pointer-events-auto hover:text-white transition-colors"
+        >
           ↩ design index
         </Link>
       </div>
@@ -205,15 +227,27 @@ function AtlasNode({ node, index }: { node: Node; index: number }) {
       </div>
       {/* Hover caption */}
       <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/85 backdrop-blur-md px-2.5 py-1.5 rounded-sm text-[10px] whitespace-nowrap font-mono uppercase tracking-[0.15em] pointer-events-none">
-        <span className="italic text-white normal-case tracking-normal">{p.title}</span>
+        <span className="italic text-white normal-case tracking-normal">
+          {p.title}
+        </span>
         <br />
-        <span className="text-white/70">{p.artist} · {p.year}</span>
+        <span className="text-white/70">
+          {p.artist} · {p.year}
+        </span>
       </div>
     </Link>
   );
 }
 
-function ClusterLabel({ top, left, text }: { top: string; left: string; text: string }) {
+function ClusterLabel({
+  top,
+  left,
+  text,
+}: {
+  top: string;
+  left: string;
+  text: string;
+}) {
   return (
     <div
       className="absolute pointer-events-none z-20 text-[10px] font-mono uppercase tracking-[0.25em] text-white/35"

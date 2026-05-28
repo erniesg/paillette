@@ -26,20 +26,39 @@ export interface Org {
   name: string;
   slug: string;
   description?: string;
+  location?: {
+    country: string;
+    city: string;
+    address?: string;
+  };
   website?: string;
   apiKey: string;
+  apiKeyHash?: string;
   isPublic: boolean;
   settings?: GallerySettings;
   createdAt: string;
   updatedAt: string;
+  ownerId?: string;
 }
 
 /** @deprecated Use Org. */
 export type Gallery = Org;
 
 export interface GallerySettings {
+  allowPublicAccess?: boolean;
   enableEmbeddingProjector?: boolean;
+  defaultLanguage?: string;
   supportedLanguages?: string[];
+}
+
+export interface CreateOrgInput {
+  name: string;
+  slug: string;
+  description?: string;
+  location?: Org['location'];
+  website?: string;
+  settings?: GallerySettings;
+  ownerId: string;
 }
 
 export interface Artwork {
@@ -89,7 +108,11 @@ export interface Artwork {
   updatedAt: string;
 }
 
-export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type ProcessingStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed';
 
 export interface ArtworkDimensions {
   height?: number;

@@ -1,13 +1,23 @@
 import type { LoaderFunctionArgs } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
-import type { ApiResponse, Artwork, ArtworkSearchResult } from '~/types';
+import type {
+  ApiResponse,
+  Artwork,
+  ArtworkMetadata,
+  ArtworkSearchResult,
+} from '~/types';
 import {
   getApiBaseUrl,
   getServerEnv,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
 
-const clamp = (value: string | null, min: number, max: number, fallback: number) => {
+const clamp = (
+  value: string | null,
+  min: number,
+  max: number,
+  fallback: number
+) => {
   const number = Number(value);
   if (!Number.isFinite(number)) {
     return fallback;
@@ -16,7 +26,13 @@ const clamp = (value: string | null, min: number, max: number, fallback: number)
   return Math.min(Math.max(Math.round(number), min), max);
 };
 
-const SORT_BY = new Set(['title', 'artist', 'year', 'created_at', 'updated_at']);
+const SORT_BY = new Set([
+  'title',
+  'artist',
+  'year',
+  'created_at',
+  'updated_at',
+]);
 const SORT_ORDER = new Set(['asc', 'desc']);
 
 const asRecord = (value: unknown): Record<string, any> =>
@@ -24,9 +40,16 @@ const asRecord = (value: unknown): Record<string, any> =>
     ? (value as Record<string, any>)
     : {};
 
-const mapArtworkToSearchResult = (artwork: Artwork & Record<string, any>): ArtworkSearchResult => {
-  const orgId = artwork.orgId || artwork.org_id || artwork.galleryId || artwork.gallery_id || '';
-  const metadata = {
+const mapArtworkToSearchResult = (
+  artwork: Artwork & Record<string, any>
+): ArtworkSearchResult => {
+  const orgId =
+    artwork.orgId ||
+    artwork.org_id ||
+    artwork.galleryId ||
+    artwork.gallery_id ||
+    '';
+  const metadata: ArtworkMetadata = {
     ...asRecord(artwork.metadata),
     ...asRecord(artwork.custom_metadata),
     medium: artwork.medium,
@@ -37,7 +60,7 @@ const mapArtworkToSearchResult = (artwork: Artwork & Record<string, any>): Artwo
     origin: artwork.origin,
     dimensions: artwork.dimensions,
     description: artwork.description,
-    provenance: artwork.provenance,
+    provenance: artwork.provenance ?? undefined,
     creditLine: artwork.credit_line,
     credit_line: artwork.credit_line,
     rights: artwork.rights,
@@ -53,9 +76,9 @@ const mapArtworkToSearchResult = (artwork: Artwork & Record<string, any>): Artwo
     source_record_id: artwork.source_record_id,
     fieldSources: artwork.field_sources,
     field_sources: artwork.field_sources,
-    dominantColors: artwork.colors?.dominant,
+    dominantColors: artwork.colors?.dominant ?? undefined,
     colorPalette: artwork.colors?.palette,
-    citation: artwork.citation,
+    citation: artwork.citation ?? undefined,
   };
 
   return {
@@ -72,7 +95,11 @@ const mapArtworkToSearchResult = (artwork: Artwork & Record<string, any>): Artwo
   };
 };
 
-export const loader = async ({ context, params, request }: LoaderFunctionArgs) => {
+export const loader = async ({
+  context,
+  params,
+  request,
+}: LoaderFunctionArgs) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -121,7 +148,9 @@ export const loader = async ({ context, params, request }: LoaderFunctionArgs) =
     return json(payload, { status: response.status });
   }
 
-  const results = payload.data.map((artwork) => mapArtworkToSearchResult(artwork));
+  const results = payload.data.map((artwork) =>
+    mapArtworkToSearchResult(artwork)
+  );
 
   return json({
     success: true,

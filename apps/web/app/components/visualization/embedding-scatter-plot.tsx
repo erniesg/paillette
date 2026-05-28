@@ -18,8 +18,8 @@ export interface ArtworkPoint {
   artist: string | null;
   year: number | null;
   medium: string | null;
-  imageUrl: string;
-  thumbnailUrl: string;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
   embedding: number[];
 }
 
@@ -96,7 +96,7 @@ export function EmbeddingScatterPlot({
     return map;
   }, [points, colorBy]);
 
-  const getPointColor = (point: typeof points[0], index: number): string => {
+  const getPointColor = (point: (typeof points)[0], index: number): string => {
     // If clustering is enabled and colorBy is 'cluster', use cluster colors
     if (colorBy === 'cluster' && clusterResult) {
       const clusterId = clusterResult.labels[index];
@@ -171,7 +171,9 @@ export function EmbeddingScatterPlot({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <g transform={`translate(${margin + pan.x}, ${margin + pan.y}) scale(${zoom})`}>
+        <g
+          transform={`translate(${margin + pan.x}, ${margin + pan.y}) scale(${zoom})`}
+        >
           {/* Grid lines */}
           <g opacity="0.1">
             {[0, 0.25, 0.5, 0.75, 1].map((i) => (
@@ -204,16 +206,17 @@ export function EmbeddingScatterPlot({
               {clusterResult.clusters.map((cluster) => {
                 const clusterPoints = cluster.points
                   .map((idx) => points[idx])
-                  .filter((p): p is typeof points[0] => p !== undefined);
+                  .filter((p): p is (typeof points)[0] => p !== undefined);
                 const hull = computeConvexHull(clusterPoints);
-                const pathD = hull
-                  .map(
-                    (p, i) =>
-                      `${i === 0 ? 'M' : 'L'} ${p.x * plotWidth} ${
-                        (1 - p.y) * plotHeight
-                      }`
-                  )
-                  .join(' ') + ' Z';
+                const pathD =
+                  hull
+                    .map(
+                      (p, i) =>
+                        `${i === 0 ? 'M' : 'L'} ${p.x * plotWidth} ${
+                          (1 - p.y) * plotHeight
+                        }`
+                    )
+                    .join(' ') + ' Z';
 
                 return (
                   <path
@@ -265,11 +268,17 @@ export function EmbeddingScatterPlot({
             className="absolute top-4 right-4 bg-neutral-800 border border-neutral-700 rounded-lg p-4 shadow-xl max-w-sm pointer-events-none"
           >
             <div className="flex gap-4">
-              <img
-                src={hovered.thumbnailUrl}
-                alt={hovered.title}
-                className="w-24 h-24 object-cover rounded"
-              />
+              {hovered.thumbnailUrl || hovered.imageUrl ? (
+                <img
+                  src={hovered.thumbnailUrl || hovered.imageUrl || ''}
+                  alt={hovered.title}
+                  className="w-24 h-24 object-cover rounded"
+                />
+              ) : (
+                <div className="flex h-24 w-24 items-center justify-center rounded bg-neutral-700 text-xs text-neutral-400">
+                  No image
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-white truncate">
                   {hovered.title}
@@ -292,34 +301,36 @@ export function EmbeddingScatterPlot({
       </AnimatePresence>
 
       {/* Legend */}
-      {colorBy === 'cluster' && clusterResult && clusterResult.clusters.length > 0 && (
-        <div className="absolute bottom-4 left-4 bg-neutral-800 border border-neutral-700 rounded-lg p-3 max-h-48 overflow-y-auto">
-          <div className="text-xs font-semibold text-neutral-400 mb-2 uppercase">
-            Clusters
+      {colorBy === 'cluster' &&
+        clusterResult &&
+        clusterResult.clusters.length > 0 && (
+          <div className="absolute bottom-4 left-4 bg-neutral-800 border border-neutral-700 rounded-lg p-3 max-h-48 overflow-y-auto">
+            <div className="text-xs font-semibold text-neutral-400 mb-2 uppercase">
+              Clusters
+            </div>
+            <div className="space-y-1">
+              {clusterResult.clusters.map((cluster) => (
+                <div key={cluster.id} className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: cluster.color }}
+                  />
+                  <span className="text-xs text-neutral-300">
+                    Cluster {cluster.id + 1} ({cluster.points.length} artworks)
+                  </span>
+                </div>
+              ))}
+              {clusterResult.noisePoints.length > 0 && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-neutral-700">
+                  <div className="w-3 h-3 rounded-full bg-neutral-500" />
+                  <span className="text-xs text-neutral-400">
+                    Noise ({clusterResult.noisePoints.length} points)
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="space-y-1">
-            {clusterResult.clusters.map((cluster) => (
-              <div key={cluster.id} className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: cluster.color }}
-                />
-                <span className="text-xs text-neutral-300">
-                  Cluster {cluster.id + 1} ({cluster.points.length} artworks)
-                </span>
-              </div>
-            ))}
-            {clusterResult.noisePoints.length > 0 && (
-              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-neutral-700">
-                <div className="w-3 h-3 rounded-full bg-neutral-500" />
-                <span className="text-xs text-neutral-400">
-                  Noise ({clusterResult.noisePoints.length} points)
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        )}
       {colorBy && colorBy !== 'cluster' && colorMap.size > 0 && (
         <div className="absolute bottom-4 left-4 bg-neutral-800 border border-neutral-700 rounded-lg p-3 max-h-48 overflow-y-auto">
           <div className="text-xs font-semibold text-neutral-400 mb-2 uppercase">

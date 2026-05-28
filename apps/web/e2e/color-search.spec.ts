@@ -48,7 +48,9 @@ test.describe('Color Search Feature', () => {
 
   test('should select and deselect colors', async ({ page }) => {
     // Wait for color buttons to be ready
-    const firstColor = page.locator('button[aria-label^="Select color"]').first();
+    const firstColor = page
+      .locator('button[aria-label^="Select color"]')
+      .first();
     await expect(firstColor).toBeVisible();
 
     // Select first color
@@ -126,9 +128,13 @@ test.describe('Color Search Feature', () => {
     await expect(searchButton).toBeDisabled();
   });
 
-  test('should enable search button when colors are selected', async ({ page }) => {
+  test('should enable search button when colors are selected', async ({
+    page,
+  }) => {
     // Wait for and select a color
-    const firstColor = page.locator('button[aria-label^="Select color"]').first();
+    const firstColor = page
+      .locator('button[aria-label^="Select color"]')
+      .first();
     await expect(firstColor).toBeVisible();
     await firstColor.click();
 
@@ -161,7 +167,7 @@ test.describe('Color Search Feature', () => {
     ).toBeVisible();
   });
 
-  test.skip('should adjust advanced options', async ({ page }) => {
+  test.skip('should adjust advanced options', async () => {
     // Note: Color search uses simpler match mode toggle (ANY/ALL) instead of
     // advanced threshold options. This test is skipped for color search mode.
     // Advanced options are available in text/image search modes.
@@ -178,7 +184,9 @@ test.describe('Color Search Feature', () => {
     await page.waitForTimeout(300);
 
     // Check text search input is visible
-    await expect(page.getByPlaceholder('Describe what you\'re looking for...')).toBeVisible();
+    await expect(
+      page.getByPlaceholder("Describe what you're looking for...")
+    ).toBeVisible();
 
     // Switch back to color mode
     await page.getByRole('button', { name: /🎨 Color/i }).click();
@@ -190,7 +198,9 @@ test.describe('Color Search Feature', () => {
 
   test('should have proper color selection interaction', async ({ page }) => {
     // Wait for color buttons
-    const firstColor = page.locator('button[aria-label^="Select color"]').first();
+    const firstColor = page
+      .locator('button[aria-label^="Select color"]')
+      .first();
     await expect(firstColor).toBeVisible();
 
     // Click to select
@@ -213,7 +223,9 @@ test.describe('Color Search Feature', () => {
   // Note: The following tests require a live backend API
   // They are skipped by default but documented for manual testing
 
-  test.skip('should perform color search and show results', async ({ page }) => {
+  test.skip('should perform color search and show results', async ({
+    page,
+  }) => {
     // Select colors
     const colorButtons = page.locator('button[aria-label^="Select color"]');
     await colorButtons.nth(0).click(); // Red
@@ -229,12 +241,16 @@ test.describe('Color Search Feature', () => {
     await expect(page.locator('[class*="grid"]').first()).toBeVisible();
 
     // Check artwork cards have color palettes
-    await expect(page.locator('div[style*="backgroundColor"]').first()).toBeVisible();
+    await expect(
+      page.locator('div[style*="backgroundColor"]').first()
+    ).toBeVisible();
   });
 
   test.skip('should show loading state during search', async ({ page }) => {
     // Select a color
-    const firstColor = page.locator('button[aria-label^="Select color"]').first();
+    const firstColor = page
+      .locator('button[aria-label^="Select color"]')
+      .first();
     await firstColor.click();
 
     // Click search
@@ -249,7 +265,9 @@ test.describe('Color Search Feature', () => {
     page,
   }) => {
     // Select an uncommon color combination
-    const customColorInput = page.locator('input[type="text"][placeholder="#000000"]');
+    const customColorInput = page.locator(
+      'input[type="text"][placeholder="#000000"]'
+    );
     await customColorInput.fill('#ABCDEF');
     await page.locator('button:has-text("Add")').click();
 
@@ -260,9 +278,13 @@ test.describe('Color Search Feature', () => {
     await page.waitForTimeout(2000);
 
     // Check no results message
-    await expect(page.locator('text=No artworks found with these colors')).toBeVisible();
     await expect(
-      page.locator('text=Try selecting different colors or increasing the similarity threshold')
+      page.locator('text=No artworks found with these colors')
+    ).toBeVisible();
+    await expect(
+      page.locator(
+        'text=Try selecting different colors or increasing the similarity threshold'
+      )
     ).toBeVisible();
   });
 });

@@ -3,15 +3,22 @@
  */
 
 import type { Page, Route } from '@playwright/test';
-import type { ApiResponse, Gallery, Artwork, SearchResponse } from '../../app/types';
+import type {
+  ApiResponse,
+  Gallery,
+  Artwork,
+  SearchResponse,
+} from '../../app/types';
 
 // Mock gallery data
 export const mockGallery: Gallery = {
   id: 'test-gallery-123',
   name: 'Test Gallery',
+  slug: 'test-gallery',
   description: 'Test gallery for E2E testing',
-  location: 'Singapore',
-  artworkCount: 100,
+  website: 'https://example.com',
+  apiKey: 'test-api-key',
+  isPublic: true,
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
 };
@@ -24,10 +31,10 @@ export const mockArtworks: Artwork[] = [
     artist: 'Test Artist',
     year: 2024,
     medium: 'Oil on canvas',
-    dimensions: '100x100cm',
+    dimensions: { width: 100, height: 100, unit: 'cm' },
     imageUrl: 'https://via.placeholder.com/400',
     thumbnailUrl: 'https://via.placeholder.com/200',
-    dominantColors: ['#FF0000', '#00FF00', '#0000FF'],
+    colors: { dominant: ['#FF0000', '#00FF00', '#0000FF'] },
     galleryId: 'test-gallery-123',
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-01T00:00:00Z',
@@ -38,10 +45,10 @@ export const mockArtworks: Artwork[] = [
     artist: 'Test Artist 2',
     year: 2024,
     medium: 'Acrylic',
-    dimensions: '80x80cm',
+    dimensions: { width: 80, height: 80, unit: 'cm' },
     imageUrl: 'https://via.placeholder.com/400',
     thumbnailUrl: 'https://via.placeholder.com/200',
-    dominantColors: ['#FFFF00', '#FF00FF', '#00FFFF'],
+    colors: { dominant: ['#FFFF00', '#FF00FF', '#00FFFF'] },
     galleryId: 'test-gallery-123',
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-01T00:00:00Z',
@@ -51,11 +58,22 @@ export const mockArtworks: Artwork[] = [
 // Mock search results
 export const mockSearchResponse: SearchResponse = {
   results: mockArtworks.map((artwork) => ({
-    artwork,
-    score: 0.95,
+    id: artwork.id,
+    galleryId: artwork.galleryId,
+    title: artwork.title,
+    artist: artwork.artist,
+    year: artwork.year,
+    imageUrl: artwork.imageUrl,
+    thumbnailUrl: artwork.thumbnailUrl,
+    similarity: 0.95,
+    metadata: {
+      medium: artwork.medium,
+      dimensions: artwork.dimensions,
+      dominantColors: artwork.colors?.dominant ?? undefined,
+    },
   })),
-  total: mockArtworks.length,
-  query: 'test query',
+  count: mockArtworks.length,
+  queryTime: 100,
 };
 
 /**

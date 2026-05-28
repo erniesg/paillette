@@ -37,7 +37,7 @@ export default function Spectrum() {
       {/* Vertical color bars filling the whole viewport */}
       <div className="absolute inset-0 flex">
         {BARS.map((bar, i) => (
-          <SpectrumBar key={i} bar={bar} index={i} />
+          <SpectrumBar key={i} bar={bar} />
         ))}
       </div>
 
@@ -48,14 +48,19 @@ export default function Spectrum() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
           className="text-center max-w-xl"
-          style={{ textShadow: '0 8px 32px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.7)' }}
+          style={{
+            textShadow:
+              '0 8px 32px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.7)',
+          }}
         >
           <p className="text-[10px] uppercase tracking-[0.4em] text-white font-mono mb-6">
             search by color · 47,000 works · 12 dominant tones
           </p>
           <h1 className="text-7xl lg:text-9xl font-display font-bold tracking-tight leading-none">
             <span className="text-white">P</span>
-            <span className="bg-gradient-accent bg-clip-text text-transparent animate-glow">ai</span>
+            <span className="bg-gradient-accent bg-clip-text text-transparent animate-glow">
+              ai
+            </span>
             <span className="text-white">llette</span>
           </h1>
           <p className="mt-6 text-lg text-white max-w-md mx-auto leading-relaxed">
@@ -80,9 +85,15 @@ export default function Spectrum() {
 
       {/* Top-left wordmark, small */}
       <div className="absolute top-6 left-6 z-30">
-        <Link to="/" className="font-display font-bold text-lg" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}>
+        <Link
+          to="/"
+          className="font-display font-bold text-lg"
+          style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}
+        >
           <span className="text-white">P</span>
-          <span className="bg-gradient-accent bg-clip-text text-transparent">ai</span>
+          <span className="bg-gradient-accent bg-clip-text text-transparent">
+            ai
+          </span>
           <span className="text-white">llette</span>
         </Link>
       </div>
@@ -100,7 +111,7 @@ export default function Spectrum() {
   );
 }
 
-function SpectrumBar({ bar, index }: { bar: Bar; index: number }) {
+function SpectrumBar({ bar }: { bar: Bar }) {
   const painting = bar.painting ? PAINTINGS[bar.painting] : null;
   return (
     <div
@@ -119,7 +130,9 @@ function SpectrumBar({ bar, index }: { bar: Bar; index: number }) {
             <p className="text-[10px] font-mono uppercase tracking-[0.25em] text-white/80 mb-1">
               {bar.label}
             </p>
-            <p className="text-lg font-display italic text-white">{painting.title}</p>
+            <p className="text-lg font-display italic text-white">
+              {painting.title}
+            </p>
             <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-white/70 mt-1">
               {painting.artist} · {painting.year} · {painting.size}
             </p>
@@ -130,7 +143,10 @@ function SpectrumBar({ bar, index }: { bar: Bar; index: number }) {
       {/* Vertical label always on bar */}
       <div
         className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-mono uppercase tracking-[0.3em] text-white/50 group-hover:opacity-0 transition-opacity"
-        style={{ writingMode: 'vertical-rl', transform: 'translateX(-50%) rotate(180deg)' }}
+        style={{
+          writingMode: 'vertical-rl',
+          transform: 'translateX(-50%) rotate(180deg)',
+        }}
       >
         {bar.label.split(' · ')[0]}
       </div>
