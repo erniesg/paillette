@@ -21,13 +21,13 @@ const holiday = (
 });
 
 describe('buildSuggestionPool', () => {
-  it('starts with a concise result-bearing evergreen query', () => {
+  it('starts with the evergreen keyword copy', () => {
     const suggestions = buildSuggestionPool([]);
 
     expect(suggestions[0]).toMatchObject({
       type: 'keyword',
-      label: 'tropical studies',
-      query: 'tropical',
+      label: 'tropical fruit and flowers',
+      query: 'a still life of tropical fruit and flowers',
     });
   });
 
@@ -41,7 +41,7 @@ describe('buildSuggestionPool', () => {
     });
     expect(suggestions[1]).toMatchObject({
       type: 'keyword',
-      label: 'tropical studies',
+      label: 'tropical fruit and flowers',
     });
   });
 
@@ -58,7 +58,7 @@ describe('buildSuggestionPool', () => {
 
     expect(suggestions[0]).toMatchObject({
       type: 'keyword',
-      label: 'tropical studies',
+      label: 'tropical fruit and flowers',
     });
     expect(suggestions[1]).toMatchObject({
       type: 'occasion',
@@ -75,7 +75,7 @@ describe('buildSuggestionPool', () => {
     );
   });
 
-  it('uses one dot colour for occasion suggestions', () => {
+  it('uses one distinct dot colour for occasion suggestions', () => {
     const suggestions = buildSuggestionPool([
       holiday({
         label: 'Vesak Day',
@@ -100,19 +100,23 @@ describe('buildSuggestionPool', () => {
     const occasionDots = suggestions
       .filter((suggestion) => suggestion.type === 'occasion')
       .map((suggestion) => suggestion.dot);
+    const keywordDot = suggestions.find(
+      (suggestion) => suggestion.type === 'keyword'
+    )?.dot;
 
-    expect(new Set(occasionDots)).toEqual(new Set(['#cda636']));
+    expect(new Set(occasionDots)).toEqual(new Set(['#365f9c']));
+    expect(keywordDot).toBe('#cda636');
   });
 });
 
 describe('normalizeSearchQuery', () => {
-  it('maps stale suggestion URLs to result-bearing queries', () => {
-    expect(normalizeSearchQuery('Qixi Festival weaving stars lovers')).toBe(
-      'weaving'
+  it('trims query text without rewriting it', () => {
+    expect(normalizeSearchQuery(' Qixi Festival weaving stars lovers ')).toBe(
+      'Qixi Festival weaving stars lovers'
     );
     expect(
       normalizeSearchQuery('a still life of tropical fruit and flowers')
-    ).toBe('tropical');
+    ).toBe('a still life of tropical fruit and flowers');
   });
 
   it('keeps freeform search text unchanged', () => {

@@ -21,7 +21,7 @@ const MOM_PUBLIC_HOLIDAYS_URL =
   'https://www.mom.gov.sg/employment-practices/public-holidays';
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
-const MAX_OCCASION_SUGGESTIONS = 10;
+const MAX_OCCASION_SUGGESTIONS = 3;
 
 const HOLIDAY_DOTS: Record<string, string> = {
   "New Year's Day": '#cda636',
@@ -113,24 +113,6 @@ const CHINESE_FESTIVALS: SingaporeHoliday[] = [
     source: 'chinese-festival',
   },
 ];
-
-const HOLIDAY_QUERY_OVERRIDES: Record<string, string> = {
-  "New Year's Day": 'new year',
-  'Chinese New Year': 'lantern',
-  'Lantern Festival': 'lantern',
-  'Qing Ming Festival': 'spring landscape',
-  'Dragon Boat Festival': 'boat',
-  'Qixi Festival': 'weaving',
-  'Mid-Autumn Festival': 'moon',
-  'Hari Raya Puasa': 'mosque',
-  'Good Friday': 'crucifixion',
-  'Labour Day': 'workers',
-  'Hari Raya Haji': 'mosque',
-  'Vesak Day': 'Buddha',
-  'National Day': 'National Day',
-  Deepavali: 'lamp',
-  'Christmas Day': 'nativity',
-};
 
 const SOURCE_PRIORITY: Record<HolidaySuggestionSource, number> = {
   mom: 0,
@@ -326,7 +308,7 @@ const buildSuggestions = (holidays: SingaporeHoliday[], now: Date) => {
       return {
         type: 'occasion' as const,
         label: holiday.name,
-        query: HOLIDAY_QUERY_OVERRIDES[holiday.name] || holiday.name,
+        query: holiday.name,
         dot: HOLIDAY_DOTS[holiday.name] || '#cdbfa2',
         date: holiday.date,
         detail: isToday ? 'Today' : formatHolidayDate(holiday.date),

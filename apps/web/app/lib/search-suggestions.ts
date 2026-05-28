@@ -1,35 +1,6 @@
 import type { HolidaySearchSuggestion } from './singapore-holidays.server';
 
-const OCCASION_DOT = '#cda636';
-
-const SEARCH_QUERY_ALIASES: Record<string, string> = {
-  'a still life of tropical fruit and flowers': 'tropical',
-  'batik or songket textile pattern': 'batik',
-  'serene, still and contemplative': 'serene',
-  'nanyang-style fusion of chinese and southeast asian': 'Nanyang',
-  'artworks made in the 1950s': '1950s',
-  'muted sage green': 'landscape',
-  "new year's day": 'new year',
-  'chinese new year': 'lantern',
-  'chinese new year red lanterns lion dance spring festival': 'lantern',
-  'lantern festival': 'lantern',
-  'lantern festival yuanxiao lanterns full moon': 'lantern',
-  'qing ming festival': 'spring landscape',
-  'qing ming ancestors spring landscape': 'spring landscape',
-  'dragon boat festival': 'boat',
-  'dragon boat festival dragon boats zongzi river race': 'boat',
-  'qixi festival': 'weaving',
-  'qixi festival weaving stars lovers': 'weaving',
-  'mid-autumn festival': 'moon',
-  "mid-autumn festival mooncakes lanterns full moon chang'e reunion": 'moon',
-  'hari raya puasa': 'mosque',
-  'hari raya haji': 'mosque',
-  'good friday': 'crucifixion',
-  'labour day': 'workers',
-  'vesak day': 'Buddha',
-  deepavali: 'lamp',
-  'christmas day': 'nativity',
-};
+const OCCASION_DOT = '#365f9c';
 
 export type EvalSuggestion = {
   type:
@@ -54,26 +25,26 @@ export type EvalSuggestion = {
 const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'keyword',
-    label: 'tropical studies',
-    query: 'tropical',
+    label: 'tropical fruit and flowers',
+    query: 'a still life of tropical fruit and flowers',
     dot: '#cda636',
   },
   {
     type: 'motif',
     label: 'batik textile pattern',
-    query: 'batik',
+    query: 'batik or songket textile pattern',
     dot: '#bf5631',
   },
   {
     type: 'mood',
-    label: 'serene landscapes',
-    query: 'serene',
+    label: 'serene and contemplative',
+    query: 'serene, still and contemplative',
     dot: '#8a9a7a',
   },
   {
     type: 'style',
     label: 'Nanyang style',
-    query: 'Nanyang',
+    query: 'Nanyang-style fusion of Chinese and Southeast Asian',
     dot: '#365f9c',
   },
   {
@@ -85,13 +56,13 @@ const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'metadata',
     label: '1950s works',
-    query: '1950s',
+    query: 'artworks made in the 1950s',
     dot: '#6a5238',
   },
   {
     type: 'colour',
-    label: 'landscape greens',
-    query: 'landscape',
+    label: 'muted sage green',
+    query: 'muted sage green',
     dot: '#8a9a7a',
     colourId: 'sage',
   },
@@ -141,5 +112,5 @@ export const normalizeSearchQuery = (query: string) => {
   const trimmed = query.trim();
   if (!trimmed) return '';
 
-  return SEARCH_QUERY_ALIASES[trimmed.toLowerCase()] || trimmed;
+  return trimmed;
 };
