@@ -31,9 +31,7 @@ const getConfiguredApiUrl = () =>
 const getApiUrlForHostname = (hostname: string) => {
   const configuredApiUrl = getConfiguredApiUrl();
   const isDev = hostname === 'localhost' || hostname === '127.0.0.1';
-  const usesStagingApi =
-    hostname === 'paillette-stg.berlayar.ai' ||
-    hostname === 'paillette.berlayar.ai';
+  const usesStagingApi = hostname === 'paillette-stg.berlayar.ai';
 
   return (
     configuredApiUrl ||

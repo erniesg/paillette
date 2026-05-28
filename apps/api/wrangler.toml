@@ -14,7 +14,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "paillette-db"
-database_id = "your-d1-database-id"  # Create with: wrangler d1 create paillette-db
+database_id = "704e8ccf-eebb-4433-96a4-5196b2862ad7"
 
 # R2 Storage
 [[r2_buckets]]
@@ -26,10 +26,22 @@ bucket_name = "paillette-assets"
 binding = "VECTORIZE"
 index_name = "paillette-embeddings"
 
+[[vectorize]]
+binding = "CAPTION_VECTORIZE"
+index_name = "paillette-caption-embeddings"
+
+[[vectorize]]
+binding = "VECTORIZE_V2"
+index_name = "paillette-embeddings-v2"
+
+[[vectorize]]
+binding = "CAPTION_VECTORIZE_V2"
+index_name = "paillette-caption-embeddings-v2"
+
 # KV for caching
 [[kv_namespaces]]
 binding = "CACHE"
-id = "your-kv-namespace-id"
+id = "ff13f719bc344eed9c7d7d972640dfa5"
 
 # AI binding
 [ai]
@@ -43,16 +55,6 @@ queue = "paillette-embedding-jobs"
 [[queues.producers]]
 binding = "TRANSLATION_QUEUE"
 queue = "paillette-translation-jobs"
-
-[[queues.consumers]]
-queue = "paillette-embedding-jobs"
-max_batch_size = 10
-max_batch_timeout = 30
-
-[[queues.consumers]]
-queue = "paillette-translation-jobs"
-max_batch_size = 5
-max_batch_timeout = 30
 
 # Environment variables (use .dev.vars for local development)
 [vars]
@@ -113,6 +115,47 @@ queue = "paillette-embedding-jobs-stg"
 # Production environment (deploy from 'master' branch)
 [env.production]
 name = "paillette-api"
-vars = { ENVIRONMENT = "production", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EXTRACT_FREE_LIFETIME_LIMIT = "10" }
+routes = [{ pattern = "paillette-api.berlayar.ai", custom_domain = true }]
+vars = { ENVIRONMENT = "production", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "100", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EXTRACT_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024" }
 
-# Production uses the main bindings defined above
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "paillette-db"
+database_id = "704e8ccf-eebb-4433-96a4-5196b2862ad7"
+
+[[env.production.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "paillette-assets"
+preview_bucket_name = "paillette-assets"
+
+[[env.production.vectorize]]
+binding = "VECTORIZE"
+index_name = "paillette-embeddings"
+
+[[env.production.vectorize]]
+binding = "CAPTION_VECTORIZE"
+index_name = "paillette-caption-embeddings"
+
+[[env.production.vectorize]]
+binding = "VECTORIZE_V2"
+index_name = "paillette-embeddings-v2"
+
+[[env.production.vectorize]]
+binding = "CAPTION_VECTORIZE_V2"
+index_name = "paillette-caption-embeddings-v2"
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "ff13f719bc344eed9c7d7d972640dfa5"
+preview_id = "ff13f719bc344eed9c7d7d972640dfa5"
+
+[env.production.ai]
+binding = "AI"
+
+[[env.production.queues.producers]]
+binding = "EMBEDDING_QUEUE"
+queue = "paillette-embedding-jobs"
+
+[[env.production.queues.producers]]
+binding = "TRANSLATION_QUEUE"
+queue = "paillette-translation-jobs"
