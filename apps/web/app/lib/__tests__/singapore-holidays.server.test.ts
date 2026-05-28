@@ -65,20 +65,35 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
       new Date('2026-05-24T00:00:00.000Z')
     );
 
-    expect(
-      suggestions.map((suggestion) => [
-        suggestion.label,
-        suggestion.query,
-        suggestion.detail,
-        suggestion.isToday,
-        suggestion.source,
-      ])
-    ).toEqual([
-      ['Hari Raya Haji', 'Hari Raya Haji', '27 May', false, 'mom'],
-      ['Vesak Day', 'Vesak Day', '31 May', false, 'mom'],
-      ['National Day', 'National Day', '9 Aug', false, 'mom'],
-      ['Deepavali', 'Deepavali', '8 Nov', false, 'mom'],
+    expect(suggestions.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        label: 'Hari Raya Haji',
+        query: 'Hari Raya Haji',
+        detail: '27 May',
+        isToday: false,
+        source: 'mom',
+      }),
+      expect.objectContaining({
+        label: 'Vesak Day',
+        query: 'Vesak Day',
+        detail: '31 May',
+        isToday: false,
+        source: 'mom',
+      }),
     ]);
+    expect(suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'National Day',
+          detail: '9 Aug',
+          source: 'mom',
+        }),
+        expect.objectContaining({
+          label: 'Deepavali',
+          source: 'mom',
+        }),
+      ])
+    );
   });
 
   it('uses the Singapore calendar day for today and removes past holidays', async () => {
@@ -100,14 +115,63 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
       new Date('2026-05-26T16:30:00.000Z')
     );
 
-    expect(suggestions.map((suggestion) => suggestion.label)).toEqual([
-      'Hari Raya Haji',
-      'Vesak Day',
-    ]);
+    expect(suggestions.map((suggestion) => suggestion.label)).not.toContain(
+      'Labour Day'
+    );
+    expect(
+      suggestions.slice(0, 2).map((suggestion) => suggestion.label)
+    ).toEqual(['Hari Raya Haji', 'Vesak Day']);
     expect(suggestions[0]).toMatchObject({
       label: 'Hari Raya Haji',
       detail: 'Today',
       isToday: true,
     });
+  });
+
+  it('adds upcoming Chinese festivals for the cycling showcase', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        text: async () => `
+          <table>
+            ${holidayRow('31 May 2026', 'Sunday', 'Vesak Day')}
+            ${holidayRow('9 August 2026', 'Sunday', 'National Day')}
+          </table>
+        `,
+      }))
+    );
+
+    const suggestions = await getUpcomingSingaporeHolidaySuggestions(
+      new Date('2026-05-28T00:00:00.000Z')
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Vesak Day',
+      'Dragon Boat Festival',
+      'National Day',
+      'Qixi Festival',
+      'Mid-Autumn Festival',
+      'Chinese New Year',
+      'Lantern Festival',
+      'Qing Ming Festival',
+    ]);
+    expect(suggestions).toContainEqual(
+      expect.objectContaining({
+        label: 'Dragon Boat Festival',
+        query: 'Dragon Boat Festival dragon boats zongzi river race',
+        detail: '19 Jun',
+        source: 'chinese-festival',
+      })
+    );
+    expect(suggestions).toContainEqual(
+      expect.objectContaining({
+        label: 'Mid-Autumn Festival',
+        query:
+          "Mid-Autumn Festival mooncakes lanterns full moon Chang'e reunion",
+        detail: '25 Sept',
+        source: 'chinese-festival',
+      })
+    );
   });
 });

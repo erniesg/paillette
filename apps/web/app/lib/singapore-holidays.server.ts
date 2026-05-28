@@ -6,23 +6,31 @@ export type HolidaySearchSuggestion = {
   date: string;
   detail: string;
   isToday: boolean;
-  source: 'mom' | 'fallback';
+  source: HolidaySuggestionSource;
 };
+
+type HolidaySuggestionSource = 'mom' | 'fallback' | 'chinese-festival';
 
 type SingaporeHoliday = {
   date: string;
   name: string;
-  source: 'mom' | 'fallback';
+  source: HolidaySuggestionSource;
 };
 
 const MOM_PUBLIC_HOLIDAYS_URL =
   'https://www.mom.gov.sg/employment-practices/public-holidays';
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const MAX_OCCASION_SUGGESTIONS = 10;
 
 const HOLIDAY_DOTS: Record<string, string> = {
   "New Year's Day": '#cda636',
   'Chinese New Year': '#bf5631',
+  'Lantern Festival': '#d04c3f',
+  'Qing Ming Festival': '#8a9a7a',
+  'Dragon Boat Festival': '#365f9c',
+  'Qixi Festival': '#c477a4',
+  'Mid-Autumn Festival': '#cda636',
   'Hari Raya Puasa': '#8a9a7a',
   'Good Friday': '#cdbfa2',
   'Labour Day': '#6e8ea8',
@@ -48,6 +56,80 @@ const FALLBACK_HOLIDAYS: SingaporeHoliday[] = [
   { date: '2026-11-08', name: 'Deepavali', source: 'fallback' },
   { date: '2026-12-25', name: 'Christmas Day', source: 'fallback' },
 ];
+
+const CHINESE_FESTIVALS: SingaporeHoliday[] = [
+  { date: '2026-02-17', name: 'Chinese New Year', source: 'chinese-festival' },
+  { date: '2026-03-03', name: 'Lantern Festival', source: 'chinese-festival' },
+  {
+    date: '2026-04-05',
+    name: 'Qing Ming Festival',
+    source: 'chinese-festival',
+  },
+  {
+    date: '2026-06-19',
+    name: 'Dragon Boat Festival',
+    source: 'chinese-festival',
+  },
+  { date: '2026-08-19', name: 'Qixi Festival', source: 'chinese-festival' },
+  {
+    date: '2026-09-25',
+    name: 'Mid-Autumn Festival',
+    source: 'chinese-festival',
+  },
+  { date: '2027-02-06', name: 'Chinese New Year', source: 'chinese-festival' },
+  { date: '2027-02-20', name: 'Lantern Festival', source: 'chinese-festival' },
+  {
+    date: '2027-04-05',
+    name: 'Qing Ming Festival',
+    source: 'chinese-festival',
+  },
+  {
+    date: '2027-06-09',
+    name: 'Dragon Boat Festival',
+    source: 'chinese-festival',
+  },
+  { date: '2027-08-08', name: 'Qixi Festival', source: 'chinese-festival' },
+  {
+    date: '2027-09-15',
+    name: 'Mid-Autumn Festival',
+    source: 'chinese-festival',
+  },
+  { date: '2028-01-26', name: 'Chinese New Year', source: 'chinese-festival' },
+  { date: '2028-02-09', name: 'Lantern Festival', source: 'chinese-festival' },
+  {
+    date: '2028-04-04',
+    name: 'Qing Ming Festival',
+    source: 'chinese-festival',
+  },
+  {
+    date: '2028-05-28',
+    name: 'Dragon Boat Festival',
+    source: 'chinese-festival',
+  },
+  { date: '2028-08-26', name: 'Qixi Festival', source: 'chinese-festival' },
+  {
+    date: '2028-10-03',
+    name: 'Mid-Autumn Festival',
+    source: 'chinese-festival',
+  },
+];
+
+const HOLIDAY_QUERY_OVERRIDES: Record<string, string> = {
+  'Chinese New Year':
+    'Chinese New Year red lanterns lion dance spring festival',
+  'Lantern Festival': 'Lantern Festival yuanxiao lanterns full moon',
+  'Qing Ming Festival': 'Qing Ming ancestors spring landscape',
+  'Dragon Boat Festival': 'Dragon Boat Festival dragon boats zongzi river race',
+  'Qixi Festival': 'Qixi Festival weaving stars lovers',
+  'Mid-Autumn Festival':
+    "Mid-Autumn Festival mooncakes lanterns full moon Chang'e reunion",
+};
+
+const SOURCE_PRIORITY: Record<HolidaySuggestionSource, number> = {
+  mom: 0,
+  fallback: 1,
+  'chinese-festival': 2,
+};
 
 const MONTHS: Record<string, number> = {
   january: 0,
@@ -222,18 +304,22 @@ const buildSuggestions = (holidays: SingaporeHoliday[], now: Date) => {
   const today = toSingaporeIsoDate(now);
 
   return uniqueByName(
-    holidays
+    [...holidays, ...CHINESE_FESTIVALS]
       .filter((holiday) => holiday.date >= today)
-      .sort((a, b) => dateToTime(a.date) - dateToTime(b.date))
+      .sort(
+        (a, b) =>
+          dateToTime(a.date) - dateToTime(b.date) ||
+          SOURCE_PRIORITY[a.source] - SOURCE_PRIORITY[b.source]
+      )
   )
-    .slice(0, 4)
+    .slice(0, MAX_OCCASION_SUGGESTIONS)
     .map((holiday) => {
       const isToday = holiday.date === today;
 
       return {
         type: 'occasion' as const,
         label: holiday.name,
-        query: holiday.name,
+        query: HOLIDAY_QUERY_OVERRIDES[holiday.name] || holiday.name,
         dot: HOLIDAY_DOTS[holiday.name] || '#cdbfa2',
         date: holiday.date,
         detail: isToday ? 'Today' : formatHolidayDate(holiday.date),

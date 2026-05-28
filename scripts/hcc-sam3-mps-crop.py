@@ -79,6 +79,7 @@ def parse_args():
     parser.add_argument("--include")
     parser.add_argument("--from-report")
     parser.add_argument("--postprocess-loaded", action="store_true")
+    parser.add_argument("--target", choices=("object", "content", "none"), default="object")
     parser.add_argument("--border-refine", action="store_true")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--write-unchanged", action="store_true")
@@ -207,8 +208,19 @@ def process_image(file_path, args, processor):
     final_box = [0, 0, preview_size[0], preview_size[1]]
     refined = None
     border_refined = None
+    object_trimmed = None
 
-    if selected:
+    target = getattr(args, "target", "object")
+    if target == "none":
+        selected = {}
+        reason = "target_none"
+    elif selected:
+        if target == "object":
+            object_selected = select_object_candidate(candidates, selected, preview_arr)
+            if object_selected and object_selected["box"] != selected["box"]:
+                selected = object_selected
+                reason = f"{reason}+object_expand"
+
         final_box = selected["box"]
         action = "crop"
         if selected["area"] >= 0.96 and edge["dark_frac"] < 0.25:
@@ -216,14 +228,23 @@ def process_image(file_path, args, processor):
             reason = "near_full_sam3"
             final_box = [0, 0, preview_size[0], preview_size[1]]
         else:
-            refined = refine_frame_box(preview_arr, final_box, edge)
+            refined = None
+            if not (target == "object" and selected.get("object_expanded")):
+                refined = refine_frame_box(preview_arr, final_box, edge)
             if refined:
                 final_box = refined["box"]
                 reason = f"{reason}+frame_refine"
-            border_refined = refine_inner_border_box(preview_arr, final_box, selected, args)
+            border_refined = None
+            if target == "content":
+                border_refined = refine_inner_border_box(preview_arr, final_box, selected, args)
             if border_refined:
                 final_box = border_refined["box"]
                 reason = f"{reason}+border_refine"
+            if target == "object" and selected.get("object_expanded"):
+                object_trimmed = trim_dark_object_rim(preview_arr, final_box)
+                if object_trimmed:
+                    final_box = object_trimmed["box"]
+                    reason = f"{reason}+rim_trim"
     else:
         selected = {}
 
@@ -245,6 +266,7 @@ def process_image(file_path, args, processor):
         "source_box": source_box,
         "refined": refined,
         "border_refined": border_refined,
+        "object_trimmed": object_trimmed,
         "top": candidates[:30],
     }
 
@@ -354,6 +376,193 @@ def select_candidate(candidates, edge, preview_size):
         return keep, "near_full_candidate"
 
     return selected, "ranked_sam3"
+
+
+def select_object_candidate(candidates, selected, image_arr):
+    selected_area = selected.get("area") or 0
+    if selected_area <= 0:
+        return selected
+    if selected_area >= 0.55:
+        return selected
+
+    selected_box = selected["box"]
+    selected_score = selected.get("score", 0)
+    ranked = []
+    for candidate in candidates:
+        if candidate.get("box") == selected_box:
+            continue
+        if candidate.get("score", 0) < 0.30:
+            continue
+        if candidate.get("area", 0) <= selected_area * 1.16:
+            continue
+        if candidate.get("area", 0) > 0.86:
+            continue
+        if candidate.get("area", 0) > selected_area * 2.35:
+            continue
+        if not contains_box(candidate["box"], selected_box, inset_tolerance=8):
+            continue
+
+        prompt = candidate.get("prompt") or ""
+        container_prompt = prompt in {
+            "image inside frame",
+            "picture inside frame",
+            "photographic print",
+            "printed image",
+            "artwork",
+            "artwork image",
+            "artwork only",
+        }
+        score_close = candidate.get("score", 0) >= selected_score - 0.09
+        if not (container_prompt or score_close):
+            continue
+
+        stats = crop_border_stats(image_arr, candidate["box"])
+        if stats["dark_frac"] > 0.58:
+            continue
+
+        area_ratio = candidate["area"] / selected_area
+        prompt_bonus = {
+            "image inside frame": 0.32,
+            "picture inside frame": 0.28,
+            "photographic print": 0.22,
+            "printed image": 0.16,
+            "artwork": 0.12,
+            "artwork image": 0.10,
+            "artwork only": 0.08,
+        }.get(prompt, 0.0)
+        rank = (
+            candidate["score"]
+            + prompt_bonus
+            + min(0.32, (area_ratio - 1.0) * 0.24)
+            - stats["dark_frac"] * 0.30
+        )
+        ranked.append((rank, candidate, stats))
+
+    if not ranked:
+        return selected
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    expanded = dict(ranked[0][1])
+    expanded["rank"] = round(ranked[0][0], 6)
+    expanded["object_expanded"] = {
+        "from": selected_box,
+        "border_stats": ranked[0][2],
+    }
+    return expanded
+
+
+def contains_box(outer, inner, inset_tolerance=0):
+    return (
+        outer[0] <= inner[0] + inset_tolerance
+        and outer[1] <= inner[1] + inset_tolerance
+        and outer[2] >= inner[2] - inset_tolerance
+        and outer[3] >= inner[3] - inset_tolerance
+    )
+
+
+def crop_border_stats(image_arr, box):
+    x1, y1, x2, y2 = [int(value) for value in box]
+    crop = image_arr[y1:y2, x1:x2]
+    if crop.size == 0:
+        return {"dark_frac": 1.0, "light_neutral_frac": 0.0}
+    return border_stats(crop)
+
+
+def trim_dark_object_rim(image_arr, box):
+    x1, y1, x2, y2 = [int(value) for value in box]
+    crop = image_arr[y1:y2, x1:x2]
+    if crop.shape[0] < 100 or crop.shape[1] < 100:
+        return None
+
+    height, width = crop.shape[:2]
+    cuts = {
+        "left": dark_rim_cut(crop, "left"),
+        "right": dark_rim_cut(crop, "right"),
+        "top": dark_rim_cut(crop, "top"),
+        "bottom": dark_rim_cut(crop, "bottom"),
+    }
+    accepted = {side: cut for side, cut in cuts.items() if cut}
+    if not accepted:
+        return None
+
+    left = accepted.get("left", {}).get("index", 0)
+    top = accepted.get("top", {}).get("index", 0)
+    right = accepted.get("right", {}).get("index", width)
+    bottom = accepted.get("bottom", {}).get("index", height)
+    if right <= left or bottom <= top:
+        return None
+
+    area_ratio = ((right - left) * (bottom - top)) / (width * height)
+    if area_ratio < 0.90:
+        return None
+
+    new_box = [x1 + left, y1 + top, x1 + right, y1 + bottom]
+    if new_box == [x1, y1, x2, y2]:
+        return None
+
+    return {
+        "box": new_box,
+        "area_ratio": round(area_ratio, 6),
+        "cuts": accepted,
+    }
+
+
+def dark_rim_cut(image, side):
+    height, width = image.shape[:2]
+    axis_length = width if side in {"left", "right"} else height
+    max_scan = min(30, max(4, int(axis_length * 0.045)))
+    last_dark = None
+    stats = []
+
+    for offset in range(max_scan):
+        index = offset
+        if side == "right":
+            index = width - 1 - offset
+            line = image[:, index, :]
+        elif side == "left":
+            line = image[:, index, :]
+        elif side == "bottom":
+            index = height - 1 - offset
+            line = image[index, :, :]
+        else:
+            line = image[index, :, :]
+
+        stat = line_luma_stats(line)
+        stats.append(stat)
+        dark_line = stat["dark_frac"] >= 0.12 and stat["mean_lum"] <= 145
+        if dark_line:
+            last_dark = offset
+            continue
+        if last_dark is not None and stat["mean_lum"] >= 155 and stat["dark_frac"] <= 0.08:
+            break
+
+    if last_dark is None:
+        return None
+
+    cut = min(last_dark + 1, max_scan)
+    if cut <= 0:
+        return None
+
+    index = cut if side in {"left", "top"} else axis_length - cut
+    distance = cut / axis_length
+    if distance > 0.055:
+        return None
+
+    return {
+        "index": int(index),
+        "pixels": int(cut),
+        "distance": round(float(distance), 6),
+        "edge_stats": stats[: cut + 1],
+    }
+
+
+def line_luma_stats(line):
+    pixels = line.reshape(-1, 3).astype(np.float32)
+    lum = 0.2126 * pixels[:, 0] + 0.7152 * pixels[:, 1] + 0.0722 * pixels[:, 2]
+    return {
+        "mean_lum": round(float(lum.mean()), 6),
+        "dark_frac": round(float((lum < 80).mean()), 6),
+    }
 
 
 def is_clean_studio(candidates, edge):

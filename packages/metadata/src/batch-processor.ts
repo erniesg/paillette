@@ -29,14 +29,17 @@ export class BatchMetadataProcessor {
     const failed: Array<{ row: number; error: string }> = [];
 
     // Process each row
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    for (const [i, row] of rows.entries()) {
       const rowNumber = i + 2; // +2 for header row and 0-index
 
       try {
         if (row.artwork_id) {
           // UPDATE operation: artwork_id provided
-          await this.updateArtwork(row, orgId, userId);
+          await this.updateArtwork(
+            { ...row, artwork_id: row.artwork_id },
+            orgId,
+            userId
+          );
           updated.push({ id: row.artwork_id, title: row.title });
         } else if (row.image_filename) {
           // Try to match by image_filename
@@ -109,7 +112,7 @@ export class BatchMetadataProcessor {
           description, provenance, field_sources, translations,
           dominant_colors, color_palette, custom_metadata, citation,
           created_at, updated_at, uploaded_by, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         artworkId,
@@ -157,7 +160,7 @@ export class BatchMetadataProcessor {
   private async updateArtwork(
     row: ArtworkRow & { artwork_id: string },
     orgId: string,
-    userId: string
+    _userId: string
   ): Promise<void> {
     // Check if artwork exists
     const existing = await this.db

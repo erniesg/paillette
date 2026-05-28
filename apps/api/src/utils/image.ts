@@ -190,10 +190,11 @@ export function parseFilename(filename: string): {
   const underscorePattern = /^(.+?)_(.+?)_(\d{4})$/;
   const underscoreMatch = nameWithoutExt.match(underscorePattern);
   if (underscoreMatch) {
+    const [, artist, title, year] = underscoreMatch;
     return {
-      artist: underscoreMatch[1].trim(),
-      title: underscoreMatch[2].trim(),
-      year: parseInt(underscoreMatch[3]),
+      artist: artist!.trim(),
+      title: title!.trim(),
+      year: parseInt(year!),
     };
   }
 
@@ -201,10 +202,11 @@ export function parseFilename(filename: string): {
   const dashPattern = /^(.+?)\s*-\s*(.+?)\s*\((\d{4})\)$/;
   const dashMatch = nameWithoutExt.match(dashPattern);
   if (dashMatch) {
+    const [, artist, title, year] = dashMatch;
     return {
-      artist: dashMatch[1].trim(),
-      title: dashMatch[2].trim(),
-      year: parseInt(dashMatch[3]),
+      artist: artist!.trim(),
+      title: title!.trim(),
+      year: parseInt(year!),
     };
   }
 
@@ -212,9 +214,10 @@ export function parseFilename(filename: string): {
   const simplePattern = /^(.+?)_(\d{4})$/;
   const simpleMatch = nameWithoutExt.match(simplePattern);
   if (simpleMatch) {
+    const [, title, year] = simpleMatch;
     return {
-      title: simpleMatch[1].trim(),
-      year: parseInt(simpleMatch[2]),
+      title: title!.trim(),
+      year: parseInt(year!),
     };
   }
 

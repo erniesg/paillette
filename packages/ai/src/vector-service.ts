@@ -5,7 +5,10 @@ import {
   VectorSearchResult,
   DEFAULT_TOP_K,
   DEFAULT_VECTOR_DIMENSIONS,
+  VectorMetadata,
 } from './types';
+
+type VectorMetadataRecord = Record<string, VectorizeVectorMetadata>;
 
 /**
  * Service for managing vectors in Cloudflare Vectorize
@@ -13,12 +16,10 @@ import {
  */
 export class VectorService {
   private vectorize: Vectorize;
-  private indexName: string;
   private expectedDimensions: number;
 
   constructor(config: VectorServiceConfig) {
     this.vectorize = config.vectorize;
-    this.indexName = config.indexName || 'artwork-embeddings';
     this.expectedDimensions = DEFAULT_VECTOR_DIMENSIONS;
   }
 
@@ -39,11 +40,11 @@ export class VectorService {
       }
 
       // Upsert the vector
-      const result = await this.vectorize.upsert([
+      await this.vectorize.upsert([
         {
           id: options.id,
           values: options.values,
-          metadata: options.metadata,
+          metadata: this.toVectorizeMetadata(options.metadata),
         },
       ]);
 
@@ -83,18 +84,18 @@ export class VectorService {
       }
 
       // Upsert all vectors
-      const result = await this.vectorize.upsert(
+      await this.vectorize.upsert(
         vectors.map((v) => ({
           id: v.id,
           values: v.values,
-          metadata: v.metadata,
+          metadata: this.toVectorizeMetadata(v.metadata),
         }))
       );
 
       return {
         success: true,
-        count: result.count,
-        ids: result.ids,
+        count: vectors.length,
+        ids: vectors.map((vector) => vector.id),
       };
     } catch (error) {
       console.error('Failed to upsert batch:', error);
@@ -123,7 +124,7 @@ export class VectorService {
       } = options || {};
 
       // Build filter object
-      const filter: Record<string, any> = {};
+      const filter: VectorizeVectorMetadataFilter = {};
       if (galleryId) {
         filter.galleryId = galleryId;
       }
@@ -141,10 +142,12 @@ export class VectorService {
         .map((match) => ({
           id: match.id,
           score: match.score,
-          metadata: includeMetadata ? match.metadata : undefined,
+          metadata: includeMetadata
+            ? this.fromVectorizeMetadata(match.metadata)
+            : undefined,
         }));
 
-      return matches as VectorSearchResult[];
+      return matches;
     } catch (error) {
       console.error('Failed to search vectors:', error);
       throw new Error(
@@ -201,10 +204,10 @@ export class VectorService {
     ids: string[]
   ): Promise<{ success: boolean; count: number }> {
     try {
-      const result = await this.vectorize.deleteByIds(ids);
+      await this.vectorize.deleteByIds(ids);
       return {
         success: true,
-        count: result.count,
+        count: ids.length,
       };
     } catch (error) {
       console.error('Failed to delete batch:', error);
@@ -212,5 +215,62 @@ export class VectorService {
         `Failed to delete batch: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  private toVectorizeMetadata(metadata: VectorMetadata): VectorMetadataRecord {
+    const record: VectorMetadataRecord = {
+      galleryId: metadata.galleryId,
+      artworkId: metadata.artworkId,
+      createdAt: metadata.createdAt,
+    };
+
+    if (metadata.title !== undefined) {
+      record.title = metadata.title;
+    }
+    if (metadata.artist !== undefined) {
+      record.artist = metadata.artist;
+    }
+    if (metadata.year !== undefined) {
+      record.year = metadata.year;
+    }
+
+    return record;
+  }
+
+  private fromVectorizeMetadata(
+    metadata?: VectorMetadataRecord
+  ): VectorMetadata | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+
+    const galleryId = metadata.galleryId;
+    const artworkId = metadata.artworkId;
+    const createdAt = metadata.createdAt;
+    if (
+      typeof galleryId !== 'string' ||
+      typeof artworkId !== 'string' ||
+      typeof createdAt !== 'string'
+    ) {
+      return undefined;
+    }
+
+    const result: VectorMetadata = {
+      galleryId,
+      artworkId,
+      createdAt,
+    };
+
+    if (typeof metadata.title === 'string') {
+      result.title = metadata.title;
+    }
+    if (typeof metadata.artist === 'string') {
+      result.artist = metadata.artist;
+    }
+    if (typeof metadata.year === 'number') {
+      result.year = metadata.year;
+    }
+
+    return result;
   }
 }

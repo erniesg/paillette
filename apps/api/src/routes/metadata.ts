@@ -7,7 +7,6 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import type { Env } from '../index';
 import { CSVParser, BatchMetadataProcessor } from '@paillette/metadata';
-import type { BatchProcessResult } from '@paillette/metadata';
 
 const app = new Hono<{ Bindings: Env }>();
 

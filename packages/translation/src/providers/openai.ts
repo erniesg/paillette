@@ -1,5 +1,5 @@
 import { BaseTranslationProvider } from './base';
-import type { SupportedLanguage, ProviderConfig } from '../types';
+import type { SupportedLanguage } from '../types';
 import { TranslationError } from '../types';
 
 /**
@@ -45,7 +45,7 @@ export class OpenAIProvider extends BaseTranslationProvider {
             },
             {
               role: 'user',
-              content: `Translate this text into ${targetLangName} for a gallery in Singapore: ${text}`,
+              content: `Translate this text from ${sourceLangName} into ${targetLangName} for a gallery in Singapore: ${text}`,
             },
           ],
           temperature: 0.3, // Lower temperature for more consistent translations
@@ -53,11 +53,15 @@ export class OpenAIProvider extends BaseTranslationProvider {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = (await response.json()) as {
+          error?: { message?: string };
+        };
         throw new Error(error.error?.message || `HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
       const translatedText = data.choices?.[0]?.message?.content;
 
       if (!translatedText) {

@@ -3,33 +3,33 @@ import {
   type LoaderFunctionArgs,
   type MetaFunction,
 } from '@remix-run/cloudflare';
-import { Link, useLoaderData } from '@remix-run/react';
+import { useLoaderData } from '@remix-run/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
-  Activity,
-  BookOpen,
-  Braces,
   Check,
+  ChevronRight,
   Copy,
-  Database,
-  FileJson,
   KeyRound,
   Loader2,
   LogIn,
+  Moon,
   Play,
-  Search,
-  Server,
-  ShieldCheck,
-  TerminalSquare,
+  RefreshCw,
+  Sun,
   Trash2,
   UserPlus,
-  Workflow,
 } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
-import { Button } from '~/components/ui/button';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Logo } from '~/components/ui/logo';
 import { UserMenu } from '~/components/user/user-menu';
+import { useTheme } from '~/contexts/theme-context';
 import { useUser } from '~/contexts/user-context';
 import { apiClient } from '~/lib/api';
 import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
@@ -279,6 +279,57 @@ const endpoints = [
       },
     ],
   },
+  {
+    method: 'POST',
+    path: '/image-extractions',
+    title: 'Image extraction',
+    body: `{
+  "imageUrls": ["https://example.com/artwork.tif"],
+  "target": "object",
+  "preserveFilenames": true,
+  "preview": false
+}`,
+    schema: [
+      {
+        name: 'imageUrls',
+        type: 'string[]',
+        required: true,
+        description:
+          'Public image URLs. For file, zip, or folder uploads, send multipart form-data with files[].',
+      },
+      {
+        name: 'target',
+        type: '"object" | "content"',
+        defaultValue: 'object',
+        description:
+          'object preserves the visible artwork object/support. content is experimental and crops tighter.',
+      },
+      {
+        name: 'preserveFilenames',
+        type: 'boolean',
+        defaultValue: 'true',
+        description: 'Preserve source filenames in generated outputs.',
+      },
+      {
+        name: 'filenamePrefix',
+        type: 'string',
+        defaultValue: '',
+        description: 'Optional prefix when not preserving source names.',
+      },
+      {
+        name: 'filenameSuffix',
+        type: 'string',
+        defaultValue: '',
+        description: 'Optional suffix when not preserving source names.',
+      },
+      {
+        name: 'preview',
+        type: 'boolean',
+        defaultValue: 'false',
+        description: 'Request lightweight preview outputs with the job.',
+      },
+    ],
+  },
 ];
 
 const responseMetadataFields: SchemaField[] = [
@@ -449,6 +500,37 @@ const mcpTools = [
       },
     ],
   },
+  {
+    name: 'extract_images',
+    description:
+      'Create an image extraction job from image URLs. target defaults to object.',
+    schema: [
+      {
+        name: 'imageUrls',
+        type: 'string[]',
+        required: true,
+        description: 'Public image URLs. Min 1, max 50.',
+      },
+      {
+        name: 'target',
+        type: '"object" | "content"',
+        defaultValue: 'object',
+        description: 'Use object for mounted artworks and scrolls.',
+      },
+      {
+        name: 'preserveFilenames',
+        type: 'boolean',
+        defaultValue: 'true',
+        description: 'Preserve source filenames in generated outputs.',
+      },
+      {
+        name: 'returnPreview',
+        type: 'boolean',
+        defaultValue: 'false',
+        description: 'Request preview outputs with the job.',
+      },
+    ],
+  },
 ];
 
 const primaryMcpTool =
@@ -456,48 +538,6 @@ const primaryMcpTool =
 const secondaryMcpTools = mcpTools.filter(
   (tool) => tool.name !== primaryMcpTool.name
 );
-
-const docsNav = [
-  { href: '#start', label: 'Start' },
-  { href: '#sources', label: 'Sources' },
-  { href: '#rest', label: 'REST' },
-  { href: '#keys', label: 'Keys' },
-  { href: '#console', label: 'Console' },
-  { href: '#mcp', label: 'MCP' },
-];
-
-const integrationSteps = [
-  {
-    icon: Workflow,
-    title: 'Choose transport',
-    body: 'Use REST for product flows and MCP for agent clients.',
-    code: 'REST or MCP',
-  },
-  {
-    icon: Database,
-    title: 'Resolve the source',
-    body: 'Call /orgs and use the short key in every search request.',
-    code: 'GET /api/v1/orgs?limit=20',
-  },
-  {
-    icon: Search,
-    title: 'Search artworks',
-    body: 'Send a natural-language query to the selected source.',
-    code: 'POST /api/v1/orgs/ngs/search/text',
-  },
-  {
-    icon: FileJson,
-    title: 'Trust the field sources',
-    body: 'Read metadata.field_sources and source_provenance before displaying catalogue text.',
-    code: 'metadata.field_sources.description',
-  },
-];
-
-const authNotes = [
-  'Use X-API-Key for server-to-server calls.',
-  'Public source discovery endpoints do not require a key.',
-  'Never expose a personal key in client-side code.',
-];
 
 const sampleSearchResponse = {
   count: 2,
@@ -594,10 +634,13 @@ const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
 type EndpointDefinition = (typeof endpoints)[number];
 
-const methodClasses: Record<string, string> = {
-  GET: 'border-emerald-300/30 bg-emerald-300/10 text-emerald-100',
-  POST: 'border-fuchsia-300/30 bg-fuchsia-300/10 text-fuchsia-100',
+const apiBaseByEnvironment = {
+  stg: 'https://paillette-api-stg.berlayar.ai/api/v1',
+  prod: 'https://paillette-api.berlayar.ai/api/v1',
 };
+type ApiEnvironment = keyof typeof apiBaseByEnvironment;
+type LanguageTab = 'curl' | 'js' | 'python' | 'mcp';
+type SectionTone = 'GET' | 'POST' | 'MCP' | 'TEXT';
 
 const publicEndpointPaths = new Set(['/orgs', '/orgs/slug/{slug}']);
 
@@ -619,6 +662,9 @@ const getFieldDefault = (endpoint: EndpointDefinition, field: SchemaField) => {
     slug: NGS_ORG_SLUG,
     targetLang: 'zh',
     text: 'Gallery label text',
+    imageUrls: 'https://example.com/artwork.tif',
+    preserveFilenames: 'true',
+    preview: 'false',
   };
 
   if (endpoint.path === '/orgs' && field.name === 'limit') return '20';
@@ -663,11 +709,11 @@ const coerceFieldValue = (field: SchemaField, value: string) => {
     const parsed = Number.parseFloat(trimmed);
     return Number.isFinite(parsed) ? parsed : trimmed;
   }
+  if (field.type === 'boolean') {
+    return ['1', 'true', 'yes', 'on'].includes(trimmed.toLowerCase());
+  }
   return trimmed;
 };
-
-const enumOptionsFor = (field: SchemaField) =>
-  [...field.type.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\"'\"'`)}'`;
 
@@ -810,33 +856,745 @@ const compactSearchResponse = (response: SearchResponse) => ({
   }),
 });
 
+const endpointIdByPath: Record<string, string> = {
+  '/orgs': 'sources-list',
+  '/orgs/slug/{slug}': 'source-lookup',
+  '/orgs/ngs/search/text': 'search-text',
+  '/orgs/ngs/search/image': 'search-image',
+  '/orgs/ngs/search/color': 'search-colour',
+  '/orgs/ngs/artworks/{artworkId}': 'artwork-lookup',
+  '/translate/text': 'translate-text',
+  '/image-extractions': 'image-extraction',
+};
+
+const endpointSummaryByPath: Record<string, string> = {
+  '/orgs':
+    'List public sources and the keys used in REST paths and MCP arguments.',
+  '/orgs/slug/{slug}':
+    'Resolve a source by canonical slug before building source-specific calls.',
+  '/orgs/ngs/search/text':
+    "Natural-language search against a source's text embeddings.",
+  '/orgs/ngs/search/image':
+    "Multipart image search against a source's visual embeddings.",
+  '/orgs/ngs/search/color':
+    'Find artworks whose extracted palettes match one or more hex colours.',
+  '/orgs/ngs/artworks/{artworkId}':
+    'Fetch one artwork record with source-labelled metadata and imagery.',
+  '/translate/text':
+    'Translate English catalogue text to Chinese, Malay, or Tamil.',
+  '/image-extractions':
+    'Create a batch image extraction job. target=object is the default for preserving mounted artworks, scrolls, and visible supports.',
+};
+
+const endpointNavLabelByPath: Record<string, string> = {
+  '/orgs': '/orgs',
+  '/orgs/slug/{slug}': '/orgs/slug/{slug}',
+  '/orgs/ngs/search/text': 'text',
+  '/orgs/ngs/search/image': 'image',
+  '/orgs/ngs/search/color': 'colour',
+  '/orgs/ngs/artworks/{artworkId}': 'by ID',
+  '/translate/text': 'translate text',
+  '/image-extractions': 'image extraction',
+};
+
+const baseResponseFields: SchemaField[] = [
+  {
+    name: 'success',
+    type: 'boolean',
+    description: 'Whether the request completed successfully.',
+  },
+  {
+    name: 'data',
+    type: 'object | array',
+    description: 'Endpoint-specific payload returned by the API.',
+  },
+  {
+    name: 'error',
+    type: 'object | null',
+    description: 'Present only when success is false.',
+  },
+];
+
+const searchResponseFields: SchemaField[] = [
+  {
+    name: 'count',
+    type: 'integer',
+    description: 'Number of ranked results returned.',
+  },
+  {
+    name: 'queryTime',
+    type: 'integer',
+    description: 'Server-side query time in milliseconds.',
+  },
+  {
+    name: 'results[].similarity',
+    type: 'number',
+    description: 'Cosine similarity score. Higher is closer.',
+  },
+  ...responseMetadataFields,
+];
+
+const translationResponseFields: SchemaField[] = [
+  {
+    name: 'translatedText',
+    type: 'string',
+    description: 'Translated output in the requested target language.',
+  },
+  {
+    name: 'provider',
+    type: 'string',
+    description: 'Translation provider used for the response.',
+  },
+  {
+    name: 'cached',
+    type: 'boolean',
+    description: 'Whether the response came from translation cache.',
+  },
+  {
+    name: 'usage.remaining',
+    type: 'integer',
+    description:
+      'Free translations remaining after the request, when returned.',
+  },
+];
+
+const imageExtractionResponseFields: SchemaField[] = [
+  {
+    name: 'id',
+    type: 'string',
+    description: 'Image extraction job ID.',
+  },
+  {
+    name: 'status',
+    type: '"pending" | "queued" | "processing" | "completed" | "failed"',
+    description: 'Current job state.',
+  },
+  {
+    name: 'target',
+    type: '"object" | "content"',
+    description: 'Requested extraction target.',
+  },
+  {
+    name: 'counts.inputs',
+    type: 'integer',
+    description: 'Number of submitted images or archive inputs.',
+  },
+  {
+    name: 'downloadUrl',
+    type: 'string | null',
+    description: 'Zip download URL once the job is completed.',
+  },
+  {
+    name: 'warnings[]',
+    type: 'string',
+    description:
+      'Non-fatal job warnings such as a missing worker dispatch config.',
+  },
+];
+
+const sourceResponseFields: SchemaField[] = [
+  {
+    name: 'data[].key',
+    type: 'string',
+    description: 'Short source key used in search paths and MCP arguments.',
+  },
+  {
+    name: 'data[].slug',
+    type: 'string',
+    description: 'Canonical public source slug.',
+  },
+  {
+    name: 'metadata.total',
+    type: 'integer',
+    description: 'Total number of sources available to the caller.',
+  },
+];
+
+const artworkResponseFields: SchemaField[] = [
+  {
+    name: 'id',
+    type: 'string',
+    description: 'Artwork identifier returned by search endpoints.',
+  },
+  {
+    name: 'title',
+    type: 'string',
+    description: 'Display title from the source record.',
+  },
+  {
+    name: 'metadata.field_sources',
+    type: 'Record<string, string>',
+    description: 'Per-field source labels for normalized catalogue metadata.',
+  },
+  {
+    name: 'metadata.source_records',
+    type: 'object',
+    description: 'Original source payload excerpts used during normalization.',
+  },
+];
+
+type EndpointDoc = {
+  endpoint: EndpointDefinition;
+  id: string;
+  navLabel: string;
+  responseFields: SchemaField[];
+  summary: string;
+};
+
+const getResponseFields = (endpoint: EndpointDefinition) => {
+  if (endpoint.path.includes('/search/')) return searchResponseFields;
+  if (endpoint.path === '/translate/text') return translationResponseFields;
+  if (endpoint.path === '/image-extractions')
+    return imageExtractionResponseFields;
+  if (endpoint.path === '/orgs') return sourceResponseFields;
+  if (endpoint.path === '/orgs/slug/{slug}') return sourceResponseFields;
+  if (endpoint.path.includes('/artworks/')) return artworkResponseFields;
+  return baseResponseFields;
+};
+
+const endpointDocs: EndpointDoc[] = endpoints.map((endpoint) => ({
+  endpoint,
+  id: endpointIdByPath[endpoint.path] ?? endpoint.path.replace(/\W+/g, '-'),
+  navLabel: endpointNavLabelByPath[endpoint.path] ?? endpoint.title,
+  responseFields: getResponseFields(endpoint),
+  summary: endpointSummaryByPath[endpoint.path] ?? endpoint.body,
+}));
+
+type NavItem = {
+  href: string;
+  id: string;
+  label: string;
+  method?: SectionTone;
+};
+
+const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
+  {
+    title: 'Start',
+    items: [
+      { href: '#overview', id: 'overview', label: 'Overview' },
+      {
+        href: '#authentication',
+        id: 'authentication',
+        label: 'Authentication',
+      },
+      {
+        href: '#field-sources',
+        id: 'field-sources',
+        label: 'Field sources',
+      },
+    ],
+  },
+  {
+    title: 'Sources · public',
+    items: [
+      {
+        href: '#sources-list',
+        id: 'sources-list',
+        label: 'GET /orgs',
+        method: 'GET',
+      },
+      {
+        href: '#source-lookup',
+        id: 'source-lookup',
+        label: 'GET /orgs/slug/{slug}',
+        method: 'GET',
+      },
+    ],
+  },
+  {
+    title: 'Search',
+    items: [
+      {
+        href: '#search-text',
+        id: 'search-text',
+        label: 'text',
+        method: 'POST',
+      },
+      {
+        href: '#search-image',
+        id: 'search-image',
+        label: 'image',
+        method: 'POST',
+      },
+      {
+        href: '#search-colour',
+        id: 'search-colour',
+        label: 'colour',
+        method: 'POST',
+      },
+    ],
+  },
+  {
+    title: 'Artworks',
+    items: [
+      {
+        href: '#artwork-lookup',
+        id: 'artwork-lookup',
+        label: 'by ID',
+        method: 'GET',
+      },
+    ],
+  },
+  {
+    title: 'Translation',
+    items: [
+      {
+        href: '#translate-text',
+        id: 'translate-text',
+        label: 'translate text',
+        method: 'POST',
+      },
+    ],
+  },
+  {
+    title: 'Tools',
+    items: [
+      {
+        href: '#image-extraction',
+        id: 'image-extraction',
+        label: 'image extraction',
+        method: 'POST',
+      },
+    ],
+  },
+  {
+    title: 'MCP',
+    items: [
+      {
+        href: '#mcp-client-config',
+        id: 'mcp-client-config',
+        label: 'client config',
+        method: 'MCP',
+      },
+      {
+        href: '#mcp-tool-reference',
+        id: 'mcp-tool-reference',
+        label: 'tool reference',
+        method: 'MCP',
+      },
+    ],
+  },
+  {
+    title: 'Account',
+    items: [
+      { href: '#api-keys', id: 'api-keys', label: 'keys' },
+      {
+        href: '#usage-billing',
+        id: 'usage-billing',
+        label: 'usage & billing',
+      },
+    ],
+  },
+];
+
+const languageTabs: Array<{ id: LanguageTab; label: string }> = [
+  { id: 'curl', label: 'cURL' },
+  { id: 'js', label: 'JS' },
+  { id: 'python', label: 'Python' },
+  { id: 'mcp', label: 'MCP' },
+];
+
+const displayPath = (endpoint: EndpointDefinition, includeBase = true) => {
+  const sourceParamPath = endpoint.path.replace('/orgs/ngs', '/orgs/{orgKey}');
+  return `${includeBase ? '/api/v1' : ''}${sourceParamPath}`;
+};
+
+const getEndpointPathFields = (endpoint: EndpointDefinition): SchemaField[] => {
+  const fields: SchemaField[] = [];
+
+  if (endpoint.path.includes('/orgs/ngs')) {
+    fields.push({
+      name: 'orgKey',
+      type: 'string',
+      required: true,
+      description:
+        'Source key from GET /orgs. Use ngs for National Gallery Singapore.',
+    });
+  }
+
+  endpoint.schema.forEach((field) => {
+    if (isPathField(endpoint, field)) fields.push(field);
+  });
+
+  return fields;
+};
+
+const getEndpointBodyFields = (endpoint: EndpointDefinition) =>
+  endpoint.schema.filter((field) => !isPathField(endpoint, field));
+
+const findNavItem = (id: string) => {
+  for (const group of docsNavGroups) {
+    const item = group.items.find((candidate) => candidate.id === id);
+    if (item) return { group: group.title, item };
+  }
+
+  return null;
+};
+
+const detectApiEnvironment = (apiBase: string): ApiEnvironment =>
+  apiBase.includes('paillette-api.berlayar.ai') &&
+  !apiBase.includes('paillette-api-stg')
+    ? 'prod'
+    : 'stg';
+
+const methodTone = (method: SectionTone) => {
+  if (method === 'GET') {
+    return {
+      background: 'color-mix(in srgb, #047857 10%, transparent)',
+      borderColor: 'color-mix(in srgb, #047857 28%, transparent)',
+      color: 'color-mix(in srgb, #047857 82%, var(--app-text))',
+    };
+  }
+
+  if (method === 'MCP') {
+    return {
+      background: 'color-mix(in srgb, #0e7490 10%, transparent)',
+      borderColor: 'color-mix(in srgb, #0e7490 28%, transparent)',
+      color: 'color-mix(in srgb, #0e7490 82%, var(--app-text))',
+    };
+  }
+
+  if (method === 'TEXT') {
+    return {
+      background: 'var(--app-control)',
+      borderColor: 'var(--app-line)',
+      color: 'var(--app-muted-strong)',
+    };
+  }
+
+  return {
+    background: 'color-mix(in srgb, #86198f 10%, transparent)',
+    borderColor: 'color-mix(in srgb, #86198f 28%, transparent)',
+    color: 'color-mix(in srgb, #86198f 82%, var(--app-text))',
+  };
+};
+
+const monoStyle = {
+  fontFamily: '"IBM Plex Mono", "SFMono-Regular", Menlo, monospace',
+};
+
+const displayStyle = {
+  fontFamily: '"EB Garamond", Georgia, serif',
+};
+
+const docsThemeStyle = {
+  '--docs-code': 'color-mix(in srgb, #0e7490 78%, var(--app-text))',
+  '--docs-code-strong': 'color-mix(in srgb, #075985 82%, var(--app-text))',
+  '--docs-accent': 'color-mix(in srgb, #7e22ce 78%, var(--app-text))',
+  '--docs-accent-strong': 'color-mix(in srgb, #86198f 86%, var(--app-text))',
+  '--docs-success': 'color-mix(in srgb, #047857 82%, var(--app-text))',
+  '--docs-code-panel':
+    'color-mix(in srgb, var(--app-text) 5%, var(--app-control))',
+  '--docs-code-panel-strong':
+    'color-mix(in srgb, var(--app-text) 8%, var(--app-control))',
+  '--docs-brand-gradient':
+    'linear-gradient(135deg, #6d28d9 0%, #a21caf 52%, #be185d 100%)',
+} as CSSProperties & Record<string, string>;
+
+const brandGradient =
+  'linear-gradient(135deg, #6d28d9 0%, #a21caf 52%, #be185d 100%)';
+
+type BuiltEndpointRequest = ReturnType<typeof buildEndpointRequest>;
+type RailRunResult = {
+  durationMs: number;
+  endpointPath: string;
+  payload: unknown;
+  status: number;
+  statusText: string;
+};
+
+const buildJavaScriptSample = (
+  request: BuiltEndpointRequest,
+  endpoint: EndpointDefinition
+) => {
+  const headers = stringify(request.headers);
+
+  if (request.isMultipart) {
+    return `const form = new FormData();
+form.set("image", imageFile);
+${Object.entries(request.displayBody)
+  .filter(([name]) => name !== 'image')
+  .map(([name, value]) => `form.set("${name}", "${String(value)}");`)
+  .join('\n')}
+
+const response = await fetch("${request.url}", {
+  method: "${endpoint.method}",
+  headers: ${headers},
+  body: form,
+});
+const payload = await response.json();`;
+  }
+
+  const body =
+    endpoint.method === 'GET'
+      ? ''
+      : `,
+  body: JSON.stringify(${stringify(request.displayBody)}),`;
+
+  return `const response = await fetch("${request.url}", {
+  method: "${endpoint.method}",
+  headers: ${headers}${body}
+});
+const payload = await response.json();`;
+};
+
+const buildPythonSample = (
+  request: BuiltEndpointRequest,
+  endpoint: EndpointDefinition
+) => {
+  if (request.isMultipart) {
+    return `import requests
+
+with open("image.jpg", "rb") as image:
+    response = requests.post(
+        "${request.url}",
+        headers=${stringify(request.headers)},
+        files={"image": image},
+        data=${stringify(request.displayBody)},
+    )
+
+payload = response.json()`;
+  }
+
+  const method = endpoint.method === 'GET' ? 'get' : 'post';
+  const body =
+    endpoint.method === 'GET'
+      ? ''
+      : `,
+        json=${stringify(request.displayBody)},`;
+
+  return `import requests
+
+response = requests.${method}(
+    "${request.url}",
+    headers=${stringify(request.headers)}${body}
+)
+
+payload = response.json()`;
+};
+
+const buildMcpSample = (
+  apiBase: string,
+  apiKey: string,
+  endpoint: EndpointDefinition,
+  values: Record<string, string>
+) => {
+  const args = endpoint.schema.reduce<Record<string, unknown>>(
+    (argumentsByName, field) => {
+      const value = coerceFieldValue(
+        field,
+        values[field.name] ?? getFieldDefault(endpoint, field)
+      );
+      if (value !== undefined) argumentsByName[field.name] = value;
+      return argumentsByName;
+    },
+    {}
+  );
+
+  if (endpoint.path === '/orgs') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'list_orgs',
+        arguments: args,
+      },
+    });
+  }
+
+  if (endpoint.path === '/orgs/ngs/search/text') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'search_artworks',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          ...args,
+        },
+      },
+    });
+  }
+
+  if (endpoint.path === '/orgs/ngs/search/color') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'colour_search',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          ...args,
+        },
+      },
+    });
+  }
+
+  if (endpoint.path === '/orgs/ngs/artworks/{artworkId}') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'lookup_artwork',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          ...args,
+        },
+      },
+    });
+  }
+
+  if (endpoint.path === '/translate/text') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'translate_text',
+        arguments: args,
+      },
+    });
+  }
+
+  if (endpoint.path === '/image-extractions') {
+    const { preview, ...rest } = args;
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'extract_images',
+        arguments: {
+          ...rest,
+          returnPreview: preview ?? false,
+        },
+      },
+    });
+  }
+
+  return stringify({
+    mcpServers: {
+      paillette: {
+        url: `${apiBase}/mcp`,
+        headers: {
+          'X-API-Key': apiKey,
+        },
+      },
+    },
+    note:
+      endpoint.path === '/orgs/ngs/search/image'
+        ? 'Image search is REST-only; MCP tools cover text, colour, lookup, and translation.'
+        : 'No direct MCP tool maps to this REST endpoint.',
+  });
+};
+
+const buildLanguageSample = ({
+  activeLanguage,
+  apiBase,
+  apiKey,
+  endpoint,
+  request,
+  values,
+}: {
+  activeLanguage: LanguageTab;
+  apiBase: string;
+  apiKey: string;
+  endpoint: EndpointDefinition;
+  request: BuiltEndpointRequest;
+  values: Record<string, string>;
+}) => {
+  if (activeLanguage === 'js') return buildJavaScriptSample(request, endpoint);
+  if (activeLanguage === 'python') return buildPythonSample(request, endpoint);
+  if (activeLanguage === 'mcp')
+    return buildMcpSample(apiBase, apiKey, endpoint, values);
+  return request.curl;
+};
+
+const buildExampleResponse = (
+  endpoint: EndpointDefinition,
+  orgListResponse: unknown
+) => {
+  if (endpoint.path === '/orgs') return orgListResponse;
+  if (endpoint.path === '/orgs/slug/{slug}') {
+    return {
+      success: true,
+      data: {
+        key: NGS_ORG_SHORTCODE,
+        id: NGS_ORG_ID,
+        name: 'National Gallery Singapore',
+        slug: NGS_ORG_SLUG,
+      },
+    };
+  }
+  if (endpoint.path === '/orgs/ngs/search/color') {
+    return {
+      results: [
+        {
+          artworkId: '2018-00743',
+          title: 'Singapore',
+          matchedColors: [{ searchColor: '#cda636', distance: 12.8 }],
+          averageDistance: 13.4,
+        },
+      ],
+      query: {
+        colors: ['#cda636', '#365f9c'],
+        matchMode: 'any',
+        threshold: 18,
+      },
+      totalResults: 1,
+      took: 94,
+    };
+  }
+  if (endpoint.path.includes('/search/')) {
+    return compactSearchResponse(sampleSearchResponse);
+  }
+  if (endpoint.path.includes('/artworks/')) {
+    return {
+      id: '2018-00743',
+      title: 'Singapore',
+      artist: 'John Turnbull Thomson',
+      year: 1851,
+      metadata: {
+        medium: 'Oil on canvas',
+        field_sources: { title: 'ngs', description: 'roots' },
+      },
+    };
+  }
+  if (endpoint.path === '/translate/text') {
+    return {
+      translatedText: '画廊标签文本',
+      provider: 'google',
+      cached: false,
+      usage: { used: 2, quota: 10, remaining: 8 },
+    };
+  }
+  return { success: true };
+};
+
 export default function ApiDocsPage() {
   const { apiBase, initialOrgDirectory } = useLoaderData<typeof loader>();
   const { user, isLoading, login, signup, getAccessToken } = useUser();
+  const { theme, toggleTheme } = useTheme();
   const queryClient = useQueryClient();
   const [keyName, setKeyName] = useState('Agent integration');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
-  const [testQuery, setTestQuery] = useState('batik textile pattern');
-  const [testLimit, setTestLimit] = useState(6);
-  const [testOrgId, setTestOrgId] = useState(NGS_ORG_SHORTCODE);
   const [testApiKey, setTestApiKey] = useState('');
-  const [testResponse, setTestResponse] = useState<SearchResponse | null>(null);
-  const [orgsExecutedAt, setOrgsExecutedAt] = useState<string | null>(null);
-  const [builderEndpointPath, setBuilderEndpointPath] = useState(
-    defaultBuilderEndpointPath
+  const [apiEnvironment, setApiEnvironment] = useState<ApiEnvironment>(() =>
+    detectApiEnvironment(apiBase)
   );
-  const [builderValuesByPath, setBuilderValuesByPath] = useState<
-    Record<string, Record<string, string>>
-  >(() => {
-    const endpoint =
-      endpoints.find((item) => item.path === defaultBuilderEndpointPath) ??
-      endpoints[0]!;
-    return { [endpoint.path]: getInitialEndpointValues(endpoint) };
-  });
-  const [builderFiles, setBuilderFiles] = useState<Record<string, File | null>>(
-    {}
+  const [activeLanguage, setActiveLanguage] = useState<LanguageTab>('curl');
+  const [activeSectionId, setActiveSectionId] = useState('overview');
+  const [activeEndpointId, setActiveEndpointId] = useState(
+    endpointIdByPath[defaultBuilderEndpointPath] ?? endpointDocs[0]!.id
   );
+  const [railResponses, setRailResponses] = useState<
+    Record<string, RailRunResult>
+  >({});
 
   const orgsQuery = useQuery({
     queryKey: ['api-docs-orgs', apiBase],
@@ -882,66 +1640,11 @@ export default function ApiDocsPage() {
     retry: false,
   });
 
-  const createApiKeyMutation = useMutation({
-    mutationFn: () =>
-      apiClient.createApiKey(getAccessToken, keyName || 'Agent integration'),
-    onSuccess: (created) => {
-      setCreatedKey(created.key);
-      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-    },
-  });
-
-  const revokeApiKeyMutation = useMutation({
-    mutationFn: (keyId: string) =>
-      apiClient.revokeApiKey(getAccessToken, keyId),
-    onSuccess: () => {
-      setCreatedKey(null);
-      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-    },
-  });
-
-  const testSearchMutation = useMutation({
-    mutationFn: async () => {
-      const liveKey = (testApiKey.trim() || createdKey || '').trim();
-
-      if (!liveKey) {
-        throw new Error('Paste an API key to run a live request.');
-      }
-
-      const orgId = (testOrgId.trim() || NGS_ORG_SHORTCODE).trim();
-      const response = await fetch(
-        `${apiBase}/orgs/${encodeURIComponent(orgId)}/search/text`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': liveKey,
-          },
-          body: JSON.stringify({
-            query: testQuery,
-            topK: testLimit,
-            minScore: 0.3,
-          }),
-        }
-      );
-      const payload = (await response.json()) as ApiResponse<SearchResponse>;
-
-      if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(
-          payload.error?.message || `Request failed (${response.status})`
-        );
-      }
-
-      return payload.data;
-    },
-    onSuccess: (response) => {
-      setTestResponse(response);
-      void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
-      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-    },
-  });
   const keys = apiKeysQuery.data?.keys ?? [];
   const activeKey = keys.find((key) => key.status === 'active');
+  const liveApiKey = testApiKey.trim();
+  const shownApiKey = liveApiKey || maskKey(null);
+  const selectedApiBase = apiBaseByEnvironment[apiEnvironment];
   const dailyUsage = usageQuery.data ?? defaultDailyUsage;
   const translationUsage =
     translationUsageQuery.data ?? defaultTranslationUsage;
@@ -956,16 +1659,16 @@ export default function ApiDocsPage() {
   const dailyUsageValue = !user
     ? 'Sign in'
     : usageQuery.isLoading
-      ? 'Checking...'
+      ? 'Checking'
       : usageQuery.isError
-        ? 'Needs refresh'
-        : `${dailyUsage.used} / ${dailyUsage.quota}`;
+        ? 'Refresh'
+        : `${dailyUsage.used}/${dailyUsage.quota}`;
   const translationUsageValue = !user
     ? 'Sign in'
     : translationUsageQuery.isLoading
-      ? 'Checking...'
+      ? 'Checking'
       : translationUsageQuery.isError
-        ? 'Needs refresh'
+        ? 'Refresh'
         : `${translationUsage.remaining} left`;
   const hasUsageError = Boolean(
     user && (usageQuery.isError || translationUsageQuery.isError)
@@ -976,37 +1679,13 @@ export default function ApiDocsPage() {
       : translationUsageQuery.error instanceof Error
         ? translationUsageQuery.error.message
         : 'Token check failed';
-  const retryUsageChecks = () => {
-    void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
-    void queryClient.invalidateQueries({
-      queryKey: ['translation-usage', user?.id],
-    });
-    void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-  };
-  const executeOrgList = async () => {
-    const result = await orgsQuery.refetch();
-
-    if (result.data) {
-      setOrgsExecutedAt(
-        new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      );
-    }
-  };
-
-  const shownApiKey = (testApiKey.trim() || createdKey || maskKey(null)).trim();
-  const selectedOrgId = (testOrgId.trim() || NGS_ORG_SHORTCODE).trim();
-  const apiKeyHeader = `X-API-Key: ${shownApiKey}`;
   const orgDirectory = orgsQuery.data?.orgs?.length
     ? orgsQuery.data.orgs
     : fallbackOrgs;
   const orgListResponse = {
     success: true,
     data: orgDirectory.map(({ key, id, name, slug, description, website }) => ({
-      key: key || (id === NGS_ORG_ID ? NGS_ORG_SHORTCODE : slug || id),
+      key: key || getOrgKey({ id, name, slug }),
       name,
       slug,
       description,
@@ -1016,114 +1695,114 @@ export default function ApiDocsPage() {
       total: orgsQuery.data?.total ?? orgDirectory.length,
     },
   };
+  const activeEndpointDoc =
+    endpointDocs.find((doc) => doc.id === activeEndpointId) ??
+    endpointDocs.find(
+      (doc) => doc.endpoint.path === defaultBuilderEndpointPath
+    ) ??
+    endpointDocs[0]!;
+  const activeEndpointValues = useMemo(
+    () => getInitialEndpointValues(activeEndpointDoc.endpoint),
+    [activeEndpointDoc.endpoint]
+  );
+  const activeRequest = useMemo(
+    () =>
+      buildEndpointRequest({
+        apiBase: selectedApiBase,
+        apiKey: shownApiKey,
+        endpoint: activeEndpointDoc.endpoint,
+        values: activeEndpointValues,
+      }),
+    [
+      activeEndpointDoc.endpoint,
+      activeEndpointValues,
+      selectedApiBase,
+      shownApiKey,
+    ]
+  );
+  const activeRailResponse = railResponses[activeEndpointDoc.endpoint.path];
+  const railResponsePayload =
+    activeRailResponse?.payload ??
+    buildExampleResponse(activeEndpointDoc.endpoint, orgListResponse);
+  const railStatus = activeRailResponse
+    ? `${activeRailResponse.status} · ${activeRailResponse.durationMs} ms`
+    : activeEndpointDoc.endpoint.path.includes('/search/')
+      ? '200 · 184 ms'
+      : 'example';
+  const activeSample = buildLanguageSample({
+    activeLanguage,
+    apiBase: selectedApiBase,
+    apiKey: shownApiKey,
+    endpoint: activeEndpointDoc.endpoint,
+    request: activeRequest,
+    values: activeEndpointValues,
+  });
+  const activeNav = findNavItem(activeSectionId);
+  const showCodeRail = endpointDocs.some((doc) => doc.id === activeSectionId);
   const mcpConfig = useMemo(
     () =>
       stringify({
         mcpServers: {
           paillette: {
-            url: `${apiBase}/mcp`,
+            url: `${selectedApiBase}/mcp`,
             headers: {
               'X-API-Key': shownApiKey,
             },
           },
         },
       }),
-    [apiBase, shownApiKey]
+    [selectedApiBase, shownApiKey]
   );
-  const orgListCurl = `curl -s ${apiBase}/orgs?limit=20`;
-  const curlSample = `curl -s ${apiBase}/orgs/${encodeURIComponent(selectedOrgId)}/search/text \\
-  -H "${apiKeyHeader}" \\
-  -H "Content-Type: application/json" \\
-  -d '${JSON.stringify({
-    query: testQuery || 'batik textile pattern',
-    topK: testLimit,
-    minScore: 0.3,
-  })}'`;
-  const canRunLiveSearch =
-    Boolean((testApiKey.trim() || createdKey || '').trim()) &&
-    Boolean(testQuery.trim()) &&
-    Boolean(selectedOrgId);
-  const shownResponse = testResponse ?? sampleSearchResponse;
-  const compactResponse = compactSearchResponse(shownResponse);
-  const responseMode = testResponse ? 'Live response' : 'Example response';
-  const textSearchEndpoint =
-    endpoints.find((endpoint) => endpoint.path === '/orgs/ngs/search/text') ||
-    endpoints[2]!;
-  const orgListStatus = orgsQuery.isFetching
-    ? 'Fetching live /orgs'
-    : orgsQuery.isError
-      ? 'Request failed'
-      : orgsExecutedAt
-        ? `Executed at ${orgsExecutedAt}`
-        : 'Loaded from /orgs';
-  const orgOptions = orgDirectory.map((org) => ({
-    key: getOrgKey(org),
-    label: org.name,
-  }));
-  const builderEndpoint =
-    endpoints.find((endpoint) => endpoint.path === builderEndpointPath) ??
-    endpoints[0]!;
-  const builderValues =
-    builderValuesByPath[builderEndpoint.path] ??
-    getInitialEndpointValues(builderEndpoint);
-  const liveBuilderKey = (testApiKey.trim() || createdKey || '').trim();
-  const builderPreview = buildEndpointRequest({
-    apiBase,
-    apiKey: shownApiKey,
-    endpoint: builderEndpoint,
-    files: builderFiles,
-    values: builderValues,
+
+  const createApiKeyMutation = useMutation({
+    mutationFn: () =>
+      apiClient.createApiKey(getAccessToken, keyName || 'Agent integration'),
+    onSuccess: (created) => {
+      setCreatedKey(created.key);
+      setTestApiKey(created.key);
+      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+    },
   });
-  const builderMutation = useMutation({
+
+  const revokeApiKeyMutation = useMutation({
+    mutationFn: (keyId: string) =>
+      apiClient.revokeApiKey(getAccessToken, keyId),
+    onSuccess: () => {
+      setCreatedKey(null);
+      void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+    },
+  });
+
+  const railRunMutation = useMutation({
     mutationFn: async () => {
+      const endpoint = activeEndpointDoc.endpoint;
       const request = buildEndpointRequest({
-        apiBase,
-        apiKey: liveBuilderKey,
-        endpoint: builderEndpoint,
-        files: builderFiles,
-        values: builderValues,
+        apiBase: selectedApiBase,
+        apiKey: liveApiKey,
+        endpoint,
+        values: activeEndpointValues,
       });
 
-      if (request.requiresAuth && !liveBuilderKey) {
-        throw new Error('Paste an API key to run this endpoint.');
+      if (request.requiresAuth && !liveApiKey) {
+        throw new Error('Paste an API key in the top bar to run this request.');
       }
 
       if (request.missingFiles.length) {
         throw new Error(
-          `Select ${request.missingFiles.join(', ')} before running.`
+          `This endpoint needs ${request.missingFiles.join(', ')}; use the generated sample.`
         );
       }
 
-      const proxyBody = request.isMultipart
-        ? new FormData()
-        : JSON.stringify({
-            apiKey: liveBuilderKey,
-            endpointPath: builderEndpoint.path,
-            values: builderValues,
-          });
-
-      if (proxyBody instanceof FormData) {
-        proxyBody.set('_apiKey', liveBuilderKey);
-        proxyBody.set('_endpointPath', builderEndpoint.path);
-        builderEndpoint.schema.forEach((field) => {
-          if (field.type === 'File') {
-            const file = builderFiles[field.name];
-            if (file) proxyBody.set(field.name, file);
-            return;
-          }
-          proxyBody.set(
-            field.name,
-            builderValues[field.name] ?? getFieldDefault(builderEndpoint, field)
-          );
-        });
-      }
-
+      const startedAt = performance.now();
       const response = await fetch('/api/docs/proxy', {
         method: 'POST',
-        headers: request.isMultipart
-          ? undefined
-          : { 'Content-Type': 'application/json' },
-        body: proxyBody,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiEnv: apiEnvironment,
+          apiKey: liveApiKey,
+          endpointPath: endpoint.path,
+          values: activeEndpointValues,
+        }),
       });
       const contentType = response.headers.get('content-type') ?? '';
       const payload = contentType.includes('application/json')
@@ -1143,13 +1822,73 @@ export default function ApiDocsPage() {
         );
       }
 
-      return payload;
+      return {
+        durationMs: Math.max(1, Math.round(performance.now() - startedAt)),
+        endpointPath: endpoint.path,
+        payload,
+        status: response.status,
+        statusText: response.statusText || 'OK',
+      } satisfies RailRunResult;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      setRailResponses((previous) => ({
+        ...previous,
+        [result.endpointPath]: result,
+      }));
       void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
       void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
   });
+
+  useEffect(() => {
+    const sections = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-doc-section]')
+    );
+    if (!sections.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        const id = visible?.target.id;
+        if (id) setActiveSectionId(id);
+      },
+      { rootMargin: '-64px 0px -60% 0px', threshold: [0.1, 0.35, 0.6] }
+    );
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const endpointSections = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-endpoint-section]')
+    );
+    if (!endpointSections.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        const id = visible?.target.id;
+        if (id) setActiveEndpointId(id);
+      },
+      { rootMargin: '-72px 0px -48% 0px', threshold: [0.1, 0.35, 0.6] }
+    );
+
+    endpointSections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
+
+  const retryUsageChecks = () => {
+    void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
+    void queryClient.invalidateQueries({
+      queryKey: ['translation-usage', user?.id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+  };
 
   const copyText = async (id: string, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -1158,1053 +1897,1065 @@ export default function ApiDocsPage() {
   };
 
   return (
-    <div className="themeable-surface min-h-screen overflow-x-hidden bg-[#08080b] text-white">
-      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#08080b]/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-[1500px] items-center justify-between px-5 lg:px-8">
-          <Link to="/" className="transition-opacity hover:opacity-80">
-            <Logo size="sm" framed />
-          </Link>
-          <nav className="flex items-center gap-3 text-sm">
-            <Link to="/ngs/search" className="text-white/60 hover:text-white">
-              Search
-            </Link>
-            <Link to="/translate" className="text-white/60 hover:text-white">
-              Translate
-            </Link>
-            {user ? (
-              <UserMenu />
+    <div
+      className="themeable-surface min-h-screen overflow-x-hidden bg-[var(--app-bg)] text-[var(--app-text)]"
+      style={docsThemeStyle}
+    >
+      <header className="sticky top-0 z-50 grid min-h-[52px] grid-cols-[240px_minmax(0,1fr)_auto] items-center gap-4 border-b border-[var(--app-line)] bg-[color-mix(in_srgb,var(--app-bg)_91%,transparent)] px-4 backdrop-blur-xl max-[1280px]:grid-cols-[220px_minmax(0,1fr)_auto] max-[900px]:grid-cols-[minmax(88px,1fr)_auto] max-[520px]:gap-2 max-[520px]:px-3">
+        <div className="min-w-max">
+          <Logo
+            size="sm"
+            framed
+            linkToHome
+            className="whitespace-nowrap max-[520px]:text-lg"
+          />
+        </div>
+
+        <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-muted)] max-[900px]:hidden">
+          <span>Reference</span>
+          <span className="text-[var(--app-faint)]">/</span>
+          <span>{activeNav?.group ?? 'Search'}</span>
+          <span className="text-[var(--app-faint)]">/</span>
+          <code
+            className="truncate text-[var(--docs-code)]"
+            style={monoStyle}
+            title={
+              activeNav?.item.label ?? displayPath(activeEndpointDoc.endpoint)
+            }
+          >
+            {activeEndpointDoc.id === activeSectionId
+              ? `${activeEndpointDoc.endpoint.method} ${displayPath(
+                  activeEndpointDoc.endpoint,
+                  false
+                )}`
+              : activeNav?.item.label}
+          </code>
+        </div>
+
+        <div className="flex min-w-0 items-center justify-end gap-2 max-[520px]:gap-1.5">
+          <div className="hidden items-center gap-1.5 min-[680px]:flex">
+            <UsageChip
+              label="SEARCH"
+              value={dailyUsageValue}
+              percent={dailyPercent}
+            />
+            <UsageChip
+              label="TRANSL"
+              value={translationUsageValue}
+              percent={translationPercent}
+            />
+          </div>
+          <label className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 max-[520px]:px-2">
+            <span
+              className="text-[10px] uppercase tracking-[0.16em] text-[var(--app-faint)] max-[1120px]:hidden"
+              style={monoStyle}
+            >
+              key
+            </span>
+            <input
+              type="password"
+              value={testApiKey}
+              onChange={(event) => setTestApiKey(event.target.value)}
+              placeholder="plt_stg_..."
+              autoComplete="off"
+              spellCheck={false}
+              className="h-7 w-[18ch] min-w-0 bg-transparent text-xs text-[var(--app-text)] outline-none placeholder:text-[var(--app-faint)] max-[1120px]:w-[12ch] max-[520px]:w-[7ch]"
+              style={monoStyle}
+              aria-label="API key"
+            />
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{
+                background: liveApiKey
+                  ? 'var(--docs-success)'
+                  : 'var(--app-faint)',
+              }}
+              aria-hidden="true"
+            />
+          </label>
+          <select
+            value={apiEnvironment}
+            onChange={(event) =>
+              setApiEnvironment(event.target.value as ApiEnvironment)
+            }
+            className="h-9 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2 text-xs text-[var(--app-muted-strong)] outline-none max-[520px]:px-1.5"
+            style={monoStyle}
+            aria-label="API environment"
+          >
+            <option value="stg">stg</option>
+            <option value="prod">prod</option>
+          </select>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--app-line)] bg-[var(--app-control)] text-[var(--app-muted-strong)] transition hover:border-[var(--app-line-strong)] hover:text-[var(--app-text)] max-[520px]:h-8 max-[520px]:w-8"
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? (
+              <Sun className="h-4 w-4" />
             ) : (
-              <button
-                type="button"
-                onClick={() => void login({ returnTo: getCurrentReturnTo() })}
-                disabled={isLoading}
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs text-white/75 hover:bg-white/[0.1] disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <LogIn className="h-3.5 w-3.5" />
-                )}
-                {isLoading ? 'Checking' : 'Log in'}
-              </button>
+              <Moon className="h-4 w-4" />
             )}
-          </nav>
+          </button>
+          <UserMenu />
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1500px] gap-6 px-4 py-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:px-8">
-        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/36">
-            Docs
-          </p>
-          <nav
-            aria-label="API documentation"
-            className="mt-3 flex gap-1 overflow-x-auto border-b border-white/[0.08] pb-3 lg:flex-col lg:overflow-visible lg:border-b-0 lg:pb-0"
-          >
-            {docsNav.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="whitespace-nowrap rounded-md px-2 py-1.5 text-sm text-white/58 transition-colors hover:bg-white/[0.06] hover:text-white"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
-        </aside>
+      <div
+        className={`grid min-h-[calc(100vh-52px)] ${
+          showCodeRail
+            ? 'grid-cols-[240px_minmax(0,1fr)_480px] max-[1280px]:grid-cols-[220px_minmax(0,1fr)_420px]'
+            : 'grid-cols-[240px_minmax(0,1fr)] max-[1280px]:grid-cols-[220px_minmax(0,1fr)]'
+        } max-[900px]:grid-cols-1`}
+      >
+        <DocsNav activeSectionId={activeSectionId} />
 
-        <div className="min-w-0">
-          <motion.section
-            id="start"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="scroll-mt-24 border-b border-white/[0.08] pb-6"
-          >
-            <p className="text-sm text-cyan-200/70">Developer API</p>
-            <h1 className="mt-2 max-w-4xl font-display text-4xl font-semibold leading-tight text-white lg:text-[3.25rem]">
-              Paillette API
-            </h1>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-white/62">
-              Search source-backed artwork records over REST or MCP. Public
-              samples use source keys; live search calls use a personal API key.
-            </p>
-            <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-              <OverviewFact
-                icon={<Server className="h-4 w-4" />}
-                label="Base URL"
-                value={apiBase}
-              />
-              <OverviewFact
-                icon={<TerminalSquare className="h-4 w-4" />}
-                label="Auth header"
-                value="X-API-Key"
-              />
-              <OverviewFact
-                icon={<BookOpen className="h-4 w-4" />}
-                label="Default source"
-                value="ngs"
-              />
-              <OverviewFact
-                icon={<Braces className="h-4 w-4" />}
-                label="Response format"
-                value="JSON with field_sources"
-              />
-            </div>
-            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {integrationSteps.map((step, index) => (
-                <IntegrationStep key={step.title} index={index} step={step} />
-              ))}
-            </div>
-            <div className="mt-5 grid gap-2 border-y border-white/[0.08] py-3 lg:grid-cols-3">
-              {authNotes.map((note) => (
-                <div
-                  key={note}
-                  className="flex min-w-0 items-start gap-2 text-sm leading-6 text-white/58"
-                >
-                  <ShieldCheck className="mt-1 h-3.5 w-3.5 shrink-0 text-cyan-100/70" />
-                  <span>{note}</span>
-                </div>
-              ))}
-            </div>
-          </motion.section>
+        <main className="min-w-0 px-8 py-6 max-[1080px]:px-5 max-[900px]:px-4">
+          <StartSections selectedApiBase={selectedApiBase} />
 
-          <DocSection
-            id="sources"
-            eyebrow="No key needed"
-            title="Sources"
-            description="Resolve the source key first, then use it consistently in REST paths and MCP tool arguments."
-          >
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 border-y border-white/[0.08] py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs text-cyan-100">GET /orgs</p>
-                    <p className="mt-1 text-sm leading-6 text-white/58">
-                      Use <code>ngs</code> for the National Gallery Singapore
-                      source.
-                      <span className="ml-2 text-white/36">
-                        {orgListStatus}
-                      </span>
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void executeOrgList()}
-                    disabled={orgsQuery.isFetching}
-                    className="shrink-0 justify-center"
-                  >
-                    {orgsQuery.isFetching ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    Execute
-                  </Button>
-                </div>
-                <CodeBlock
-                  id="org-list-curl"
-                  label="curl"
-                  copied={copiedValue === 'org-list-curl'}
-                  value={orgListCurl}
-                  onCopy={copyText}
-                />
-              </div>
-              <CodeBlock
-                id="org-list-response"
-                label="Live /orgs response"
-                copied={copiedValue === 'org-list-response'}
-                value={
-                  orgsQuery.isError
-                    ? stringify({
-                        success: false,
-                        error: {
-                          message:
-                            orgsQuery.error instanceof Error
-                              ? orgsQuery.error.message
-                              : 'Could not load /orgs',
-                        },
-                      })
-                    : stringify(orgListResponse)
-                }
-                onCopy={copyText}
-              />
-            </div>
-          </DocSection>
+          {endpointDocs.map((doc) => (
+            <EndpointSection key={doc.id} doc={doc} />
+          ))}
 
-          <DocSection
-            id="rest"
-            title="REST Endpoints"
-            description={
-              <>
-                Authenticated calls accept <code>X-API-Key</code> or{' '}
-                <code>Authorization: Bearer</code>.
-              </>
+          <McpSections
+            copiedValue={copiedValue}
+            mcpConfig={mcpConfig}
+            onCopy={copyText}
+          />
+
+          <AccountSections
+            activeKey={activeKey}
+            apiKeysLoading={apiKeysQuery.isLoading}
+            apiKeysError={apiKeysQuery.isError}
+            copiedValue={copiedValue}
+            createApiKeyMutation={createApiKeyMutation}
+            createdKey={createdKey}
+            dailyPercent={dailyPercent}
+            dailyUsageValue={dailyUsageValue}
+            hasUsageError={hasUsageError}
+            isLoading={isLoading}
+            keyName={keyName}
+            keys={keys}
+            onCopy={copyText}
+            onKeyNameChange={setKeyName}
+            onLogin={login}
+            onRetryUsage={retryUsageChecks}
+            onSignup={signup}
+            revokeApiKeyMutation={revokeApiKeyMutation}
+            setTestApiKey={setTestApiKey}
+            translationPercent={translationPercent}
+            translationUsageValue={translationUsageValue}
+            usageErrorMessage={usageErrorMessage}
+            user={user}
+          />
+        </main>
+
+        {showCodeRail && (
+          <CodeRail
+            activeLanguage={activeLanguage}
+            copied={copiedValue === 'rail-sample'}
+            endpointDoc={activeEndpointDoc}
+            error={
+              railRunMutation.error instanceof Error
+                ? railRunMutation.error.message
+                : null
             }
-          >
-            <div className="mb-6 grid items-start gap-5 border-y border-white/[0.08] py-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
-              <div className="space-y-4">
-                <div className="grid gap-2">
-                  <label
-                    htmlFor="builder-endpoint"
-                    className="text-sm text-white/70"
-                  >
-                    Endpoint
-                  </label>
-                  <select
-                    id="builder-endpoint"
-                    value={builderEndpoint.path}
-                    onChange={(event) => {
-                      const nextEndpoint =
-                        endpoints.find(
-                          (endpoint) => endpoint.path === event.target.value
-                        ) ?? endpoints[0]!;
-                      setBuilderEndpointPath(nextEndpoint.path);
-                      setBuilderValuesByPath((previous) =>
-                        previous[nextEndpoint.path]
-                          ? previous
-                          : {
-                              ...previous,
-                              [nextEndpoint.path]:
-                                getInitialEndpointValues(nextEndpoint),
-                            }
-                      );
-                      builderMutation.reset();
-                    }}
-                    className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
-                  >
-                    {endpoints.map((endpoint) => (
-                      <option key={endpoint.path} value={endpoint.path}>
-                        {endpoint.method} {endpoint.path}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {builderPreview.requiresAuth && (
-                  <div className="grid gap-2">
-                    <label
-                      htmlFor="builder-api-key"
-                      className="text-sm text-white/70"
-                    >
-                      API key
-                    </label>
-                    <input
-                      id="builder-api-key"
-                      type="password"
-                      value={testApiKey}
-                      onChange={(event) => {
-                        setTestApiKey(event.target.value);
-                        builderMutation.reset();
-                      }}
-                      placeholder="plt_stg_..."
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="h-11 rounded-md border border-white/10 bg-black/30 px-3 font-mono text-sm text-white outline-none focus:border-cyan-200"
-                    />
-                  </div>
-                )}
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {builderEndpoint.schema.map((field) => (
-                    <EndpointFieldControl
-                      key={field.name}
-                      endpoint={builderEndpoint}
-                      field={field}
-                      file={builderFiles[field.name] ?? null}
-                      value={
-                        builderValues[field.name] ??
-                        getFieldDefault(builderEndpoint, field)
-                      }
-                      onChange={(value) => {
-                        setBuilderValuesByPath((previous) => ({
-                          ...previous,
-                          [builderEndpoint.path]: {
-                            ...getInitialEndpointValues(builderEndpoint),
-                            ...(previous[builderEndpoint.path] ?? {}),
-                            [field.name]: value,
-                          },
-                        }));
-                        builderMutation.reset();
-                      }}
-                      onFileChange={(file) => {
-                        setBuilderFiles((previous) => ({
-                          ...previous,
-                          [field.name]: file,
-                        }));
-                        builderMutation.reset();
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <Button
-                  type="button"
-                  disabled={
-                    builderMutation.isPending ||
-                    (builderPreview.requiresAuth && !liveBuilderKey) ||
-                    builderPreview.missingFiles.length > 0
-                  }
-                  onClick={() => builderMutation.mutate()}
-                >
-                  {builderMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                  Run request
-                </Button>
-
-                {builderMutation.isError && (
-                  <p className="border-y border-red-400/20 bg-red-400/10 py-3 text-sm text-red-200">
-                    {builderMutation.error instanceof Error
-                      ? builderMutation.error.message
-                      : 'Request failed'}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                <CodeBlock
-                  id="builder-curl"
-                  label="Generated request"
-                  copied={copiedValue === 'builder-curl'}
-                  value={builderPreview.curl}
-                  onCopy={copyText}
-                />
-                <CodeBlock
-                  id="builder-response"
-                  label={
-                    builderMutation.data ? 'Live response' : 'Request body'
-                  }
-                  copied={copiedValue === 'builder-response'}
-                  value={
-                    builderMutation.data
-                      ? stringify(builderMutation.data)
-                      : stringify(builderPreview.displayBody)
-                  }
-                  onCopy={copyText}
-                />
-              </div>
-            </div>
-
-            <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
-              {endpoints.map((endpoint) => (
-                <div
-                  key={endpoint.path}
-                  className="grid gap-3 px-1 py-4 md:grid-cols-[76px_minmax(170px,0.35fr)_minmax(0,1fr)] md:items-start"
-                >
-                  <span
-                    className={`inline-flex w-fit rounded-md border px-2 py-1 text-xs font-semibold ${
-                      methodClasses[endpoint.method] || methodClasses.POST
-                    }`}
-                  >
-                    {endpoint.method}
-                  </span>
-                  <h2 className="pt-0.5 text-base font-semibold text-white">
-                    {endpoint.title}
-                  </h2>
-                  <div className="min-w-0">
-                    <code className="block overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-black/35 px-3 py-2 text-sm text-cyan-100">
-                      {endpoint.path}
-                    </code>
-                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-black/25 px-3 py-2 text-xs leading-5 text-white/62">
-                      {endpoint.body}
-                    </pre>
-                    <SchemaList title="Schema" fields={endpoint.schema} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-5">
-              <SchemaList
-                title="Search response metadata"
-                fields={responseMetadataFields}
-              />
-            </div>
-          </DocSection>
-
-          <DocSection
-            id="keys"
-            title="API keys"
-            description={
-              isLoading
-                ? 'Checking sign-in'
-                : user
-                  ? `Signed in as ${user.email || user.name}`
-                  : 'Sign in to create keys and run live requests.'
+            isRunning={railRunMutation.isPending}
+            onCopy={() => copyText('rail-sample', activeSample)}
+            onLanguageChange={setActiveLanguage}
+            onRun={() => railRunMutation.mutate()}
+            request={activeRequest}
+            responsePayload={railResponsePayload}
+            sample={activeSample}
+            status={railStatus}
+            canRun={
+              !railRunMutation.isPending &&
+              (!activeRequest.requiresAuth || Boolean(liveApiKey)) &&
+              !activeRequest.missingFiles.length
             }
-          >
-            {isLoading ? (
-              <div className="flex items-center gap-2 border-y border-white/[0.08] py-4 text-sm text-white/55">
-                <Loader2 className="h-4 w-4 animate-spin text-cyan-100" />
-                Checking sign-in state
-              </div>
-            ) : !user ? (
-              <div className="flex flex-col gap-4 border-y border-white/[0.08] py-4 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <h3 className="text-base font-semibold text-white">
-                    Sign in required
-                  </h3>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-white/55">
-                    Sign in to view usage, create a personal API key, and run
-                    live requests.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row md:shrink-0">
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      void signup({ returnTo: getCurrentReturnTo() })
-                    }
-                  >
-                    <UserPlus className="h-4 w-4" />
-                    Create account
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void login({ returnTo: getCurrentReturnTo() })
-                    }
-                  >
-                    <LogIn className="h-4 w-4" />
-                    Log in
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
-                <div className="space-y-4 border-y border-white/[0.08] py-4">
-                  <UsageMeter
-                    icon={<Activity className="h-4 w-4 text-cyan-200" />}
-                    label="Search API today"
-                    value={dailyUsageValue}
-                    percent={dailyPercent}
-                  />
-                  <UsageMeter
-                    icon={<KeyRound className="h-4 w-4 text-amber-200" />}
-                    label="Free translations"
-                    value={translationUsageValue}
-                    percent={translationPercent}
-                  />
-                  {hasUsageError && (
-                    <div className="border-y border-amber-300/20 bg-amber-300/10 py-3 text-sm text-amber-100">
-                      <p>Token check failed. Refresh your sign-in.</p>
-                      <p className="mt-1 truncate font-mono text-xs text-amber-100/60">
-                        {usageErrorMessage}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={retryUsageChecks}
-                        >
-                          Retry
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() =>
-                            void login({ returnTo: getCurrentReturnTo() })
-                          }
-                        >
-                          <LogIn className="h-4 w-4" />
-                          Reconnect
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="min-w-0 border-y border-white/[0.08] py-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-white">
-                        Personal key
-                      </h3>
-                      <p className="mt-1 text-xs text-white/45">
-                        One active key works for REST and MCP.
-                      </p>
-                    </div>
-                    {apiKeysQuery.isLoading && (
-                      <Loader2 className="h-4 w-4 animate-spin text-white/35" />
-                    )}
-                  </div>
-                  <div className="grid gap-2">
-                    <label
-                      htmlFor="api-key-name"
-                      className="text-xs text-white/55"
-                    >
-                      Key name
-                    </label>
-                    <input
-                      id="api-key-name"
-                      value={keyName}
-                      onChange={(event) => setKeyName(event.target.value)}
-                      disabled={
-                        Boolean(activeKey) || createApiKeyMutation.isPending
-                      }
-                      className="h-10 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200 disabled:opacity-50"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={() => createApiKeyMutation.mutate()}
-                    disabled={
-                      Boolean(activeKey) || createApiKeyMutation.isPending
-                    }
-                    className="mt-3 w-full"
-                  >
-                    {createApiKeyMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <KeyRound className="h-4 w-4" />
-                    )}
-                    Create API key
-                  </Button>
-
-                  {apiKeysQuery.isError && (
-                    <p className="mt-3 border-y border-amber-300/20 bg-amber-300/10 py-3 text-sm text-amber-100">
-                      Key check failed. Reconnect sign-in.
-                    </p>
-                  )}
-
-                  {createApiKeyMutation.isError && (
-                    <p className="mt-3 border-y border-red-400/20 bg-red-400/10 py-3 text-sm text-red-200">
-                      {createApiKeyMutation.error instanceof Error
-                        ? createApiKeyMutation.error.message
-                        : 'Failed to create API key'}
-                    </p>
-                  )}
-
-                  {createdKey && (
-                    <div className="mt-3 border-y border-amber-300/25 bg-amber-300/10 py-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-amber-100">
-                          New key
-                        </p>
-                        <CopyButton
-                          copied={copiedValue === 'created-key'}
-                          onClick={() => copyText('created-key', createdKey)}
-                        />
-                      </div>
-                      <code className="block overflow-x-auto rounded-md bg-black/45 p-3 text-xs text-amber-100">
-                        {createdKey}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => setTestApiKey(createdKey)}
-                        className="mt-3 inline-flex h-8 items-center rounded-md border border-amber-200/20 px-3 text-xs font-medium text-amber-100 hover:bg-amber-200/10"
-                      >
-                        Use in tester
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="mt-3 divide-y divide-white/[0.08]">
-                    {keys.length
-                      ? keys.map((key) => (
-                          <div
-                            key={key.id}
-                            className="flex items-center justify-between gap-3 py-3"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-white">
-                                {key.name}
-                              </p>
-                              <p className="mt-1 font-mono text-xs text-white/40">
-                                {key.key_prefix}...
-                              </p>
-                            </div>
-                            {key.status === 'active' && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  revokeApiKeyMutation.mutate(key.id)
-                                }
-                                disabled={revokeApiKeyMutation.isPending}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-300/20 text-red-200 hover:bg-red-300/10 disabled:opacity-50"
-                                aria-label="Revoke API key"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        ))
-                      : !apiKeysQuery.isLoading && (
-                          <p className="py-3 text-sm text-white/45">
-                            No API keys yet.
-                          </p>
-                        )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </DocSection>
-
-          <DocSection
-            id="console"
-            title="Console"
-            description="Run the exact text-search request shape and inspect a compact response with source labels."
-          >
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
-              <div className="space-y-4">
-                <div className="grid gap-2">
-                  <label
-                    htmlFor="test-org-id"
-                    className="text-sm text-white/70"
-                  >
-                    Source key
-                  </label>
-                  <select
-                    id="test-org-id"
-                    value={testOrgId}
-                    onChange={(event) => setTestOrgId(event.target.value)}
-                    className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
-                  >
-                    {orgOptions.map((org) => (
-                      <option key={org.key} value={org.key}>
-                        {org.label} ({org.key})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid gap-2">
-                  <label
-                    htmlFor="test-api-key"
-                    className="text-sm text-white/70"
-                  >
-                    API key
-                  </label>
-                  <input
-                    id="test-api-key"
-                    type="password"
-                    value={testApiKey}
-                    onChange={(event) => setTestApiKey(event.target.value)}
-                    placeholder="plt_stg_..."
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="h-11 rounded-md border border-white/10 bg-black/30 px-3 font-mono text-sm text-white outline-none focus:border-cyan-200"
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
-                  <label className="grid gap-2">
-                    <span className="text-sm text-white/70">Query</span>
-                    <input
-                      value={testQuery}
-                      onChange={(event) => setTestQuery(event.target.value)}
-                      className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
-                    />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm text-white/70">topK</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={testLimit}
-                      onChange={(event) =>
-                        setTestLimit(
-                          Math.min(20, Math.max(1, Number(event.target.value)))
-                        )
-                      }
-                      className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
-                    />
-                  </label>
-                </div>
-                <SchemaList
-                  title="Request body"
-                  fields={textSearchEndpoint.schema}
-                  compact
-                />
-                <Button
-                  type="button"
-                  disabled={!canRunLiveSearch || testSearchMutation.isPending}
-                  onClick={() => testSearchMutation.mutate()}
-                >
-                  {testSearchMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                  Run with API key
-                </Button>
-                {testSearchMutation.isError && (
-                  <p className="border-y border-red-400/20 bg-red-400/10 py-3 text-sm text-red-200">
-                    {testSearchMutation.error instanceof Error
-                      ? testSearchMutation.error.message
-                      : 'Search failed'}
-                  </p>
-                )}
-                <CodeBlock
-                  id="curl"
-                  copied={copiedValue === 'curl'}
-                  value={curlSample}
-                  onCopy={copyText}
-                />
-              </div>
-              <CodeBlock
-                id="search-response"
-                label={responseMode}
-                copied={copiedValue === 'search-response'}
-                value={stringify(compactResponse)}
-                onCopy={copyText}
-              />
-            </div>
-          </DocSection>
-
-          <DocSection
-            id="mcp"
-            title="MCP"
-            description={
-              <>
-                Point an MCP client at <code>/api/v1/mcp</code>; use{' '}
-                <code>collection: "ngs"</code>.
-              </>
-            }
-          >
-            <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
-              <div className="space-y-4">
-                <CodeBlock
-                  id="mcp-config"
-                  label="MCP client config"
-                  copied={copiedValue === 'mcp-config'}
-                  value={mcpConfig}
-                  onCopy={copyText}
-                />
-                <div className="border-y border-white/[0.08] py-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                    Call builder
-                  </p>
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <h2 className="font-mono text-base text-cyan-100">
-                        {primaryMcpTool.name}
-                      </h2>
-                      <p className="mt-1 max-w-2xl text-sm leading-6 text-white/62">
-                        {primaryMcpTool.description}
-                      </p>
-                    </div>
-                    <code className="w-fit rounded-md bg-black/35 px-2 py-1 font-mono text-xs text-white/55">
-                      tools/call
-                    </code>
-                  </div>
-                  <SchemaList
-                    title="Arguments"
-                    fields={primaryMcpTool.schema}
-                    compact
-                  />
-                </div>
-                <div className="border-y border-white/[0.08] py-3">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                    Tool reference
-                  </p>
-                  <div className="mt-2 divide-y divide-white/[0.06]">
-                    {secondaryMcpTools.map((tool) => (
-                      <div
-                        key={tool.name}
-                        className="grid gap-2 py-3 text-sm sm:grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)]"
-                      >
-                        <code className="break-words font-mono text-cyan-100">
-                          {tool.name}
-                        </code>
-                        <p className="leading-6 text-white/58">
-                          {tool.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <CodeBlock
-                id="mcp-call"
-                label="tools/call request"
-                copied={copiedValue === 'mcp-call'}
-                value={`curl -s ${apiBase}/mcp \\
-  -H "${apiKeyHeader}" \\
-  -H "Content-Type: application/json" \\
-  -d '${stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'tools/call',
-    params: {
-      name: 'search_artworks',
-      arguments: {
-        collection: NGS_ORG_SHORTCODE,
-        query: 'serene kampong landscape',
-        topK: 5,
-      },
-    },
-  })}'`}
-                onCopy={copyText}
-              />
-            </div>
-          </DocSection>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-function OverviewFact({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="border-y border-white/[0.08] py-3">
-      <div className="flex items-center gap-2 text-cyan-100/65">
-        {icon}
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-          {label}
-        </p>
-      </div>
-      <code className="mt-1 block break-all text-sm text-cyan-100/75">
-        {value}
-      </code>
-    </div>
-  );
-}
-
-function IntegrationStep({
-  index,
-  step,
-}: {
-  index: number;
-  step: (typeof integrationSteps)[number];
-}) {
-  const StepIcon = step.icon;
-
-  return (
-    <div className="min-w-0 border-y border-white/[0.08] py-3">
-      <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-xs font-semibold text-white/55">
-          {index + 1}
-        </span>
-        <StepIcon className="h-4 w-4 shrink-0 text-cyan-100/75" />
-        <h2 className="min-w-0 text-sm font-semibold text-white">
-          {step.title}
-        </h2>
-      </div>
-      <p className="mt-2 text-sm leading-6 text-white/55">{step.body}</p>
-      <code className="mt-2 block overflow-x-auto whitespace-nowrap rounded-md bg-black/30 px-2 py-1.5 text-xs text-cyan-100/70">
-        {step.code}
-      </code>
-    </div>
-  );
-}
-
-function DocSection({
-  id,
-  eyebrow,
-  title,
-  description,
-  children,
-}: {
-  id: string;
-  eyebrow?: string;
-  title: string;
-  description?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section id={id} className="scroll-mt-24 border-b border-white/[0.08] py-6">
-      {eyebrow && (
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-100/55">
-          {eyebrow}
-        </p>
-      )}
-      <div className="mb-4 max-w-3xl">
-        <h2 className="font-display text-2xl font-semibold leading-tight text-white">
-          {title}
-        </h2>
-        {description && (
-          <p className="mt-2 text-sm leading-6 text-white/55">{description}</p>
+          />
         )}
       </div>
-      {children}
+    </div>
+  );
+}
+
+function StartSections({ selectedApiBase }: { selectedApiBase: string }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+      <section
+        id="overview"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] pb-6"
+      >
+        <h1
+          className="text-[2.15rem] font-semibold leading-none text-[var(--app-text-strong)]"
+          style={displayStyle}
+        >
+          Paillette API
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
+          Resolve a source, search or translate through REST, and keep
+          provenance fields with every displayed catalogue value.
+        </p>
+        <div className="mt-4 flex min-w-0 flex-wrap gap-2 text-xs text-[var(--app-muted)]">
+          <InlineDatum label="Base" value={selectedApiBase} />
+          <InlineDatum label="Auth" value="X-API-Key" />
+          <InlineDatum label="Source" value={NGS_ORG_SHORTCODE} />
+        </div>
+      </section>
+
+      <section
+        id="authentication"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <SectionHeading title="Authentication" />
+        <p className="text-sm leading-6 text-[var(--app-muted)]">
+          Server-to-server calls use <CodeText>X-API-Key</CodeText>. Public
+          source discovery works without a key; search, artwork lookup, and
+          translation require one.
+        </p>
+      </section>
+
+      <section
+        id="field-sources"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <SectionHeading title="Field sources" />
+        <p className="mb-3 text-sm leading-6 text-[var(--app-muted)]">
+          Search results include normalized metadata plus source labels. Check
+          these fields before displaying catalogue text or citations.
+        </p>
+        <SchemaRows fields={responseMetadataFields.slice(0, 4)} />
+      </section>
+    </motion.div>
+  );
+}
+
+function DocsNav({ activeSectionId }: { activeSectionId: string }) {
+  return (
+    <aside className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-[var(--app-line)] px-3 py-4 [scrollbar-width:thin] max-[900px]:relative max-[900px]:top-0 max-[900px]:h-auto max-[900px]:border-b max-[900px]:border-r-0 max-[900px]:py-3">
+      <nav
+        aria-label="API documentation"
+        className="flex flex-col gap-4 max-[900px]:flex-row max-[900px]:gap-3 max-[900px]:overflow-x-auto"
+      >
+        {docsNavGroups.map((group) => (
+          <div key={group.title} className="min-w-[190px]">
+            <p
+              className="px-2 text-[10px] uppercase tracking-[0.2em] text-[var(--app-faint)]"
+              style={monoStyle}
+            >
+              {group.title}
+            </p>
+            <div className="mt-1 grid gap-0.5">
+              {group.items.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--app-muted)] transition hover:bg-[var(--app-control)] hover:text-[var(--app-text)]"
+                  style={
+                    activeSectionId === item.id
+                      ? {
+                          background: 'var(--app-control-strong)',
+                          color: 'var(--app-text)',
+                        }
+                      : undefined
+                  }
+                >
+                  {item.method && <MethodTag method={item.method} />}
+                  <span className="truncate">{item.label}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+function EndpointSection({ doc }: { doc: EndpointDoc }) {
+  const endpoint = doc.endpoint;
+  const pathFields = getEndpointPathFields(endpoint);
+  const bodyFields = getEndpointBodyFields(endpoint);
+
+  return (
+    <section
+      id={doc.id}
+      data-doc-section
+      data-endpoint-section
+      className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <MethodTag method={endpoint.method as SectionTone} />
+        <code
+          className="min-w-0 break-words text-sm text-[var(--docs-code)]"
+          style={monoStyle}
+        >
+          {displayPath(endpoint)}
+        </code>
+        <span
+          className="rounded-full border border-[var(--app-line)] px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-[var(--app-faint)]"
+          style={monoStyle}
+        >
+          {endpointRequiresAuth(endpoint) ? 'requires key' : 'public'}
+        </span>
+      </div>
+      <h2
+        className="mt-2 text-[1.5rem] font-semibold leading-tight text-[var(--app-text-strong)]"
+        style={displayStyle}
+      >
+        {endpoint.title}
+      </h2>
+      <p className="mt-1 text-sm leading-6 text-[var(--app-muted)]">
+        {doc.summary}
+      </p>
+
+      <div className="mt-4">
+        <SchemaDisclosure title="Path" fields={pathFields} defaultOpen />
+        <SchemaDisclosure title="Body" fields={bodyFields} defaultOpen />
+        <SchemaDisclosure title="Response" fields={doc.responseFields} />
+      </div>
     </section>
   );
 }
 
-function SchemaList({
-  title,
-  fields,
-  compact = false,
+function McpSections({
+  copiedValue,
+  mcpConfig,
+  onCopy,
 }: {
-  title: string;
-  fields: SchemaField[];
-  compact?: boolean;
+  copiedValue: string | null;
+  mcpConfig: string;
+  onCopy: (id: string, value: string) => void;
 }) {
-  if (!fields.length) return null;
-
   return (
-    <div className={compact ? 'mt-3' : 'mt-4'}>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-          {title}
+    <>
+      <section
+        id="mcp-client-config"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <SectionHeading title="MCP client config" />
+        <p className="mb-4 text-sm leading-6 text-[var(--app-muted)]">
+          Point the client at <CodeText>/api/v1/mcp</CodeText> and send the same
+          API key used for REST calls.
         </p>
-        <p className="font-mono text-[10px] text-white/30">
-          {fields.length} {fields.length === 1 ? 'field' : 'fields'}
-        </p>
-      </div>
-      <div className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
-        {fields.map((field) => (
-          <div
-            key={field.name}
-            className={`grid min-w-0 gap-3 text-sm md:grid-cols-[minmax(180px,0.34fr)_minmax(0,1fr)] ${
-              compact ? 'py-2.5' : 'py-3'
-            }`}
-          >
-            <div className="min-w-0 space-y-1">
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                <code className="break-all font-mono text-cyan-100">
-                  {field.name}
-                </code>
-                <span
-                  className={`text-[10px] uppercase tracking-[0.12em] ${
-                    field.required ? 'text-amber-100/80' : 'text-white/35'
-                  }`}
-                >
-                  {field.required ? 'required' : 'optional'}
-                </span>
+        <CodePanel
+          id="mcp-config"
+          copied={copiedValue === 'mcp-config'}
+          label="mcpServers"
+          onCopy={onCopy}
+          value={mcpConfig}
+        />
+      </section>
+
+      <section
+        id="mcp-tool-reference"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <SectionHeading title="MCP tool reference" />
+        <div className="mt-2 divide-y divide-[var(--app-line)] border-y border-[var(--app-line)]">
+          {[primaryMcpTool, ...secondaryMcpTools].map((tool) => (
+            <details key={tool.name} className="group py-3">
+              <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <code
+                    className="break-words text-sm text-[var(--docs-code)]"
+                    style={monoStyle}
+                  >
+                    {tool.name}
+                  </code>
+                  <p className="mt-1 text-sm leading-6 text-[var(--app-muted)]">
+                    {tool.description}
+                  </p>
+                </div>
+                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-[var(--app-faint)] transition group-open:rotate-90" />
+              </summary>
+              <div className="mt-3">
+                <SchemaRows fields={tool.schema} />
               </div>
-              <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 font-mono text-xs text-white/52">
-                <span className="break-words">{field.type}</span>
-                {field.defaultValue && (
-                  <span className="text-white/35">
-                    default {field.defaultValue}
-                  </span>
-                )}
-              </div>
-            </div>
-            <p className="min-w-0 max-w-[72ch] leading-6 text-white/55">
-              {field.description}
+            </details>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function AccountSections({
+  activeKey,
+  apiKeysError,
+  apiKeysLoading,
+  copiedValue,
+  createApiKeyMutation,
+  createdKey,
+  dailyPercent,
+  dailyUsageValue,
+  hasUsageError,
+  isLoading,
+  keyName,
+  keys,
+  onCopy,
+  onKeyNameChange,
+  onLogin,
+  onRetryUsage,
+  onSignup,
+  revokeApiKeyMutation,
+  setTestApiKey,
+  translationPercent,
+  translationUsageValue,
+  usageErrorMessage,
+  user,
+}: {
+  activeKey:
+    | { id: string; key_prefix: string; name: string; status: string }
+    | undefined;
+  apiKeysError: boolean;
+  apiKeysLoading: boolean;
+  copiedValue: string | null;
+  createApiKeyMutation: ReturnType<
+    typeof useMutation<
+      Awaited<ReturnType<typeof apiClient.createApiKey>>,
+      Error,
+      void
+    >
+  >;
+  createdKey: string | null;
+  dailyPercent: number;
+  dailyUsageValue: string;
+  hasUsageError: boolean;
+  isLoading: boolean;
+  keyName: string;
+  keys: Array<{ id: string; key_prefix: string; name: string; status: string }>;
+  onCopy: (id: string, value: string) => void;
+  onKeyNameChange: (value: string) => void;
+  onLogin: (options?: { returnTo?: string }) => Promise<void>;
+  onRetryUsage: () => void;
+  onSignup: (options?: { returnTo?: string }) => Promise<void>;
+  revokeApiKeyMutation: ReturnType<typeof useMutation<void, Error, string>>;
+  setTestApiKey: (value: string) => void;
+  translationPercent: number;
+  translationUsageValue: string;
+  usageErrorMessage: string;
+  user: { email?: string; name: string } | null;
+}) {
+  return (
+    <>
+      <section
+        id="api-keys"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <SectionHeading
+          title="API keys"
+          description={
+            isLoading
+              ? 'Checking sign-in state.'
+              : user
+                ? `Signed in as ${user.email || user.name}.`
+                : 'Sign in to create keys and run live requests.'
+          }
+        />
+
+        {isLoading ? (
+          <InlineStatus>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Checking sign-in state
+          </InlineStatus>
+        ) : !user ? (
+          <div className="flex flex-col gap-4 border-y border-[var(--app-line)] py-4 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm leading-6 text-[var(--app-muted)]">
+              Key management is tied to your Paillette account. The top-bar key
+              input stays available for pasted keys.
             </p>
+            <div className="flex flex-wrap gap-2">
+              <ActionButton
+                onClick={() =>
+                  void onSignup({ returnTo: getCurrentReturnTo() })
+                }
+              >
+                <UserPlus className="h-4 w-4" />
+                Create account
+              </ActionButton>
+              <ActionButton
+                variant="ghost"
+                onClick={() => void onLogin({ returnTo: getCurrentReturnTo() })}
+              >
+                <LogIn className="h-4 w-4" />
+                Log in
+              </ActionButton>
+            </div>
           </div>
+        ) : (
+          <div className="grid gap-5 border-y border-[var(--app-line)] py-4 xl:grid-cols-[minmax(0,0.74fr)_minmax(0,1fr)]">
+            <div className="min-w-0">
+              <label className="grid gap-2">
+                <span className="text-xs text-[var(--app-muted)]">
+                  Key name
+                </span>
+                <input
+                  value={keyName}
+                  onChange={(event) => onKeyNameChange(event.target.value)}
+                  disabled={
+                    Boolean(activeKey) || createApiKeyMutation.isPending
+                  }
+                  className="h-10 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)] disabled:opacity-50"
+                />
+              </label>
+              <ActionButton
+                className="mt-3 w-full justify-center"
+                disabled={Boolean(activeKey) || createApiKeyMutation.isPending}
+                onClick={() => createApiKeyMutation.mutate()}
+              >
+                {createApiKeyMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <KeyRound className="h-4 w-4" />
+                )}
+                Create API key
+              </ActionButton>
+
+              {apiKeysError && (
+                <Notice tone="warn">
+                  Key check failed. Reconnect sign-in.
+                </Notice>
+              )}
+              {createApiKeyMutation.isError && (
+                <Notice tone="error">
+                  {createApiKeyMutation.error instanceof Error
+                    ? createApiKeyMutation.error.message
+                    : 'Failed to create API key'}
+                </Notice>
+              )}
+              {createdKey && (
+                <div className="mt-4 border-y border-[color-mix(in_srgb,#86198f_26%,transparent)] py-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-[var(--app-text)]">
+                      New key
+                    </p>
+                    <CopyButton
+                      copied={copiedValue === 'created-key'}
+                      onClick={() => onCopy('created-key', createdKey)}
+                    />
+                  </div>
+                  <code
+                    className="block overflow-x-auto rounded-md bg-[var(--app-control)] p-3 text-xs text-[var(--docs-code)]"
+                    style={monoStyle}
+                  >
+                    {createdKey}
+                  </code>
+                  <ActionButton
+                    className="mt-3"
+                    variant="ghost"
+                    onClick={() => setTestApiKey(createdKey)}
+                  >
+                    Use in top bar
+                  </ActionButton>
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 divide-y divide-[var(--app-line)]">
+              {apiKeysLoading && (
+                <InlineStatus>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading keys
+                </InlineStatus>
+              )}
+              {keys.length
+                ? keys.map((key) => (
+                    <div
+                      key={key.id}
+                      className="flex items-center justify-between gap-3 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-[var(--app-text)]">
+                          {key.name}
+                        </p>
+                        <p
+                          className="mt-1 text-xs text-[var(--app-faint)]"
+                          style={monoStyle}
+                        >
+                          {key.key_prefix}...
+                        </p>
+                      </div>
+                      {key.status === 'active' && (
+                        <button
+                          type="button"
+                          onClick={() => revokeApiKeyMutation.mutate(key.id)}
+                          disabled={revokeApiKeyMutation.isPending}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[color-mix(in_srgb,#f87171_30%,transparent)] text-[color-mix(in_srgb,#f87171_84%,var(--app-text))] transition hover:bg-[color-mix(in_srgb,#f87171_12%,transparent)] disabled:opacity-50"
+                          aria-label="Revoke API key"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))
+                : !apiKeysLoading && (
+                    <p className="py-3 text-sm text-[var(--app-muted)]">
+                      No API keys yet.
+                    </p>
+                  )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section
+        id="usage-billing"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <SectionHeading title="Usage & billing" />
+        <div className="grid gap-5 border-y border-[var(--app-line)] py-4 md:grid-cols-2">
+          <UsageMeter
+            label="Search API today"
+            percent={dailyPercent}
+            value={dailyUsageValue}
+          />
+          <UsageMeter
+            label="Free translations"
+            percent={translationPercent}
+            value={translationUsageValue}
+          />
+        </div>
+        {hasUsageError && (
+          <Notice tone="warn">
+            <span>Token check failed. Refresh your sign-in.</span>
+            <code
+              className="mt-1 block truncate text-xs text-[var(--app-faint)]"
+              style={monoStyle}
+            >
+              {usageErrorMessage}
+            </code>
+            <ActionButton
+              className="mt-3"
+              variant="ghost"
+              onClick={onRetryUsage}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Retry
+            </ActionButton>
+          </Notice>
+        )}
+      </section>
+    </>
+  );
+}
+
+function CodeRail({
+  activeLanguage,
+  canRun,
+  copied,
+  endpointDoc,
+  error,
+  isRunning,
+  onCopy,
+  onLanguageChange,
+  onRun,
+  request,
+  responsePayload,
+  sample,
+  status,
+}: {
+  activeLanguage: LanguageTab;
+  canRun: boolean;
+  copied: boolean;
+  endpointDoc: EndpointDoc;
+  error: string | null;
+  isRunning: boolean;
+  onCopy: () => void;
+  onLanguageChange: (language: LanguageTab) => void;
+  onRun: () => void;
+  request: BuiltEndpointRequest;
+  responsePayload: unknown;
+  sample: string;
+  status: string;
+}) {
+  return (
+    <aside className="sticky top-[52px] h-[calc(100vh-52px)] min-w-0 overflow-y-auto border-l border-[var(--app-line)] bg-[color-mix(in_srgb,var(--app-bg-soft)_62%,transparent)] px-5 py-4 [scrollbar-width:thin] max-[900px]:relative max-[900px]:top-0 max-[900px]:h-auto max-[900px]:border-l-0 max-[900px]:border-t">
+      <div
+        className="flex min-w-0 items-center justify-between gap-3 text-[10px] uppercase tracking-[0.14em] text-[var(--app-faint)]"
+        style={monoStyle}
+      >
+        <span className="truncate">
+          {endpointDoc.endpoint.method}{' '}
+          {displayPath(endpointDoc.endpoint, false)}
+        </span>
+        <span className="shrink-0 text-[var(--docs-success)]">{status}</span>
+      </div>
+
+      <div className="mt-3 flex rounded-md border border-[var(--app-line)] bg-[var(--app-control)] p-1">
+        {languageTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onLanguageChange(tab.id)}
+            className="flex-1 rounded px-2 py-1.5 text-xs text-[var(--app-muted)] transition hover:text-[var(--app-text)]"
+            style={{
+              ...monoStyle,
+              ...(activeLanguage === tab.id
+                ? {
+                    background: 'var(--app-control-strong)',
+                    color: 'var(--app-text)',
+                  }
+                : {}),
+            }}
+          >
+            {tab.label}
+          </button>
         ))}
       </div>
+
+      <CodePanel
+        className="mt-3"
+        id="rail-request"
+        maxHeight="280px"
+        value={sample}
+      />
+
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        <ActionButton
+          disabled={!canRun}
+          onClick={onRun}
+          title={
+            request.missingFiles.length
+              ? 'This endpoint requires a file.'
+              : request.requiresAuth && !canRun
+                ? 'Paste an API key in the top bar.'
+                : undefined
+          }
+        >
+          {isRunning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+          Run
+        </ActionButton>
+        <ActionButton variant="ghost" onClick={onCopy}>
+          {copied ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+          Copy
+        </ActionButton>
+      </div>
+
+      {error && <Notice tone="error">{error}</Notice>}
+
+      <div
+        className="mt-4 flex items-center gap-2 text-xs text-[var(--app-muted)]"
+        style={monoStyle}
+      >
+        <span className="h-2 w-2 rounded-full bg-[var(--docs-success)]" />
+        Response
+      </div>
+      <CodePanel
+        className="mt-2"
+        id="rail-response"
+        maxHeight="420px"
+        value={stringify(responsePayload)}
+        highlighted
+      />
+    </aside>
+  );
+}
+
+function SchemaDisclosure({
+  defaultOpen = false,
+  fields,
+  title,
+}: {
+  defaultOpen?: boolean;
+  fields: SchemaField[];
+  title: string;
+}) {
+  return (
+    <details
+      className="group border-t border-[var(--app-line)]"
+      open={defaultOpen}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2 py-3 text-xs uppercase tracking-[0.12em] text-[var(--app-muted-strong)]">
+        <ChevronRight className="h-3.5 w-3.5 text-[var(--app-faint)] transition group-open:rotate-90" />
+        <span style={monoStyle}>{title}</span>
+        <span
+          className="ml-auto text-[10px] normal-case tracking-normal text-[var(--app-faint)]"
+          style={monoStyle}
+        >
+          {fields.length} {fields.length === 1 ? 'field' : 'fields'}
+        </span>
+      </summary>
+      <SchemaRows
+        fields={fields}
+        emptyLabel={`No ${title.toLowerCase()} fields.`}
+      />
+    </details>
+  );
+}
+
+function SchemaRows({
+  emptyLabel = 'No fields.',
+  fields,
+}: {
+  emptyLabel?: string;
+  fields: SchemaField[];
+}) {
+  if (!fields.length) {
+    return (
+      <p className="pb-3 text-sm leading-6 text-[var(--app-faint)]">
+        {emptyLabel}
+      </p>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-[var(--app-line)] border-y border-[var(--app-line)]">
+      {fields.map((field) => (
+        <div
+          key={field.name}
+          className="grid min-w-0 gap-4 py-3 text-sm md:grid-cols-[minmax(240px,340px)_minmax(0,1fr)] xl:grid-cols-[minmax(300px,460px)_minmax(0,1fr)]"
+        >
+          <div className="min-w-0">
+            <code
+              className="break-all text-sm text-[var(--docs-code)]"
+              style={monoStyle}
+            >
+              {field.name}
+            </code>
+            <div
+              className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-[var(--app-faint)]"
+              style={monoStyle}
+            >
+              <span className="break-words">{field.type}</span>
+              <span>
+                {field.required
+                  ? 'required'
+                  : field.defaultValue
+                    ? 'default'
+                    : 'optional'}
+              </span>
+              {field.defaultValue && <span>{field.defaultValue}</span>}
+            </div>
+          </div>
+          <p className="min-w-0 leading-6 text-[var(--app-muted)]">
+            {field.description}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }
 
-function EndpointFieldControl({
-  endpoint,
-  field,
-  file,
-  onChange,
-  onFileChange,
+function UsageChip({
+  label,
+  percent,
   value,
 }: {
-  endpoint: EndpointDefinition;
-  field: SchemaField;
-  file: File | null;
-  onChange: (value: string) => void;
-  onFileChange: (file: File | null) => void;
+  label: string;
+  percent: number;
   value: string;
 }) {
-  const location = getFieldLocation(endpoint, field);
-  const enumOptions = enumOptionsFor(field).filter(Boolean);
-  const inputId = `builder-field-${endpoint.path}-${field.name}`.replace(
-    /[^a-z0-9_-]+/gi,
-    '-'
-  );
-  const isNumber = field.type === 'integer' || field.type === 'number';
-
   return (
-    <label htmlFor={inputId} className="grid min-w-0 gap-2">
-      <span className="flex min-w-0 items-center justify-between gap-3">
-        <span className="min-w-0">
-          <code className="break-all font-mono text-sm text-cyan-100">
-            {field.name}
-          </code>
-          <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.12em] text-white/35">
-            {location}
-          </span>
-        </span>
-        {field.required && (
-          <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-amber-100/80">
-            required
-          </span>
-        )}
+    <span className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 text-xs text-[var(--app-muted-strong)]">
+      <span
+        className="text-[10px] uppercase tracking-[0.14em] max-[1180px]:hidden"
+        style={monoStyle}
+      >
+        {label}
       </span>
-
-      {field.type === 'File' ? (
-        <input
-          id={inputId}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={(event) =>
-            onFileChange(event.currentTarget.files?.[0] ?? null)
-          }
-          className="min-h-11 rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:text-white hover:file:bg-white/15"
-        />
-      ) : enumOptions.length ? (
-        <select
-          id={inputId}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
-        >
-          {enumOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          id={inputId}
-          type={isNumber ? 'number' : 'text'}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={field.type === 'string[]' ? '#cda636, #365f9c' : ''}
-          className="h-11 min-w-0 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-200"
-        />
-      )}
-
-      <span className="text-xs leading-5 text-white/45">
-        {field.type === 'File' && file
-          ? `Selected: ${file.name}`
-          : field.description}
+      <span className="whitespace-nowrap" style={monoStyle}>
+        {value}
       </span>
-    </label>
+      <span className="h-1 w-10 overflow-hidden rounded-full bg-[var(--app-control-strong)] max-[1180px]:hidden">
+        <span
+          className="block h-full rounded-full bg-[image:var(--docs-brand-gradient)]"
+          style={{ width: `${Math.max(0, Math.min(percent, 100))}%` }}
+        />
+      </span>
+    </span>
   );
 }
 
 function UsageMeter({
-  icon,
   label,
-  value,
   percent,
+  value,
 }: {
-  icon: ReactNode;
   label: string;
-  value: string;
   percent: number;
+  value: string;
 }) {
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-        <span className="flex items-center gap-2 text-white/70">
-          {icon}
-          {label}
+        <span className="text-[var(--app-muted)]">{label}</span>
+        <span className="text-[var(--app-text)]" style={monoStyle}>
+          {value}
         </span>
-        <span className="text-white">{value}</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--app-control-strong)]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-cyan-200 via-fuchsia-300 to-amber-200"
-          style={{ width: `${percent}%` }}
+          className="h-full rounded-full bg-[image:var(--docs-brand-gradient)]"
+          style={{ width: `${Math.max(0, Math.min(percent, 100))}%` }}
         />
       </div>
     </div>
+  );
+}
+
+function InlineDatum({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2 border-r border-[var(--app-line)] pr-3 last:border-r-0">
+      <span
+        className="shrink-0 text-[10px] uppercase tracking-[0.16em] text-[var(--app-faint)]"
+        style={monoStyle}
+      >
+        {label}
+      </span>
+      <code
+        className="min-w-0 truncate text-[var(--docs-code)]"
+        style={monoStyle}
+        title={value}
+      >
+        {value}
+      </code>
+    </span>
+  );
+}
+
+function SectionHeading({
+  description,
+  title,
+}: {
+  description?: ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="mb-3">
+      <h2
+        className="text-[1.5rem] font-semibold leading-tight text-[var(--app-text-strong)]"
+        style={displayStyle}
+      >
+        {title}
+      </h2>
+      {description && (
+        <p className="mt-1 text-sm leading-6 text-[var(--app-muted)]">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MethodTag({ method }: { method: SectionTone }) {
+  return (
+    <span
+      className="inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em]"
+      style={{ ...monoStyle, ...methodTone(method) }}
+    >
+      {method}
+    </span>
+  );
+}
+
+function CodeText({ children }: { children: ReactNode }) {
+  return (
+    <code className="text-[var(--docs-code)]" style={monoStyle}>
+      {children}
+    </code>
+  );
+}
+
+function InlineStatus({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 border-y border-[var(--app-line)] py-4 text-sm text-[var(--app-muted)]">
+      {children}
+    </div>
+  );
+}
+
+function Notice({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: 'error' | 'warn';
+}) {
+  return (
+    <div
+      className="mt-3 border-y py-3 text-sm leading-6"
+      style={{
+        background:
+          tone === 'error'
+            ? 'color-mix(in srgb, #f87171 10%, transparent)'
+            : 'color-mix(in srgb, #86198f 10%, transparent)',
+        borderColor:
+          tone === 'error'
+            ? 'color-mix(in srgb, #f87171 24%, transparent)'
+            : 'color-mix(in srgb, #86198f 24%, transparent)',
+        color:
+          tone === 'error'
+            ? 'color-mix(in srgb, #f87171 84%, var(--app-text))'
+            : 'var(--app-muted-strong)',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  className = '',
+  disabled,
+  onClick,
+  title,
+  variant = 'primary',
+}: {
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  title?: string;
+  variant?: 'primary' | 'ghost';
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
+      style={
+        disabled
+          ? {
+              background: 'var(--app-control-strong)',
+              borderColor: 'var(--app-line)',
+              color: 'var(--app-muted)',
+            }
+          : variant === 'primary'
+            ? {
+                background: brandGradient,
+                borderColor: 'transparent',
+                color: '#ffffff',
+              }
+            : {
+                background: 'var(--app-control)',
+                borderColor: 'var(--app-line)',
+                color: 'var(--app-muted-strong)',
+              }
+      }
+    >
+      {children}
+    </button>
   );
 }
 
@@ -2219,7 +2970,7 @@ function CopyButton({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-xs text-white/65 hover:bg-white/[0.08] hover:text-white"
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 text-xs text-[var(--app-muted-strong)] transition hover:border-[var(--app-line-strong)] hover:text-[var(--app-text)]"
     >
       {copied ? (
         <Check className="h-3.5 w-3.5" />
@@ -2231,34 +2982,96 @@ function CopyButton({
   );
 }
 
-function CodeBlock({
+function CodePanel({
+  className = '',
+  copied,
+  highlighted = false,
   id,
   label,
-  copied,
-  value,
+  maxHeight = '520px',
   onCopy,
+  value,
 }: {
+  className?: string;
+  copied?: boolean;
+  highlighted?: boolean;
   id: string;
   label?: string;
-  copied: boolean;
+  maxHeight?: string;
+  onCopy?: (id: string, value: string) => void;
   value: string;
-  onCopy: (id: string, value: string) => void;
 }) {
   return (
-    <div className="min-w-0 max-w-full overflow-hidden border-y border-white/[0.08] bg-black/25 py-3">
-      <div className="mb-2 flex items-center justify-between gap-3 px-1">
-        {label ? (
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-            {label}
-          </p>
-        ) : (
-          <span aria-hidden="true" />
-        )}
-        <CopyButton copied={copied} onClick={() => onCopy(id, value)} />
-      </div>
-      <pre className="max-h-[520px] max-w-full overflow-auto whitespace-pre-wrap break-words px-1 text-xs leading-5 text-white/68">
-        {value}
+    <div
+      className={`min-w-0 max-w-full overflow-hidden border-y border-[var(--app-line)] py-3 ${className}`}
+      style={{
+        background: highlighted
+          ? 'var(--docs-code-panel-strong)'
+          : 'var(--docs-code-panel)',
+      }}
+    >
+      {(label || onCopy) && (
+        <div className="mb-2 flex items-center justify-between gap-3 px-1">
+          {label ? (
+            <p
+              className="text-[10px] uppercase tracking-[0.18em] text-[var(--app-faint)]"
+              style={monoStyle}
+            >
+              {label}
+            </p>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          {onCopy && (
+            <CopyButton
+              copied={Boolean(copied)}
+              onClick={() => onCopy(id, value)}
+            />
+          )}
+        </div>
+      )}
+      <pre
+        className="max-w-full overflow-auto whitespace-pre-wrap break-words px-1 text-xs leading-5 text-[var(--app-text)]"
+        style={{ ...monoStyle, maxHeight }}
+      >
+        {highlighted ? renderHighlightedJson(value) : value}
       </pre>
     </div>
   );
+}
+
+function renderHighlightedJson(value: string) {
+  const tokenPattern =
+    /("(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?)/g;
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(value))) {
+    if (match.index > lastIndex) {
+      nodes.push(value.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    const isKey =
+      token.startsWith('"') &&
+      /^\s*:/.test(value.slice(tokenPattern.lastIndex));
+    const color = isKey
+      ? 'var(--docs-code-strong)'
+      : token.startsWith('"')
+        ? 'var(--docs-accent-strong)'
+        : token === 'true' || token === 'false' || token === 'null'
+          ? 'var(--docs-success)'
+          : 'var(--app-text)';
+
+    nodes.push(
+      <span key={`${match.index}-${token}`} style={{ color }}>
+        {token}
+      </span>
+    );
+    lastIndex = tokenPattern.lastIndex;
+  }
+
+  if (lastIndex < value.length) nodes.push(value.slice(lastIndex));
+  return nodes;
 }

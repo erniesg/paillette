@@ -14,13 +14,20 @@ export interface AuthContext {
   galleryId?: string;
 }
 
+type MockAuthBindings = {
+  Bindings: Env;
+  Variables: {
+    auth: AuthContext;
+  };
+};
+
 /**
  * Mock authentication middleware
  * In development, accepts X-User-Id header or uses default test user
  * In production, this should be replaced with real auth
  */
 export async function mockAuth(
-  c: Context<{ Bindings: Env }>,
+  c: Context<MockAuthBindings>,
   next: Next
 ) {
   // Check environment
@@ -61,7 +68,7 @@ export async function mockAuth(
  * Returns 401 if no auth context exists
  */
 export async function requireAuth(
-  c: Context<{ Bindings: Env }>,
+  c: Context<MockAuthBindings>,
   next: Next
 ) {
   const auth = c.get('auth') as AuthContext | undefined;
@@ -86,7 +93,7 @@ export async function requireAuth(
  * Require specific role middleware
  */
 export function requireRole(...roles: AuthContext['role'][]) {
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {
+  return async (c: Context<MockAuthBindings>, next: Next) => {
     const auth = c.get('auth') as AuthContext | undefined;
 
     if (!auth) {
@@ -122,6 +129,6 @@ export function requireRole(...roles: AuthContext['role'][]) {
 /**
  * Helper to get auth context from request
  */
-export function getAuth(c: Context<{ Bindings: Env }>): AuthContext | null {
-  return c.get('auth') || null;
+export function getAuth(c: Context<MockAuthBindings>): AuthContext | null {
+  return c.get('auth') ?? null;
 }

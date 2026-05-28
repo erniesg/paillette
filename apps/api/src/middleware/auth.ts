@@ -55,9 +55,23 @@ const getScopes = (payload: JWTPayload) => {
   return typeof scope === 'string' ? scope.split(' ').filter(Boolean) : [];
 };
 
-const getUserInfoEndpoint = (issuer: string) => `${trimTrailingSlash(issuer)}/me`;
+const getUserInfoEndpoint = (issuer: string) =>
+  `${trimTrailingSlash(issuer)}/me`;
 
-const fetchLogtoUserInfo = async (issuer: string, token: string): Promise<JWTPayload> => {
+const allowsIssuerOnlyLogtoFallback = (env: Env) => {
+  const environment = env.ENVIRONMENT?.toLowerCase();
+  return (
+    environment === 'local' ||
+    environment === 'development' ||
+    environment === 'dev' ||
+    environment === 'test'
+  );
+};
+
+const fetchLogtoUserInfo = async (
+  issuer: string,
+  token: string
+): Promise<JWTPayload> => {
   const response = await fetch(getUserInfoEndpoint(issuer), {
     headers: {
       Accept: 'application/json',
@@ -121,11 +135,17 @@ const getBrowser = (userAgent: string | null) => {
   }
 
   if (/curl/i.test(userAgent)) {
-    return { name: 'curl', version: userAgent.match(/curl\/([\d.]+)/)?.[1] ?? null };
+    return {
+      name: 'curl',
+      version: userAgent.match(/curl\/([\d.]+)/)?.[1] ?? null,
+    };
   }
 
   if (/python-requests/i.test(userAgent)) {
-    return { name: 'python-requests', version: userAgent.match(/python-requests\/([\d.]+)/)?.[1] ?? null };
+    return {
+      name: 'python-requests',
+      version: userAgent.match(/python-requests\/([\d.]+)/)?.[1] ?? null,
+    };
   }
 
   if (/node/i.test(userAgent)) {
@@ -161,7 +181,10 @@ const getOs = (userAgent: string | null) => {
   return { name: 'Unknown', version: null };
 };
 
-const getDeviceType = (userAgent: string | null, secChUaMobile: string | null) => {
+const getDeviceType = (
+  userAgent: string | null,
+  secChUaMobile: string | null
+) => {
   if (secChUaMobile === '?1') {
     return 'mobile';
   }
@@ -207,14 +230,18 @@ const getRequestMetadata = (c: Context<AppBindings>) => {
   };
 
   return {
-    ipAddress: truncate(c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For'), 128),
+    ipAddress: truncate(
+      c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For'),
+      128
+    ),
     userAgent,
     browserName: browser.name,
     browserVersion: browser.version,
     osName: os.name,
     osVersion: os.version,
     deviceType: getDeviceType(userAgent, secChUaMobile),
-    country: toStringOrNull(cf.country) || truncate(c.req.header('CF-IPCountry'), 16),
+    country:
+      toStringOrNull(cf.country) || truncate(c.req.header('CF-IPCountry'), 16),
     region: toStringOrNull(cf.region),
     regionCode: toStringOrNull(cf.regionCode),
     city: toStringOrNull(cf.city),
@@ -287,6 +314,12 @@ const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
     });
     payload = verified.payload;
   } else {
+    if (!allowsIssuerOnlyLogtoFallback(c.env)) {
+      throw new Error(
+        'LOGTO_API_RESOURCE is required outside local development'
+      );
+    }
+
     try {
       const verified = await jwtVerify(token, jwks, { issuer });
       payload = verified.payload;
@@ -316,7 +349,10 @@ const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
   return auth;
 };
 
-const verifyPersonalApiKey = async (c: Context<AppBindings>, apiKey: string) => {
+const verifyPersonalApiKey = async (
+  c: Context<AppBindings>,
+  apiKey: string
+) => {
   const keyHash = await hashApiKey(getApiKeyHashInput(apiKey, c.env));
   const row = await c.env.DB.prepare(
     `
@@ -343,7 +379,9 @@ const verifyPersonalApiKey = async (c: Context<AppBindings>, apiKey: string) => 
     return null;
   }
 
-  await c.env.DB.prepare('UPDATE api_keys SET last_used_at = datetime(\'now\') WHERE id = ?')
+  await c.env.DB.prepare(
+    "UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?"
+  )
     .bind(row.id)
     .run();
 
@@ -357,7 +395,10 @@ const verifyPersonalApiKey = async (c: Context<AppBindings>, apiKey: string) => 
   } satisfies AuthPrincipal;
 };
 
-const getApiKeyFromRequest = (c: Context<AppBindings>, bearerToken: string | null) => {
+const getApiKeyFromRequest = (
+  c: Context<AppBindings>,
+  bearerToken: string | null
+) => {
   const explicitKey = c.req.header('X-API-Key');
   if (explicitKey) {
     return explicitKey.trim();
@@ -368,6 +409,21 @@ const getApiKeyFromRequest = (c: Context<AppBindings>, bearerToken: string | nul
   }
 
   return null;
+};
+
+const verifyPublicSearchApiKey = (c: Context<AppBindings>, apiKey: string) => {
+  const configuredKey = c.env.PAILLETTE_PUBLIC_SEARCH_API_KEY?.trim();
+  if (!configuredKey || apiKey !== configuredKey) {
+    return null;
+  }
+
+  return {
+    kind: 'user',
+    userId: 'public-search-web',
+    email: 'public-search-web@paillette.local',
+    name: 'Public Search Web',
+    scopes: ['public_search'],
+  } satisfies AuthPrincipal;
 };
 
 const getDevPrincipal = (c: Context<AppBindings>) => {
@@ -394,7 +450,9 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
   try {
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const devPrincipal = getDevPrincipal(c);
-    const auth = bearerToken ? await verifyLogtoToken(c, bearerToken) : devPrincipal;
+    const auth = bearerToken
+      ? await verifyLogtoToken(c, bearerToken)
+      : devPrincipal;
 
     if (!auth || auth.kind !== 'user') {
       return c.json(
@@ -427,12 +485,16 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
   }
 };
 
-export const requireAuthOrApiKey = async (c: Context<AppBindings>, next: Next) => {
+export const requireAuthOrApiKey = async (
+  c: Context<AppBindings>,
+  next: Next
+) => {
   try {
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const apiKey = getApiKeyFromRequest(c, bearerToken);
 
     const auth =
+      (apiKey ? verifyPublicSearchApiKey(c, apiKey) : null) ||
       (apiKey ? await verifyPersonalApiKey(c, apiKey) : null) ||
       (bearerToken && !bearerToken.startsWith('plt_')
         ? await verifyLogtoToken(c, bearerToken)
@@ -475,9 +537,10 @@ export const requireAuthOrApiKey = async (c: Context<AppBindings>, next: Next) =
 
 export const getAuth = (c: Context<AppBindings>) => c.get('auth');
 
-export const enforceDailyQuota = (
-  options: { queryType: string; cost?: number }
-): MiddlewareHandler<AppBindings> => {
+export const enforceDailyQuota = (options: {
+  queryType: string;
+  cost?: number;
+}): MiddlewareHandler<AppBindings> => {
   return async (c, next) => {
     const auth = getAuth(c);
 
@@ -627,7 +690,10 @@ export const enforceDailyQuota = (
 
     c.set('usageEventId', usageEventId);
     c.header('X-RateLimit-Limit', String(usage?.quota ?? quota));
-    c.header('X-RateLimit-Remaining', String(Math.max((usage?.quota ?? quota) - (usage?.used ?? 0), 0)));
+    c.header(
+      'X-RateLimit-Remaining',
+      String(Math.max((usage?.quota ?? quota) - (usage?.used ?? 0), 0))
+    );
 
     const rollbackUsage = async () => {
       await c.env.DB.prepare(
@@ -643,7 +709,9 @@ export const enforceDailyQuota = (
         .bind(cost, cost, principalType, principalId, usageDate)
         .run();
 
-      await c.env.DB.prepare('DELETE FROM artwork_usage_events WHERE usage_event_id = ?')
+      await c.env.DB.prepare(
+        'DELETE FROM artwork_usage_events WHERE usage_event_id = ?'
+      )
         .bind(usageEventId)
         .run();
 
@@ -667,7 +735,13 @@ export const enforceDailyQuota = (
 
 export const recordArtworkResults = async (
   c: Context<AppBindings>,
-  results: Array<{ artworkId: string; orgId?: string; galleryId?: string; rank: number; score?: number | null }>
+  results: Array<{
+    artworkId: string;
+    orgId?: string;
+    galleryId?: string;
+    rank: number;
+    score?: number | null;
+  }>
 ) => {
   const usageEventId = c.get('usageEventId');
 
@@ -688,7 +762,11 @@ export const recordArtworkResults = async (
         generateId(),
         usageEventId,
         result.artworkId,
-        result.orgId || result.galleryId || c.req.param('orgId') || c.req.param('galleryId') || null,
+        result.orgId ||
+          result.galleryId ||
+          c.req.param('orgId') ||
+          c.req.param('galleryId') ||
+          null,
         result.rank,
         result.score ?? null
       )

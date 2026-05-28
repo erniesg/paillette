@@ -1,4 +1,4 @@
-import type { Env } from '../types';
+import type { Env } from '../index';
 
 /**
  * Translation queue job message

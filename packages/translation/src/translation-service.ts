@@ -2,7 +2,6 @@ import type {
   SupportedLanguage,
   TranslationProvider,
   TranslationResult,
-  ProviderConfig,
 } from './types';
 import { TranslationError, generateCacheKey } from './types';
 import { CloudflareAIProvider } from './providers/cloudflare-ai';
@@ -26,7 +25,6 @@ export interface TranslationServiceConfig {
  */
 export class TranslationService {
   private providers: Map<string, TranslationProvider>;
-  private fallbackProvider: TranslationProvider;
   private cache?: KVNamespace;
   private cacheTTL: number;
 
@@ -48,7 +46,6 @@ export class TranslationService {
     // Cloudflare AI (always available, free)
     const cloudflareAI = new CloudflareAIProvider({ ai: config.ai });
     this.providers.set(cloudflareAI.name, cloudflareAI);
-    this.fallbackProvider = cloudflareAI;
 
     // OpenAI (if configured)
     if (config.openaiApiKey) {
@@ -115,7 +112,7 @@ export class TranslationService {
     }
 
     // Get provider strategy for target language
-    const providerNames = this.providerStrategy[targetLang];
+    const providerNames = this.providerStrategy[targetLang] ?? [];
 
     // Try providers in order of preference
     let lastError: TranslationError | null = null;
@@ -191,6 +188,9 @@ export class TranslationService {
   ): { provider: string; cost: number } {
     const providerNames = this.providerStrategy[targetLang];
     const providerName = providerNames[0]; // Use primary provider
+    if (!providerName) {
+      return { provider: 'unknown', cost: 0 };
+    }
     const provider = this.providers.get(providerName);
 
     if (!provider) {

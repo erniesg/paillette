@@ -15,7 +15,7 @@ import {
   type ArtworkListResponse,
   type ArtworkUploadResponse,
 } from '../types/artwork';
-import { uploadImage, uploadThumbnail, deleteImage } from '../utils/r2';
+import { uploadImage, deleteImage } from '../utils/r2';
 import {
   validateImage,
   extractImageMetadata,

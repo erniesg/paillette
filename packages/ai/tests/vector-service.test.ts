@@ -33,8 +33,7 @@ describe('VectorService', () => {
       };
 
       vi.mocked(mockVectorize.upsert).mockResolvedValue({
-        count: 1,
-        ids: [artworkId],
+        mutationId: 'mutation-1',
       });
 
       // Act
@@ -135,8 +134,7 @@ describe('VectorService', () => {
       ];
 
       vi.mocked(mockVectorize.upsert).mockResolvedValue({
-        count: 3,
-        ids: ['artwork-1', 'artwork-2', 'artwork-3'],
+        mutationId: 'mutation-batch-1',
       });
 
       // Act
@@ -208,9 +206,9 @@ describe('VectorService', () => {
         returnMetadata: true,
       });
       expect(results).toHaveLength(2);
-      expect(results[0].id).toBe('artwork-1');
-      expect(results[0].score).toBe(0.95);
-      expect(results[0].metadata).toBeDefined();
+      expect(results[0]!.id).toBe('artwork-1');
+      expect(results[0]!.score).toBe(0.95);
+      expect(results[0]!.metadata).toBeDefined();
     });
 
     it('should filter by gallery ID', async () => {
@@ -247,10 +245,10 @@ describe('VectorService', () => {
       };
 
       const mockMatches = [
-        { id: 'artwork-1', score: 0.95, metadata: {} as VectorMetadata },
-        { id: 'artwork-2', score: 0.85, metadata: {} as VectorMetadata },
-        { id: 'artwork-3', score: 0.75, metadata: {} as VectorMetadata }, // Below threshold
-        { id: 'artwork-4', score: 0.65, metadata: {} as VectorMetadata }, // Below threshold
+        { id: 'artwork-1', score: 0.95, metadata: {} },
+        { id: 'artwork-2', score: 0.85, metadata: {} },
+        { id: 'artwork-3', score: 0.75, metadata: {} }, // Below threshold
+        { id: 'artwork-4', score: 0.65, metadata: {} }, // Below threshold
       ];
 
       vi.mocked(mockVectorize.query).mockResolvedValue({
@@ -341,7 +339,7 @@ describe('VectorService', () => {
           returnMetadata: false,
         })
       );
-      expect(results[0].metadata).toBeUndefined();
+      expect(results[0]!.metadata).toBeUndefined();
     });
   });
 
@@ -357,7 +355,7 @@ describe('VectorService', () => {
             galleryId: 'gallery-1',
             artworkId: 'artwork-1',
             createdAt: '2025-11-07T10:00:00Z',
-          } as VectorMetadata,
+          },
         },
         {
           id: 'artwork-2',
@@ -366,7 +364,7 @@ describe('VectorService', () => {
             galleryId: 'gallery-1',
             artworkId: 'artwork-2',
             createdAt: '2025-11-07T10:01:00Z',
-          } as VectorMetadata,
+          },
         },
       ];
 
@@ -378,7 +376,7 @@ describe('VectorService', () => {
       // Assert
       expect(mockVectorize.getByIds).toHaveBeenCalledWith(ids);
       expect(results).toHaveLength(2);
-      expect(results[0].id).toBe('artwork-1');
+      expect(results[0]!.id).toBe('artwork-1');
     });
   });
 
@@ -387,8 +385,7 @@ describe('VectorService', () => {
       // Arrange
       const artworkId = 'artwork-123';
       vi.mocked(mockVectorize.deleteByIds).mockResolvedValue({
-        count: 1,
-        ids: [artworkId],
+        mutationId: 'mutation-delete-1',
       });
 
       // Act
@@ -419,8 +416,7 @@ describe('VectorService', () => {
       // Arrange
       const ids = ['artwork-1', 'artwork-2', 'artwork-3'];
       vi.mocked(mockVectorize.deleteByIds).mockResolvedValue({
-        count: 3,
-        ids,
+        mutationId: 'mutation-delete-batch-1',
       });
 
       // Act

@@ -10,6 +10,44 @@ import type { Env } from '../../src/index';
 describe('GET /api/v1/galleries/:id/embeddings', () => {
   let env: Env;
 
+  const mockDatabase = ({
+    galleryId,
+    artworks = [],
+    orgExists = true,
+    rejectArtworkQuery = false,
+  }: {
+    galleryId: string;
+    artworks?: Array<Record<string, unknown>>;
+    orgExists?: boolean;
+    rejectArtworkQuery?: boolean;
+  }) => {
+    (env.DB.prepare as any).mockImplementation((sql: string) => {
+      const statement = {
+        bind: vi.fn(() => statement),
+        first: vi.fn(async () => {
+          if (sql.includes('FROM orgs')) {
+            return orgExists ? { id: galleryId } : null;
+          }
+
+          if (sql.includes('COUNT(*)')) {
+            return { count: artworks.length };
+          }
+
+          return null;
+        }),
+        all: vi.fn(async () => {
+          if (rejectArtworkQuery) {
+            throw new Error('Database error');
+          }
+
+          return { results: artworks };
+        }),
+      };
+
+      return statement;
+    });
+  };
+
   beforeEach(() => {
     // Mock environment bindings
     env = {
@@ -71,11 +109,7 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
       },
     ];
 
-    // Mock DB query
-    (env.DB.prepare as any).mockReturnValue({
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn().mockResolvedValue({ results: mockArtworks }),
-    });
+    mockDatabase({ galleryId, artworks: mockArtworks });
 
     // Mock Vectorize query
     (env.VECTORIZE.getByIds as any).mockResolvedValue(mockEmbeddings);
@@ -126,10 +160,7 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
       },
     ];
 
-    (env.DB.prepare as any).mockReturnValue({
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn().mockResolvedValue({ results: mockArtworks }),
-    });
+    mockDatabase({ galleryId, artworks: mockArtworks });
 
     (env.VECTORIZE.getByIds as any).mockResolvedValue(mockEmbeddings);
 
@@ -151,17 +182,16 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
       `http://localhost/api/v1/galleries/${galleryId}/embeddings?limit=10&offset=20`
     );
 
-    (env.DB.prepare as any).mockReturnValue({
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn().mockResolvedValue({ results: [] }),
-    });
+    mockDatabase({ galleryId, artworks: [] });
 
     (env.VECTORIZE.getByIds as any).mockResolvedValue([]);
 
     const response = await app.fetch(request, env);
 
     // Verify DB prepare was called with correct query
-    const prepareCall = (env.DB.prepare as any).mock.calls[0][0];
+    const prepareCall = (env.DB.prepare as any).mock.calls.find(
+      ([sql]: [string]) => sql.includes('FROM artworks')
+    )?.[0];
     expect(prepareCall).toContain('LIMIT');
     expect(prepareCall).toContain('OFFSET');
   });
@@ -169,10 +199,7 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
   it('should return 404 if gallery does not exist', async () => {
     const galleryId = 'non-existent-gallery';
 
-    (env.DB.prepare as any).mockReturnValue({
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn().mockResolvedValue({ results: [] }),
-    });
+    mockDatabase({ galleryId, orgExists: false });
 
     const request = new Request(
       `http://localhost/api/v1/galleries/${galleryId}/embeddings`
@@ -188,10 +215,7 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
   it('should handle errors gracefully', async () => {
     const galleryId = 'test-gallery-123';
 
-    (env.DB.prepare as any).mockReturnValue({
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn().mockRejectedValue(new Error('Database error')),
-    });
+    mockDatabase({ galleryId, rejectArtworkQuery: true });
 
     const request = new Request(
       `http://localhost/api/v1/galleries/${galleryId}/embeddings`
@@ -227,10 +251,7 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
       },
     ];
 
-    (env.DB.prepare as any).mockReturnValue({
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn().mockResolvedValue({ results: mockArtworks }),
-    });
+    mockDatabase({ galleryId, artworks: mockArtworks });
 
     (env.VECTORIZE.getByIds as any).mockResolvedValue(mockEmbeddings);
 

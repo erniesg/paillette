@@ -1,4 +1,9 @@
-import { json, type LinksFunction, type LoaderFunctionArgs, type MetaFunction } from '@remix-run/cloudflare';
+import {
+  json,
+  type LinksFunction,
+  type LoaderFunctionArgs,
+  type MetaFunction,
+} from '@remix-run/cloudflare';
 import {
   Links,
   Meta,
@@ -21,7 +26,10 @@ import styles from './tailwind.css?url';
 export const meta: MetaFunction = () => {
   return [
     { title: 'Paillette - AI-Powered Art Gallery Search' },
-    { name: 'description', content: 'Multimodal search and management platform for art galleries' },
+    {
+      name: 'description',
+      content: 'Multimodal search and management platform for art galleries',
+    },
   ];
 };
 
@@ -36,7 +44,7 @@ export const links: LinksFunction = () => [
   },
   {
     rel: 'stylesheet',
-    href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700;1,800&display=swap',
+    href: 'https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700;1,800&display=swap',
   },
 ];
 
@@ -57,8 +65,13 @@ const getProcessEnv = () => {
 export const loader = ({ context }: LoaderFunctionArgs) => {
   const workerEnv = (context as WorkerContext).cloudflare?.env ?? {};
   const processEnv = getProcessEnv();
-  const appEnv = workerEnv.APP_ENV ?? processEnv.APP_ENV ?? processEnv.NODE_ENV ?? 'development';
-  const defaultStagingAppId = appEnv === 'production' ? '' : 'zsrsuc0jkv9zhinog3bx5';
+  const appEnv =
+    workerEnv.APP_ENV ??
+    processEnv.APP_ENV ??
+    processEnv.NODE_ENV ??
+    'development';
+  const defaultStagingAppId =
+    appEnv === 'production' ? '' : 'zsrsuc0jkv9zhinog3bx5';
 
   return json({
     env: {
@@ -119,15 +132,12 @@ export default function App() {
       })
   );
   const logtoConfig = useMemo<LogtoConfig>(() => {
-    const resources = env.apiResource ? [env.apiResource] : undefined;
-
     return {
       endpoint: env.endpoint,
       appId: env.appId,
       scopes: [UserScope.Email],
-      resources,
     };
-  }, [env.apiResource, env.appId, env.endpoint]);
+  }, [env.appId, env.endpoint]);
 
   return (
     <QueryClientProvider client={queryClient}>

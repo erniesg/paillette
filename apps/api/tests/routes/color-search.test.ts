@@ -1,23 +1,84 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { colorSearchRoutes } from '../../src/routes/color-search';
 import type { Env } from '../../src/index';
 
 describe('Color Search API', () => {
-  let app: Hono;
+  let app: Hono<{ Bindings: Env }>;
   let mockEnv: Env;
   let testGalleryId: string;
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    'X-User-Id': 'public-search-web',
+  };
+
+  const request = (path: string, init?: RequestInit) =>
+    app.request(path, init, mockEnv);
 
   beforeEach(() => {
     testGalleryId = 'test-gallery-123';
+    const artwork = {
+      id: 'test-artwork-123',
+      title: 'Test Artwork',
+      artist: 'Test Artist',
+      image_url: 'https://r2.example.com/artwork.jpg',
+      dominant_colors: JSON.stringify([
+        { color: '#FF5733', rgb: { r: 255, g: 87, b: 51 }, percentage: 70 },
+        { color: '#333333', rgb: { r: 51, g: 51, b: 51 }, percentage: 30 },
+      ]),
+      color_palette: null,
+      color_extracted_at: '2026-05-27T00:00:00.000Z',
+    };
 
     // Mock environment
     mockEnv = {
-      DB: {} as D1Database,
+      DB: {
+        prepare: vi.fn((sql: string) => {
+          let params: unknown[] = [];
+          const statement = {
+            bind: (...values: unknown[]) => {
+              params = values;
+              return statement;
+            },
+            all: vi.fn(async () => {
+              if (sql.includes('dominant_colors IS NOT NULL')) {
+                return { success: true, results: [artwork] };
+              }
+
+              if (sql.includes('dominant_colors IS NULL')) {
+                return {
+                  success: true,
+                  results: [{ id: 'needs-colors', image_url: artwork.image_url }],
+                };
+              }
+
+              return { success: true, results: [] };
+            }),
+            first: vi.fn(async () => {
+              if (sql.includes('FROM orgs')) {
+                return { id: testGalleryId };
+              }
+
+              if (params[0] === 'nonexistent') {
+                return null;
+              }
+
+              return artwork;
+            }),
+            run: vi.fn(async () => ({ success: true, meta: { changes: 1 } })),
+          };
+          return statement;
+        }),
+        batch: vi.fn(async () => []),
+      } as unknown as D1Database,
       AI: {} as any,
-      VECTORIZE_INDEX: {} as any,
-      ARTWORK_IMAGES_BUCKET: {} as R2Bucket,
-      EMBEDDING_QUEUE: {} as Queue,
+      VECTORIZE: {} as any,
+      IMAGES: {} as R2Bucket,
+      CACHE: {} as KVNamespace,
+      EMBEDDING_QUEUE: { send: vi.fn(async () => undefined) } as unknown as Queue,
+      ENVIRONMENT: 'test',
+      API_VERSION: 'v1',
+      DAILY_FREE_QUERY_LIMIT: '100',
     };
 
     app = new Hono<{ Bindings: Env }>();
@@ -28,11 +89,11 @@ describe('Color Search API', () => {
     it('should search by single color', async () => {
       const searchColor = '#FF5733'; // Orange-red
 
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: [searchColor],
             threshold: 10,
@@ -52,11 +113,11 @@ describe('Color Search API', () => {
     });
 
     it('should search by multiple colors (ANY mode)', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF0000', '#00FF00'],
             matchMode: 'any',
@@ -74,11 +135,11 @@ describe('Color Search API', () => {
     });
 
     it('should search by multiple colors (ALL mode)', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF0000', '#00FF00'],
             matchMode: 'all',
@@ -96,11 +157,11 @@ describe('Color Search API', () => {
     });
 
     it('should return results sorted by average distance', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF5733'],
             threshold: 20,
@@ -122,11 +183,11 @@ describe('Color Search API', () => {
     });
 
     it('should reject invalid hex colors', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['invalid-color'],
             threshold: 10,
@@ -142,11 +203,11 @@ describe('Color Search API', () => {
     });
 
     it('should reject empty colors array', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: [],
             threshold: 10,
@@ -163,11 +224,11 @@ describe('Color Search API', () => {
     it('should limit results to requested limit', async () => {
       const limit = 5;
 
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF5733'],
             threshold: 20,
@@ -183,11 +244,11 @@ describe('Color Search API', () => {
     });
 
     it('should use default values for optional parameters', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF5733'],
           }),
@@ -203,11 +264,11 @@ describe('Color Search API', () => {
     });
 
     it('should include matched colors in results', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF5733'],
             threshold: 15,
@@ -232,11 +293,11 @@ describe('Color Search API', () => {
     });
 
     it('should reject threshold above 30', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF5733'],
             threshold: 35, // Too high
@@ -248,11 +309,11 @@ describe('Color Search API', () => {
     });
 
     it('should reject more than 5 colors', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/search/color`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({
             colors: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'],
             threshold: 10,
@@ -268,7 +329,7 @@ describe('Color Search API', () => {
     it('should return color palette for an artwork', async () => {
       const artworkId = 'test-artwork-123';
 
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/artworks/${artworkId}/colors`,
         {
           method: 'GET',
@@ -285,7 +346,7 @@ describe('Color Search API', () => {
     });
 
     it('should return 404 for non-existent artwork', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/artworks/nonexistent/colors`,
         {
           method: 'GET',
@@ -300,7 +361,7 @@ describe('Color Search API', () => {
     it('should trigger color extraction for an artwork', async () => {
       const artworkId = 'test-artwork-123';
 
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/artworks/${artworkId}/extract-colors`,
         {
           method: 'POST',
@@ -317,7 +378,7 @@ describe('Color Search API', () => {
 
   describe('POST /artworks/batch-extract-colors', () => {
     it('should trigger batch color extraction', async () => {
-      const res = await app.request(
+      const res = await request(
         `/galleries/${testGalleryId}/artworks/batch-extract-colors`,
         {
           method: 'POST',

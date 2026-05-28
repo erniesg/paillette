@@ -11,8 +11,9 @@ import translationRoutes from './routes/translation';
 import apiKeyRoutes from './routes/api-keys';
 import impactRoutes from './routes/impact';
 import assetRoutes from './routes/assets';
-import mcpRoutes from './routes/mcp';
+import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
+import imageExtractionRoutes from './routes/image-extractions';
 
 // Environment bindings
 export interface Env {
@@ -25,7 +26,9 @@ export interface Env {
   CACHE: KVNamespace;
   AI: Ai;
   EMBEDDING_QUEUE: Queue;
+  FRAME_REMOVAL_QUEUE: Queue;
   TRANSLATION_QUEUE?: Queue;
+  BUCKET: R2Bucket;
   ENVIRONMENT: string;
   API_VERSION: string;
   // Translation provider API keys
@@ -37,6 +40,7 @@ export interface Env {
   LOGTO_JWKS_URI?: string;
   LOGTO_API_RESOURCE?: string;
   API_KEY_PEPPER?: string;
+  PAILLETTE_PUBLIC_SEARCH_API_KEY?: string;
   DAILY_FREE_QUERY_LIMIT?: string;
   TRANSLATION_FREE_LIFETIME_LIMIT?: string;
   JINA_API_KEY?: string;
@@ -49,6 +53,8 @@ export interface Env {
   EMBEDDING_INDEX_VERSION?: string;
   SEARCH_FUSION_MODE?: string;
   ENABLE_NGS_REVIEW?: string;
+  IMAGE_EXTRACTION_WORKER_URL?: string;
+  IMAGE_EXTRACTION_WORKER_TOKEN?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -74,6 +80,7 @@ app.use(
     ],
     exposeHeaders: [
       'Content-Length',
+      'WWW-Authenticate',
       'X-Request-ID',
       'X-RateLimit-Limit',
       'X-RateLimit-Remaining',
@@ -96,6 +103,7 @@ app.get('/', (c) => {
         textSearch: 'POST /api/v1/orgs/:orgId/search/text',
         imageSearch: 'POST /api/v1/orgs/:orgId/search/image',
         colorSearch: 'POST /api/v1/orgs/:orgId/search/color',
+        imageExtraction: 'POST /api/v1/image-extractions',
       },
     },
     meta: {
@@ -114,8 +122,19 @@ app.get('/health', (c) => {
   });
 });
 
+app.get('/.well-known/oauth-protected-resource', (c) =>
+  c.json(getMcpProtectedResourceMetadata(c.req.url, c.env))
+);
+
+app.get('/.well-known/oauth-protected-resource/api/v1/mcp', (c) =>
+  c.json(getMcpProtectedResourceMetadata(c.req.url, c.env))
+);
+
 // API v1 routes
 const api = new Hono<{ Bindings: Env }>();
+api.get('/.well-known/oauth-protected-resource', (c) =>
+  c.json(getMcpProtectedResourceMetadata(c.req.url, c.env))
+);
 api.route('/me', apiKeyRoutes as any);
 api.route('/impact', impactRoutes as any);
 api.route('/orgs', orgs);
@@ -123,6 +142,7 @@ api.route('/galleries', orgs);
 api.route('/metadata', metadataRoutes);
 api.route('/translate', translationRoutes);
 api.route('/assets', assetRoutes);
+api.route('/image-extractions', imageExtractionRoutes as any);
 api.route('/mcp', mcpRoutes as any);
 api.route('/ngs-review', ngsReviewRoutes);
 

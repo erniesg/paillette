@@ -6,7 +6,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { Env } from '../types';
+import type { Env } from '../index';
 import {
   enqueueFrameRemoval,
   batchEnqueueFrameRemoval,
@@ -19,7 +19,7 @@ const frameRemoval = new Hono<{ Bindings: Env }>();
 // ============================================================================
 
 const ProcessFrameSchema = z.object({
-  artworkId: z.string().uuid(),
+  id: z.string().uuid(),
 });
 
 const BatchProcessSchema = z.object({
@@ -27,10 +27,6 @@ const BatchProcessSchema = z.object({
   galleryId: z.string().uuid().optional(),
   artworkIds: z.array(z.string().uuid()).optional(),
   forceReprocess: z.boolean().default(false),
-});
-
-const ProcessingStatusSchema = z.object({
-  artworkId: z.string().uuid(),
 });
 
 // ============================================================================
@@ -45,8 +41,7 @@ frameRemoval.post(
   '/artworks/:id/process-frame',
   zValidator('param', ProcessFrameSchema),
   async (c) => {
-    const { artworkId } = c.req.param();
-    const user = c.get('user'); // From auth middleware
+    const artworkId = c.req.param('id');
 
     try {
       // Get artwork details

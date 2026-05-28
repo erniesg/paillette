@@ -1,5 +1,5 @@
 import { BaseTranslationProvider } from './base';
-import type { SupportedLanguage, ProviderConfig } from '../types';
+import type { SupportedLanguage } from '../types';
 import { TranslationError } from '../types';
 
 /**
@@ -46,13 +46,17 @@ export class GoogleTranslateProvider extends BaseTranslationProvider {
       );
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = (await response.json()) as {
+          error?: { message?: string };
+        };
         throw new Error(
           error.error?.message || `HTTP ${response.status}`
         );
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        data?: { translations?: Array<{ translatedText?: string }> };
+      };
       const translatedText = data.data?.translations?.[0]?.translatedText;
 
       if (!translatedText) {

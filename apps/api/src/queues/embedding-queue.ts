@@ -141,7 +141,7 @@ async function processColorExtraction(
     console.log(`Processing color extraction for artwork: ${job.artworkId}`);
 
     // Fetch the image from R2 or use URL directly
-    let imageUrl = job.imageUrl;
+    const imageUrl = job.imageUrl;
 
     // If we have an image key, construct the R2 URL
     if (job.imageKey) {

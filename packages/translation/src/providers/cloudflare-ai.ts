@@ -26,11 +26,11 @@ export class CloudflareAIProvider extends BaseTranslationProvider {
     this.validateLanguages(sourceLang, targetLang);
 
     try {
-      const response = await this.ai.run('@cf/meta/m2m100-1.2b', {
+      const response = (await this.ai.run('@cf/meta/m2m100-1.2b', {
         text,
         source_lang: this.mapLanguageCode(sourceLang),
         target_lang: this.mapLanguageCode(targetLang),
-      });
+      })) as { translated_text?: string };
 
       if (!response || typeof response.translated_text !== 'string') {
         throw new Error('Invalid response from Cloudflare AI');

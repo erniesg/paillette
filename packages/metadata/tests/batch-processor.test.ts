@@ -64,31 +64,39 @@ class MockD1Database {
         if (query.includes('INSERT INTO artworks')) {
           const artwork = {
             id: statement.params[0],
+            org_id: statement.params[1],
             gallery_id: statement.params[1],
             collection_id: statement.params[2],
             image_url: statement.params[3],
             thumbnail_url: statement.params[4],
             original_filename: statement.params[5],
             image_hash: statement.params[6],
-            embedding_id: statement.params[7],
-            title: statement.params[8],
-            artist: statement.params[9],
-            year: statement.params[10],
-            medium: statement.params[11],
-            dimensions_height: statement.params[12],
-            dimensions_width: statement.params[13],
-            dimensions_depth: statement.params[14],
-            dimensions_unit: statement.params[15],
-            description: statement.params[16],
-            provenance: statement.params[17],
-            translations: statement.params[18],
-            dominant_colors: statement.params[19],
-            color_palette: statement.params[20],
-            custom_metadata: statement.params[21],
-            citation: statement.params[22],
-            created_at: statement.params[23],
-            updated_at: statement.params[24],
-            uploaded_by: statement.params[25],
+            image_url_processed: statement.params[7],
+            processing_status: statement.params[8],
+            frame_removal_confidence: statement.params[9],
+            processed_at: statement.params[10],
+            processing_error: statement.params[11],
+            embedding_id: statement.params[12],
+            title: statement.params[13],
+            artist: statement.params[14],
+            year: statement.params[15],
+            medium: statement.params[16],
+            dimensions_height: statement.params[17],
+            dimensions_width: statement.params[18],
+            dimensions_depth: statement.params[19],
+            dimensions_unit: statement.params[20],
+            description: statement.params[21],
+            provenance: statement.params[22],
+            field_sources: statement.params[23],
+            translations: statement.params[24],
+            dominant_colors: statement.params[25],
+            color_palette: statement.params[26],
+            custom_metadata: statement.params[27],
+            citation: statement.params[28],
+            created_at: statement.params[29],
+            updated_at: statement.params[30],
+            uploaded_by: statement.params[31],
+            deleted_at: statement.params[32],
           };
           this.artworks.set(artwork.id, artwork);
           return { success: true };
@@ -192,7 +200,7 @@ describe('BatchMetadataProcessor', () => {
       expect(result.created).toHaveLength(0);
     });
 
-    it('should assign placeholder image URLs for metadata-only uploads', async () => {
+    it('should leave image URLs empty for metadata-only uploads', async () => {
       const csvRows: ArtworkRow[] = [
         {
           title: 'Metadata Only Artwork',
@@ -209,10 +217,10 @@ describe('BatchMetadataProcessor', () => {
       expect(result.stats.created).toBe(1);
       expect(result.created[0].title).toBe('Metadata Only Artwork');
 
-      // Verify placeholder URLs were assigned
+      // Verify metadata-only rows are stored without fake image URLs.
       const artwork = mockDb.getAll()[0];
-      expect(artwork.image_url).toContain('placeholder');
-      expect(artwork.thumbnail_url).toContain('placeholder');
+      expect(artwork.image_url).toBeNull();
+      expect(artwork.thumbnail_url).toBeNull();
     });
   });
 

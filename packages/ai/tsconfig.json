@@ -1,5 +1,5 @@
 {
-  "extends": "@paillette/typescript-config/base.json",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "types": ["@cloudflare/workers-types", "vitest/globals"],
     "lib": ["ES2022"],

@@ -1,17 +1,61 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ColorExtractor } from '../src/extractor';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
+
+type MockSwatch = {
+  getRgb: () => number[];
+  getPopulation: () => number;
+};
+
+const swatch = (rgb: number[], population: number): MockSwatch => ({
+  getRgb: () => rgb,
+  getPopulation: () => population,
+});
+
+const colorPalette = {
+  Vibrant: swatch([220, 45, 45], 50),
+  Muted: swatch([32, 120, 210], 30),
+  DarkVibrant: swatch([245, 190, 40], 20),
+  DarkMuted: swatch([80, 170, 90], 15),
+  LightVibrant: swatch([165, 70, 185], 10),
+  LightMuted: swatch([20, 30, 60], 5),
+};
+
+vi.mock('node-vibrant/node', () => ({
+  Vibrant: {
+    from: (source: string | Buffer) => ({
+      maxColorCount: () => ({
+        quality: () => ({
+          getPalette: async () => {
+            if (typeof source === 'string' && source.includes('nonexistent')) {
+              throw new Error(`Failed to fetch ${source}`);
+            }
+
+            if (typeof source === 'string' && source.includes('grayscale')) {
+              return {
+                Vibrant: swatch([225, 225, 225], 45),
+                Muted: swatch([180, 180, 180], 25),
+                DarkVibrant: swatch([120, 120, 120], 20),
+                DarkMuted: swatch([75, 75, 75], 15),
+                LightVibrant: swatch([35, 35, 35], 10),
+              };
+            }
+
+            if (typeof source === 'string' && source.includes('monochrome')) {
+              return {
+                Vibrant: swatch([42, 92, 135], 80),
+                Muted: swatch([45, 95, 138], 15),
+              };
+            }
+
+            return colorPalette;
+          },
+        }),
+      }),
+    }),
+  },
+}));
 
 describe('ColorExtractor', () => {
-  let testImageBuffer: Buffer;
-  let grayscaleImageBuffer: Buffer;
-
-  beforeAll(async () => {
-    // We'll create test fixtures later
-    // For now, tests will expect these to exist
-  });
-
   describe('extract', () => {
     it('should extract 5 dominant colors from artwork', async () => {
       // Test image: a colorful artwork
@@ -128,10 +172,8 @@ describe('ColorExtractor', () => {
 
   describe('extractFromBuffer', () => {
     it('should extract colors from image buffer', async () => {
-      // Mock buffer for testing
       const mockBuffer = Buffer.from([]);
 
-      // This will be implemented when we have actual test images
       expect(ColorExtractor.extractFromBuffer).toBeDefined();
     });
   });

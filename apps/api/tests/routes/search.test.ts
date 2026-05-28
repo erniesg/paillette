@@ -529,10 +529,15 @@ describe('Search API auth and quota behavior', () => {
       } as unknown as Ai,
     };
 
-    const res = await textSearch(app, env, { 'X-User-Id': 'user-1' }, {
-      query: 'mangrove tree by the shore',
-      topK: 1,
-    });
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'mangrove tree by the shore',
+        topK: 1,
+      }
+    );
     const body = (await res.json()) as any;
 
     expect(res.status).toBe(200);
@@ -590,6 +595,27 @@ describe('Search API auth and quota behavior', () => {
       api_key_id: 'key-1',
       auth_kind: 'api_key',
     });
+  });
+
+  it('lets the public search proxy key bypass user quota in production', async () => {
+    env = {
+      ...env,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const res = await textSearch(app, env, {
+      'X-API-Key': 'public-search-secret',
+    });
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-RateLimit-Limit')).toBeNull();
+    expect(body.success).toBe(true);
+    expect(body.data.results).toHaveLength(1);
+    expect(db.daily.size).toBe(0);
+    expect(db.usageEvents).toHaveLength(0);
+    expect(db.artworkEvents).toHaveLength(0);
   });
 
   it('does not consume quota or keep usage events for invalid requests', async () => {

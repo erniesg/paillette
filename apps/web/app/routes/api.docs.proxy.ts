@@ -3,7 +3,7 @@ import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
 
 type ProxyField = {
   name: string;
-  type: 'File' | 'integer' | 'number' | 'string' | 'string[]';
+  type: 'File' | 'boolean' | 'integer' | 'number' | 'string' | 'string[]';
   required?: boolean;
 };
 
@@ -12,6 +12,13 @@ type ProxyEndpoint = {
   path: string;
   public?: boolean;
   fields: ProxyField[];
+};
+
+type DocsApiEnvironment = 'stg' | 'prod';
+
+const apiBaseByEnvironment: Record<DocsApiEnvironment, string> = {
+  stg: 'https://paillette-api-stg.berlayar.ai/api/v1',
+  prod: 'https://paillette-api.berlayar.ai/api/v1',
 };
 
 const endpoints: ProxyEndpoint[] = [
@@ -69,6 +76,18 @@ const endpoints: ProxyEndpoint[] = [
       { name: 'targetLang', type: 'string', required: true },
     ],
   },
+  {
+    method: 'POST',
+    path: '/image-extractions',
+    fields: [
+      { name: 'imageUrls', type: 'string[]', required: true },
+      { name: 'target', type: 'string' },
+      { name: 'preserveFilenames', type: 'boolean' },
+      { name: 'filenamePrefix', type: 'string' },
+      { name: 'filenameSuffix', type: 'string' },
+      { name: 'preview', type: 'boolean' },
+    ],
+  },
 ];
 
 const coerce = (field: ProxyField, value: unknown) => {
@@ -91,6 +110,10 @@ const coerce = (field: ProxyField, value: unknown) => {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  if (field.type === 'boolean') {
+    return ['1', 'true', 'yes', 'on'].includes(text.toLowerCase());
   }
 
   return text;
@@ -116,11 +139,21 @@ const proxyError = (message: string, status = 400) =>
     { status }
   );
 
+const normalizeApiEnv = (value: unknown): DocsApiEnvironment | undefined =>
+  value === 'stg' || value === 'prod' ? value : undefined;
+
+const getDocsApiBaseUrl = (
+  context: ActionFunctionArgs['context'],
+  apiEnv: DocsApiEnvironment | undefined
+) =>
+  apiEnv ? apiBaseByEnvironment[apiEnv] : getApiBaseUrl(getServerEnv(context));
+
 export const action = async ({ context, request }: ActionFunctionArgs) => {
   const contentType = request.headers.get('content-type') ?? '';
   const isMultipart = contentType.includes('multipart/form-data');
   let endpointPath = '';
   let apiKey = '';
+  let apiEnv: DocsApiEnvironment | undefined;
   let values: Record<string, unknown> = {};
   let incomingForm: FormData | null = null;
 
@@ -128,15 +161,18 @@ export const action = async ({ context, request }: ActionFunctionArgs) => {
     incomingForm = await request.formData();
     endpointPath = String(incomingForm.get('_endpointPath') ?? '');
     apiKey = String(incomingForm.get('_apiKey') ?? '');
+    apiEnv = normalizeApiEnv(incomingForm.get('_apiEnv'));
     values = Object.fromEntries(incomingForm.entries());
   } else {
     const body = (await request.json().catch(() => null)) as {
+      apiEnv?: unknown;
       apiKey?: string;
       endpointPath?: string;
       values?: Record<string, unknown>;
     } | null;
     endpointPath = body?.endpointPath ?? '';
     apiKey = body?.apiKey ?? '';
+    apiEnv = normalizeApiEnv(body?.apiEnv);
     values = body?.values ?? {};
   }
 
@@ -148,11 +184,11 @@ export const action = async ({ context, request }: ActionFunctionArgs) => {
     return proxyError('API key is required for this endpoint.', 401);
   }
 
-  let path = endpoint.path.replace(/\{([^}]+)\}/g, (_, fieldName: string) => {
+  const path = endpoint.path.replace(/\{([^}]+)\}/g, (_, fieldName: string) => {
     const value = values[fieldName];
     return encodeURIComponent(String(value ?? fieldName));
   });
-  const url = new URL(`${getApiBaseUrl(getServerEnv(context))}${path}`);
+  const url = new URL(`${getDocsApiBaseUrl(context, apiEnv)}${path}`);
   const headers = new Headers();
   let body: BodyInit | undefined;
 

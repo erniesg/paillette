@@ -1,4 +1,4 @@
-import type { ExtractedDocument, DocumentMetadata } from './types';
+import type { ExtractedDocument } from './types';
 import { DocumentProcessingError } from './types';
 
 /**
@@ -8,7 +8,7 @@ import { DocumentProcessingError } from './types';
  * For production, consider using an external service like pdf.js or Adobe PDF Services API
  */
 export class PDFProcessor {
-  async extract(buffer: ArrayBuffer, filename: string): Promise<ExtractedDocument> {
+  async extract(_buffer: ArrayBuffer, _filename: string): Promise<ExtractedDocument> {
     throw new DocumentProcessingError(
       'PDF processing not yet implemented. Consider using an external service like Adobe PDF Services API or converting to plain text first.',
       'PDF_NOT_IMPLEMENTED'
@@ -23,11 +23,4 @@ export class PDFProcessor {
     // For now, return error to user
   }
 
-  /**
-   * Placeholder for future implementation
-   */
-  private async extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
-    // This would use pdf.js or similar library
-    throw new Error('Not implemented');
-  }
 }

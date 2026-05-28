@@ -73,6 +73,7 @@ const isRootsUrl = (value: string) => /roots\.gov\.sg/i.test(value);
 const NGS_SOURCE_LABEL = 'National Gallery Singapore';
 const ROOTS_SOURCE_LABEL = 'Roots NHB';
 const METADATA_SOURCE_LABEL = 'Public metadata';
+const AI_SOURCE_LABEL = 'Paillette AI';
 
 const SOURCE_LABELS: Record<string, string> = {
   ngs: NGS_SOURCE_LABEL,
@@ -87,6 +88,10 @@ const SOURCE_LABELS: Record<string, string> = {
   artplus: NGS_SOURCE_LABEL,
   'ngs art+ catalogue': NGS_SOURCE_LABEL,
   metadata: METADATA_SOURCE_LABEL,
+  ai: AI_SOURCE_LABEL,
+  paillette_ai: AI_SOURCE_LABEL,
+  generated_caption: AI_SOURCE_LABEL,
+  generatedcaption: AI_SOURCE_LABEL,
 };
 
 const formatSourceLabel = (value: unknown) => {
@@ -111,8 +116,14 @@ const formatSourceLabel = (value: unknown) => {
     return METADATA_SOURCE_LABEL;
   }
 
+  if (/paillette|generated\s*caption|^ai$/i.test(cleaned)) {
+    return AI_SOURCE_LABEL;
+  }
+
   return null;
 };
+
+const isAiSourceLabel = (label: string | null) => label === AI_SOURCE_LABEL;
 
 const getPublicFieldSources = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
@@ -532,9 +543,14 @@ export const getGeneratedCaptionRecord = (artwork: PublicArtwork) => {
 export const getGeneratedCaptionText = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
   const caption = meta.generated_caption || meta.generatedCaption;
+  const fieldSources = getPublicFieldSources(artwork);
+  const captionSource = getFieldSourceLabel(fieldSources, 'caption');
 
   if (typeof caption === 'string') return caption.trim() || null;
-  return asText(getGeneratedCaptionRecord(artwork).text);
+  return (
+    asText(getGeneratedCaptionRecord(artwork).text) ||
+    (isAiSourceLabel(captionSource) ? asText(meta.caption) : null)
+  );
 };
 
 export const getSourceRecords = (
@@ -826,10 +842,12 @@ const getPublicDescriptionGroups = (
     'source_caption',
     'sourceCaption',
     'label_text',
-    'labelText',
-    'caption'
+    'labelText'
   );
+  const metadataCaptionSource = getFieldSourceLabel(fieldSources, 'caption');
   const metadataTextIsRoots = metadataTextSource === ROOTS_SOURCE_LABEL;
+  const metadataCaptionIsCatalogue =
+    Boolean(metadataCaptionSource) && !isAiSourceLabel(metadataCaptionSource);
   const suppressRoots = shouldSuppressRootsRecord(artwork);
   const rootsGroup = {
     source: 'roots' as const,
@@ -876,23 +894,29 @@ const getPublicDescriptionGroups = (
             meta.sourceCaption,
             meta.label_text,
             meta.labelText,
-            meta.caption,
           ],
+  };
+  const metadataCaptionGroup = {
+    source: 'metadata' as const,
+    sourceLabel: asFromSourceLabel(
+      metadataCaptionSource || METADATA_SOURCE_LABEL
+    ),
+    values: metadataCaptionIsCatalogue ? [meta.caption] : [],
   };
 
   if (shouldPreferRootsRecord(artwork)) {
-    return [rootsGroup, metadataGroup];
+    return [rootsGroup, metadataGroup, metadataCaptionGroup];
   }
 
   if (suppressRoots) {
-    return [ngsGroup, metadataGroup];
+    return [ngsGroup, metadataGroup, metadataCaptionGroup];
   }
 
   if (metadataTextIsRoots) {
-    return [rootsGroup, metadataGroup, ngsGroup];
+    return [rootsGroup, metadataGroup, metadataCaptionGroup, ngsGroup];
   }
 
-  return [ngsGroup, rootsGroup, metadataGroup];
+  return [ngsGroup, rootsGroup, metadataGroup, metadataCaptionGroup];
 };
 
 export const getPublicDescription = (artwork: PublicArtwork) =>

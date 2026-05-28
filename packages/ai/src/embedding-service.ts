@@ -5,6 +5,10 @@ import {
   DEFAULT_VECTOR_DIMENSIONS,
 } from './types';
 
+type EmbeddingAiOutput = {
+  data?: unknown;
+};
+
 /**
  * Service for generating embeddings using Cloudflare AI
  * Supports both image and text embeddings with configurable models
@@ -41,12 +45,12 @@ export class EmbeddingService {
       const imageArray = Array.from(new Uint8Array(imageData));
 
       // Call Cloudflare AI to generate embedding
-      const result = await this.ai.run(this.imageModel, {
+      const result = (await this.ai.run(this.imageModel as keyof AiModels, {
         image: imageArray,
-      });
+      } as never)) as EmbeddingAiOutput;
 
       // Extract embedding from result
-      const embedding = result.data[0] as number[];
+      const embedding = this.extractEmbedding(result);
 
       if (!embedding || embedding.length === 0) {
         throw new Error('Received empty embedding from AI service');
@@ -95,12 +99,12 @@ export class EmbeddingService {
           : normalizedText;
 
       // Call Cloudflare AI to generate embedding
-      const result = await this.ai.run(this.textModel, {
+      const result = (await this.ai.run(this.textModel as keyof AiModels, {
         text: truncatedText,
-      });
+      } as never)) as EmbeddingAiOutput;
 
       // Extract embedding from result
-      const embedding = result.data[0] as number[];
+      const embedding = this.extractEmbedding(result);
 
       if (!embedding || embedding.length === 0) {
         throw new Error('Received empty embedding from AI service');
@@ -162,6 +166,15 @@ export class EmbeddingService {
       .trim()
       .replace(/\s+/g, ' ') // Collapse multiple whitespace to single space
       .replace(/\n|\r|\t/g, ' '); // Replace newlines and tabs with space
+  }
+
+  private extractEmbedding(result: EmbeddingAiOutput): number[] {
+    const data = result.data;
+    if (!Array.isArray(data) || !Array.isArray(data[0])) {
+      throw new Error('AI service returned an invalid embedding response');
+    }
+
+    return data[0] as number[];
   }
 
   /**

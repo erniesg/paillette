@@ -1,11 +1,16 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../index';
-import { requireAuthOrApiKey, type AuthPrincipal } from '../middleware/auth';
+import {
+  getAuth,
+  requireAuthOrApiKey,
+  type AuthPrincipal,
+} from '../middleware/auth';
 import { NGS_ORG_KEY } from '../utils/orgs';
 
 type Variables = {
   auth: AuthPrincipal;
+  usageEventId: string;
 };
 
 type AppBindings = {
@@ -14,6 +19,52 @@ type AppBindings = {
 };
 
 type JsonRpcId = string | number | null;
+
+const DEFAULT_LOGTO_ISSUER = 'https://m2fmae.logto.app/oidc';
+const MCP_ALL_SCOPE = 'mcp:all';
+const MCP_READ_SCOPE = 'mcp:read';
+const MCP_WRITE_SCOPE = 'mcp:write';
+const ARTWORKS_READ_SCOPE = 'artworks:read';
+const TRANSLATIONS_CREATE_SCOPE = 'translations:create';
+const IMAGE_EXTRACTIONS_CREATE_SCOPE = 'image_extractions:create';
+const MCP_SCOPES_SUPPORTED = [
+  MCP_ALL_SCOPE,
+  MCP_READ_SCOPE,
+  MCP_WRITE_SCOPE,
+  ARTWORKS_READ_SCOPE,
+  TRANSLATIONS_CREATE_SCOPE,
+  IMAGE_EXTRACTIONS_CREATE_SCOPE,
+];
+
+export const getMcpResourceUri = (
+  requestUrl: string,
+  env: Pick<Env, 'LOGTO_API_RESOURCE'>
+) => {
+  const url = new URL(requestUrl);
+  return env.LOGTO_API_RESOURCE || url.origin;
+};
+
+export const getMcpProtectedResourceMetadataUrl = (requestUrl: string) => {
+  const url = new URL(requestUrl);
+  return `${url.origin}/.well-known/oauth-protected-resource`;
+};
+
+export const getMcpProtectedResourceMetadata = (
+  requestUrl: string,
+  env: Pick<Env, 'LOGTO_API_RESOURCE' | 'LOGTO_ISSUER'>
+) => ({
+  resource: getMcpResourceUri(requestUrl, env),
+  resource_name: 'Paillette MCP',
+  resource_documentation: 'https://paillette.berlayar.ai/docs/api#mcp',
+  authorization_servers: [env.LOGTO_ISSUER || DEFAULT_LOGTO_ISSUER],
+  bearer_methods_supported: ['header'],
+  scopes_supported: MCP_SCOPES_SUPPORTED,
+});
+
+const getMcpAuthenticateHeader = (requestUrl: string) =>
+  `Bearer resource_metadata="${getMcpProtectedResourceMetadataUrl(
+    requestUrl
+  )}", scope="${MCP_READ_SCOPE}"`;
 
 const JsonRpcRequestSchema = z.object({
   jsonrpc: z.literal('2.0').optional(),
@@ -54,6 +105,15 @@ const TranslateTextArgsSchema = z.object({
   targetLang: z.enum(['zh', 'ms', 'ta']),
 });
 
+const ExtractImagesArgsSchema = z.object({
+  imageUrls: z.array(z.string().url()).min(1).max(50),
+  target: z.enum(['object', 'content']).optional().default('object'),
+  preserveFilenames: z.boolean().optional().default(true),
+  filenamePrefix: z.string().trim().max(80).optional().default(''),
+  filenameSuffix: z.string().trim().max(80).optional().default(''),
+  returnPreview: z.boolean().optional().default(false),
+});
+
 const ListOrgsArgsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
 });
@@ -62,6 +122,7 @@ const tools = [
   {
     name: 'list_orgs',
     title: 'List orgs',
+    requiredScopeGroups: [[MCP_READ_SCOPE], [ARTWORKS_READ_SCOPE]],
     description:
       'List available Paillette collections and their short keys for REST or MCP calls.',
     inputSchema: {
@@ -79,6 +140,7 @@ const tools = [
   {
     name: 'search_artworks',
     title: 'Search artworks',
+    requiredScopeGroups: [[MCP_READ_SCOPE], [ARTWORKS_READ_SCOPE]],
     description:
       'Search an art collection by natural-language intent, subject, era, style, medium, or mood.',
     inputSchema: {
@@ -117,6 +179,7 @@ const tools = [
   {
     name: 'lookup_artwork',
     title: 'Look up artwork',
+    requiredScopeGroups: [[MCP_READ_SCOPE], [ARTWORKS_READ_SCOPE]],
     description:
       'Fetch source-labelled artwork metadata, imagery, catalogue fields, and colour data.',
     inputSchema: {
@@ -141,6 +204,7 @@ const tools = [
   {
     name: 'colour_search',
     title: 'Colour search',
+    requiredScopeGroups: [[MCP_READ_SCOPE], [ARTWORKS_READ_SCOPE]],
     description:
       'Find artworks whose extracted palettes are near one or more target hex colours.',
     inputSchema: {
@@ -187,6 +251,7 @@ const tools = [
   {
     name: 'translate_text',
     title: 'Translate text',
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [TRANSLATIONS_CREATE_SCOPE]],
     description:
       'Translate English gallery text into Chinese, Malay, or Tamil. Counts against the authenticated user lifetime translation allowance.',
     inputSchema: {
@@ -210,9 +275,62 @@ const tools = [
       required: ['text', 'targetLang'],
     },
   },
+  {
+    name: 'extract_images',
+    title: 'Extract images',
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [IMAGE_EXTRACTIONS_CREATE_SCOPE]],
+    description:
+      'Create an image extraction job from image URLs. Defaults to target=object so mounted artwork objects, scrolls, and visible supports are preserved.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        imageUrls: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          items: { type: 'string', format: 'uri' },
+          description: 'Public image URLs for the extraction job.',
+        },
+        target: {
+          type: 'string',
+          enum: ['object', 'content'],
+          default: 'object',
+          description:
+            'object preserves the visible artwork object/support; content is experimental and may crop tighter.',
+        },
+        preserveFilenames: {
+          type: 'boolean',
+          default: true,
+        },
+        filenamePrefix: {
+          type: 'string',
+          default: '',
+        },
+        filenameSuffix: {
+          type: 'string',
+          default: '',
+        },
+        returnPreview: {
+          type: 'boolean',
+          default: false,
+        },
+      },
+      required: ['imageUrls'],
+    },
+  },
 ];
 
 const mcpRoutes = new Hono<AppBindings>();
+
+class McpAuthorizationError extends Error {
+  constructor(readonly requiredScopeGroups: string[][]) {
+    super(
+      `Missing required MCP scope: ${requiredScopeGroups
+        .map((group) => group.join(' '))
+        .join(' or ')}`
+    );
+  }
+}
 
 const jsonRpcResult = (id: JsonRpcId | undefined, result: unknown) => ({
   jsonrpc: '2.0',
@@ -282,11 +400,61 @@ const asToolContent = (data: unknown) => ({
   structuredContent: data,
 });
 
+const serializeTool = ({
+  name,
+  title,
+  description,
+  inputSchema,
+}: (typeof tools)[number]) => ({
+  name,
+  title,
+  description,
+  inputSchema,
+});
+
+const hasMcpScopes = (auth: AuthPrincipal, requiredScopeGroups: string[][]) => {
+  if (auth.kind === 'api_key' || auth.scopes.includes('dev')) {
+    return true;
+  }
+
+  if (auth.scopes.includes(MCP_ALL_SCOPE)) {
+    return true;
+  }
+
+  return requiredScopeGroups.some((group) =>
+    group.every((scope) => auth.scopes.includes(scope))
+  );
+};
+
+const getAvailableTools = (auth: AuthPrincipal) =>
+  tools
+    .filter((tool) => hasMcpScopes(auth, tool.requiredScopeGroups))
+    .map(serializeTool);
+
+const requireMcpScopes = (
+  c: Context<AppBindings>,
+  requiredScopeGroups: string[][]
+) => {
+  const auth = getAuth(c);
+
+  if (!hasMcpScopes(auth, requiredScopeGroups)) {
+    throw new McpAuthorizationError(requiredScopeGroups);
+  }
+};
+
 const callTool = async (
   c: Context<AppBindings>,
   name: string,
   args: unknown
 ) => {
+  const tool = tools.find((candidate) => candidate.name === name);
+
+  if (!tool) {
+    throw new Error(`Unknown MCP tool: ${name}`);
+  }
+
+  requireMcpScopes(c, tool.requiredScopeGroups);
+
   if (name === 'list_orgs') {
     const input = ListOrgsArgsSchema.parse(args ?? {});
     const data = await callApi(c, `/orgs?limit=${input.limit}`);
@@ -354,8 +522,33 @@ const callTool = async (
     return asToolContent(data);
   }
 
+  if (name === 'extract_images') {
+    const input = ExtractImagesArgsSchema.parse(args ?? {});
+    const data = await callApi(c, '/image-extractions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageUrls: input.imageUrls,
+        target: input.target,
+        preserveFilenames: input.preserveFilenames,
+        filenamePrefix: input.filenamePrefix,
+        filenameSuffix: input.filenameSuffix,
+        preview: input.returnPreview,
+      }),
+    });
+    return asToolContent(data);
+  }
+
   throw new Error(`Unknown MCP tool: ${name}`);
 };
+
+mcpRoutes.use('*', async (c, next) => {
+  await next();
+
+  if (c.res.status === 401 || c.res.status === 403) {
+    c.res.headers.set('WWW-Authenticate', getMcpAuthenticateHeader(c.req.url));
+  }
+});
 
 mcpRoutes.use('*', requireAuthOrApiKey as any);
 
@@ -364,12 +557,8 @@ mcpRoutes.get('/', (c) =>
     name: 'paillette-mcp',
     transport: 'streamable-http-json-rpc',
     endpoint: '/api/v1/mcp',
-    tools: tools.map(({ name, title, description, inputSchema }) => ({
-      name,
-      title,
-      description,
-      inputSchema,
-    })),
+    oauth: getMcpProtectedResourceMetadata(c.req.url, c.env),
+    tools: getAvailableTools(getAuth(c)),
   })
 );
 
@@ -402,7 +591,9 @@ mcpRoutes.post('/', async (c) => {
     }
 
     if (parsed.method === 'tools/list') {
-      return c.json(jsonRpcResult(parsed.id, { tools }));
+      return c.json(
+        jsonRpcResult(parsed.id, { tools: getAvailableTools(getAuth(c)) })
+      );
     }
 
     if (parsed.method === 'tools/call') {
@@ -422,6 +613,15 @@ mcpRoutes.post('/', async (c) => {
 
     return c.json(jsonRpcError(parsed.id, -32601, 'Method not found'), 404);
   } catch (error) {
+    if (error instanceof McpAuthorizationError) {
+      return c.json(
+        jsonRpcError(parsed.id, -32001, error.message, {
+          requiredScopeGroups: error.requiredScopeGroups,
+        }),
+        403
+      );
+    }
+
     return c.json(
       jsonRpcError(
         parsed.id,

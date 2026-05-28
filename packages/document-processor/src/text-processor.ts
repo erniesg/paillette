@@ -1,4 +1,4 @@
-import type { ExtractedDocument, DocumentMetadata, SupportedDocumentType } from './types';
+import type { ExtractedDocument, DocumentMetadata } from './types';
 import { DocumentProcessingError } from './types';
 
 /**

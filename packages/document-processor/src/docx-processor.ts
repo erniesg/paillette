@@ -1,4 +1,4 @@
-import type { ExtractedDocument, DocumentMetadata, ProcessedDocument } from './types';
+import type { ExtractedDocument, DocumentMetadata } from './types';
 import { DocumentProcessingError } from './types';
 
 /**
@@ -12,7 +12,7 @@ import { DocumentProcessingError } from './types';
  * 3. Pre-process documents before upload
  */
 export class DOCXProcessor {
-  async extract(buffer: ArrayBuffer, filename: string): Promise<ExtractedDocument> {
+  async extract(_buffer: ArrayBuffer, _filename: string): Promise<ExtractedDocument> {
     throw new DocumentProcessingError(
       'DOCX processing not yet implemented. Consider using mammoth.js or an external service for document conversion.',
       'DOCX_NOT_IMPLEMENTED'
@@ -30,9 +30,9 @@ export class DOCXProcessor {
    * This would preserve basic formatting from the original
    */
   async createTranslatedDocument(
-    originalBuffer: ArrayBuffer,
-    translatedText: string,
-    metadata: DocumentMetadata
+    _originalBuffer: ArrayBuffer,
+    _translatedText: string,
+    _metadata: DocumentMetadata
   ): Promise<ArrayBuffer> {
     throw new DocumentProcessingError(
       'DOCX creation not yet implemented',

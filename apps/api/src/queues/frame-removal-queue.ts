@@ -4,8 +4,7 @@
  */
 
 import { FrameDetector } from '@paillette/image-processing';
-import { uploadImage } from '../utils/r2';
-import type { Env } from '../types';
+import type { Env } from '../index';
 
 export interface FrameRemovalMessage {
   artworkId: string;

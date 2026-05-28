@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getDominantSourceLabel,
+  getGeneratedCaptionText,
   getPublicCatalogueRows,
   getPublicCitation,
   getPublicCitationParts,
@@ -106,6 +107,55 @@ describe('getPublicDescription', () => {
       source: 'metadata',
       sourceLabel: 'From National Gallery Singapore',
       text: 'Top-level public text from the catalogue.',
+    });
+  });
+
+  it('does not treat an unlabelled metadata caption as catalogue text', () => {
+    const artwork = {
+      metadata: {
+        caption:
+          'A generated-looking caption stored in the legacy metadata caption field.',
+        field_sources: {
+          description: 'ngs',
+        },
+      },
+    };
+
+    expect(getPublicDescription(artwork)).toBeNull();
+    expect(getGeneratedCaptionText(artwork)).toBeNull();
+  });
+
+  it('routes AI-labelled metadata captions to generated captions only', () => {
+    const artwork = {
+      metadata: {
+        caption:
+          'A machine-generated caption describing visible brushwork and colours.',
+        field_sources: {
+          caption: 'generated_caption',
+        },
+      },
+    };
+
+    expect(getGeneratedCaptionText(artwork)).toBe(
+      'A machine-generated caption describing visible brushwork and colours.'
+    );
+    expect(getPublicDescription(artwork)).toBeNull();
+  });
+
+  it('keeps source-labelled metadata captions as catalogue text', () => {
+    expect(
+      getPublicDescriptionDetails({
+        metadata: {
+          caption: 'A Roots catalogue caption from the public record.',
+          field_sources: {
+            caption: 'roots',
+          },
+        },
+      })
+    ).toEqual({
+      source: 'metadata',
+      sourceLabel: 'From Roots NHB',
+      text: 'A Roots catalogue caption from the public record.',
     });
   });
 

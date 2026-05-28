@@ -1,5 +1,5 @@
 import { BaseTranslationProvider } from './base';
-import type { SupportedLanguage, ProviderConfig } from '../types';
+import type { SupportedLanguage } from '../types';
 import { TranslationError } from '../types';
 
 /**
@@ -60,7 +60,10 @@ export class YoudaoProvider extends BaseTranslationProvider {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        errorCode?: string;
+        translation?: string[];
+      };
 
       if (data.errorCode !== '0') {
         throw new Error(`Youdao API error: ${data.errorCode}`);

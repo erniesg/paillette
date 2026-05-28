@@ -139,7 +139,10 @@ describe('EmbeddingService', () => {
       // Assert
       expect(result.embedding).toEqual(mockEmbedding);
       // Verify text was truncated to max length (typically 512 tokens ~2048 chars)
-      const calledText = vi.mocked(mockAi.run).mock.calls[0][1].text;
+      const calledInput = vi.mocked(mockAi.run).mock.calls[0]![1] as {
+        text: string;
+      };
+      const calledText = calledInput.text;
       expect(calledText.length).toBeLessThanOrEqual(2048);
     });
 
@@ -156,7 +159,10 @@ describe('EmbeddingService', () => {
       await embeddingService.generateTextEmbedding(messyQuery);
 
       // Assert
-      const calledText = vi.mocked(mockAi.run).mock.calls[0][1].text;
+      const calledInput = vi.mocked(mockAi.run).mock.calls[0]![1] as {
+        text: string;
+      };
+      const calledText = calledInput.text;
       expect(calledText).toBe('impressionist landscape painting');
     });
   });
@@ -182,8 +188,9 @@ describe('EmbeddingService', () => {
       expect(results).toHaveLength(3);
       expect(mockAi.run).toHaveBeenCalledTimes(3);
       results.forEach((result) => {
-        expect(result.embedding).toEqual(mockEmbedding);
-        expect(result.dimensions).toBe(1024);
+        expect(result).not.toBeNull();
+        expect(result!.embedding).toEqual(mockEmbedding);
+        expect(result!.dimensions).toBe(1024);
       });
     });
 
@@ -206,7 +213,7 @@ describe('EmbeddingService', () => {
 
       // Assert
       expect(results).toHaveLength(2);
-      expect(results[0].embedding).toEqual(mockEmbedding);
+      expect(results[0]!.embedding).toEqual(mockEmbedding);
       expect(results[1]).toBeNull(); // Failed embedding is null
     });
   });

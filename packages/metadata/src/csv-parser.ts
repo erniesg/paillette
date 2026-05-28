@@ -82,7 +82,7 @@ export class CSVParser {
       }
 
       // Check for required 'title' column
-      const header = lines[0].toLowerCase();
+      const header = lines[0]!.toLowerCase();
       if (!header.includes('title')) {
         return {
           valid: false,

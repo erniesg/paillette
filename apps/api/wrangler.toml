@@ -52,7 +52,7 @@ max_batch_timeout = 30
 [[queues.consumers]]
 queue = "paillette-translation-jobs"
 max_batch_size = 5
-max_batch_timeout = 60
+max_batch_timeout = 30
 
 # Environment variables (use .dev.vars for local development)
 [vars]
