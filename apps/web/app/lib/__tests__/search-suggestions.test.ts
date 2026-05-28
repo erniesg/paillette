@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSuggestionPool } from '../search-suggestions';
+import {
+  buildSuggestionPool,
+  normalizeSearchQuery,
+} from '../search-suggestions';
 import type { HolidaySearchSuggestion } from '../singapore-holidays.server';
 
 const holiday = (
@@ -99,5 +102,20 @@ describe('buildSuggestionPool', () => {
       .map((suggestion) => suggestion.dot);
 
     expect(new Set(occasionDots)).toEqual(new Set(['#cda636']));
+  });
+});
+
+describe('normalizeSearchQuery', () => {
+  it('maps stale suggestion URLs to result-bearing queries', () => {
+    expect(normalizeSearchQuery('Qixi Festival weaving stars lovers')).toBe(
+      'weaving'
+    );
+    expect(
+      normalizeSearchQuery('a still life of tropical fruit and flowers')
+    ).toBe('tropical');
+  });
+
+  it('keeps freeform search text unchanged', () => {
+    expect(normalizeSearchQuery('  batik workers  ')).toBe('batik workers');
   });
 });

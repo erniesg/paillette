@@ -60,6 +60,7 @@ import {
 import {
   buildSuggestionPool,
   getSuggestionKey,
+  normalizeSearchQuery,
   type EvalSuggestion,
 } from '~/lib/search-suggestions';
 import type {
@@ -806,9 +807,11 @@ export default function SearchPage() {
   } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, login, signup } = useUser();
+  const urlQuery = searchParams.get('q') || '';
+  const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
 
   const [searchMode, setSearchMode] = useState<SearchMode>('text');
-  const [textQuery, setTextQuery] = useState(searchParams.get('q') || '');
+  const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [searchColours, setSearchColours] = useState<string[]>([]);
@@ -821,9 +824,7 @@ export default function SearchPage() {
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
   const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
   const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
-  const [shouldSearch, setShouldSearch] = useState(
-    Boolean(searchParams.get('q'))
-  );
+  const [shouldSearch, setShouldSearch] = useState(Boolean(normalizedUrlQuery));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedArtwork, setSelectedArtwork] =
     useState<ArtworkSearchResult | null>(null);
@@ -833,11 +834,11 @@ export default function SearchPage() {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
-  const urlQuery = searchParams.get('q') || '';
-  const previousUrlQueryRef = useRef(urlQuery);
+  const previousUrlQueryRef = useRef(normalizedUrlQuery);
   const [idleSuggestion, setIdleSuggestion] = useState<EvalSuggestion | null>(
     null
   );
+  const normalizedTextQuery = normalizeSearchQuery(textQuery);
 
   const suggestionPool = useMemo(
     () => buildSuggestionPool(holidaySuggestions),
@@ -867,14 +868,19 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    if (previousUrlQueryRef.current === urlQuery) return;
+    if (urlQuery && normalizedUrlQuery !== urlQuery) {
+      setSearchParams({ q: normalizedUrlQuery }, { replace: true });
+      return;
+    }
 
-    previousUrlQueryRef.current = urlQuery;
-    setTextQuery(urlQuery);
-    setShouldSearch(Boolean(urlQuery));
+    if (previousUrlQueryRef.current === normalizedUrlQuery) return;
+
+    previousUrlQueryRef.current = normalizedUrlQuery;
+    setTextQuery(normalizedUrlQuery);
+    setShouldSearch(Boolean(normalizedUrlQuery));
     setIsBrowsingCollection(false);
 
-    if (!urlQuery) {
+    if (!normalizedUrlQuery) {
       setImageFile(null);
       setImagePreview(null);
       setSearchColours([]);
@@ -882,14 +888,21 @@ export default function SearchPage() {
       setSearchMode('text');
       setSortMode('relevance');
     }
-  }, [urlQuery]);
+  }, [normalizedUrlQuery, setSearchParams, urlQuery]);
 
   const textSearchQuery = useQuery({
-    queryKey: ['search', 'text', galleryId, textQuery, topK, minScore],
+    queryKey: [
+      'search',
+      'text',
+      galleryId,
+      normalizedTextQuery,
+      topK,
+      minScore,
+    ],
     queryFn: async () => {
-      if (!textQuery.trim()) return null;
+      if (!normalizedTextQuery) return null;
       return publicSearchText(galleryId, {
-        query: textQuery,
+        query: normalizedTextQuery,
         topK,
         minScore,
       });
@@ -898,7 +911,7 @@ export default function SearchPage() {
       hasMounted &&
       (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
-      textQuery.trim().length > 0,
+      normalizedTextQuery.length > 0,
   });
 
   const imageSearchQuery = useQuery({
@@ -1146,13 +1159,14 @@ export default function SearchPage() {
   const runTextSearch = (query = textQuery) => {
     const trimmed = query.trim();
     if (!trimmed) return;
+    const normalized = normalizeSearchQuery(trimmed);
 
     setIsBrowsingCollection(false);
     setSearchMode('text');
     setSearchColours([]);
-    setTextQuery(trimmed);
+    setTextQuery(normalized);
     setShouldSearch(true);
-    setSearchParams({ q: trimmed });
+    setSearchParams({ q: normalized });
   };
 
   const clearSearch = () => {
