@@ -56,6 +56,22 @@ type CaptionVectorMatch = {
   metadata?: Record<string, unknown>;
 };
 
+type SearchSourceChannel =
+  | 'image_embedding'
+  | 'generated_caption_embedding'
+  | 'metadata';
+
+type SearchSourceContribution = {
+  channel: SearchSourceChannel;
+  label: string;
+  source: string;
+  weight: number;
+  rank: number;
+  score?: number;
+  model?: string;
+  embeddingVersion?: string;
+};
+
 const CAPTION_TEXT_MODEL = '@cf/baai/bge-large-en-v1.5';
 const DEFAULT_JINA_MULTIMODAL_MODEL = 'jina-clip-v2';
 const DEFAULT_JINA_TEXT_MODEL = 'jina-embeddings-v5-text-small';
@@ -203,15 +219,11 @@ const getEmbeddingIndexVersion = (env: Env): EmbeddingIndexVersion =>
 
 const getSearchFusionMode = (
   env: Env,
-  orgId: string | undefined
+  _orgId: string | undefined
 ): SearchFusionMode => {
   if (env.SEARCH_FUSION_MODE === 'metadata') return 'metadata';
   if (env.SEARCH_FUSION_MODE === 'hybrid') return 'hybrid';
   if (env.SEARCH_FUSION_MODE === 'legacy') return 'legacy';
-
-  if (isNgsPublicOrg(orgId)) {
-    return 'legacy';
-  }
 
   return 'hybrid';
 };
@@ -223,6 +235,9 @@ const getCaptionVectorize = (env: Env): Vectorize | undefined =>
   getEmbeddingIndexVersion(env) === 'v2'
     ? env.CAPTION_VECTORIZE_V2
     : env.CAPTION_VECTORIZE;
+
+const isCaptionVectorSearchEnabled = (env: Env) =>
+  env.CAPTION_VECTOR_SEARCH_ENABLED !== 'false';
 
 type TemporalFilter = {
   startYear: number;
@@ -431,8 +446,8 @@ const searchDescriptionSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId)
     ? `CASE
         WHEN lower(coalesce(json_extract(field_sources, '$.description'), '')) LIKE '%roots%'
-          THEN ''
-        ELSE coalesce(description, '')
+          THEN coalesce(description, '')
+        ELSE ''
       END`
     : 'description';
 
@@ -446,101 +461,15 @@ const parseJsonObject = (value: string | null) => {
   }
 };
 
-const normalizeSourceLabel = (value: unknown) =>
-  String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, '_');
-
-const removeRootsMetadataForNgsSearch = (
+const prepareSearchMetadata = (
   artwork: ArtworkSearchRow,
   customMetadata: Record<string, unknown>,
   fieldSources: Record<string, unknown> | undefined
 ) => {
-  if (!isNgsPublicOrg(artwork.org_id)) {
-    return {
-      description: artwork.description,
-      customMetadata,
-      fieldSources,
-    };
-  }
-
-  const sanitizedMetadata: Record<string, unknown> = { ...customMetadata };
-  const sanitizedFieldSources = fieldSources ? { ...fieldSources } : undefined;
-  let description = artwork.description;
-
-  if (
-    sanitizedFieldSources &&
-    normalizeSourceLabel(sanitizedFieldSources.description).includes('roots')
-  ) {
-    description = null;
-    delete sanitizedFieldSources.description;
-  }
-
-  delete sanitizedMetadata.roots_listing_url;
-
-  const sourceRecords = sanitizedMetadata.source_records;
-  if (
-    sourceRecords &&
-    typeof sourceRecords === 'object' &&
-    !Array.isArray(sourceRecords)
-  ) {
-    const sanitizedSourceRecords = {
-      ...(sourceRecords as Record<string, unknown>),
-    };
-    delete sanitizedSourceRecords.roots;
-    delete sanitizedSourceRecords.roots_listing_url;
-    sanitizedMetadata.source_records = sanitizedSourceRecords;
-  }
-
-  const sourceProvenance = sanitizedMetadata.source_provenance;
-  if (
-    sourceProvenance &&
-    typeof sourceProvenance === 'object' &&
-    !Array.isArray(sourceProvenance)
-  ) {
-    const sanitizedProvenance = {
-      ...(sourceProvenance as Record<string, unknown>),
-    };
-    const descriptionProvenance = sanitizedProvenance.description;
-    if (
-      descriptionProvenance &&
-      typeof descriptionProvenance === 'object' &&
-      /roots\.gov\.sg/i.test(
-        String(
-          (descriptionProvenance as Record<string, unknown>).ref ||
-            (descriptionProvenance as Record<string, unknown>).source ||
-            ''
-        )
-      )
-    ) {
-      delete sanitizedProvenance.description;
-    }
-    sanitizedMetadata.source_provenance = sanitizedProvenance;
-  }
-
-  const generatedCaption = sanitizedMetadata.generated_caption;
-  if (
-    generatedCaption &&
-    typeof generatedCaption === 'object' &&
-    !Array.isArray(generatedCaption)
-  ) {
-    const sanitizedCaption = {
-      ...(generatedCaption as Record<string, unknown>),
-    };
-    const sources = sanitizedCaption.sources;
-    if (Array.isArray(sources)) {
-      sanitizedCaption.sources = sources.filter(
-        (source) => !/roots\.gov\.sg/i.test(String(source || ''))
-      );
-    }
-    sanitizedMetadata.generated_caption = sanitizedCaption;
-  }
-
   return {
-    description,
-    customMetadata: sanitizedMetadata,
-    fieldSources: sanitizedFieldSources,
+    description: artwork.description,
+    customMetadata,
+    fieldSources,
   };
 };
 
@@ -564,14 +493,15 @@ const buildDimensions = (artwork: ArtworkSearchRow) => {
 
 const mapSearchRow = (
   artwork: ArtworkSearchRow,
-  similarity: number
+  similarity: number,
+  searchSources?: SearchSourceContribution[]
 ): ArtworkSearchResult => {
   const customMetadata =
     (parseJsonObject(artwork.custom_metadata) as Record<string, unknown>) ?? {};
   const fieldSources = parseJsonObject(artwork.field_sources) as
     | Record<string, unknown>
     | undefined;
-  const sanitized = removeRootsMetadataForNgsSearch(
+  const sanitized = prepareSearchMetadata(
     artwork,
     customMetadata,
     fieldSources
@@ -622,6 +552,8 @@ const mapSearchRow = (
       colorPalette,
       color_palette: colorPalette,
       citation,
+      searchSources,
+      search_sources: searchSources,
     }),
   };
 };
@@ -781,7 +713,7 @@ async function searchCaptionVectors(
   query: string,
   topK: number
 ): Promise<CaptionVectorMatch[]> {
-  if (!vectorize || env.CAPTION_VECTOR_SEARCH_ENABLED !== 'true') {
+  if (!vectorize || !isCaptionVectorSearchEnabled(env)) {
     return [];
   }
 
@@ -963,31 +895,90 @@ async function searchArtworksHybrid(
           orgId,
           metadataQuery,
           Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS)
-        )
+        ).catch((error) => {
+          console.warn(
+            'Metadata search failed during hybrid search; continuing with vector channels',
+            error
+          );
+          return [] as ArtworkSearchResult[];
+        })
       : Promise.resolve([] as ArtworkSearchResult[]),
   ]);
 
-  const scores = new Map<string, { score: number; vectorScore?: number }>();
+  const scores = new Map<
+    string,
+    {
+      score: number;
+      vectorScore?: number;
+      searchSources: SearchSourceContribution[];
+    }
+  >();
 
   const addRankedMatches = (
-    matches: Array<{ id: string; score?: number }>,
-    weight: number
+    matches: Array<{
+      id: string;
+      score?: number;
+      similarity?: number;
+      metadata?: Record<string, unknown>;
+    }>,
+    weight: number,
+    source: Omit<
+      SearchSourceContribution,
+      'weight' | 'rank' | 'score' | 'model' | 'embeddingVersion'
+    >
   ) => {
     if (weight <= 0) return;
 
     matches.forEach((match, index) => {
       const existing = scores.get(match.id);
+      const score =
+        typeof match.score === 'number'
+          ? match.score
+          : typeof match.similarity === 'number'
+            ? match.similarity
+            : undefined;
+      const model =
+        typeof match.metadata?.model === 'string'
+          ? match.metadata.model
+          : undefined;
+      const embeddingVersion =
+        typeof match.metadata?.embeddingVersion === 'string'
+          ? match.metadata.embeddingVersion
+          : undefined;
       scores.set(match.id, {
         score:
           (existing?.score || 0) + weight / (RRF_K + index + 1),
         vectorScore: existing?.vectorScore ?? match.score,
+        searchSources: [
+          ...(existing?.searchSources || []),
+          compactObject({
+            ...source,
+            weight,
+            rank: index + 1,
+            score,
+            model,
+            embeddingVersion,
+          }) as SearchSourceContribution,
+        ],
       });
     });
   };
 
-  addRankedMatches(jinaMatches, route.weights.jinaImage);
-  addRankedMatches(captionMatches, route.weights.caption);
-  addRankedMatches(metadataMatches, route.weights.metadata);
+  addRankedMatches(jinaMatches, route.weights.jinaImage, {
+    channel: 'image_embedding',
+    label: 'Image embedding',
+    source: 'image_url',
+  });
+  addRankedMatches(captionMatches, route.weights.caption, {
+    channel: 'generated_caption_embedding',
+    label: 'Generated caption embedding',
+    source: 'custom_metadata.generated_caption.text',
+  });
+  addRankedMatches(metadataMatches, route.weights.metadata, {
+    channel: 'metadata',
+    label: 'Catalogue metadata',
+    source: 'artworks metadata fields',
+  });
 
   const rankedCandidateIds = [...scores.entries()]
     .sort(([, a], [, b]) => b.score - a.score)
@@ -1014,7 +1005,11 @@ async function searchArtworksHybrid(
       return [];
     }
 
-    return mapSearchRow(artwork, Math.min(fused.score / maxScore, 1));
+    return mapSearchRow(
+      artwork,
+      Math.min(fused.score / maxScore, 1),
+      fused.searchSources
+    );
   });
 
   return results.slice(0, topK);
@@ -1031,7 +1026,7 @@ async function searchArtworksByMetadata(
   const temporalFilter = parseTemporalFilter(query);
   const likeQuery = `%${escapeLike(normalizedWordQuery || normalizedQuery)}%`;
   const tokens = searchQueryTokens(query)
-    .slice(0, 8);
+    .slice(0, 5);
   const phraseQuery =
     tokens.length === 1
       ? `% ${escapeLike(tokens[0] as string)} %`

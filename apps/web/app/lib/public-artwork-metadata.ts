@@ -827,7 +827,6 @@ const getPublicDescriptionGroups = (
 ): PublicDescriptionGroup[] => {
   const meta = getPublicMetadata(artwork);
   const sourceRecords = getSourceRecords(artwork);
-  const ngsRecord = asRecord(sourceRecords.ngs);
   const rootsRecord = asRecord(sourceRecords.roots);
   const fieldSources = getPublicFieldSources(artwork);
   const metadataTextSource = getFieldSourceLabel(
@@ -846,8 +845,7 @@ const getPublicDescriptionGroups = (
   );
   const metadataCaptionSource = getFieldSourceLabel(fieldSources, 'caption');
   const metadataTextIsRoots = metadataTextSource === ROOTS_SOURCE_LABEL;
-  const metadataCaptionIsCatalogue =
-    Boolean(metadataCaptionSource) && !isAiSourceLabel(metadataCaptionSource);
+  const metadataCaptionIsRoots = metadataCaptionSource === ROOTS_SOURCE_LABEL;
   const suppressRoots = shouldSuppressRootsRecord(artwork);
   const rootsGroup = {
     source: 'roots' as const,
@@ -861,47 +859,31 @@ const getPublicDescriptionGroups = (
       rootsRecord.text,
     ],
   };
-  const ngsGroup = {
-    source: 'ngs' as const,
-    sourceLabel: NGS_SOURCE_LABEL,
-    values: [
-      ngsRecord.objDescriptionClb,
-      ngsRecord.ocspWebText,
-      ngsRecord.description,
-      ngsRecord.caption,
-      ngsRecord.summary,
-      ngsRecord.labelText,
-      ngsRecord.label_text,
-      ngsRecord.text,
-    ],
-  };
+  const metadataTextValues = [
+    artwork.description,
+    meta.description,
+    meta.catalogue_description,
+    meta.catalogueDescription,
+    meta.catalogue_text,
+    meta.catalogueText,
+    meta.source_description,
+    meta.sourceDescription,
+    meta.source_caption,
+    meta.sourceCaption,
+    meta.label_text,
+    meta.labelText,
+  ];
   const metadataGroup = {
     source: 'metadata' as const,
     sourceLabel: asFromSourceLabel(metadataTextSource || METADATA_SOURCE_LABEL),
-    values:
-      suppressRoots && metadataTextIsRoots
-        ? []
-        : [
-            artwork.description,
-            meta.description,
-            meta.catalogue_description,
-            meta.catalogueDescription,
-            meta.catalogue_text,
-            meta.catalogueText,
-            meta.source_description,
-            meta.sourceDescription,
-            meta.source_caption,
-            meta.sourceCaption,
-            meta.label_text,
-            meta.labelText,
-          ],
+    values: !suppressRoots && metadataTextIsRoots ? metadataTextValues : [],
   };
   const metadataCaptionGroup = {
     source: 'metadata' as const,
     sourceLabel: asFromSourceLabel(
       metadataCaptionSource || METADATA_SOURCE_LABEL
     ),
-    values: metadataCaptionIsCatalogue ? [meta.caption] : [],
+    values: !suppressRoots && metadataCaptionIsRoots ? [meta.caption] : [],
   };
 
   if (shouldPreferRootsRecord(artwork)) {
@@ -909,14 +891,14 @@ const getPublicDescriptionGroups = (
   }
 
   if (suppressRoots) {
-    return [ngsGroup, metadataGroup, metadataCaptionGroup];
+    return [];
   }
 
   if (metadataTextIsRoots) {
-    return [rootsGroup, metadataGroup, metadataCaptionGroup, ngsGroup];
+    return [rootsGroup, metadataGroup, metadataCaptionGroup];
   }
 
-  return [ngsGroup, rootsGroup, metadataGroup, metadataCaptionGroup];
+  return [rootsGroup, metadataGroup, metadataCaptionGroup];
 };
 
 export const getPublicDescription = (artwork: PublicArtwork) =>

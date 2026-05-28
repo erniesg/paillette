@@ -31,6 +31,21 @@ describe('buildSuggestionPool', () => {
     });
   });
 
+  it('keeps the serene mood showcase query', () => {
+    const suggestions = buildSuggestionPool([]);
+
+    expect(suggestions).toContainEqual(
+      expect.objectContaining({
+        type: 'mood',
+        label: 'serene and contemplative',
+        query: 'serene, still and contemplative',
+      })
+    );
+    expect(suggestions.map((suggestion) => suggestion.label)).not.toContain(
+      'wistful and tender'
+    );
+  });
+
   it('uses a same-day public holiday as the first showcase suggestion', () => {
     const suggestions = buildSuggestionPool([holiday()]);
 

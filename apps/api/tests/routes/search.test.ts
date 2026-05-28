@@ -128,6 +128,7 @@ class FakeSearchDb {
   daily = new Map<string, DailyUsage>();
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
+  metadataSearchSql: string[] = [];
   apiKeyRow: {
     id: string;
     user_id: string;
@@ -343,6 +344,7 @@ class FakeSearchDb {
     };
 
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
+      this.metadataSearchSql.push(sql);
       return {
         success: true,
         results: applySearchVisibility(this.rows),
@@ -511,6 +513,69 @@ describe('Search API auth and quota behavior', () => {
     });
   });
 
+  it('returns Roots caption provenance instead of stripping it from NGS search results', async () => {
+    db = new FakeSearchDb([
+      {
+        ...artworkRow,
+        description: 'Roots catalogue caption text.',
+        field_sources: JSON.stringify({
+          ...JSON.parse(artworkRow.field_sources),
+          description: 'roots',
+        }),
+        custom_metadata: JSON.stringify({
+          roots_listing_url:
+            'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+          source_records: {
+            roots: {
+              pageid: '1029142',
+              caption: 'Roots catalogue caption text.',
+            },
+            roots_listing_url:
+              'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+          },
+          source_provenance: {
+            description: {
+              source: 'roots',
+              ref: 'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+            },
+          },
+          generated_caption: {
+            text: 'Generated caption text for Mangrove Tree.',
+            sources: [
+              'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+            ],
+          },
+        }),
+      },
+    ]);
+    env = makeEnv(db);
+
+    const res = await textSearch(app, env);
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0]).toMatchObject({
+      metadata: {
+        description: 'Roots catalogue caption text.',
+        field_sources: {
+          description: 'roots',
+        },
+        roots_listing_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+        source_records: {
+          roots: {
+            caption: 'Roots catalogue caption text.',
+          },
+        },
+        generated_caption: {
+          sources: [
+            'https://www.roots.gov.sg/Collection-Landing/listing/1029142',
+          ],
+        },
+      },
+    });
+  });
+
   it('filters caption vector search by the resolved org id', async () => {
     const captionVectorize = {
       query: vi.fn().mockResolvedValue({
@@ -548,6 +613,74 @@ describe('Search API auth and quota behavior', () => {
         filter: { galleryId: ORG_ID },
       })
     );
+  });
+
+  it('uses generated caption embeddings by default and exposes them as a search source', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [
+          {
+            id: artworkRow.id,
+            score: 0.91,
+            metadata: {
+              model: 'jina-embeddings-v5-text-small',
+              embeddingVersion: 'v2',
+            },
+          },
+        ],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'quiet shore',
+        topK: 1,
+      }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(captionVectorize.query).toHaveBeenCalled();
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({
+        channel: 'generated_caption_embedding',
+        source: 'custom_metadata.generated_caption.text',
+        label: 'Generated caption embedding',
+        score: 0.91,
+        model: 'jina-embeddings-v5-text-small',
+        embeddingVersion: 'v2',
+      })
+    );
+  });
+
+  it('does not use NGS payload descriptions as the metadata caption-search source', async () => {
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'mangrove shore',
+        topK: 1,
+      }
+    );
+
+    expect(res.status).toBe(200);
+    expect(db.metadataSearchSql[0]).toContain(
+      "json_extract(field_sources, '$.description')"
+    );
+    expect(db.metadataSearchSql[0]).toContain("ELSE ''");
   });
 
   it('excludes NGS rows that cannot link back to a public NGS or Roots source', async () => {

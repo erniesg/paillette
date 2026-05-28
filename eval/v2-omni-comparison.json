@@ -1,0 +1,112 @@
+{
+  "generated_at": "2026-05-27T08:45:38.891582+00:00",
+  "app_db": "/tmp/paillette-v2-bakeoff.sqlite",
+  "coverage": {
+    "v2_artworks": 7979,
+    "v2_imageable_artworks": 7711,
+    "v2_captioned_artworks": 7752,
+    "v2_ngs_validated_artworks": 7884,
+    "v2_web_image_source_artworks": 5,
+    "v2_legacy_image_approved_artworks": 30,
+    "jina_vectors": 8023,
+    "jina_vectors_in_v2": 7567,
+    "jina_vectors_missing_for_v2": 412,
+    "caption_vectors": 8023,
+    "caption_vectors_in_v2": 7567,
+    "caption_vectors_missing_for_v2": 412,
+    "caption_v5_text_small_vectors": 8023,
+    "caption_v5_text_small_vectors_in_v2": 7567,
+    "caption_v5_text_small_vectors_missing_for_v2": 412,
+    "v5_omni_small_vectors": 8023,
+    "v5_omni_small_vectors_in_v2": 7567,
+    "v5_omni_small_vectors_missing_for_v2": 412
+  },
+  "metrics": [
+    {
+      "name": "decided_bge_routed",
+      "avg_results_per_query": 19.66,
+      "source_backed_top10_rate": 1.0,
+      "no_title_top10_rate": 0.0,
+      "metadata_exact_top1": 0.8571,
+      "metadata_exact_top5": 1.0,
+      "metadata_exact_top10": 1.0,
+      "medium_exact_top10": 1.0,
+      "avg_text_overlap_top10": 0.4984,
+      "web_image_hits_top10": 2,
+      "legacy_image_hits_top10": 5,
+      "top10_channel_counts": {
+        "jina_image": 231,
+        "caption": 263,
+        "metadata": 331
+      }
+    },
+    {
+      "name": "decided_jina_text_routed",
+      "avg_results_per_query": 19.66,
+      "source_backed_top10_rate": 1.0,
+      "no_title_top10_rate": 0.0,
+      "metadata_exact_top1": 0.8571,
+      "metadata_exact_top5": 1.0,
+      "metadata_exact_top10": 1.0,
+      "medium_exact_top10": 1.0,
+      "avg_text_overlap_top10": 0.499,
+      "web_image_hits_top10": 1,
+      "legacy_image_hits_top10": 7,
+      "top10_channel_counts": {
+        "jina_image": 236,
+        "caption": 292,
+        "metadata": 339
+      }
+    },
+    {
+      "name": "omni_image_only",
+      "avg_results_per_query": 18.7,
+      "source_backed_top10_rate": 1.0,
+      "no_title_top10_rate": 0.0,
+      "metadata_exact_top1": 0.2857,
+      "metadata_exact_top5": 0.4286,
+      "metadata_exact_top10": 0.5714,
+      "medium_exact_top10": 0.8571,
+      "avg_text_overlap_top10": 0.3098,
+      "web_image_hits_top10": 1,
+      "legacy_image_hits_top10": 4,
+      "top10_channel_counts": {}
+    },
+    {
+      "name": "omni_image_metadata",
+      "avg_results_per_query": 20.0,
+      "source_backed_top10_rate": 1.0,
+      "no_title_top10_rate": 0.0,
+      "metadata_exact_top1": 0.7143,
+      "metadata_exact_top5": 1.0,
+      "metadata_exact_top10": 1.0,
+      "medium_exact_top10": 1.0,
+      "avg_text_overlap_top10": 0.4354,
+      "web_image_hits_top10": 2,
+      "legacy_image_hits_top10": 6,
+      "top10_channel_counts": {
+        "metadata": 307,
+        "omni_image": 310
+      }
+    },
+    {
+      "name": "omni_family_routed",
+      "avg_results_per_query": 19.66,
+      "source_backed_top10_rate": 1.0,
+      "no_title_top10_rate": 0.0,
+      "metadata_exact_top1": 1.0,
+      "metadata_exact_top5": 1.0,
+      "metadata_exact_top10": 1.0,
+      "medium_exact_top10": 1.0,
+      "avg_text_overlap_top10": 0.496,
+      "web_image_hits_top10": 2,
+      "legacy_image_hits_top10": 7,
+      "top10_channel_counts": {
+        "caption": 304,
+        "metadata": 337,
+        "omni_image": 240
+      }
+    }
+  ],
+  "readout": "`omni_family_routed` is the clean Jina-v5-family alternative, but this offline diagnostic should not replace judged relevance. Compare exact metadata @10 100.00% vs 100.00%, medium @10 100.00% vs 100.00%, and text overlap 49.60% vs 49.90%. A final call still needs a small judged montage or live Vectorize smoke test because these metrics do not measure visual relevance directly."
+}

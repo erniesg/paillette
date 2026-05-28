@@ -252,7 +252,7 @@ const endpoints = [
   {
     method: 'POST',
     path: '/translate/text',
-    title: 'Translation',
+    title: 'Translate text',
     body: `{
   "text": "Gallery label text",
   "sourceLang": "en",
@@ -282,7 +282,7 @@ const endpoints = [
   {
     method: 'POST',
     path: '/extract',
-    title: 'Extract',
+    title: 'Extract image',
     body: `{
   "imageUrls": ["https://example.com/artwork.tif"],
   "target": "object",
@@ -337,7 +337,7 @@ const responseMetadataFields: SchemaField[] = [
     name: 'results[].metadata.description',
     type: 'string',
     description:
-      'Catalogue text selected for display. When NGS has no usable text and a verified Roots/NHB caption exists, this is sourced from Roots.',
+      'Verified Roots/NHB catalogue caption selected for display when available. NGS Art+ payload descriptions are retained in source_records, not exposed as public caption text.',
   },
   {
     name: 'results[].metadata.field_sources',
@@ -368,6 +368,12 @@ const responseMetadataFields: SchemaField[] = [
     type: 'string | null',
     description:
       'Generated visual caption used for semantic retrieval/debugging. Includes model, prompt version, generated time, and source URLs.',
+  },
+  {
+    name: 'results[].metadata.search_sources',
+    type: 'Array<{ channel, source, weight, rank, score }>',
+    description:
+      'Search provenance for hybrid results. Generated-caption vector hits are labelled generated_caption_embedding and source custom_metadata.generated_caption.text.',
   },
   {
     name: 'results[].metadata.classification',
@@ -884,7 +890,7 @@ const endpointSummaryByPath: Record<string, string> = {
   '/translate/text':
     'Translate English catalogue text to Chinese, Malay, or Tamil.',
   '/extract':
-    'Create a batch /extract job. target=object is the default for preserving mounted artworks, scrolls, and visible supports. Live jobs use fal SAM3 when configured. Free accounts get 10 submitted inputs lifetime.',
+    'Extract image objects from public image URLs. target=object is the default for preserving mounted artworks, scrolls, and visible supports. Live jobs use fal SAM3 when configured. Free accounts get 10 submitted inputs lifetime.',
 };
 
 const endpointNavLabelByPath: Record<string, string> = {
@@ -895,7 +901,7 @@ const endpointNavLabelByPath: Record<string, string> = {
   '/orgs/ngs/search/color': 'colour',
   '/orgs/ngs/artworks/{artworkId}': 'by ID',
   '/translate/text': 'translate text',
-  '/extract': 'extract',
+  '/extract': 'extract image',
 };
 
 const baseResponseFields: SchemaField[] = [
@@ -1059,7 +1065,7 @@ const getResponseFields = (endpoint: EndpointDefinition) => {
   return baseResponseFields;
 };
 
-const endpointDocs: EndpointDoc[] = endpoints.map((endpoint) => ({
+export const endpointDocs: EndpointDoc[] = endpoints.map((endpoint) => ({
   endpoint,
   id: endpointIdByPath[endpoint.path] ?? endpoint.path.replace(/\W+/g, '-'),
   navLabel: endpointNavLabelByPath[endpoint.path] ?? endpoint.title,
@@ -1072,7 +1078,7 @@ const fieldToMarkdown = (field: SchemaField) =>
     field.required ? 'yes' : field.defaultValue ? `default ${field.defaultValue}` : ''
   } | ${field.description.replace(/\|/g, '\\|')} |`;
 
-const buildDocsMarkdown = (apiBase: string) => {
+export const buildDocsMarkdown = (apiBase: string) => {
   const lines = [
     '# Paillette API',
     '',
@@ -1101,7 +1107,7 @@ const buildDocsMarkdown = (apiBase: string) => {
 
     lines.push(
       '',
-      `### ${doc.endpoint.method} ${displayPath(doc.endpoint)}`,
+      `### ${doc.endpoint.method} ${displayPath(doc.endpoint)} - ${doc.endpoint.title}`,
       '',
       doc.summary,
       '',
@@ -1143,7 +1149,7 @@ const buildDocsMarkdown = (apiBase: string) => {
     '',
     '## Field sources',
     '',
-    'Search and artwork responses include `metadata.field_sources` and `metadata.source_provenance` so clients can distinguish NGS catalogue text, Roots/NHB fallback captions, public metadata, and generated captions.'
+    'Search and artwork responses include `metadata.field_sources` and `metadata.source_provenance` so clients can distinguish Roots/NHB catalogue captions, retained NGS source records, public metadata, and generated captions.'
   );
 
   return `${lines.join('\n')}\n`;
@@ -1156,7 +1162,7 @@ type NavItem = {
   method?: SectionTone;
 };
 
-const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
+export const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
   {
     title: 'Start',
     items: [
@@ -1241,7 +1247,7 @@ const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
       {
         href: '#extract',
         id: 'extract',
-        label: 'extract',
+        label: 'extract image',
         method: 'POST',
       },
     ],
@@ -2199,7 +2205,12 @@ export default function ApiDocsPage() {
         <DocsNav activeSectionId={activeSectionId} />
 
         <main className="min-w-0 px-8 py-6 max-[1080px]:px-5 max-[900px]:px-4">
-          <StartSections selectedApiBase={selectedApiBase} />
+          <StartSections
+            copiedValue={copiedValue}
+            docsMarkdown={docsMarkdown}
+            onCopy={copyText}
+            selectedApiBase={selectedApiBase}
+          />
 
           {endpointDocs.map((doc) => (
             <EndpointSection key={doc.id} doc={doc} />
@@ -2270,7 +2281,17 @@ export default function ApiDocsPage() {
   );
 }
 
-function StartSections({ selectedApiBase }: { selectedApiBase: string }) {
+function StartSections({
+  copiedValue,
+  docsMarkdown,
+  onCopy,
+  selectedApiBase,
+}: {
+  copiedValue: string | null;
+  docsMarkdown: string;
+  onCopy: (id: string, value: string) => void;
+  selectedApiBase: string;
+}) {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
       <section
@@ -2288,7 +2309,20 @@ function StartSections({ selectedApiBase }: { selectedApiBase: string }) {
           Resolve a source, search or translate through REST, and keep
           provenance fields with every displayed catalogue value.
         </p>
-        <div className="mt-4 flex min-w-0 flex-wrap gap-2 text-xs text-[var(--app-muted)]">
+        <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 text-xs text-[var(--app-muted)]">
+          <button
+            type="button"
+            onClick={() => onCopy('docs-markdown', docsMarkdown)}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--app-line-strong)] bg-[var(--app-control-strong)] px-3 text-sm font-medium text-[var(--app-text)] transition hover:border-[var(--docs-code)]"
+            aria-label="Copy API docs as Markdown"
+          >
+            {copiedValue === 'docs-markdown' ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+            {copiedValue === 'docs-markdown' ? 'Copied' : 'Copy MD'}
+          </button>
           <InlineDatum label="Base" value={selectedApiBase} />
           <InlineDatum label="Auth" value="X-API-Key" />
           <InlineDatum label="Source" value={NGS_ORG_SHORTCODE} />

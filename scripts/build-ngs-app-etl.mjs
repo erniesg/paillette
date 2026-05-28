@@ -281,24 +281,6 @@ const isRootsAsset = (asset) =>
     `${asset.source_url || ''} ${asset.source_provider || ''} ${asset.source_type || ''}`
   );
 
-const normalizeSourceKey = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/[\s-]+/g, '_')
-    .trim();
-
-const isNgsDescriptionSource = (value) =>
-  [
-    'ngs',
-    'ngs_source_data',
-    'stored_ngs_source_data',
-    'national_gallery_singapore',
-    'nationalgallerysingapore',
-    'ngs_artplus_catalog',
-    'artplus',
-    'ngs_art+_catalogue',
-  ].includes(normalizeSourceKey(value));
-
 const getVerifiedRootsDescriptionText = (artwork, fieldSources, decision) => {
   if (!decision?.trustedRoots || !hasText(artwork.roots_listing_url)) {
     return null;
@@ -313,18 +295,8 @@ const getVerifiedRootsDescriptionText = (artwork, fieldSources, decision) => {
   const rootsDescription = getRootsDescription(decision.rootsRecord);
   if (rootsDescription) return rootsDescription;
 
-  if (
-    hasText(artwork.description) &&
-    isNgsDescriptionSource(fieldSources.description)
-  ) {
-    return artwork.description;
-  }
-
   return null;
 };
-
-const shouldAttributeDescriptionToRoots = (artwork, fieldSources, decision) =>
-  Boolean(getVerifiedRootsDescriptionText(artwork, fieldSources, decision));
 
 const withDerivedRootsDescription = (
   rootsRecord,
@@ -737,6 +709,22 @@ const loadRootsSourceRecords = (path) => {
       url,
       pageId,
       accession,
+      title: firstText(row.documents_0_title, row.documents_0_metadata_title_text),
+      creator: firstText(
+        row.documents_0_metadata_creator,
+        row.documents_0_metadata_creator_1,
+        row.documents_0_metadata_creator_2
+      ),
+      caption: firstText(
+        row.documents_0_content,
+        row.documents_0_metadata_sgcool_label_text
+      ),
+      img: firstText(row.documents_0_metadata_image_url),
+      medium: firstText(
+        row.documents_0_metadata_material,
+        row.documents_0_metadata_material_0
+      ),
+      dimensions: firstText(row.documents_0_metadata_dimension),
       collectionOf: firstText(
         row.documents_0_metadata_collection_of,
         row.documents_0_metadata_collection_of_0
@@ -855,6 +843,24 @@ for (const artwork of candidateSourceArtworks) {
   const ngsRecord = jsonOrNull(grounding?.raw_ngs || artwork.raw_ngs);
   const rootsRecord = jsonOrNull(grounding?.raw_roots || artwork.raw_roots);
   const rootsSourceRecord = findRootsSourceRecord(artwork, grounding);
+  const verifiedRootsDescriptionRecord = verifiedRootsDescriptionRecords.get(
+    artwork.id
+  );
+  const candidateRootsListingUrl = normalizeUrlForCompare(
+    grounding?.roots_listing_url || artwork.roots_listing_url
+  );
+  const verifiedRootsListingUrl = normalizeUrlForCompare(
+    verifiedRootsDescriptionRecord?.rootsUrl
+  );
+  const verifiedRootsMetadata =
+    Boolean(verifiedRootsDescriptionRecord) &&
+    (!verifiedRootsListingUrl ||
+      verifiedRootsListingUrl === candidateRootsListingUrl) &&
+    (!verifiedRootsDescriptionRecord?.rootsTitle ||
+      comparableTextMatches(
+        verifiedRootsDescriptionRecord.rootsTitle,
+        firstText(getRootsTitle(rootsRecord), getNgsTitle(ngsRecord, artwork))
+      ));
   const normalizedAccession = normalizeAccession(
     artwork.accession_no || artwork.id
   );
@@ -870,7 +876,9 @@ for (const artwork of candidateSourceArtworks) {
   const rootsCollectionOf = firstText(
     rootsSourceRecord?.collectionOf,
     getRootsCollectionOf(rootsRecord),
-    reviewedRootsMetadata ? 'National Gallery Singapore' : null
+    reviewedRootsMetadata || verifiedRootsMetadata
+      ? 'National Gallery Singapore'
+      : null
   );
   const rootsCollectionVerdict = rootsCollectionOf
     ? isNgsCollectionName(rootsCollectionOf)
@@ -887,10 +895,17 @@ for (const artwork of candidateSourceArtworks) {
   const trustedRoots =
     rootsCollectionVerdict !== 'not_ngs' &&
     (rootsRecordMatchesArtwork(artwork, ngsRecord, rootsRecord) ||
-      reviewedRootsMetadata);
+      reviewedRootsMetadata ||
+      verifiedRootsMetadata);
   const trustedRootsRecord = trustedRoots
     ? {
+        ...(rootsSourceRecord || {}),
         ...(rootsRecord || {}),
+        caption:
+          getRootsDescription(rootsRecord) ||
+          rootsSourceRecord?.caption ||
+          verifiedRootsDescriptionRecord?.caption ||
+          undefined,
         accession:
           getRootsAccession(rootsRecord) ||
           rootsSourceRecord?.accession ||
@@ -1092,22 +1107,11 @@ const artworkRows = sourceArtworks.map((artwork) => {
     fieldSources,
     decision
   );
-  const ngsDescriptionText = isNgsDescriptionSource(fieldSources.description)
-    ? artwork.description || null
-    : null;
-  const legacyDescriptionText =
-    decision.legacyImageApproved && hasText(artwork.description)
-      ? artwork.description
-      : null;
-  const publicDescription =
-    rootsDescriptionText || ngsDescriptionText || legacyDescriptionText;
+  const publicDescription = rootsDescriptionText;
   const publicFieldSources = { ...fieldSources };
   if (rootsDescriptionText) {
     publicFieldSources.description = 'roots';
-  } else if (legacyDescriptionText) {
-    publicFieldSources.description =
-      publicFieldSources.description || 'legacy_source_db';
-  } else if (!publicDescription) {
+  } else {
     delete publicFieldSources.description;
   }
   const sourceProvenance = jsonOrNull(artwork.provenance) || {};
@@ -1122,13 +1126,7 @@ const artworkRows = sourceArtworks.map((artwork) => {
       ref: decision.rootsListingUrl || artwork.roots_listing_url || null,
       type: 'web',
     };
-  } else if (legacyDescriptionText) {
-    publicSourceProvenance.description = publicSourceProvenance.description || {
-      source: publicFieldSources.description || 'legacy_source_db',
-      ref: sourceRecordRef(artwork),
-      type: 'source_record',
-    };
-  } else if (!publicDescription) {
+  } else {
     delete publicSourceProvenance.description;
   }
   if (decision.legacyImageApproved && originalAsset) {

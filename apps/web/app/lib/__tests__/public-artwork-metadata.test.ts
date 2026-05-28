@@ -16,19 +16,19 @@ import {
 } from '../public-artwork-metadata';
 
 describe('getPublicDescription', () => {
-  it('uses source catalogue text from NGS records', () => {
+  it('does not expose NGS Art+ payload descriptions as public caption text', () => {
     expect(
       getPublicDescription({
         metadata: {
           source_records: {
             ngs: {
               objDescriptionClb:
-                'An NGS catalogue caption about the artwork and its context.',
+                'An imported NGS Art+ payload description about the artwork.',
             },
           },
         },
       })
-    ).toBe('An NGS catalogue caption about the artwork and its context.');
+    ).toBeNull();
   });
 
   it('uses source catalogue text from NHB Roots records', () => {
@@ -45,22 +45,23 @@ describe('getPublicDescription', () => {
     ).toBe('A Roots description supplied by the public record.');
   });
 
-  it('prefers NGS and NHB source fields over top-level metadata', () => {
+  it('prefers Roots source fields over top-level metadata', () => {
     expect(
       getPublicDescription({
         description: 'The curated artwork description.',
         metadata: {
           source_records: {
-            ngs: {
+            roots: {
               objDescriptionClb: 'Nested source text.',
+              caption: 'Nested Roots source text.',
             },
           },
         },
       })
-    ).toBe('Nested source text.');
+    ).toBe('Nested Roots source text.');
   });
 
-  it('ignores internal catalogue boilerplate', () => {
+  it('ignores internal catalogue boilerplate without falling back to NGS Art+ payload text', () => {
     expect(
       getPublicDescription({
         metadata: {
@@ -72,10 +73,10 @@ describe('getPublicDescription', () => {
           },
         },
       })
-    ).toBe('A public-facing catalogue caption.');
+    ).toBeNull();
   });
 
-  it('reports stored NGS source data for raw NGS catalogue text', () => {
+  it('does not report stored NGS source data as public caption text', () => {
     expect(
       getPublicDescriptionDetails({
         metadata: {
@@ -86,14 +87,10 @@ describe('getPublicDescription', () => {
           },
         },
       })
-    ).toEqual({
-      source: 'ngs',
-      sourceLabel: 'National Gallery Singapore',
-      text: 'Public catalogue text.',
-    });
+    ).toBeNull();
   });
 
-  it('uses field source provenance for top-level catalogue text', () => {
+  it('does not expose NGS-labelled top-level catalogue text as a public caption', () => {
     expect(
       getPublicDescriptionDetails({
         metadata: {
@@ -103,11 +100,7 @@ describe('getPublicDescription', () => {
           },
         },
       })
-    ).toEqual({
-      source: 'metadata',
-      sourceLabel: 'From National Gallery Singapore',
-      text: 'Top-level public text from the catalogue.',
-    });
+    ).toBeNull();
   });
 
   it('does not treat an unlabelled metadata caption as catalogue text', () => {
@@ -192,7 +185,7 @@ describe('getPublicDescription', () => {
     ]);
   });
 
-  it('keeps both NGS and Roots catalogue captions when both records match', () => {
+  it('keeps Roots catalogue captions but hides matching NGS Art+ payload text', () => {
     expect(
       getPublicDescriptionDetailList({
         title: 'Singapore',
@@ -213,11 +206,6 @@ describe('getPublicDescription', () => {
         },
       })
     ).toEqual([
-      {
-        source: 'ngs',
-        sourceLabel: 'National Gallery Singapore',
-        text: 'NGS catalogue text.',
-      },
       {
         source: 'roots',
         sourceLabel: 'Roots NHB',
@@ -248,6 +236,43 @@ describe('getPublicDescription', () => {
             },
             roots: {
               pageid: '1470665',
+              caption: rootsCaption,
+            },
+          },
+        },
+      })
+    ).toEqual([
+      {
+        source: 'roots',
+        sourceLabel: 'Roots NHB',
+        text: rootsCaption,
+      },
+    ]);
+  });
+
+  it('prioritizes verified Roots catalogue text and hides a different NGS Art+ description', () => {
+    const rootsCaption =
+      'Tan Choon Ghee was born in Penang in 1930. He travelled to Singapore in the late 1940s to enrol at the Nanyang Academy of Fine Arts.';
+
+    expect(
+      getPublicDescriptionDetailList({
+        title: '[Not titled] (Singapore, 1963)',
+        artist: 'Tan Choon Ghee',
+        metadata: {
+          field_sources: {
+            description: 'roots',
+          },
+          source_records: {
+            ngs: {
+              objObjectTitleTxt: '[Not titled] (Singapore, 1963)',
+              artistAvailableNames: ['Tan Choon Ghee'],
+              objDescriptionClb:
+                'Tan Choon Gee made more than ten thousand sketches from life during his career.',
+            },
+            roots: {
+              pageid: '1411600',
+              title: 'Untitled (Singapore, 1963)',
+              creator: 'Tan Choon Ghee',
               caption: rootsCaption,
             },
           },
@@ -453,9 +478,7 @@ describe('getPublicDescription', () => {
       'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/foo-chee-san/2010/2010-01598.tif'
     );
     expect(getRootsUrl(artwork)).toBeNull();
-    expect(getPublicDescription(artwork)).toBe(
-      'An NGS catalogue caption about Singapore River.'
-    );
+    expect(getPublicDescription(artwork)).toBeNull();
     expect(getPublicCitationParts(artwork).plainText).toBe(
       'Foo Chee San (1921-2017). Singapore River. Undated. Ink on paper. National Gallery Singapore, Singapore.'
     );

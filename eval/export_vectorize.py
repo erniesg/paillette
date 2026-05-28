@@ -161,6 +161,16 @@ def main():
                 "galleryId": metadata_org_id,
                 "artworkId": artwork_id,
                 "channel": args.channel,
+                "sourceKind": (
+                    "generated_caption_embedding"
+                    if args.channel == "caption"
+                    else "image_embedding"
+                ),
+                "sourceField": (
+                    "custom_metadata.generated_caption.text"
+                    if args.channel == "caption"
+                    else "image_url"
+                ),
                 "model": args.model,
                 "embeddingVersion": args.version,
                 "title": row.get("title") or "",
