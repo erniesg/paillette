@@ -518,6 +518,403 @@ def crop_review_box(review_dir: Path, item_id: str, box: list[int], points: list
     }
 
 
+def ordered_quad_from_points(points: list[dict]) -> list[list[float]]:
+    import cv2
+    import numpy as np
+
+    positive = [
+        [float(point["x"]), float(point["y"])]
+        for point in points
+        if int(point.get("label", 1)) == 1 and "x" in point and "y" in point
+    ]
+    if len(positive) < 4:
+        raise ValueError("Add four positive corner points to use perspective straightening.")
+
+    pts = np.asarray(positive, dtype=np.float32)
+    sums = pts.sum(axis=1)
+    diffs = pts[:, 0] - pts[:, 1]
+    ordered = np.asarray(
+        [
+            pts[int(np.argmin(sums))],
+            pts[int(np.argmax(diffs))],
+            pts[int(np.argmax(sums))],
+            pts[int(np.argmin(diffs))],
+        ],
+        dtype=np.float32,
+    )
+
+    if len({(round(float(x), 2), round(float(y), 2)) for x, y in ordered}) < 4:
+        rect = cv2.minAreaRect(pts)
+        ordered = cv2.boxPoints(rect).astype(np.float32)
+        y_sorted = ordered[np.argsort(ordered[:, 1])]
+        top = y_sorted[:2][np.argsort(y_sorted[:2, 0])]
+        bottom = y_sorted[2:][np.argsort(y_sorted[2:, 0])]
+        ordered = np.asarray([top[0], top[1], bottom[1], bottom[0]], dtype=np.float32)
+
+    return [[float(x), float(y)] for x, y in ordered]
+
+
+def line_coeff(p1, p2):
+    import math
+
+    x1, y1 = float(p1[0]), float(p1[1])
+    x2, y2 = float(p2[0]), float(p2[1])
+    a = y1 - y2
+    b = x2 - x1
+    c = x1 * y2 - x2 * y1
+    norm = math.hypot(a, b)
+    if norm <= 1e-6:
+        return None
+    return [a / norm, b / norm, c / norm]
+
+
+def line_intersection(l1, l2):
+    if not l1 or not l2:
+        return None
+    a1, b1, c1 = l1
+    a2, b2, c2 = l2
+    denom = a1 * b2 - a2 * b1
+    if abs(denom) <= 1e-6:
+        return None
+    x = (b1 * c2 - b2 * c1) / denom
+    y = (c1 * a2 - c2 * a1) / denom
+    return [float(x), float(y)]
+
+
+def parallel_angle_delta(a: float, b: float) -> float:
+    return abs(((a - b + 90.0) % 180.0) - 90.0)
+
+
+def segment_angle(p1, p2) -> float:
+    import math
+
+    return math.degrees(math.atan2(float(p2[1]) - float(p1[1]), float(p2[0]) - float(p1[0])))
+
+
+def polygon_area(quad: list[list[float]]) -> float:
+    area = 0.0
+    for index, point in enumerate(quad):
+        nxt = quad[(index + 1) % len(quad)]
+        area += point[0] * nxt[1] - nxt[0] * point[1]
+    return abs(area) / 2.0
+
+
+def quad_bounds(quad: list[list[float]], width: int, height: int) -> list[int]:
+    xs = [point[0] for point in quad]
+    ys = [point[1] for point in quad]
+    return clamp_box([int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))], width, height)
+
+
+def refine_quad_with_edges(image, rough_quad: list[list[float]]) -> tuple[list[list[float]], dict]:
+    import cv2
+    import numpy as np
+
+    width, height = image.size
+    rough_box = quad_bounds(rough_quad, width, height)
+    pad = max(12, int(round(max(rough_box[2] - rough_box[0], rough_box[3] - rough_box[1]) * 0.08)))
+    rx1 = max(0, rough_box[0] - pad)
+    ry1 = max(0, rough_box[1] - pad)
+    rx2 = min(width, rough_box[2] + pad)
+    ry2 = min(height, rough_box[3] + pad)
+    if rx2 - rx1 < 24 or ry2 - ry1 < 24:
+        return rough_quad, {"used": False, "reason": "roi too small"}
+
+    arr = np.asarray(image)
+    roi = arr[ry1:ry2, rx1:rx2]
+    gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(gray, 45, 145)
+    min_side = max(1, min(rx2 - rx1, ry2 - ry1))
+    lines = cv2.HoughLinesP(
+        edges,
+        1,
+        np.pi / 180,
+        threshold=max(24, int(round(min_side * 0.10))),
+        minLineLength=max(24, int(round(min_side * 0.30))),
+        maxLineGap=max(8, int(round(min_side * 0.05))),
+    )
+    if lines is None:
+        return rough_quad, {"used": False, "reason": "no hough lines"}
+
+    segments = []
+    for raw in lines[:256]:
+        x1, y1, x2, y2 = [int(v) for v in raw[0]]
+        p1 = [x1 + rx1, y1 + ry1]
+        p2 = [x2 + rx1, y2 + ry1]
+        length = float(np.hypot(p2[0] - p1[0], p2[1] - p1[1]))
+        if length < 16:
+            continue
+        segments.append(
+            {
+                "p1": p1,
+                "p2": p2,
+                "line": line_coeff(p1, p2),
+                "angle": segment_angle(p1, p2),
+                "mid": [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2],
+                "length": length,
+            }
+        )
+
+    side_defs = {
+        "top": (rough_quad[0], rough_quad[1]),
+        "right": (rough_quad[1], rough_quad[2]),
+        "bottom": (rough_quad[3], rough_quad[2]),
+        "left": (rough_quad[0], rough_quad[3]),
+    }
+    selected = {}
+    diagnostics = {"used": False, "roi": [rx1, ry1, rx2, ry2], "segments": len(segments), "sides": {}}
+    for side, (p1, p2) in side_defs.items():
+        rough_line = line_coeff(p1, p2)
+        rough_angle = segment_angle(p1, p2)
+        rough_mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2]
+        best = None
+        for segment in segments:
+            if not segment["line"] or not rough_line:
+                continue
+            angle_delta = parallel_angle_delta(segment["angle"], rough_angle)
+            if angle_delta > 18:
+                continue
+            distance = abs(
+                rough_line[0] * segment["mid"][0]
+                + rough_line[1] * segment["mid"][1]
+                + rough_line[2]
+            )
+            midpoint_delta = float(np.hypot(segment["mid"][0] - rough_mid[0], segment["mid"][1] - rough_mid[1]))
+            score = segment["length"] - distance * 4.2 - angle_delta * 3.0 - midpoint_delta * 0.18
+            candidate = {
+                "line": segment["line"],
+                "score": score,
+                "distance": distance,
+                "angleDelta": angle_delta,
+                "length": segment["length"],
+                "points": [segment["p1"], segment["p2"]],
+            }
+            if best is None or candidate["score"] > best["score"]:
+                best = candidate
+        if best:
+            selected[side] = best["line"]
+            diagnostics["sides"][side] = {
+                "score": round(float(best["score"]), 6),
+                "distance": round(float(best["distance"]), 6),
+                "angleDelta": round(float(best["angleDelta"]), 6),
+                "length": round(float(best["length"]), 6),
+                "points": best["points"],
+            }
+        else:
+            diagnostics["sides"][side] = None
+
+    if not all(side in selected for side in ("top", "right", "bottom", "left")):
+        diagnostics["reason"] = "missing side line"
+        return rough_quad, diagnostics
+
+    refined = [
+        line_intersection(selected["top"], selected["left"]),
+        line_intersection(selected["top"], selected["right"]),
+        line_intersection(selected["bottom"], selected["right"]),
+        line_intersection(selected["bottom"], selected["left"]),
+    ]
+    if any(point is None for point in refined):
+        diagnostics["reason"] = "parallel side lines"
+        return rough_quad, diagnostics
+
+    refined = [[max(0.0, min(float(width), p[0])), max(0.0, min(float(height), p[1]))] for p in refined]
+    rough_area = max(1.0, polygon_area(rough_quad))
+    refined_area = polygon_area(refined)
+    if refined_area < rough_area * 0.45 or refined_area > rough_area * 1.85:
+        diagnostics["reason"] = "refined area out of range"
+        diagnostics["roughArea"] = round(rough_area, 6)
+        diagnostics["refinedArea"] = round(refined_area, 6)
+        return rough_quad, diagnostics
+
+    diagnostics["used"] = True
+    diagnostics["roughArea"] = round(rough_area, 6)
+    diagnostics["refinedArea"] = round(refined_area, 6)
+    return refined, diagnostics
+
+
+def warp_quad(image, quad: list[list[float]]):
+    import cv2
+    import numpy as np
+    from PIL import Image
+
+    pts = np.asarray(quad, dtype=np.float32)
+    tl, tr, br, bl = pts
+    width_a = float(np.linalg.norm(br - bl))
+    width_b = float(np.linalg.norm(tr - tl))
+    height_a = float(np.linalg.norm(tr - br))
+    height_b = float(np.linalg.norm(tl - bl))
+    output_w = max(8, int(round(max(width_a, width_b))))
+    output_h = max(8, int(round(max(height_a, height_b))))
+    dst = np.asarray(
+        [[0, 0], [output_w - 1, 0], [output_w - 1, output_h - 1], [0, output_h - 1]],
+        dtype=np.float32,
+    )
+    matrix = cv2.getPerspectiveTransform(pts, dst)
+    warped = cv2.warpPerspective(
+        np.asarray(image),
+        matrix,
+        (output_w, output_h),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    return Image.fromarray(warped), {"width": output_w, "height": output_h}
+
+
+def detect_crop_skew_angle(crop) -> tuple[float, dict]:
+    import cv2
+    import numpy as np
+
+    gray = cv2.cvtColor(np.asarray(crop), cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(gray, 45, 145)
+    height, width = gray.shape
+    min_side = max(1, min(width, height))
+    lines = cv2.HoughLinesP(
+        edges,
+        1,
+        np.pi / 180,
+        threshold=max(20, int(round(min_side * 0.12))),
+        minLineLength=max(24, int(round(min_side * 0.35))),
+        maxLineGap=max(8, int(round(min_side * 0.05))),
+    )
+    if lines is None:
+        return 0.0, {"lines": 0, "angles": []}
+
+    angles = []
+    for raw in lines[:128]:
+        x1, y1, x2, y2 = [float(v) for v in raw[0]]
+        length = float(np.hypot(x2 - x1, y2 - y1))
+        if length < 16:
+            continue
+        angle = float(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
+        while angle <= -90:
+            angle += 180
+        while angle > 90:
+            angle -= 180
+        if abs(angle) <= 16:
+            angles.append(angle)
+    if not angles:
+        return 0.0, {"lines": int(len(lines)), "angles": []}
+    median = float(np.median(np.asarray(angles, dtype=np.float32)))
+    if abs(median) < 0.2:
+        median = 0.0
+    return median, {"lines": int(len(lines)), "angles": [round(float(v), 4) for v in angles[:24]]}
+
+
+def median_border_color(image):
+    import numpy as np
+
+    arr = np.asarray(image)
+    if arr.size == 0:
+        return (245, 245, 245)
+    strips = [
+        arr[: max(1, arr.shape[0] // 20), :, :],
+        arr[-max(1, arr.shape[0] // 20) :, :, :],
+        arr[:, : max(1, arr.shape[1] // 20), :],
+        arr[:, -max(1, arr.shape[1] // 20) :, :],
+    ]
+    pixels = np.concatenate([strip.reshape(-1, 3) for strip in strips if strip.size], axis=0)
+    color = np.median(pixels, axis=0)
+    return tuple(int(round(v)) for v in color)
+
+
+def straighten_review_crop(
+    review_dir: Path,
+    item_id: str,
+    box: list[int] | None = None,
+    points: list[dict] | None = None,
+    angle_degrees: float | None = None,
+) -> dict:
+    from PIL import Image, ImageDraw, ImageOps
+
+    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing original asset for {item_id}")
+
+    started = time.time()
+    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    width, height = image.size
+    points = points or []
+    source_box = clamp_box(box or [0, 0, width, height], width, height)
+    positive_count = sum(1 for point in points if int(point.get("label", 1)) == 1)
+    mode = "rotation-box"
+    diagnostics = {}
+    quad = None
+
+    if angle_degrees is not None:
+        crop = image.crop(tuple(source_box))
+        angle = float(angle_degrees)
+        fill = median_border_color(crop)
+        if abs(angle) > 0:
+            crop = crop.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill)
+        quad = [
+            [float(source_box[0]), float(source_box[1])],
+            [float(source_box[2]), float(source_box[1])],
+            [float(source_box[2]), float(source_box[3])],
+            [float(source_box[0]), float(source_box[3])],
+        ]
+        mode = "manual-rotation"
+        diagnostics = {"angleDegrees": round(float(angle), 6), "fill": fill}
+    elif positive_count >= 4:
+        rough_quad = ordered_quad_from_points(points)
+        refined_quad, edge_diagnostics = refine_quad_with_edges(image, rough_quad)
+        quad = refined_quad
+        source_box = quad_bounds(refined_quad, width, height)
+        crop, warp_info = warp_quad(image, refined_quad)
+        mode = "perspective-points"
+        diagnostics = {
+            "roughQuad": [[round(v, 3) for v in point] for point in rough_quad],
+            "edgeRefine": edge_diagnostics,
+            "warp": warp_info,
+        }
+    else:
+        crop = image.crop(tuple(source_box))
+        angle, skew_diagnostics = detect_crop_skew_angle(crop)
+        fill = median_border_color(crop)
+        if abs(angle) > 0:
+            crop = crop.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill)
+        quad = [
+            [float(source_box[0]), float(source_box[1])],
+            [float(source_box[2]), float(source_box[1])],
+            [float(source_box[2]), float(source_box[3])],
+            [float(source_box[0]), float(source_box[3])],
+        ]
+        diagnostics = {"angleDegrees": round(float(angle), 6), "skew": skew_diagnostics, "fill": fill}
+
+    stamp = int(time.time() * 1000)
+    crop_url_path = f"assets/{item_id}-straighten-{stamp}-crop.jpg"
+    overlay_url_path = f"assets/{item_id}-straighten-{stamp}-overlay.jpg"
+    crop.save(review_dir / crop_url_path, format="JPEG", quality=94)
+
+    overlay = image.copy()
+    draw = ImageDraw.Draw(overlay)
+    draw.rectangle(source_box, outline=(247, 216, 74), width=3)
+    if quad:
+        polygon = [(float(x), float(y)) for x, y in quad]
+        draw.line(polygon + [polygon[0]], fill=(57, 213, 232), width=5)
+    for point in points[:32]:
+        x = int(round(float(point["x"])))
+        y = int(round(float(point["y"])))
+        label = int(point.get("label", 1))
+        color = (35, 192, 107) if label == 1 else (255, 90, 106)
+        draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill=color, outline=(255, 255, 255), width=2)
+    overlay.save(review_dir / overlay_url_path, format="JPEG", quality=92)
+
+    return {
+        "ok": True,
+        "id": item_id,
+        "method": "auto-straighten",
+        "mode": mode,
+        "box": source_box,
+        "quad": [[round(float(x), 3), round(float(y), 3)] for x, y in (quad or [])],
+        "positivePoints": positive_count,
+        "cropUrl": f"{crop_url_path}?v={stamp}",
+        "overlayUrl": f"{overlay_url_path}?v={stamp}",
+        "diagnostics": diagnostics,
+        "seconds": round(time.time() - started, 3),
+    }
+
+
 def load_image_from_url(image_url: str):
     from PIL import Image, ImageOps
 
@@ -972,6 +1369,21 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                             "method": "POST",
                             "writes": "review-decisions.json",
                         },
+                        "straighten": {
+                            "path": "/api/straighten",
+                            "method": "POST",
+                            "body": {
+                                "id": "2010-04377",
+                                "box": [46, 25, 426, 316],
+                                "points": [
+                                    {"x": 46, "y": 25, "label": 1},
+                                    {"x": 426, "y": 25, "label": 1},
+                                    {"x": 426, "y": 316, "label": 1},
+                                    {"x": 46, "y": 316, "label": 1},
+                                ],
+                                "angleDegrees": "optional manual rotation; omit for auto",
+                            },
+                        },
                     },
                 )
                 return
@@ -984,6 +1396,7 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                 "/api/snap-rectangle",
                 "/api/crop-box",
                 "/api/frame-detector",
+                "/api/straighten",
                 "/api/local-api-sam3",
                 "/api/local-sam3-extract",
                 "/api/submit-review",
@@ -1023,6 +1436,15 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     raise ValueError("points must be an array.")
                 if parsed.path == "/api/frame-detector":
                     result = api_frame_detector(review_dir, item_id)
+                elif parsed.path == "/api/straighten":
+                    box = payload.get("box") or []
+                    if box and (not isinstance(box, list) or len(box) != 4):
+                        raise ValueError("box must be a four-number array.")
+                    raw_angle = payload.get("angleDegrees", None)
+                    angle_degrees = None
+                    if raw_angle is not None and raw_angle != "":
+                        angle_degrees = float(raw_angle)
+                    result = straighten_review_crop(review_dir, item_id, box or None, points, angle_degrees)
                 elif parsed.path == "/api/local-api-sam3":
                     result = runner.api_prompt_extract(
                         review_dir,
