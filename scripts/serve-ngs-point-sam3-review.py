@@ -110,6 +110,14 @@ def side_search_radius(size: int, limit: int) -> int:
     return max(24, min(92, int(round(size * 0.34)), int(round(limit * 0.22))))
 
 
+def point_intent_outward_limit(size: int, limit: int) -> int:
+    return max(3, min(12, int(round(size * 0.035)), int(round(limit * 0.018))))
+
+
+def point_intent_inward_limit(size: int, limit: int) -> int:
+    return max(4, min(16, max(1, int(round(size * 0.25))), int(round(size * 0.08)), int(round(limit * 0.025))))
+
+
 def choose_axis_line(
     gray,
     gradient,
@@ -295,8 +303,22 @@ def snap_rectangle(review_dir: Path, item_id: str, points: list[dict], source_ur
     top = choose_axis_line(gray, gy, cy1, y_radius, x_span, height, "horizontal", "top")
     bottom = choose_axis_line(gray, gy, cy2, y_radius, x_span, height, "horizontal", "bottom")
 
-    snapped_box = clamp_box(
+    max_out_x = point_intent_outward_limit(cx2 - cx1, width)
+    max_out_y = point_intent_outward_limit(cy2 - cy1, height)
+    max_in_x = point_intent_inward_limit(cx2 - cx1, width)
+    max_in_y = point_intent_inward_limit(cy2 - cy1, height)
+    raw_box = clamp_box(
         [left["position"], top["position"], right["position"], bottom["position"]],
+        width,
+        height,
+    )
+    snapped_box = clamp_box(
+        [
+            min(cx1 + max_in_x, max(cx1 - max_out_x, raw_box[0])),
+            min(cy1 + max_in_y, max(cy1 - max_out_y, raw_box[1])),
+            max(cx2 - max_in_x, min(cx2 + max_out_x, raw_box[2])),
+            max(cy2 - max_in_y, min(cy2 + max_out_y, raw_box[3])),
+        ],
         width,
         height,
     )
@@ -336,6 +358,11 @@ def snap_rectangle(review_dir: Path, item_id: str, points: list[dict], source_ur
             "right": right,
             "top": top,
             "bottom": bottom,
+            "rawBox": raw_box,
+            "pointIntentBox": coarse_box,
+            "boundedByPointIntent": raw_box != snapped_box,
+            "maxOutward": {"x": max_out_x, "y": max_out_y},
+            "maxInward": {"x": max_in_x, "y": max_in_y},
             "xRadius": x_radius,
             "yRadius": y_radius,
         },
