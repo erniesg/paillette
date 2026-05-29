@@ -37,20 +37,19 @@ describe('SourceIndicator', () => {
         showLabel
         details={[
           ['Model', 'mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit'],
-          ['Prompt', 'cap-ngs-missing-v1'],
         ]}
       />
     );
 
     const indicator = screen.getByRole('button', {
-      name: /Source: Generated caption: Generated visual description with model provenance\./,
+      name: /Source: Generated caption: Model used for the generated visual description\./,
     });
 
     expect(indicator).toHaveTextContent('Generated caption');
     expect(indicator).not.toHaveAttribute('title');
     expect(indicator).toHaveAttribute(
       'data-source-description',
-      'Generated caption: Generated visual description with model provenance.'
+      'Generated caption: Model used for the generated visual description.'
     );
     expect(indicator).toHaveAttribute('aria-expanded', 'false');
 
@@ -60,14 +59,12 @@ describe('SourceIndicator', () => {
     expect(screen.getByRole('tooltip')).toHaveClass('visible');
     expect(screen.getByRole('tooltip')).not.toHaveClass('invisible');
     expect(
-      screen.getByText('Generated visual description with model provenance.')
+      screen.getByText('Model used for the generated visual description.')
     ).toBeInTheDocument();
     expect(screen.getByText('Model')).toBeInTheDocument();
     expect(
       screen.getByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
     ).toBeInTheDocument();
-    expect(screen.getByText('Prompt')).toBeInTheDocument();
-    expect(screen.getByText('cap-ngs-missing-v1')).toBeInTheDocument();
   });
 
   it('keeps catalogue provenance available from the pill', () => {

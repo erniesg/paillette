@@ -88,7 +88,7 @@ export const getSourceIndicatorDetails = (label: string): SourceDetails => {
     return {
       title: 'Generated caption',
       shortLabel: 'AI',
-      description: 'Generated visual description with model provenance.',
+      description: 'Model used for the generated visual description.',
       icon: Sparkles,
       tone: 'ai',
     };
