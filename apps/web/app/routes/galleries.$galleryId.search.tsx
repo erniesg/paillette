@@ -1920,7 +1920,7 @@ export default function SearchPage() {
               )}
           </section>
         )}
-        <SearchInfoFooter />
+        <SearchInfoFooter separated={hasActiveSearch} />
       </main>
       <SearchArtworkDialog
         artwork={selectedArtwork}
@@ -1931,9 +1931,13 @@ export default function SearchPage() {
   );
 }
 
-function SearchInfoFooter() {
+function SearchInfoFooter({ separated }: { separated: boolean }) {
   return (
-    <section className="mt-12 border-t border-white/[0.08] pt-8">
+    <section
+      className={
+        separated ? 'mt-12 border-t border-white/[0.08] pt-8' : 'mt-8 pt-0'
+      }
+    >
       <div className="flex flex-col gap-3 text-sm leading-6 text-white/55 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex max-w-4xl items-start gap-2">
           <ShieldCheck className="mt-1 h-3.5 w-3.5 shrink-0 text-white/35" />
