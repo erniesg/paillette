@@ -13,6 +13,11 @@ Paillette enables galleries to manage, search, and discover artworks through adv
 
 Starting with the **National Gallery Singapore**, we're building a platform that makes art more accessible and searchable for galleries worldwide.
 
+## Visit
+
+- [Paillette NGS search](https://paillette-stg.berlayar.ai/ngs/search)
+- [National Gallery Singapore Collection Search](https://www.nationalgallery.sg/sg/en/our-collections/search-collection.html), the source collection currently represented in Paillette
+
 ## Core Features
 
 ### 1. Image Collection & Embedding Generation
