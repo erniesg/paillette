@@ -856,7 +856,9 @@ def straighten_review_source(
     angle = float(angle_degrees)
     fill = median_border_color(image)
     if abs(angle) > 0:
-        image = image.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill)
+        # CSS rotate() uses the opposite sign convention from PIL Image.rotate().
+        # Keep the materialized source visually identical to the review preview.
+        image = image.rotate(-angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill)
 
     stamp = int(time.time() * 1000)
     source_url_path = f"assets/{item_id}-source-straighten-{stamp}.jpg"
@@ -873,7 +875,7 @@ def straighten_review_source(
         "width": width,
         "height": height,
         "box": [0, 0, width, height],
-        "diagnostics": {"fill": fill},
+        "diagnostics": {"fill": fill, "pilAngleDegrees": round(-angle, 6)},
         "seconds": round(time.time() - started, 3),
     }
 
