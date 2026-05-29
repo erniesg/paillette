@@ -79,6 +79,205 @@ def map_box(box: list[int], from_size: tuple[int, int], to_size: tuple[int, int]
     )
 
 
+def point_intent_box(points: list[dict], width: int, height: int) -> list[int]:
+    positive = [point for point in points if int(point.get("label", 1)) == 1]
+    source = positive if len(positive) >= 2 else points
+    if len(source) < 2:
+        raise ValueError("Add at least two points to snap a rectangle.")
+
+    xs = [max(0.0, min(float(width), float(point["x"]))) for point in source]
+    ys = [max(0.0, min(float(height), float(point["y"]))) for point in source]
+    box = [min(xs), min(ys), max(xs), max(ys)]
+    if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+        raise ValueError("Point rectangle is too small to snap.")
+    return clamp_box(box, width, height)
+
+
+def expanded_span(start: int, end: int, limit: int, fraction: float = 0.18, minimum: int = 18) -> tuple[int, int]:
+    size = max(1, end - start)
+    pad = max(minimum, int(round(size * fraction)))
+    return max(0, start - pad), min(limit, end + pad)
+
+
+def side_search_radius(size: int, limit: int) -> int:
+    return max(24, min(92, int(round(size * 0.34)), int(round(limit * 0.22))))
+
+
+def choose_axis_line(
+    gray,
+    gradient,
+    estimate: int,
+    radius: int,
+    span: tuple[int, int],
+    limit: int,
+    orientation: str,
+    side: str,
+) -> dict:
+    import numpy as np
+
+    lo = max(0, estimate - radius)
+    hi = min(limit - 1, estimate + radius)
+    span_lo, span_hi = span
+    span_lo = max(0, min(span_lo, span_hi - 1))
+    span_hi = min(gray.shape[0 if orientation == "vertical" else 1], max(span_hi, span_lo + 1))
+    grad_threshold = 24.0
+    candidates = []
+
+    for pos in range(lo, hi + 1):
+        if orientation == "vertical":
+            line = gradient[span_lo:span_hi, max(0, pos - 1) : min(limit, pos + 2)]
+            before = gray[span_lo:span_hi, max(0, pos - 5) : max(0, pos - 1)]
+            after = gray[span_lo:span_hi, min(limit, pos + 1) : min(limit, pos + 5)]
+        else:
+            line = gradient[max(0, pos - 1) : min(limit, pos + 2), span_lo:span_hi]
+            before = gray[max(0, pos - 5) : max(0, pos - 1), span_lo:span_hi]
+            after = gray[min(limit, pos + 1) : min(limit, pos + 5), span_lo:span_hi]
+
+        if line.size == 0:
+            continue
+
+        edge = float(line.mean())
+        coverage = float((line > grad_threshold).mean())
+        contrast = 0.0
+        if before.size and after.size:
+            contrast = abs(float(before.mean()) - float(after.mean()))
+
+        distance = abs(pos - estimate) / max(1, radius)
+        edge_norm = min(edge / 120.0, 2.0)
+        contrast_norm = min(contrast / 70.0, 2.0)
+        score = edge_norm * 0.42 + coverage * 0.85 + contrast_norm * 0.36 - distance * 0.22
+        candidates.append(
+            {
+                "position": int(pos),
+                "score": round(score, 6),
+                "edge": round(edge, 6),
+                "coverage": round(coverage, 6),
+                "contrast": round(contrast, 6),
+                "distance": round(distance, 6),
+            }
+        )
+
+    candidates.sort(key=lambda row: row["score"], reverse=True)
+    strong = [
+        row
+        for row in candidates
+        if row["coverage"] >= 0.32 or (row["edge"] >= 70 and row["contrast"] >= 24)
+    ]
+    if strong:
+        selected = strong[0]
+        return {
+            "position": selected["position"],
+            "kind": "edge",
+            "selected": selected,
+            "candidates": candidates[:8],
+        }
+
+    edge_threshold = max(14, int(round(limit * 0.06)))
+    if side in {"left", "top"} and estimate <= edge_threshold:
+        return {
+            "position": 0,
+            "kind": "image_edge",
+            "selected": None,
+            "candidates": candidates[:8],
+        }
+    if side in {"right", "bottom"} and limit - estimate <= edge_threshold:
+        return {
+            "position": limit,
+            "kind": "image_edge",
+            "selected": None,
+            "candidates": candidates[:8],
+        }
+
+    return {
+        "position": int(round(estimate)),
+        "kind": "point_estimate",
+        "selected": None,
+        "candidates": candidates[:8],
+    }
+
+
+def snap_rectangle(review_dir: Path, item_id: str, points: list[dict]) -> dict:
+    import cv2
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageOps
+
+    if not points:
+        raise ValueError("Add rough corner or edge points before snapping.")
+
+    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing original asset for {item_id}")
+
+    started = time.time()
+    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    width, height = image.size
+    coarse_box = point_intent_box(points, width, height)
+    cx1, cy1, cx2, cy2 = coarse_box
+
+    arr = np.asarray(image)
+    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    gx = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3))
+    gy = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
+
+    x_span = expanded_span(cx1, cx2, width)
+    y_span = expanded_span(cy1, cy2, height)
+    x_radius = side_search_radius(cx2 - cx1, width)
+    y_radius = side_search_radius(cy2 - cy1, height)
+
+    left = choose_axis_line(gray, gx, cx1, x_radius, y_span, width, "vertical", "left")
+    right = choose_axis_line(gray, gx, cx2, x_radius, y_span, width, "vertical", "right")
+    top = choose_axis_line(gray, gy, cy1, y_radius, x_span, height, "horizontal", "top")
+    bottom = choose_axis_line(gray, gy, cy2, y_radius, x_span, height, "horizontal", "bottom")
+
+    snapped_box = clamp_box(
+        [left["position"], top["position"], right["position"], bottom["position"]],
+        width,
+        height,
+    )
+    min_w = max(16, int(round((cx2 - cx1) * 0.18)))
+    min_h = max(16, int(round((cy2 - cy1) * 0.18)))
+    if snapped_box[2] - snapped_box[0] < min_w or snapped_box[3] - snapped_box[1] < min_h:
+        snapped_box = coarse_box
+
+    crop = image.crop(tuple(snapped_box))
+    stamp = int(time.time() * 1000)
+    crop_url_path = f"assets/{item_id}-snap-crop.jpg"
+    crop.save(review_dir / crop_url_path, format="JPEG", quality=94)
+
+    overlay = image.copy()
+    draw = ImageDraw.Draw(overlay)
+    draw.rectangle(coarse_box, outline=(255, 156, 45), width=3)
+    draw.rectangle(snapped_box, outline=(247, 216, 74), width=5)
+    for point in points[:32]:
+        x = int(round(float(point["x"])))
+        y = int(round(float(point["y"])))
+        label = int(point.get("label", 1))
+        color = (35, 192, 107) if label == 1 else (255, 90, 106)
+        draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill=color, outline=(255, 255, 255), width=2)
+    overlay_url_path = f"assets/{item_id}-snap-overlay.jpg"
+    overlay.save(review_dir / overlay_url_path, format="JPEG", quality=92)
+
+    return {
+        "ok": True,
+        "id": item_id,
+        "method": "snap-rectangle",
+        "box": snapped_box,
+        "coarseBox": coarse_box,
+        "cropUrl": f"{crop_url_path}?v={stamp}",
+        "overlayUrl": f"{overlay_url_path}?v={stamp}",
+        "diagnostics": {
+            "left": left,
+            "right": right,
+            "top": top,
+            "bottom": bottom,
+            "xRadius": x_radius,
+            "yRadius": y_radius,
+        },
+        "seconds": round(time.time() - started, 3),
+    }
+
+
 class Sam3PointRunner:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -245,7 +444,7 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
 
         def do_POST(self):
             parsed = urlparse(self.path)
-            if parsed.path != "/api/segment":
+            if parsed.path not in {"/api/segment", "/api/snap-rectangle"}:
                 self.send_error(404, "Not found")
                 return
 
@@ -258,7 +457,10 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     raise ValueError("Missing id.")
                 if not isinstance(points, list):
                     raise ValueError("points must be an array.")
-                result = runner.segment(review_dir, item_id, points)
+                if parsed.path == "/api/snap-rectangle":
+                    result = snap_rectangle(review_dir, item_id, points)
+                else:
+                    result = runner.segment(review_dir, item_id, points)
                 self._json(200, result)
             except Exception as exc:  # noqa: BLE001 - review endpoint should return diagnostics.
                 self._json(500, {"ok": False, "error": str(exc)})
