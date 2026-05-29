@@ -1022,6 +1022,7 @@ export default function SearchPage() {
         minScore: 0,
       }),
     enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -1050,11 +1051,8 @@ export default function SearchPage() {
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
   const idleShowcaseResults = useMemo(
-    () =>
-      idleShowcaseQuery.isFetching
-        ? []
-        : selectIdleShowcaseArtworks(idleShowcaseQuery.data?.results || []),
-    [idleShowcaseQuery.data?.results, idleShowcaseQuery.isFetching]
+    () => selectIdleShowcaseArtworks(idleShowcaseQuery.data?.results || []),
+    [idleShowcaseQuery.data?.results]
   );
   const isIdleShowcaseLoading =
     idleShowcaseQuery.isLoading || idleShowcaseQuery.isFetching;
@@ -2184,8 +2182,7 @@ const getArtworkImageUrl = (
     thumbnail_url?: string | null;
   };
   const imageUrl = asset.imageUrl || asset.image_url || null;
-  const thumbnailUrl =
-    asset.thumbnailUrl || asset.thumbnail_url || null;
+  const thumbnailUrl = asset.thumbnailUrl || asset.thumbnail_url || null;
 
   if (role === 'large') {
     return imageUrl || thumbnailUrl;
@@ -2195,7 +2192,7 @@ const getArtworkImageUrl = (
 };
 
 const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
-  artwork ? getArtworkImageUrl(artwork, 'large') : null;
+  artwork ? getArtworkImageUrl(artwork, 'thumbnail') : null;
 
 const preloadShowcaseImage = (src: string) =>
   new Promise<void>((resolve) => {
@@ -2242,9 +2239,7 @@ const IdleShowcaseBackdrop = forwardRef<
   const transitionRunRef = useRef(0);
   const previewWorks = useMemo(
     () =>
-      artworks
-        .filter((artwork) => getShowcaseImageUrl(artwork))
-        .slice(0, 4),
+      artworks.filter((artwork) => getShowcaseImageUrl(artwork)).slice(0, 4),
     [artworks]
   );
   const previewKey = useMemo(
