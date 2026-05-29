@@ -115,6 +115,12 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
 type SearchMode = 'text' | 'image' | 'colour';
 type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
+type ActiveSearchSummary = {
+  type: string;
+  label: string;
+  detail?: string;
+  dot: string;
+};
 type BrowseCollectionResponse = {
   results: ArtworkSearchResult[];
   count: number;
@@ -850,6 +856,59 @@ export default function SearchPage() {
     textQuery.trim().length > 0 ||
     imageFile !== null ||
     searchColours.length > 0;
+  const activeSearchSummary = useMemo<ActiveSearchSummary | null>(() => {
+    if (isBrowsingCollection) {
+      return {
+        type: 'browse',
+        label: 'collection',
+        detail: 'all works',
+        dot: '#8b8d96',
+      };
+    }
+
+    if (searchMode === 'image' && imageFile) {
+      return {
+        type: 'image',
+        label: imageFile.name || 'uploaded image',
+        detail: 'visual search',
+        dot: '#7dd3fc',
+      };
+    }
+
+    if (searchMode === 'colour' && searchColours.length) {
+      const selectedColourId = searchColours[0];
+      if (!selectedColourId) return null;
+
+      const colour = getSelectedColour(selectedColourId);
+      const label = colour?.name || getColourSearchText(selectedColourId);
+
+      return {
+        type: 'colour',
+        label,
+        detail: 'active search',
+        dot: colour?.hex || '#d946ef',
+      };
+    }
+
+    const trimmedQuery = textQuery.trim();
+    if (searchMode === 'text' && trimmedQuery) {
+      return {
+        type: 'text',
+        label: trimmedQuery,
+        detail: shouldSearch ? 'active search' : 'typing',
+        dot: '#d946ef',
+      };
+    }
+
+    return null;
+  }, [
+    imageFile,
+    isBrowsingCollection,
+    searchColours,
+    searchMode,
+    shouldSearch,
+    textQuery,
+  ]);
   const getCurrentReturnTo = () =>
     `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
@@ -1468,6 +1527,7 @@ export default function SearchPage() {
               <SuggestionPicker
                 suggestions={suggestionPool}
                 currentQuery={textQuery}
+                activeSearch={activeSearchSummary}
                 onSelect={runEvalSearch}
                 onPreviewChange={setIdleSuggestion}
               />
@@ -1910,18 +1970,20 @@ function SearchInfoFooter() {
 function SuggestionPicker({
   suggestions,
   currentQuery,
+  activeSearch,
   onSelect,
   onPreviewChange,
 }: {
   suggestions: EvalSuggestion[];
   currentQuery: string;
+  activeSearch?: ActiveSearchSummary | null;
   onSelect: (suggestion: EvalSuggestion) => void;
   onPreviewChange?: (suggestion: EvalSuggestion) => void;
 }) {
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const [paused, setPaused] = useState(false);
-  const activeSuggestionRef = useRef<HTMLButtonElement | null>(null);
+  const activeSuggestionRef = useRef<HTMLElement | null>(null);
   const suggestion = suggestions[index] ?? suggestions[0] ?? null;
 
   useEffect(() => {
@@ -1930,23 +1992,28 @@ function SuggestionPicker({
   }, [suggestions.length]);
 
   useEffect(() => {
-    if (open || paused || suggestions.length < 2) return undefined;
+    if (activeSearch || open || paused || suggestions.length < 2) {
+      return undefined;
+    }
 
     const handle = window.setInterval(() => {
       setIndex((value) => (value + 1) % suggestions.length);
     }, 9000);
 
     return () => window.clearInterval(handle);
-  }, [open, paused, suggestions.length]);
+  }, [activeSearch, open, paused, suggestions.length]);
 
   useEffect(() => {
+    if (activeSearch) return;
     if (suggestion) {
       onPreviewChange?.(suggestion);
     }
-  }, [onPreviewChange, suggestion]);
+  }, [activeSearch, onPreviewChange, suggestion]);
 
   useEffect(() => {
-    if (!suggestion || !activeSuggestionRef.current) return undefined;
+    if ((!suggestion && !activeSearch) || !activeSuggestionRef.current) {
+      return undefined;
+    }
 
     let context: { revert: () => void } | undefined;
     let cancelled = false;
@@ -1978,11 +2045,15 @@ function SuggestionPicker({
       cancelled = true;
       context?.revert();
     };
-  }, [suggestion]);
+  }, [activeSearch, suggestion]);
 
-  if (!suggestion) return null;
+  if (!suggestion && !activeSearch) return null;
 
   const activeQuery = currentQuery.trim().toLowerCase();
+  const activeLabel = activeSearch?.label.trim();
+  const activeStatusLabel = activeSearch
+    ? `Current ${activeSearch.type} search: ${activeSearch.label}`
+    : undefined;
 
   return (
     <div
@@ -1993,32 +2064,64 @@ function SuggestionPicker({
       onBlur={() => setPaused(false)}
     >
       <span className="shrink-0 border-r border-white/10 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
-        Try
+        {activeSearch ? 'Search' : 'Try'}
       </span>
-      <button
-        ref={activeSuggestionRef}
-        type="button"
-        onClick={() => onSelect(suggestion)}
-        className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
-          activeQuery === suggestion.query.toLowerCase()
-            ? 'bg-white/[0.12] text-white'
-            : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
-        }`}
-      >
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ background: suggestion.dot }}
-        />
-        <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
-          {suggestion.type}
-        </span>
-        <span className="truncate">{suggestion.label}</span>
-        {suggestion.detail && (
-          <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
-            {suggestion.detail}
+      {activeSearch ? (
+        <div
+          ref={(node) => {
+            activeSuggestionRef.current = node;
+          }}
+          className="inline-flex min-w-0 items-center gap-2 bg-white/[0.08] px-3 py-1.5 text-left text-xs text-white"
+          role="status"
+          aria-label={activeStatusLabel}
+          aria-live="polite"
+        >
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ background: activeSearch.dot }}
+          />
+          <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+            {activeSearch.type}
           </span>
-        )}
-      </button>
+          <span className="truncate">{activeLabel}</span>
+          {activeSearch.detail && (
+            <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
+              {activeSearch.detail}
+            </span>
+          )}
+        </div>
+      ) : (
+        <button
+          ref={(node) => {
+            activeSuggestionRef.current = node;
+          }}
+          type="button"
+          onClick={() => suggestion && onSelect(suggestion)}
+          className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
+            suggestion && activeQuery === suggestion.query.toLowerCase()
+              ? 'bg-white/[0.12] text-white'
+              : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
+          }`}
+        >
+          {suggestion && (
+            <>
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: suggestion.dot }}
+              />
+              <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                {suggestion.type}
+              </span>
+              <span className="truncate">{suggestion.label}</span>
+              {suggestion.detail && (
+                <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
+                  {suggestion.detail}
+                </span>
+              )}
+            </>
+          )}
+        </button>
+      )}
       <DropdownMenu.Root open={open} onOpenChange={setOpen}>
         <DropdownMenu.Trigger asChild>
           <button
