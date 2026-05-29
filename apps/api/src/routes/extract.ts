@@ -821,6 +821,37 @@ const runFalSam3 = async ({
   throw new Error('fal request timed out before completion');
 };
 
+const runLocalSam3 = async ({
+  endpoint,
+  imageUrl,
+  target,
+  points,
+}: {
+  endpoint: string;
+  imageUrl: string;
+  target: ExtractTarget;
+  points?: PointPrompt[];
+}) => {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      imageUrl,
+      target,
+      points: points ?? [],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(
+      `local SAM3 request failed (${response.status})${detail ? `: ${detail}` : ''}`
+    );
+  }
+
+  return unwrapFalPayload(await response.json());
+};
+
 const resolveFalInputUrl = async (
   env: Env,
   input: NormalizedExtractInput
@@ -1065,8 +1096,11 @@ const processWithFal = async ({
   outputZipKey: string;
   warnings: string[];
 }) => {
+  const localSam3Endpoint = env.LOCAL_SAM3_EXTRACT_URL?.trim();
   const falKey = env.FAL_KEY?.trim();
-  if (!falKey) throw new Error('fal provider is not configured.');
+  if (!localSam3Endpoint && !falKey) {
+    throw new Error('Direct extract provider is not configured.');
+  }
 
   const bucket = getBucket(env);
   if (!bucket) throw new Error('Extract storage is not configured.');
@@ -1082,14 +1116,23 @@ const processWithFal = async ({
     await updateItemStatus({ env, itemId: input.itemId, status: 'processing' });
 
     try {
-      assertFalCompatibleInput(input);
+      if (!localSam3Endpoint) {
+        assertFalCompatibleInput(input);
+      }
       const imageUrl = await resolveFalInputUrl(env, input);
-      const result = await runFalSam3({
-        key: falKey,
-        imageUrl,
-        target,
-        points: input.points,
-      });
+      const result = localSam3Endpoint
+        ? await runLocalSam3({
+            endpoint: localSam3Endpoint,
+            imageUrl,
+            target,
+            points: input.points,
+          })
+        : await runFalSam3({
+            key: falKey!,
+            imageUrl,
+            target,
+            points: input.points,
+          });
       const selected = selectFalOutput(result);
       const outputImage = await fetchFalImage(selected.output);
       const outputName = getUniqueName(
@@ -1109,7 +1152,9 @@ const processWithFal = async ({
         itemWarnings.push('fal returned a mask but no masked output image.');
       }
       if (typeof selected.confidence === 'number') {
-        itemWarnings.push(`fal confidence ${selected.confidence.toFixed(3)}`);
+        itemWarnings.push(
+          `${localSam3Endpoint ? 'local SAM3' : 'fal'} confidence ${selected.confidence.toFixed(3)}`
+        );
       }
 
       await bucket.put(outputKey, outputImage.bytes, {
@@ -1138,7 +1183,9 @@ const processWithFal = async ({
     } catch (error) {
       failedCount += 1;
       const message =
-        error instanceof Error ? error.message : 'fal extract failed';
+        error instanceof Error
+          ? error.message
+          : `${localSam3Endpoint ? 'local SAM3' : 'fal'} extract failed`;
       warnings.push(`${input.originalFilename}: ${message}`);
       await updateItemStatus({
         env,
@@ -1451,11 +1498,12 @@ extractRoutes.post('/', async (c) => {
   let jobRecorded = false;
   let failureMessage: string | null = null;
   const hasExternalWorker = Boolean(c.env.EXTRACT_WORKER_URL?.trim());
+  const hasLocalSam3Provider = Boolean(c.env.LOCAL_SAM3_EXTRACT_URL?.trim());
   const hasFalProvider = Boolean(c.env.FAL_KEY?.trim());
 
-  if (!hasExternalWorker && !hasFalProvider) {
+  if (!hasExternalWorker && !hasLocalSam3Provider && !hasFalProvider) {
     warnings.push(
-      'Extract worker and fal provider are not configured; job is recorded but not dispatched.'
+      'Extract worker, local SAM3 provider, and fal provider are not configured; job is recorded but not dispatched.'
     );
   }
 
@@ -1494,7 +1542,7 @@ extractRoutes.post('/', async (c) => {
         status = 'queued';
         await updateJobStatus(c.env, jobId, status);
       }
-    } else if (hasFalProvider) {
+    } else if (hasLocalSam3Provider || hasFalProvider) {
       status = await processWithFal({
         env: c.env,
         jobId,

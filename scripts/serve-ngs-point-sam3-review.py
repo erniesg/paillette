@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import io
 import json
 import mimetypes
 import os
@@ -12,7 +14,8 @@ import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, unquote_to_bytes, urlparse
+from urllib.request import Request, urlopen
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
@@ -515,6 +518,78 @@ def crop_review_box(review_dir: Path, item_id: str, box: list[int], points: list
     }
 
 
+def load_image_from_url(image_url: str):
+    from PIL import Image, ImageOps
+
+    if not image_url:
+        raise ValueError("Missing imageUrl.")
+
+    if image_url.startswith("data:"):
+        header, data = image_url.split(",", 1)
+        if ";base64" in header:
+            raw = base64.b64decode(data)
+        else:
+            raw = unquote_to_bytes(data)
+    else:
+        parsed = urlparse(image_url)
+        if parsed.scheme in {"http", "https"}:
+            request = Request(image_url, headers={"User-Agent": "paillette-local-sam3-review/1.0"})
+            with urlopen(request, timeout=90) as response:
+                raw = response.read()
+        elif parsed.scheme == "file":
+            raw = Path(unquote(parsed.path)).read_bytes()
+        else:
+            raw = Path(image_url).read_bytes()
+
+    return ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+
+
+def submit_review_decisions(review_dir: Path, payload: dict) -> dict:
+    submitted_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    output = {
+        **payload,
+        "submittedAt": payload.get("submittedAt") or submitted_at,
+    }
+    body = json.dumps(output, ensure_ascii=False, indent=2).encode("utf-8")
+    canonical = review_dir / "review-decisions.json"
+    timestamped = review_dir / f"review-decisions-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}.json"
+    canonical.write_bytes(body)
+    timestamped.write_bytes(body)
+    return {
+        "ok": True,
+        "path": canonical.name,
+        "snapshotPath": timestamped.name,
+        "bytes": len(body),
+        "submittedAt": output["submittedAt"],
+        "accepted": sum(1 for value in (payload.get("decisions") or {}).values() if value == "accept"),
+        "rejected": sum(1 for value in (payload.get("decisions") or {}).values() if value == "reject"),
+    }
+
+
+def materialize_local_extract_image(review_dir: Path, result: dict, host: str) -> dict:
+    image = result.get("image") or {}
+    image_url = str(image.get("url") or "")
+    if not image_url.startswith("data:"):
+        return result
+
+    header, data = image_url.split(",", 1)
+    if ";base64" in header:
+        raw = base64.b64decode(data)
+    else:
+        raw = unquote_to_bytes(data)
+    stamp = int(time.time() * 1000)
+    output_path = f"assets/local-sam3-extract-{stamp}.png"
+    (review_dir / output_path).write_bytes(raw)
+    result["image"] = {
+        **image,
+        "url": f"http://{host}/{output_path}",
+        "content_type": image.get("content_type") or "image/png",
+        "file_name": image.get("file_name") or Path(output_path).name,
+        "file_size": len(raw),
+    }
+    return result
+
+
 class Sam3PointRunner:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -558,6 +633,121 @@ class Sam3PointRunner:
         with self.lock:
             self.load()
             return self._api_prompt_extract_loaded(review_dir, item_id, target)
+
+    def extract_from_image_url(self, image_url: str, target: str, points: list[dict]) -> dict:
+        target = "content" if target == "content" else "object"
+        with self.lock:
+            self.load()
+            image = load_image_from_url(image_url)
+            return self._extract_image_loaded(image, target, points)
+
+    def _extract_image_loaded(self, full_image, target: str, points: list[dict]) -> dict:
+        import torch
+        from PIL import Image
+
+        full_size = full_image.size
+        preview = full_image.copy()
+        preview.thumbnail((self.args.max_dim, self.args.max_dim), Image.Resampling.LANCZOS)
+        preview_size = preview.size
+        started = time.time()
+
+        state = self.processor.set_image(preview)
+        self.processor.reset_all_prompts(state)
+
+        if points:
+            normalized_points = []
+            preview_points = []
+            for raw in points[:32]:
+                label = 1 if int(raw.get("label", 1)) == 1 else 0
+                x = float(raw["x"])
+                y = float(raw["y"])
+                nx = max(0.0, min(1.0, x / max(1, full_size[0])))
+                ny = max(0.0, min(1.0, y / max(1, full_size[1])))
+                normalized_points.append([nx, ny, label])
+                preview_points.append(
+                    {
+                        "x": int(round(nx * preview_size[0])),
+                        "y": int(round(ny * preview_size[1])),
+                        "label": label,
+                    }
+                )
+            state["backbone_out"].update(self.model.backbone.forward_text(["visual"], device=self.device))
+            state["geometric_prompt"] = self.model._get_dummy_prompt()
+            point_tensor = torch.tensor(
+                [[[point[0], point[1]]] for point in normalized_points],
+                device=self.device,
+                dtype=torch.float32,
+            )
+            label_tensor = torch.tensor(
+                [[point[2]] for point in normalized_points],
+                device=self.device,
+                dtype=torch.long,
+            )
+            state["geometric_prompt"].append_points(point_tensor, label_tensor)
+            output = self.processor._forward_grounding(state)
+        else:
+            output = self.processor.set_text_prompt(REMOTE_EXTRACT_PROMPTS[target], state)
+            preview_points = []
+
+        boxes = output.get("boxes")
+        scores = output.get("scores")
+        if boxes is None or len(boxes) == 0:
+            raise RuntimeError("Local SAM3 returned no boxes.")
+        if hasattr(boxes, "detach"):
+            boxes = boxes.detach().cpu().numpy()
+        if hasattr(scores, "detach"):
+            scores = scores.detach().cpu().numpy()
+
+        positive_points = [point for point in preview_points if point["label"] == 1]
+        negative_points = [point for point in preview_points if point["label"] == 0]
+        candidates = []
+        for index, raw_box in enumerate(boxes):
+            raw_values = raw_box.tolist() if hasattr(raw_box, "tolist") else list(raw_box)
+            box = clamp_box([int(round(value)) for value in raw_values], *preview_size)
+            score = float(scores[index]) if scores is not None and index < len(scores) else 0.0
+            area = ((box[2] - box[0]) * (box[3] - box[1])) / max(1, preview_size[0] * preview_size[1])
+            candidate = {"index": index, "box": box, "score": score, "area": area}
+            if points:
+                candidate["contains_pos"] = sum(1 for point in positive_points if box_contains_point(box, point))
+                candidate["contains_neg"] = sum(1 for point in negative_points if box_contains_point(box, point))
+            candidates.append(candidate)
+
+        if points:
+            candidates.sort(
+                key=lambda row: (
+                    row["contains_pos"],
+                    -row["contains_neg"],
+                    row["score"],
+                    -abs(row["area"] - 0.5),
+                ),
+                reverse=True,
+            )
+
+        selected = candidates[0]
+        source_box = map_box(selected["box"], preview_size, full_size)
+        crop = full_image.crop(tuple(source_box))
+        output_buffer = io.BytesIO()
+        crop.save(output_buffer, format="PNG")
+        output_bytes = output_buffer.getvalue()
+        data_url = f"data:image/png;base64,{base64.b64encode(output_bytes).decode('ascii')}"
+        return {
+            "ok": True,
+            "image": {
+                "url": data_url,
+                "content_type": "image/png",
+                "file_name": "local-sam3-output.png",
+                "file_size": len(output_bytes),
+                "width": source_box[2] - source_box[0],
+                "height": source_box[3] - source_box[1],
+            },
+            "metadata": [{"index": selected["index"], "score": selected["score"], "box": source_box}],
+            "scores": [candidate["score"] for candidate in candidates[:5]],
+            "boxes": [map_box(candidate["box"], preview_size, full_size) for candidate in candidates[:5]],
+            "provider": "local-sam3",
+            "target": target,
+            "prompt": None if points else REMOTE_EXTRACT_PROMPTS[target],
+            "seconds": round(time.time() - started, 3),
+        }
 
     def _api_prompt_extract_loaded(self, review_dir: Path, item_id: str, target: str) -> dict:
         from PIL import Image, ImageDraw, ImageOps
@@ -766,6 +956,8 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                 "/api/crop-box",
                 "/api/frame-detector",
                 "/api/local-api-sam3",
+                "/api/local-sam3-extract",
+                "/api/submit-review",
             }:
                 self.send_error(404, "Not found")
                 return
@@ -773,6 +965,27 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
             try:
                 length = int(self.headers.get("content-length", "0"))
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                if parsed.path == "/api/submit-review":
+                    self._json(200, submit_review_decisions(review_dir, payload))
+                    return
+                if parsed.path == "/api/local-sam3-extract":
+                    points = payload.get("points") or payload.get("prompts") or []
+                    if not isinstance(points, list):
+                        raise ValueError("points must be an array.")
+                    result = runner.extract_from_image_url(
+                        str(payload.get("imageUrl") or payload.get("image_url") or ""),
+                        str(payload.get("target") or "content"),
+                        points,
+                    )
+                    self._json(
+                        200,
+                        materialize_local_extract_image(
+                            review_dir,
+                            result,
+                            self.headers.get("Host", f"{self.server.server_address[0]}:{self.server.server_address[1]}"),
+                        ),
+                    )
+                    return
                 item_id = str(payload.get("id", "")).strip()
                 points = payload.get("points") or []
                 if not item_id:

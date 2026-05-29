@@ -13,3 +13,8 @@ YOUDAO_APP_SECRET=your-youdao-app-secret-here
 # Google Translate API Key (for Tamil translations)
 # Get from: https://console.cloud.google.com/apis/credentials
 GOOGLE_TRANSLATE_API_KEY=your-google-translate-key-here
+
+# Optional local image extraction provider.
+# Start scripts/serve-ngs-point-sam3-review.py, then wrangler dev can use
+# the same /api/v1/extract route while routing extraction to local SAM3.
+LOCAL_SAM3_EXTRACT_URL=http://127.0.0.1:4189/api/local-sam3-extract

@@ -57,6 +57,7 @@ export interface Env {
   ENABLE_NGS_REVIEW?: string;
   EXTRACT_WORKER_URL?: string;
   EXTRACT_WORKER_TOKEN?: string;
+  LOCAL_SAM3_EXTRACT_URL?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();

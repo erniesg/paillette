@@ -479,6 +479,74 @@ describe('extract routes', () => {
     ).toBe('Key test-fal-key');
   });
 
+  it('processes URL-backed jobs through the local SAM3 provider when configured', async () => {
+    const db = new FakeExtractDb();
+    const bucket = new FakeR2Bucket();
+    const pngBytes = new TextEncoder().encode('local-png');
+    const localFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === 'http://127.0.0.1:4189/api/local-sam3-extract') {
+        return new Response(
+          JSON.stringify({
+            image: {
+              url: 'https://local.sam3/output.png',
+              content_type: 'image/png',
+            },
+            metadata: [{ score: 0.88, box: [1, 2, 30, 40] }],
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === 'https://local.sam3/output.png') {
+        return new Response(pngBytes, {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', localFetch);
+
+    const res = await makeApp().request(
+      '/api/v1/extract',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'user-1',
+        },
+        body: JSON.stringify({
+          imageUrls: ['https://example.com/artwork.tif'],
+          target: 'content',
+        }),
+      },
+      makeEnv(db, {
+        LOCAL_SAM3_EXTRACT_URL: 'http://127.0.0.1:4189/api/local-sam3-extract',
+        IMAGES: bucket as unknown as R2Bucket,
+      })
+    );
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(202);
+    expect(data.data).toMatchObject({
+      status: 'completed',
+      target: 'content',
+      counts: { inputs: 1, processed: 1, items: 1 },
+    });
+    expect(data.data.items[0]).toMatchObject({
+      status: 'completed',
+      hasOutput: true,
+    });
+
+    const [localUrl, localInit] = localFetch.mock.calls[0]!;
+    expect(String(localUrl)).toBe('http://127.0.0.1:4189/api/local-sam3-extract');
+    expect(JSON.parse(String((localInit as RequestInit).body))).toMatchObject({
+      imageUrl: 'https://example.com/artwork.tif',
+      target: 'content',
+      points: [],
+    });
+  });
+
   it('does not send TIFF inputs directly to fal', async () => {
     const db = new FakeExtractDb();
     const falFetch = vi.fn();
