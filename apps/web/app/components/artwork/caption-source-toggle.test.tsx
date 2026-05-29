@@ -24,25 +24,34 @@ describe('CaptionSourceToggle', () => {
       />
     );
 
-    expect(screen.getByText('Roots catalogue text from the public record.')).toBeVisible();
-    expect(screen.queryByText('Generated visual caption for search.')).toBeNull();
-    expect(screen.getByRole('button', { name: /Roots catalogue/ })).toHaveAttribute(
-      'aria-pressed',
-      'true'
+    expect(
+      screen.getByText('Roots catalogue text from the public record.')
+    ).toBeVisible();
+    expect(
+      screen.queryByText('Generated visual caption for search.')
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /^Roots catalogue$/ })
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(
+      screen.getByRole('button', { name: /^Generated caption$/ })
     );
 
-    await user.click(screen.getByRole('button', { name: /Generated caption/ }));
-
-    expect(screen.getByText('Generated visual caption for search.')).toBeVisible();
-    expect(screen.getByText('Model')).toBeVisible();
     expect(
-      screen.getByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
+      screen.getByText('Generated visual caption for search.')
     ).toBeVisible();
-    expect(screen.getByText('Prompt')).toBeVisible();
-    expect(screen.getByText('cap-ngs-missing-v1')).toBeVisible();
-    expect(screen.queryByText('Roots catalogue text from the public record.')).toBeNull();
+    expect(screen.getAllByText('Model')).toHaveLength(2);
     expect(
-      screen.getByRole('button', { name: /Generated caption/ })
+      screen.getAllByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
+    ).toHaveLength(2);
+    expect(screen.getAllByText('Prompt')).toHaveLength(2);
+    expect(screen.getAllByText('cap-ngs-missing-v1')).toHaveLength(2);
+    expect(
+      screen.queryByText('Roots catalogue text from the public record.')
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /^Generated caption$/ })
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -58,6 +67,11 @@ describe('CaptionSourceToggle', () => {
 
     expect(screen.getByText('Generated caption only.')).toBeVisible();
     expect(screen.getByLabelText(/Source: Generated caption:/)).toBeVisible();
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /^Roots catalogue$/ })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /^Generated caption$/ })
+    ).toBeNull();
   });
 });

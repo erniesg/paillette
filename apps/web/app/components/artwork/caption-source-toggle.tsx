@@ -73,7 +73,11 @@ export function CaptionSourceToggle({
           <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/45">
             Caption
           </h3>
-          <SourceIndicator label={activeOption.sourceLabel} showLabel />
+          <SourceIndicator
+            label={activeOption.sourceLabel}
+            showLabel
+            details={details}
+          />
         </div>
 
         {options.length > 1 && (
