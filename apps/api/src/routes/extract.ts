@@ -20,6 +20,12 @@ type AppBindings = {
 type ExtractTarget = 'object' | 'content';
 type ExtractSourceType = 'r2' | 'url';
 
+type PointPrompt = {
+  x: number;
+  y: number;
+  label: 0 | 1;
+};
+
 type NormalizedExtractInput = {
   itemId: string;
   sourceType: ExtractSourceType;
@@ -28,6 +34,7 @@ type NormalizedExtractInput = {
   sourceUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  points: PointPrompt[];
 };
 
 type ExtractUsage = {
@@ -74,14 +81,39 @@ const FAL_POLL_ATTEMPTS = 45;
 const FAL_POLL_INTERVAL_MS = 1000;
 const EXTRACT_PREFIX = 'extract';
 
-const CreateExtractJsonSchema = z.object({
-  imageUrls: z.array(z.string().url()).min(1).max(MAX_INPUTS),
-  target: z.enum(TARGETS).optional().default(DEFAULT_TARGET),
-  preserveFilenames: z.boolean().optional().default(true),
-  filenamePrefix: z.string().trim().max(80).optional().default(''),
-  filenameSuffix: z.string().trim().max(80).optional().default(''),
-  preview: z.boolean().optional().default(false),
+const PointPromptSchema = z.object({
+  x: z.number().finite().nonnegative(),
+  y: z.number().finite().nonnegative(),
+  label: z.union([z.literal(0), z.literal(1)]),
 });
+
+const CreateExtractItemSchema = z.object({
+  imageUrl: z.string().url(),
+  originalFilename: z.string().trim().max(180).optional(),
+  points: z.array(PointPromptSchema).max(32).optional().default([]),
+});
+
+const CreateExtractJsonSchema = z
+  .object({
+    imageUrls: z.array(z.string().url()).min(1).max(MAX_INPUTS).optional(),
+    items: z.array(CreateExtractItemSchema).min(1).max(MAX_INPUTS).optional(),
+    target: z.enum(TARGETS).optional().default(DEFAULT_TARGET),
+    preserveFilenames: z.boolean().optional().default(true),
+    filenamePrefix: z.string().trim().max(80).optional().default(''),
+    filenameSuffix: z.string().trim().max(80).optional().default(''),
+    preview: z.boolean().optional().default(false),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.imageUrls?.length && !data.items?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide imageUrls or items.',
+        path: ['imageUrls'],
+      });
+    }
+  });
+
+type ExtractJsonInputItem = z.infer<typeof CreateExtractItemSchema>;
 
 const supportedUploadTypes = new Set([
   'image/avif',
@@ -716,27 +748,40 @@ const runFalSam3 = async ({
   key,
   imageUrl,
   target,
+  points,
 }: {
   key: string;
   imageUrl: string;
   target: ExtractTarget;
+  points?: PointPrompt[];
 }) => {
+  const input: Record<string, unknown> = {
+    image_url: imageUrl,
+    apply_mask: true,
+    output_format: 'png',
+    return_multiple_masks: true,
+    max_masks: 3,
+    include_scores: true,
+    include_boxes: true,
+  };
+
+  if (points?.length) {
+    input.prompts = points.map((point) => ({
+      x: point.x,
+      y: point.y,
+      label: point.label,
+    }));
+  } else {
+    input.prompt = getFalPrompt(target);
+  }
+
   const submission = await falFetchJson<{
     request_id?: string;
     response_url?: string;
     status_url?: string;
   }>(FAL_QUEUE_BASE, key, {
     method: 'POST',
-    body: JSON.stringify({
-      image_url: imageUrl,
-      prompt: getFalPrompt(target),
-      apply_mask: true,
-      output_format: 'png',
-      return_multiple_masks: true,
-      max_masks: 3,
-      include_scores: true,
-      include_boxes: true,
-    }),
+    body: JSON.stringify(input),
   });
 
   if (!submission.request_id && !submission.response_url) {
@@ -1039,7 +1084,12 @@ const processWithFal = async ({
     try {
       assertFalCompatibleInput(input);
       const imageUrl = await resolveFalInputUrl(env, input);
-      const result = await runFalSam3({ key: falKey, imageUrl, target });
+      const result = await runFalSam3({
+        key: falKey,
+        imageUrl,
+        target,
+        points: input.points,
+      });
       const selected = selectFalOutput(result);
       const outputImage = await fetchFalImage(selected.output);
       const outputName = getUniqueName(
@@ -1174,6 +1224,7 @@ const dispatchToWorker = async ({
         originalFilename: input.originalFilename,
         mimeType: input.mimeType,
         sizeBytes: input.sizeBytes,
+        points: input.points,
       })),
     }),
   });
@@ -1186,17 +1237,29 @@ const dispatchToWorker = async ({
 };
 
 const normalizeJsonInputs = (
-  imageUrls: string[]
-): NormalizedExtractInput[] =>
-  imageUrls.map((url, index) => ({
+  body: z.infer<typeof CreateExtractJsonSchema>
+): NormalizedExtractInput[] => {
+  const items: ExtractJsonInputItem[] =
+    body.items ??
+    body.imageUrls?.map((imageUrl) => ({
+      imageUrl,
+      points: [] as PointPrompt[],
+    })) ??
+    [];
+
+  return items.map((item, index) => ({
     itemId: generateId(),
     sourceType: 'url',
-    originalFilename: filenameFromUrl(url, index),
+    originalFilename: item.originalFilename
+      ? sanitizeFilename(item.originalFilename)
+      : filenameFromUrl(item.imageUrl, index),
     inputKey: null,
-    sourceUrl: url,
+    sourceUrl: item.imageUrl,
     mimeType: null,
     sizeBytes: null,
+    points: item.points ?? [],
   }));
+};
 
 const normalizeMultipartInputs = async (
   env: Env,
@@ -1260,6 +1323,7 @@ const normalizeMultipartInputs = async (
       sourceUrl: null,
       mimeType: file.type || 'application/octet-stream',
       sizeBytes: file.size,
+      points: [],
     });
   }
 
@@ -1348,7 +1412,7 @@ extractRoutes.post('/', async (c) => {
     filenamePrefix = parsed.data.filenamePrefix;
     filenameSuffix = parsed.data.filenameSuffix;
     preview = parsed.data.preview;
-    inputs = normalizeJsonInputs(parsed.data.imageUrls);
+    inputs = normalizeJsonInputs(parsed.data);
   }
 
   if (!Array.isArray(inputs)) {
