@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 const imageRequire = createRequire(
@@ -63,17 +59,23 @@ console.log(
     `rows=${rows.length}`,
     `appDb=${options.appDb}`,
     `imageDir=${options.imageDir}`,
-    options.fetchMissing ? `fetchMissing=${options.fetchRole}` : 'localOnly=true',
+    options.fetchMissing
+      ? `fetchMissing=${options.fetchRole}`
+      : 'localOnly=true',
   ].join(' ')
 );
 
-const results = await mapLimit(rows, options.concurrency, async (row, index) => {
-  const result = await auditRow(row);
-  if ((index + 1) % 250 === 0) {
-    console.log(`processed=${index + 1}/${rows.length}`);
+const results = await mapLimit(
+  rows,
+  options.concurrency,
+  async (row, index) => {
+    const result = await auditRow(row);
+    if ((index + 1) % 250 === 0) {
+      console.log(`processed=${index + 1}/${rows.length}`);
+    }
+    return result;
   }
-  return result;
-});
+);
 
 const summary = summarize(results, startedAt);
 writeJson(join(options.outDir, 'summary.json'), summary);
@@ -110,6 +112,7 @@ await writeContactSheet(
   join(options.outDir, 'needs-review.jpg'),
   options.contactSheetLimit
 );
+writeColorCardCandidateFiles(results, options.outDir);
 
 console.log(
   [
@@ -221,6 +224,10 @@ async function auditRow(row) {
       outerStats: analysis.outerStats,
       colorCardSignal: analysis.colorCardSignal,
       sourceSignals: sourceSignals(row),
+      extractionHints: extractionHints(
+        classification.reasons,
+        sourceSignals(row)
+      ),
       sam3Priority:
         classification.decision === 'route_sam3'
           ? sam3Priority(classification.reasons)
@@ -369,10 +376,20 @@ function scanUniformMargin(data, width, height, side, ref) {
       side === 'top'
         ? [0, offset, width, Math.min(step, height - offset)]
         : side === 'bottom'
-          ? [0, Math.max(0, height - offset - step), width, Math.min(step, height)]
+          ? [
+              0,
+              Math.max(0, height - offset - step),
+              width,
+              Math.min(step, height),
+            ]
           : side === 'left'
             ? [offset, 0, Math.min(step, width - offset), height]
-            : [Math.max(0, width - offset - step), 0, Math.min(step, width), height];
+            : [
+                Math.max(0, width - offset - step),
+                0,
+                Math.min(step, width),
+                height,
+              ];
 
     const stats = statsForRect(data, width, height, ...rect);
     const colorDistance = distance(stats, ref);
@@ -403,8 +420,16 @@ function classify(row, analysis, metadata) {
   const is2d = isLikely2d(row);
   const isObject = isLikelyObject(row);
   const source = sourceSignals(row);
+  const strongColorCardSignal = analysis.colorCardSignal.score >= 0.72;
+  const contextualColorCardSignal =
+    analysis.colorCardSignal.score >= 0.4 &&
+    ((outer.lumaMedian <= 30 && maxMargin >= 0.035) ||
+      (outer.lumaMedian >= 226 &&
+        maxMargin >= 0.055 &&
+        outer.stdMedian <= 24) ||
+      (sidesOver7 >= 2 && outer.stdMedian <= 26));
 
-  if (analysis.colorCardSignal.score >= 0.72) {
+  if (strongColorCardSignal || contextualColorCardSignal) {
     reasons.push('possible_color_card_or_calibration_target');
   }
   if (outer.lumaMedian <= 30 && maxMargin >= 0.035) {
@@ -447,8 +472,9 @@ function classify(row, analysis, metadata) {
     reasons.includes('possible_white_mat_or_scanner_surround') ||
     reasons.includes('possible_nonwhite_uniform_surround') ||
     reasons.includes('possible_color_card_or_calibration_target');
-  const colorCardSignal = analysis.colorCardSignal.score >= 0.72;
-  const highRisk = reasons.includes('candidate_crop_aggressive') || colorCardSignal;
+  const colorCardSignal = strongColorCardSignal || contextualColorCardSignal;
+  const highRisk =
+    reasons.includes('candidate_crop_aggressive') || colorCardSignal;
 
   let decision = 'use_original';
   let confidence = 0.15;
@@ -457,7 +483,9 @@ function classify(row, analysis, metadata) {
     return {
       decision,
       confidence: 0.82,
-      reasons: reasons.filter((reason) => reason !== 'candidate_crop_nearly_full_image'),
+      reasons: reasons.filter(
+        (reason) => reason !== 'candidate_crop_nearly_full_image'
+      ),
     };
   }
 
@@ -472,7 +500,11 @@ function classify(row, analysis, metadata) {
       Math.min(0.22, maxMargin * 1.2) +
       (is2d ? 0.1 : 0) +
       (source.hasFrameOrMountMeasure ? 0.08 : 0) +
-      (analysis.colorCardSignal.score >= 0.58 ? 0.12 : 0);
+      (analysis.colorCardSignal.score >= 0.58
+        ? 0.12
+        : colorCardSignal
+          ? 0.08
+          : 0);
   }
 
   if (decision === 'use_original') {
@@ -481,6 +513,20 @@ function classify(row, analysis, metadata) {
   }
 
   return { decision, confidence: clamp(confidence, 0, 0.98), reasons };
+}
+
+function extractionHints(reasons, source) {
+  const needsStraightening =
+    source.hasFrameOrMountMeasure &&
+    (reasons.includes('possible_color_card_or_calibration_target') ||
+      reasons.includes('possible_black_capture_surround') ||
+      reasons.includes('possible_nonwhite_uniform_surround'));
+  return {
+    needsStraightening,
+    note: needsStraightening
+      ? 'Photo-capture artifact likely; crop should exclude calibration target/surround and deskew the artwork plane if tilted.'
+      : null,
+  };
 }
 
 function sourceSignals(row) {
@@ -773,12 +819,17 @@ function summarize(results, generatedAt) {
       sam3High: results.filter((row) => row.sam3Priority === 'high').length,
       sam3Medium: results.filter((row) => row.sam3Priority === 'medium').length,
       sam3Low: results.filter((row) => row.sam3Priority === 'low').length,
-      cheapCandidates: results.filter((row) => row.decision === 'cheap_candidate')
+      cheapCandidates: results.filter(
+        (row) => row.decision === 'cheap_candidate'
+      ).length,
+      useOriginal: results.filter((row) => row.decision === 'use_original')
         .length,
-      useOriginal: results.filter((row) => row.decision === 'use_original').length,
-      needsReview: results.filter((row) => row.decision === 'needs_review').length,
-      localCache: results.filter((row) => row.imageRef?.source === 'local_cache')
+      needsReview: results.filter((row) => row.decision === 'needs_review')
         .length,
+      colorCardCandidates: colorCardCandidateRows(results).length,
+      localCache: results.filter(
+        (row) => row.imageRef?.source === 'local_cache'
+      ).length,
       fetched: results.filter((row) => row.imageRef?.source === 'remote_asset')
         .length,
     },
@@ -794,6 +845,15 @@ function summarize(results, generatedAt) {
       cheapCandidatesSheet: join(options.outDir, 'cheap-candidates.jpg'),
       sam3QueueSheet: join(options.outDir, 'sam3-queue.jpg'),
       needsReviewSheet: join(options.outDir, 'needs-review.jpg'),
+      colorCardCandidates: join(options.outDir, 'colour-card-candidates.json'),
+      colorCardCandidatesTsv: join(
+        options.outDir,
+        'colour-card-candidates.tsv'
+      ),
+      colorCardCandidatesHtml: join(
+        options.outDir,
+        'colour-card-candidates.html'
+      ),
     },
     notes: [
       'This audit is read-only. It does not write processed assets, crop images, update D1, or upsert Vectorize.',
@@ -801,6 +861,154 @@ function summarize(results, generatedAt) {
       'Image embeddings should be regenerated after accepted extraction decisions are materialized additively.',
     ],
   };
+}
+
+function colorCardCandidateRows(results) {
+  return results
+    .filter(
+      (row) =>
+        row.reasons?.includes('possible_color_card_or_calibration_target') ||
+        row.colorCardSignal?.score >= 0.4
+    )
+    .sort((left, right) => {
+      const reasonDiff =
+        Number(
+          right.reasons?.includes(
+            'possible_color_card_or_calibration_target'
+          ) || false
+        ) -
+        Number(
+          left.reasons?.includes('possible_color_card_or_calibration_target') ||
+            false
+        );
+      if (reasonDiff) return reasonDiff;
+      return (
+        (right.colorCardSignal?.score || 0) - (left.colorCardSignal?.score || 0)
+      );
+    });
+}
+
+function writeColorCardCandidateFiles(results, outDir) {
+  const rows = colorCardCandidateRows(results).map(stripPrivate);
+  writeJson(join(outDir, 'colour-card-candidates.json'), rows);
+  writeFileSync(
+    join(outDir, 'colour-card-candidates.tsv'),
+    [
+      [
+        'artwork_id',
+        'title',
+        'artist',
+        'decision',
+        'confidence',
+        'color_card_score',
+        'saturated_cells',
+        'hue_bins',
+        'needs_straightening',
+        'reasons',
+        'source_url',
+      ].join('\t'),
+      ...rows.map((row) =>
+        [
+          row.artworkId,
+          row.title,
+          row.artist,
+          row.decision,
+          row.confidence,
+          row.colorCardSignal?.score,
+          row.colorCardSignal?.saturatedCells,
+          row.colorCardSignal?.hueBins,
+          row.extractionHints?.needsStraightening ? 'yes' : 'no',
+          row.reasons?.join(', '),
+          row.sourceUrl,
+        ]
+          .map((value) =>
+            String(value ?? '')
+              .replace(/\s+/g, ' ')
+              .trim()
+          )
+          .join('\t')
+      ),
+    ].join('\n') + '\n'
+  );
+  writeFileSync(
+    join(outDir, 'colour-card-candidates.html'),
+    colorCardHtml(rows)
+  );
+}
+
+function colorCardHtml(rows) {
+  const cards = rows
+    .map((row) => {
+      const imageSrc = row.imageRef?.path
+        ? pathToFileURL(resolve(row.imageRef.path)).href
+        : '';
+      const flagged = row.reasons?.includes(
+        'possible_color_card_or_calibration_target'
+      );
+      return `
+        <article class="card ${flagged ? 'flagged' : 'weak'}">
+          <a class="image" href="${escapeAttr(imageSrc)}" target="_blank" rel="noreferrer">
+            <img src="${escapeAttr(imageSrc)}" loading="lazy" alt="${escapeAttr(row.title || row.artworkId)}">
+          </a>
+          <div class="body">
+            <div class="topline">
+              <h2>${escapeXml(row.artworkId)}</h2>
+              <span>${escapeXml(row.decision)}</span>
+            </div>
+            <h3>${escapeXml(row.title || '[Untitled]')}</h3>
+            <p>${escapeXml(row.artist || '')}</p>
+            <dl>
+              <div><dt>colour-card score</dt><dd>${escapeXml(row.colorCardSignal?.score ?? 0)}</dd></div>
+              <div><dt>cells / hues</dt><dd>${escapeXml(`${row.colorCardSignal?.saturatedCells ?? 0} / ${row.colorCardSignal?.hueBins ?? 0}`)}</dd></div>
+              <div><dt>straighten</dt><dd>${row.extractionHints?.needsStraightening ? 'yes' : 'no'}</dd></div>
+            </dl>
+            <p class="reasons">${escapeXml(row.reasons?.join(', ') || '')}</p>
+            <a class="source" href="${escapeAttr(row.sourceUrl || '')}" target="_blank" rel="noreferrer">source</a>
+          </div>
+        </article>`;
+    })
+    .join('\n');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NGS Colour Calibration Candidate Audit</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #09090b; color: #f4f4f5; }
+    body { margin: 0; padding: 32px; }
+    header { max-width: 1120px; margin: 0 auto 24px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .sub { margin: 0; color: #a1a1aa; line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; max-width: 1500px; margin: 0 auto; }
+    .card { overflow: hidden; border: 1px solid #27272a; border-radius: 10px; background: #111113; }
+    .card.flagged { border-color: rgba(250, 204, 21, 0.55); }
+    .card.weak { border-color: rgba(148, 163, 184, 0.35); }
+    .image { display: flex; align-items: center; justify-content: center; min-height: 260px; background: #050506; }
+    img { display: block; max-width: 100%; max-height: 420px; object-fit: contain; }
+    .body { padding: 14px; }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h2 { margin: 0; font: 700 18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    h3 { margin: 10px 0 4px; font-size: 17px; }
+    p { margin: 0; color: #a1a1aa; }
+    dl { display: grid; gap: 6px; margin: 14px 0; }
+    dl div { display: flex; justify-content: space-between; gap: 12px; }
+    dt { color: #71717a; text-transform: uppercase; letter-spacing: .12em; font-size: 10px; }
+    dd { margin: 0; color: #e4e4e7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .reasons { color: #facc15; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; }
+    .source { display: inline-block; margin-top: 12px; color: #93c5fd; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NGS colour calibration candidate audit</h1>
+    <p class="sub">The "colour palette thing" is a colour calibration target / ColorChecker. Strong matches are highlighted; weak matches are included so top-mounted or small charts like <code>2009-01799</code> do not disappear from review.</p>
+    <p class="sub">${rows.length} candidates. Generated ${escapeXml(new Date().toISOString())}.</p>
+  </header>
+  <main class="grid">${cards}</main>
+</body>
+</html>`;
 }
 
 function countBy(items, fn) {
@@ -862,9 +1070,7 @@ function median(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 function safeFileName(value) {
@@ -877,7 +1083,14 @@ function escapeXml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/\n/g, '</text><text x="10" dy="16" font-family="Arial, sans-serif" font-size="13" fill="#111">');
+    .replace(
+      /\n/g,
+      '</text><text x="10" dy="16" font-family="Arial, sans-serif" font-size="13" fill="#111">'
+    );
+}
+
+function escapeAttr(value) {
+  return escapeXml(value).replace(/'/g, '&#39;');
 }
 
 function round(value, digits = 4) {
