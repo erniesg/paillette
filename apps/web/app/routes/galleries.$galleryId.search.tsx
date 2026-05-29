@@ -2167,6 +2167,8 @@ const getArtworkImageUrl = (
 const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
   artwork ? getArtworkImageUrl(artwork, 'thumbnail') : null;
 
+const SHOWCASE_TRANSITION_MS = 420;
+
 const preloadShowcaseImage = (src: string) =>
   new Promise<void>((resolve) => {
     const image = new Image();
@@ -2200,6 +2202,55 @@ const preloadShowcaseImage = (src: string) =>
     }
   });
 
+type ShowcaseLayerModel = {
+  key: string;
+  works: ArtworkSearchResult[];
+};
+
+const getShowcaseItems = (works: ArtworkSearchResult[]) =>
+  Array.from({ length: 4 }, (_, index) => works[index] ?? null);
+
+type ShowcaseLayoutItem = {
+  top?: string;
+  right?: string;
+  bottom?: string;
+  left?: string;
+  width: string;
+  rotate: number;
+  mobile: boolean;
+};
+
+const SHOWCASE_LAYOUT: ShowcaseLayoutItem[] = [
+  {
+    top: '8%',
+    left: '7%',
+    width: 'clamp(9rem, 15vw, 18rem)',
+    rotate: -2,
+    mobile: true,
+  },
+  {
+    top: '8%',
+    right: '8%',
+    width: 'clamp(9rem, 15vw, 18rem)',
+    rotate: 2,
+    mobile: true,
+  },
+  {
+    bottom: '8%',
+    left: '10%',
+    width: 'clamp(8rem, 13vw, 16rem)',
+    rotate: 1.5,
+    mobile: false,
+  },
+  {
+    bottom: '8%',
+    right: '11%',
+    width: 'clamp(8rem, 13vw, 16rem)',
+    rotate: -1.5,
+    mobile: false,
+  },
+];
+
 const IdleShowcaseBackdrop = forwardRef<
   HTMLDivElement,
   {
@@ -2208,7 +2259,6 @@ const IdleShowcaseBackdrop = forwardRef<
     onSelectArtwork: (artwork: ArtworkSearchResult) => void;
   }
 >(function IdleShowcaseBackdrop({ artworks, isLoading, onSelectArtwork }, ref) {
-  const stageRef = useRef<HTMLDivElement | null>(null);
   const transitionRunRef = useRef(0);
   const previewWorks = useMemo(
     () =>
@@ -2222,61 +2272,36 @@ const IdleShowcaseBackdrop = forwardRef<
         .join('|'),
     [previewWorks]
   );
-  const displayedKeyRef = useRef(previewKey);
-  const [displayedWorks, setDisplayedWorks] =
-    useState<ArtworkSearchResult[]>(previewWorks);
-  const [stageVersion, setStageVersion] = useState(0);
-  const previewItems = Array.from(
-    { length: 4 },
-    (_, index) => displayedWorks[index] ?? null
+  const committedKeyRef = useRef(previewKey);
+  const [committedLayer, setCommittedLayer] = useState<ShowcaseLayerModel>(
+    () => ({ key: previewKey, works: previewWorks })
   );
-  const previewLayout = [
-    {
-      top: '8%',
-      left: '7%',
-      width: 'clamp(9rem, 15vw, 18rem)',
-      rotate: -2,
-      mobile: true,
-    },
-    {
-      top: '8%',
-      right: '8%',
-      width: 'clamp(9rem, 15vw, 18rem)',
-      rotate: 2,
-      mobile: true,
-    },
-    {
-      bottom: '8%',
-      left: '10%',
-      width: 'clamp(8rem, 13vw, 16rem)',
-      rotate: 1.5,
-      mobile: false,
-    },
-    {
-      bottom: '8%',
-      right: '11%',
-      width: 'clamp(8rem, 13vw, 16rem)',
-      rotate: -1.5,
-      mobile: false,
-    },
-  ];
+  const [incomingLayer, setIncomingLayer] =
+    useState<ShowcaseLayerModel | null>(null);
+  const [isCrossfading, setIsCrossfading] = useState(false);
 
   useEffect(() => {
     if (!previewWorks.length) {
       transitionRunRef.current += 1;
-      displayedKeyRef.current = '';
-      setDisplayedWorks([]);
-      setStageVersion((version) => version + 1);
+      committedKeyRef.current = '';
+      setCommittedLayer({ key: '', works: [] });
+      setIncomingLayer(null);
+      setIsCrossfading(false);
       return undefined;
     }
 
-    if (previewKey === displayedKeyRef.current) return undefined;
+    if (previewKey === committedKeyRef.current) return undefined;
 
     let cancelled = false;
+    let revealFrame = 0;
+    let promoteTimeout = 0;
     const runId = transitionRunRef.current + 1;
     transitionRunRef.current = runId;
 
     const transitionToBufferedWorks = async () => {
+      setIncomingLayer(null);
+      setIsCrossfading(false);
+
       await Promise.allSettled(
         previewWorks
           .map(getShowcaseImageUrl)
@@ -2286,82 +2311,43 @@ const IdleShowcaseBackdrop = forwardRef<
 
       if (cancelled || runId !== transitionRunRef.current) return;
 
-      const stage = stageRef.current;
       const reduceMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)'
       ).matches;
+      const nextLayer = { key: previewKey, works: previewWorks };
 
-      if (stage && !reduceMotion && displayedKeyRef.current) {
-        const { gsap } = await import('gsap');
-        if (cancelled || runId !== transitionRunRef.current) return;
-
-        const works = Array.from(
-          stage.querySelectorAll('[data-showcase-work]')
-        );
-
-        if (works.length) {
-          await new Promise<void>((resolve) => {
-            gsap.to(works, {
-              autoAlpha: 0,
-              y: -10,
-              scale: 0.985,
-              duration: 0.32,
-              ease: 'power2.out',
-              overwrite: 'auto',
-              onComplete: resolve,
-            });
-          });
-        }
+      if (reduceMotion) {
+        committedKeyRef.current = previewKey;
+        setCommittedLayer(nextLayer);
+        setIncomingLayer(null);
+        setIsCrossfading(false);
+        return;
       }
 
-      if (cancelled || runId !== transitionRunRef.current) return;
-      displayedKeyRef.current = previewKey;
-      setDisplayedWorks(previewWorks);
-      setStageVersion((version) => version + 1);
+      setIncomingLayer(nextLayer);
+      revealFrame = window.requestAnimationFrame(() => {
+        if (cancelled || runId !== transitionRunRef.current) return;
+
+        setIsCrossfading(true);
+        promoteTimeout = window.setTimeout(() => {
+          if (cancelled || runId !== transitionRunRef.current) return;
+
+          committedKeyRef.current = previewKey;
+          setCommittedLayer(nextLayer);
+          setIncomingLayer(null);
+          setIsCrossfading(false);
+        }, SHOWCASE_TRANSITION_MS);
+      });
     };
 
     void transitionToBufferedWorks();
 
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(revealFrame);
+      window.clearTimeout(promoteTimeout);
     };
   }, [previewKey, previewWorks]);
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage || !displayedWorks.length) return undefined;
-
-    let animation: { kill: () => void } | undefined;
-    let cancelled = false;
-
-    void import('gsap').then(({ gsap }) => {
-      if (cancelled || !stageRef.current) return;
-
-      const reduceMotion = window.matchMedia(
-        '(prefers-reduced-motion: reduce)'
-      ).matches;
-      if (reduceMotion) return;
-
-      const works = Array.from(
-        stageRef.current.querySelectorAll('[data-showcase-work]')
-      );
-
-      gsap.set(works, { autoAlpha: 0, y: 14, scale: 0.985 });
-      animation = gsap.to(works, {
-        autoAlpha: 1,
-        y: 0,
-        scale: 1,
-        duration: 0.52,
-        ease: 'power3.out',
-        overwrite: 'auto',
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      animation?.kill();
-    };
-  }, [displayedWorks.length, stageVersion]);
 
   return (
     <div
@@ -2369,80 +2355,123 @@ const IdleShowcaseBackdrop = forwardRef<
       className="absolute inset-0 overflow-hidden bg-[#0b0b0e]"
       aria-label="Suggested artworks"
     >
-      <div ref={stageRef} className="pointer-events-none absolute inset-0">
-        {previewItems.map((artwork, index) => {
-          const layout = previewLayout[index];
-          const imageUrl = getShowcaseImageUrl(artwork);
-          const title = artwork ? getDisplayTitle(artwork) : 'Artwork';
-          const artist = artwork ? getPublicArtist(artwork) : null;
-
-          return (
-            <button
-              key={artwork?.id || `showcase-${index}`}
-              type="button"
-              data-showcase-work="true"
-              disabled={!artwork}
-              onClick={() => {
-                if (artwork) onSelectArtwork(artwork);
-              }}
-              className={`group pointer-events-auto absolute flex w-fit justify-center overflow-hidden text-left shadow-2xl outline-none transition-transform duration-300 hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-fuchsia-300 ${
-                layout?.mobile ? '' : 'hidden md:block'
-              }`}
-              aria-label={`View ${title}`}
-              title={
-                artwork ? `${title}${artist ? ` - ${artist}` : ''}` : undefined
-              }
-              style={{
-                top: layout?.top,
-                right: layout?.right,
-                bottom: layout?.bottom,
-                left: layout?.left,
-                maxWidth: layout?.width,
-                transform: `rotate(${layout?.rotate || 0}deg)`,
-              }}
-            >
-              {imageUrl ? (
-                <span className="relative block w-fit max-w-full overflow-hidden">
-                  <ImageWithFallback
-                    src={imageUrl}
-                    alt=""
-                    loading="eager"
-                    decoding="async"
-                    className="block max-w-full object-contain"
-                    style={{ height: 'min(22vh, 20rem)', width: 'auto' }}
-                    fallback={
-                      <div
-                        className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
-                          isLoading ? 'animate-pulse' : ''
-                        }`}
-                      />
-                    }
-                  />
-                  <span className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 max-w-full overflow-hidden bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 opacity-95 transition duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
-                    <span className="line-clamp-2 max-w-full whitespace-normal break-words text-xs font-semibold leading-tight text-white drop-shadow [overflow-wrap:anywhere]">
-                      {title}
-                    </span>
-                    {artist && (
-                      <span className="mt-1 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-tight text-white/72 drop-shadow">
-                        {artist}
-                      </span>
-                    )}
-                  </span>
-                </span>
-              ) : (
-                <div
-                  className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
-                    isLoading ? 'animate-pulse' : ''
-                  }`}
-                />
-              )}
-            </button>
-          );
-        })}
+      <div className="pointer-events-none absolute inset-0">
+        <IdleShowcaseLayer
+          layer={committedLayer}
+          isLoading={isLoading}
+          isVisible={!incomingLayer || !isCrossfading}
+          layout={SHOWCASE_LAYOUT}
+          onSelectArtwork={onSelectArtwork}
+        />
+        {incomingLayer && (
+          <IdleShowcaseLayer
+            layer={incomingLayer}
+            isLoading={isLoading}
+            isVisible={isCrossfading}
+            layout={SHOWCASE_LAYOUT}
+            onSelectArtwork={onSelectArtwork}
+          />
+        )}
       </div>
     </div>
   );
 });
+
+function IdleShowcaseLayer({
+  layer,
+  isLoading,
+  isVisible,
+  layout,
+  onSelectArtwork,
+}: {
+  layer: ShowcaseLayerModel;
+  isLoading: boolean;
+  isVisible: boolean;
+  layout: ShowcaseLayoutItem[];
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  return (
+    <div
+      className={`absolute inset-0 transition-[opacity,transform] duration-[420ms] ease-out ${
+        isVisible
+          ? 'translate-y-0 scale-100 opacity-100'
+          : 'translate-y-3 scale-[0.985] opacity-0'
+      }`}
+      aria-hidden={!isVisible}
+      data-showcase-layer={layer.key || 'empty'}
+    >
+      {getShowcaseItems(layer.works).map((artwork, index) => {
+        const itemLayout = layout[index];
+        const imageUrl = getShowcaseImageUrl(artwork);
+        const title = artwork ? getDisplayTitle(artwork) : 'Artwork';
+        const artist = artwork ? getPublicArtist(artwork) : null;
+
+        return (
+          <button
+            key={artwork?.id || `showcase-${index}`}
+            type="button"
+            data-showcase-work="true"
+            disabled={!artwork || !isVisible}
+            onClick={() => {
+              if (artwork) onSelectArtwork(artwork);
+            }}
+            className={`group pointer-events-auto absolute flex w-fit justify-center overflow-hidden text-left shadow-2xl outline-none transition-transform duration-300 hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-fuchsia-300 ${
+              itemLayout?.mobile ? '' : 'hidden md:block'
+            }`}
+            aria-label={`View ${title}`}
+            title={
+              artwork ? `${title}${artist ? ` - ${artist}` : ''}` : undefined
+            }
+            style={{
+              top: itemLayout?.top,
+              right: itemLayout?.right,
+              bottom: itemLayout?.bottom,
+              left: itemLayout?.left,
+              maxWidth: itemLayout?.width,
+              transform: `rotate(${itemLayout?.rotate || 0}deg)`,
+            }}
+          >
+            {imageUrl ? (
+              <span className="relative block w-fit max-w-full overflow-hidden">
+                <ImageWithFallback
+                  src={imageUrl}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                  className="block max-w-full object-contain"
+                  style={{ height: 'min(22vh, 20rem)', width: 'auto' }}
+                  fallback={
+                    <div
+                      className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
+                        isLoading ? 'animate-pulse' : ''
+                      }`}
+                    />
+                  }
+                />
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 max-w-full overflow-hidden bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 opacity-95 transition duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span className="line-clamp-2 max-w-full whitespace-normal break-words text-xs font-semibold leading-tight text-white drop-shadow [overflow-wrap:anywhere]">
+                    {title}
+                  </span>
+                  {artist && (
+                    <span className="mt-1 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-tight text-white/72 drop-shadow">
+                      {artist}
+                    </span>
+                  )}
+                </span>
+              </span>
+            ) : (
+              <div
+                className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
+                  isLoading ? 'animate-pulse' : ''
+                }`}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function SearchArtworkDialog({
   artwork,
