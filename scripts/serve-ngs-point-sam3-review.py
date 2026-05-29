@@ -165,6 +165,41 @@ def choose_axis_line(
     ]
     if strong:
         selected = strong[0]
+        estimate_to_selected = abs(selected["position"] - estimate)
+        inward = (
+            (side in {"left", "top"} and selected["position"] > estimate)
+            or (side in {"right", "bottom"} and selected["position"] < estimate)
+        )
+        if inward and estimate_to_selected >= 6:
+            lo = min(estimate, selected["position"])
+            hi = max(estimate, selected["position"])
+            if orientation == "vertical":
+                strip = gray[span_lo:span_hi, lo:hi]
+                strip_gradient = gradient[span_lo:span_hi, lo:hi]
+            else:
+                strip = gray[lo:hi, span_lo:span_hi]
+                strip_gradient = gradient[lo:hi, span_lo:span_hi]
+
+            if strip.size and strip_gradient.size:
+                quiet_border = {
+                    "mean_luma": round(float(np.mean(strip)), 6),
+                    "std_luma": round(float(np.std(strip)), 6),
+                    "dark_frac": round(float(np.mean(strip < 80)), 6),
+                    "edge": round(float(np.mean(strip_gradient)), 6),
+                }
+                if (
+                    quiet_border["mean_luma"] >= 150
+                    and quiet_border["dark_frac"] <= 0.04
+                    and quiet_border["std_luma"] <= 32
+                    and quiet_border["edge"] <= 90
+                ):
+                    return {
+                        "position": int(round(estimate)),
+                        "kind": "point_estimate_quiet_border",
+                        "selected": selected,
+                        "quietBorder": quiet_border,
+                        "candidates": candidates[:8],
+                    }
         return {
             "position": selected["position"],
             "kind": "edge",
@@ -274,6 +309,46 @@ def snap_rectangle(review_dir: Path, item_id: str, points: list[dict]) -> dict:
             "xRadius": x_radius,
             "yRadius": y_radius,
         },
+        "seconds": round(time.time() - started, 3),
+    }
+
+
+def crop_review_box(review_dir: Path, item_id: str, box: list[int], points: list[dict] | None = None) -> dict:
+    from PIL import Image, ImageDraw, ImageOps
+
+    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing original asset for {item_id}")
+
+    started = time.time()
+    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    width, height = image.size
+    source_box = clamp_box(box, width, height)
+
+    crop = image.crop(tuple(source_box))
+    stamp = int(time.time() * 1000)
+    crop_url_path = f"assets/{item_id}-manual-crop.jpg"
+    crop.save(review_dir / crop_url_path, format="JPEG", quality=94)
+
+    overlay = image.copy()
+    draw = ImageDraw.Draw(overlay)
+    draw.rectangle(source_box, outline=(255, 156, 45), width=5)
+    for point in (points or [])[:32]:
+        x = int(round(float(point["x"])))
+        y = int(round(float(point["y"])))
+        label = int(point.get("label", 1))
+        color = (35, 192, 107) if label == 1 else (255, 90, 106)
+        draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill=color, outline=(255, 255, 255), width=2)
+    overlay_url_path = f"assets/{item_id}-manual-overlay.jpg"
+    overlay.save(review_dir / overlay_url_path, format="JPEG", quality=92)
+
+    return {
+        "ok": True,
+        "id": item_id,
+        "method": "manual-rectangle",
+        "box": source_box,
+        "cropUrl": f"{crop_url_path}?v={stamp}",
+        "overlayUrl": f"{overlay_url_path}?v={stamp}",
         "seconds": round(time.time() - started, 3),
     }
 
@@ -444,7 +519,7 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
 
         def do_POST(self):
             parsed = urlparse(self.path)
-            if parsed.path not in {"/api/segment", "/api/snap-rectangle"}:
+            if parsed.path not in {"/api/segment", "/api/snap-rectangle", "/api/crop-box"}:
                 self.send_error(404, "Not found")
                 return
 
@@ -457,7 +532,12 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     raise ValueError("Missing id.")
                 if not isinstance(points, list):
                     raise ValueError("points must be an array.")
-                if parsed.path == "/api/snap-rectangle":
+                if parsed.path == "/api/crop-box":
+                    box = payload.get("box") or []
+                    if not isinstance(box, list) or len(box) != 4:
+                        raise ValueError("box must be a four-number array.")
+                    result = crop_review_box(review_dir, item_id, box, points)
+                elif parsed.path == "/api/snap-rectangle":
                     result = snap_rectangle(review_dir, item_id, points)
                 else:
                     result = runner.segment(review_dir, item_id, points)
