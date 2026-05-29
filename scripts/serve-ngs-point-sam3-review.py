@@ -948,6 +948,35 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(review_dir), **kwargs)
 
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            if parsed.path == "/api" or parsed.path.startswith("/api/"):
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "message": "This review helper exposes POST API endpoints; open / for the review UI.",
+                        "reviewUrl": "/",
+                        "localExtractProvider": {
+                            "path": "/api/local-sam3-extract",
+                            "method": "POST",
+                            "usedBy": "apps/api /api/v1/extract when LOCAL_SAM3_EXTRACT_URL points here",
+                            "body": {
+                                "imageUrl": "file:///absolute/path/to/image.jpg or https://...",
+                                "target": "content",
+                                "points": [],
+                            },
+                        },
+                        "reviewSubmit": {
+                            "path": "/api/submit-review",
+                            "method": "POST",
+                            "writes": "review-decisions.json",
+                        },
+                    },
+                )
+                return
+            super().do_GET()
+
         def do_POST(self):
             parsed = urlparse(self.path)
             if parsed.path not in {
