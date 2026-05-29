@@ -4,6 +4,7 @@ import type { Artwork } from '~/types';
 import { formatDimensions, copyToClipboard } from '~/lib/utils';
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
+import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 
 interface ArtworkDetailDialogProps {
   artwork: Artwork;
@@ -52,17 +53,16 @@ export function ArtworkDetailDialog({
             </Dialog.Close>
 
             <div className="w-full bg-neutral-950 flex items-center justify-center p-8">
-              {artwork.imageUrl ? (
-                <img
-                  src={artwork.imageUrl}
-                  alt={artwork.title || 'Artwork'}
-                  className="max-w-full max-h-[60vh] object-contain"
-                />
-              ) : (
-                <div className="flex h-64 w-full items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
-                  No image
-                </div>
-              )}
+              <ImageWithFallback
+                src={artwork.imageUrl}
+                alt={artwork.title || 'Artwork'}
+                className="max-w-full max-h-[60vh] object-contain"
+                fallback={
+                  <div className="flex h-64 w-full items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
+                    No image
+                  </div>
+                }
+              />
             </div>
 
             {/* Content */}

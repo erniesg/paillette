@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { Artwork } from '~/types';
+import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { ArtworkDetailDialog } from './artwork-detail-dialog';
 
 interface ArtworkGridProps {
@@ -23,18 +24,17 @@ export function ArtworkGrid({ artworks }: ArtworkGridProps) {
             onClick={() => setSelectedArtwork(artwork)}
           >
             <div className="aspect-square bg-neutral-950 flex items-center justify-center overflow-hidden">
-              {artwork.thumbnailUrl || artwork.imageUrl ? (
-                <img
-                  src={artwork.thumbnailUrl || artwork.imageUrl || undefined}
-                  alt={artwork.title || 'Artwork'}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">
-                  No image
-                </div>
-              )}
+              <ImageWithFallback
+                src={artwork.thumbnailUrl || artwork.imageUrl}
+                alt={artwork.title || 'Artwork'}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                loading="lazy"
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">
+                    No image
+                  </div>
+                }
+              />
             </div>
 
             {/* Info */}

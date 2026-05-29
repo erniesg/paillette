@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { ArrowLeft, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
+import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { SourceIndicator } from '~/components/artwork/source-indicator';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import {
@@ -14,7 +15,6 @@ import {
   getPublicCatalogueRows,
   getPublicDescription,
   getPublicDescriptionDetailList,
-  getPublicImageUrl,
   getPublicRecordSourceLabel,
   getPublicTitle,
   getRootsUrl,
@@ -76,7 +76,7 @@ export default function ArtworkDetailPage() {
     typeof caption.text === 'string' && caption.text.trim()
       ? caption.text.trim()
       : null;
-  const imageUrl = getPublicImageUrl(artwork);
+  const imageUrl = artwork.imageUrl || artwork.image_url || null;
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
   const catalogRows = getPublicCatalogueRows(artwork);
@@ -107,18 +107,17 @@ export default function ArtworkDetailPage() {
         <section>
           <div className="sticky top-20">
             <div className="flex min-h-[420px] items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.025] p-4">
-              {imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt={title}
-                  className="max-h-[76vh] w-full object-contain"
-                />
-              ) : (
-                <div className="flex h-80 w-full items-center justify-center rounded-md bg-white/[0.03] text-white/35">
-                  <ImageIcon className="mr-2 h-5 w-5" />
-                  No image
-                </div>
-              )}
+              <ImageWithFallback
+                src={imageUrl}
+                alt={title}
+                className="max-h-[76vh] w-full object-contain"
+                fallback={
+                  <div className="flex h-80 w-full items-center justify-center rounded-md bg-white/[0.03] text-white/35">
+                    <ImageIcon className="mr-2 h-5 w-5" />
+                    No image
+                  </div>
+                }
+              />
             </div>
           </div>
         </section>

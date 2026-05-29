@@ -48,13 +48,12 @@ import {
   getPublicCatalogueRows,
   getPublicDateText,
   getPublicDescriptionDetailList,
-  getPublicImageUrl,
-  getPublicThumbnailUrl,
   getPublicArtist,
   getPublicRecordSourceLabel,
   getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
+import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import {
@@ -2180,12 +2179,9 @@ const getArtworkImageUrl = (
     image_url?: string | null;
     thumbnail_url?: string | null;
   };
-  const imageUrl =
-    asset.imageUrl || asset.image_url || getPublicImageUrl(artwork);
+  const imageUrl = asset.imageUrl || asset.image_url || null;
   const thumbnailUrl =
-    asset.thumbnailUrl ||
-    asset.thumbnail_url ||
-    getPublicThumbnailUrl(artwork);
+    asset.thumbnailUrl || asset.thumbnail_url || null;
 
   if (role === 'large') {
     return imageUrl || thumbnailUrl;
@@ -2435,13 +2431,20 @@ const IdleShowcaseBackdrop = forwardRef<
             >
               {imageUrl ? (
                 <span className="relative block w-fit max-w-full overflow-hidden">
-                  <img
+                  <ImageWithFallback
                     src={imageUrl}
                     alt=""
                     loading="eager"
                     decoding="async"
                     className="block max-w-full object-contain"
                     style={{ height: 'min(22vh, 20rem)', width: 'auto' }}
+                    fallback={
+                      <div
+                        className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
+                          isLoading ? 'animate-pulse' : ''
+                        }`}
+                      />
+                    }
                   />
                   <span className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 max-w-full overflow-hidden bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 opacity-95 transition duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
                     <span className="line-clamp-2 max-w-full whitespace-normal break-words text-xs font-semibold leading-tight text-white drop-shadow [overflow-wrap:anywhere]">
@@ -2510,18 +2513,17 @@ function SearchArtworkDialog({
               caption for the selected artwork.
             </Dialog.Description>
             <div className="flex min-h-0 min-w-0 items-center justify-center bg-black/35 p-4">
-              {imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt={title}
-                  className="max-h-full w-full object-contain"
-                />
-              ) : (
-                <div className="flex h-full min-h-64 w-full items-center justify-center rounded-md bg-white/[0.04] text-white/30">
-                  <ImageIcon className="mr-2 h-5 w-5" />
-                  No image
-                </div>
-              )}
+              <ImageWithFallback
+                src={imageUrl}
+                alt={title}
+                className="max-h-full w-full object-contain"
+                fallback={
+                  <div className="flex h-full min-h-64 w-full items-center justify-center rounded-md bg-white/[0.04] text-white/30">
+                    <ImageIcon className="mr-2 h-5 w-5" />
+                    No image
+                  </div>
+                }
+              />
             </div>
             <div className="min-h-0 overflow-y-auto p-5 md:p-6">
               <div className="flex items-start justify-between gap-4">
@@ -2995,18 +2997,17 @@ function SalonResults({
             style={{ transform: `rotate(${rotation}deg)` }}
           >
             <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
-              {image ? (
-                <img
-                  src={image}
-                  alt={title}
-                  loading="lazy"
-                  className="aspect-[4/5] w-full object-cover"
-                />
-              ) : (
-                <div className="flex aspect-[4/5] items-center justify-center bg-white/[0.04] text-sm text-white/30">
-                  No image
-                </div>
-              )}
+              <ImageWithFallback
+                src={image}
+                alt={title}
+                loading="lazy"
+                className="aspect-[4/5] w-full object-cover"
+                fallback={
+                  <div className="flex aspect-[4/5] items-center justify-center bg-white/[0.04] text-sm text-white/30">
+                    No image
+                  </div>
+                }
+              />
             </div>
             <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors group-hover:text-white/75">
               #{rank}
@@ -3059,18 +3060,17 @@ function AtlasResults({
               <span className="absolute left-1 top-1 z-10 rounded-sm bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-white/75">
                 #{rank}
               </span>
-              {image ? (
-                <img
-                  src={image}
-                  alt={title}
-                  loading="lazy"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-white/25">
-                  <ImageIcon className="h-4 w-4" />
-                </div>
-              )}
+              <ImageWithFallback
+                src={image}
+                alt={title}
+                loading="lazy"
+                className="h-full w-full object-cover"
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center text-white/25">
+                    <ImageIcon className="h-4 w-4" />
+                  </div>
+                }
+              />
             </div>
             <div className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-black/90 px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100">
               <span className="text-[10px] italic text-white">{title}</span>
@@ -3114,18 +3114,17 @@ function ResultCard({
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
         <div className="bg-white/[0.03]">
-          {image ? (
-            <img
-              src={image}
-              alt={title}
-              loading="lazy"
-              className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-            />
-          ) : (
-            <div className="flex aspect-[4/3] items-center justify-center text-sm text-white/35">
-              No image
-            </div>
-          )}
+          <ImageWithFallback
+            src={image}
+            alt={title}
+            loading="lazy"
+            className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            fallback={
+              <div className="flex aspect-[4/3] items-center justify-center text-sm text-white/35">
+                No image
+              </div>
+            }
+          />
         </div>
       </button>
       <div className="space-y-3 p-4">
@@ -3346,18 +3345,17 @@ function TableResults({
                     onClick={() => onSelectArtwork(result)}
                     className="flex items-center gap-3 text-left text-white transition-colors hover:text-cyan-200"
                   >
-                    {image ? (
-                      <img
-                        src={image}
-                        alt=""
-                        loading="lazy"
-                        className="h-12 w-12 object-cover"
-                      />
-                    ) : (
-                      <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">
-                        <ImageIcon className="h-4 w-4" />
-                      </span>
-                    )}
+                    <ImageWithFallback
+                      src={image}
+                      alt=""
+                      loading="lazy"
+                      className="h-12 w-12 object-cover"
+                      fallback={
+                        <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">
+                          <ImageIcon className="h-4 w-4" />
+                        </span>
+                      }
+                    />
                     <span>
                       <span className="block font-medium">{title}</span>
                       {getAccession(result) && (

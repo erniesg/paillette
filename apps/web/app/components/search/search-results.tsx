@@ -14,6 +14,7 @@ import type { ArtworkSearchResult } from '~/types';
 import { formatSimilarity, formatDimensions, cn } from '~/lib/utils';
 import { Badge } from '~/components/ui/badge';
 import { Input } from '~/components/ui/input';
+import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { ArtworkDialog } from './artwork-dialog';
 
 interface SearchResultsProps {
@@ -35,24 +36,21 @@ export function SearchResults({ results, queryTime }: SearchResultsProps) {
       header: 'Image',
       cell: ({ row }) => (
         <div className="w-24 h-24 flex items-center justify-center">
-          {row.original.thumbnailUrl || row.original.imageUrl ? (
-            <img
-              src={
-                row.original.thumbnailUrl || row.original.imageUrl || undefined
-              }
-              alt={row.original.title || 'Artwork'}
-              className="max-w-full max-h-full object-contain cursor-pointer hover:scale-105 transition-transform"
-              onClick={() => setSelectedArtwork(row.original)}
-            />
-          ) : (
-            <button
-              type="button"
-              className="h-full w-full rounded-lg border border-neutral-800 bg-neutral-900 text-xs text-neutral-500"
-              onClick={() => setSelectedArtwork(row.original)}
-            >
-              No image
-            </button>
-          )}
+          <ImageWithFallback
+            src={row.original.thumbnailUrl || row.original.imageUrl}
+            alt={row.original.title || 'Artwork'}
+            className="max-w-full max-h-full object-contain cursor-pointer hover:scale-105 transition-transform"
+            onClick={() => setSelectedArtwork(row.original)}
+            fallback={
+              <button
+                type="button"
+                className="h-full w-full rounded-lg border border-neutral-800 bg-neutral-900 text-xs text-neutral-500"
+                onClick={() => setSelectedArtwork(row.original)}
+              >
+                No image
+              </button>
+            }
+          />
         </div>
       ),
       enableSorting: false,

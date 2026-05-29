@@ -11,6 +11,7 @@ import {
   dbscan,
   estimateDBSCANParams,
 } from '~/lib/dimensionality-reduction';
+import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 
 export interface ArtworkPoint {
   id: string;
@@ -268,17 +269,16 @@ export function EmbeddingScatterPlot({
             className="absolute top-4 right-4 bg-neutral-800 border border-neutral-700 rounded-lg p-4 shadow-xl max-w-sm pointer-events-none"
           >
             <div className="flex gap-4">
-              {hovered.thumbnailUrl || hovered.imageUrl ? (
-                <img
-                  src={hovered.thumbnailUrl || hovered.imageUrl || ''}
-                  alt={hovered.title}
-                  className="w-24 h-24 object-cover rounded"
-                />
-              ) : (
-                <div className="flex h-24 w-24 items-center justify-center rounded bg-neutral-700 text-xs text-neutral-400">
-                  No image
-                </div>
-              )}
+              <ImageWithFallback
+                src={hovered.thumbnailUrl || hovered.imageUrl}
+                alt={hovered.title}
+                className="w-24 h-24 object-cover rounded"
+                fallback={
+                  <div className="flex h-24 w-24 items-center justify-center rounded bg-neutral-700 text-xs text-neutral-400">
+                    No image
+                  </div>
+                }
+              />
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-white truncate">
                   {hovered.title}
