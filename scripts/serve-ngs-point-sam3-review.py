@@ -839,7 +839,12 @@ def median_border_color(image):
     return tuple(int(round(v)) for v in color)
 
 
-def straighten_review_source(review_dir: Path, item_id: str, angle_degrees: float) -> dict:
+def straighten_review_source(
+    review_dir: Path,
+    item_id: str,
+    angle_degrees: float,
+    source_url: str | None = None,
+) -> dict:
     from PIL import Image
 
     started = time.time()
@@ -847,7 +852,7 @@ def straighten_review_source(review_dir: Path, item_id: str, angle_degrees: floa
     if not source_path.exists():
         raise FileNotFoundError(f"Missing original asset for {item_id}")
 
-    image = load_review_source_image(review_dir, item_id)
+    image = load_review_source_image(review_dir, item_id, source_url)
     angle = float(angle_degrees)
     fill = median_border_color(image)
     if abs(angle) > 0:
@@ -864,7 +869,7 @@ def straighten_review_source(review_dir: Path, item_id: str, angle_degrees: floa
         "mode": "source-rotation",
         "angleDegrees": round(angle, 6),
         "sourceUrl": f"{source_url_path}?v={stamp}",
-        "sourceOriginalUrl": f"assets/{item_id}-original.jpg",
+        "sourceOriginalUrl": source_url or f"assets/{item_id}-original.jpg",
         "width": width,
         "height": height,
         "box": [0, 0, width, height],
@@ -1516,13 +1521,13 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     raw_angle = payload.get("angleDegrees", None)
                     if raw_angle is None or raw_angle == "":
                         raise ValueError("angleDegrees is required for source straightening.")
-                    result = straighten_review_source(review_dir, item_id, float(raw_angle))
+                    result = straighten_review_source(review_dir, item_id, float(raw_angle), source_url)
                 elif parsed.path == "/api/straighten":
                     if str(payload.get("scope") or payload.get("target") or "").lower() == "source" or payload.get("source") is True:
                         raw_angle = payload.get("angleDegrees", None)
                         if raw_angle is None or raw_angle == "":
                             raise ValueError("angleDegrees is required for source straightening.")
-                        result = straighten_review_source(review_dir, item_id, float(raw_angle))
+                        result = straighten_review_source(review_dir, item_id, float(raw_angle), source_url)
                         self._json(200, result)
                         return
                     box = payload.get("box") or []
