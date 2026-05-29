@@ -101,13 +101,6 @@ export function CaptionSourceToggle({
         {activeOption.text}
       </p>
 
-      {activeOption.id === 'generated' && (
-        <p className="mt-2 text-[11px] leading-relaxed text-white/38">
-          Machine-generated from the image for visual search; not source
-          catalogue text.
-        </p>
-      )}
-
       {details.length > 0 && (
         <dl className="mt-4 grid gap-3 sm:grid-cols-3">
           {details.map(([label, value]) => (

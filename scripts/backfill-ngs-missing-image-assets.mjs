@@ -64,6 +64,8 @@ const options = {
     args.values.get('caption-index') || 'paillette-caption-embeddings-v2-stg',
   apiBase: args.values.get('api-base') || DEFAULT_STAGING_ASSET_API_BASE,
   orgId: args.values.get('org-id') || DEFAULT_NGS_ORG_ID,
+  assetVersion: args.values.get('asset-version') || 'ngs-missing-v1',
+  objectKeyPrefix: args.values.get('object-key-prefix') || 'ngs-missing',
   limit: Number(args.values.get('limit') || '0'),
   concurrency: Number(args.values.get('concurrency') || '4'),
   uploadConcurrency: Number(args.values.get('upload-concurrency') || '4'),
@@ -236,15 +238,24 @@ async function prepareRow(row) {
   }
 
   const baseName = safeFilename(row.id);
-  const originalAssetId = stableAssetId({ artworkId: row.id, role: 'original' });
-  const thumbnailAssetId = stableAssetId({ artworkId: row.id, role: 'thumb' });
+  const originalAssetId = stableAssetId({
+    artworkId: row.id,
+    role: 'original',
+    version: options.assetVersion,
+  });
+  const thumbnailAssetId = stableAssetId({
+    artworkId: row.id,
+    role: 'thumb',
+    version: options.assetVersion,
+  });
   const { imageUrl, thumbnailUrl } = buildAssetUrls({
     apiBase: options.apiBase,
     originalAssetId,
     thumbnailAssetId,
   });
-  const originalObjectKey = `ngs-missing/${options.orgId}/${baseName}/original.jpg`;
-  const thumbnailObjectKey = `ngs-missing/${options.orgId}/${baseName}/thumb.jpg`;
+  const objectKeyPrefix = options.objectKeyPrefix.replace(/^\/+|\/+$/g, '');
+  const originalObjectKey = `${objectKeyPrefix}/${options.orgId}/${baseName}/original.jpg`;
+  const thumbnailObjectKey = `${objectKeyPrefix}/${options.orgId}/${baseName}/thumb.jpg`;
   const imageOut = resolve(options.outDir, 'prepared', `${baseName}.jpg`);
   const thumbOut = resolve(options.outDir, 'prepared', `${baseName}.thumb.jpg`);
   mkdirSync(dirname(imageOut), { recursive: true });
@@ -811,6 +822,8 @@ Core options:
   --sam3-report PATH     Optional SAM3 report. Crops are ignored unless accepted.
   --crop-decisions PATH  Optional decisions JSON from review UI.
   --caption-jsonl PATH   Captions JSONL with id + caption/text.
+  --asset-version NAME   Stable asset-id version. Default: ngs-missing-v1.
+  --object-key-prefix P  R2 object key prefix. Default: ngs-missing.
   --limit N              Process first N valid downloaded rows.
 
 Actions:
