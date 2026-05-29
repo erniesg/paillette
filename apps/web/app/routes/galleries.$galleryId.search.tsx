@@ -817,6 +817,8 @@ export default function SearchPage() {
 
   const [searchMode, setSearchMode] = useState<SearchMode>('text');
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
+  const [committedTextQuery, setCommittedTextQuery] =
+    useState(normalizedUrlQuery);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [searchColours, setSearchColours] = useState<string[]>([]);
@@ -844,6 +846,12 @@ export default function SearchPage() {
     null
   );
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
+  const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
+  const hasCommittedTextSearch =
+    shouldSearch &&
+    normalizedCommittedTextQuery.length > 0 &&
+    (searchMode === 'text' || searchMode === 'colour');
+  const canSubmitTextSearch = normalizedTextQuery.length > 0;
 
   const suggestionPool = useMemo(
     () => buildSuggestionPool(holidaySuggestions),
@@ -851,9 +859,8 @@ export default function SearchPage() {
   );
   const hasActiveSearch =
     isBrowsingCollection ||
-    shouldSearch ||
+    hasCommittedTextSearch ||
     searchMode !== 'text' ||
-    textQuery.trim().length > 0 ||
     imageFile !== null ||
     searchColours.length > 0;
   const activeSearchSummary = useMemo<ActiveSearchSummary | null>(() => {
@@ -890,12 +897,11 @@ export default function SearchPage() {
       };
     }
 
-    const trimmedQuery = textQuery.trim();
-    if (searchMode === 'text' && trimmedQuery) {
+    if (searchMode === 'text' && shouldSearch && normalizedCommittedTextQuery) {
       return {
         type: 'text',
-        label: trimmedQuery,
-        detail: shouldSearch ? 'active search' : 'typing',
+        label: committedTextQuery,
+        detail: 'active search',
         dot: '#d946ef',
       };
     }
@@ -907,7 +913,8 @@ export default function SearchPage() {
     searchColours,
     searchMode,
     shouldSearch,
-    textQuery,
+    committedTextQuery,
+    normalizedCommittedTextQuery,
   ]);
   const getCurrentReturnTo = () =>
     `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -935,6 +942,7 @@ export default function SearchPage() {
 
     previousUrlQueryRef.current = normalizedUrlQuery;
     setTextQuery(normalizedUrlQuery);
+    setCommittedTextQuery(normalizedUrlQuery);
     setShouldSearch(Boolean(normalizedUrlQuery));
     setIsBrowsingCollection(false);
 
@@ -953,14 +961,14 @@ export default function SearchPage() {
       'search',
       'text',
       galleryId,
-      normalizedTextQuery,
+      normalizedCommittedTextQuery,
       topK,
       minScore,
     ],
     queryFn: async () => {
-      if (!normalizedTextQuery) return null;
+      if (!normalizedCommittedTextQuery) return null;
       return publicSearchText(galleryId, {
-        query: normalizedTextQuery,
+        query: normalizedCommittedTextQuery,
         topK,
         minScore,
       });
@@ -969,7 +977,7 @@ export default function SearchPage() {
       hasMounted &&
       (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
-      normalizedTextQuery.length > 0,
+      normalizedCommittedTextQuery.length > 0,
   });
 
   const imageSearchQuery = useQuery({
@@ -1137,7 +1145,7 @@ export default function SearchPage() {
     searchMode,
     sortMode,
     sortColours,
-    textQuery,
+    committedTextQuery,
     topK,
     isBrowsingCollection,
   ]);
@@ -1172,24 +1180,6 @@ export default function SearchPage() {
     loadMoreResults,
   ]);
 
-  useEffect(() => {
-    if (isBrowsingCollection || searchMode !== 'text') return undefined;
-
-    const trimmed = textQuery.trim();
-    if (!trimmed) {
-      setShouldSearch(false);
-      return undefined;
-    }
-
-    setShouldSearch(false);
-    const handle = window.setTimeout(() => {
-      setShouldSearch(true);
-      setSearchParams({ q: trimmed }, { replace: true });
-    }, 450);
-
-    return () => window.clearTimeout(handle);
-  }, [isBrowsingCollection, searchMode, setSearchParams, textQuery]);
-
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (file) {
@@ -1221,12 +1211,25 @@ export default function SearchPage() {
     setSearchMode('text');
     setSearchColours([]);
     setTextQuery(normalized);
+    setCommittedTextQuery(normalized);
     setShouldSearch(true);
     setSearchParams({ q: normalized });
   };
 
   const clearSearch = () => {
     setTextQuery('');
+    setCommittedTextQuery('');
+    setShouldSearch(false);
+    setIsBrowsingCollection(false);
+    setSearchParams({}, { replace: true });
+  };
+
+  const updateTextDraft = (value: string) => {
+    setTextQuery(value);
+
+    if (value.trim()) return;
+
+    setCommittedTextQuery('');
     setShouldSearch(false);
     setIsBrowsingCollection(false);
     setSearchParams({}, { replace: true });
@@ -1250,7 +1253,7 @@ export default function SearchPage() {
   };
 
   const selectColourSearch = (selection: string) => {
-    const query = getColourSearchText(selection);
+    const query = normalizeSearchQuery(getColourSearchText(selection));
     if (!query) return;
 
     setSearchMode('colour');
@@ -1259,6 +1262,7 @@ export default function SearchPage() {
     setSortColours([selection]);
     setSortMode('colour');
     setTextQuery(query);
+    setCommittedTextQuery(query);
     setShouldSearch(true);
     setSearchParams({ q: query });
   };
@@ -1336,7 +1340,8 @@ export default function SearchPage() {
 
   const runEvalSearch = (suggestion: EvalSuggestion) => {
     const active =
-      textQuery.trim().toLowerCase() === suggestion.query.toLowerCase();
+      committedTextQuery.trim().toLowerCase() ===
+      suggestion.query.toLowerCase();
     if (active) {
       clearSearch();
       if (suggestion.type === 'colour') {
@@ -1448,29 +1453,42 @@ export default function SearchPage() {
               <span>{gallery.name}</span>
               <span>/</span>
               <span>collection search</span>
-              {currentQuery.data?.queryTime !== undefined && (
-                <>
-                  <span>/</span>
-                  <span>{Math.round(currentQuery.data.queryTime)}ms</span>
-                </>
-              )}
+              {hasActiveSearch &&
+                currentQuery.data?.queryTime !== undefined && (
+                  <>
+                    <span>/</span>
+                    <span>{Math.round(currentQuery.data.queryTime)}ms</span>
+                  </>
+                )}
             </div>
 
             <div className="space-y-4">
               {searchMode === 'text' && (
-                <div className="relative">
+                <form
+                  className="relative"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    runTextSearch();
+                  }}
+                >
                   <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
                   <input
                     value={textQuery}
-                    onChange={(event) => setTextQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') runTextSearch();
-                    }}
+                    onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-4 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 lg:text-5xl"
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl"
                   />
-                </div>
+                  <button
+                    type="submit"
+                    disabled={!canSubmitTextSearch}
+                    className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
+                    aria-label="Search text"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Search</span>
+                  </button>
+                </form>
               )}
 
               {searchMode === 'image' && (
@@ -1590,11 +1608,11 @@ export default function SearchPage() {
                           : hasMounted && shouldSearch
                             ? 'No works'
                             : 'Ready'}
-                    {textQuery &&
+                    {committedTextQuery &&
                       searchMode !== 'image' &&
                       !isBrowsingCollection && (
                         <span className="ml-2 normal-case tracking-normal text-white/70">
-                          "{textQuery}"
+                          "{committedTextQuery}"
                         </span>
                       )}
                     {isBrowsingCollection && (
@@ -1985,7 +2003,6 @@ function SuggestionPicker({
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const [paused, setPaused] = useState(false);
-  const activeSuggestionRef = useRef<HTMLElement | null>(null);
   const suggestion = suggestions[index] ?? suggestions[0] ?? null;
 
   useEffect(() => {
@@ -2012,43 +2029,6 @@ function SuggestionPicker({
     }
   }, [activeSearch, onPreviewChange, suggestion]);
 
-  useEffect(() => {
-    if ((!suggestion && !activeSearch) || !activeSuggestionRef.current) {
-      return undefined;
-    }
-
-    let context: { revert: () => void } | undefined;
-    let cancelled = false;
-
-    void import('gsap').then(({ gsap }) => {
-      if (cancelled || !activeSuggestionRef.current) return;
-
-      const reduceMotion = window.matchMedia(
-        '(prefers-reduced-motion: reduce)'
-      ).matches;
-      if (reduceMotion) return;
-
-      context = gsap.context(() => {
-        gsap.fromTo(
-          activeSuggestionRef.current,
-          { autoAlpha: 0, y: 6 },
-          {
-            autoAlpha: 1,
-            y: 0,
-            duration: 0.35,
-            ease: 'power3.out',
-            overwrite: 'auto',
-          }
-        );
-      }, activeSuggestionRef);
-    });
-
-    return () => {
-      cancelled = true;
-      context?.revert();
-    };
-  }, [activeSearch, suggestion]);
-
   if (!suggestion && !activeSearch) return null;
 
   const activeQuery = currentQuery.trim().toLowerCase();
@@ -2070,10 +2050,7 @@ function SuggestionPicker({
       </span>
       {activeSearch ? (
         <div
-          ref={(node) => {
-            activeSuggestionRef.current = node;
-          }}
-          className="inline-flex min-w-0 items-center gap-2 bg-white/[0.08] px-3 py-1.5 text-left text-xs text-white"
+          className="inline-flex min-w-0 items-center gap-2 bg-white/[0.08] px-3 py-1.5 text-left text-xs text-white transition-colors"
           role="status"
           aria-label={activeStatusLabel}
           aria-live="polite"
@@ -2094,9 +2071,6 @@ function SuggestionPicker({
         </div>
       ) : (
         <button
-          ref={(node) => {
-            activeSuggestionRef.current = node;
-          }}
           type="button"
           onClick={() => suggestion && onSelect(suggestion)}
           className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
