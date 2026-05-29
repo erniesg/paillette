@@ -112,7 +112,8 @@ const BACKABLE_NGS_SEARCH_SQL = `
         AND trim(accession_number) <> ''
         AND title IS NOT NULL
         AND trim(title) <> ''
-        AND source_url LIKE 'https://www.nationalgallery.sg/%'
+        AND source_institution = 'National Gallery Singapore'
+        AND source_collection = 'National Collection'
 `;
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');

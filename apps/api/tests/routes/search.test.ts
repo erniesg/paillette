@@ -513,6 +513,42 @@ describe('Search API auth and quota behavior', () => {
     });
   });
 
+  it('keeps validated NGS rows searchable when their public source URL is Roots', async () => {
+    db = new FakeSearchDb([
+      {
+        ...artworkRow,
+        id: '2013-00170',
+        title: 'Charity Ride',
+        accession_number: '2013-00170',
+        source_record_id: '2013-00170',
+        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
+        match_score: 100,
+      },
+    ]);
+    env = makeEnv(db);
+
+    const res = await textSearch(app, env);
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(1);
+    expect(body.data.results[0]).toMatchObject({
+      id: '2013-00170',
+      title: 'Charity Ride',
+      metadata: {
+        sourceInstitution: 'National Gallery Singapore',
+        sourceCollection: 'National Collection',
+        sourceUrl: 'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
+      },
+    });
+    expect(db.metadataSearchSql[0]).toContain(
+      "source_institution = 'National Gallery Singapore'"
+    );
+    expect(db.metadataSearchSql[0]).not.toContain(
+      "source_url LIKE 'https://www.nationalgallery.sg/%'"
+    );
+  });
+
   it('returns Roots caption provenance instead of stripping it from NGS search results', async () => {
     db = new FakeSearchDb([
       {
