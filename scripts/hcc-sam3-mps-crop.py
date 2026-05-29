@@ -2,11 +2,14 @@
 import argparse
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import cv2
 import numpy as np
