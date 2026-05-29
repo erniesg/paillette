@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SourceIndicator } from '~/components/artwork/source-indicator';
 import { cn } from '~/lib/utils';
 
@@ -46,25 +46,58 @@ export function CaptionSourceToggle({
   generatedCaption?: CaptionSource | null;
   className?: string;
 }) {
-  const options = [
-    captionOption(rootsCaption, 'roots', 'Roots catalogue'),
-    captionOption(generatedCaption, 'generated', 'Generated caption'),
-  ].filter((option): option is CaptionOption => Boolean(option));
-  const [activeId, setActiveId] = useState<CaptionOption['id'] | null>(
-    options[0]?.id ?? null
+  const options = useMemo(
+    () =>
+      [
+        captionOption(rootsCaption, 'roots', 'Roots'),
+        captionOption(generatedCaption, 'generated', 'Generated'),
+      ].filter((option): option is CaptionOption => Boolean(option)),
+    [generatedCaption, rootsCaption]
   );
+  const preferredId =
+    options.find((option) => option.id === 'roots')?.id ??
+    options[0]?.id ??
+    null;
+  const sourceKey = options
+    .map((option) => `${option.id}:${option.sourceLabel}:${option.text}`)
+    .join('\n');
+  const [activeId, setActiveId] = useState<CaptionOption['id'] | null>(
+    preferredId
+  );
+  const [hasManualSelection, setHasManualSelection] = useState(false);
+  const previousSourceKey = useRef(sourceKey);
   const activeOption =
     options.find((option) => option.id === activeId) || options[0];
 
   useEffect(() => {
-    if (!options.some((option) => option.id === activeId) && options[0]) {
-      setActiveId(options[0].id);
+    const sourceChanged = previousSourceKey.current !== sourceKey;
+    if (sourceChanged) {
+      previousSourceKey.current = sourceKey;
+      setHasManualSelection(false);
     }
-  }, [activeId, options]);
+
+    if (!preferredId) {
+      if (activeId !== null) setActiveId(null);
+      return;
+    }
+
+    const activeStillExists = options.some((option) => option.id === activeId);
+
+    if (!activeStillExists) {
+      setActiveId(preferredId);
+      setHasManualSelection(false);
+      return;
+    }
+
+    if ((sourceChanged || !hasManualSelection) && activeId !== preferredId) {
+      setActiveId(preferredId);
+    }
+  }, [activeId, hasManualSelection, options, preferredId, sourceKey]);
 
   if (!activeOption) return null;
 
-  const details = detailRows(activeOption.details);
+  const details =
+    activeOption.id === 'generated' ? [] : detailRows(activeOption.details);
 
   return (
     <section className={cn('space-y-3', className)}>
@@ -87,7 +120,10 @@ export function CaptionSourceToggle({
                 key={option.id}
                 type="button"
                 aria-pressed={option.id === activeOption.id}
-                onClick={() => setActiveId(option.id)}
+                onClick={() => {
+                  setActiveId(option.id);
+                  setHasManualSelection(true);
+                }}
                 className={cn(
                   'rounded px-2.5 py-1.5 text-xs font-medium text-white/55 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300',
                   option.id === activeOption.id &&

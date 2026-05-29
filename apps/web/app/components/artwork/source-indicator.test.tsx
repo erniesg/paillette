@@ -42,14 +42,14 @@ describe('SourceIndicator', () => {
     );
 
     const indicator = screen.getByRole('button', {
-      name: /Source: Generated caption: Model used for the generated visual description\./,
+      name: /Source: Generated caption: Generated visual description used for search and discovery\./,
     });
 
     expect(indicator).toHaveTextContent('Generated caption');
     expect(indicator).not.toHaveAttribute('title');
     expect(indicator).toHaveAttribute(
       'data-source-description',
-      'Generated caption: Model used for the generated visual description.'
+      'Generated caption: Generated visual description used for search and discovery.'
     );
     expect(indicator).toHaveAttribute('aria-expanded', 'false');
 
@@ -59,7 +59,9 @@ describe('SourceIndicator', () => {
     expect(screen.getByRole('tooltip')).toHaveClass('visible');
     expect(screen.getByRole('tooltip')).not.toHaveClass('invisible');
     expect(
-      screen.getByText('Model used for the generated visual description.')
+      screen.getByText(
+        'Generated visual description used for search and discovery.'
+      )
     ).toBeInTheDocument();
     expect(screen.getByText('Model')).toBeInTheDocument();
     expect(
