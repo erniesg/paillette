@@ -22,6 +22,10 @@ DEFAULT_CHECKPOINT = (
     "snapshots/3c879f39826c281e95690f02c7821c4de09afae7/sam3.pt"
 )
 DEFAULT_BPE = "/Users/erniesg/Downloads/paillette-sam3-apple/assets/bpe_simple_vocab_16e6.txt.gz"
+REMOTE_EXTRACT_PROMPTS = {
+    "content": "artwork image content, painting surface, print, drawing, photograph; exclude frame, mat, mount, wall, label",
+    "object": "visible artwork object, painting, framed artwork, mounted artwork, scroll, print, photograph",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -313,6 +317,164 @@ def snap_rectangle(review_dir: Path, item_id: str, points: list[dict]) -> dict:
     }
 
 
+def edge_projection_boundary(edge_density, direction: str) -> int:
+    import numpy as np
+
+    length = len(edge_density)
+    start = 0 if direction == "forward" else length - 1
+    end = length if direction == "forward" else -1
+    step = 1 if direction == "forward" else -1
+
+    density = np.asarray(edge_density, dtype=np.float32)
+    max_density = float(density.max()) if density.size else 0.0
+    median_density = float(np.median(density)) if density.size else 0.0
+    avg_density = float(density.sum() / max(1, length))
+    if max_density < 5 or avg_density < 1:
+        return 0 if direction == "forward" else length - 1
+
+    threshold = max(median_density * 1.5, max_density * 0.3)
+    peak_found = False
+    peak_position = start
+    boundary = start
+    index = start
+    while index != end:
+        current = float(edge_density[index])
+        if current > threshold and not peak_found:
+            peak_found = True
+            peak_position = index
+
+        if peak_found and abs(index - peak_position) > 2 and current < threshold * 0.4:
+            boundary = index
+            break
+        index += step
+
+    if not peak_found:
+        boundary = 0 if direction == "forward" else length - 1
+    return int(boundary)
+
+
+def frame_detector_confidence(box: list[int], width: int, height: int, edge_strength: float) -> float:
+    x1, y1, x2, y2 = box
+    crop_ratio = ((x2 - x1) * (y2 - y1)) / max(1, width * height)
+    confidence = 0.25
+
+    if 0.5 <= crop_ratio <= 0.85:
+        confidence += 0.40
+    elif 0.3 <= crop_ratio < 0.5:
+        confidence += 0.30
+    elif 0.85 < crop_ratio <= 0.96:
+        confidence += 0.28
+    elif 0.96 < crop_ratio <= 0.99:
+        confidence += 0.18
+    elif crop_ratio > 0.99:
+        confidence -= 0.4
+
+    center_x = x1 + (x2 - x1) / 2
+    center_y = y1 + (y2 - y1) / 2
+    center_offset_x = abs(center_x - width / 2) / max(1, width / 2)
+    center_offset_y = abs(center_y - height / 2) / max(1, height / 2)
+    if center_offset_x < 0.1 and center_offset_y < 0.1:
+        confidence += 0.15
+    elif center_offset_x < 0.2 and center_offset_y < 0.2:
+        confidence += 0.08
+    elif center_offset_x > 0.4 or center_offset_y > 0.4:
+        confidence -= 0.15
+
+    original_aspect = width / max(1, height)
+    cropped_aspect = (x2 - x1) / max(1, y2 - y1)
+    aspect_diff = abs(original_aspect - cropped_aspect) / max(0.001, original_aspect)
+    if aspect_diff < 0.1:
+        confidence += 0.1
+    elif aspect_diff < 0.2:
+        confidence += 0.05
+    elif aspect_diff > 0.3:
+        confidence -= 0.2
+
+    if edge_strength < 0.003 and crop_ratio > 0.98:
+        confidence -= 0.7
+    elif edge_strength < 0.008 and crop_ratio > 0.96:
+        confidence -= 0.45
+    elif edge_strength < 0.02 and crop_ratio > 0.90:
+        confidence -= 0.25
+    elif edge_strength < 0.02 and crop_ratio <= 0.90:
+        confidence -= 0.10
+    elif edge_strength > 0.15:
+        confidence += 0.1
+
+    return max(0.0, min(1.0, confidence))
+
+
+def api_frame_detector(review_dir: Path, item_id: str) -> dict:
+    import cv2
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageOps
+
+    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing original asset for {item_id}")
+
+    started = time.time()
+    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    width, height = image.size
+    gray = np.asarray(image.convert("L")).astype(np.float32)
+    gray = cv2.GaussianBlur(gray, (0, 0), sigmaX=2.5, sigmaY=2.5)
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    edge = (cv2.magnitude(gx, gy) > 50).astype(np.uint8)
+
+    row_edges = edge.sum(axis=1)
+    col_edges = edge.sum(axis=0)
+    left = edge_projection_boundary(col_edges, "forward")
+    right = edge_projection_boundary(col_edges, "backward")
+    top = edge_projection_boundary(row_edges, "forward")
+    bottom = edge_projection_boundary(row_edges, "backward")
+
+    border_x = int(width * 0.1)
+    border_y = int(height * 0.1)
+    interior = edge[border_y : height - border_y, border_x : width - border_x]
+    edge_strength = float(interior.mean()) if interior.size else 0.0
+    valid_geometry = right > left and bottom > top
+    box = clamp_box([left, top, right, bottom], width, height) if valid_geometry else [0, 0, width, height]
+    confidence = frame_detector_confidence(box, width, height, edge_strength) if valid_geometry else 0.0
+    crop_ratio = ((box[2] - box[0]) * (box[3] - box[1])) / max(1, width * height)
+    has_frame = valid_geometry and confidence >= 0.5 and 0.3 <= crop_ratio <= 0.99
+
+    stamp = int(time.time() * 1000)
+    crop_url_path = f"assets/{item_id}-api-frame-detector-crop.jpg"
+    overlay_url_path = f"assets/{item_id}-api-frame-detector-overlay.jpg"
+    if has_frame:
+        image.crop(tuple(box)).save(review_dir / crop_url_path, format="JPEG", quality=94)
+    else:
+        image.save(review_dir / crop_url_path, format="JPEG", quality=94)
+
+    overlay = image.copy()
+    draw = ImageDraw.Draw(overlay)
+    draw.rectangle(box, outline=(255, 156, 45), width=5)
+    overlay.save(review_dir / overlay_url_path, format="JPEG", quality=92)
+
+    return {
+        "ok": True,
+        "id": item_id,
+        "method": "api-frame-detector",
+        "box": box,
+        "hasFrame": has_frame,
+        "confidence": round(confidence, 6),
+        "cropRatio": round(crop_ratio, 6),
+        "edgeStrength": round(edge_strength, 6),
+        "cropUrl": f"{crop_url_path}?v={stamp}",
+        "overlayUrl": f"{overlay_url_path}?v={stamp}",
+        "diagnostics": {
+            "rawBox": [int(left), int(top), int(right), int(bottom)],
+            "validGeometry": valid_geometry,
+            "rowMax": int(row_edges.max()) if len(row_edges) else 0,
+            "colMax": int(col_edges.max()) if len(col_edges) else 0,
+            "rowMedian": round(float(np.median(row_edges)), 6) if len(row_edges) else 0,
+            "colMedian": round(float(np.median(col_edges)), 6) if len(col_edges) else 0,
+        },
+        "seconds": round(time.time() - started, 3),
+    }
+
+
 def crop_review_box(review_dir: Path, item_id: str, box: list[int], points: list[dict] | None = None) -> dict:
     from PIL import Image, ImageDraw, ImageOps
 
@@ -390,6 +552,85 @@ class Sam3PointRunner:
         with self.lock:
             self.load()
             return self._segment_loaded(review_dir, item_id, points)
+
+    def api_prompt_extract(self, review_dir: Path, item_id: str, target: str) -> dict:
+        target = "content" if target == "content" else "object"
+        with self.lock:
+            self.load()
+            return self._api_prompt_extract_loaded(review_dir, item_id, target)
+
+    def _api_prompt_extract_loaded(self, review_dir: Path, item_id: str, target: str) -> dict:
+        from PIL import Image, ImageDraw, ImageOps
+
+        source_path = review_dir / "assets" / f"{item_id}-original.jpg"
+        if not source_path.exists():
+            raise FileNotFoundError(f"Missing original asset for {item_id}")
+
+        started = time.time()
+        full_image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+        full_size = full_image.size
+        preview = full_image.copy()
+        preview.thumbnail((self.args.max_dim, self.args.max_dim), Image.Resampling.LANCZOS)
+        preview_size = preview.size
+        prompt = REMOTE_EXTRACT_PROMPTS[target]
+
+        state = self.processor.set_image(preview)
+        self.processor.reset_all_prompts(state)
+        output = self.processor.set_text_prompt(prompt, state)
+        boxes = output.get("boxes")
+        scores = output.get("scores")
+        if boxes is None or len(boxes) == 0:
+            raise RuntimeError("Local SAM3 returned no boxes for the API extract prompt.")
+        if hasattr(boxes, "detach"):
+            boxes = boxes.detach().cpu().numpy()
+        if hasattr(scores, "detach"):
+            scores = scores.detach().cpu().numpy()
+
+        candidates = []
+        for index, raw_box in enumerate(boxes):
+            raw_values = raw_box.tolist() if hasattr(raw_box, "tolist") else list(raw_box)
+            box = clamp_box([int(round(value)) for value in raw_values], *preview_size)
+            score = float(scores[index]) if scores is not None and index < len(scores) else 0.0
+            candidates.append(
+                {
+                    "index": index,
+                    "box": box,
+                    "score": score,
+                    "area": ((box[2] - box[0]) * (box[3] - box[1])) / max(1, preview_size[0] * preview_size[1]),
+                }
+            )
+
+        # The app route selects the first returned mask/output from fal. fal normally
+        # returns candidates in score order, so we keep the same "first candidate"
+        # semantics here instead of applying the HCC ranking prompt bonuses.
+        selected = candidates[0]
+        source_box = map_box(selected["box"], preview_size, full_size)
+
+        crop = full_image.crop(tuple(source_box))
+        stamp = int(time.time() * 1000)
+        crop_url_path = f"assets/{item_id}-api-sam3-{target}-crop.jpg"
+        crop.save(review_dir / crop_url_path, format="JPEG", quality=94)
+
+        overlay = full_image.copy()
+        draw = ImageDraw.Draw(overlay)
+        draw.rectangle(source_box, outline=(126, 232, 135), width=5)
+        overlay_url_path = f"assets/{item_id}-api-sam3-{target}-overlay.jpg"
+        overlay.save(review_dir / overlay_url_path, format="JPEG", quality=92)
+
+        return {
+            "ok": True,
+            "id": item_id,
+            "method": f"local-api-sam3-{target}",
+            "target": target,
+            "prompt": prompt,
+            "box": source_box,
+            "previewBox": selected["box"],
+            "score": selected["score"],
+            "candidates": candidates[:5],
+            "cropUrl": f"{crop_url_path}?v={stamp}",
+            "overlayUrl": f"{overlay_url_path}?v={stamp}",
+            "seconds": round(time.time() - started, 3),
+        }
 
     def _segment_loaded(self, review_dir: Path, item_id: str, points: list[dict]) -> dict:
         import numpy as np
@@ -519,7 +760,13 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
 
         def do_POST(self):
             parsed = urlparse(self.path)
-            if parsed.path not in {"/api/segment", "/api/snap-rectangle", "/api/crop-box"}:
+            if parsed.path not in {
+                "/api/segment",
+                "/api/snap-rectangle",
+                "/api/crop-box",
+                "/api/frame-detector",
+                "/api/local-api-sam3",
+            }:
                 self.send_error(404, "Not found")
                 return
 
@@ -532,7 +779,15 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     raise ValueError("Missing id.")
                 if not isinstance(points, list):
                     raise ValueError("points must be an array.")
-                if parsed.path == "/api/crop-box":
+                if parsed.path == "/api/frame-detector":
+                    result = api_frame_detector(review_dir, item_id)
+                elif parsed.path == "/api/local-api-sam3":
+                    result = runner.api_prompt_extract(
+                        review_dir,
+                        item_id,
+                        str(payload.get("target") or "content"),
+                    )
+                elif parsed.path == "/api/crop-box":
                     box = payload.get("box") or []
                     if not isinstance(box, list) or len(box) != 4:
                         raise ValueError("box must be a four-number array.")
@@ -545,8 +800,19 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
             except Exception as exc:  # noqa: BLE001 - review endpoint should return diagnostics.
                 self._json(500, {"ok": False, "error": str(exc)})
 
+        def do_OPTIONS(self):
+            parsed = urlparse(self.path)
+            if parsed.path.startswith("/api/"):
+                self.send_response(204)
+                self.end_headers()
+                return
+            self.send_error(404, "Not found")
+
         def end_headers(self):
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
             super().end_headers()
 
         def translate_path(self, path):
