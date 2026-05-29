@@ -2176,8 +2176,16 @@ const getArtworkImageUrl = (
   artwork: ArtworkSearchResult,
   role: ArtworkImageRole
 ) => {
-  const imageUrl = getPublicImageUrl(artwork);
-  const thumbnailUrl = getPublicThumbnailUrl(artwork);
+  const asset = artwork as ArtworkSearchResult & {
+    image_url?: string | null;
+    thumbnail_url?: string | null;
+  };
+  const imageUrl =
+    asset.imageUrl || asset.image_url || getPublicImageUrl(artwork);
+  const thumbnailUrl =
+    asset.thumbnailUrl ||
+    asset.thumbnail_url ||
+    getPublicThumbnailUrl(artwork);
 
   if (role === 'large') {
     return imageUrl || thumbnailUrl;
