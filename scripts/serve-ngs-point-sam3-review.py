@@ -238,20 +238,43 @@ def choose_axis_line(
     }
 
 
-def snap_rectangle(review_dir: Path, item_id: str, points: list[dict]) -> dict:
-    import cv2
-    import numpy as np
-    from PIL import Image, ImageDraw, ImageOps
+def load_review_source_image(review_dir: Path, item_id: str, source_url: str | None = None):
+    from PIL import Image, ImageOps
 
-    if not points:
-        raise ValueError("Add rough corner or edge points before snapping.")
+    if source_url:
+        parsed = urlparse(source_url)
+        if parsed.scheme in {"http", "https"}:
+            local_path = review_dir / unquote(parsed.path).lstrip("/")
+        elif parsed.scheme == "file":
+            local_path = Path(unquote(parsed.path))
+        else:
+            local_path = review_dir / unquote((parsed.path or source_url).split("?", 1)[0]).lstrip("/")
+
+        try:
+            resolved = local_path.resolve()
+            if resolved.exists() and resolved.is_relative_to(review_dir):
+                return ImageOps.exif_transpose(Image.open(resolved)).convert("RGB")
+        except (OSError, RuntimeError):
+            pass
+
+        return load_image_from_url(source_url)
 
     source_path = review_dir / "assets" / f"{item_id}-original.jpg"
     if not source_path.exists():
         raise FileNotFoundError(f"Missing original asset for {item_id}")
+    return ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+
+
+def snap_rectangle(review_dir: Path, item_id: str, points: list[dict], source_url: str | None = None) -> dict:
+    import cv2
+    import numpy as np
+    from PIL import ImageDraw
+
+    if not points:
+        raise ValueError("Add rough corner or edge points before snapping.")
 
     started = time.time()
-    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    image = load_review_source_image(review_dir, item_id, source_url)
     width, height = image.size
     coarse_box = point_intent_box(points, width, height)
     cx1, cy1, cx2, cy2 = coarse_box
@@ -407,17 +430,13 @@ def frame_detector_confidence(box: list[int], width: int, height: int, edge_stre
     return max(0.0, min(1.0, confidence))
 
 
-def api_frame_detector(review_dir: Path, item_id: str) -> dict:
+def api_frame_detector(review_dir: Path, item_id: str, source_url: str | None = None) -> dict:
     import cv2
     import numpy as np
-    from PIL import Image, ImageDraw, ImageOps
-
-    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
-    if not source_path.exists():
-        raise FileNotFoundError(f"Missing original asset for {item_id}")
+    from PIL import ImageDraw
 
     started = time.time()
-    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    image = load_review_source_image(review_dir, item_id, source_url)
     width, height = image.size
     gray = np.asarray(image.convert("L")).astype(np.float32)
     gray = cv2.GaussianBlur(gray, (0, 0), sigmaX=2.5, sigmaY=2.5)
@@ -478,15 +497,17 @@ def api_frame_detector(review_dir: Path, item_id: str) -> dict:
     }
 
 
-def crop_review_box(review_dir: Path, item_id: str, box: list[int], points: list[dict] | None = None) -> dict:
-    from PIL import Image, ImageDraw, ImageOps
-
-    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
-    if not source_path.exists():
-        raise FileNotFoundError(f"Missing original asset for {item_id}")
+def crop_review_box(
+    review_dir: Path,
+    item_id: str,
+    box: list[int],
+    points: list[dict] | None = None,
+    source_url: str | None = None,
+) -> dict:
+    from PIL import ImageDraw
 
     started = time.time()
-    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    image = load_review_source_image(review_dir, item_id, source_url)
     width, height = image.size
     source_box = clamp_box(box, width, height)
 
@@ -818,21 +839,52 @@ def median_border_color(image):
     return tuple(int(round(v)) for v in color)
 
 
+def straighten_review_source(review_dir: Path, item_id: str, angle_degrees: float) -> dict:
+    from PIL import Image
+
+    started = time.time()
+    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing original asset for {item_id}")
+
+    image = load_review_source_image(review_dir, item_id)
+    angle = float(angle_degrees)
+    fill = median_border_color(image)
+    if abs(angle) > 0:
+        image = image.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill)
+
+    stamp = int(time.time() * 1000)
+    source_url_path = f"assets/{item_id}-source-straighten-{stamp}.jpg"
+    image.save(review_dir / source_url_path, format="JPEG", quality=94)
+    width, height = image.size
+    return {
+        "ok": True,
+        "id": item_id,
+        "method": "source-straighten",
+        "mode": "source-rotation",
+        "angleDegrees": round(angle, 6),
+        "sourceUrl": f"{source_url_path}?v={stamp}",
+        "sourceOriginalUrl": f"assets/{item_id}-original.jpg",
+        "width": width,
+        "height": height,
+        "box": [0, 0, width, height],
+        "diagnostics": {"fill": fill},
+        "seconds": round(time.time() - started, 3),
+    }
+
+
 def straighten_review_crop(
     review_dir: Path,
     item_id: str,
     box: list[int] | None = None,
     points: list[dict] | None = None,
     angle_degrees: float | None = None,
+    source_url: str | None = None,
 ) -> dict:
-    from PIL import Image, ImageDraw, ImageOps
-
-    source_path = review_dir / "assets" / f"{item_id}-original.jpg"
-    if not source_path.exists():
-        raise FileNotFoundError(f"Missing original asset for {item_id}")
+    from PIL import Image, ImageDraw
 
     started = time.time()
-    image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+    image = load_review_source_image(review_dir, item_id, source_url)
     width, height = image.size
     points = points or []
     source_box = clamp_box(box or [0, 0, width, height], width, height)
@@ -1017,19 +1069,31 @@ class Sam3PointRunner:
         self.processor = Sam3Processor(self.model, device=self.device, confidence_threshold=0.05)
         print(f"loaded local SAM3 in {time.time() - started:.1f}s", flush=True)
 
-    def segment(self, review_dir: Path, item_id: str, points: list[dict]) -> dict:
+    def segment(
+        self,
+        review_dir: Path,
+        item_id: str,
+        points: list[dict],
+        source_url: str | None = None,
+    ) -> dict:
         if not points:
             raise ValueError("Add at least one positive/negative point before running SAM.")
 
         with self.lock:
             self.load()
-            return self._segment_loaded(review_dir, item_id, points)
+            return self._segment_loaded(review_dir, item_id, points, source_url)
 
-    def api_prompt_extract(self, review_dir: Path, item_id: str, target: str) -> dict:
+    def api_prompt_extract(
+        self,
+        review_dir: Path,
+        item_id: str,
+        target: str,
+        source_url: str | None = None,
+    ) -> dict:
         target = "content" if target == "content" else "object"
         with self.lock:
             self.load()
-            return self._api_prompt_extract_loaded(review_dir, item_id, target)
+            return self._api_prompt_extract_loaded(review_dir, item_id, target, source_url)
 
     def extract_from_image_url(self, image_url: str, target: str, points: list[dict]) -> dict:
         target = "content" if target == "content" else "object"
@@ -1146,15 +1210,17 @@ class Sam3PointRunner:
             "seconds": round(time.time() - started, 3),
         }
 
-    def _api_prompt_extract_loaded(self, review_dir: Path, item_id: str, target: str) -> dict:
-        from PIL import Image, ImageDraw, ImageOps
-
-        source_path = review_dir / "assets" / f"{item_id}-original.jpg"
-        if not source_path.exists():
-            raise FileNotFoundError(f"Missing original asset for {item_id}")
+    def _api_prompt_extract_loaded(
+        self,
+        review_dir: Path,
+        item_id: str,
+        target: str,
+        source_url: str | None = None,
+    ) -> dict:
+        from PIL import Image, ImageDraw
 
         started = time.time()
-        full_image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+        full_image = load_review_source_image(review_dir, item_id, source_url)
         full_size = full_image.size
         preview = full_image.copy()
         preview.thumbnail((self.args.max_dim, self.args.max_dim), Image.Resampling.LANCZOS)
@@ -1219,17 +1285,19 @@ class Sam3PointRunner:
             "seconds": round(time.time() - started, 3),
         }
 
-    def _segment_loaded(self, review_dir: Path, item_id: str, points: list[dict]) -> dict:
+    def _segment_loaded(
+        self,
+        review_dir: Path,
+        item_id: str,
+        points: list[dict],
+        source_url: str | None = None,
+    ) -> dict:
         import numpy as np
         import torch
-        from PIL import Image, ImageDraw, ImageOps
-
-        source_path = review_dir / "assets" / f"{item_id}-original.jpg"
-        if not source_path.exists():
-            raise FileNotFoundError(f"Missing original asset for {item_id}")
+        from PIL import Image, ImageDraw
 
         started = time.time()
-        full_image = ImageOps.exif_transpose(Image.open(source_path)).convert("RGB")
+        full_image = load_review_source_image(review_dir, item_id, source_url)
         full_size = full_image.size
         preview = full_image.copy()
         preview.thumbnail((self.args.max_dim, self.args.max_dim), Image.Resampling.LANCZOS)
@@ -1384,6 +1452,12 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                                 "angleDegrees": "optional manual rotation; omit for auto",
                             },
                         },
+                        "sourceStraighten": {
+                            "path": "/api/straighten",
+                            "method": "POST",
+                            "usedBy": "review UI before frame/SAM/manual crop operations",
+                            "body": {"id": "2010-04175", "scope": "source", "angleDegrees": -1.4},
+                        },
                     },
                 )
                 return
@@ -1397,6 +1471,7 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                 "/api/crop-box",
                 "/api/frame-detector",
                 "/api/straighten",
+                "/api/straighten-source",
                 "/api/local-api-sam3",
                 "/api/local-sam3-extract",
                 "/api/submit-review",
@@ -1434,9 +1509,22 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     raise ValueError("Missing id.")
                 if not isinstance(points, list):
                     raise ValueError("points must be an array.")
+                source_url = str(payload.get("sourceUrl") or payload.get("source_url") or "").strip() or None
                 if parsed.path == "/api/frame-detector":
-                    result = api_frame_detector(review_dir, item_id)
+                    result = api_frame_detector(review_dir, item_id, source_url)
+                elif parsed.path == "/api/straighten-source":
+                    raw_angle = payload.get("angleDegrees", None)
+                    if raw_angle is None or raw_angle == "":
+                        raise ValueError("angleDegrees is required for source straightening.")
+                    result = straighten_review_source(review_dir, item_id, float(raw_angle))
                 elif parsed.path == "/api/straighten":
+                    if str(payload.get("scope") or payload.get("target") or "").lower() == "source" or payload.get("source") is True:
+                        raw_angle = payload.get("angleDegrees", None)
+                        if raw_angle is None or raw_angle == "":
+                            raise ValueError("angleDegrees is required for source straightening.")
+                        result = straighten_review_source(review_dir, item_id, float(raw_angle))
+                        self._json(200, result)
+                        return
                     box = payload.get("box") or []
                     if box and (not isinstance(box, list) or len(box) != 4):
                         raise ValueError("box must be a four-number array.")
@@ -1444,22 +1532,23 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                     angle_degrees = None
                     if raw_angle is not None and raw_angle != "":
                         angle_degrees = float(raw_angle)
-                    result = straighten_review_crop(review_dir, item_id, box or None, points, angle_degrees)
+                    result = straighten_review_crop(review_dir, item_id, box or None, points, angle_degrees, source_url)
                 elif parsed.path == "/api/local-api-sam3":
                     result = runner.api_prompt_extract(
                         review_dir,
                         item_id,
                         str(payload.get("target") or "content"),
+                        source_url,
                     )
                 elif parsed.path == "/api/crop-box":
                     box = payload.get("box") or []
                     if not isinstance(box, list) or len(box) != 4:
                         raise ValueError("box must be a four-number array.")
-                    result = crop_review_box(review_dir, item_id, box, points)
+                    result = crop_review_box(review_dir, item_id, box, points, source_url)
                 elif parsed.path == "/api/snap-rectangle":
-                    result = snap_rectangle(review_dir, item_id, points)
+                    result = snap_rectangle(review_dir, item_id, points, source_url)
                 else:
-                    result = runner.segment(review_dir, item_id, points)
+                    result = runner.segment(review_dir, item_id, points, source_url)
                 self._json(200, result)
             except Exception as exc:  # noqa: BLE001 - review endpoint should return diagnostics.
                 self._json(500, {"ok": False, "error": str(exc)})
