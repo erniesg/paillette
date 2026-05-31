@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
+import {
+  BACKABLE_NGS_PUBLIC_ARTWORK_SQL,
+  PUBLIC_ARTWORK_SQL,
+  isHiddenNgsPublicAccession,
+} from '../../src/utils/ngs-public-filter';
 
 describe('isHiddenNgsPublicAccession', () => {
   it('hides Roots-only museum accessions and GI AB suffix records', () => {
@@ -48,5 +52,18 @@ describe('isHiddenNgsPublicAccession', () => {
         'https://www.nationalgallery.sg/example'
       )
     ).toBe(false);
+  });
+
+  it('keeps generic public filtering separate from NGS source labels', () => {
+    expect(PUBLIC_ARTWORK_SQL).toContain('source_url IS NOT NULL');
+    expect(PUBLIC_ARTWORK_SQL).toContain(
+      "UPPER(accession_number) LIKE '%-(AB)'"
+    );
+    expect(PUBLIC_ARTWORK_SQL).not.toContain(
+      "source_institution = 'National Gallery Singapore'"
+    );
+    expect(BACKABLE_NGS_PUBLIC_ARTWORK_SQL).toContain(
+      "source_institution = 'National Gallery Singapore'"
+    );
   });
 });

@@ -50,14 +50,26 @@ export const HIDDEN_NGS_PUBLIC_ARTWORK_SQL = `
         )
 `;
 
-export const BACKABLE_NGS_PUBLIC_ARTWORK_SQL = `
+export const PUBLIC_SOURCE_REQUIRED_SQL = `
         AND source_url IS NOT NULL
         AND trim(source_url) <> ''
         AND accession_number IS NOT NULL
         AND trim(accession_number) <> ''
         AND title IS NOT NULL
         AND trim(title) <> ''
-        ${HIDDEN_NGS_PUBLIC_ARTWORK_SQL}
+`;
+
+export const PUBLIC_NGS_SOURCE_LABEL_SQL = `
         AND source_institution = 'National Gallery Singapore'
         AND source_collection = 'National Collection'
+`;
+
+export const PUBLIC_ARTWORK_SQL = `
+        ${PUBLIC_SOURCE_REQUIRED_SQL}
+        ${HIDDEN_NGS_PUBLIC_ARTWORK_SQL}
+`;
+
+export const BACKABLE_NGS_PUBLIC_ARTWORK_SQL = `
+        ${PUBLIC_ARTWORK_SQL}
+        ${PUBLIC_NGS_SOURCE_LABEL_SQL}
 `;

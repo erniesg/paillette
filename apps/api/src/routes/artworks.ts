@@ -22,7 +22,7 @@ import {
   checkDuplicateImage,
   parseFilename,
 } from '../utils/image';
-import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
+import { PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { resolveOrgIdentifier } from '../utils/orgs';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -433,7 +433,7 @@ app.get('/', async (c) => {
     }
 
     if (validatedQuery.public_only) {
-      sql += BACKABLE_NGS_PUBLIC_ARTWORK_SQL;
+      sql += PUBLIC_ARTWORK_SQL;
     }
 
     if (validatedQuery.artist) {
