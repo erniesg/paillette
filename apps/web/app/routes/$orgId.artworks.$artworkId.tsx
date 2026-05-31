@@ -8,6 +8,7 @@ import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
 import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
   getGeneratedCaptionText,
@@ -21,6 +22,12 @@ import {
   getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
+
+export const shouldHidePublicArtworkDetail = (
+  _requestedOrgId: string,
+  preferredRouteId: string,
+  artwork: Record<string, any>
+) => preferredRouteId === 'ngs' && isHiddenPublicNgsArtwork(artwork);
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   const artwork = data?.artwork;
@@ -46,6 +53,9 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     const gallery = await api.getGallery(orgId);
     const artwork = await api.getArtwork(gallery.id, artworkId);
     const preferredRouteId = getPreferredOrgRouteId(orgId, gallery.slug);
+    if (shouldHidePublicArtworkDetail(orgId, preferredRouteId, artwork)) {
+      throw new Response('Artwork not found', { status: 404 });
+    }
     const url = new URL(request.url);
 
     return {
