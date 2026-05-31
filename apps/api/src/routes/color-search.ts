@@ -13,23 +13,13 @@ import {
   requireAuthOrApiKey,
 } from '../middleware/auth';
 import type { ApiResponse } from '../types';
+import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { isNgsPublicOrg, resolveOrgIdentifier } from '../utils/orgs';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
 
-const BACKABLE_NGS_COLOR_SQL = `
-        AND source_url IS NOT NULL
-        AND trim(source_url) <> ''
-        AND accession_number IS NOT NULL
-        AND trim(accession_number) <> ''
-        AND title IS NOT NULL
-        AND trim(title) <> ''
-        AND source_institution = 'National Gallery Singapore'
-        AND source_collection = 'National Collection'
-`;
-
 const backableColorSearchSql = (orgId: string | undefined) =>
-  isNgsPublicOrg(orgId) ? BACKABLE_NGS_COLOR_SQL : '';
+  isNgsPublicOrg(orgId) ? BACKABLE_NGS_PUBLIC_ARTWORK_SQL : '';
 
 colorSearchRoutes.use(
   '/search/*',

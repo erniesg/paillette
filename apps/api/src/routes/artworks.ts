@@ -22,22 +22,10 @@ import {
   checkDuplicateImage,
   parseFilename,
 } from '../utils/image';
+import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { resolveOrgIdentifier } from '../utils/orgs';
 
 const app = new Hono<{ Bindings: Env }>();
-
-const publicSourceFilterSql = `
-  AND source_url IS NOT NULL
-  AND trim(source_url) <> ''
-  AND accession_number IS NOT NULL
-  AND trim(accession_number) <> ''
-  AND title IS NOT NULL
-  AND trim(title) <> ''
-  AND NOT (
-    (accession_number LIKE 'AB%' OR accession_number LIKE 'HP-%')
-    AND source_url LIKE 'https://www.roots.gov.sg/%'
-  )
-`;
 
 // ============================================================================
 // Helper Functions
@@ -445,7 +433,7 @@ app.get('/', async (c) => {
     }
 
     if (validatedQuery.public_only) {
-      sql += publicSourceFilterSql;
+      sql += BACKABLE_NGS_PUBLIC_ARTWORK_SQL;
     }
 
     if (validatedQuery.artist) {

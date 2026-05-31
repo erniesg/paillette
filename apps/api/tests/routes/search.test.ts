@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { searchRoutes } from '../../src/routes/search';
+import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
 import type { Env } from '../../src/index';
 
 const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
@@ -340,11 +341,7 @@ class FakeSearchDb {
           row.source_url?.trim() &&
           row.accession_number?.trim() &&
           row.title?.trim() &&
-          !(
-            (row.accession_number.startsWith('AB') ||
-              row.accession_number.startsWith('HP-')) &&
-            row.source_url.startsWith('https://www.roots.gov.sg/')
-          )
+          !isHiddenNgsPublicAccession(row.accession_number, row.source_url)
       );
     };
 
@@ -576,6 +573,26 @@ describe('Search API auth and quota behavior', () => {
         source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1129656',
         match_score: 100,
       },
+      {
+        ...artworkRow,
+        id: 'GI-0286-(AB)',
+        title: 'Singapore River',
+        artist: 'Lim Cheng Hoe',
+        accession_number: 'GI-0286-(AB)',
+        source_record_id: 'GI-0286-(AB)',
+        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1030183',
+        match_score: 100,
+      },
+      {
+        ...artworkRow,
+        id: '2013-00591',
+        title: 'Istana Art Collection Work',
+        artist: 'Unknown',
+        accession_number: '2013-00591',
+        source_record_id: '2013-00591',
+        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1284239',
+        match_score: 100,
+      },
     ]);
     env = makeEnv(db);
 
@@ -584,8 +601,16 @@ describe('Search API auth and quota behavior', () => {
 
     expect(res.status).toBe(200);
     expect(body.data.results).toHaveLength(0);
-    expect(db.metadataSearchSql[0]).toContain("accession_number LIKE 'AB%'");
-    expect(db.metadataSearchSql[0]).toContain("accession_number LIKE 'HP-%'");
+    expect(db.metadataSearchSql[0]).toContain(
+      "UPPER(accession_number) LIKE 'AB%'"
+    );
+    expect(db.metadataSearchSql[0]).toContain(
+      "UPPER(accession_number) LIKE 'HP-%'"
+    );
+    expect(db.metadataSearchSql[0]).toContain(
+      "UPPER(accession_number) LIKE '%-(AB)'"
+    );
+    expect(db.metadataSearchSql[0]).toContain("'2013-00591'");
     expect(db.metadataSearchSql[0]).toContain(
       "source_url LIKE 'https://www.roots.gov.sg/%'"
     );

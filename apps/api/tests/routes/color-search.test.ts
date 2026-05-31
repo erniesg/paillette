@@ -7,6 +7,7 @@ describe('Color Search API', () => {
   let app: Hono<{ Bindings: Env }>;
   let mockEnv: Env;
   let testGalleryId: string;
+  const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
     'Content-Type': 'application/json',
     'X-User-Id': 'public-search-web',
@@ -110,6 +111,32 @@ describe('Color Search API', () => {
       expect(body.data).toHaveProperty('results');
       expect(body.data).toHaveProperty('query');
       expect(Array.isArray(body.data.results)).toBe(true);
+    });
+
+    it('applies the NGS public artwork filter to color search', async () => {
+      testGalleryId = ngsOrgId;
+
+      const res = await request('/galleries/ngs/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+          threshold: 10,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const colorSql = (mockEnv.DB.prepare as any).mock.calls
+        .map(([sql]: [string]) => sql)
+        .find((sql: string) => sql.includes('dominant_colors IS NOT NULL'));
+
+      expect(colorSql).toContain(
+        "source_url LIKE 'https://www.roots.gov.sg/%'"
+      );
+      expect(colorSql).toContain("UPPER(accession_number) LIKE '%-(AB)'");
+      expect(colorSql).toContain(
+        "source_institution = 'National Gallery Singapore'"
+      );
     });
 
     it('should search by multiple colors (ANY mode)', async () => {
