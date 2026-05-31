@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  mapReviewBoxToSourcePixels,
   reviewCropArtworkStatement,
   reviewCropBackfillPayload,
+  reviewSourceCropSpec,
   selectReviewedCropsForBackfill,
 } from '../lib/ngs-reviewed-crop-backfill.mjs';
 
@@ -15,6 +17,8 @@ describe('selectReviewedCropsForBackfill', () => {
       artist: 'Yip Cheong Fun',
       dateText: '1950s',
       original: 'assets/2015-00240-original.jpg',
+      fullWidth: 512,
+      fullHeight: 342,
     },
     {
       id: 'GI-0001',
@@ -85,6 +89,13 @@ describe('selectReviewedCropsForBackfill', () => {
       selected[0].selectedImage.reviewCropUrl,
       'assets/2015-00240-api-frame-detector-crop.jpg?v=1780119016103'
     );
+    assert.deepEqual(selected[0].selectedImage.reviewSource, {
+      path: '/tmp/review/assets/2015-00240-source-auto-straighten.jpg',
+      sourceUrl: 'assets/2015-00240-source-auto-straighten.jpg?v=1',
+      width: 512,
+      height: 342,
+      box: [22, 20, 386, 325],
+    });
   });
 
   it('fails loud when an accepted review choice has no crop asset', () => {
@@ -97,6 +108,62 @@ describe('selectReviewedCropsForBackfill', () => {
           exists: () => false,
         }),
       /accepted review crop is missing/
+    );
+  });
+});
+
+describe('mapReviewBoxToSourcePixels', () => {
+  it('maps review coordinates onto the actual source image size', () => {
+    assert.deepEqual(
+      mapReviewBoxToSourcePixels({
+        box: [10, 20, 110, 220],
+        reviewSize: { width: 200, height: 400 },
+        sourceSize: { width: 1000, height: 2000 },
+      }),
+      { left: 50, top: 100, width: 500, height: 1000 }
+    );
+  });
+
+  it('clamps boxes to the source image bounds', () => {
+    assert.deepEqual(
+      mapReviewBoxToSourcePixels({
+        box: [-5, 10, 210, 450],
+        reviewSize: { width: 200, height: 400 },
+        sourceSize: { width: 1000, height: 2000 },
+      }),
+      { left: 0, top: 50, width: 1000, height: 1950 }
+    );
+  });
+});
+
+describe('reviewSourceCropSpec', () => {
+  it('returns the extraction region for a reviewed crop source image', () => {
+    assert.deepEqual(
+      reviewSourceCropSpec(
+        {
+          reviewSource: {
+            path: '/tmp/review/source.jpg',
+            width: 512,
+            height: 342,
+            box: [22, 20, 386, 325],
+          },
+        },
+        { width: 1200, height: 801 }
+      ),
+      {
+        inputPath: '/tmp/review/source.jpg',
+        extract: { left: 52, top: 47, width: 853, height: 714 },
+      }
+    );
+  });
+
+  it('returns null when review source context is incomplete', () => {
+    assert.equal(
+      reviewSourceCropSpec(
+        { reviewSource: { path: '/tmp/review/source.jpg', box: [0, 0, 10, 10] } },
+        { width: 1200, height: 801 }
+      ),
+      null
     );
   });
 });

@@ -16,6 +16,7 @@ import {
 import {
   reviewCropArtworkStatement,
   reviewCropBackfillPayload,
+  reviewSourceCropSpec,
   selectReviewedCropsForBackfill,
 } from './lib/ngs-reviewed-crop-backfill.mjs';
 
@@ -201,7 +202,8 @@ async function prepareRow(row) {
   );
   mkdirSync(dirname(imageOut), { recursive: true });
 
-  const normalized = await sharp(row.selectedImage.path, {
+  const sourceInput = await prepareReviewedCropInput(row);
+  const normalized = await sharp(sourceInput.input, {
     limitInputPixels: false,
   })
     .rotate()
@@ -239,6 +241,9 @@ async function prepareRow(row) {
     preparedThumbnailPath: thumbOut,
     width: normalized.info.width,
     height: normalized.info.height,
+    preparedSourceKind: sourceInput.kind,
+    preparedSourcePath: sourceInput.path,
+    preparedSourceExtract: sourceInput.extract,
     thumbWidth: thumb.info.width,
     thumbHeight: thumb.info.height,
     sizeBytes: normalized.data.byteLength,
@@ -248,6 +253,61 @@ async function prepareRow(row) {
     colors,
     colorExtractedAt: now,
   };
+}
+
+async function prepareReviewedCropInput(row) {
+  const source = row.selectedImage?.reviewSource;
+  if (!source?.path || !existsSync(source.path)) {
+    return {
+      input: row.selectedImage.path,
+      kind: 'selected_review_crop',
+      path: row.selectedImage.path,
+      extract: null,
+    };
+  }
+
+  try {
+    const metadata = await sharp(source.path, {
+      limitInputPixels: false,
+    }).metadata();
+    const cropSpec = reviewSourceCropSpec(row.selectedImage, {
+      width: metadata.width,
+      height: metadata.height,
+    });
+
+    if (!cropSpec) {
+      return {
+        input: row.selectedImage.path,
+        kind: 'selected_review_crop',
+        path: row.selectedImage.path,
+        extract: null,
+      };
+    }
+
+    const cropBuffer = await sharp(cropSpec.inputPath, {
+      limitInputPixels: false,
+    })
+      .extract(cropSpec.extract)
+      .toBuffer();
+
+    return {
+      input: cropBuffer,
+      kind: 'review_source_crop',
+      path: cropSpec.inputPath,
+      extract: cropSpec.extract,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `could not prepare source crop for ${row.id}; using selected review crop: ${message}`
+    );
+    return {
+      input: row.selectedImage.path,
+      kind: 'selected_review_crop',
+      path: row.selectedImage.path,
+      extract: null,
+    };
+  }
 }
 
 function planRowWithoutPrepare(row) {
@@ -388,6 +448,9 @@ function assetStatements(row, now) {
           version: options.assetVersion,
         }),
         originalReviewSourcePath: row.selectedImage.originalPath,
+        preparedSourceKind: row.preparedSourceKind || null,
+        preparedSourcePath: row.preparedSourcePath || null,
+        preparedSourceExtract: row.preparedSourceExtract || null,
       },
       now,
     }),

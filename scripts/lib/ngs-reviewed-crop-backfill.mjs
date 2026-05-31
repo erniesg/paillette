@@ -5,8 +5,66 @@ import { sqlString } from './ngs-missing-image-backfill.mjs';
 
 const ACCEPTED_DECISIONS = new Set(['accept', 'accepted']);
 
+const positiveNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
 export function stripUrlQuery(value) {
   return String(value || '').split('?', 1)[0];
+}
+
+export function mapReviewBoxToSourcePixels({ box, reviewSize, sourceSize }) {
+  if (!Array.isArray(box) || box.length !== 4) return null;
+
+  const reviewWidth = positiveNumber(reviewSize?.width);
+  const reviewHeight = positiveNumber(reviewSize?.height);
+  const sourceWidth = positiveNumber(sourceSize?.width);
+  const sourceHeight = positiveNumber(sourceSize?.height);
+
+  if (!reviewWidth || !reviewHeight || !sourceWidth || !sourceHeight) {
+    return null;
+  }
+
+  const [x1, y1, x2, y2] = box.map(Number);
+  if (![x1, y1, x2, y2].every(Number.isFinite)) return null;
+
+  const left = Math.max(
+    0,
+    Math.min(sourceWidth - 1, Math.round((x1 / reviewWidth) * sourceWidth))
+  );
+  const top = Math.max(
+    0,
+    Math.min(sourceHeight - 1, Math.round((y1 / reviewHeight) * sourceHeight))
+  );
+  const right = Math.max(
+    left + 1,
+    Math.min(sourceWidth, Math.round((x2 / reviewWidth) * sourceWidth))
+  );
+  const bottom = Math.max(
+    top + 1,
+    Math.min(sourceHeight, Math.round((y2 / reviewHeight) * sourceHeight))
+  );
+
+  return {
+    left,
+    top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+export function reviewSourceCropSpec(selectedImage, actualSourceSize) {
+  const source = selectedImage?.reviewSource;
+  if (!source?.path) return null;
+
+  const extract = mapReviewBoxToSourcePixels({
+    box: source.box,
+    reviewSize: { width: source.width, height: source.height },
+    sourceSize: actualSourceSize,
+  });
+
+  return extract ? { inputPath: source.path, extract } : null;
 }
 
 export function normalizeReviewDecision(decision) {
@@ -58,6 +116,12 @@ export function selectReviewedCropsForBackfill({
     const originalPath = row.original
       ? resolve(reviewDir, stripUrlQuery(row.original))
       : null;
+    const sourceTransform =
+      selection.sourceTransform || activeResult.sourceTransform || null;
+    const sourceUrl = sourceTransform?.sourceUrl || row.original || null;
+    const sourceWidth = Number(sourceTransform?.width || row.fullWidth || 0);
+    const sourceHeight = Number(sourceTransform?.height || row.fullHeight || 0);
+    const reviewBox = selection.box || activeResult.box || null;
 
     output.push({
       id,
@@ -74,13 +138,21 @@ export function selectReviewedCropsForBackfill({
         sourceContentType: 'image/jpeg',
         reviewChoice: selection.choice || null,
         reviewChoiceLabel: selection.choiceLabel || null,
-        reviewBox: selection.box || activeResult.box || null,
+        reviewBox,
         reviewCropUrl: cropUrl,
         reviewOverlayUrl:
           activeResult.overlayUrl || selection.overlayUrl || null,
         activeMethod: activeResult.method || null,
-        sourceTransform:
-          selection.sourceTransform || activeResult.sourceTransform || null,
+        sourceTransform,
+        reviewSource: sourceUrl
+          ? {
+              path: resolve(reviewDir, stripUrlQuery(sourceUrl)),
+              sourceUrl,
+              width: sourceWidth || null,
+              height: sourceHeight || null,
+              box: reviewBox,
+            }
+          : null,
         points: selection.points || [],
       },
     });
