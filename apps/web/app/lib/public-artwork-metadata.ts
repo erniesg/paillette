@@ -1291,6 +1291,65 @@ const getInferredCatalogueSourceLabel = (artwork: PublicArtwork) => {
   );
 };
 
+const getPublicImageBackfill = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  return asParsedRecord(
+    meta.image_backfill ||
+      meta.imageBackfill ||
+      artwork.image_backfill ||
+      artwork.imageBackfill
+  );
+};
+
+const getPublicImageSourceRow = (
+  artwork: PublicArtwork
+): PublicMetadataRowCandidate | null => {
+  const backfill = getPublicImageBackfill(artwork);
+  const source = asText(backfill.source);
+  if (!source) return null;
+
+  const selectedKind = asText(backfill.selected_kind || backfill.selectedKind);
+  const selectedSource = asText(
+    backfill.selected_source || backfill.selectedSource
+  );
+
+  if (source === 'ngs_dam_rendition') {
+    const isExtracted =
+      selectedKind === 'extracted' || /sam3|crop/i.test(selectedSource || '');
+
+    return {
+      label: 'Image source',
+      value: isExtracted
+        ? 'NGS DAM rendition, extracted artwork crop'
+        : 'NGS DAM rendition',
+      sourceLabel: NGS_SOURCE_LABEL,
+    };
+  }
+
+  if (source === 'ngs_remaining_sam3_human_review') {
+    return {
+      label: 'Image source',
+      value: 'Human-reviewed crop from NGS image',
+      sourceLabel: NGS_SOURCE_LABEL,
+    };
+  }
+
+  const sourceProvider = firstText(
+    backfill.source_provider,
+    backfill.sourceProvider,
+    backfill.provider
+  );
+  if (/web_image|external|legacy/i.test(source) && sourceProvider) {
+    return {
+      label: 'Image source',
+      value: `${sourceProvider} web image`,
+      sourceLabel: METADATA_SOURCE_LABEL,
+    };
+  }
+
+  return null;
+};
+
 const getNgsCatalogueRows = (
   artwork: PublicArtwork,
   fallbackSourceLabel: string
@@ -1425,6 +1484,8 @@ const getNgsCatalogueRows = (
         sourceLabel,
     },
   ];
+  const imageSourceRow = getPublicImageSourceRow(artwork);
+  if (imageSourceRow) rows.push(imageSourceRow);
 
   return toPublicMetadataRows(rows, sourceLabel);
 };
@@ -1667,6 +1728,8 @@ export const getPublicCatalogueRows = (
         sourceLabel: ROOTS_SOURCE_LABEL,
       },
     ];
+    const imageSourceRow = getPublicImageSourceRow(artwork);
+    if (imageSourceRow) rows.push(imageSourceRow);
 
     return rows
       .map(({ label, value, sourceLabel }) => ({
@@ -1747,6 +1810,8 @@ export const getPublicCatalogueRows = (
       ),
     },
   ];
+  const imageSourceRow = getPublicImageSourceRow(artwork);
+  if (imageSourceRow) rows.push(imageSourceRow);
 
   return rows
     .map(({ label, value, sourceLabel }) => ({

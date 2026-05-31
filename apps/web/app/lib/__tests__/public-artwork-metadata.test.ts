@@ -576,6 +576,48 @@ describe('getPublicDescription', () => {
     );
   });
 
+  it('labels NGS DAM backfilled images in public catalogue rows', () => {
+    expect(
+      getPublicCatalogueRows({
+        id: '1992-00439',
+        title: 'Rooster and Cockerels',
+        custom_metadata: {
+          image_backfill: {
+            source: 'ngs_dam_rendition',
+            selected_kind: 'original',
+            ngs_image_url:
+              'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/chen-wen-hsi/1992/1992-00439_cropped.tif',
+          },
+        },
+      })
+    ).toContainEqual({
+      label: 'Image source',
+      value: 'NGS DAM rendition',
+      sourceLabel: 'National Gallery Singapore',
+    });
+  });
+
+  it('labels extracted NGS DAM backfilled images separately', () => {
+    expect(
+      getPublicCatalogueRows({
+        id: '2017-00233',
+        custom_metadata: {
+          image_backfill: {
+            source: 'ngs_dam_rendition',
+            selected_kind: 'extracted',
+            selected_source: 'accepted_sam3_crop',
+            ngs_image_url:
+              'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/example/2017/2017-00233.tif',
+          },
+        },
+      })
+    ).toContainEqual({
+      label: 'Image source',
+      value: 'NGS DAM rendition, extracted artwork crop',
+      sourceLabel: 'National Gallery Singapore',
+    });
+  });
+
   it('does not suppress app assets for minor Roots title spelling differences', () => {
     const artwork = {
       id: 'GI-0405',
