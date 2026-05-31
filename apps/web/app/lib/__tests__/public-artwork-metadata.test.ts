@@ -47,6 +47,23 @@ describe('getPublicDescription', () => {
     ).toBe('A Roots description supplied by the public record.');
   });
 
+  it('decodes HTML entities in Roots catalogue text', () => {
+    expect(
+      getPublicDescription({
+        metadata: {
+          sourceRecords: {
+            roots: {
+              caption:
+                'Collection of National Gallery Singapore. &#169; 1988 Eduardo Masferr&#233; Masferre &amp; family.',
+            },
+          },
+        },
+      })
+    ).toBe(
+      'Collection of National Gallery Singapore. © 1988 Eduardo Masferré Masferre & family.'
+    );
+  });
+
   it('prefers Roots source fields over top-level metadata', () => {
     expect(
       getPublicDescription({

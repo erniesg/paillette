@@ -38,8 +38,43 @@ export const asRecord = (value: unknown): Record<string, any> =>
     ? (value as Record<string, any>)
     : {};
 
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: '&',
+  apos: "'",
+  gt: '>',
+  lt: '<',
+  nbsp: ' ',
+  quot: '"',
+};
+
+const decodeHtmlEntities = (value: string) =>
+  value.replace(
+    /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi,
+    (match, entity: string) => {
+      const normalized = entity.toLowerCase();
+
+      if (normalized.startsWith('#x')) {
+        const codePoint = Number.parseInt(normalized.slice(2), 16);
+        return Number.isFinite(codePoint)
+          ? String.fromCodePoint(codePoint)
+          : match;
+      }
+
+      if (normalized.startsWith('#')) {
+        const codePoint = Number.parseInt(normalized.slice(1), 10);
+        return Number.isFinite(codePoint)
+          ? String.fromCodePoint(codePoint)
+          : match;
+      }
+
+      return NAMED_HTML_ENTITIES[normalized] ?? match;
+    }
+  );
+
 export const asText = (value: unknown) =>
-  typeof value === 'string' && value.trim() ? value.trim() : null;
+  typeof value === 'string' && value.trim()
+    ? decodeHtmlEntities(value).replace(/\u00a0/g, ' ').trim()
+    : null;
 
 const asParsedRecord = (value: unknown): Record<string, any> => {
   const record = asRecord(value);
