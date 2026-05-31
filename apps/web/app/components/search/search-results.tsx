@@ -38,6 +38,7 @@ export function SearchResults({ results, queryTime }: SearchResultsProps) {
         <div className="w-24 h-24 flex items-center justify-center">
           <ImageWithFallback
             src={row.original.thumbnailUrl || row.original.imageUrl}
+            fallbackSrc={row.original.imageUrl || row.original.thumbnailUrl}
             alt={row.original.title || 'Artwork'}
             className="max-w-full max-h-full object-contain cursor-pointer hover:scale-105 transition-transform"
             onClick={() => setSelectedArtwork(row.original)}

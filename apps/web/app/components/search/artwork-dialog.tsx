@@ -70,6 +70,7 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
             </Dialog.Close>
             <ImageWithFallback
               src={artwork.imageUrl}
+              fallbackSrc={artwork.thumbnailUrl}
               alt={artwork.title || 'Artwork'}
               className="max-h-full w-full object-contain"
               fallback={

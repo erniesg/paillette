@@ -5,7 +5,7 @@ import {
   buildPublicSearchHeaders,
   getApiBaseUrl,
   getServerEnv,
-  proxyJsonResponse,
+  isHiddenPublicNgsArtwork,
   publicSearchConfigError,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
@@ -70,7 +70,7 @@ export const action = async ({ context, params, request }: ActionFunctionArgs) =
     );
   }
 
-  const payload: SearchTextRequest = {
+  const searchPayload: SearchTextRequest = {
     query,
     topK: clamp(body.topK, 1, 100, 30),
     minScore: clamp(body.minScore, 0, 1, 0.3),
@@ -81,9 +81,21 @@ export const action = async ({ context, params, request }: ActionFunctionArgs) =
     {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify(searchPayload),
     }
   );
 
-  return proxyJsonResponse<SearchResponse>(response);
+  const responsePayload = (await response.json()) as ApiResponse<SearchResponse>;
+  if (responsePayload.success && responsePayload.data) {
+    const results = responsePayload.data.results.filter(
+      (artwork) => !isHiddenPublicNgsArtwork(artwork as any)
+    );
+    responsePayload.data = {
+      ...responsePayload.data,
+      results,
+      count: results.length,
+    };
+  }
+
+  return json(responsePayload, { status: response.status });
 };

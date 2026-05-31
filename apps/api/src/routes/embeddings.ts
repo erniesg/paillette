@@ -32,6 +32,28 @@ export interface EmbeddingsResponse {
   dimensions: number;
 }
 
+const VECTORIZE_GET_BY_IDS_LIMIT = 20;
+
+const getEmbeddingVectorize = (env: Env): Vectorize =>
+  env.EMBEDDING_INDEX_VERSION?.trim().toLowerCase() === 'v2'
+    ? env.VECTORIZE_V2 || env.VECTORIZE
+    : env.VECTORIZE;
+
+const getVectorsByIds = async (vectorize: Vectorize, ids: string[]) => {
+  const vectors: Awaited<ReturnType<Vectorize['getByIds']>> = [];
+
+  for (
+    let offset = 0;
+    offset < ids.length;
+    offset += VECTORIZE_GET_BY_IDS_LIMIT
+  ) {
+    const chunk = ids.slice(offset, offset + VECTORIZE_GET_BY_IDS_LIMIT);
+    vectors.push(...(await vectorize.getByIds(chunk)));
+  }
+
+  return vectors;
+};
+
 export const embeddingsRoutes = new Hono<{ Bindings: Env }>();
 
 /**
@@ -146,9 +168,14 @@ embeddingsRoutes.get('/embeddings', async (c) => {
       .bind(orgId)
       .first<{ count: number }>();
 
-    // Fetch embeddings from Vectorize
-    const embeddingIds = artworks.map((a) => a.embedding_id);
-    const vectorResults = await c.env.VECTORIZE.getByIds(embeddingIds);
+    // Fetch embeddings from Vectorize. Cloudflare caps getByIds payloads at 20.
+    const embeddingIds = artworks
+      .map((a) => a.embedding_id)
+      .filter((id): id is string => Boolean(id));
+    const vectorResults = await getVectorsByIds(
+      getEmbeddingVectorize(c.env),
+      embeddingIds
+    );
 
     // Create a map for quick lookup
     const embeddingsMap = new Map(

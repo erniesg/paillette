@@ -214,6 +214,16 @@ type ReviewManifest = {
 
 const manifest = manifestJson as unknown as ReviewManifest;
 
+const publicManifest: ReviewManifest = {
+  ...manifest,
+  rows: manifest.rows.map((row) => ({
+    ...row,
+    captionEvidence: row.captionEvidence?.map(
+      ({ model: _model, ...item }) => item
+    ),
+  })),
+};
+
 export const meta: MetaFunction = () => [
   { title: 'NGS / Roots discrepancy review | Paillette' },
 ];
@@ -230,7 +240,7 @@ export const loader = ({ context }: LoaderFunctionArgs) => {
   const apiOrigin = apiBaseUrl.replace(/\/api\/v1$/, '');
 
   return json({
-    manifest,
+    manifest: publicManifest,
     apiOrigin,
   });
 };
@@ -601,7 +611,6 @@ function CaptionEvidencePanel({ evidence }: { evidence?: CaptionEvidence[] }) {
               {repairDisplayText(item.text)}
             </p>
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              {item.model ? <span>{item.model}</span> : null}
               {item.promptVersion ? <span>{item.promptVersion}</span> : null}
               {item.rootsTitle ? (
                 <span>Roots title: {item.rootsTitle}</span>

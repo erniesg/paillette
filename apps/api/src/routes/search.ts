@@ -112,6 +112,10 @@ const BACKABLE_NGS_SEARCH_SQL = `
         AND trim(accession_number) <> ''
         AND title IS NOT NULL
         AND trim(title) <> ''
+        AND NOT (
+          (accession_number LIKE 'AB%' OR accession_number LIKE 'HP-%')
+          AND source_url LIKE 'https://www.roots.gov.sg/%'
+        )
         AND source_institution = 'National Gallery Singapore'
         AND source_collection = 'National Collection'
 `;

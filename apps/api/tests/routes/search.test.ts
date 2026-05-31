@@ -339,7 +339,12 @@ class FakeSearchDb {
         (row) =>
           row.source_url?.trim() &&
           row.accession_number?.trim() &&
-          row.title?.trim()
+          row.title?.trim() &&
+          !(
+            (row.accession_number.startsWith('AB') ||
+              row.accession_number.startsWith('HP-')) &&
+            row.source_url.startsWith('https://www.roots.gov.sg/')
+          )
       );
     };
 
@@ -546,6 +551,43 @@ describe('Search API auth and quota behavior', () => {
     );
     expect(db.metadataSearchSql[0]).not.toContain(
       "source_url LIKE 'https://www.nationalgallery.sg/%'"
+    );
+  });
+
+  it('excludes museum rows that only link to Roots', async () => {
+    db = new FakeSearchDb([
+      {
+        ...artworkRow,
+        id: 'AB1999-00041',
+        title: 'Angkor Wat, 1965',
+        artist: 'Latiff Mohidin',
+        accession_number: 'AB1999-00041',
+        source_record_id: 'AB1999-00041',
+        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1103589',
+        match_score: 100,
+      },
+      {
+        ...artworkRow,
+        id: 'HP-0126',
+        title: 'Balek Kampong',
+        artist: 'Lim Cheng Hoe',
+        accession_number: 'HP-0126',
+        source_record_id: 'HP-0126',
+        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1129656',
+        match_score: 100,
+      },
+    ]);
+    env = makeEnv(db);
+
+    const res = await textSearch(app, env);
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(0);
+    expect(db.metadataSearchSql[0]).toContain("accession_number LIKE 'AB%'");
+    expect(db.metadataSearchSql[0]).toContain("accession_number LIKE 'HP-%'");
+    expect(db.metadataSearchSql[0]).toContain(
+      "source_url LIKE 'https://www.roots.gov.sg/%'"
     );
   });
 

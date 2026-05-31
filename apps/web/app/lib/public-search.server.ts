@@ -17,6 +17,46 @@ const ORG_ID_ALIASES: Record<string, string> = {
 export const resolvePublicSearchOrgId = (orgId: string) =>
   ORG_ID_ALIASES[orgId.toLowerCase()] || orgId;
 
+const asRecord = (value: unknown): Record<string, any> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+
+const firstText = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const isRootsUrl = (value: string | null) =>
+  Boolean(value && /^https:\/\/www\.roots\.gov\.sg\//i.test(value));
+
+export const isHiddenPublicNgsArtwork = (artwork: Record<string, any>) => {
+  const metadata = asRecord(artwork.metadata || artwork.custom_metadata);
+  const accession = firstText(
+    artwork.accession_number,
+    artwork.accessionNumber,
+    artwork.source_record_id,
+    artwork.sourceRecordId,
+    metadata.accession_number,
+    metadata.accessionNumber,
+    metadata.source_record_id,
+    metadata.sourceRecordId,
+    artwork.id
+  );
+  const sourceUrl = firstText(
+    artwork.source_url,
+    artwork.sourceUrl,
+    metadata.source_url,
+    metadata.sourceUrl
+  );
+
+  return Boolean(
+    accession && /^(AB|HP-)/i.test(accession) && isRootsUrl(sourceUrl)
+  );
+};
+
 const getProcessEnv = () => {
   const runtime = globalThis as typeof globalThis & {
     process?: { env?: Record<string, string | undefined> };

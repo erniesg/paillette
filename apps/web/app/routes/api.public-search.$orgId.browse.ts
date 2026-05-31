@@ -9,6 +9,7 @@ import type {
 import {
   getApiBaseUrl,
   getServerEnv,
+  isHiddenPublicNgsArtwork,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
 
@@ -148,9 +149,9 @@ export const loader = async ({
     return json(payload, { status: response.status });
   }
 
-  const results = payload.data.map((artwork) =>
-    mapArtworkToSearchResult(artwork)
-  );
+  const results = payload.data
+    .filter((artwork) => !isHiddenPublicNgsArtwork(artwork as any))
+    .map((artwork) => mapArtworkToSearchResult(artwork));
 
   return json({
     success: true,

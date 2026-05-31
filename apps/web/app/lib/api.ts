@@ -91,17 +91,57 @@ export const getPreferredOrgRouteId = (
     : canonicalSlug || requestedOrgId;
 };
 
+const sanitizeGeneratedCaptionRecord = (record: unknown) => {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return record;
+  }
+
+  const { model: _model, ...caption } = record as Record<string, unknown>;
+  return caption;
+};
+
+const sanitizeArtworkMetadata = (metadata: Record<string, any>) => {
+  const sanitized = { ...metadata };
+
+  if ('generated_caption' in sanitized) {
+    sanitized.generated_caption = sanitizeGeneratedCaptionRecord(
+      sanitized.generated_caption
+    );
+  }
+
+  if ('generatedCaption' in sanitized) {
+    sanitized.generatedCaption = sanitizeGeneratedCaptionRecord(
+      sanitized.generatedCaption
+    );
+  }
+
+  return sanitized;
+};
+
 const normalizeArtwork = (artwork: Artwork): Artwork => {
   const raw = artwork as Artwork & Record<string, any>;
   const orgId =
     raw.orgId || raw.org_id || raw.galleryId || raw.gallery_id || '';
-  const metadata = {
+  const rawCustomMetadata =
+    raw.custom_metadata &&
+    typeof raw.custom_metadata === 'object' &&
+    !Array.isArray(raw.custom_metadata)
+      ? raw.custom_metadata
+      : {};
+  const customMetadata =
+    raw.custom_metadata &&
+    typeof raw.custom_metadata === 'object' &&
+    !Array.isArray(raw.custom_metadata)
+      ? sanitizeArtworkMetadata(raw.custom_metadata)
+      : raw.custom_metadata;
+  const metadata = sanitizeArtworkMetadata({
     ...(raw.metadata || {}),
-    ...(raw.custom_metadata || {}),
-  };
+    ...rawCustomMetadata,
+  });
 
   return {
     ...artwork,
+    custom_metadata: customMetadata,
     orgId,
     galleryId: orgId,
     imageUrl: raw.imageUrl ?? raw.image_url ?? null,

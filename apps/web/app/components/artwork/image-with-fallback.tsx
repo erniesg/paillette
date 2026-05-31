@@ -10,33 +10,41 @@ type ImageWithFallbackProps = Omit<
   'src'
 > & {
   src?: string | null;
+  fallbackSrc?: string | null;
   fallback: ReactNode;
 };
 
 export function ImageWithFallback({
   src,
+  fallbackSrc,
   fallback,
   onError,
   ...imageProps
 }: ImageWithFallbackProps) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
 
   useEffect(() => {
-    if (src !== failedSrc) {
-      setFailedSrc(null);
-    }
-  }, [failedSrc, src]);
+    setFailedSources([]);
+  }, [fallbackSrc, src]);
 
-  if (!src || failedSrc === src) {
+  const sources = [src, fallbackSrc].filter(
+    (source, index, list): source is string =>
+      Boolean(source) && list.indexOf(source) === index
+  );
+  const activeSrc = sources.find((source) => !failedSources.includes(source));
+
+  if (!activeSrc) {
     return <>{fallback}</>;
   }
 
   return (
     <img
       {...imageProps}
-      src={src}
+      src={activeSrc}
       onError={(event) => {
-        setFailedSrc(src);
+        setFailedSources((current) =>
+          current.includes(activeSrc) ? current : [...current, activeSrc]
+        );
         onError?.(event);
       }}
     />

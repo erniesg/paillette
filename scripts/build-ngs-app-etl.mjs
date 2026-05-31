@@ -287,9 +287,7 @@ const getVerifiedRootsDescriptionText = (artwork, fieldSources, decision) => {
   }
 
   const override = verifiedRootsDescriptionRecords.get(artwork.id);
-  if (!override) return null;
-
-  const overrideCaption = firstText(override.caption);
+  const overrideCaption = firstText(override?.caption);
   if (overrideCaption) return overrideCaption;
 
   const rootsDescription = getRootsDescription(decision.rootsRecord);
@@ -348,6 +346,28 @@ const basenameFromUrl = (value) => {
 const firstYear = (dateText) => {
   const match = String(dateText || '').match(/\b(1[0-9]{3}|20[0-9]{2})\b/);
   return match ? Number(match[1]) : null;
+};
+
+const normalizeDimensionText = (value) => {
+  const text = firstText(value);
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/\bnull\b/gi, ' ')
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/\s+/g, ' ')
+        .replace(/\s+x\s+(?=(cm|mm|m|in)\b)/gi, ' ')
+        .replace(/\s+x\s*$/gi, '')
+        .replace(/\s+,/g, ',')
+        .replace(/,\s*$/g, '')
+        .trim()
+    )
+    .filter(Boolean)
+    .join('\n');
+
+  return cleaned || null;
 };
 
 const emitInsertMany = (lines, table, columns, rows, chunkSize = 25) => {
@@ -651,6 +671,8 @@ const ngsDetailUrlOverrides = new Map([
   ],
   // The NGS detail page currently renders the site's 404 page; Roots is the live public record.
   ['2010-03468', null],
+  // The NGS detail page currently renders the site's 404 page; Roots is the live public record.
+  ['2015-00622', null],
 ]);
 
 const normalizedDateText = (artwork) =>
@@ -720,11 +742,53 @@ const loadRootsSourceRecords = (path) => {
         row.documents_0_metadata_sgcool_label_text
       ),
       img: firstText(row.documents_0_metadata_image_url),
+      yearPeriod: firstText(
+        row.documents_0_metadata_date_period,
+        row.documents_0_metadata_year_period_0,
+        row.documents_0_metadata_creation_date,
+        row.documents_0_metadata_date_period_0
+      ),
+      region: firstText(
+        row.documents_0_metadata_region,
+        row.documents_0_metadata_region_0,
+        row.documents_0_metadata_region_1,
+        row.documents_0_metadata_creation_place_original_location
+      ),
+      objectType: firstText(
+        row.documents_0_metadata_object_type,
+        row.documents_0_metadata_object_type_0,
+        row.documents_0_metadata_object_type_1,
+        row.documents_0_metadata_nlb_type,
+        row.documents_0_metadata_nlb_type_0,
+        row.documents_0_metadata_categories_0
+      ),
       medium: firstText(
         row.documents_0_metadata_material,
         row.documents_0_metadata_material_0
       ),
-      dimensions: firstText(row.documents_0_metadata_dimension),
+      material: firstText(
+        row.documents_0_metadata_material,
+        row.documents_0_metadata_material_0,
+        row.documents_0_metadata_material_1,
+        row.documents_0_metadata_materials_name
+      ),
+      technique: firstText(
+        row.documents_0_metadata_technique_0,
+        row.documents_0_metadata_technique_1,
+        row.documents_0_metadata_techniques_name
+      ),
+      dimensions: normalizeDimensionText(
+        firstText(
+          row.documents_0_metadata_dimension,
+          row.documents_0_metadata_dimension_0
+        )
+      ),
+      dimension: normalizeDimensionText(
+        firstText(
+          row.documents_0_metadata_dimension,
+          row.documents_0_metadata_dimension_0
+        )
+      ),
       collectionOf: firstText(
         row.documents_0_metadata_collection_of,
         row.documents_0_metadata_collection_of_0
@@ -754,6 +818,181 @@ const findRootsSourceRecord = (artwork, grounding) => {
     rootsSourceRecords.byAccession.get(accession) ||
     null
   );
+};
+
+const copyNonEmptyRecordFields = (target, record) => {
+  if (!record || typeof record !== 'object') return;
+
+  for (const [key, value] of Object.entries(record)) {
+    const hasValue =
+      (typeof value === 'string' && value.trim().length > 0) ||
+      (Array.isArray(value) && value.length > 0) ||
+      Boolean(value && typeof value === 'object') ||
+      (value !== null && value !== undefined && typeof value !== 'string');
+
+    if (hasValue || !(key in target)) {
+      target[key] = value;
+    }
+  }
+};
+
+const setCanonicalRootField = (target, key, ...values) => {
+  const value = firstText(...values);
+  if (value) target[key] = value;
+};
+
+const setCanonicalRootDimensionField = (target, key, ...values) => {
+  const value = normalizeDimensionText(firstText(...values));
+  if (value) target[key] = value;
+};
+
+const mergeRootsSourceRecord = (rootsSourceRecord, rootsRecord) => {
+  if (!rootsSourceRecord && !rootsRecord) return null;
+
+  const merged = {};
+  copyNonEmptyRecordFields(merged, rootsSourceRecord);
+  copyNonEmptyRecordFields(merged, rootsRecord);
+
+  setCanonicalRootField(
+    merged,
+    'title',
+    rootsSourceRecord?.title,
+    rootsRecord?.title,
+    rootsRecord?.objectTitle,
+    rootsRecord?.object_title
+  );
+  setCanonicalRootField(
+    merged,
+    'creator',
+    rootsSourceRecord?.creator,
+    rootsRecord?.creator,
+    rootsRecord?.artist,
+    rootsRecord?.maker
+  );
+  setCanonicalRootField(
+    merged,
+    'accession',
+    rootsSourceRecord?.accession,
+    getRootsAccession(rootsRecord)
+  );
+  setCanonicalRootField(
+    merged,
+    'yearPeriod',
+    rootsSourceRecord?.yearPeriod,
+    rootsRecord?.yearPeriod,
+    rootsRecord?.year_period,
+    rootsRecord?.date_period,
+    rootsRecord?.metadata_year_period_0,
+    rootsRecord?.date,
+    rootsRecord?.creation_date
+  );
+  setCanonicalRootField(
+    merged,
+    'region',
+    rootsSourceRecord?.region,
+    rootsRecord?.region,
+    rootsRecord?.associated_place,
+    rootsRecord?.creation_place_original_location,
+    rootsRecord?.metadata_region,
+    rootsRecord?.metadata_region_0
+  );
+  setCanonicalRootField(
+    merged,
+    'objectType',
+    rootsSourceRecord?.objectType,
+    rootsRecord?.objectType,
+    rootsRecord?.object_type,
+    rootsRecord?.object_work_type,
+    rootsRecord?.categories,
+    rootsRecord?.category,
+    rootsRecord?.nlb_type
+  );
+  setCanonicalRootField(
+    merged,
+    'object_type',
+    rootsSourceRecord?.objectType,
+    rootsRecord?.object_type,
+    rootsRecord?.objectType,
+    rootsRecord?.object_work_type,
+    rootsRecord?.categories,
+    rootsRecord?.category,
+    rootsRecord?.nlb_type
+  );
+  setCanonicalRootField(
+    merged,
+    'material',
+    rootsSourceRecord?.material,
+    rootsSourceRecord?.medium,
+    rootsRecord?.material,
+    rootsRecord?.medium,
+    rootsRecord?.materials_name,
+    rootsRecord?.metadata_material_0
+  );
+  setCanonicalRootField(
+    merged,
+    'medium',
+    rootsSourceRecord?.medium,
+    rootsSourceRecord?.material,
+    rootsRecord?.medium,
+    rootsRecord?.material,
+    rootsRecord?.materials_name,
+    rootsRecord?.metadata_material_0
+  );
+  setCanonicalRootField(
+    merged,
+    'technique',
+    rootsSourceRecord?.technique,
+    rootsRecord?.technique,
+    rootsRecord?.techniques_name,
+    rootsRecord?.metadata_technique_0
+  );
+  setCanonicalRootDimensionField(
+    merged,
+    'dimensions',
+    rootsSourceRecord?.dimensions,
+    rootsSourceRecord?.dimension,
+    rootsRecord?.dimensions,
+    rootsRecord?.dimension,
+    rootsRecord?.metadata_dimension
+  );
+  setCanonicalRootDimensionField(
+    merged,
+    'dimension',
+    rootsSourceRecord?.dimension,
+    rootsSourceRecord?.dimensions,
+    rootsRecord?.dimension,
+    rootsRecord?.dimensions,
+    rootsRecord?.metadata_dimension
+  );
+  setCanonicalRootField(
+    merged,
+    'collectionOf',
+    rootsSourceRecord?.collectionOf,
+    getRootsCollectionOf(rootsRecord)
+  );
+  setCanonicalRootField(
+    merged,
+    'collection_of',
+    rootsSourceRecord?.collectionOf,
+    rootsRecord?.collection_of,
+    getRootsCollectionOf(rootsRecord)
+  );
+  setCanonicalRootField(
+    merged,
+    'caption',
+    getRootsDescription(rootsRecord),
+    rootsSourceRecord?.caption
+  );
+  setCanonicalRootField(
+    merged,
+    'img',
+    rootsRecord?.img,
+    rootsSourceRecord?.img,
+    rootsRecord?.image_url,
+    rootsRecord?.imageUrl
+  );
+
+  return merged;
 };
 
 const sourceRecordRef = (artwork) =>
@@ -841,8 +1080,9 @@ for (const artwork of candidateSourceArtworks) {
     groundingByArtwork.get(artwork.source_artwork_id) ||
     groundingByArtwork.get(artwork.id);
   const ngsRecord = jsonOrNull(grounding?.raw_ngs || artwork.raw_ngs);
-  const rootsRecord = jsonOrNull(grounding?.raw_roots || artwork.raw_roots);
+  const rawRootsRecord = jsonOrNull(grounding?.raw_roots || artwork.raw_roots);
   const rootsSourceRecord = findRootsSourceRecord(artwork, grounding);
+  const rootsRecord = mergeRootsSourceRecord(rootsSourceRecord, rawRootsRecord);
   const verifiedRootsDescriptionRecord = verifiedRootsDescriptionRecords.get(
     artwork.id
   );
@@ -899,16 +1139,13 @@ for (const artwork of candidateSourceArtworks) {
       verifiedRootsMetadata);
   const trustedRootsRecord = trustedRoots
     ? {
-        ...(rootsSourceRecord || {}),
         ...(rootsRecord || {}),
         caption:
           getRootsDescription(rootsRecord) ||
-          rootsSourceRecord?.caption ||
           verifiedRootsDescriptionRecord?.caption ||
           undefined,
         accession:
           getRootsAccession(rootsRecord) ||
-          rootsSourceRecord?.accession ||
           artwork.accession_no ||
           artwork.id,
         collectionOf: rootsCollectionOf || undefined,
@@ -1173,7 +1410,7 @@ const artworkRows = sourceArtworks.map((artwork) => {
   );
   const customMetadata = {
     artist_bio: artwork.artist_bio || null,
-    dimensions_text: artwork.dimensions || null,
+    dimensions_text: normalizeDimensionText(artwork.dimensions),
     geographic_association: ngsRecord?.objAssociatedPlaceTxt || null,
     colour_palette:
       jsonOrNull(artwork.colour_palette) ?? artwork.colour_palette ?? null,

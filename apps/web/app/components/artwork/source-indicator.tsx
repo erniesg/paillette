@@ -38,6 +38,12 @@ const toneClasses: Record<SourceTone, string> = {
 const cleanSourceLabel = (label: string) =>
   label.replace(/^from\s+/i, '').trim();
 
+const shouldShowDetailRow = ([label, value]: SourceIndicatorDetailRow) =>
+  value !== null &&
+  value !== undefined &&
+  value !== '' &&
+  label.trim().toLowerCase() !== 'model';
+
 export const getSourceIndicatorDetails = (label: string): SourceDetails => {
   const title = cleanSourceLabel(label) || 'Source metadata';
   const key = title.toLowerCase();
@@ -88,7 +94,8 @@ export const getSourceIndicatorDetails = (label: string): SourceDetails => {
     return {
       title: 'Generated caption',
       shortLabel: 'AI',
-      description: 'Generated visual description used for search and discovery.',
+      description:
+        'Generated visual description used for search and discovery.',
       icon: Sparkles,
       tone: 'ai',
     };
@@ -117,10 +124,7 @@ export function SourceIndicator({
   const popoverId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const visibleDetails = useMemo(
-    () =>
-      (details ?? []).filter(
-        ([, value]) => value !== null && value !== undefined && value !== ''
-      ),
+    () => (details ?? []).filter(shouldShowDetailRow),
     [details]
   );
 

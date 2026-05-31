@@ -10,6 +10,13 @@ export type PublicMetadataRow = {
   sourceLabel: string;
 };
 
+export type PublicMetadataGroup = {
+  id: 'ngs' | 'roots' | 'metadata';
+  label: string;
+  sourceLabel: string;
+  rows: PublicMetadataRow[];
+};
+
 export type PublicDescriptionDetails = {
   text: string;
   source: 'ngs' | 'roots' | 'metadata';
@@ -239,11 +246,41 @@ const normalizeComparableText = (value: unknown) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const comparableTextMatches = (left: string | null, right: string | null) => {
-  const normalizedLeft = normalizeComparableText(left);
-  const normalizedRight = normalizeComparableText(right);
+const removeComparableArticles = (value: string) =>
+  value.replace(/\b(a|an|the)\b/g, ' ').replace(/\s+/g, ' ').trim();
 
-  if (!normalizedLeft || !normalizedRight) return true;
+const editDistanceAtMost = (left: string, right: string, maxDistance: number) => {
+  if (Math.abs(left.length - right.length) > maxDistance) return false;
+
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    let rowMinimum = current[0] ?? leftIndex;
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost =
+        left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      const distance = Math.min(
+        (previous[rightIndex] ?? rightIndex) + 1,
+        (current[rightIndex - 1] ?? leftIndex) + 1,
+        (previous[rightIndex - 1] ?? rightIndex - 1) + substitutionCost
+      );
+      current[rightIndex] = distance;
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+
+    if (rowMinimum > maxDistance) return false;
+    previous = current;
+  }
+
+  return (previous[right.length] ?? maxDistance + 1) <= maxDistance;
+};
+
+const normalizedComparableTextMatches = (
+  normalizedLeft: string,
+  normalizedRight: string
+) => {
   if (normalizedLeft === normalizedRight) return true;
 
   const [shorter, longer] =
@@ -251,7 +288,33 @@ const comparableTextMatches = (left: string | null, right: string | null) => {
       ? [normalizedLeft, normalizedRight]
       : [normalizedRight, normalizedLeft];
 
-  return shorter.length >= 8 && longer.includes(shorter);
+  if (shorter.length < 8) return false;
+  if (longer.includes(shorter)) return true;
+
+  const maxDistance = Math.max(1, Math.floor(shorter.length * 0.08));
+  return editDistanceAtMost(shorter, longer, maxDistance);
+};
+
+const comparableTextMatches = (left: string | null, right: string | null) => {
+  const normalizedLeft = normalizeComparableText(left);
+  const normalizedRight = normalizeComparableText(right);
+
+  if (!normalizedLeft || !normalizedRight) return true;
+  if (normalizedComparableTextMatches(normalizedLeft, normalizedRight)) {
+    return true;
+  }
+
+  const articlelessLeft = removeComparableArticles(normalizedLeft);
+  const articlelessRight = removeComparableArticles(normalizedRight);
+  if (!articlelessLeft || !articlelessRight) return true;
+  if (
+    articlelessLeft !== normalizedLeft ||
+    articlelessRight !== normalizedRight
+  ) {
+    return normalizedComparableTextMatches(articlelessLeft, articlelessRight);
+  }
+
+  return false;
 };
 
 const hasRecordContent = (record: Record<string, any>) =>
@@ -379,7 +442,7 @@ export const getPublicImageUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsImageUrl(artwork);
   }
 
-  return getStandardImageUrl(artwork);
+  return getStandardImageUrl(artwork) || getExplicitNgsImageUrl(artwork);
 };
 
 export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
@@ -387,7 +450,7 @@ export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsThumbnailUrl(artwork);
   }
 
-  return getStandardThumbnailUrl(artwork);
+  return getStandardThumbnailUrl(artwork) || getExplicitNgsThumbnailUrl(artwork);
 };
 
 const getPublicMediumText = (artwork: PublicArtwork) => {
@@ -403,7 +466,9 @@ const getPublicMediumText = (artwork: PublicArtwork) => {
       .filter(Boolean)
       .join('; ');
 
-    return rootsMedium || rootsMaterial || rootsObjectType || null;
+    if (rootsMedium || rootsMaterial || rootsObjectType) {
+      return rootsMedium || rootsMaterial || rootsObjectType || null;
+    }
   }
 
   return firstPublicCatalogueText(
@@ -413,12 +478,82 @@ const getPublicMediumText = (artwork: PublicArtwork) => {
   );
 };
 
+const cleanDimensionText = (value: unknown) => {
+  const text = asText(value);
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/\bnull\b/gi, ' ')
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/\s+/g, ' ')
+        .replace(/\s+x\s+(?=(cm|mm|m|in)\b)/gi, ' ')
+        .replace(/\s+x\s*$/gi, '')
+        .replace(/\s+,/g, ',')
+        .replace(/,\s*$/g, '')
+        .trim()
+    )
+    .filter(Boolean)
+    .join('\n');
+
+  return cleaned || null;
+};
+
+const getDimensionTextFromRecordValues = (
+  record: Record<string, any>,
+  hadNullComponent: boolean
+) => {
+  const values = [record.firstNum, record.secondNum, record.thirdNum]
+    .map((value, index) => {
+      const text = asText(value);
+      if (
+        index === 2 &&
+        hadNullComponent &&
+        text &&
+        /^0(?:\.0+)?$/.test(text)
+      ) {
+        return null;
+      }
+      return text;
+    })
+    .filter((value): value is string => Boolean(value));
+  if (values.length === 0) return null;
+
+  const unit = asText(record.unitVoc) || asText(record.unit);
+  return `${values.join(' x ')}${unit ? ` ${unit}` : ''}`;
+};
+
+const getDimensionSummaryFromRecord = (record: Record<string, any>) => {
+  const summary = cleanDimensionText(record.summary);
+  const type = firstPublicCatalogueText(record.type);
+  const hadPlaceholder = /\bnull\b/i.test(String(record.summary ?? ''));
+  const hadNullComponent = /\bx\s*null\b/i.test(String(record.summary ?? ''));
+  const dimensionsFromValues = getDimensionTextFromRecordValues(
+    record,
+    hadNullComponent
+  );
+
+  if (hadPlaceholder && dimensionsFromValues) {
+    return type ? `${type}: ${dimensionsFromValues}` : dimensionsFromValues;
+  }
+
+  if (summary) {
+    return hadPlaceholder && type ? `${type}: ${summary}` : summary;
+  }
+
+  const dimensions = dimensionsFromValues;
+  if (!dimensions) return null;
+
+  return type ? `${type}: ${dimensions}` : dimensions;
+};
+
 const getFirstDimensionSummary = (groups: unknown) => {
   if (!Array.isArray(groups)) return null;
 
   for (const group of groups) {
     const record = asRecord(group);
-    const summary = firstPublicCatalogueText(record.summary);
+    const summary = getDimensionSummaryFromRecord(record);
     if (summary) return summary;
   }
 
@@ -442,16 +577,16 @@ export const getPublicDimensionsText = (artwork: PublicArtwork) => {
       'Dimension'
     );
 
-    if (rootsDimension) return rootsDimension;
+    if (rootsDimension) return cleanDimensionText(rootsDimension);
   }
 
   return firstPublicCatalogueText(
-    meta.dimensions_text,
-    meta.dimensionsText,
-    meta.published_dimension,
-    meta.publishedDimension,
     getFirstDimensionSummary(ngsRecord.objDim2DGrp),
     getFirstDimensionSummary(ngsRecord.objDim3DGrp),
+    cleanDimensionText(meta.dimensions_text),
+    cleanDimensionText(meta.dimensionsText),
+    cleanDimensionText(meta.published_dimension),
+    cleanDimensionText(meta.publishedDimension),
     formatDimensions(artwork.dimensions)
   );
 };
@@ -632,6 +767,54 @@ const getRootsRecordArtist = (artwork: PublicArtwork) => {
   );
 };
 
+const normalizeAccessionText = (value: unknown) =>
+  String(value ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '');
+
+const rootsRecordMatchesAccession = (artwork: PublicArtwork) => {
+  const sourceRecords = getSourceRecords(artwork);
+  const rootsRecord = asRecord(sourceRecords.roots);
+  const meta = getPublicMetadata(artwork);
+  const artworkAccession = firstPublicCatalogueText(
+    artwork.accession_number,
+    artwork.accessionNumber,
+    artwork.source_record_id,
+    artwork.sourceRecordId,
+    meta.accession_number,
+    meta.accessionNumber
+  );
+  const rootsAccession = firstPublicCatalogueText(
+    rootsRecord.accession,
+    rootsRecord.accession_number,
+    rootsRecord.accessionNumber,
+    rootsRecord.object_number,
+    rootsRecord.objectNumber
+  );
+
+  return Boolean(
+    artworkAccession &&
+      rootsAccession &&
+      normalizeAccessionText(artworkAccession) ===
+        normalizeAccessionText(rootsAccession)
+  );
+};
+
+const hasAccessionMatchedTitleVariant = (artwork: PublicArtwork) => {
+  if (!rootsRecordMatchesAccession(artwork)) return false;
+
+  const rootsTitle = getRootsRecordTitle(artwork);
+  const ngsOrDisplayedTitle =
+    getNgsRecordTitle(artwork) ||
+    firstPublicCatalogueText(artwork.title, getPublicMetadata(artwork).title);
+
+  return Boolean(
+    rootsTitle &&
+      ngsOrDisplayedTitle &&
+      !comparableTextMatches(rootsTitle, ngsOrDisplayedTitle)
+  );
+};
+
 export const hasNgsSourceRecord = (artwork: PublicArtwork) => {
   const sourceRecords = getSourceRecords(artwork);
   return Boolean(
@@ -647,6 +830,10 @@ export const hasRootsSourceRecord = (artwork: PublicArtwork) => {
 };
 
 export const hasPublicSourceMismatch = (artwork: PublicArtwork) => {
+  if (rootsRecordMatchesAccession(artwork)) {
+    return false;
+  }
+
   const rootTitle = getRootsRecordTitle(artwork);
   const ngsOrDisplayedTitle =
     getNgsRecordTitle(artwork) ||
@@ -847,17 +1034,23 @@ const getPublicDescriptionGroups = (
   const metadataTextIsRoots = metadataTextSource === ROOTS_SOURCE_LABEL;
   const metadataCaptionIsRoots = metadataCaptionSource === ROOTS_SOURCE_LABEL;
   const suppressRoots = shouldSuppressRootsRecord(artwork);
+  const allowRootsCaption =
+    !suppressRoots ||
+    ((metadataTextIsRoots || metadataCaptionIsRoots) &&
+      rootsRecordMatchesAccession(artwork));
   const rootsGroup = {
     source: 'roots' as const,
     sourceLabel: ROOTS_SOURCE_LABEL,
-    values: [
-      rootsRecord.description,
-      rootsRecord.caption,
-      rootsRecord.summary,
-      rootsRecord.synopsis,
-      rootsRecord.content,
-      rootsRecord.text,
-    ],
+    values: allowRootsCaption
+      ? [
+          rootsRecord.caption,
+          rootsRecord.description,
+          rootsRecord.summary,
+          rootsRecord.synopsis,
+          rootsRecord.content,
+          rootsRecord.text,
+        ]
+      : [],
   };
   const metadataTextValues = [
     artwork.description,
@@ -876,22 +1069,22 @@ const getPublicDescriptionGroups = (
   const metadataGroup = {
     source: 'metadata' as const,
     sourceLabel: asFromSourceLabel(metadataTextSource || METADATA_SOURCE_LABEL),
-    values: !suppressRoots && metadataTextIsRoots ? metadataTextValues : [],
+    values: allowRootsCaption && metadataTextIsRoots ? metadataTextValues : [],
   };
   const metadataCaptionGroup = {
     source: 'metadata' as const,
     sourceLabel: asFromSourceLabel(
       metadataCaptionSource || METADATA_SOURCE_LABEL
     ),
-    values: !suppressRoots && metadataCaptionIsRoots ? [meta.caption] : [],
+    values: allowRootsCaption && metadataCaptionIsRoots ? [meta.caption] : [],
   };
+
+  if (suppressRoots && !allowRootsCaption) {
+    return [];
+  }
 
   if (shouldPreferRootsRecord(artwork)) {
     return [rootsGroup, metadataGroup, metadataCaptionGroup];
-  }
-
-  if (suppressRoots) {
-    return [];
   }
 
   if (metadataTextIsRoots) {
@@ -954,21 +1147,363 @@ export const getGeographicAssociation = (artwork: PublicArtwork) => {
   );
 };
 
-export const getPublicCatalogueRows = (
-  artwork: PublicArtwork
-): PublicMetadataRow[] => {
-  const meta = getPublicMetadata(artwork);
+type PublicMetadataRowCandidate = {
+  label: string;
+  value: unknown;
+  sourceLabel?: string | null;
+};
+
+const toPublicMetadataRows = (
+  rows: PublicMetadataRowCandidate[],
+  fallbackSourceLabel: string
+): PublicMetadataRow[] =>
+  rows
+    .map(({ label, value, sourceLabel }) => ({
+      label,
+      value: String(value ?? '').trim(),
+      sourceLabel: sourceLabel || fallbackSourceLabel,
+    }))
+    .filter((row) => row.value.length > 0);
+
+const getInferredCatalogueSourceLabel = (artwork: PublicArtwork) => {
   const fieldSources = getPublicFieldSources(artwork);
-  const inferredRecordSource =
+
+  return (
     (shouldSuppressRootsRecord(artwork) ? NGS_SOURCE_LABEL : null) ||
     getFieldSourceLabel(fieldSources, 'title') ||
     (getNgsUrl(artwork)
       ? NGS_SOURCE_LABEL
       : getRootsUrl(artwork)
         ? ROOTS_SOURCE_LABEL
-        : METADATA_SOURCE_LABEL);
+        : METADATA_SOURCE_LABEL)
+  );
+};
+
+const getNgsCatalogueRows = (
+  artwork: PublicArtwork,
+  fallbackSourceLabel: string
+) => {
+  const meta = getPublicMetadata(artwork);
+  const sourceRecords = getSourceRecords(artwork);
+  const ngsRecord = asRecord(sourceRecords.ngs);
+  const fieldSources = getPublicFieldSources(artwork);
+  const sourceLabel =
+    hasNgsSourceRecord(artwork) || fallbackSourceLabel === NGS_SOURCE_LABEL
+      ? NGS_SOURCE_LABEL
+      : fallbackSourceLabel;
+  const dateText = firstText(artwork.date_text, meta.dateText, meta.date_text);
+  const year =
+    typeof artwork.year === 'number' ? artwork.year : Number(meta.year);
+  const dimensionsText = firstPublicCatalogueText(
+    getFirstDimensionSummary(ngsRecord.objDim2DGrp),
+    getFirstDimensionSummary(ngsRecord.objDim3DGrp),
+    cleanDimensionText(meta.dimensions_text),
+    cleanDimensionText(meta.dimensionsText),
+    cleanDimensionText(meta.published_dimension),
+    cleanDimensionText(meta.publishedDimension),
+    formatDimensions(artwork.dimensions)
+  );
+  const rows: PublicMetadataRowCandidate[] = [
+    {
+      label: 'Title',
+      value: firstPublicCatalogueText(
+        artwork.title,
+        meta.title,
+        getNgsRecordTitle(artwork)
+      ),
+      sourceLabel: getFieldSourceLabel(fieldSources, 'title') || sourceLabel,
+    },
+    {
+      label: 'Artist',
+      value: firstPublicCatalogueText(
+        artwork.artist,
+        meta.artist,
+        getNgsRecordArtist(artwork)
+      ),
+      sourceLabel: getFieldSourceLabel(fieldSources, 'artist') || sourceLabel,
+    },
+    {
+      label: 'Date',
+      value:
+        dateText && !isMalformedDateText(dateText)
+          ? dateText
+          : Number.isFinite(year) && year >= 1000 && year <= 9999
+            ? String(year)
+            : null,
+      sourceLabel:
+        getFieldSourceLabel(fieldSources, 'date_text', 'dateText') ||
+        sourceLabel,
+    },
+    {
+      label: 'Medium',
+      value: firstPublicCatalogueText(
+        artwork.medium,
+        meta.medium,
+        ngsRecord.objMaterialTechniqueTxt
+      ),
+      sourceLabel: getFieldSourceLabel(fieldSources, 'medium') || sourceLabel,
+    },
+    {
+      label: 'Geographic association',
+      value: firstText(
+        artwork.geographic_association,
+        artwork.geographicAssociation,
+        artwork.geographical_association,
+        artwork.geographicalAssociation,
+        meta.geographic_association,
+        meta.geographicAssociation,
+        meta.geographical_association,
+        meta.geographicalAssociation,
+        meta.associated_place,
+        meta.associatedPlace,
+        meta.associated_country,
+        meta.associatedCountry,
+        meta.creation_place_original_location,
+        meta.creationPlaceOriginalLocation,
+        meta.documents_0_metadata_creation_place_original_location,
+        ngsRecord.objAssociatedPlaceTxt,
+        artwork.origin,
+        meta.origin
+      ),
+      sourceLabel:
+        getFieldSourceLabel(
+          fieldSources,
+          'geographic_association',
+          'geographicAssociation',
+          'geographical_association',
+          'geographicalAssociation',
+          'associated_place',
+          'associatedPlace',
+          'creation_place_original_location',
+          'creationPlaceOriginalLocation'
+        ) || sourceLabel,
+    },
+    {
+      label: 'Dimensions',
+      value: dimensionsText,
+      sourceLabel:
+        getFieldSourceLabel(
+          fieldSources,
+          'dimensions',
+          'dimensions_text',
+          'dimensionsText',
+          'published_dimension',
+          'publishedDimension'
+        ) || sourceLabel,
+    },
+    {
+      label: 'Accession',
+      value: getPublicAccession(artwork),
+      sourceLabel:
+        getFieldSourceLabel(
+          fieldSources,
+          'accession_number',
+          'accessionNumber'
+        ) || sourceLabel,
+    },
+    {
+      label: 'Credit line',
+      value: firstPublicCatalogueText(
+        artwork.credit_line,
+        meta.creditLine,
+        meta.credit_line
+      ),
+      sourceLabel:
+        getFieldSourceLabel(fieldSources, 'credit_line', 'creditLine') ||
+        sourceLabel,
+    },
+  ];
+
+  return toPublicMetadataRows(rows, sourceLabel);
+};
+
+const getRootsCatalogueRows = (artwork: PublicArtwork) => {
+  const rootsYearPeriod = getRootsRecordText(
+    artwork,
+    'yearPeriod',
+    'year_period',
+    'date_period',
+    'metadata_year_period_0',
+    'date',
+    'creation_date',
+    'creationDate'
+  );
+  const rootsDimension = cleanDimensionText(
+    getRootsRecordText(
+      artwork,
+      'dimension',
+      'dimensions',
+      'dimension_text',
+      'dimensionText',
+      'published_dimension',
+      'publishedDimension',
+      'metadata_dimension',
+      'metadata_dimension_0',
+      'Dimension'
+    )
+  );
+  const rows: PublicMetadataRowCandidate[] = [
+    {
+      label: 'Title',
+      value: getRootsRecordTitle(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Creator',
+      value: getRootsRecordArtist(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Year/Period',
+      value: rootsYearPeriod,
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Region',
+      value: getRootsRecordText(
+        artwork,
+        'region',
+        'associated_place',
+        'associatedPlace',
+        'creation_place_original_location',
+        'creationPlaceOriginalLocation',
+        'Region'
+      ),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Object type',
+      value: getRootsObjectTypeText(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Material',
+      value: getRootsMaterialText(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Technique',
+      value: getRootsTechniqueText(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Dimension',
+      value: rootsDimension,
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Accession',
+      value:
+        getRootsRecordText(
+          artwork,
+          'accession',
+          'accession_number',
+          'accessionNumber',
+          'object_number',
+          'objectNumber'
+        ) || getPublicAccession(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+    {
+      label: 'Collection of',
+      value: getRootsCollectionText(artwork),
+      sourceLabel: ROOTS_SOURCE_LABEL,
+    },
+  ];
+
+  return toPublicMetadataRows(rows, ROOTS_SOURCE_LABEL);
+};
+
+const getCatalogueGroupId = (
+  sourceLabel: string
+): PublicMetadataGroup['id'] => {
+  if (sourceLabel === NGS_SOURCE_LABEL) return 'ngs';
+  if (sourceLabel === ROOTS_SOURCE_LABEL) return 'roots';
+  return 'metadata';
+};
+
+const getCatalogueGroupLabel = (sourceLabel: string) => {
+  if (sourceLabel === NGS_SOURCE_LABEL) return 'NGS';
+  if (sourceLabel === ROOTS_SOURCE_LABEL) return 'Roots';
+  return 'Metadata';
+};
+
+export const getPublicCatalogueRowGroups = (
+  artwork: PublicArtwork
+): PublicMetadataGroup[] => {
+  const inferredSourceLabel = getInferredCatalogueSourceLabel(artwork);
+  const ngsRows = getNgsCatalogueRows(artwork, inferredSourceLabel);
+  const ngsSourceLabel =
+    getPublicRecordSourceLabel(getDominantSourceLabel(ngsRows)) ||
+    inferredSourceLabel;
+  const canShowRootsGroup =
+    hasRootsSourceRecord(artwork) && !shouldSuppressRootsRecord(artwork);
+  const groups: PublicMetadataGroup[] = [];
+
+  if (
+    ngsRows.length > 0 &&
+    !(ngsSourceLabel === ROOTS_SOURCE_LABEL && canShowRootsGroup)
+  ) {
+    groups.push({
+      id: getCatalogueGroupId(ngsSourceLabel),
+      label: getCatalogueGroupLabel(ngsSourceLabel),
+      sourceLabel: ngsSourceLabel,
+      rows: ngsRows,
+    });
+  }
+
+  if (canShowRootsGroup) {
+    const rootsRows = getRootsCatalogueRows(artwork);
+    if (rootsRows.length > 0) {
+      groups.push({
+        id: 'roots',
+        label: 'Roots',
+        sourceLabel: ROOTS_SOURCE_LABEL,
+        rows: rootsRows,
+      });
+    }
+  }
+
+  if (
+    shouldPreferRootsRecord(artwork) &&
+    !hasAccessionMatchedTitleVariant(artwork)
+  ) {
+    groups.sort((left, right) => {
+      if (left.id === 'roots') return -1;
+      if (right.id === 'roots') return 1;
+      return 0;
+    });
+  }
+
+  return groups;
+};
+
+export const getPublicCatalogueRows = (
+  artwork: PublicArtwork
+): PublicMetadataRow[] => {
+  const meta = getPublicMetadata(artwork);
+  const fieldSources = getPublicFieldSources(artwork);
+  const inferredRecordSource = getInferredCatalogueSourceLabel(artwork);
 
   if (shouldPreferRootsRecord(artwork)) {
+    const rootsYearPeriod = getRootsRecordText(
+      artwork,
+      'yearPeriod',
+      'year_period',
+      'date_period',
+      'metadata_year_period_0',
+      'date',
+      'creation_date',
+      'creationDate'
+    );
+    const rootsMaterial = getRootsMaterialText(artwork);
+    const rootsDimension = getRootsRecordText(
+      artwork,
+      'dimension',
+      'dimensions',
+      'metadata_dimension',
+      'metadata_dimension_0'
+    );
     const rows: Array<{
       label: string;
       value: unknown;
@@ -981,7 +1516,7 @@ export const getPublicCatalogueRows = (
       },
       {
         label: 'Year/Period',
-        value: getPublicDateText(artwork),
+        value: rootsYearPeriod || getPublicDateText(artwork),
         sourceLabel: ROOTS_SOURCE_LABEL,
       },
       {
@@ -996,7 +1531,7 @@ export const getPublicCatalogueRows = (
       },
       {
         label: 'Material',
-        value: getRootsMaterialText(artwork),
+        value: rootsMaterial || getPublicMediumText(artwork),
         sourceLabel: ROOTS_SOURCE_LABEL,
       },
       {
@@ -1006,7 +1541,7 @@ export const getPublicCatalogueRows = (
       },
       {
         label: 'Dimension',
-        value: getPublicDimensionsText(artwork),
+        value: rootsDimension || getPublicDimensionsText(artwork),
         sourceLabel: ROOTS_SOURCE_LABEL,
       },
       {

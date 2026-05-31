@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   getDominantSourceLabel,
   getGeneratedCaptionText,
+  getPublicCatalogueRowGroups,
   getPublicCatalogueRows,
   getPublicCitation,
   getPublicCitationParts,
   getPublicDescription,
   getPublicDescriptionDetailList,
   getPublicDescriptionDetails,
+  getPublicDimensionsText,
   getPublicImageUrl,
   getPublicThumbnailUrl,
   getPublicTitle,
@@ -514,6 +516,311 @@ describe('getPublicDescription', () => {
         sourceLabel: 'National Gallery Singapore',
       },
     ]);
+  });
+
+  it('uses explicit NGS image metadata when the app asset fields are empty', () => {
+    const artwork = {
+      id: '2021-01174',
+      title: 'Male Nudes',
+      metadata: {
+        ngs_image_url:
+          'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/johan-rudolf-bonnet/2021/2021-01174(2).jpg',
+        source_records: {
+          ngs: {
+            objObjectTitleTxt: 'Male Nudes',
+            img: 'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/johan-rudolf-bonnet/2021/2021-01174(2).jpg',
+          },
+        },
+      },
+    };
+
+    expect(getPublicImageUrl(artwork)).toBe(
+      'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/johan-rudolf-bonnet/2021/2021-01174(2).jpg'
+    );
+    expect(getPublicThumbnailUrl(artwork)).toBe(
+      'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/johan-rudolf-bonnet/2021/2021-01174(2).jpg'
+    );
+  });
+
+  it('does not suppress app assets for minor Roots title spelling differences', () => {
+    const artwork = {
+      id: 'GI-0405',
+      title: 'Lillies with Carps',
+      artist: 'Teng Nee Cheong (1951–2013)',
+      medium: 'Watercolour on paper',
+      field_sources: {
+        title: 'ngs_artplus_catalog',
+        artist: 'ngs_artplus_catalog',
+        medium: 'ngs_artplus_catalog',
+      },
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/bf72b916-8d6c-4c24-be94-8d8b496df029/content',
+      metadata: {
+        source_records: {
+          roots: {
+            title: 'Lilies with Carps',
+            creator: 'Teng Nee Cheong',
+          },
+        },
+      },
+    };
+
+    expect(hasPublicSourceMismatch(artwork)).toBe(false);
+    expect(getPublicTitle(artwork)).toBe('Lilies with Carps');
+    expect(getPublicImageUrl(artwork)).toBe(
+      'https://paillette-api-stg.berlayar.ai/api/v1/assets/bf72b916-8d6c-4c24-be94-8d8b496df029/content'
+    );
+    expect(getPublicCatalogueRows(artwork)).toEqual([
+      {
+        label: 'Creator',
+        value: 'Teng Nee Cheong',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Material',
+        value: 'Watercolour on paper',
+        sourceLabel: 'Roots NHB',
+      },
+    ]);
+  });
+
+  it('does not suppress app assets for harmless title article differences', () => {
+    const artwork = {
+      id: '1999-00334',
+      title: 'Henri Listening to Birds',
+      artist: 'Jimmy Ong  (1964–)',
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/henri/content',
+      metadata: {
+        source_records: {
+          roots: {
+            title: 'Henri Listening to the Birds',
+            creator: 'Jimmy Ong',
+          },
+        },
+      },
+    };
+
+    expect(hasPublicSourceMismatch(artwork)).toBe(false);
+    expect(getPublicImageUrl(artwork)).toBe(
+      'https://paillette-api-stg.berlayar.ai/api/v1/assets/henri/content'
+    );
+  });
+
+  it('does not suppress accession-matched Roots images and captions for title variants', () => {
+    const artwork = {
+      id: '2020-00222',
+      title: 'Nude Woman',
+      artist: 'Georgette Chen  (1906–1993)',
+      accession_number: '2020-00222',
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/a49cb2bf/content',
+      metadata: {
+        field_sources: {
+          description: 'roots',
+        },
+        source_records: {
+          roots: {
+            title: 'Femme nue (Nude)',
+            creator: 'Georgette Chen',
+            accession: '2020-00222',
+            caption: 'A Roots catalogue caption for the accession.',
+          },
+        },
+      },
+    };
+
+    expect(hasPublicSourceMismatch(artwork)).toBe(false);
+    expect(getPublicImageUrl(artwork)).toBe(
+      'https://paillette-api-stg.berlayar.ai/api/v1/assets/a49cb2bf/content'
+    );
+    expect(getPublicDescriptionDetails(artwork)).toEqual({
+      source: 'roots',
+      sourceLabel: 'Roots NHB',
+      text: 'A Roots catalogue caption for the accession.',
+    });
+  });
+
+  it('builds separate metadata groups for accession-matched NGS and Roots title variants', () => {
+    const groups = getPublicCatalogueRowGroups({
+      id: '2020-00222',
+      title: 'Nude Woman',
+      artist: 'Georgette Chen  (1906–1993)',
+      date_text: '1932',
+      medium: 'Oil on canvas',
+      accession_number: '2020-00222',
+      field_sources: {
+        title: 'ngs_artplus_catalog',
+        artist: 'ngs_artplus_catalog',
+        date_text: 'ngs_artplus_catalog',
+        medium: 'ngs_artplus_catalog',
+      },
+      metadata: {
+        source_records: {
+          roots: {
+            title: 'Femme nue (Nude)',
+            creator: 'Georgette Chen',
+            accession: '2020-00222',
+            yearPeriod: '1932',
+            material: 'Oil on canvas',
+            collectionOf: 'National Gallery Singapore',
+          },
+        },
+      },
+    });
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({
+      id: 'ngs',
+      label: 'NGS',
+      sourceLabel: 'National Gallery Singapore',
+    });
+    expect(groups[0]?.rows).toContainEqual({
+      label: 'Title',
+      value: 'Nude Woman',
+      sourceLabel: 'National Gallery Singapore',
+    });
+    expect(groups[1]).toMatchObject({
+      id: 'roots',
+      label: 'Roots',
+      sourceLabel: 'Roots NHB',
+    });
+    expect(groups[1]?.rows).toContainEqual({
+      label: 'Title',
+      value: 'Femme nue (Nude)',
+      sourceLabel: 'Roots NHB',
+    });
+  });
+
+  it('prefers rich Roots fields when no public NGS record exists', () => {
+    const rows = getPublicCatalogueRows({
+      id: 'GI-0340',
+      title: 'Lotus',
+      artist: 'Chew Hiong San',
+      accession_number: 'GI-0340',
+      field_sources: {
+        title: 'ngs_artplus_catalog',
+        artist: 'ngs_artplus_catalog',
+        date_text: 'ngs_artplus_catalog',
+        medium: 'ngs_artplus_catalog',
+        dimensions: 'ngs_artplus_catalog',
+      },
+      metadata: {
+        roots_listing_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1030221',
+        source_records: {
+          roots: {
+            title: 'Lotus',
+            creator: 'Chew Hiong San',
+            accession: 'GI-0340',
+            yearPeriod: '1989',
+            region: 'Singapore',
+            objectType: 'Painting',
+            material: 'Chinese ink and colour on paper',
+            dimension: 'Image size: 121 x 60 cm',
+            collectionOf: 'National Gallery Singapore',
+          },
+        },
+      },
+    });
+
+    expect(rows).toEqual([
+      {
+        label: 'Creator',
+        value: 'Chew Hiong San',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Year/Period',
+        value: '1989',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Region',
+        value: 'Singapore',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Object type',
+        value: 'Painting',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Material',
+        value: 'Chinese ink and colour on paper',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Dimension',
+        value: 'Image size: 121 x 60 cm',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Accession',
+        value: 'GI-0340',
+        sourceLabel: 'Roots NHB',
+      },
+      {
+        label: 'Collection of',
+        value: 'National Gallery Singapore',
+        sourceLabel: 'Roots NHB',
+      },
+    ]);
+  });
+
+  it('cleans placeholder null tokens from NGS dimension summaries', () => {
+    const artwork = {
+      metadata: {
+        dimensions_text: 'null 59 x 87 cm null',
+        source_records: {
+          ngs: {
+            objDim2DGrp: [
+              {
+                type: 'Image measure',
+                summary: 'null 59 x 87 cm null',
+                firstNum: '59',
+                secondNum: '87',
+                unitVoc: 'cm',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(getPublicDimensionsText(artwork)).toBe(
+      'Image measure: 59 x 87 cm'
+    );
+    expect(getPublicCatalogueRows(artwork)).toContainEqual({
+      label: 'Dimensions',
+      value: 'Image measure: 59 x 87 cm',
+      sourceLabel: 'Public metadata',
+    });
+  });
+
+  it('drops placeholder null dimension components without leaving dangling separators', () => {
+    const artwork = {
+      metadata: {
+        source_records: {
+          ngs: {
+            objDim2DGrp: [
+              {
+                type: 'Image measure',
+                summary: 'null 61 x 61 x null cm null',
+                firstNum: '61',
+                secondNum: '61',
+                thirdNum: null,
+                unitVoc: 'cm',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(getPublicDimensionsText(artwork)).toBe(
+      'Image measure: 61 x 61 cm'
+    );
   });
 
   it('suppresses conflicting Roots imagery when no NGS image exists', () => {

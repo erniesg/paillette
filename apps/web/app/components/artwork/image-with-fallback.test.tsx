@@ -27,6 +27,42 @@ describe('ImageWithFallback', () => {
     expect(screen.getByText('No image')).toBeInTheDocument();
   });
 
+  it('tries the secondary source before showing the fallback', () => {
+    render(
+      <ImageWithFallback
+        src="https://example.test/missing-thumb.webp"
+        fallbackSrc="https://example.test/full.jpg"
+        alt="Artwork"
+        fallback={fallback}
+      />
+    );
+
+    fireEvent.error(screen.getByRole('img', { name: 'Artwork' }));
+
+    expect(screen.getByRole('img', { name: 'Artwork' })).toHaveAttribute(
+      'src',
+      'https://example.test/full.jpg'
+    );
+    expect(screen.queryByText('No image')).not.toBeInTheDocument();
+  });
+
+  it('shows the fallback after both sources fail', () => {
+    render(
+      <ImageWithFallback
+        src="https://example.test/missing-thumb.webp"
+        fallbackSrc="https://example.test/missing-full.jpg"
+        alt="Artwork"
+        fallback={fallback}
+      />
+    );
+
+    fireEvent.error(screen.getByRole('img', { name: 'Artwork' }));
+    fireEvent.error(screen.getByRole('img', { name: 'Artwork' }));
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText('No image')).toBeInTheDocument();
+  });
+
   it('retries when the source changes after a failed load', () => {
     const { rerender } = render(
       <ImageWithFallback

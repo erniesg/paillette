@@ -5,17 +5,18 @@ import { ArrowLeft, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
-import { SourceIndicator } from '~/components/artwork/source-indicator';
+import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
-  getDominantSourceLabel,
   getGeneratedCaptionText,
   getNgsUrl,
   getPublicArtist,
-  getPublicCatalogueRows,
+  getPublicCatalogueRowGroups,
   getPublicDescription,
   getPublicDescriptionDetailList,
-  getPublicRecordSourceLabel,
+  getPublicImageUrl,
+  getPublicThumbnailUrl,
   getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
@@ -43,11 +44,17 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     const api = getApiClientForRequest(request);
     const gallery = await api.getGallery(orgId);
     const artwork = await api.getArtwork(gallery.id, artworkId);
+    const preferredRouteId = getPreferredOrgRouteId(orgId, gallery.slug);
+    const url = new URL(request.url);
 
     return {
       gallery,
       artwork,
-      preferredRouteId: getPreferredOrgRouteId(orgId, gallery.slug),
+      preferredRouteId,
+      returnToSearchPath: getSafeSearchReturnPath(
+        url.searchParams.get('from'),
+        preferredRouteId
+      ),
     };
   } catch {
     throw new Response('Artwork not found', { status: 404 });
@@ -68,17 +75,16 @@ const getCatalogueRowSearchQuery = (label: string, value: string) => {
 };
 
 export default function ArtworkDetailPage() {
-  const { gallery, artwork, preferredRouteId } = useLoaderData<typeof loader>();
+  const { gallery, artwork, preferredRouteId, returnToSearchPath } =
+    useLoaderData<typeof loader>();
   const descriptionDetailsList = getPublicDescriptionDetailList(artwork);
   const rootsDescriptionDetails = descriptionDetailsList[0] || null;
   const generatedCaptionText = getGeneratedCaptionText(artwork);
-  const imageUrl = artwork.imageUrl || artwork.image_url || null;
+  const imageUrl = getPublicImageUrl(artwork);
+  const thumbnailUrl = getPublicThumbnailUrl(artwork);
   const ngsUrl = getNgsUrl(artwork);
   const rootsUrl = getRootsUrl(artwork);
-  const catalogRows = getPublicCatalogueRows(artwork);
-  const catalogueSourceLabel = getPublicRecordSourceLabel(
-    getDominantSourceLabel(catalogRows)
-  );
+  const catalogueGroups = getPublicCatalogueRowGroups(artwork);
   const title = getPublicTitle(artwork);
   const artist = getPublicArtist(artwork);
 
@@ -87,7 +93,7 @@ export default function ArtworkDetailPage() {
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
           <Link
-            to={`/${preferredRouteId}/search`}
+            to={returnToSearchPath || `/${preferredRouteId}/search`}
             className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -105,6 +111,7 @@ export default function ArtworkDetailPage() {
             <div className="flex min-h-[420px] items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.025] p-4">
               <ImageWithFallback
                 src={imageUrl}
+                fallbackSrc={thumbnailUrl}
                 alt={title}
                 className="max-h-[76vh] w-full object-contain"
                 fallback={
@@ -152,52 +159,20 @@ export default function ArtworkDetailPage() {
             </Section>
           )}
 
-          <Section
-            title="Catalogue fields"
-            eyebrow={
-              catalogueSourceLabel ? (
-                <SourceIndicator label={catalogueSourceLabel} compact />
-              ) : null
-            }
-          >
-            <dl className="grid gap-3 sm:grid-cols-2">
-              {catalogRows.map(({ label, value, sourceLabel }) => {
+          {catalogueGroups.length > 0 && (
+            <MetadataSourceToggle
+              className="rounded-lg border border-white/[0.08] bg-white/[0.025] p-5"
+              groups={catalogueGroups}
+              getSearchHref={(label, value) => {
                 const searchQuery = getCatalogueRowSearchQuery(label, value);
-
-                return (
-                  <div
-                    key={label}
-                    className="rounded-md border border-white/[0.08] bg-black/20 p-3"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-                        {label}
-                      </dt>
-                      {getPublicRecordSourceLabel(sourceLabel) &&
-                        getPublicRecordSourceLabel(sourceLabel) !==
-                          catalogueSourceLabel && (
-                          <SourceIndicator label={sourceLabel} compact />
-                        )}
-                    </div>
-                    <dd className="mt-1 text-sm text-white/75">
-                      {searchQuery ? (
-                        <Link
-                          to={`/${preferredRouteId}/search?q=${encodeURIComponent(
-                            searchQuery
-                          )}`}
-                          className="underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/60"
-                        >
-                          {value}
-                        </Link>
-                      ) : (
-                        value
-                      )}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </Section>
+                return searchQuery
+                  ? `/${preferredRouteId}/search?q=${encodeURIComponent(
+                      searchQuery
+                    )}`
+                  : null;
+              }}
+            />
+          )}
 
           <CitationPanel artwork={artwork} />
 

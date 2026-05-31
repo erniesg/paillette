@@ -55,6 +55,7 @@ export function ArtworkDetailDialog({
             <div className="w-full bg-neutral-950 flex items-center justify-center p-8">
               <ImageWithFallback
                 src={artwork.imageUrl}
+                fallbackSrc={artwork.thumbnailUrl}
                 alt={artwork.title || 'Artwork'}
                 className="max-w-full max-h-[60vh] object-contain"
                 fallback={

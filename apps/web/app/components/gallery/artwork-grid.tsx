@@ -26,6 +26,7 @@ export function ArtworkGrid({ artworks }: ArtworkGridProps) {
             <div className="aspect-square bg-neutral-950 flex items-center justify-center overflow-hidden">
               <ImageWithFallback
                 src={artwork.thumbnailUrl || artwork.imageUrl}
+                fallbackSrc={artwork.imageUrl || artwork.thumbnailUrl}
                 alt={artwork.title || 'Artwork'}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"

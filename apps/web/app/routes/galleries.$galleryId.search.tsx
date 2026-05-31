@@ -1,5 +1,10 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
-import { Link, useLoaderData, useSearchParams } from '@remix-run/react';
+import {
+  Link,
+  useLoaderData,
+  useLocation,
+  useSearchParams,
+} from '@remix-run/react';
 import {
   forwardRef,
   useCallback,
@@ -36,19 +41,19 @@ import {
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
-import { SourceIndicator } from '~/components/artwork/source-indicator';
+import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { Logo } from '~/components/ui/logo';
 import {
   getGeneratedCaptionText,
   getGeographicAssociation,
-  getDominantSourceLabel,
   getNgsUrl,
   getPublicAccession,
-  getPublicCatalogueRows,
+  getPublicCatalogueRowGroups,
   getPublicDateText,
   getPublicDescriptionDetailList,
+  getPublicImageUrl,
+  getPublicThumbnailUrl,
   getPublicArtist,
-  getPublicRecordSourceLabel,
   getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
@@ -61,6 +66,7 @@ import {
   normalizeSearchQuery,
   type EvalSuggestion,
 } from '~/lib/search-suggestions';
+import { buildSearchResultSections } from '~/lib/search-result-sections';
 import type {
   ApiResponse,
   ArtworkSearchResult,
@@ -809,6 +815,7 @@ export default function SearchPage() {
     preferredRouteId,
     holidaySuggestions = [],
   } = useLoaderData<typeof loader>();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, login, signup } = useUser();
   const urlQuery = searchParams.get('q') || '';
@@ -841,9 +848,12 @@ export default function SearchPage() {
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const previousUrlQueryRef = useRef(normalizedUrlQuery);
+  const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
   const [idleSuggestion, setIdleSuggestion] = useState<EvalSuggestion | null>(
     null
   );
+  const [displayIdleSuggestion, setDisplayIdleSuggestion] =
+    useState<EvalSuggestion | null>(null);
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
   const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
   const hasCommittedTextSearch =
@@ -851,11 +861,23 @@ export default function SearchPage() {
     normalizedCommittedTextQuery.length > 0 &&
     (searchMode === 'text' || searchMode === 'colour');
   const canSubmitTextSearch = normalizedTextQuery.length > 0;
+  const hasUncommittedInitialText =
+    searchMode === 'text' &&
+    normalizedTextQuery.length > 0 &&
+    normalizedCommittedTextQuery.length === 0;
 
   const suggestionPool = useMemo(
     () => buildSuggestionPool(holidaySuggestions),
     [holidaySuggestions]
   );
+
+  useEffect(() => {
+    if (suggestionPool.length) return;
+
+    setIdleSuggestion(null);
+    setDisplayIdleSuggestion(null);
+  }, [suggestionPool.length]);
+
   const hasActiveSearch =
     isBrowsingCollection ||
     hasCommittedTextSearch ||
@@ -864,6 +886,15 @@ export default function SearchPage() {
     searchColours.length > 0;
   const activeSearchSummary = useMemo<ActiveSearchSummary | null>(() => {
     if (isBrowsingCollection) {
+      if (shouldSearch && normalizedCommittedTextQuery) {
+        return {
+          type: 'browse',
+          label: committedTextQuery,
+          detail: 'ranked + infinite browse',
+          dot: '#d946ef',
+        };
+      }
+
       return {
         type: 'browse',
         label: 'collection',
@@ -891,7 +922,6 @@ export default function SearchPage() {
       return {
         type: 'colour',
         label,
-        detail: 'active search',
         dot: colour?.hex || '#d946ef',
       };
     }
@@ -900,7 +930,6 @@ export default function SearchPage() {
       return {
         type: 'text',
         label: committedTextQuery,
-        detail: 'active search',
         dot: '#d946ef',
       };
     }
@@ -1029,31 +1058,54 @@ export default function SearchPage() {
         minScore: 0,
       }),
     enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
-    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
   });
 
   const currentQuery =
     searchMode === 'image' ? imageSearchQuery : textSearchQuery;
-  const rawResults = isBrowsingCollection
-    ? browseQuery.data?.pages.flatMap((page) => page.results) || []
-    : currentQuery.data?.results || [];
-  const results = useMemo(
-    () => sortResults(rawResults, sortMode, sortColours),
-    [rawResults, sortColours, sortMode]
+  const rankedRawResults = currentQuery.data?.results || [];
+  const browseRawResults =
+    browseQuery.data?.pages.flatMap((page) => page.results) || [];
+  const rankedResults = useMemo(
+    () => sortResults(rankedRawResults, sortMode, sortColours),
+    [rankedRawResults, sortColours, sortMode]
   );
+  const sortedBrowseResults = useMemo(
+    () => sortResults(browseRawResults, sortMode, sortColours),
+    [browseRawResults, sortColours, sortMode]
+  );
+  const resultSections = useMemo(
+    () =>
+      buildSearchResultSections({
+        isBrowsingCollection,
+        rankedResults: isBrowsingCollection
+          ? shouldSearch
+            ? rankedResults
+            : []
+          : rankedResults,
+        browseResults: sortedBrowseResults,
+      }),
+    [isBrowsingCollection, rankedResults, shouldSearch, sortedBrowseResults]
+  );
+  const results = resultSections.combinedResults;
   const activeSortColours = sortMode === 'colour' ? sortColours : [];
+  const visibleRankedResults = resultSections.rankedResults;
+  const visibleBrowseResults = isBrowsingCollection
+    ? resultSections.browseResults
+    : resultSections.browseResults.slice(0, visibleCount);
   const visibleResults = isBrowsingCollection
-    ? results
-    : results.slice(0, visibleCount);
+    ? [...visibleRankedResults, ...visibleBrowseResults]
+    : visibleBrowseResults;
   const totalBrowseResults =
-    browseQuery.data?.pages[0]?.total ?? results.length;
+    browseQuery.data?.pages[0]?.total ?? resultSections.browseResults.length;
   const isLoading =
     hasMounted &&
     (isBrowsingCollection
-      ? browseQuery.isLoading
+      ? browseQuery.isLoading && results.length === 0
       : currentQuery.isLoading || currentQuery.isFetching);
-  const error = isBrowsingCollection ? browseQuery.error : currentQuery.error;
+  const error = isBrowsingCollection
+    ? browseQuery.error || (shouldSearch ? currentQuery.error : null)
+    : currentQuery.error;
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
@@ -1437,6 +1489,8 @@ export default function SearchPage() {
               ref={idleShowcaseRef}
               artworks={idleShowcaseResults}
               isLoading={isIdleShowcaseLoading}
+              suggestion={activeIdleSuggestion}
+              onCommittedSuggestionChange={setDisplayIdleSuggestion}
               onSelectArtwork={setSelectedArtwork}
             />
           )}
@@ -1539,13 +1593,16 @@ export default function SearchPage() {
                 hasActiveSearch ? 'justify-center' : 'justify-center'
               }`}
             >
-              <SuggestionPicker
-                suggestions={suggestionPool}
-                currentQuery={textQuery}
-                activeSearch={activeSearchSummary}
-                onSelect={runEvalSearch}
-                onPreviewChange={setIdleSuggestion}
-              />
+              {!hasUncommittedInitialText && (
+                <SuggestionPicker
+                  suggestions={suggestionPool}
+                  currentQuery={textQuery}
+                  activeSearch={activeSearchSummary}
+                  displaySuggestion={displayIdleSuggestion}
+                  onSelect={runEvalSearch}
+                  onPreviewChange={setIdleSuggestion}
+                />
+              )}
               <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
                 <ModeButton
                   active={searchMode === 'text'}
@@ -1599,7 +1656,9 @@ export default function SearchPage() {
                     {isBrowsingCollection
                       ? isLoading && !results.length
                         ? 'Loading collection'
-                        : `${visibleResults.length} / ${totalBrowseResults} works`
+                        : visibleRankedResults.length
+                          ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
+                          : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
                       : isLoading
                         ? 'Searching'
                         : results.length
@@ -1608,8 +1667,7 @@ export default function SearchPage() {
                             ? 'No works'
                             : 'Ready'}
                     {committedTextQuery &&
-                      searchMode !== 'image' &&
-                      !isBrowsingCollection && (
+                      searchMode !== 'image' && (
                         <span className="ml-2 normal-case tracking-normal text-white/70">
                           "{committedTextQuery}"
                         </span>
@@ -1750,7 +1808,6 @@ export default function SearchPage() {
                         type="button"
                         onClick={() => {
                           setIsBrowsingCollection((value) => !value);
-                          setShouldSearch(false);
                         }}
                         className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
                           isBrowsingCollection
@@ -1763,8 +1820,8 @@ export default function SearchPage() {
                             Infinite browse
                           </span>
                           <span className="mt-0.5 block text-xs text-white/40">
-                            Show the full source-backed collection. Ranked AI
-                            search stays capped.
+                            Show the full source-backed collection. Ranked
+                            matches stay pinned above browse.
                           </span>
                         </span>
                         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
@@ -1887,17 +1944,64 @@ export default function SearchPage() {
 
             {!isLoading && !error && results.length > 0 && (
               <>
-                <ResultsView
-                  view={view}
-                  results={visibleResults}
-                  selectedColours={activeSortColours}
-                  sortMode={sortMode}
-                  showSimilarity={!isBrowsingCollection}
-                  onSortModeChange={setSortMode}
-                  onFacetSearch={runTextSearch}
-                  onPaletteColourSelect={useArtworkPaletteColour}
-                  onSelectArtwork={setSelectedArtwork}
-                />
+                {isBrowsingCollection && visibleRankedResults.length > 0 ? (
+                  <>
+                    <ResultsView
+                      view={view}
+                      results={visibleRankedResults}
+                      selectedColours={activeSortColours}
+                      sortMode={sortMode}
+                      showSimilarity
+                      onSortModeChange={setSortMode}
+                      onFacetSearch={runTextSearch}
+                      onPaletteColourSelect={useArtworkPaletteColour}
+                      onSelectArtwork={setSelectedArtwork}
+                    />
+                    {resultSections.hasBrowseDivider && (
+                      <div className="my-6 rounded-lg border border-fuchsia-300/25 bg-fuchsia-300/[0.07] px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Infinite browse begins
+                            </p>
+                            <p className="mt-0.5 text-xs text-white/45">
+                              Ranked search matches stay above this divider.
+                            </p>
+                          </div>
+                          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
+                            {visibleBrowseResults.length} /{' '}
+                            {totalBrowseResults} browse works
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {visibleBrowseResults.length > 0 && (
+                      <ResultsView
+                        view={view}
+                        results={visibleBrowseResults}
+                        selectedColours={activeSortColours}
+                        sortMode={sortMode}
+                        showSimilarity={false}
+                        onSortModeChange={setSortMode}
+                        onFacetSearch={runTextSearch}
+                        onPaletteColourSelect={useArtworkPaletteColour}
+                        onSelectArtwork={setSelectedArtwork}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <ResultsView
+                    view={view}
+                    results={visibleResults}
+                    selectedColours={activeSortColours}
+                    sortMode={sortMode}
+                    showSimilarity={!isBrowsingCollection}
+                    onSortModeChange={setSortMode}
+                    onFacetSearch={runTextSearch}
+                    onPaletteColourSelect={useArtworkPaletteColour}
+                    onSelectArtwork={setSelectedArtwork}
+                  />
+                )}
                 <div ref={loadMoreRef} className="flex justify-center py-8">
                   {hasMoreResults ? (
                     <button
@@ -1940,6 +2044,7 @@ export default function SearchPage() {
       <SearchArtworkDialog
         artwork={selectedArtwork}
         routeId={preferredRouteId}
+        returnTo={searchReturnPath}
         onClose={() => setSelectedArtwork(null)}
       />
     </div>
@@ -1990,12 +2095,14 @@ function SuggestionPicker({
   suggestions,
   currentQuery,
   activeSearch,
+  displaySuggestion,
   onSelect,
   onPreviewChange,
 }: {
   suggestions: EvalSuggestion[];
   currentQuery: string;
   activeSearch?: ActiveSearchSummary | null;
+  displaySuggestion?: EvalSuggestion | null;
   onSelect: (suggestion: EvalSuggestion) => void;
   onPreviewChange?: (suggestion: EvalSuggestion) => void;
 }) {
@@ -2003,6 +2110,9 @@ function SuggestionPicker({
   const [open, setOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const suggestion = suggestions[index] ?? suggestions[0] ?? null;
+  const visibleSuggestion = activeSearch
+    ? null
+    : displaySuggestion || suggestion;
 
   useEffect(() => {
     if (!suggestions.length) return;
@@ -2028,7 +2138,7 @@ function SuggestionPicker({
     }
   }, [activeSearch, onPreviewChange, suggestion]);
 
-  if (!suggestion && !activeSearch) return null;
+  if (!visibleSuggestion && !activeSearch) return null;
 
   const activeQuery = currentQuery.trim().toLowerCase();
   const activeLabel = activeSearch?.label.trim();
@@ -2071,26 +2181,28 @@ function SuggestionPicker({
       ) : (
         <button
           type="button"
-          onClick={() => suggestion && onSelect(suggestion)}
+          data-suggestion-query={visibleSuggestion?.query || ''}
+          onClick={() => visibleSuggestion && onSelect(visibleSuggestion)}
           className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
-            suggestion && activeQuery === suggestion.query.toLowerCase()
+            visibleSuggestion &&
+            activeQuery === visibleSuggestion.query.toLowerCase()
               ? 'bg-white/[0.12] text-white'
               : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
           }`}
         >
-          {suggestion && (
+          {visibleSuggestion && (
             <>
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
-                style={{ background: suggestion.dot }}
+                style={{ background: visibleSuggestion.dot }}
               />
               <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
-                {suggestion.type}
+                {visibleSuggestion.type}
               </span>
-              <span className="truncate">{suggestion.label}</span>
-              {suggestion.detail && (
+              <span className="truncate">{visibleSuggestion.label}</span>
+              {visibleSuggestion.detail && (
                 <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
-                  {suggestion.detail}
+                  {visibleSuggestion.detail}
                 </span>
               )}
             </>
@@ -2146,7 +2258,7 @@ function SuggestionPicker({
 
 type ArtworkImageRole = 'thumbnail' | 'large';
 
-const getArtworkImageUrl = (
+const getArtworkImageSources = (
   artwork: ArtworkSearchResult,
   role: ArtworkImageRole
 ) => {
@@ -2154,15 +2266,26 @@ const getArtworkImageUrl = (
     image_url?: string | null;
     thumbnail_url?: string | null;
   };
-  const imageUrl = asset.imageUrl || asset.image_url || null;
-  const thumbnailUrl = asset.thumbnailUrl || asset.thumbnail_url || null;
+  const imageUrl = getPublicImageUrl(asset);
+  const thumbnailUrl = getPublicThumbnailUrl(asset);
 
   if (role === 'large') {
-    return imageUrl || thumbnailUrl;
+    return {
+      src: imageUrl || thumbnailUrl,
+      fallbackSrc: imageUrl && thumbnailUrl ? thumbnailUrl : null,
+    };
   }
 
-  return thumbnailUrl || imageUrl;
+  return {
+    src: thumbnailUrl || imageUrl,
+    fallbackSrc: thumbnailUrl && imageUrl ? imageUrl : null,
+  };
 };
+
+const getArtworkImageUrl = (
+  artwork: ArtworkSearchResult,
+  role: ArtworkImageRole
+) => getArtworkImageSources(artwork, role).src;
 
 const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
   artwork ? getArtworkImageUrl(artwork, 'thumbnail') : null;
@@ -2205,6 +2328,7 @@ const preloadShowcaseImage = (src: string) =>
 type ShowcaseLayerModel = {
   key: string;
   works: ArtworkSearchResult[];
+  suggestion: EvalSuggestion | null;
 };
 
 const getShowcaseItems = (works: ArtworkSearchResult[]) =>
@@ -2256,37 +2380,56 @@ const IdleShowcaseBackdrop = forwardRef<
   {
     artworks: ArtworkSearchResult[];
     isLoading: boolean;
+    suggestion: EvalSuggestion | null;
+    onCommittedSuggestionChange?: (suggestion: EvalSuggestion | null) => void;
     onSelectArtwork: (artwork: ArtworkSearchResult) => void;
   }
->(function IdleShowcaseBackdrop({ artworks, isLoading, onSelectArtwork }, ref) {
+>(function IdleShowcaseBackdrop(
+  {
+    artworks,
+    isLoading,
+    suggestion,
+    onCommittedSuggestionChange,
+    onSelectArtwork,
+  },
+  ref
+) {
   const transitionRunRef = useRef(0);
   const previewWorks = useMemo(
     () =>
       artworks.filter((artwork) => getShowcaseImageUrl(artwork)).slice(0, 4),
     [artworks]
   );
-  const previewKey = useMemo(
-    () =>
-      previewWorks
-        .map((artwork) => `${artwork.id}:${getShowcaseImageUrl(artwork)}`)
-        .join('|'),
-    [previewWorks]
-  );
+  const previewSuggestionKey = suggestion ? getSuggestionKey(suggestion) : '';
+  const previewKey = useMemo(() => {
+    const artworkKey = previewWorks
+      .map((artwork) => `${artwork.id}:${getShowcaseImageUrl(artwork)}`)
+      .join('|');
+    return `${previewSuggestionKey}::${artworkKey}`;
+  }, [previewSuggestionKey, previewWorks]);
   const committedKeyRef = useRef(previewKey);
   const [committedLayer, setCommittedLayer] = useState<ShowcaseLayerModel>(
-    () => ({ key: previewKey, works: previewWorks })
+    () => ({ key: previewKey, works: previewWorks, suggestion })
   );
-  const [incomingLayer, setIncomingLayer] =
-    useState<ShowcaseLayerModel | null>(null);
+  const [incomingLayer, setIncomingLayer] = useState<ShowcaseLayerModel | null>(
+    null
+  );
   const [isCrossfading, setIsCrossfading] = useState(false);
+
+  useEffect(() => {
+    onCommittedSuggestionChange?.(committedLayer.suggestion);
+  }, [committedLayer.suggestion, onCommittedSuggestionChange]);
 
   useEffect(() => {
     if (!previewWorks.length) {
       transitionRunRef.current += 1;
-      committedKeyRef.current = '';
-      setCommittedLayer({ key: '', works: [] });
       setIncomingLayer(null);
       setIsCrossfading(false);
+
+      if (isLoading) return undefined;
+
+      committedKeyRef.current = '';
+      setCommittedLayer({ key: '', works: [], suggestion });
       return undefined;
     }
 
@@ -2314,7 +2457,7 @@ const IdleShowcaseBackdrop = forwardRef<
       const reduceMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)'
       ).matches;
-      const nextLayer = { key: previewKey, works: previewWorks };
+      const nextLayer = { key: previewKey, works: previewWorks, suggestion };
 
       if (reduceMotion) {
         committedKeyRef.current = previewKey;
@@ -2347,7 +2490,7 @@ const IdleShowcaseBackdrop = forwardRef<
       window.cancelAnimationFrame(revealFrame);
       window.clearTimeout(promoteTimeout);
     };
-  }, [previewKey, previewWorks]);
+  }, [isLoading, previewKey, previewWorks, suggestion]);
 
   return (
     <div
@@ -2399,10 +2542,13 @@ function IdleShowcaseLayer({
       }`}
       aria-hidden={!isVisible}
       data-showcase-layer={layer.key || 'empty'}
+      data-showcase-suggestion={layer.suggestion?.query || ''}
     >
       {getShowcaseItems(layer.works).map((artwork, index) => {
         const itemLayout = layout[index];
-        const imageUrl = getShowcaseImageUrl(artwork);
+        const image = artwork
+          ? getArtworkImageSources(artwork, 'thumbnail')
+          : { src: null, fallbackSrc: null };
         const title = artwork ? getDisplayTitle(artwork) : 'Artwork';
         const artist = artwork ? getPublicArtist(artwork) : null;
 
@@ -2431,10 +2577,11 @@ function IdleShowcaseLayer({
               transform: `rotate(${itemLayout?.rotate || 0}deg)`,
             }}
           >
-            {imageUrl ? (
+            {image.src ? (
               <span className="relative block w-fit max-w-full overflow-hidden">
                 <ImageWithFallback
-                  src={imageUrl}
+                  src={image.src}
+                  fallbackSrc={image.fallbackSrc}
                   alt=""
                   loading="eager"
                   decoding="async"
@@ -2476,22 +2623,23 @@ function IdleShowcaseLayer({
 function SearchArtworkDialog({
   artwork,
   routeId,
+  returnTo,
   onClose,
 }: {
   artwork: ArtworkSearchResult | null;
   routeId: string;
+  returnTo: string;
   onClose: () => void;
 }) {
-  const imageUrl = artwork ? getArtworkImageUrl(artwork, 'large') : null;
+  const image = artwork
+    ? getArtworkImageSources(artwork, 'large')
+    : { src: null, fallbackSrc: null };
   const descriptionDetailsList = artwork
     ? getPublicDescriptionDetailList(artwork)
     : [];
   const rootsDescriptionDetails = descriptionDetailsList[0] || null;
   const caption = artwork ? getGeneratedCaptionText(artwork) : null;
-  const catalogRows = artwork ? getPublicCatalogueRows(artwork) : [];
-  const catalogueSourceLabel = getPublicRecordSourceLabel(
-    getDominantSourceLabel(catalogRows)
-  );
+  const catalogueGroups = artwork ? getPublicCatalogueRowGroups(artwork) : [];
   const ngsUrl = artwork ? getNgsUrl(artwork) : null;
   const rootsUrl = artwork ? getRootsUrl(artwork) : null;
   const title = artwork ? getDisplayTitle(artwork) : 'Untitled';
@@ -2514,7 +2662,8 @@ function SearchArtworkDialog({
             </Dialog.Description>
             <div className="flex min-h-0 min-w-0 items-center justify-center bg-black/35 p-4">
               <ImageWithFallback
-                src={imageUrl}
+                src={image.src}
+                fallbackSrc={image.fallbackSrc}
                 alt={title}
                 className="max-h-full w-full object-contain"
                 fallback={
@@ -2551,14 +2700,16 @@ function SearchArtworkDialog({
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <Link
-                  to={`/${routeId}/artworks/${encodeURIComponent(artwork.id)}`}
+                  to={`/${routeId}/artworks/${encodeURIComponent(
+                    artwork.id
+                  )}?from=${encodeURIComponent(returnTo)}`}
                   className="inline-flex h-9 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
                 >
                   Open full page
                 </Link>
-                {imageUrl && (
+                {image.src && (
                   <a
-                    href={imageUrl}
+                    href={image.src}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.09] hover:text-white"
@@ -2600,57 +2751,22 @@ function SearchArtworkDialog({
                 />
               )}
 
-              {catalogRows.length > 0 && (
-                <section className="mt-6">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-                      Catalogue fields
-                    </h3>
-                    {catalogueSourceLabel && (
-                      <SourceIndicator label={catalogueSourceLabel} compact />
-                    )}
-                  </div>
-                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {catalogRows.map(({ label, value, sourceLabel }) => {
-                      const searchQuery = getCatalogueRowSearchQuery(
-                        label,
-                        value
-                      );
-
-                      return (
-                        <div
-                          key={label}
-                          className="rounded-md border border-white/[0.08] bg-black/20 p-3"
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/35">
-                              {label}
-                            </dt>
-                            {getPublicRecordSourceLabel(sourceLabel) &&
-                              getPublicRecordSourceLabel(sourceLabel) !==
-                                catalogueSourceLabel && (
-                                <SourceIndicator label={sourceLabel} compact />
-                              )}
-                          </div>
-                          <dd className="mt-1 text-sm text-white/70">
-                            {searchQuery ? (
-                              <Link
-                                to={`/${routeId}/search?q=${encodeURIComponent(
-                                  searchQuery
-                                )}`}
-                                className="underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/60"
-                              >
-                                {value}
-                              </Link>
-                            ) : (
-                              value
-                            )}
-                          </dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
-                </section>
+              {catalogueGroups.length > 0 && (
+                <MetadataSourceToggle
+                  className="mt-6"
+                  groups={catalogueGroups}
+                  getSearchHref={(label, value) => {
+                    const searchQuery = getCatalogueRowSearchQuery(
+                      label,
+                      value
+                    );
+                    return searchQuery
+                      ? `/${routeId}/search?q=${encodeURIComponent(
+                          searchQuery
+                        )}`
+                      : null;
+                  }}
+                />
               )}
 
               <CitationPanel artwork={artwork} className="mt-6" />
@@ -2982,7 +3098,7 @@ function SalonResults({
     <div className="grid gap-x-8 gap-y-12 pt-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {results.map((result, index) => {
         const rotation = ((hashString(`${result.id}-${index}`) % 50) - 25) / 10;
-        const image = getArtworkImageUrl(result, 'thumbnail');
+        const image = getArtworkImageSources(result, 'thumbnail');
         const rank = (index + 1).toString().padStart(2, '0');
         const title = getDisplayTitle(result);
         const artist = getDisplayArtist(result);
@@ -2997,7 +3113,8 @@ function SalonResults({
           >
             <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
               <ImageWithFallback
-                src={image}
+                src={image.src}
+                fallbackSrc={image.fallbackSrc}
                 alt={title}
                 loading="lazy"
                 className="aspect-[4/5] w-full object-cover"
@@ -3038,7 +3155,7 @@ function AtlasResults({
         const x = 4 + (hash % 82);
         const y = 6 + (Math.floor(hash / 83) % 76);
         const width = 58 + (hash % 76);
-        const image = getArtworkImageUrl(result, 'thumbnail');
+        const image = getArtworkImageSources(result, 'thumbnail');
         const rank = (index + 1).toString().padStart(2, '0');
         const title = getDisplayTitle(result);
 
@@ -3060,7 +3177,8 @@ function AtlasResults({
                 #{rank}
               </span>
               <ImageWithFallback
-                src={image}
+                src={image.src}
+                fallbackSrc={image.fallbackSrc}
                 alt={title}
                 loading="lazy"
                 className="h-full w-full object-cover"
@@ -3103,7 +3221,7 @@ function ResultCard({
   const palette = collectPalette(result).slice(0, 5);
   const title = getDisplayTitle(result);
   const artist = getDisplayArtist(result);
-  const image = getArtworkImageUrl(result, imageRole);
+  const image = getArtworkImageSources(result, imageRole);
 
   return (
     <article className="break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]">
@@ -3114,7 +3232,8 @@ function ResultCard({
       >
         <div className="bg-white/[0.03]">
           <ImageWithFallback
-            src={image}
+            src={image.src}
+            fallbackSrc={image.fallbackSrc}
             alt={title}
             loading="lazy"
             className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
@@ -3328,7 +3447,7 @@ function TableResults({
           {results.map((result, index) => {
             const title = getDisplayTitle(result);
             const artist = getDisplayArtist(result);
-            const image = getArtworkImageUrl(result, 'thumbnail');
+            const image = getArtworkImageSources(result, 'thumbnail');
 
             return (
               <tr
@@ -3345,7 +3464,8 @@ function TableResults({
                     className="flex items-center gap-3 text-left text-white transition-colors hover:text-cyan-200"
                   >
                     <ImageWithFallback
-                      src={image}
+                      src={image.src}
+                      fallbackSrc={image.fallbackSrc}
                       alt=""
                       loading="lazy"
                       className="h-12 w-12 object-cover"

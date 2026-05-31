@@ -265,4 +265,50 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
     expect(data.data.embeddings[0]).toHaveProperty('year', 2024);
     expect(data.data.embeddings[0]).toHaveProperty('medium', 'Digital');
   });
+
+  it('should chunk Vectorize reads and use the v2 index when configured', async () => {
+    const galleryId = 'test-gallery-123';
+    const mockArtworks = Array.from({ length: 45 }, (_, index) => {
+      const id = `artwork-${index + 1}`;
+      return {
+        id,
+        gallery_id: galleryId,
+        title: `Artwork ${index + 1}`,
+        artist: 'Test Artist',
+        year: 2024,
+        medium: 'Digital',
+        image_url: `https://r2.example.com/${id}.jpg`,
+        thumbnail_url: `https://r2.example.com/${id}-thumb.jpg`,
+        embedding_id: id,
+      };
+    });
+
+    mockDatabase({ galleryId, artworks: mockArtworks });
+    env.EMBEDDING_INDEX_VERSION = 'v2';
+    env.VECTORIZE_V2 = {
+      getByIds: vi.fn(async (ids: string[]) =>
+        ids.map((id) => ({ id, values: new Array(1024).fill(0.25) }))
+      ),
+      query: vi.fn(),
+    } as any;
+
+    const request = new Request(
+      `http://localhost/api/v1/galleries/${galleryId}/embeddings?limit=45`
+    );
+    const response = await app.fetch(request, env);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(data.data.embeddings).toHaveLength(45);
+    expect(env.VECTORIZE.getByIds).not.toHaveBeenCalled();
+    expect(env.VECTORIZE_V2.getByIds).toHaveBeenCalledTimes(3);
+    expect((env.VECTORIZE_V2.getByIds as any).mock.calls[0][0]).toHaveLength(
+      20
+    );
+    expect((env.VECTORIZE_V2.getByIds as any).mock.calls[1][0]).toHaveLength(
+      20
+    );
+    expect((env.VECTORIZE_V2.getByIds as any).mock.calls[2][0]).toHaveLength(5);
+  });
 });

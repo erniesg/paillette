@@ -271,6 +271,7 @@ export function EmbeddingScatterPlot({
             <div className="flex gap-4">
               <ImageWithFallback
                 src={hovered.thumbnailUrl || hovered.imageUrl}
+                fallbackSrc={hovered.imageUrl || hovered.thumbnailUrl}
                 alt={hovered.title}
                 className="w-24 h-24 object-cover rounded"
                 fallback={

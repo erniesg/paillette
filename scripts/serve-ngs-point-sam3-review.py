@@ -111,7 +111,9 @@ def side_search_radius(size: int, limit: int) -> int:
 
 
 def point_intent_outward_limit(size: int, limit: int) -> int:
-    return max(3, min(12, int(round(size * 0.035)), int(round(limit * 0.018))))
+    # Points define the user's crop intent; snapping may refine inward to a
+    # stronger edge, but must not grow into surrounding mat/frame whitespace.
+    return 0
 
 
 def point_intent_inward_limit(size: int, limit: int) -> int:
@@ -907,6 +909,43 @@ def straighten_review_source(
     }
 
 
+def auto_straighten_review_source(review_dir: Path, item_id: str, source_url: str | None = None) -> dict:
+    from PIL import Image
+
+    started = time.time()
+    image = load_review_source_image(review_dir, item_id, source_url)
+    detected_angle, skew_diagnostics = detect_crop_skew_angle(image)
+    fill = median_border_color(image)
+    pil_angle = float(detected_angle)
+    css_equivalent_angle = -pil_angle
+    if abs(pil_angle) > 0:
+        image = image.rotate(pil_angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill)
+
+    stamp = int(time.time() * 1000)
+    source_url_path = f"assets/{item_id}-source-auto-straighten-{stamp}.jpg"
+    image.save(review_dir / source_url_path, format="JPEG", quality=94)
+    width, height = image.size
+    return {
+        "ok": True,
+        "id": item_id,
+        "method": "source-straighten",
+        "mode": "source-auto",
+        "angleDegrees": round(css_equivalent_angle, 6),
+        "detectedSkewAngleDegrees": round(pil_angle, 6),
+        "sourceUrl": f"{source_url_path}?v={stamp}",
+        "sourceOriginalUrl": source_url or f"assets/{item_id}-original.jpg",
+        "width": width,
+        "height": height,
+        "box": [0, 0, width, height],
+        "diagnostics": {
+            "skew": skew_diagnostics,
+            "fill": fill,
+            "pilAngleDegrees": round(pil_angle, 6),
+        },
+        "seconds": round(time.time() - started, 3),
+    }
+
+
 def straighten_review_crop(
     review_dir: Path,
     item_id: str,
@@ -1492,6 +1531,12 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                             "usedBy": "review UI before frame/SAM/manual crop operations",
                             "body": {"id": "2010-04175", "scope": "source", "angleDegrees": -1.4},
                         },
+                        "sourceAutoStraighten": {
+                            "path": "/api/straighten",
+                            "method": "POST",
+                            "usedBy": "review UI to auto-detect source skew before frame/SAM/manual crop operations",
+                            "body": {"id": "2010-04175", "scope": "source", "mode": "auto"},
+                        },
                     },
                 )
                 return
@@ -1549,14 +1594,16 @@ def make_handler(review_dir: Path, runner: Sam3PointRunner):
                 elif parsed.path == "/api/straighten-source":
                     raw_angle = payload.get("angleDegrees", None)
                     if raw_angle is None or raw_angle == "":
-                        raise ValueError("angleDegrees is required for source straightening.")
-                    result = straighten_review_source(review_dir, item_id, float(raw_angle), source_url)
+                        result = auto_straighten_review_source(review_dir, item_id, source_url)
+                    else:
+                        result = straighten_review_source(review_dir, item_id, float(raw_angle), source_url)
                 elif parsed.path == "/api/straighten":
                     if str(payload.get("scope") or payload.get("target") or "").lower() == "source" or payload.get("source") is True:
                         raw_angle = payload.get("angleDegrees", None)
                         if raw_angle is None or raw_angle == "":
-                            raise ValueError("angleDegrees is required for source straightening.")
-                        result = straighten_review_source(review_dir, item_id, float(raw_angle), source_url)
+                            result = auto_straighten_review_source(review_dir, item_id, source_url)
+                        else:
+                            result = straighten_review_source(review_dir, item_id, float(raw_angle), source_url)
                         self._json(200, result)
                         return
                     box = payload.get("box") or []
