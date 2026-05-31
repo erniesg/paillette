@@ -5,6 +5,7 @@ import { formatDimensions, copyToClipboard } from '~/lib/utils';
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 
 interface ArtworkDetailDialogProps {
   artwork: Artwork;
@@ -59,9 +60,7 @@ export function ArtworkDetailDialog({
                 alt={artwork.title || 'Artwork'}
                 className="max-w-full max-h-[60vh] object-contain"
                 fallback={
-                  <div className="flex h-64 w-full items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
-                    No image
-                  </div>
+                  <NoImagePlaceholder className="h-64 rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-600" />
                 }
               />
             </div>

@@ -1,11 +1,12 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { Link, useLoaderData } from '@remix-run/react';
 import type { ReactNode } from 'react';
-import { ArrowLeft, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
@@ -115,10 +116,7 @@ export default function ArtworkDetailPage() {
                 alt={title}
                 className="max-h-[76vh] w-full object-contain"
                 fallback={
-                  <div className="flex h-80 w-full items-center justify-center rounded-md bg-white/[0.03] text-white/35">
-                    <ImageIcon className="mr-2 h-5 w-5" />
-                    No image
-                  </div>
+                  <NoImagePlaceholder className="h-80 rounded-md text-white/25" />
                 }
               />
             </div>

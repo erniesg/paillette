@@ -42,6 +42,7 @@ import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { Logo } from '~/components/ui/logo';
 import {
   getGeneratedCaptionText,
@@ -2667,10 +2668,7 @@ function SearchArtworkDialog({
                 alt={title}
                 className="max-h-full w-full object-contain"
                 fallback={
-                  <div className="flex h-full min-h-64 w-full items-center justify-center rounded-md bg-white/[0.04] text-white/30">
-                    <ImageIcon className="mr-2 h-5 w-5" />
-                    No image
-                  </div>
+                  <NoImagePlaceholder className="min-h-64 rounded-md text-white/25" />
                 }
               />
             </div>
@@ -3119,9 +3117,7 @@ function SalonResults({
                 loading="lazy"
                 className="aspect-[4/5] w-full object-cover"
                 fallback={
-                  <div className="flex aspect-[4/5] items-center justify-center bg-white/[0.04] text-sm text-white/30">
-                    No image
-                  </div>
+                  <NoImagePlaceholder className="aspect-[4/5] text-white/25" />
                 }
               />
             </div>
@@ -3183,9 +3179,7 @@ function AtlasResults({
                 loading="lazy"
                 className="h-full w-full object-cover"
                 fallback={
-                  <div className="flex h-full w-full items-center justify-center text-white/25">
-                    <ImageIcon className="h-4 w-4" />
-                  </div>
+                  <NoImagePlaceholder iconClassName="h-4 w-4" />
                 }
               />
             </div>
@@ -3238,9 +3232,7 @@ function ResultCard({
             loading="lazy"
             className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             fallback={
-              <div className="flex aspect-[4/3] items-center justify-center text-sm text-white/35">
-                No image
-              </div>
+              <NoImagePlaceholder className="aspect-[4/3] text-white/25" />
             }
           />
         </div>
@@ -3470,9 +3462,10 @@ function TableResults({
                       loading="lazy"
                       className="h-12 w-12 object-cover"
                       fallback={
-                        <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white/[0.04] text-white/25">
-                          <ImageIcon className="h-4 w-4" />
-                        </span>
+                        <NoImagePlaceholder
+                          className="h-12 w-12 rounded-md"
+                          iconClassName="h-4 w-4"
+                        />
                       }
                     />
                     <span>

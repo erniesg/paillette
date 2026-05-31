@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { Artwork } from '~/types';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { ArtworkDetailDialog } from './artwork-detail-dialog';
 
 interface ArtworkGridProps {
@@ -31,9 +32,7 @@ export function ArtworkGrid({ artworks }: ArtworkGridProps) {
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"
                 fallback={
-                  <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">
-                    No image
-                  </div>
+                  <NoImagePlaceholder className="bg-neutral-950 text-neutral-600" />
                 }
               />
             </div>

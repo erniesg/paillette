@@ -15,6 +15,7 @@ import { formatSimilarity, formatDimensions, cn } from '~/lib/utils';
 import { Badge } from '~/components/ui/badge';
 import { Input } from '~/components/ui/input';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { ArtworkDialog } from './artwork-dialog';
 
 interface SearchResultsProps {
@@ -45,10 +46,10 @@ export function SearchResults({ results, queryTime }: SearchResultsProps) {
             fallback={
               <button
                 type="button"
-                className="h-full w-full rounded-lg border border-neutral-800 bg-neutral-900 text-xs text-neutral-500"
+                className="h-full w-full rounded-lg border border-neutral-800 bg-neutral-900"
                 onClick={() => setSelectedArtwork(row.original)}
               >
-                No image
+                <NoImagePlaceholder className="rounded-lg bg-transparent text-neutral-600" />
               </button>
             }
           />

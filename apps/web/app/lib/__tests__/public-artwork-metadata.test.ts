@@ -841,4 +841,22 @@ describe('getPublicDescription', () => {
     expect(getPublicImageUrl(artwork)).toBeNull();
     expect(getPublicThumbnailUrl(artwork)).toBeNull();
   });
+
+  it('suppresses known NGS no-image placeholder assets', () => {
+    const artwork = {
+      id: '2021-00063',
+      accession_number: '2021-00063',
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/dca0630cea7e831915bf245ab93b3d7d/content',
+      thumbnailUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/cb86db4e09cbfa701b2748803f503e30/content',
+      metadata: {
+        ngs_image_url:
+          'https://www.nationalgallery.sg/content/dam/national-collections-artworks/external-loan-collection/vasan-sitthiket/2021/2021-00063_cropped.tif',
+      },
+    };
+
+    expect(getPublicImageUrl(artwork)).toBeNull();
+    expect(getPublicThumbnailUrl(artwork)).toBeNull();
+  });
 });

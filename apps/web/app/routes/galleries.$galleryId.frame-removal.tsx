@@ -20,6 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from '~/components/ui/card';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import type { Artwork, ProcessingStatus } from '~/types';
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
@@ -421,9 +422,7 @@ export default function GalleryFrameRemoval() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-neutral-950 text-sm text-neutral-500">
-                        No image
-                      </div>
+                      <NoImagePlaceholder className="bg-neutral-950 text-neutral-600" />
                     )}
                     <div className="absolute top-2 right-2">
                       {getStatusBadge(artwork.processingStatus)}

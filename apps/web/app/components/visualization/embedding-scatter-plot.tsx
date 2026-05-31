@@ -12,6 +12,7 @@ import {
   estimateDBSCANParams,
 } from '~/lib/dimensionality-reduction';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 
 export interface ArtworkPoint {
   id: string;
@@ -275,9 +276,7 @@ export function EmbeddingScatterPlot({
                 alt={hovered.title}
                 className="w-24 h-24 object-cover rounded"
                 fallback={
-                  <div className="flex h-24 w-24 items-center justify-center rounded bg-neutral-700 text-xs text-neutral-400">
-                    No image
-                  </div>
+                  <NoImagePlaceholder className="h-24 w-24 rounded bg-neutral-700 text-neutral-500" />
                 }
               />
               <div className="flex-1 min-w-0">

@@ -15,6 +15,7 @@ import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 
 interface ArtworkDialogProps {
   artwork: ArtworkSearchResult;
@@ -74,9 +75,7 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
               alt={artwork.title || 'Artwork'}
               className="max-h-full w-full object-contain"
               fallback={
-                <div className="flex h-full min-h-64 w-full items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-sm text-neutral-500">
-                  No image
-                </div>
+                <NoImagePlaceholder className="min-h-64 rounded-md border border-neutral-800 bg-neutral-900 text-neutral-600" />
               }
             />
           </div>

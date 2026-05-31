@@ -390,6 +390,69 @@ const getStandardThumbnailUrl = (artwork: PublicArtwork) =>
     artwork.image_url
   );
 
+// These accessions currently point at the same NGS "No image available"
+// placeholder asset in staging, so treat them as metadata-only records.
+const NGS_NO_IMAGE_PLACEHOLDER_ACCESSIONS = new Set([
+  '2011-00892',
+  '2011-00893',
+  '2011-00894',
+  '2011-02261',
+  '2011-03007',
+  '2012-00766',
+  '2015-00382',
+  '2015-01976',
+  '2017-00534',
+  '2017-00812',
+  '2017-00813',
+  '2017-00819',
+  '2017-00864',
+  '2018-01262',
+  '2018-01263',
+  '2018-01264',
+  '2018-01273',
+  '2018-01274',
+  '2018-01275',
+  '2018-01276',
+  '2018-01277',
+  '2019-00373',
+  '2020-00352',
+  '2020-00551',
+  '2021-00063',
+  '2021-00064',
+  '2021-00065',
+  '2021-00658',
+  '2021-01066',
+  'ASB-0068',
+  'GI-0058',
+  'GI-0146',
+  'GI-0292',
+  'GI-0577',
+  'GI-0810-(OT)',
+  'P-0282',
+  'P-0285',
+  'P-0606',
+  'P-1089',
+]);
+
+const hasKnownNgsNoImagePlaceholder = (artwork: PublicArtwork) => {
+  const meta = getPublicMetadata(artwork);
+  const accession = firstPublicText(
+    artwork.accession_number,
+    artwork.accessionNumber,
+    artwork.source_record_id,
+    artwork.sourceRecordId,
+    meta.accession_number,
+    meta.accessionNumber,
+    meta.source_record_id,
+    meta.sourceRecordId,
+    artwork.id
+  );
+
+  return Boolean(
+    accession && NGS_NO_IMAGE_PLACEHOLDER_ACCESSIONS.has(accession)
+  );
+};
+
 const getExplicitNgsImageUrl = (artwork: PublicArtwork) => {
   const meta = getPublicMetadata(artwork);
   const sourceRecords = getSourceRecords(artwork);
@@ -438,6 +501,10 @@ const getExplicitNgsThumbnailUrl = (artwork: PublicArtwork) => {
 };
 
 export const getPublicImageUrl = (artwork: PublicArtwork) => {
+  if (hasKnownNgsNoImagePlaceholder(artwork)) {
+    return null;
+  }
+
   if (shouldSuppressRootsRecord(artwork)) {
     return getExplicitNgsImageUrl(artwork);
   }
@@ -446,6 +513,10 @@ export const getPublicImageUrl = (artwork: PublicArtwork) => {
 };
 
 export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
+  if (hasKnownNgsNoImagePlaceholder(artwork)) {
+    return null;
+  }
+
   if (shouldSuppressRootsRecord(artwork)) {
     return getExplicitNgsThumbnailUrl(artwork);
   }
