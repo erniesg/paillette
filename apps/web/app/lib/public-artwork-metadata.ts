@@ -71,9 +71,15 @@ const decodeHtmlEntities = (value: string) =>
     }
   );
 
+const normalizePublicText = (value: string) =>
+  decodeHtmlEntities(value)
+    .replace(/\u00a0/g, ' ')
+    .replace(/([a-z0-9)\]][.!?])([A-Z][a-z])/g, '$1 $2')
+    .trim();
+
 export const asText = (value: unknown) =>
   typeof value === 'string' && value.trim()
-    ? decodeHtmlEntities(value).replace(/\u00a0/g, ' ').trim()
+    ? normalizePublicText(value)
     : null;
 
 const asParsedRecord = (value: unknown): Record<string, any> => {

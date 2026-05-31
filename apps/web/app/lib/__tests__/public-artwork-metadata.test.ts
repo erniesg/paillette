@@ -64,6 +64,23 @@ describe('getPublicDescription', () => {
     );
   });
 
+  it('repairs missing spaces between concatenated catalogue sentences', () => {
+    expect(
+      getPublicDescription({
+        metadata: {
+          sourceRecords: {
+            roots: {
+              caption:
+                'Thang was President of the Modern Art Society Singapore (1981-93).Following his second solo exhibition, he continued painting.',
+            },
+          },
+        },
+      })
+    ).toBe(
+      'Thang was President of the Modern Art Society Singapore (1981-93). Following his second solo exhibition, he continued painting.'
+    );
+  });
+
   it('prefers Roots source fields over top-level metadata', () => {
     expect(
       getPublicDescription({
