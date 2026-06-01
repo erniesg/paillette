@@ -100,6 +100,50 @@ describe('selectReviewedCropsForBackfill', () => {
     });
   });
 
+  it('uses native source crop metadata instead of low-resolution preview data URLs', () => {
+    const selected = selectReviewedCropsForBackfill({
+      reviewDir: '/tmp/review',
+      decisionsPayload: {
+        decisions: { '2015-00240': 'accept' },
+        selected: {
+          '2015-00240': {
+            choice: 'generated:snap-rectangle',
+            choiceLabel: 'snapped rectangle',
+            box: [52, 47, 905, 761],
+            cropMetadata: {
+              sourceUrl: 'assets/2015-00240-original.jpg',
+              sourceWidth: 1200,
+              sourceHeight: 801,
+              nativeCropBox: [52, 47, 905, 761],
+            },
+            activeResult: {
+              method: 'snap-rectangle',
+              cropUrl: 'data:image/jpeg;base64,preview-only',
+            },
+          },
+        },
+      },
+      rows,
+      exists: (path) => path === '/tmp/review/assets/2015-00240-original.jpg',
+    });
+
+    assert.equal(selected.length, 1);
+    assert.equal(selected[0].selectedImage.kind, 'review_source_native_crop');
+    assert.equal(
+      selected[0].selectedImage.path,
+      '/tmp/review/assets/2015-00240-original.jpg'
+    );
+    assert.equal(selected[0].selectedImage.reviewCropUrl, null);
+    assert.deepEqual(selected[0].selectedImage.reviewBox, [52, 47, 905, 761]);
+    assert.deepEqual(selected[0].selectedImage.reviewSource, {
+      path: '/tmp/review/assets/2015-00240-original.jpg',
+      sourceUrl: 'assets/2015-00240-original.jpg',
+      width: 1200,
+      height: 801,
+      box: [52, 47, 905, 761],
+    });
+  });
+
   it('fails loud when an accepted review choice has no crop asset', () => {
     assert.throws(
       () =>
@@ -162,7 +206,9 @@ describe('reviewSourceCropSpec', () => {
   it('returns null when review source context is incomplete', () => {
     assert.equal(
       reviewSourceCropSpec(
-        { reviewSource: { path: '/tmp/review/source.jpg', box: [0, 0, 10, 10] } },
+        {
+          reviewSource: { path: '/tmp/review/source.jpg', box: [0, 0, 10, 10] },
+        },
         { width: 1200, height: 801 }
       ),
       null

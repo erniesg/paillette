@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { sqlString } from './ngs-missing-image-backfill.mjs';
 
 const ACCEPTED_DECISIONS = new Set(['accept', 'accepted']);
+const isDataUrl = (value) => /^data:/i.test(String(value || ''));
 
 const positiveNumber = (value) => {
   const number = Number(value);
@@ -81,7 +82,9 @@ export function sourceImageCandidateUrls(sourceRow = {}, reviewRow = {}) {
     ...(Array.isArray(sourceRow.asset_candidates)
       ? sourceRow.asset_candidates
       : []),
-    ...(Array.isArray(sourceRow.assetCandidates) ? sourceRow.assetCandidates : []),
+    ...(Array.isArray(sourceRow.assetCandidates)
+      ? sourceRow.assetCandidates
+      : []),
   ];
   for (const candidate of assetCandidates) {
     if (typeof candidate === 'string') {
@@ -182,29 +185,60 @@ export function selectReviewedCropsForBackfill({
     const row = rowById.get(id) || { id };
     const selection = selected[id] || {};
     const activeResult = selection.activeResult || {};
+    const cropMetadata =
+      selection.cropMetadata || activeResult.cropMetadata || null;
     const cropUrl = activeResult.cropUrl || selection.cropUrl;
-    const cropPath = stripUrlQuery(cropUrl);
+    const cropPath =
+      cropUrl && !isDataUrl(cropUrl) ? stripUrlQuery(cropUrl) : null;
+    const sourceTransform =
+      selection.sourceTransform || activeResult.sourceTransform || null;
+    const sourceUrl =
+      cropMetadata?.sourceUrl ||
+      sourceTransform?.sourceUrl ||
+      row.original ||
+      null;
+    const sourceWidth = Number(
+      cropMetadata?.sourceWidth || sourceTransform?.width || row.fullWidth || 0
+    );
+    const sourceHeight = Number(
+      cropMetadata?.sourceHeight ||
+        sourceTransform?.height ||
+        row.fullHeight ||
+        0
+    );
+    const reviewBox =
+      cropMetadata?.nativeCropBox || selection.box || activeResult.box || null;
+    const sourcePath =
+      sourceUrl && !isDataUrl(sourceUrl)
+        ? resolve(reviewDir, stripUrlQuery(sourceUrl))
+        : null;
+    const canUseNativeSource =
+      cropMetadata?.sourceUrl &&
+      Array.isArray(cropMetadata.nativeCropBox) &&
+      sourcePath &&
+      exists(sourcePath);
+    const resolvedCropPath = cropPath ? resolve(reviewDir, cropPath) : null;
 
-    if (!cropPath) {
-      throw new Error(`accepted review crop is missing a cropUrl for ${id}`);
-    }
-
-    const resolvedCropPath = resolve(reviewDir, cropPath);
-    if (!exists(resolvedCropPath)) {
+    if (resolvedCropPath && !exists(resolvedCropPath) && !canUseNativeSource) {
       throw new Error(
         `accepted review crop is missing on disk for ${id}: ${resolvedCropPath}`
       );
+    }
+    if (!resolvedCropPath && !canUseNativeSource) {
+      throw new Error(`accepted review crop is missing a cropUrl for ${id}`);
     }
 
     const originalPath = row.original
       ? resolve(reviewDir, stripUrlQuery(row.original))
       : null;
-    const sourceTransform =
-      selection.sourceTransform || activeResult.sourceTransform || null;
-    const sourceUrl = sourceTransform?.sourceUrl || row.original || null;
-    const sourceWidth = Number(sourceTransform?.width || row.fullWidth || 0);
-    const sourceHeight = Number(sourceTransform?.height || row.fullHeight || 0);
-    const reviewBox = selection.box || activeResult.box || null;
+    const selectedPath =
+      resolvedCropPath && exists(resolvedCropPath)
+        ? resolvedCropPath
+        : sourcePath;
+    const selectedKind =
+      selectedPath === resolvedCropPath
+        ? 'review_crop'
+        : 'review_source_native_crop';
 
     output.push({
       id,
@@ -214,22 +248,23 @@ export function selectReviewedCropsForBackfill({
       medium: row.medium || null,
       selectedImage: {
         ok: true,
-        kind: 'review_crop',
-        path: resolvedCropPath,
+        kind: selectedKind,
+        path: selectedPath,
         originalPath,
-        sourceUrl: cropPath,
+        sourceUrl: cropPath || sourceUrl || null,
         sourceContentType: 'image/jpeg',
         reviewChoice: selection.choice || null,
         reviewChoiceLabel: selection.choiceLabel || null,
         reviewBox,
-        reviewCropUrl: cropUrl,
+        reviewCropUrl: cropPath ? cropUrl : null,
         reviewOverlayUrl:
           activeResult.overlayUrl || selection.overlayUrl || null,
         activeMethod: activeResult.method || null,
         sourceTransform,
+        cropMetadata,
         reviewSource: sourceUrl
           ? {
-              path: resolve(reviewDir, stripUrlQuery(sourceUrl)),
+              path: sourcePath,
               sourceUrl,
               width: sourceWidth || null,
               height: sourceHeight || null,
