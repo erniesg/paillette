@@ -77,6 +77,25 @@ export function sourceImageCandidateUrls(sourceRow = {}, reviewRow = {}) {
     candidates.push({ kind, url: value });
   };
 
+  const assetCandidates = [
+    ...(Array.isArray(sourceRow.asset_candidates)
+      ? sourceRow.asset_candidates
+      : []),
+    ...(Array.isArray(sourceRow.assetCandidates) ? sourceRow.assetCandidates : []),
+  ];
+  for (const candidate of assetCandidates) {
+    if (typeof candidate === 'string') {
+      push('db-asset', candidate);
+      continue;
+    }
+    push(
+      candidate.kind || candidate.role || candidate.source || 'db-asset',
+      candidate.url
+    );
+  }
+
+  push('db-web-image', sourceRow.web_image_url || sourceRow.webImageUrl);
+
   const ngsImageUrl = sourceRow.ngs_image_url || sourceRow.ngsImageUrl;
   if (ngsImageUrl) {
     push('ngs-direct', ngsImageUrl);

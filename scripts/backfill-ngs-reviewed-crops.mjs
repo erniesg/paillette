@@ -26,6 +26,7 @@ import {
   reviewSourceCropSpec,
   selectReviewedCropsForBackfill,
   sourceImageCandidateUrls,
+  stripUrlQuery,
 } from './lib/ngs-reviewed-crop-backfill.mjs';
 
 const imageRequire = createRequire(
@@ -357,13 +358,13 @@ async function preferredSourceForRow(row, source, localMetadata) {
     metadata: localMetadata,
   };
 
-  if (hasNonZeroSourceTransform(row.selectedImage?.sourceTransform)) {
-    return localSource;
-  }
-
   const sourceRow = sourceRowsById.get(row.id);
   if (!sourceRow) return localSource;
 
+  const comparisonMetadata = await nativeSourceComparisonMetadata(
+    row,
+    localMetadata
+  );
   const candidates = sourceImageCandidateUrls(sourceRow, row);
   let best = null;
   for (const candidate of candidates) {
@@ -372,7 +373,10 @@ async function preferredSourceForRow(row, source, localMetadata) {
 
     if (
       !isLargerSameAspectSource(
-        { width: localMetadata.width, height: localMetadata.height },
+        {
+          width: comparisonMetadata.width,
+          height: comparisonMetadata.height,
+        },
         {
           width: downloaded.metadata.width,
           height: downloaded.metadata.height,
@@ -394,19 +398,99 @@ async function preferredSourceForRow(row, source, localMetadata) {
   }
 
   if (!best) return localSource;
+  const transformed = await applyReviewSourceTransformToNativeCandidate(
+    row,
+    best
+  );
+  const prepared = transformed || best;
   return {
-    input: best.path,
-    kind: `native_${best.kind}_review_source_crop`,
-    path: best.path,
+    input: prepared.path,
+    kind: `native_${prepared.kind}_review_source_crop`,
+    path: prepared.path,
     url: best.url,
-    metadata: best.metadata,
+    metadata: prepared.metadata,
   };
 }
 
-function hasNonZeroSourceTransform(sourceTransform) {
-  if (!sourceTransform) return false;
+async function nativeSourceComparisonMetadata(row, fallbackMetadata) {
+  const sourceTransform = row.selectedImage?.sourceTransform;
+  const sourceOriginalUrl = sourceTransform?.sourceOriginalUrl;
+  if (!sourceOriginalUrl) return fallbackMetadata;
+
+  const sourceOriginalPath = resolve(
+    options.reviewDir,
+    stripUrlQuery(sourceOriginalUrl)
+  );
+  if (!existsSync(sourceOriginalPath)) return fallbackMetadata;
+
+  try {
+    const metadata = await sharp(sourceOriginalPath, {
+      limitInputPixels: false,
+    }).metadata();
+    return metadata.width && metadata.height ? metadata : fallbackMetadata;
+  } catch {
+    return fallbackMetadata;
+  }
+}
+
+async function applyReviewSourceTransformToNativeCandidate(row, candidate) {
+  const sourceTransform = row.selectedImage?.sourceTransform;
+  if (!sourceTransform) return null;
+
   const angle = Number(sourceTransform.angleDegrees || 0);
-  return Number.isFinite(angle) && Math.abs(angle) > 0.05;
+  if (!Number.isFinite(angle) || Math.abs(angle) <= 0.05) {
+    return null;
+  }
+
+  const fill = sourceTransform.diagnostics?.fill;
+  const background = {
+    r: clampColor(fill?.[0], 255),
+    g: clampColor(fill?.[1], 255),
+    b: clampColor(fill?.[2], 255),
+    alpha: 1,
+  };
+  const sourceDir = resolve(options.outDir, 'source-cache');
+  mkdirSync(sourceDir, { recursive: true });
+  const transformKey = createHash('sha256')
+    .update(
+      JSON.stringify({
+        candidate: candidate.url || candidate.path,
+        angle,
+        background,
+      })
+    )
+    .digest('hex');
+  const path = resolve(
+    sourceDir,
+    `${safeFilename(row.id)}-${transformKey}-source-transform.jpg`
+  );
+
+  if (!existsSync(path)) {
+    await sharp(candidate.path, { limitInputPixels: false })
+      .rotate(angle, { background })
+      .flatten({ background })
+      .jpeg({ quality: 98, mozjpeg: true })
+      .toFile(path);
+  }
+
+  try {
+    const metadata = await sharp(path, { limitInputPixels: false }).metadata();
+    if (!metadata.width || !metadata.height) return null;
+    return {
+      kind: `${candidate.kind}_source_transform`,
+      url: candidate.url,
+      path,
+      metadata,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clampColor(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(255, Math.round(number)));
 }
 
 async function downloadCandidateSource(candidate, id) {
