@@ -273,6 +273,7 @@ async function prepareRow(row) {
     localReviewSourceWidth: sourceInput.localWidth || null,
     localReviewSourceHeight: sourceInput.localHeight || null,
     preparedSourceExtract: sourceInput.extract,
+    preparedSourceRotationAngle: sourceInput.rotationAngle || null,
     thumbWidth: thumb.info.width,
     thumbHeight: thumb.info.height,
     sizeBytes: normalized.data.byteLength,
@@ -318,11 +319,16 @@ async function prepareReviewedCropInput(row) {
       };
     }
 
-    const cropBuffer = await sharp(preferredSource.input, {
+    let cropPipeline = sharp(preferredSource.input, {
       limitInputPixels: false,
-    })
-      .extract(cropSpec.extract)
-      .toBuffer();
+    }).extract(cropSpec.extract);
+    const cropRotationAngle = reviewedCropRotationAngle(row);
+    if (Math.abs(cropRotationAngle) >= 0.05) {
+      cropPipeline = cropPipeline.rotate(cropRotationAngle, {
+        background: '#ebe5d6',
+      });
+    }
+    const cropBuffer = await cropPipeline.toBuffer();
 
     return {
       input: cropBuffer,
@@ -334,6 +340,7 @@ async function prepareReviewedCropInput(row) {
       localWidth: localMetadata.width || null,
       localHeight: localMetadata.height || null,
       extract: cropSpec.extract,
+      rotationAngle: cropRotationAngle || null,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -347,6 +354,15 @@ async function prepareReviewedCropInput(row) {
       extract: null,
     };
   }
+}
+
+function reviewedCropRotationAngle(row) {
+  const value =
+    row.selectedImage?.cropMetadata?.rotationAngle ??
+    row.selectedImage?.rotationAngle ??
+    0;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 async function preferredSourceForRow(row, source, localMetadata) {
@@ -681,6 +697,7 @@ function assetStatements(row, now) {
         localReviewSourceWidth: row.localReviewSourceWidth || null,
         localReviewSourceHeight: row.localReviewSourceHeight || null,
         preparedSourceExtract: row.preparedSourceExtract || null,
+        preparedSourceRotationAngle: row.preparedSourceRotationAngle || null,
       },
       now,
     }),
@@ -838,9 +855,7 @@ async function writeImageVectorNdjson(planRows) {
     });
     appendFileSync(out, `${lines.join('\n')}\n`);
     completed += batch.length;
-    console.error(
-      `embedded images ${completed}/${planRows.length}`
-    );
+    console.error(`embedded images ${completed}/${planRows.length}`);
   }
   return out;
 }

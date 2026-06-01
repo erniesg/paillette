@@ -115,6 +115,7 @@ describe('selectReviewedCropsForBackfill', () => {
               sourceWidth: 1200,
               sourceHeight: 801,
               nativeCropBox: [52, 47, 905, 761],
+              rotationAngle: 1.4,
             },
             activeResult: {
               method: 'snap-rectangle',
@@ -135,6 +136,7 @@ describe('selectReviewedCropsForBackfill', () => {
     );
     assert.equal(selected[0].selectedImage.reviewCropUrl, null);
     assert.deepEqual(selected[0].selectedImage.reviewBox, [52, 47, 905, 761]);
+    assert.equal(selected[0].selectedImage.cropMetadata.rotationAngle, 1.4);
     assert.deepEqual(selected[0].selectedImage.reviewSource, {
       path: '/tmp/review/assets/2015-00240-original.jpg',
       sourceUrl: 'assets/2015-00240-original.jpg',

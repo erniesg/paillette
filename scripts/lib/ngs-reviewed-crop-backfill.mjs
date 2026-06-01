@@ -303,6 +303,7 @@ export function reviewCropBackfillPayload(
     review_crop_url: selected.reviewCropUrl || null,
     review_overlay_url: selected.reviewOverlayUrl || null,
     source_transform: selected.sourceTransform || null,
+    ...(selected.cropMetadata ? { crop_metadata: selected.cropMetadata } : {}),
     original_asset_id: originalAssetId,
     thumbnail_asset_id: thumbnailAssetId,
   };
