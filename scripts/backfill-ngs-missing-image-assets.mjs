@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -588,9 +589,13 @@ function applySqlFiles(files) {
 async function writeImageVectorNdjson(planRows) {
   const out = resolve(options.outDir, 'image-vectors.ndjson');
   const apiKey = requireJinaApiKey();
-  const lines = [];
-  for (let index = 0; index < planRows.length; index += options.vectorBatchSize) {
-    const batch = planRows.slice(index, index + options.vectorBatchSize);
+  const existingIds = readExistingVectorIds(out);
+  if (!existsSync(out)) writeFileSync(out, '');
+  const pendingRows = planRows.filter((row) => !existingIds.has(row.id));
+  let completed = planRows.length - pendingRows.length;
+
+  for (let index = 0; index < pendingRows.length; index += options.vectorBatchSize) {
+    const batch = pendingRows.slice(index, index + options.vectorBatchSize);
     const inputs = batch.map((row) => ({
       image: readFileSync(row.preparedImagePath).toString('base64'),
     }));
@@ -600,6 +605,7 @@ async function writeImageVectorNdjson(planRows) {
       inputs,
       dimensions: 1024,
     });
+    const lines = [];
     batch.forEach((row, rowIndex) => {
       lines.push(vectorLine(row, vectors[rowIndex], {
         channel: 'image',
@@ -608,10 +614,26 @@ async function writeImageVectorNdjson(planRows) {
         sourceField: 'image_url',
       }));
     });
-    console.error(`embedded images ${Math.min(index + options.vectorBatchSize, planRows.length)}/${planRows.length}`);
+    appendFileSync(out, `${lines.join('\n')}\n`);
+    completed += batch.length;
+    console.error(`embedded images ${completed}/${planRows.length}`);
   }
-  writeFileSync(out, `${lines.join('\n')}\n`);
   return out;
+}
+
+function readExistingVectorIds(path) {
+  if (!existsSync(path)) return new Set();
+  const ids = new Set();
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line);
+      if (row?.id) ids.add(String(row.id));
+    } catch {
+      continue;
+    }
+  }
+  return ids;
 }
 
 async function writeCaptionVectorNdjson(planRows, captionRowsById) {
