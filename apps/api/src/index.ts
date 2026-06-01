@@ -11,6 +11,7 @@ import translationRoutes from './routes/translation';
 import apiKeyRoutes from './routes/api-keys';
 import impactRoutes from './routes/impact';
 import assetRoutes from './routes/assets';
+import usageEventRoutes from './routes/usage-events';
 import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
@@ -142,6 +143,7 @@ api.get('/.well-known/oauth-protected-resource', (c) =>
 );
 api.route('/me', apiKeyRoutes as any);
 api.route('/impact', impactRoutes as any);
+api.route('/usage-events', usageEventRoutes as any);
 api.route('/orgs', orgs);
 api.route('/galleries', orgs);
 api.route('/metadata', metadataRoutes);

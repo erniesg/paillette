@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { Env } from '../index';
 import {
+  annotateUsageEvent,
   enforceDailyQuota,
   recordArtworkResults,
   requireAuthOrApiKey,
@@ -147,11 +148,7 @@ const MEDIUM_TERMS = new Set([
   'watercolor',
   'woodcut',
 ]);
-const FORMAL_VISUAL_TERMS = new Set([
-  'brushwork',
-  'calligraphic',
-  'gestural',
-]);
+const FORMAL_VISUAL_TERMS = new Set(['brushwork', 'calligraphic', 'gestural']);
 const SEARCH_CONTROL_WORDS = new Set([
   'a',
   'an',
@@ -188,10 +185,7 @@ const searchQueryTokens = (query: string) =>
     .split(/\s+/)
     .map((token) => token.trim())
     .filter(
-      (token) =>
-        token &&
-        token.length > 1 &&
-        !SEARCH_CONTROL_WORDS.has(token)
+      (token) => token && token.length > 1 && !SEARCH_CONTROL_WORDS.has(token)
     );
 
 const extractTitlePhrase = (query: string) => {
@@ -937,8 +931,7 @@ async function searchArtworksHybrid(
           ? match.metadata.embeddingVersion
           : undefined;
       scores.set(match.id, {
-        score:
-          (existing?.score || 0) + weight / (RRF_K + index + 1),
+        score: (existing?.score || 0) + weight / (RRF_K + index + 1),
         vectorScore: existing?.vectorScore ?? match.score,
         searchSources: [
           ...(existing?.searchSources || []),
@@ -1016,8 +1009,7 @@ async function searchArtworksByMetadata(
   const normalizedWordQuery = normalizeSearchWords(query);
   const temporalFilter = parseTemporalFilter(query);
   const likeQuery = `%${escapeLike(normalizedWordQuery || normalizedQuery)}%`;
-  const tokens = searchQueryTokens(query)
-    .slice(0, 5);
+  const tokens = searchQueryTokens(query).slice(0, 5);
   const phraseQuery =
     tokens.length === 1
       ? `% ${escapeLike(tokens[0] as string)} %`
@@ -1201,7 +1193,7 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
 
-    const { query, topK } = validation.data;
+    const { query, topK, minScore } = validation.data;
 
     const enrichedResults = await searchArtworksHybrid(
       c.env,
@@ -1211,6 +1203,17 @@ searchRoutes.post('/search/text', async (c) => {
     );
 
     const queryTime = performance.now() - startTime;
+
+    await annotateUsageEvent(c as any, {
+      search: {
+        mode: 'text',
+        query,
+        topK,
+        minScore,
+        resultCount: enrichedResults.length,
+        queryTime,
+      },
+    });
 
     await recordArtworkResults(
       c as any,
@@ -1347,6 +1350,20 @@ searchRoutes.post('/search/image', async (c) => {
     // If no results found, return empty response
     if (vectorResults.length === 0) {
       const queryTime = performance.now() - startTime;
+      await annotateUsageEvent(c as any, {
+        search: {
+          mode: 'image',
+          image: {
+            name: imageFile.name || null,
+            type: imageFile.type || null,
+            size: imageFile.size,
+          },
+          topK,
+          minScore,
+          resultCount: 0,
+          queryTime,
+        },
+      });
       return c.json<ApiResponse<SearchResponse>>({
         success: true,
         data: {
@@ -1427,6 +1444,21 @@ searchRoutes.post('/search/image', async (c) => {
     );
 
     const queryTime = performance.now() - startTime;
+
+    await annotateUsageEvent(c as any, {
+      search: {
+        mode: 'image',
+        image: {
+          name: imageFile.name || null,
+          type: imageFile.type || null,
+          size: imageFile.size,
+        },
+        topK,
+        minScore,
+        resultCount: enrichedResults.length,
+        queryTime,
+      },
+    });
 
     await recordArtworkResults(
       c as any,

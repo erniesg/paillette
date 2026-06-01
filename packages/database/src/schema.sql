@@ -366,7 +366,8 @@ CREATE TABLE IF NOT EXISTS artwork_usage_events (
   org_id TEXT,
   rank INTEGER,
   score REAL,
-  interaction TEXT CHECK(interaction IN ('result', 'view', 'click', 'download')) NOT NULL DEFAULT 'result',
+  interaction TEXT CHECK(interaction IN ('result', 'view', 'click', 'download', 'citation_copy')) NOT NULL DEFAULT 'result',
+  metadata TEXT DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
 
   FOREIGN KEY (usage_event_id) REFERENCES api_usage_events(id) ON DELETE CASCADE,

@@ -68,6 +68,10 @@ import {
   type EvalSuggestion,
 } from '~/lib/search-suggestions';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
+import {
+  trackPublicUsageEvent,
+  type PublicArtworkInteractionType,
+} from '~/lib/usage-events';
 import type {
   ApiResponse,
   ArtworkSearchResult,
@@ -120,6 +124,12 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 }
 
 type SearchMode = 'text' | 'image' | 'colour';
+type PublicSearchUsageContext = {
+  mode?: 'text' | 'colour';
+  colours?: string[];
+  source?: string;
+  auto?: boolean;
+};
 type ViewMode = 'masonry' | 'salon' | 'atlas' | 'table';
 type ActiveSearchSummary = {
   type: string;
@@ -724,7 +734,8 @@ const readSearchResponse = async (response: Response) => {
 
 const publicSearchText = async (
   orgId: string,
-  request: SearchTextRequest
+  request: SearchTextRequest,
+  usageContext?: PublicSearchUsageContext
 ): Promise<SearchResponse> => {
   const response = await fetch(
     `/api/public-search/${encodeURIComponent(orgId)}/text`,
@@ -733,7 +744,10 @@ const publicSearchText = async (
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify({
+        ...request,
+        usageContext,
+      }),
     }
   );
 
@@ -996,11 +1010,18 @@ export default function SearchPage() {
     ],
     queryFn: async () => {
       if (!normalizedCommittedTextQuery) return null;
-      return publicSearchText(galleryId, {
-        query: normalizedCommittedTextQuery,
-        topK,
-        minScore,
-      });
+      return publicSearchText(
+        galleryId,
+        {
+          query: normalizedCommittedTextQuery,
+          topK,
+          minScore,
+        },
+        {
+          mode: searchMode === 'colour' ? 'colour' : 'text',
+          colours: searchColours,
+        }
+      );
     },
     enabled:
       hasMounted &&
@@ -1053,11 +1074,18 @@ export default function SearchPage() {
   const idleShowcaseQuery = useQuery({
     queryKey: ['idle-showcase', galleryId, activeIdleSuggestion?.query],
     queryFn: () =>
-      publicSearchText(galleryId, {
-        query: activeIdleSuggestion?.query || '',
-        topK: IDLE_SHOWCASE_FETCH_LIMIT,
-        minScore: 0,
-      }),
+      publicSearchText(
+        galleryId,
+        {
+          query: activeIdleSuggestion?.query || '',
+          topK: IDLE_SHOWCASE_FETCH_LIMIT,
+          minScore: 0,
+        },
+        {
+          auto: true,
+          source: 'idle_showcase',
+        }
+      ),
     enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
     staleTime: 5 * 60 * 1000,
   });
@@ -1432,6 +1460,86 @@ export default function SearchPage() {
     setMinScore(Math.min(1, Math.max(0, value / 100)));
   };
 
+  const getSearchInteractionMetadata = useCallback(
+    () => ({
+      mode: isBrowsingCollection ? 'browse' : searchMode,
+      query: normalizedCommittedTextQuery || null,
+      colours: searchMode === 'colour' ? searchColours : [],
+      sortMode,
+      view,
+      topK,
+      minScore,
+      pagePath: `${location.pathname}${location.search}${location.hash}`,
+    }),
+    [
+      isBrowsingCollection,
+      location.hash,
+      location.pathname,
+      location.search,
+      minScore,
+      normalizedCommittedTextQuery,
+      searchColours,
+      searchMode,
+      sortMode,
+      topK,
+      view,
+    ]
+  );
+
+  const getArtworkRank = useCallback(
+    (artwork: ArtworkSearchResult) => {
+      const index = results.findIndex((result) => result.id === artwork.id);
+      return index >= 0 ? index + 1 : null;
+    },
+    [results]
+  );
+
+  const trackArtworkInteraction = useCallback(
+    (
+      artwork: ArtworkSearchResult,
+      type: PublicArtworkInteractionType,
+      action: string,
+      metadata: Record<string, unknown> = {}
+    ) => {
+      trackPublicUsageEvent(preferredRouteId, {
+        queryType:
+          type === 'citation_copy'
+            ? 'public_citation_copy'
+            : 'public_artwork_interaction',
+        orgId: galleryId,
+        search: getSearchInteractionMetadata(),
+        interaction: {
+          type,
+          action,
+          artworkId: artwork.id,
+          orgId: artwork.orgId || artwork.galleryId || galleryId,
+          rank: getArtworkRank(artwork),
+          score: artwork.similarity,
+          metadata: {
+            title: getDisplayTitle(artwork),
+            artist: getPublicArtist(artwork),
+            accessionNumber: getAccession(artwork),
+            sourceUrl: getSourceUrl(artwork),
+            ...metadata,
+          },
+        },
+        metadata: {
+          routeOrgId: preferredRouteId,
+          surface: 'search',
+        },
+      });
+    },
+    [galleryId, getArtworkRank, getSearchInteractionMetadata, preferredRouteId]
+  );
+
+  const selectArtwork = useCallback(
+    (artwork: ArtworkSearchResult) => {
+      trackArtworkInteraction(artwork, 'click', 'artwork_preview_open');
+      setSelectedArtwork(artwork);
+    },
+    [trackArtworkInteraction]
+  );
+
   return (
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
@@ -1492,7 +1600,7 @@ export default function SearchPage() {
               isLoading={isIdleShowcaseLoading}
               suggestion={activeIdleSuggestion}
               onCommittedSuggestionChange={setDisplayIdleSuggestion}
-              onSelectArtwork={setSelectedArtwork}
+              onSelectArtwork={selectArtwork}
             />
           )}
 
@@ -1667,12 +1775,11 @@ export default function SearchPage() {
                           : hasMounted && shouldSearch
                             ? 'No works'
                             : 'Ready'}
-                    {committedTextQuery &&
-                      searchMode !== 'image' && (
-                        <span className="ml-2 normal-case tracking-normal text-white/70">
-                          "{committedTextQuery}"
-                        </span>
-                      )}
+                    {committedTextQuery && searchMode !== 'image' && (
+                      <span className="ml-2 normal-case tracking-normal text-white/70">
+                        "{committedTextQuery}"
+                      </span>
+                    )}
                     {isBrowsingCollection && (
                       <span className="ml-2 normal-case tracking-normal text-white/70">
                         infinite browse
@@ -1956,7 +2063,7 @@ export default function SearchPage() {
                       onSortModeChange={setSortMode}
                       onFacetSearch={runTextSearch}
                       onPaletteColourSelect={useArtworkPaletteColour}
-                      onSelectArtwork={setSelectedArtwork}
+                      onSelectArtwork={selectArtwork}
                     />
                     {resultSections.hasBrowseDivider && (
                       <div className="my-6 rounded-lg border border-fuchsia-300/25 bg-fuchsia-300/[0.07] px-4 py-3">
@@ -1970,8 +2077,8 @@ export default function SearchPage() {
                             </p>
                           </div>
                           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
-                            {visibleBrowseResults.length} /{' '}
-                            {totalBrowseResults} browse works
+                            {visibleBrowseResults.length} / {totalBrowseResults}{' '}
+                            browse works
                           </span>
                         </div>
                       </div>
@@ -1986,7 +2093,7 @@ export default function SearchPage() {
                         onSortModeChange={setSortMode}
                         onFacetSearch={runTextSearch}
                         onPaletteColourSelect={useArtworkPaletteColour}
-                        onSelectArtwork={setSelectedArtwork}
+                        onSelectArtwork={selectArtwork}
                       />
                     )}
                   </>
@@ -2000,7 +2107,7 @@ export default function SearchPage() {
                     onSortModeChange={setSortMode}
                     onFacetSearch={runTextSearch}
                     onPaletteColourSelect={useArtworkPaletteColour}
-                    onSelectArtwork={setSelectedArtwork}
+                    onSelectArtwork={selectArtwork}
                   />
                 )}
                 <div ref={loadMoreRef} className="flex justify-center py-8">
@@ -2046,6 +2153,7 @@ export default function SearchPage() {
         artwork={selectedArtwork}
         routeId={preferredRouteId}
         returnTo={searchReturnPath}
+        onTrackArtworkInteraction={trackArtworkInteraction}
         onClose={() => setSelectedArtwork(null)}
       />
     </div>
@@ -2625,11 +2733,18 @@ function SearchArtworkDialog({
   artwork,
   routeId,
   returnTo,
+  onTrackArtworkInteraction,
   onClose,
 }: {
   artwork: ArtworkSearchResult | null;
   routeId: string;
   returnTo: string;
+  onTrackArtworkInteraction: (
+    artwork: ArtworkSearchResult,
+    type: PublicArtworkInteractionType,
+    action: string,
+    metadata?: Record<string, unknown>
+  ) => void;
   onClose: () => void;
 }) {
   const image = artwork
@@ -2701,6 +2816,13 @@ function SearchArtworkDialog({
                   to={`/${routeId}/artworks/${encodeURIComponent(
                     artwork.id
                   )}?from=${encodeURIComponent(returnTo)}`}
+                  onClick={() =>
+                    onTrackArtworkInteraction(
+                      artwork,
+                      'click',
+                      'artwork_full_page_open'
+                    )
+                  }
                   className="inline-flex h-9 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
                 >
                   Open full page
@@ -2710,6 +2832,9 @@ function SearchArtworkDialog({
                     href={image.src}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() =>
+                      onTrackArtworkInteraction(artwork, 'click', 'image_open')
+                    }
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.09] hover:text-white"
                   >
                     Open image
@@ -2720,10 +2845,29 @@ function SearchArtworkDialog({
                   <PublicRecordLink
                     href={ngsUrl}
                     label="National Gallery Singapore record"
+                    onClick={() =>
+                      onTrackArtworkInteraction(
+                        artwork,
+                        'click',
+                        'source_record_open',
+                        { source: 'ngs' }
+                      )
+                    }
                   />
                 )}
                 {rootsUrl && (
-                  <PublicRecordLink href={rootsUrl} label="Roots NHB record" />
+                  <PublicRecordLink
+                    href={rootsUrl}
+                    label="Roots NHB record"
+                    onClick={() =>
+                      onTrackArtworkInteraction(
+                        artwork,
+                        'click',
+                        'source_record_open',
+                        { source: 'roots' }
+                      )
+                    }
+                  />
                 )}
               </div>
 
@@ -2767,7 +2911,21 @@ function SearchArtworkDialog({
                 />
               )}
 
-              <CitationPanel artwork={artwork} className="mt-6" />
+              <CitationPanel
+                artwork={artwork}
+                className="mt-6"
+                onCopyCitation={(copyMetadata) =>
+                  onTrackArtworkInteraction(
+                    artwork,
+                    'citation_copy',
+                    'citation_copy',
+                    {
+                      surface: 'search_dialog',
+                      ...copyMetadata,
+                    }
+                  )
+                }
+              />
             </div>
           </Dialog.Content>
         )}
@@ -2776,12 +2934,21 @@ function SearchArtworkDialog({
   );
 }
 
-function PublicRecordLink({ href, label }: { href: string; label: string }) {
+function PublicRecordLink({
+  href,
+  label,
+  onClick,
+}: {
+  href: string;
+  label: string;
+  onClick?: () => void;
+}) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
+      onClick={onClick}
       className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-cyan-100/75 transition-colors hover:bg-white/[0.09] hover:text-cyan-100"
     >
       {label}
@@ -3178,9 +3345,7 @@ function AtlasResults({
                 alt={title}
                 loading="lazy"
                 className="h-full w-full object-cover"
-                fallback={
-                  <NoImagePlaceholder iconClassName="h-4 w-4" />
-                }
+                fallback={<NoImagePlaceholder iconClassName="h-4 w-4" />}
               />
             </div>
             <div className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-black/90 px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100">

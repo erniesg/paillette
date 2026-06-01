@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { Link, useLoaderData } from '@remix-run/react';
 import type { ReactNode } from 'react';
+import { useEffect } from 'react';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
@@ -22,6 +23,7 @@ import {
   getPublicTitle,
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
+import { trackPublicUsageEvent } from '~/lib/usage-events';
 
 export const shouldHidePublicArtworkDetail = (
   _requestedOrgId: string,
@@ -98,6 +100,47 @@ export default function ArtworkDetailPage() {
   const catalogueGroups = getPublicCatalogueRowGroups(artwork);
   const title = getPublicTitle(artwork);
   const artist = getPublicArtist(artwork);
+
+  const trackArtworkInteraction = (
+    type: 'view' | 'click' | 'citation_copy',
+    action: string,
+    metadata: Record<string, unknown> = {}
+  ) => {
+    trackPublicUsageEvent(preferredRouteId, {
+      queryType:
+        type === 'citation_copy'
+          ? 'public_citation_copy'
+          : 'public_artwork_interaction',
+      orgId: gallery.id,
+      interaction: {
+        type,
+        action,
+        artworkId: artwork.id,
+        orgId: artwork.orgId || artwork.galleryId || gallery.id,
+        metadata: {
+          title,
+          artist,
+          accessionNumber:
+            artwork.metadata?.accessionNumber ||
+            artwork.metadata?.accession_number ||
+            null,
+          sourceUrl: getNgsUrl(artwork) || getRootsUrl(artwork) || undefined,
+          ...metadata,
+        },
+      },
+      metadata: {
+        routeOrgId: preferredRouteId,
+        surface: 'artwork_detail',
+      },
+    });
+  };
+
+  useEffect(() => {
+    trackArtworkInteraction('view', 'artwork_page_open', {
+      referrer: document.referrer || null,
+      pagePath: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    });
+  }, [artwork.id]);
 
   return (
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
@@ -182,7 +225,16 @@ export default function ArtworkDetailPage() {
             />
           )}
 
-          <CitationPanel artwork={artwork} />
+          <CitationPanel
+            artwork={artwork}
+            onCopyCitation={(copyMetadata) =>
+              trackArtworkInteraction(
+                'citation_copy',
+                'citation_copy',
+                copyMetadata
+              )
+            }
+          />
 
           <Section
             title="Public Portal Links"
@@ -193,10 +245,23 @@ export default function ArtworkDetailPage() {
                 <SourceLink
                   href={ngsUrl}
                   label="National Gallery Singapore record"
+                  onClick={() =>
+                    trackArtworkInteraction('click', 'source_record_open', {
+                      source: 'ngs',
+                    })
+                  }
                 />
               )}
               {rootsUrl && (
-                <SourceLink href={rootsUrl} label="Roots NHB record" />
+                <SourceLink
+                  href={rootsUrl}
+                  label="Roots NHB record"
+                  onClick={() =>
+                    trackArtworkInteraction('click', 'source_record_open', {
+                      source: 'roots',
+                    })
+                  }
+                />
               )}
               {!ngsUrl && !rootsUrl && (
                 <p className="text-sm text-white/45">
@@ -241,12 +306,21 @@ function Section({
   );
 }
 
-function SourceLink({ href, label }: { href: string; label: string }) {
+function SourceLink({
+  href,
+  label,
+  onClick,
+}: {
+  href: string;
+  label: string;
+  onClick?: () => void;
+}) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
+      onClick={onClick}
       className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-cyan-200/75 transition-colors hover:bg-white/[0.08] hover:text-cyan-200"
     >
       {label}

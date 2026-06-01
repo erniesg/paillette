@@ -6,9 +6,11 @@ import { cn, copyRichTextToClipboard } from '~/lib/utils';
 export function CitationPanel({
   artwork,
   className,
+  onCopyCitation,
 }: {
   artwork: Record<string, any>;
   className?: string;
+  onCopyCitation?: (metadata: Record<string, unknown>) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const citation = useMemo(() => getPublicCitationParts(artwork), [artwork]);
@@ -21,6 +23,11 @@ export function CitationPanel({
     if (!ok) return;
 
     setCopied(true);
+    onCopyCitation?.({
+      style: 'chicago',
+      plainTextLength: citation.plainText.length,
+      htmlTextLength: citation.htmlText.length,
+    });
     window.setTimeout(() => setCopied(false), 1800);
   };
 

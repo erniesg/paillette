@@ -17,6 +17,7 @@ export interface AuthPrincipal {
 type Variables = {
   auth: AuthPrincipal;
   usageEventId: string;
+  usageEventMetadata?: Record<string, unknown>;
 };
 
 type AppBindings = {
@@ -267,6 +268,130 @@ const getRequestMetadata = (c: Context<AppBindings>) => {
     secChUaMobile,
     metadata: JSON.stringify(metadata),
   };
+};
+
+const parseUsageMetadata = (metadata: string | null | undefined) => {
+  if (!metadata) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(metadata);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+export const recordApiUsageEvent = async (
+  c: Context<AppBindings>,
+  options: {
+    queryType?: string | null;
+    orgId?: string | null;
+    collectionId?: string | null;
+    metadata?: Record<string, unknown>;
+  }
+) => {
+  const auth = getAuth(c);
+  const usageDate = new Date().toISOString().slice(0, 10);
+  const usageEventId = generateId();
+  const requestMetadata = getRequestMetadata(c);
+  const mergedMetadata = {
+    ...parseUsageMetadata(requestMetadata.metadata),
+    ...(options.metadata ?? {}),
+  };
+
+  await c.env.DB.prepare(
+    `
+    INSERT INTO api_usage_events (
+      id, user_id, api_key_id, usage_date, method, path, route, query_type,
+      org_id, collection_id, auth_kind, ip_address, user_agent,
+      browser_name, browser_version, os_name, os_version, device_type,
+      country, region, region_code, city, postal_code, timezone, continent,
+      latitude, longitude, colo, asn, as_organization, cf_ray,
+      request_protocol, http_protocol, tls_version, tls_cipher,
+      referer, origin, accept_language, content_type,
+      sec_ch_ua, sec_ch_ua_platform, sec_ch_ua_mobile, metadata
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  )
+    .bind(
+      usageEventId,
+      auth.userId,
+      auth.apiKeyId || null,
+      usageDate,
+      c.req.method,
+      new URL(c.req.url).pathname,
+      c.req.routePath,
+      options.queryType ?? null,
+      options.orgId ?? c.req.param('orgId') ?? c.req.param('galleryId') ?? null,
+      options.collectionId ?? c.req.param('collectionId') ?? null,
+      auth.kind,
+      requestMetadata.ipAddress,
+      requestMetadata.userAgent,
+      requestMetadata.browserName,
+      requestMetadata.browserVersion,
+      requestMetadata.osName,
+      requestMetadata.osVersion,
+      requestMetadata.deviceType,
+      requestMetadata.country,
+      requestMetadata.region,
+      requestMetadata.regionCode,
+      requestMetadata.city,
+      requestMetadata.postalCode,
+      requestMetadata.timezone,
+      requestMetadata.continent,
+      requestMetadata.latitude,
+      requestMetadata.longitude,
+      requestMetadata.colo,
+      requestMetadata.asn,
+      requestMetadata.asOrganization,
+      requestMetadata.cfRay,
+      requestMetadata.requestProtocol,
+      requestMetadata.httpProtocol,
+      requestMetadata.tlsVersion,
+      requestMetadata.tlsCipher,
+      requestMetadata.referer,
+      requestMetadata.origin,
+      requestMetadata.acceptLanguage,
+      requestMetadata.contentType,
+      requestMetadata.secChUa,
+      requestMetadata.secChUaPlatform,
+      requestMetadata.secChUaMobile,
+      JSON.stringify(mergedMetadata)
+    )
+    .run();
+
+  c.set('usageEventId', usageEventId);
+  c.set('usageEventMetadata', mergedMetadata);
+
+  return usageEventId;
+};
+
+export const annotateUsageEvent = async (
+  c: Context<AppBindings>,
+  metadata: Record<string, unknown>
+) => {
+  const usageEventId = c.get('usageEventId');
+  if (!usageEventId) {
+    return;
+  }
+
+  const mergedMetadata = {
+    ...(c.get('usageEventMetadata') ?? {}),
+    ...metadata,
+  };
+
+  c.set('usageEventMetadata', mergedMetadata);
+
+  await c.env.DB.prepare(
+    'UPDATE api_usage_events SET metadata = ? WHERE id = ?'
+  )
+    .bind(JSON.stringify(mergedMetadata), usageEventId)
+    .run();
 };
 
 export const createApiKey = async (env: Env) => {
@@ -537,6 +662,13 @@ export const requireAuthOrApiKey = async (
 
 export const getAuth = (c: Context<AppBindings>) => c.get('auth');
 
+export type ArtworkUsageInteraction =
+  | 'result'
+  | 'view'
+  | 'click'
+  | 'download'
+  | 'citation_copy';
+
 export const enforceDailyQuota = (options: {
   queryType: string;
   cost?: number;
@@ -624,71 +756,10 @@ export const enforceDailyQuota = (options: {
       .bind(principalType, principalId, usageDate)
       .first<{ used: number; quota: number }>();
 
-    const usageEventId = generateId();
-    const requestMetadata = getRequestMetadata(c);
-    await c.env.DB.prepare(
-      `
-      INSERT INTO api_usage_events (
-        id, user_id, api_key_id, usage_date, method, path, route, query_type,
-        org_id, collection_id, auth_kind, ip_address, user_agent,
-        browser_name, browser_version, os_name, os_version, device_type,
-        country, region, region_code, city, postal_code, timezone, continent,
-        latitude, longitude, colo, asn, as_organization, cf_ray,
-        request_protocol, http_protocol, tls_version, tls_cipher,
-        referer, origin, accept_language, content_type,
-        sec_ch_ua, sec_ch_ua_platform, sec_ch_ua_mobile, metadata
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `
-    )
-      .bind(
-        usageEventId,
-        auth.userId,
-        auth.apiKeyId || null,
-        usageDate,
-        c.req.method,
-        new URL(c.req.url).pathname,
-        c.req.routePath,
-        options.queryType,
-        c.req.param('orgId') || c.req.param('galleryId') || null,
-        c.req.param('collectionId') || null,
-        auth.kind,
-        requestMetadata.ipAddress,
-        requestMetadata.userAgent,
-        requestMetadata.browserName,
-        requestMetadata.browserVersion,
-        requestMetadata.osName,
-        requestMetadata.osVersion,
-        requestMetadata.deviceType,
-        requestMetadata.country,
-        requestMetadata.region,
-        requestMetadata.regionCode,
-        requestMetadata.city,
-        requestMetadata.postalCode,
-        requestMetadata.timezone,
-        requestMetadata.continent,
-        requestMetadata.latitude,
-        requestMetadata.longitude,
-        requestMetadata.colo,
-        requestMetadata.asn,
-        requestMetadata.asOrganization,
-        requestMetadata.cfRay,
-        requestMetadata.requestProtocol,
-        requestMetadata.httpProtocol,
-        requestMetadata.tlsVersion,
-        requestMetadata.tlsCipher,
-        requestMetadata.referer,
-        requestMetadata.origin,
-        requestMetadata.acceptLanguage,
-        requestMetadata.contentType,
-        requestMetadata.secChUa,
-        requestMetadata.secChUaPlatform,
-        requestMetadata.secChUaMobile,
-        requestMetadata.metadata
-      )
-      .run();
+    const usageEventId = await recordApiUsageEvent(c, {
+      queryType: options.queryType,
+    });
 
-    c.set('usageEventId', usageEventId);
     c.header('X-RateLimit-Limit', String(usage?.quota ?? quota));
     c.header(
       'X-RateLimit-Remaining',
@@ -741,6 +812,7 @@ export const recordArtworkResults = async (
     galleryId?: string;
     rank: number;
     score?: number | null;
+    metadata?: Record<string, unknown>;
   }>
 ) => {
   const usageEventId = c.get('usageEventId');
@@ -749,26 +821,55 @@ export const recordArtworkResults = async (
     return;
   }
 
+  await recordArtworkUsageEvents(
+    c,
+    usageEventId,
+    results.map((result) => ({
+      ...result,
+      interaction: 'result',
+    }))
+  );
+};
+
+export const recordArtworkUsageEvents = async (
+  c: Context<AppBindings>,
+  usageEventId: string,
+  events: Array<{
+    artworkId: string;
+    orgId?: string;
+    galleryId?: string;
+    rank?: number | null;
+    score?: number | null;
+    interaction: ArtworkUsageInteraction;
+    metadata?: Record<string, unknown>;
+  }>
+) => {
+  if (!usageEventId || events.length === 0) {
+    return;
+  }
+
   await c.env.DB.batch(
-    results.map((result) =>
+    events.map((event) =>
       c.env.DB.prepare(
         `
         INSERT INTO artwork_usage_events (
-          id, usage_event_id, artwork_id, org_id, rank, score, interaction
+          id, usage_event_id, artwork_id, org_id, rank, score, interaction, metadata
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'result')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).bind(
         generateId(),
         usageEventId,
-        result.artworkId,
-        result.orgId ||
-          result.galleryId ||
+        event.artworkId,
+        event.orgId ||
+          event.galleryId ||
           c.req.param('orgId') ||
           c.req.param('galleryId') ||
           null,
-        result.rank,
-        result.score ?? null
+        event.rank ?? null,
+        event.score ?? null,
+        event.interaction,
+        JSON.stringify(event.metadata ?? {})
       )
     )
   );

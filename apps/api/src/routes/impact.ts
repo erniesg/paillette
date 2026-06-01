@@ -21,9 +21,17 @@ impactRoutes.get(
   ),
   async (c) => {
     const query = c.req.valid('query');
-    const days = Math.min(Math.max(Number.parseInt(query.days, 10) || 30, 1), 365);
-    const limit = Math.min(Math.max(Number.parseInt(query.limit, 10) || 50, 1), 500);
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const days = Math.min(
+      Math.max(Number.parseInt(query.days, 10) || 30, 1),
+      365
+    );
+    const limit = Math.min(
+      Math.max(Number.parseInt(query.limit, 10) || 50, 1),
+      500
+    );
+    const since = new Date(
+      Date.now() - days * 24 * 60 * 60 * 1000
+    ).toISOString();
     const orgId = query.orgId || query.galleryId;
 
     const orgFilter = orgId ? 'AND aue.org_id = ?' : '';
@@ -37,10 +45,14 @@ impactRoutes.get(
         a.title AS title,
         a.artist AS artist,
         a.image_url AS image_url,
-        COUNT(*) AS result_exposures,
-        COUNT(DISTINCT aue.usage_event_id) AS search_count,
-        MIN(aue.rank) AS best_rank,
-        AVG(aue.rank) AS avg_rank,
+        SUM(CASE WHEN aue.interaction = 'result' THEN 1 ELSE 0 END) AS result_exposures,
+        COUNT(DISTINCT CASE WHEN aue.interaction = 'result' THEN aue.usage_event_id END) AS search_count,
+        MIN(CASE WHEN aue.interaction = 'result' THEN aue.rank END) AS best_rank,
+        AVG(CASE WHEN aue.interaction = 'result' THEN aue.rank END) AS avg_rank,
+        SUM(CASE WHEN aue.interaction = 'click' THEN 1 ELSE 0 END) AS click_count,
+        SUM(CASE WHEN aue.interaction = 'view' THEN 1 ELSE 0 END) AS view_count,
+        SUM(CASE WHEN aue.interaction = 'citation_copy' THEN 1 ELSE 0 END) AS citation_copy_count,
+        SUM(CASE WHEN aue.interaction = 'download' THEN 1 ELSE 0 END) AS download_count,
         MAX(aue.created_at) AS last_seen_at
       FROM artwork_usage_events aue
       LEFT JOIN artworks a ON a.id = aue.artwork_id

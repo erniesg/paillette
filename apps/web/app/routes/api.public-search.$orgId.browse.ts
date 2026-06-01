@@ -10,6 +10,7 @@ import {
   getApiBaseUrl,
   getServerEnv,
   isHiddenPublicNgsArtwork,
+  logPublicUsageEvent,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
 
@@ -96,6 +97,26 @@ const mapArtworkToSearchResult = (
   };
 };
 
+const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
+  const metadata = artwork.metadata || {};
+
+  return {
+    artworkId: artwork.id,
+    orgId: artwork.orgId || artwork.galleryId,
+    rank: index + 1,
+    score: artwork.similarity,
+    metadata: {
+      title: artwork.title || metadata.title || null,
+      artist: artwork.artist || metadata.artist || null,
+      accessionNumber:
+        metadata.accessionNumber || metadata.accession_number || null,
+      sourceUrl: metadata.sourceUrl || metadata.source_url || null,
+      sourceInstitution:
+        metadata.sourceInstitution || metadata.source_institution || null,
+    },
+  };
+};
+
 export const loader = async ({
   context,
   params,
@@ -126,8 +147,9 @@ export const loader = async ({
     : 'asc';
 
   const env = getServerEnv(context);
+  const resolvedOrgId = resolvePublicSearchOrgId(orgId);
   const apiUrl = new URL(
-    `${getApiBaseUrl(env)}/orgs/${resolvePublicSearchOrgId(orgId)}/artworks`
+    `${getApiBaseUrl(env)}/orgs/${resolvedOrgId}/artworks`
   );
   apiUrl.searchParams.set('public_only', 'true');
   apiUrl.searchParams.set('limit', String(limit));
@@ -152,6 +174,28 @@ export const loader = async ({
   const results = payload.data
     .filter((artwork) => !isHiddenPublicNgsArtwork(artwork as any))
     .map((artwork) => mapArtworkToSearchResult(artwork));
+
+  await logPublicUsageEvent(request, env, {
+    eventType: 'browse',
+    queryType: 'public_browse',
+    orgId: resolvedOrgId,
+    search: {
+      mode: 'browse',
+      limit,
+      offset,
+      sortBy,
+      sortOrder,
+      rawResultCount: payload.data.length,
+      resultCount: results.length,
+      hiddenFilteredCount: payload.data.length - results.length,
+      total: payload.pagination?.total ?? results.length,
+      hasMore: payload.pagination?.has_more ?? results.length === limit,
+    },
+    results: results.map(getUsageResult),
+    metadata: {
+      routeOrgId: orgId,
+    },
+  });
 
   return json({
     success: true,

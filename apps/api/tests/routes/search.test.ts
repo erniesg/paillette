@@ -305,6 +305,15 @@ class FakeSearchDb {
       return { success: true, meta: { changes: 1 } };
     }
 
+    if (sql.includes('UPDATE api_usage_events SET metadata')) {
+      const [metadata, id] = params as [string, string];
+      const event = this.usageEvents.find((usageEvent) => usageEvent.id === id);
+      if (event) {
+        event.metadata = metadata;
+      }
+      return { success: true, meta: { changes: event ? 1 : 0 } };
+    }
+
     if (sql.includes('UPDATE api_keys SET last_used_at')) {
       return { success: true, meta: { changes: this.apiKeyRow ? 1 : 0 } };
     }
@@ -474,7 +483,15 @@ describe('Search API auth and quota behavior', () => {
       country: 'SG',
       cf_ray: 'test-ray',
     });
-    expect(JSON.parse(db.usageEvents[0].metadata || '{}')).toHaveProperty('cf');
+    const usageMetadata = JSON.parse(db.usageEvents[0].metadata || '{}');
+    expect(usageMetadata).toHaveProperty('cf');
+    expect(usageMetadata.search).toMatchObject({
+      mode: 'text',
+      query: 'pineapple',
+      topK: 1,
+      minScore: 0.7,
+      resultCount: 1,
+    });
     expect(db.artworkEvents).toHaveLength(1);
     expect(db.artworkEvents[0]).toMatchObject({
       artwork_id: '1993-01678',
@@ -523,7 +540,8 @@ describe('Search API auth and quota behavior', () => {
         title: 'Charity Ride',
         accession_number: '2013-00170',
         source_record_id: '2013-00170',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
         match_score: 100,
       },
     ]);
@@ -540,7 +558,8 @@ describe('Search API auth and quota behavior', () => {
       metadata: {
         sourceInstitution: 'National Gallery Singapore',
         sourceCollection: 'National Collection',
-        sourceUrl: 'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
+        sourceUrl:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
       },
     });
     expect(db.metadataSearchSql[0]).toContain(
@@ -560,7 +579,8 @@ describe('Search API auth and quota behavior', () => {
         artist: 'Latiff Mohidin',
         accession_number: 'AB1999-00041',
         source_record_id: 'AB1999-00041',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1103589',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1103589',
         match_score: 100,
       },
       {
@@ -570,7 +590,8 @@ describe('Search API auth and quota behavior', () => {
         artist: 'Lim Cheng Hoe',
         accession_number: 'HP-0126',
         source_record_id: 'HP-0126',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1129656',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1129656',
         match_score: 100,
       },
       {
@@ -580,7 +601,8 @@ describe('Search API auth and quota behavior', () => {
         artist: 'Lim Cheng Hoe',
         accession_number: 'GI-0286-(AB)',
         source_record_id: 'GI-0286-(AB)',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1030183',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1030183',
         match_score: 100,
       },
       {
@@ -590,7 +612,8 @@ describe('Search API auth and quota behavior', () => {
         artist: 'Unknown',
         accession_number: '2013-00591',
         source_record_id: '2013-00591',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1284239',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1284239',
         match_score: 100,
       },
     ]);

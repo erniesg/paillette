@@ -120,6 +120,27 @@ export const proxyJsonResponse = async <T>(response: Response) => {
   });
 };
 
+export const logPublicUsageEvent = async (
+  request: Request,
+  env: Record<string, string | undefined>,
+  payload: Record<string, unknown>
+) => {
+  const headers = buildPublicSearchHeaders(request, env, 'application/json');
+  if (!headers) {
+    return;
+  }
+
+  try {
+    await fetch(`${getApiBaseUrl(env)}/usage-events`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.warn('Failed to log public usage event:', error);
+  }
+};
+
 export const publicSearchConfigError = () =>
   json(
     {
