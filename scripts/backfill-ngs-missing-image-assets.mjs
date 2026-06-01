@@ -299,6 +299,8 @@ async function prepareRow(row) {
     accessLevel: row.accessLevel || null,
     ngsPageUrl: row.ngsPageUrl || null,
     ngsImageUrl: row.ngsImageUrl || null,
+    rootsListingUrl: row.rootsListingUrl || null,
+    sourceKind: row.sourceKind || null,
     selected: row.selectedImage,
     preparedImagePath: imageOut,
     preparedThumbnailPath: thumbOut,
@@ -331,6 +333,8 @@ function planRowWithoutPrepare(row) {
     accessLevel: row.accessLevel || null,
     ngsPageUrl: row.ngsPageUrl || null,
     ngsImageUrl: row.ngsImageUrl || null,
+    rootsListingUrl: row.rootsListingUrl || null,
+    sourceKind: row.sourceKind || null,
     selected: row.selectedImage,
     preparedImagePath: null,
     preparedThumbnailPath: null,
@@ -450,6 +454,7 @@ function writeD1Sql(planRows, captionRowsById) {
 
 function assetStatements(row) {
   const now = new Date().toISOString();
+  const provenance = sourceProvenance(row);
   return [
     assetStatement({
       id: row.originalAssetId,
@@ -462,11 +467,12 @@ function assetStatements(row) {
       sizeBytes: row.sizeBytes,
       checksum: row.checksum,
       metadata: {
-        source: 'ngs_dam_rendition',
+        source: provenance.source,
         sourceUrl: row.selected.sourceUrl,
         ngsImageUrl: row.ngsImageUrl,
+        rootsListingUrl: row.rootsListingUrl || null,
         selectedKind: row.selected.kind,
-        selectedSource: row.selected.kind === 'extracted' ? 'accepted_sam3_crop' : 'original_ngs_rendition',
+        selectedSource: provenance.selectedSource,
         sam3Reason: row.selected.sam3Reason || null,
         sam3Box: row.selected.sam3Box || null,
       },
@@ -534,12 +540,15 @@ function artworkStatement(row, captionRow) {
   const captionPayload = captionRow
     ? captionRecordForRow(captionRow, captionRow.caption)
     : null;
+  const provenance = sourceProvenance(row);
   const backfillPayload = {
-    version: 'ngs-missing-image-backfill-v1',
+    version: options.assetVersion,
     applied_at: new Date().toISOString(),
-    source: 'ngs_dam_rendition',
+    source: provenance.source,
     ngs_image_url: row.ngsImageUrl,
+    roots_listing_url: row.rootsListingUrl || null,
     selected_kind: row.selected.kind,
+    selected_source: provenance.selectedSource,
     original_asset_id: row.originalAssetId,
     thumbnail_asset_id: row.thumbnailAssetId,
   };
@@ -556,12 +565,32 @@ SET
   dominant_colors = json('${sqlString(JSON.stringify(row.colors.dominantColors))}'),
   color_palette = json('${sqlString(JSON.stringify(row.colors.palette))}'),
   color_extracted_at = '${sqlString(row.colorExtractedAt)}',
-  color_extraction_version = 'ngs-missing-image-backfill-v1',
+  color_extraction_version = '${sqlString(options.assetVersion)}',
   custom_metadata = ${customMetadataExpression},
   updated_at = CURRENT_TIMESTAMP
 WHERE id = '${sqlString(row.id)}'
   AND org_id = '${sqlString(options.orgId)}'
   AND deleted_at IS NULL;`.trim();
+}
+
+function sourceProvenance(row) {
+  const sourceKind = String(row.sourceKind || row.selected?.kind || '').toLowerCase();
+  if (sourceKind.includes('roots')) {
+    return {
+      source: 'roots_collection_image',
+      selectedSource:
+        row.selected?.kind === 'extracted'
+          ? 'accepted_sam3_crop'
+          : 'roots_collection_image',
+    };
+  }
+  return {
+    source: 'ngs_dam_rendition',
+    selectedSource:
+      row.selected?.kind === 'extracted'
+        ? 'accepted_sam3_crop'
+        : 'original_ngs_rendition',
+  };
 }
 
 function applySqlFiles(files) {
