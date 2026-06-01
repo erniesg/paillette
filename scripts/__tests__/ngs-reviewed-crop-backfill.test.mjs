@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  isLargerSameAspectSource,
   mapReviewBoxToSourcePixels,
   reviewCropArtworkStatement,
   reviewCropBackfillPayload,
   reviewSourceCropSpec,
   selectReviewedCropsForBackfill,
+  sourceImageCandidateUrls,
 } from '../lib/ngs-reviewed-crop-backfill.mjs';
 
 describe('selectReviewedCropsForBackfill', () => {
@@ -164,6 +166,65 @@ describe('reviewSourceCropSpec', () => {
         { width: 1200, height: 801 }
       ),
       null
+    );
+  });
+});
+
+describe('sourceImageCandidateUrls', () => {
+  it('builds NGS and Roots native-image candidates without duplicates', () => {
+    assert.deepEqual(
+      sourceImageCandidateUrls(
+        {
+          ngs_image_url:
+            'https://www.nationalgallery.sg/content/dam/example/work.tif',
+          roots_listing_url:
+            'https://www.roots.gov.sg/Collection-Landing/listing/12345',
+        },
+        {
+          sourceUrl:
+            'https://www.roots.gov.sg/Collection-Landing/listing/12345',
+        }
+      ),
+      [
+        {
+          kind: 'ngs-direct',
+          url: 'https://www.nationalgallery.sg/content/dam/example/work.tif',
+        },
+        {
+          kind: 'ngs-zoom-2048',
+          url: 'https://www.nationalgallery.sg/content/dam/example/work.tif/_jcr_content/renditions/cq5dam.zoom.2048.2048.jpeg',
+        },
+        {
+          kind: 'ngs-web-1280',
+          url: 'https://www.nationalgallery.sg/content/dam/example/work.tif/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+        },
+        {
+          kind: 'roots-collection-image',
+          url: 'https://www.roots.gov.sg/CollectionImages/12345.jpg',
+        },
+      ]
+    );
+  });
+});
+
+describe('isLargerSameAspectSource', () => {
+  it('accepts larger same-aspect candidates', () => {
+    assert.equal(
+      isLargerSameAspectSource(
+        { width: 1200, height: 1800 },
+        { width: 2048, height: 3072 }
+      ),
+      true
+    );
+  });
+
+  it('rejects larger candidates with a different crop coordinate basis', () => {
+    assert.equal(
+      isLargerSameAspectSource(
+        { width: 1200, height: 801 },
+        { width: 600, height: 100 }
+      ),
+      false
     );
   });
 });

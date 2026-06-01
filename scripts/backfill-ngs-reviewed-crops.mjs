@@ -14,10 +14,12 @@ import {
   stableAssetId,
 } from './lib/ngs-missing-image-backfill.mjs';
 import {
+  isLargerSameAspectSource,
   reviewCropArtworkStatement,
   reviewCropBackfillPayload,
   reviewSourceCropSpec,
   selectReviewedCropsForBackfill,
+  sourceImageCandidateUrls,
 } from './lib/ngs-reviewed-crop-backfill.mjs';
 
 const imageRequire = createRequire(
@@ -47,6 +49,9 @@ const options = {
     ? resolve(args.values.get('decisions'))
     : null,
   rows: args.values.get('rows') ? resolve(args.values.get('rows')) : null,
+  sourceRows: args.values.get('source-rows')
+    ? resolve(args.values.get('source-rows'))
+    : null,
   outDir: resolve(
     args.values.get('out-dir') || 'tmp/ngs-reviewed-crops-backfill'
   ),
@@ -62,6 +67,10 @@ const options = {
   uploadConcurrency: Number(args.values.get('upload-concurrency') || '4'),
   vectorBatchSize: Number(args.values.get('vector-batch-size') || '8'),
   d1BatchSize: Number(args.values.get('d1-batch-size') || '20'),
+  maxImageDim: Number(args.values.get('max-image-dim') || '4096'),
+  thumbnailDim: Number(args.values.get('thumbnail-dim') || '768'),
+  jpegQuality: Number(args.values.get('jpeg-quality') || '94'),
+  thumbnailQuality: Number(args.values.get('thumbnail-quality') || '90'),
   envFile: resolve(args.values.get('env-file') || 'eval/.env'),
   apply: args.flags.has('apply'),
   upload: args.flags.has('upload') || args.flags.has('apply'),
@@ -79,6 +88,12 @@ const decisionsPath =
 const rowsPath = options.rows || resolve(options.reviewDir, 'rows.json');
 const decisionsPayload = readJson(decisionsPath);
 const reviewRows = readJson(rowsPath);
+const sourceRowsById = new Map(
+  (options.sourceRows ? readJson(options.sourceRows) : []).map((row) => [
+    String(row.id),
+    row,
+  ])
+);
 const selected = selectReviewedCropsForBackfill({
   reviewDir: options.reviewDir,
   decisionsPayload,
@@ -94,6 +109,7 @@ writeJson(resolve(options.outDir, 'backfill-plan.json'), {
   reviewDir: options.reviewDir,
   decisionsPath,
   rowsPath,
+  sourceRowsPath: options.sourceRows,
   orgId: options.orgId,
   database: options.database,
   bucket: options.bucket,
@@ -208,25 +224,26 @@ async function prepareRow(row) {
   })
     .rotate()
     .resize({
-      width: 2048,
-      height: 2048,
+      width: options.maxImageDim,
+      height: options.maxImageDim,
       fit: 'inside',
       withoutEnlargement: true,
     })
     .flatten({ background: '#ffffff' })
-    .jpeg({ quality: 92, mozjpeg: true })
+    .jpeg({ quality: options.jpegQuality, mozjpeg: true })
     .toBuffer({ resolveWithObject: true });
 
   writeFileSync(imageOut, normalized.data);
 
   const thumb = await sharp(normalized.data, { limitInputPixels: false })
     .resize({
-      width: 480,
-      height: 480,
+      width: options.thumbnailDim,
+      height: options.thumbnailDim,
       fit: 'inside',
       withoutEnlargement: true,
     })
-    .jpeg({ quality: 86, mozjpeg: true })
+    .sharpen({ sigma: 0.45, m1: 0.4, m2: 0.4 })
+    .jpeg({ quality: options.thumbnailQuality, mozjpeg: true })
     .toBuffer({ resolveWithObject: true });
   writeFileSync(thumbOut, thumb.data);
 
@@ -243,6 +260,11 @@ async function prepareRow(row) {
     height: normalized.info.height,
     preparedSourceKind: sourceInput.kind,
     preparedSourcePath: sourceInput.path,
+    preparedSourceUrl: sourceInput.url || null,
+    preparedSourceWidth: sourceInput.width || null,
+    preparedSourceHeight: sourceInput.height || null,
+    localReviewSourceWidth: sourceInput.localWidth || null,
+    localReviewSourceHeight: sourceInput.localHeight || null,
     preparedSourceExtract: sourceInput.extract,
     thumbWidth: thumb.info.width,
     thumbHeight: thumb.info.height,
@@ -267,12 +289,17 @@ async function prepareReviewedCropInput(row) {
   }
 
   try {
-    const metadata = await sharp(source.path, {
+    const localMetadata = await sharp(source.path, {
       limitInputPixels: false,
     }).metadata();
+    const preferredSource = await preferredSourceForRow(
+      row,
+      source,
+      localMetadata
+    );
     const cropSpec = reviewSourceCropSpec(row.selectedImage, {
-      width: metadata.width,
-      height: metadata.height,
+      width: preferredSource.metadata.width,
+      height: preferredSource.metadata.height,
     });
 
     if (!cropSpec) {
@@ -284,7 +311,7 @@ async function prepareReviewedCropInput(row) {
       };
     }
 
-    const cropBuffer = await sharp(cropSpec.inputPath, {
+    const cropBuffer = await sharp(preferredSource.input, {
       limitInputPixels: false,
     })
       .extract(cropSpec.extract)
@@ -292,8 +319,13 @@ async function prepareReviewedCropInput(row) {
 
     return {
       input: cropBuffer,
-      kind: 'review_source_crop',
-      path: cropSpec.inputPath,
+      kind: preferredSource.kind,
+      path: preferredSource.path,
+      url: preferredSource.url,
+      width: preferredSource.metadata.width,
+      height: preferredSource.metadata.height,
+      localWidth: localMetadata.width || null,
+      localHeight: localMetadata.height || null,
       extract: cropSpec.extract,
     };
   } catch (error) {
@@ -307,6 +339,109 @@ async function prepareReviewedCropInput(row) {
       path: row.selectedImage.path,
       extract: null,
     };
+  }
+}
+
+async function preferredSourceForRow(row, source, localMetadata) {
+  const localSource = {
+    input: source.path,
+    kind: 'review_source_crop',
+    path: source.path,
+    url: source.sourceUrl || null,
+    metadata: localMetadata,
+  };
+
+  if (hasNonZeroSourceTransform(row.selectedImage?.sourceTransform)) {
+    return localSource;
+  }
+
+  const sourceRow = sourceRowsById.get(row.id);
+  if (!sourceRow) return localSource;
+
+  const candidates = sourceImageCandidateUrls(sourceRow, row);
+  let best = null;
+  for (const candidate of candidates) {
+    const downloaded = await downloadCandidateSource(candidate, row.id);
+    if (!downloaded) continue;
+
+    if (
+      !isLargerSameAspectSource(
+        { width: localMetadata.width, height: localMetadata.height },
+        {
+          width: downloaded.metadata.width,
+          height: downloaded.metadata.height,
+        }
+      )
+    ) {
+      continue;
+    }
+
+    const candidatePixels =
+      Number(downloaded.metadata.width || 0) *
+      Number(downloaded.metadata.height || 0);
+    const bestPixels = best
+      ? Number(best.metadata.width || 0) * Number(best.metadata.height || 0)
+      : 0;
+    if (!best || candidatePixels > bestPixels) {
+      best = downloaded;
+    }
+  }
+
+  if (!best) return localSource;
+  return {
+    input: best.path,
+    kind: `native_${best.kind}_review_source_crop`,
+    path: best.path,
+    url: best.url,
+    metadata: best.metadata,
+  };
+}
+
+function hasNonZeroSourceTransform(sourceTransform) {
+  if (!sourceTransform) return false;
+  const angle = Number(sourceTransform.angleDegrees || 0);
+  return Number.isFinite(angle) && Math.abs(angle) > 0.05;
+}
+
+async function downloadCandidateSource(candidate, id) {
+  const sourceDir = resolve(options.outDir, 'source-cache');
+  mkdirSync(sourceDir, { recursive: true });
+  const cacheKey = createHash('sha256').update(candidate.url).digest('hex');
+  const path = resolve(sourceDir, `${safeFilename(id)}-${cacheKey}.img`);
+
+  if (!existsSync(path)) {
+    let response;
+    try {
+      response = await fetch(candidate.url, {
+        headers: {
+          'User-Agent': 'paillette-ngs-reviewed-crop-backfill/1.0',
+        },
+        redirect: 'follow',
+      });
+    } catch {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !contentType.startsWith('image/')) {
+      return null;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    writeFileSync(path, buffer);
+  }
+
+  try {
+    const metadata = await sharp(path, { limitInputPixels: false }).metadata();
+    if (!metadata.width || !metadata.height) return null;
+    return {
+      kind: candidate.kind,
+      url: candidate.url,
+      path,
+      metadata,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -450,6 +585,11 @@ function assetStatements(row, now) {
         originalReviewSourcePath: row.selectedImage.originalPath,
         preparedSourceKind: row.preparedSourceKind || null,
         preparedSourcePath: row.preparedSourcePath || null,
+        preparedSourceUrl: row.preparedSourceUrl || null,
+        preparedSourceWidth: row.preparedSourceWidth || null,
+        preparedSourceHeight: row.preparedSourceHeight || null,
+        localReviewSourceWidth: row.localReviewSourceWidth || null,
+        localReviewSourceHeight: row.localReviewSourceHeight || null,
         preparedSourceExtract: row.preparedSourceExtract || null,
       },
       now,
@@ -786,7 +926,12 @@ Options:
   --review-dir <path>        Review directory. Default: ${DEFAULT_REVIEW_DIR}
   --decisions <path>         Decisions JSON. Default: <review-dir>/review-decisions.json
   --rows <path>              Review rows JSON. Default: <review-dir>/rows.json
+  --source-rows <path>       Optional DB rows with ngs_image_url/roots_listing_url for native source upgrades.
   --out-dir <path>           Output directory. Default: tmp/ngs-reviewed-crops-backfill
+  --max-image-dim <n>        Max display image edge. Default 4096.
+  --thumbnail-dim <n>        Max thumbnail edge. Default 768.
+  --jpeg-quality <n>         Display JPEG quality. Default 94.
+  --thumbnail-quality <n>    Thumbnail JPEG quality. Default 90.
   --limit <n>                Limit accepted rows for smoke tests.
   --prepare-only             Prepare images and SQL without uploading/applying/embedding.
   --upload                   Upload prepared images to R2.

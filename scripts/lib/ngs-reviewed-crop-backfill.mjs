@@ -67,6 +67,70 @@ export function reviewSourceCropSpec(selectedImage, actualSourceSize) {
   return extract ? { inputPath: source.path, extract } : null;
 }
 
+export function sourceImageCandidateUrls(sourceRow = {}, reviewRow = {}) {
+  const candidates = [];
+  const seen = new Set();
+  const push = (kind, url) => {
+    const value = String(url || '').trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    candidates.push({ kind, url: value });
+  };
+
+  const ngsImageUrl = sourceRow.ngs_image_url || sourceRow.ngsImageUrl;
+  if (ngsImageUrl) {
+    push('ngs-direct', ngsImageUrl);
+    push(
+      'ngs-zoom-2048',
+      `${ngsImageUrl}/_jcr_content/renditions/cq5dam.zoom.2048.2048.jpeg`
+    );
+    push(
+      'ngs-web-1280',
+      `${ngsImageUrl}/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg`
+    );
+  }
+
+  const rootsUrls = [
+    sourceRow.roots_listing_url,
+    sourceRow.rootsListingUrl,
+    reviewRow.sourceUrl,
+  ];
+  for (const rootsUrl of rootsUrls) {
+    const match = String(rootsUrl || '').match(
+      /roots\.gov\.sg\/Collection-Landing\/listing\/(\d+)/i
+    );
+    if (match) {
+      push(
+        'roots-collection-image',
+        `https://www.roots.gov.sg/CollectionImages/${match[1]}.jpg`
+      );
+    }
+  }
+
+  return candidates;
+}
+
+export function isLargerSameAspectSource(
+  localSize,
+  candidateSize,
+  { maxAspectDelta = 0.015, minAreaGain = 1.05 } = {}
+) {
+  const localWidth = positiveNumber(localSize?.width);
+  const localHeight = positiveNumber(localSize?.height);
+  const candidateWidth = positiveNumber(candidateSize?.width);
+  const candidateHeight = positiveNumber(candidateSize?.height);
+  if (!localWidth || !localHeight || !candidateWidth || !candidateHeight) {
+    return false;
+  }
+
+  const localAspect = localWidth / localHeight;
+  const candidateAspect = candidateWidth / candidateHeight;
+  const aspectDelta = Math.abs(candidateAspect - localAspect) / localAspect;
+  const areaGain =
+    (candidateWidth * candidateHeight) / (localWidth * localHeight);
+  return aspectDelta <= maxAspectDelta && areaGain >= minAreaGain;
+}
+
 export function normalizeReviewDecision(decision) {
   if (!decision) return null;
   if (typeof decision === 'string') return decision.toLowerCase();
