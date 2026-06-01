@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import {
   copyFileSync,
   existsSync,
@@ -16,6 +17,12 @@ import {
 } from './lib/ngs-missing-image-backfill.mjs';
 import { stripUrlQuery } from './lib/ngs-reviewed-crop-backfill.mjs';
 
+const imageRequire = createRequire(
+  new URL('../packages/image-processing/package.json', import.meta.url)
+);
+const sharpModule = await import(imageRequire.resolve('sharp'));
+const sharp = sharpModule.default || sharpModule;
+
 const DEFAULT_OUT_DIR = 'tmp/ngs-crop-resolution-repair/review-action';
 const DEFAULT_ARTWORKS = 'tmp/ngs-crop-resolution-repair/live-artworks.json';
 const DEFAULT_ASSETS = 'tmp/ngs-crop-resolution-repair/live-assets.json';
@@ -23,6 +30,7 @@ const LOW_MP = 0.5;
 const VERY_LOW_MP = 0.3;
 const LOW_MAX_DIM = 1000;
 const VERY_LOW_MAX_DIM = 768;
+const MEANINGFUL_GAIN = 1.5;
 
 const args = parseArgs(process.argv.slice(2));
 const options = {
@@ -34,6 +42,8 @@ const options = {
   orgId: args.values.get('org-id') || DEFAULT_NGS_ORG_ID,
   apiBase: args.values.get('api-base') || DEFAULT_STAGING_ASSET_API_BASE,
   runPrepare: !args.flags.has('skip-prepare'),
+  probeSources: !args.flags.has('skip-source-probe'),
+  sourceProbeConcurrency: Number(args.values.get('source-probe-concurrency') || '8'),
 };
 
 const reviewExports = [
@@ -102,13 +112,21 @@ if (options.runPrepare) {
 
 const plan = readJson(resolve(backfillDir, 'backfill-plan.json')).rows || [];
 const planById = new Map(plan.map((row) => [String(row.id), row]));
-const actions = buildActions({
+let actions = buildActions({
   merged,
   planById,
   artworkById,
   assetsByArtwork,
   outDir: options.outDir,
 });
+if (options.probeSources) {
+  actions = await addSourceCandidates({
+    actions,
+    artworkById,
+    outDir: options.outDir,
+    concurrency: options.sourceProbeConcurrency,
+  });
+}
 const report = {
   generatedAt: new Date().toISOString(),
   sourceExports: reviewExports.map((item) => ({
@@ -349,8 +367,10 @@ function buildActions({
             width: plan.width,
             height: plan.height,
             assetId: plan.originalAssetId,
+            sourceKind: plan.preparedSourceKind || null,
           })
         : null;
+      const gain = improvementRatio(current, proposed);
       actions.push({
         id: record.id,
         title: artwork.title || record.row.title || null,
@@ -359,12 +379,14 @@ function buildActions({
         decision: record.decision,
         conflict: record.conflict,
         actionType: 'rerender_reviewed_crop',
-        defaultAction:
-          proposed && qualityStatus(proposed) === 'ok'
+        defaultAction: proposed
+          ? gain >= MEANINGFUL_GAIN
             ? 'approve_proposed'
-            : 'needs_manual',
+            : 'keep_current'
+          : 'needs_manual',
         current,
         proposed,
+        improvementRatio: gain,
         bestAlternative: best,
         review: reviewSummary(record),
         provenance: plan
@@ -397,6 +419,7 @@ function buildActions({
       current,
       proposed: null,
       bestAlternative: best,
+      sourceCandidates: [],
       review: reviewSummary(record),
       provenance: null,
       alerts: actionAlerts({ current, proposed: null, best, record }),
@@ -431,10 +454,16 @@ function buildActions({
       decision: null,
       conflict: false,
       actionType: 'outside_review_low_res',
-      defaultAction: best ? 'review_candidate' : 'needs_source',
+      defaultAction:
+        best && improvementRatio(current, best) >= MEANINGFUL_GAIN
+          ? 'restore_best_existing'
+          : best
+            ? 'keep_current'
+            : 'needs_manual',
       current,
       proposed: null,
       bestAlternative: best,
+      sourceCandidates: [],
       review: null,
       provenance: null,
       alerts: actionAlerts({ current, proposed: null, best, record: null }),
@@ -447,6 +476,174 @@ function buildActions({
     if (groupA !== groupB) return groupA - groupB;
     return a.id.localeCompare(b.id);
   });
+}
+
+async function addSourceCandidates({
+  actions,
+  artworkById,
+  outDir,
+  concurrency,
+}) {
+  const cachePath = resolve(outDir, 'source-candidate-probes.json');
+  const cache = existsSync(cachePath) ? readJson(cachePath) : {};
+  const probeTargets = actions.filter(
+    (action) =>
+      ['outside_review_low_res', 'rejected_or_keep_source'].includes(
+        action.actionType
+      ) &&
+      (!action.bestAlternative || action.bestAlternative.status !== 'ok')
+  );
+
+  await mapLimit(probeTargets, concurrency, async (action, index) => {
+    const artwork = artworkById.get(action.id);
+    const candidates = sourceProbeCandidateUrls(artwork);
+    const probed = [];
+    for (const candidate of candidates) {
+      const probe = await probeSourceCandidate({
+        candidate,
+        cache,
+      });
+      if (probe) probed.push(probe);
+    }
+    action.sourceCandidates = probed.sort((a, b) => b.pixels - a.pixels);
+    const bestSource = action.sourceCandidates[0] || null;
+    if (
+      bestSource &&
+      (!action.bestAlternative ||
+        pixelCount(bestSource) > pixelCount(action.bestAlternative))
+    ) {
+      action.bestAlternative = bestSource;
+      action.defaultAction =
+        improvementRatio(action.current, bestSource) >= MEANINGFUL_GAIN
+          ? 'ingest_source_candidate'
+          : action.defaultAction;
+    }
+    action.alerts = actionAlerts({
+      current: action.current,
+      proposed: action.proposed,
+      best: action.bestAlternative,
+      record: null,
+    });
+    if (action.conflict) {
+      action.alerts.push('decision conflict resolved by latest export');
+    }
+    if ((index + 1) % 50 === 0 || index + 1 === probeTargets.length) {
+      writeJson(cachePath, cache);
+      console.error(`probed source candidates ${index + 1}/${probeTargets.length}`);
+    }
+  });
+  writeJson(cachePath, cache);
+  return actions;
+}
+
+function sourceProbeCandidateUrls(artwork = {}) {
+  const custom = parseJsonObject(artwork.custom_metadata);
+  const ngsImageUrl = artwork.ngs_image_url || custom.ngs_image_url || null;
+  const rootsListingUrl =
+    artwork.roots_listing_url ||
+    custom.roots_listing_url ||
+    custom.source_records?.roots_listing_url ||
+    null;
+  const candidates = [];
+  const seen = new Set();
+  const push = (kind, url) => {
+    const value = String(url || '').trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    candidates.push({ kind, url: value });
+  };
+
+  if (ngsImageUrl) {
+    push(
+      'ngs-zoom-2048',
+      `${ngsImageUrl}/_jcr_content/renditions/cq5dam.zoom.2048.2048.jpeg`
+    );
+    push(
+      'ngs-web-1280',
+      `${ngsImageUrl}/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg`
+    );
+    if (!/\.tiff?($|[?#])/i.test(ngsImageUrl)) {
+      push('ngs-direct', ngsImageUrl);
+    }
+  }
+
+  const rootsMatch = String(rootsListingUrl || '').match(
+    /roots\.gov\.sg\/Collection-Landing\/listing\/(\d+)/i
+  );
+  if (rootsMatch) {
+    push(
+      'roots-collection-image',
+      `https://www.roots.gov.sg/CollectionImages/${rootsMatch[1]}.jpg`
+    );
+  }
+
+  return candidates;
+}
+
+async function probeSourceCandidate({ candidate, cache }) {
+  if (cache[candidate.url]) return cache[candidate.url].ok ? cache[candidate.url] : null;
+  let response;
+  try {
+    response = await fetch(candidate.url, {
+      headers: {
+        'User-Agent': 'paillette-ngs-crop-resolution-review/1.0',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (error) {
+    cache[candidate.url] = {
+      ok: false,
+      kind: candidate.kind,
+      url: candidate.url,
+      error: error instanceof Error ? error.message : String(error),
+    };
+    return null;
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok || !contentType.startsWith('image/')) {
+    cache[candidate.url] = {
+      ok: false,
+      kind: candidate.kind,
+      url: candidate.url,
+      status: response.status,
+      contentType,
+    };
+    return null;
+  }
+
+  try {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const metadata = await sharp(buffer, { limitInputPixels: false }).metadata();
+    if (!metadata.width || !metadata.height) throw new Error('missing dimensions');
+    const image = imageRef({
+      url: candidate.url,
+      width: metadata.width,
+      height: metadata.height,
+      assetId: null,
+      sourceKind: candidate.kind,
+    });
+    const probe = {
+      ...image,
+      ok: true,
+      kind: candidate.kind,
+      contentType,
+      sizeBytes: buffer.length,
+    };
+    cache[candidate.url] = probe;
+    return probe;
+  } catch (error) {
+    cache[candidate.url] = {
+      ok: false,
+      kind: candidate.kind,
+      url: candidate.url,
+      status: response.status,
+      contentType,
+      error: error instanceof Error ? error.message : String(error),
+    };
+    return null;
+  }
 }
 
 function reviewSummary(record) {
@@ -462,17 +659,25 @@ function reviewSummary(record) {
   };
 }
 
-function imageRef({ url, width, height, assetId }) {
+function imageRef({ url, width, height, assetId, sourceKind }) {
   const image = {
     url: url || null,
     width: Number(width) || null,
     height: Number(height) || null,
     assetId: assetId || null,
+    sourceKind: sourceKind || null,
   };
   image.pixels = pixelCount(image);
   image.megapixels = image.pixels ? image.pixels / 1_000_000 : null;
   image.status = qualityStatus(image);
   return image;
+}
+
+function improvementRatio(current, candidate) {
+  const currentPixels = pixelCount(current);
+  const candidatePixels = pixelCount(candidate);
+  if (!currentPixels || !candidatePixels) return 0;
+  return candidatePixels / currentPixels;
 }
 
 function qualityStatus(image) {
@@ -518,6 +723,8 @@ function actionAlerts({ current, proposed, best, record }) {
   if (proposed?.status === 'low') alerts.push('proposed still low');
   if (proposed && current?.pixels && proposed.pixels > current.pixels) {
     alerts.push(`${formatRatio(proposed.pixels / current.pixels)}x pixels`);
+  } else if (proposed && current?.pixels && proposed.pixels <= current.pixels) {
+    alerts.push('no pixel gain');
   }
   if (!proposed && best && current?.pixels && best.pixels > current.pixels) {
     alerts.push(`${formatRatio(best.pixels / current.pixels)}x alt pixels`);
@@ -542,6 +749,9 @@ function summarizeActions(actions) {
     currentLow: 0,
     proposedOk: 0,
     proposedLowOrVeryLow: 0,
+    proposedMeaningfulGain: 0,
+    proposedNoGain: 0,
+    sourceCandidateOk: 0,
   };
   for (const action of actions) {
     if (action.actionType === 'rerender_reviewed_crop') {
@@ -557,8 +767,34 @@ function summarizeActions(actions) {
     if (['low', 'very_low'].includes(action.proposed?.status)) {
       summary.proposedLowOrVeryLow += 1;
     }
+    if (action.proposed && improvementRatio(action.current, action.proposed) >= MEANINGFUL_GAIN) {
+      summary.proposedMeaningfulGain += 1;
+    }
+    if (action.proposed && improvementRatio(action.current, action.proposed) < MEANINGFUL_GAIN) {
+      summary.proposedNoGain += 1;
+    }
+    if (action.sourceCandidates?.some((candidate) => candidate.status === 'ok')) {
+      summary.sourceCandidateOk += 1;
+    }
   }
   return summary;
+}
+
+async function mapLimit(items, limit, mapper) {
+  const output = new Array(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, limit), items.length || 1) },
+    async () => {
+      while (next < items.length) {
+        const index = next;
+        next += 1;
+        output[index] = await mapper(items[index], index);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return output;
 }
 
 function pathToRelativeUrl(root, path) {
@@ -668,7 +904,7 @@ function renderHtml(report) {
   </main>
   <script>
     const report = ${json};
-    const stateKey = 'ngs-crop-resolution-review-actions-v1';
+    const stateKey = 'ngs-crop-resolution-review-actions-v2';
     const state = JSON.parse(localStorage.getItem(stateKey) || '{}');
     for (const action of report.actions) {
       if (!state[action.id]) state[action.id] = { action: action.defaultAction, note: '' };
@@ -681,8 +917,9 @@ function renderHtml(report) {
       ['outside low-res', report.summary.outsideReviewLowRes],
       ['current very low', report.summary.currentVeryLow],
       ['current low', report.summary.currentLow],
-      ['proposed ok', report.summary.proposedOk],
-      ['proposed low', report.summary.proposedLowOrVeryLow],
+      ['meaningful crop gain', report.summary.proposedMeaningfulGain],
+      ['no crop gain', report.summary.proposedNoGain],
+      ['source candidates', report.summary.sourceCandidateOk],
     ];
     document.getElementById('stats').innerHTML = stats.map(([label, value]) => '<div class="stat"><b>' + value + '</b><span>' + label + '</span></div>').join('');
 
@@ -694,7 +931,8 @@ function renderHtml(report) {
       if (!image || !image.url) {
         return '<section class="panel"><div class="label">' + label + '</div><div class="imagebox"><div class="missing">No image</div></div></section>';
       }
-      return '<section class="panel"><div class="label">' + label + '</div><a href="' + image.url + '" target="_blank" rel="noreferrer"><div class="imagebox"><img loading="lazy" src="' + image.url + '"></div></a><div class="dims"><span class="badge ' + image.status + '">' + image.status + '</span><span>' + dims(image) + '</span><a href="' + image.url + '" target="_blank" rel="noreferrer">full size</a></div></section>';
+      const kind = image.sourceKind || image.kind || '';
+      return '<section class="panel"><div class="label">' + label + '</div><a href="' + image.url + '" target="_blank" rel="noreferrer"><div class="imagebox"><img loading="lazy" src="' + image.url + '"></div></a><div class="dims"><span class="badge ' + image.status + '">' + image.status + '</span><span>' + dims(image) + '</span>' + (kind ? '<span>' + kind + '</span>' : '') + '<a href="' + image.url + '" target="_blank" rel="noreferrer">full size</a></div></section>';
     }
     function option(id, value, label) {
       const checked = state[id]?.action === value ? ' checked' : '';
@@ -709,8 +947,9 @@ function renderHtml(report) {
         ...action.alerts.map(a => '<span class="badge low">' + a + '</span>'),
       ].filter(Boolean).join('');
       const choices = [
-        option(action.id, 'approve_proposed', 'Approve proposed crop/render'),
-        option(action.id, 'restore_best_existing', 'Restore best existing high-res asset'),
+        option(action.id, 'approve_proposed', 'Approve proposed crop/render + update image, thumbnail, embedding'),
+        option(action.id, 'ingest_source_candidate', 'Ingest source candidate + update image, thumbnail, embedding'),
+        option(action.id, 'restore_best_existing', 'Restore best existing high-res asset + update embedding'),
         option(action.id, 'keep_current', 'Keep current image'),
         option(action.id, 'needs_manual', 'Needs manual review'),
         option(action.id, 'reject_action', 'Reject this action'),
@@ -720,9 +959,9 @@ function renderHtml(report) {
         '<div class="body">' +
         imagePanel('current final image_url', action.current) +
         imagePanel('proposed final', action.proposed) +
-        imagePanel('best existing alternative', action.bestAlternative) +
+        imagePanel('best existing / source alternative', action.bestAlternative) +
         '<section class="actions"><div class="label">Action</div>' + choices + '<textarea placeholder="Notes">' + (state[action.id]?.note || '') + '</textarea>' +
-        '<details><summary>Crop/source metadata</summary><pre>' + escapeHtml(JSON.stringify({ review: action.review, provenance: action.provenance }, null, 2)) + '</pre></details></section>' +
+        '<details><summary>Crop/source metadata</summary><pre>' + escapeHtml(JSON.stringify({ review: action.review, provenance: action.provenance, sourceCandidates: action.sourceCandidates }, null, 2)) + '</pre></details></section>' +
         '</div></article>';
     }
     function escapeHtml(value) {
