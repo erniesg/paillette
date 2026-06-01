@@ -21,6 +21,7 @@ import {
 } from './lib/ngs-missing-image-backfill.mjs';
 import {
   isLargerSameAspectSource,
+  mapReviewBoxToSourcePixels,
   reviewCropArtworkStatement,
   reviewCropBackfillPayload,
   reviewSourceCropSpec,
@@ -274,6 +275,8 @@ async function prepareRow(row) {
     localReviewSourceHeight: sourceInput.localHeight || null,
     preparedSourceExtract: sourceInput.extract,
     preparedSourceRotationAngle: sourceInput.rotationAngle || null,
+    preparedRotatedSourceWidth: sourceInput.rotatedSourceWidth || null,
+    preparedRotatedSourceHeight: sourceInput.rotatedSourceHeight || null,
     thumbWidth: thumb.info.width,
     thumbHeight: thumb.info.height,
     sizeBytes: normalized.data.byteLength,
@@ -305,6 +308,13 @@ async function prepareReviewedCropInput(row) {
       source,
       localMetadata
     );
+    const rotatedSourceCrop = await prepareRotateSourceThenCropInput(
+      row,
+      preferredSource,
+      localMetadata
+    );
+    if (rotatedSourceCrop) return rotatedSourceCrop;
+
     const cropSpec = reviewSourceCropSpec(row.selectedImage, {
       width: preferredSource.metadata.width,
       height: preferredSource.metadata.height,
@@ -328,7 +338,10 @@ async function prepareReviewedCropInput(row) {
         background: '#ebe5d6',
       });
     }
-    const cropBuffer = await cropPipeline.toBuffer();
+    const cropBuffer = await maybeTrimBackgroundBorder(
+      await cropPipeline.toBuffer(),
+      row
+    );
 
     return {
       input: cropBuffer,
@@ -354,6 +367,171 @@ async function prepareReviewedCropInput(row) {
       extract: null,
     };
   }
+}
+
+async function prepareRotateSourceThenCropInput(
+  row,
+  preferredSource,
+  localMetadata
+) {
+  const cropMetadata = row.selectedImage?.cropMetadata;
+  if (cropMetadata?.rotationMode !== 'rotate-source-then-crop') return null;
+  if (!Array.isArray(cropMetadata.rotatedCropBox)) return null;
+
+  const angle = Number(cropMetadata.rotationAngle || 0);
+  if (!Number.isFinite(angle) || Math.abs(angle) < 0.05) return null;
+
+  const rotated = await sharp(preferredSource.input, {
+    limitInputPixels: false,
+  })
+    .rotate(angle, { background: '#ebe5d6' })
+    .toBuffer({ resolveWithObject: true });
+
+  const extract = mapReviewBoxToSourcePixels({
+    box: cropMetadata.rotatedCropBox,
+    reviewSize: {
+      width: cropMetadata.rotatedSourceWidth,
+      height: cropMetadata.rotatedSourceHeight,
+    },
+    sourceSize: {
+      width: rotated.info.width,
+      height: rotated.info.height,
+    },
+  });
+  if (!extract) return null;
+
+  const cropBuffer = await maybeTrimBackgroundBorder(
+    await sharp(rotated.data, {
+      limitInputPixels: false,
+    })
+      .extract(extract)
+      .toBuffer(),
+    row
+  );
+
+  return {
+    input: cropBuffer,
+    kind: `${preferredSource.kind}_rotated_source_crop`,
+    path: preferredSource.path,
+    url: preferredSource.url,
+    width: preferredSource.metadata.width,
+    height: preferredSource.metadata.height,
+    localWidth: localMetadata.width || null,
+    localHeight: localMetadata.height || null,
+    extract,
+    rotationAngle: angle,
+    rotatedSourceWidth: rotated.info.width,
+    rotatedSourceHeight: rotated.info.height,
+  };
+}
+
+async function maybeTrimBackgroundBorder(buffer, row) {
+  if (row.selectedImage?.cropMetadata?.autoTrimBackground !== true)
+    return buffer;
+  const raw = await sharp(buffer, {
+    limitInputPixels: false,
+  })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const trim = backgroundBorderTrimBox(
+    raw.data,
+    raw.info.width,
+    raw.info.height
+  );
+  if (!trim) return buffer;
+  return sharp(buffer, { limitInputPixels: false }).extract(trim).toBuffer();
+}
+
+function backgroundBorderTrimBox(data, width, height) {
+  if (width < 20 || height < 20) return null;
+  const center = {
+    x1: Math.floor(width * 0.28),
+    y1: Math.floor(height * 0.28),
+    x2: Math.ceil(width * 0.72),
+    y2: Math.ceil(height * 0.72),
+  };
+  if (
+    backgroundFraction(
+      data,
+      width,
+      height,
+      center.x1,
+      center.y1,
+      center.x2,
+      center.y2
+    ) > 0.52
+  ) {
+    return null;
+  }
+
+  const threshold = 0.62;
+  const maxTrimX = Math.floor(width * 0.28);
+  const maxTrimY = Math.floor(height * 0.28);
+  let left = 0;
+  let right = width;
+  let top = 0;
+  let bottom = height;
+  while (
+    left < maxTrimX &&
+    backgroundFraction(data, width, height, left, 0, left + 1, height) >
+      threshold
+  ) {
+    left += 1;
+  }
+  while (
+    right > width - maxTrimX &&
+    backgroundFraction(data, width, height, right - 1, 0, right, height) >
+      threshold
+  ) {
+    right -= 1;
+  }
+  while (
+    top < maxTrimY &&
+    backgroundFraction(data, width, height, left, top, right, top + 1) >
+      threshold
+  ) {
+    top += 1;
+  }
+  while (
+    bottom > height - maxTrimY &&
+    backgroundFraction(data, width, height, left, bottom - 1, right, bottom) >
+      threshold
+  ) {
+    bottom -= 1;
+  }
+
+  if (right - left < width * 0.55 || bottom - top < height * 0.55) return null;
+  if (left < 2 && top < 2 && width - right < 2 && height - bottom < 2) {
+    return null;
+  }
+  return {
+    left,
+    top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+function backgroundFraction(data, width, height, x1, y1, x2, y2) {
+  let background = 0;
+  let total = 0;
+  for (let y = y1; y < y2; y += 1) {
+    for (let x = x1; x < x2; x += 1) {
+      const index = (y * width + x) * 4;
+      if (isBackgroundRgb(data[index], data[index + 1], data[index + 2])) {
+        background += 1;
+      }
+      total += 1;
+    }
+  }
+  return total ? background / total : 0;
+}
+
+function isBackgroundRgb(r, g, b) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  return (r > 205 && g > 205 && b > 205 && max - min < 55) || max < 24;
 }
 
 function reviewedCropRotationAngle(row) {
@@ -698,6 +876,8 @@ function assetStatements(row, now) {
         localReviewSourceHeight: row.localReviewSourceHeight || null,
         preparedSourceExtract: row.preparedSourceExtract || null,
         preparedSourceRotationAngle: row.preparedSourceRotationAngle || null,
+        preparedRotatedSourceWidth: row.preparedRotatedSourceWidth || null,
+        preparedRotatedSourceHeight: row.preparedRotatedSourceHeight || null,
       },
       now,
     }),
