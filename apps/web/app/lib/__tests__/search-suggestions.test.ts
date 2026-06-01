@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSuggestionPool,
+  getSuggestionPrefetchQueries,
   normalizeSearchQuery,
 } from '../search-suggestions';
 import type { HolidaySearchSuggestion } from '../singapore-holidays.server';
@@ -137,6 +138,32 @@ describe('buildSuggestionPool', () => {
 
     expect(new Set(occasionDots)).toEqual(new Set(['#365f9c']));
     expect(keywordDot).toBe('#cda636');
+  });
+
+  it('returns distinct suggestion queries for try-query cache prefetching', () => {
+    const suggestions = buildSuggestionPool([
+      holiday({
+        label: 'Vesak Day',
+        query: 'Vesak Day',
+        isToday: false,
+      }),
+      holiday({
+        label: 'Duplicate Vesak',
+        query: '  Vesak Day  ',
+        isToday: false,
+      }),
+    ]);
+
+    expect(getSuggestionPrefetchQueries(suggestions)).toEqual([
+      'a still life of tropical fruit and flowers',
+      'Vesak Day',
+      'batik or songket textile pattern',
+      'serene, still and contemplative',
+      'Nanyang-style fusion of Chinese and Southeast Asian',
+      'watercolour painting',
+      'artworks made in the 1950s',
+      'muted sage green',
+    ]);
   });
 });
 

@@ -114,3 +114,20 @@ export const normalizeSearchQuery = (query: string) => {
 
   return trimmed;
 };
+
+export const getSuggestionPrefetchQueries = (
+  suggestions: EvalSuggestion[]
+) => {
+  const queries: string[] = [];
+  const seen = new Set<string>();
+
+  for (const suggestion of suggestions) {
+    const query = normalizeSearchQuery(suggestion.query);
+    if (!query || seen.has(query)) continue;
+
+    queries.push(query);
+    seen.add(query);
+  }
+
+  return queries;
+};

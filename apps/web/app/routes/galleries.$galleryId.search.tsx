@@ -12,8 +12,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -63,6 +68,7 @@ import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import {
   buildSuggestionPool,
+  getSuggestionPrefetchQueries,
   getSuggestionKey,
   normalizeSearchQuery,
   type EvalSuggestion,
@@ -84,10 +90,12 @@ import { UserMenu } from '~/components/user/user-menu';
 
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
-const IDLE_SHOWCASE_FETCH_LIMIT = 12;
 const MIN_BROWSE_PAGE_SIZE = 12;
 const MAX_BROWSE_PAGE_SIZE = 100;
 const MAX_SEARCH_RESULTS = 100;
+const PUBLIC_SEARCH_QUERY_STALE_TIME = Infinity;
+const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
+const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
 const GITHUB_URL = 'https://github.com/erniesg/paillette';
 
 export const meta: MetaFunction = () => {
@@ -161,6 +169,25 @@ type SortMode =
   | 'source'
   | 'source-desc';
 type SortControlId = 'relevance' | 'colour' | 'time' | 'artist' | 'title';
+
+export const shouldObserveMasonryColumnEnds = ({
+  hasMoreResults,
+  isBrowsingCollection,
+  isFetchingNextPage,
+  isLoading,
+  view,
+}: {
+  hasMoreResults: boolean;
+  isBrowsingCollection: boolean;
+  isFetchingNextPage: boolean;
+  isLoading: boolean;
+  view: ViewMode;
+}) =>
+  view === 'masonry' &&
+  isBrowsingCollection &&
+  hasMoreResults &&
+  !isLoading &&
+  !isFetchingNextPage;
 
 const COLOURS = [
   { id: 'navy', hex: '#1a2f52', name: 'Navy' },
@@ -553,6 +580,12 @@ const getMasonryImageRatio = (result: ArtworkSearchResult) => {
   return 0.82 + (hashString(result.id) % 88) / 100;
 };
 
+export const getMasonryImageFrameStyle = (
+  result: ArtworkSearchResult
+): CSSProperties => ({
+  aspectRatio: `1 / ${getMasonryImageRatio(result)}`,
+});
+
 const estimateMasonryCardHeight = (result: ArtworkSearchResult) => {
   const titleLength = getDisplayTitle(result).length;
   const titleWeight = Math.min(0.42, titleLength / 150);
@@ -754,6 +787,13 @@ const publicSearchText = async (
   return readSearchResponse(response);
 };
 
+const publicTextSearchQueryKey = (
+  orgId: string,
+  query: string,
+  topK: number,
+  minScore: number
+) => ['search', 'text', orgId, query, topK, minScore] as const;
+
 const publicSearchImage = async (
   orgId: string,
   request: SearchImageRequest
@@ -832,6 +872,7 @@ export default function SearchPage() {
   } = useLoaderData<typeof loader>();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const { isAuthenticated, login, signup } = useUser();
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
@@ -884,6 +925,10 @@ export default function SearchPage() {
   const suggestionPool = useMemo(
     () => buildSuggestionPool(holidaySuggestions),
     [holidaySuggestions]
+  );
+  const suggestionPrefetchQueries = useMemo(
+    () => getSuggestionPrefetchQueries(suggestionPool),
+    [suggestionPool]
   );
 
   useEffect(() => {
@@ -999,15 +1044,53 @@ export default function SearchPage() {
     }
   }, [normalizedUrlQuery, setSearchParams, urlQuery]);
 
+  useEffect(() => {
+    if (!hasMounted || !suggestionPrefetchQueries.length) return undefined;
+
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      if (cancelled) return;
+
+      for (const query of suggestionPrefetchQueries) {
+        void queryClient.prefetchQuery({
+          queryKey: publicTextSearchQueryKey(
+            galleryId,
+            query,
+            MAX_SEARCH_RESULTS,
+            0
+          ),
+          queryFn: () =>
+            publicSearchText(
+              galleryId,
+              {
+                query,
+                topK: MAX_SEARCH_RESULTS,
+                minScore: 0,
+              },
+              {
+                auto: true,
+                source: 'try_query_prefetch',
+              }
+            ),
+          staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+          gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
+        });
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [galleryId, hasMounted, queryClient, suggestionPrefetchQueries]);
+
   const textSearchQuery = useQuery({
-    queryKey: [
-      'search',
-      'text',
+    queryKey: publicTextSearchQueryKey(
       galleryId,
       normalizedCommittedTextQuery,
       topK,
-      minScore,
-    ],
+      minScore
+    ),
     queryFn: async () => {
       if (!normalizedCommittedTextQuery) return null;
       return publicSearchText(
@@ -1028,6 +1111,8 @@ export default function SearchPage() {
       (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
       normalizedCommittedTextQuery.length > 0,
+    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
   const imageSearchQuery = useQuery({
@@ -1072,13 +1157,18 @@ export default function SearchPage() {
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
   const shouldLoadIdleShowcase = hasMounted && !hasActiveSearch;
   const idleShowcaseQuery = useQuery({
-    queryKey: ['idle-showcase', galleryId, activeIdleSuggestion?.query],
+    queryKey: publicTextSearchQueryKey(
+      galleryId,
+      activeIdleSuggestion?.query || '',
+      MAX_SEARCH_RESULTS,
+      0
+    ),
     queryFn: () =>
       publicSearchText(
         galleryId,
         {
           query: activeIdleSuggestion?.query || '',
-          topK: IDLE_SHOWCASE_FETCH_LIMIT,
+          topK: MAX_SEARCH_RESULTS,
           minScore: 0,
         },
         {
@@ -1087,7 +1177,8 @@ export default function SearchPage() {
         }
       ),
     enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
-    staleTime: 5 * 60 * 1000,
+    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
   const currentQuery =
@@ -1138,6 +1229,13 @@ export default function SearchPage() {
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
+  const shouldWatchMasonryColumnEnds = shouldObserveMasonryColumnEnds({
+    hasMoreResults,
+    isBrowsingCollection,
+    isFetchingNextPage: Boolean(browseQuery.isFetchingNextPage),
+    isLoading,
+    view,
+  });
   const idleShowcaseResults = useMemo(
     () => selectIdleShowcaseArtworks(idleShowcaseQuery.data?.results || []),
     [idleShowcaseQuery.data?.results]
@@ -1215,6 +1313,11 @@ export default function SearchPage() {
       Math.min(count + SEARCH_DISPLAY_INCREMENT, results.length)
     );
   }, [browseQuery, isBrowsingCollection, results.length]);
+  const loadMoreMasonryColumnResults = useCallback(() => {
+    if (!shouldWatchMasonryColumnEnds) return;
+
+    loadMoreResults();
+  }, [loadMoreResults, shouldWatchMasonryColumnEnds]);
 
   useEffect(() => {
     setVisibleCount(SEARCH_DISPLAY_INCREMENT);
@@ -2090,6 +2193,11 @@ export default function SearchPage() {
                         selectedColours={activeSortColours}
                         sortMode={sortMode}
                         showSimilarity={false}
+                        onMasonryColumnEndVisible={
+                          shouldWatchMasonryColumnEnds
+                            ? loadMoreMasonryColumnResults
+                            : undefined
+                        }
                         onSortModeChange={setSortMode}
                         onFacetSearch={runTextSearch}
                         onPaletteColourSelect={useArtworkPaletteColour}
@@ -2104,6 +2212,11 @@ export default function SearchPage() {
                     selectedColours={activeSortColours}
                     sortMode={sortMode}
                     showSimilarity={!isBrowsingCollection}
+                    onMasonryColumnEndVisible={
+                      shouldWatchMasonryColumnEnds
+                        ? loadMoreMasonryColumnResults
+                        : undefined
+                    }
                     onSortModeChange={setSortMode}
                     onFacetSearch={runTextSearch}
                     onPaletteColourSelect={useArtworkPaletteColour}
@@ -3154,6 +3267,7 @@ function ResultsView({
   selectedColours,
   sortMode,
   showSimilarity,
+  onMasonryColumnEndVisible,
   onSortModeChange,
   onFacetSearch,
   onPaletteColourSelect,
@@ -3164,6 +3278,7 @@ function ResultsView({
   selectedColours: string[];
   sortMode: SortMode;
   showSimilarity: boolean;
+  onMasonryColumnEndVisible?: () => void;
   onSortModeChange: (sortMode: SortMode) => void;
   onFacetSearch: (query: string) => void;
   onPaletteColourSelect: (hex: string) => void;
@@ -3195,6 +3310,7 @@ function ResultsView({
       results={results}
       selectedColours={selectedColours}
       showSimilarity={showSimilarity}
+      onColumnEndVisible={onMasonryColumnEndVisible}
       onFacetSearch={onFacetSearch}
       onPaletteColourSelect={onPaletteColourSelect}
       onSelectArtwork={onSelectArtwork}
@@ -3206,6 +3322,7 @@ function MasonryResults({
   results,
   selectedColours,
   showSimilarity,
+  onColumnEndVisible,
   onFacetSearch,
   onPaletteColourSelect,
   onSelectArtwork,
@@ -3213,11 +3330,13 @@ function MasonryResults({
   results: ArtworkSearchResult[];
   selectedColours: string[];
   showSimilarity: boolean;
+  onColumnEndVisible?: () => void;
   onFacetSearch: (query: string) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const columnCount = useMasonryColumnCount();
+  const columnEndRefs = useRef<Array<HTMLDivElement | null>>([]);
   const effectiveColumnCount = Math.min(
     columnCount,
     Math.max(results.length, 1)
@@ -3228,6 +3347,25 @@ function MasonryResults({
   );
   const imageRole: ArtworkImageRole =
     results.length <= effectiveColumnCount ? 'large' : 'thumbnail';
+
+  useEffect(() => {
+    if (!onColumnEndVisible) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onColumnEndVisible();
+        }
+      },
+      { rootMargin: MASONRY_COLUMN_END_ROOT_MARGIN }
+    );
+    const nodes = columnEndRefs.current
+      .slice(0, columns.length)
+      .filter((node): node is HTMLDivElement => Boolean(node));
+
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [columns.length, onColumnEndVisible]);
 
   return (
     <div className="flex items-start gap-4 pt-6">
@@ -3246,6 +3384,13 @@ function MasonryResults({
               onSelectArtwork={onSelectArtwork}
             />
           ))}
+          <div
+            ref={(node) => {
+              columnEndRefs.current[columnIndex] = node;
+            }}
+            aria-hidden="true"
+            className="h-px w-full"
+          />
         </div>
       ))}
     </div>
@@ -3381,6 +3526,7 @@ function ResultCard({
   const title = getDisplayTitle(result);
   const artist = getDisplayArtist(result);
   const image = getArtworkImageSources(result, imageRole);
+  const imageFrameStyle = getMasonryImageFrameStyle(result);
 
   return (
     <article className="break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]">
@@ -3389,15 +3535,15 @@ function ResultCard({
         onClick={() => onSelectArtwork(result)}
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
-        <div className="bg-white/[0.03]">
+        <div className="overflow-hidden bg-white/[0.03]" style={imageFrameStyle}>
           <ImageWithFallback
             src={image.src}
             fallbackSrc={image.fallbackSrc}
             alt={title}
             loading="lazy"
-            className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             fallback={
-              <NoImagePlaceholder className="aspect-[4/3] text-white/25" />
+              <NoImagePlaceholder className="text-white/25" />
             }
           />
         </div>

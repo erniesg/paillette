@@ -1,5 +1,5 @@
 import { json } from '@remix-run/cloudflare';
-import type { ApiResponse } from '~/types';
+import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
 export { isHiddenPublicNgsArtwork } from './public-ngs-visibility';
 
 type WorkerContext = {
@@ -7,6 +7,24 @@ type WorkerContext = {
     env?: Record<string, string | undefined>;
   };
 };
+
+type CacheLike = {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
+};
+
+type PublicTextSearchCacheKeyInput = {
+  apiBaseUrl: string;
+  orgId: string;
+  query: string;
+};
+
+type PublicTextSearchRequest = Required<SearchTextRequest>;
+
+export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
+export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
+export const PUBLIC_SEARCH_CACHE_CONTROL =
+  'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
 const ORG_ID_ALIASES: Record<string, string> = {
   ngs: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
@@ -45,6 +63,139 @@ export const getApiBaseUrl = (env: Record<string, string | undefined>) => {
       : 'https://paillette-api-stg.berlayar.ai');
 
   return `${apiUrl.replace(/\/+$/, '')}/api/v1`;
+};
+
+export const getCanonicalPublicTextSearchRequest = (
+  request: PublicTextSearchRequest
+): PublicTextSearchRequest => ({
+  ...request,
+  topK: PUBLIC_TEXT_SEARCH_CACHE_TOP_K,
+  minScore: PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE,
+});
+
+export const filterPublicTextSearchResponse = (
+  payload: ApiResponse<SearchResponse>,
+  request: PublicTextSearchRequest
+): ApiResponse<SearchResponse> => {
+  if (!payload.success || !payload.data) {
+    return payload;
+  }
+
+  const results = payload.data.results
+    .filter((artwork) => artwork.similarity >= request.minScore)
+    .slice(0, request.topK);
+
+  return {
+    ...payload,
+    data: {
+      ...payload.data,
+      results,
+      count: results.length,
+    },
+  };
+};
+
+export const buildPublicTextSearchCacheKey = ({
+  apiBaseUrl,
+  orgId,
+  query,
+}: PublicTextSearchCacheKeyInput) => {
+  const url = new URL('https://paillette-public-search-cache.local/text');
+  url.searchParams.set('v', '1');
+  url.searchParams.set('api', apiBaseUrl);
+  url.searchParams.set('org', orgId);
+  url.searchParams.set('query', query.trim());
+
+  return new Request(url.toString(), { method: 'GET' });
+};
+
+const getPublicSearchCache = (): CacheLike | null => {
+  const runtime = globalThis as typeof globalThis & {
+    caches?: { default?: CacheLike };
+  };
+
+  return runtime.caches?.default ?? null;
+};
+
+const hashString = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(36);
+};
+
+export const getPublicSearchPayloadEtag = (payload: ApiResponse) =>
+  `W/"public-search-${hashString(JSON.stringify(payload))}"`;
+
+export const buildPublicSearchCacheHeaders = (
+  status: 'HIT' | 'MISS' | 'BYPASS',
+  payload?: ApiResponse
+) => {
+  const headers = new Headers({
+    'Cache-Control': PUBLIC_SEARCH_CACHE_CONTROL,
+    'X-Paillette-Search-Cache': status,
+  });
+
+  if (payload) {
+    headers.set('ETag', getPublicSearchPayloadEtag(payload));
+  }
+
+  return headers;
+};
+
+export const readPublicTextSearchCache = async (
+  cacheKey: Request
+): Promise<ApiResponse<SearchResponse> | null> => {
+  const cache = getPublicSearchCache();
+  if (!cache) {
+    return null;
+  }
+
+  try {
+    const cachedResponse = await cache.match(cacheKey);
+    if (!cachedResponse) {
+      return null;
+    }
+
+    return (await cachedResponse.json()) as ApiResponse<SearchResponse>;
+  } catch (error) {
+    console.warn('Failed to read public text search cache:', error);
+    return null;
+  }
+};
+
+export const writePublicTextSearchCache = async (
+  cacheKey: Request,
+  payload: ApiResponse<SearchResponse>,
+  status: number
+) => {
+  if (status !== 200 || !payload.success || !payload.data) {
+    return;
+  }
+
+  const cache = getPublicSearchCache();
+  if (!cache) {
+    return;
+  }
+
+  try {
+    await cache.put(
+      cacheKey,
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: {
+          'Cache-Control': PUBLIC_SEARCH_CACHE_CONTROL,
+          'Content-Type': 'application/json',
+          ETag: getPublicSearchPayloadEtag(payload),
+        },
+      })
+    );
+  } catch (error) {
+    console.warn('Failed to write public text search cache:', error);
+  }
 };
 
 const getPublicSearchAuthHeaders = (

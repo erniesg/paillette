@@ -2,13 +2,19 @@ import type { ActionFunctionArgs } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
 import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
 import {
+  buildPublicSearchCacheHeaders,
+  buildPublicTextSearchCacheKey,
   buildPublicSearchHeaders,
+  filterPublicTextSearchResponse,
   getApiBaseUrl,
+  getCanonicalPublicTextSearchRequest,
   getServerEnv,
   isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   publicSearchConfigError,
+  readPublicTextSearchCache,
   resolvePublicSearchOrgId,
+  writePublicTextSearchCache,
 } from '~/lib/public-search.server';
 import type { ArtworkSearchResult } from '~/types';
 
@@ -101,21 +107,71 @@ export const action = async ({
     );
   }
 
-  const searchPayload: SearchTextRequest = {
+  const requestedSearchPayload: Required<SearchTextRequest> = {
     query,
     topK: clamp(body.topK, 1, 100, 30),
     minScore: clamp(body.minScore, 0, 1, 0.3),
   };
+  const searchPayload: SearchTextRequest = requestedSearchPayload;
+  const canonicalSearchPayload =
+    getCanonicalPublicTextSearchRequest(requestedSearchPayload);
   const usageContext = asRecord(body.usageContext);
   const shouldLogUsage = usageContext.auto !== true;
   const resolvedOrgId = resolvePublicSearchOrgId(orgId);
+  const apiBaseUrl = getApiBaseUrl(env);
+  const cacheKey = buildPublicTextSearchCacheKey({
+    apiBaseUrl,
+    orgId: resolvedOrgId,
+    query,
+  });
+
+  const cachedPayload = await readPublicTextSearchCache(cacheKey);
+  if (cachedPayload) {
+    const responsePayload = filterPublicTextSearchResponse(
+      cachedPayload,
+      requestedSearchPayload
+    );
+
+    if (shouldLogUsage && responsePayload.success && responsePayload.data) {
+      const results = responsePayload.data.results;
+      await logPublicUsageEvent(request, env, {
+        eventType: 'search',
+        queryType: `public_${usageContext.mode === 'colour' ? 'colour' : 'text'}_search`,
+        orgId: resolvedOrgId,
+        search: {
+          mode: usageContext.mode === 'colour' ? 'colour' : 'text',
+          query,
+          topK: searchPayload.topK,
+          minScore: searchPayload.minScore,
+          rawResultCount: cachedPayload.data?.results.length ?? results.length,
+          resultCount: results.length,
+          hiddenFilteredCount: 0,
+          queryTime: responsePayload.data.queryTime,
+          colours: Array.isArray(usageContext.colours)
+            ? usageContext.colours
+            : undefined,
+          cache: 'hit',
+        },
+        results: results.map(getUsageResult),
+        metadata: {
+          routeOrgId: orgId,
+          usageContext,
+        },
+      });
+    }
+
+    return json(responsePayload, {
+      status: 200,
+      headers: buildPublicSearchCacheHeaders('HIT', responsePayload),
+    });
+  }
 
   const response = await fetch(
-    `${getApiBaseUrl(env)}/orgs/${resolvedOrgId}/search/text`,
+    `${apiBaseUrl}/orgs/${resolvedOrgId}/search/text`,
     {
       method: 'POST',
       headers,
-      body: JSON.stringify(searchPayload),
+      body: JSON.stringify(canonicalSearchPayload),
     }
   );
 
@@ -132,7 +188,19 @@ export const action = async ({
       count: results.length,
     };
 
+    await writePublicTextSearchCache(
+      cacheKey,
+      responsePayload,
+      response.status
+    );
+
+    const requestedResponsePayload = filterPublicTextSearchResponse(
+      responsePayload,
+      requestedSearchPayload
+    );
+
     if (shouldLogUsage) {
+      const requestedResults = requestedResponsePayload.data?.results || [];
       await logPublicUsageEvent(request, env, {
         eventType: 'search',
         queryType: `public_${usageContext.mode === 'colour' ? 'colour' : 'text'}_search`,
@@ -143,21 +211,30 @@ export const action = async ({
           topK: searchPayload.topK,
           minScore: searchPayload.minScore,
           rawResultCount,
-          resultCount: results.length,
+          resultCount: requestedResults.length,
           hiddenFilteredCount: rawResultCount - results.length,
-          queryTime: responsePayload.data.queryTime,
+          queryTime: requestedResponsePayload.data?.queryTime,
           colours: Array.isArray(usageContext.colours)
             ? usageContext.colours
             : undefined,
+          cache: 'miss',
         },
-        results: results.map(getUsageResult),
+        results: requestedResults.map(getUsageResult),
         metadata: {
           routeOrgId: orgId,
           usageContext,
         },
       });
     }
+
+    return json(requestedResponsePayload, {
+      status: response.status,
+      headers: buildPublicSearchCacheHeaders('MISS', requestedResponsePayload),
+    });
   }
 
-  return json(responsePayload, { status: response.status });
+  return json(responsePayload, {
+    status: response.status,
+    headers: buildPublicSearchCacheHeaders('BYPASS', responsePayload),
+  });
 };
