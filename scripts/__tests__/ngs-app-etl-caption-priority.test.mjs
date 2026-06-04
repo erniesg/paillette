@@ -14,6 +14,9 @@ const sqlite = (dbPath, sql) =>
   execFileSync('sqlite3', [dbPath, sql], { encoding: 'utf8' });
 
 const sqlString = (value) => String(value).replaceAll("'", "''");
+const sqlInsertRowFor = (output, id) =>
+  output.split('\n').find((line) => line.startsWith(`('${sqlString(id)}'`)) ||
+  '';
 
 describe('build-ngs-app-etl caption priority', () => {
   it('uses trusted persistent Roots captions as public descriptions without dropping generated captions', () => {
@@ -134,19 +137,63 @@ INSERT INTO artworks VALUES (
   '{"pageid":"1323511","img":"https://www.roots.gov.sg/CollectionImages/1323511.jpg","title":"Docking","creator":"Lim Yew Kuan","accession":"2015-00622"}',
   NULL
 );
+INSERT INTO artworks VALUES (
+  'GI-0393',
+  'GI-0393',
+  'ngs',
+  'national-collection',
+  'A Hot Day by the River',
+  'Tay Bak Koi',
+  NULL,
+  '1989',
+  NULL,
+  'Watercolour on paper',
+  'Image size: 85 x 61 cm, Frame size: H106 x W81.5 x D2 cm',
+  'Collection of National Gallery Singapore. © Family of Tay Bak Koi.',
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  1,
+  '{}',
+  '{}',
+  'https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/tay-bak-koi/gi/GI-0393.tif.html',
+  NULL,
+  'https://www.roots.gov.sg/Collection-Landing/listing/1030227',
+  '{"objObjectNumberTxt":"GI-0393","objObjectTitleTxt":"A Hot Day by the River","artistAvailableNames":["Tay Bak Koi"],"objCreditLineTxt":"Collection of National Gallery Singapore. © Family of Tay Bak Koi."}',
+  '{"pageid":"1030227","title":"A Hot Day by the river","creator":"Tay Bak Koi","accession":"GI-0393"}',
+  NULL
+);
 `
       );
 
       writeFileSync(
         captionsPath,
-        JSON.stringify({
-          id: '2019-00754',
-          caption: 'Generated visual caption.',
-          model: 'test-model',
-          prompt_version: 'cap-v1',
-          generated_at: '2026-05-31T00:00:00.000Z',
-          sources: ['https://www.roots.gov.sg/Collection-Landing/listing/1454646'],
-        }) + '\n'
+        [
+          {
+            id: '2019-00754',
+            caption: 'Generated visual caption.',
+            model: 'test-model',
+            prompt_version: 'cap-v1',
+            generated_at: '2026-05-31T00:00:00.000Z',
+            sources: [
+              'https://www.roots.gov.sg/Collection-Landing/listing/1454646',
+            ],
+          },
+          {
+            id: 'GI-0393',
+            caption: 'Generated Hot Day visual caption.',
+            model: 'test-model',
+            prompt_version: 'cap-v1',
+            generated_at: '2026-05-31T00:00:00.000Z',
+            sources: [
+              'https://www.roots.gov.sg/Collection-Landing/listing/1030227',
+            ],
+          },
+        ]
+          .map((record) => JSON.stringify(record))
+          .join('\n') + '\n'
       );
       writeFileSync(groundingPath, '');
       writeFileSync(
@@ -194,13 +241,36 @@ INSERT INTO artworks VALUES (
             'Painting',
             '"Image size: 39.5 x 70 cm Frame size: 62.9 x 92.6 cm"',
           ].join(','),
+          [
+            'https://www.roots.gov.sg/Collection-Landing/listing/1030227',
+            '"Collection of National Gallery Singapore. &#169; Family of Tay Bak Koi"',
+            '1030227',
+            'GI-0393',
+            'National Gallery Singapore',
+            '"A Hot Day by the river"',
+            '"Tay Bak Koi"',
+            '1989',
+            'Singapore',
+            '"Watercolour on paper"',
+            'Painting',
+            '"Image size: 85 x 61 cm Frame size: H106 x W81.5 x D2 cm"',
+          ].join(','),
         ].join('\n')
       );
       writeFileSync(
         emptyOverridesPath,
         JSON.stringify({
           verified_roots_description_records: [],
-          verified_roots_caption_records: [],
+          verified_roots_caption_records: [
+            {
+              id: 'GI-0393',
+              rootsUrl:
+                'https://www.roots.gov.sg/Collection-Landing/listing/1030227',
+              rootsTitle: 'A Hot Day by the river',
+              caption:
+                'Collection of National Gallery Singapore. &#169; Family of Tay Bak Koi',
+            },
+          ],
         })
       );
 
@@ -251,6 +321,22 @@ INSERT INTO artworks VALUES (
       assert.match(
         output,
         /'Persistent Roots source caption\.', 'Gift of Chung Cheng High School/u
+      );
+
+      const hotDayRow = sqlInsertRowFor(output, 'GI-0393');
+      assert.notEqual(hotDayRow, '');
+      assert.match(
+        hotDayRow,
+        /"generated_caption":\{"text":"Generated Hot Day visual caption\."/u
+      );
+      assert.doesNotMatch(hotDayRow, /"description":"roots"/u);
+      assert.doesNotMatch(
+        hotDayRow,
+        /"caption":"Collection of National Gallery Singapore\./u
+      );
+      assert.doesNotMatch(
+        hotDayRow,
+        /'Collection of National Gallery Singapore\. &#169; Family of Tay Bak Koi'/u
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -23,6 +23,7 @@ type PublicTextSearchRequest = Required<SearchTextRequest>;
 
 export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
+export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '4';
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
@@ -101,7 +102,7 @@ export const buildPublicTextSearchCacheKey = ({
   query,
 }: PublicTextSearchCacheKeyInput) => {
   const url = new URL('https://paillette-public-search-cache.local/text');
-  url.searchParams.set('v', '1');
+  url.searchParams.set('v', PUBLIC_TEXT_SEARCH_CACHE_VERSION);
   url.searchParams.set('api', apiBaseUrl);
   url.searchParams.set('org', orgId);
   url.searchParams.set('query', query.trim());

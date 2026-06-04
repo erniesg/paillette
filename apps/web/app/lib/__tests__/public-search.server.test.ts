@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isHiddenPublicNgsArtwork } from '../public-search.server';
+import {
+  PUBLIC_TEXT_SEARCH_CACHE_VERSION,
+  buildPublicTextSearchCacheKey,
+  isHiddenPublicNgsArtwork,
+} from '../public-search.server';
 
 describe('isHiddenPublicNgsArtwork', () => {
   it('hides Roots-only museum accessions when they point at Roots records', () => {
@@ -55,5 +59,19 @@ describe('isHiddenPublicNgsArtwork', () => {
         source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1016995',
       })
     ).toBe(false);
+  });
+});
+
+describe('buildPublicTextSearchCacheKey', () => {
+  it('includes the public text-search cache version', () => {
+    const key = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+      query: ' chung cheng ',
+    });
+    const url = new URL(key.url);
+
+    expect(url.searchParams.get('v')).toBe(PUBLIC_TEXT_SEARCH_CACHE_VERSION);
+    expect(url.searchParams.get('query')).toBe('chung cheng');
   });
 });

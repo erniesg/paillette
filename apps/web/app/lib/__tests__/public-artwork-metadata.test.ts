@@ -54,13 +54,40 @@ describe('getPublicDescription', () => {
           sourceRecords: {
             roots: {
               caption:
-                'Collection of National Gallery Singapore. &#169; 1988 Eduardo Masferr&#233; Masferre &amp; family.',
+                'Eduardo Masferr&#233; Masferre photographed the Cordillera communities &amp; their daily life.',
             },
           },
         },
       })
     ).toBe(
-      'Collection of National Gallery Singapore. © 1988 Eduardo Masferré Masferre & family.'
+      'Eduardo Masferré Masferre photographed the Cordillera communities & their daily life.'
+    );
+  });
+
+  it('does not treat Roots credit lines as public caption text', () => {
+    const artwork = {
+      description:
+        'Collection of National Gallery Singapore. &#169; Family of Tay Bak Koi',
+      metadata: {
+        field_sources: {
+          description: 'roots',
+        },
+        source_records: {
+          roots: {
+            caption:
+              'Collection of National Gallery Singapore. &#169; Family of Tay Bak Koi',
+          },
+        },
+        generated_caption: {
+          text: 'A watercolor landscape uses soft bands of ochre, grey, and white to suggest a riverbank.',
+        },
+      },
+    };
+
+    expect(getPublicDescription(artwork)).toBeNull();
+    expect(getPublicDescriptionDetailList(artwork)).toEqual([]);
+    expect(getGeneratedCaptionText(artwork)).toBe(
+      'A watercolor landscape uses soft bands of ochre, grey, and white to suggest a riverbank.'
     );
   });
 

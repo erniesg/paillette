@@ -93,6 +93,35 @@ const firstText = (...values) => {
   return null;
 };
 
+const creditLineTextStartRe =
+  /^(collection of national gallery singapore|gift of|donated by|bequest of|purchase(?:d)? (?:with|from)|acquired (?:with|from)|commissioned by)\b/i;
+const creditLineRightsRe =
+  /(?:©|&copy;|&#169;|&#x0*a9;|copyright|\ball rights reserved\b)/i;
+const shortCreditLineWordLimit = 18;
+const shortRightsLineWordLimit = 24;
+
+const countWords = (value) => String(value).split(/\s+/).filter(Boolean).length;
+
+const isCreditLineOnlyDescriptionText = (value) => {
+  const text = firstText(value);
+  if (!text || !creditLineTextStartRe.test(text)) return false;
+
+  const wordCount = countWords(text);
+  return (
+    wordCount <= shortCreditLineWordLimit ||
+    (creditLineRightsRe.test(text) && wordCount <= shortRightsLineWordLimit)
+  );
+};
+
+const firstRootsDescriptionText = (...values) => {
+  for (const value of values) {
+    const text = firstText(value);
+    if (text && !isCreditLineOnlyDescriptionText(text)) return text;
+  }
+
+  return null;
+};
+
 const getNgsTitle = (ngsRecord, artwork) =>
   firstText(ngsRecord?.objObjectTitleTxt, ngsRecord?.title, artwork.title);
 
@@ -116,7 +145,7 @@ const getRootsArtist = (rootsRecord) =>
   firstText(rootsRecord?.creator, rootsRecord?.artist, rootsRecord?.maker);
 
 const getRootsDescription = (rootsRecord) =>
-  firstText(
+  firstRootsDescriptionText(
     rootsRecord?.caption,
     rootsRecord?.description,
     rootsRecord?.summary,
@@ -287,7 +316,7 @@ const getVerifiedRootsDescriptionText = (artwork, fieldSources, decision) => {
   }
 
   const override = verifiedRootsDescriptionRecords.get(artwork.id);
-  const overrideCaption = firstText(override?.caption);
+  const overrideCaption = firstRootsDescriptionText(override?.caption);
   if (overrideCaption) return overrideCaption;
 
   const rootsDescription = getRootsDescription(decision.rootsRecord);
@@ -737,7 +766,7 @@ const loadRootsSourceRecords = (path) => {
         row.documents_0_metadata_creator_1,
         row.documents_0_metadata_creator_2
       ),
-      caption: firstText(
+      caption: firstRootsDescriptionText(
         row.documents_0_content,
         row.documents_0_metadata_sgcool_label_text
       ),
@@ -846,12 +875,37 @@ const setCanonicalRootDimensionField = (target, key, ...values) => {
   if (value) target[key] = value;
 };
 
+const removeCreditLineOnlyRootDescriptionFields = (record) => {
+  for (const key of [
+    'caption',
+    'description',
+    'summary',
+    'synopsis',
+    'content',
+    'text',
+  ]) {
+    if (isCreditLineOnlyDescriptionText(record[key])) {
+      delete record[key];
+    }
+  }
+};
+
+const setCanonicalRootDescriptionField = (target, key, ...values) => {
+  const value = firstRootsDescriptionText(...values);
+  if (value) {
+    target[key] = value;
+  } else if (isCreditLineOnlyDescriptionText(target[key])) {
+    delete target[key];
+  }
+};
+
 const mergeRootsSourceRecord = (rootsSourceRecord, rootsRecord) => {
   if (!rootsSourceRecord && !rootsRecord) return null;
 
   const merged = {};
   copyNonEmptyRecordFields(merged, rootsSourceRecord);
   copyNonEmptyRecordFields(merged, rootsRecord);
+  removeCreditLineOnlyRootDescriptionFields(merged);
 
   setCanonicalRootField(
     merged,
@@ -977,7 +1031,7 @@ const mergeRootsSourceRecord = (rootsSourceRecord, rootsRecord) => {
     rootsRecord?.collection_of,
     getRootsCollectionOf(rootsRecord)
   );
-  setCanonicalRootField(
+  setCanonicalRootDescriptionField(
     merged,
     'caption',
     getRootsDescription(rootsRecord),
@@ -1142,7 +1196,7 @@ for (const artwork of candidateSourceArtworks) {
         ...(rootsRecord || {}),
         caption:
           getRootsDescription(rootsRecord) ||
-          verifiedRootsDescriptionRecord?.caption ||
+          firstRootsDescriptionText(verifiedRootsDescriptionRecord?.caption) ||
           undefined,
         accession:
           getRootsAccession(rootsRecord) ||

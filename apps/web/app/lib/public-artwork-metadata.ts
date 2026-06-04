@@ -263,6 +263,41 @@ const firstPublicCatalogueText = (...values: unknown[]) => {
   return null;
 };
 
+const CREDIT_LINE_TEXT_START_RE =
+  /^(collection of national gallery singapore|gift of|donated by|bequest of|purchase(?:d)? (?:with|from)|acquired (?:with|from)|commissioned by)\b/i;
+const CREDIT_LINE_RIGHTS_RE = /(?:©|copyright|\ball rights reserved\b)/i;
+const SHORT_CREDIT_LINE_WORD_LIMIT = 18;
+const SHORT_RIGHTS_LINE_WORD_LIMIT = 24;
+
+const countWords = (value: string) =>
+  value.split(/\s+/).filter(Boolean).length;
+
+const isCreditLineOnlyCatalogueText = (value: unknown) => {
+  const text = asText(value);
+  if (!text || !CREDIT_LINE_TEXT_START_RE.test(text)) return false;
+
+  const wordCount = countWords(text);
+  return (
+    wordCount <= SHORT_CREDIT_LINE_WORD_LIMIT ||
+    (CREDIT_LINE_RIGHTS_RE.test(text) &&
+      wordCount <= SHORT_RIGHTS_LINE_WORD_LIMIT)
+  );
+};
+
+const firstPublicDescriptionText = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = asText(value);
+    if (
+      text &&
+      !isInternalCatalogueText(text) &&
+      !isCreditLineOnlyCatalogueText(text)
+    ) {
+      return text;
+    }
+  }
+  return null;
+};
+
 const firstArrayText = (value: unknown) => {
   if (!Array.isArray(value)) return null;
 
@@ -375,7 +410,7 @@ const firstPublicCatalogueDetails = (
   ...groups: PublicDescriptionGroup[]
 ): PublicDescriptionDetails | null => {
   for (const group of groups) {
-    const text = firstPublicCatalogueText(...group.values);
+    const text = firstPublicDescriptionText(...group.values);
     if (text) {
       return {
         text,
@@ -395,7 +430,7 @@ const publicCatalogueDetailsFromGroups = (
   const details: PublicDescriptionDetails[] = [];
 
   for (const group of groups) {
-    const text = firstPublicCatalogueText(...group.values);
+    const text = firstPublicDescriptionText(...group.values);
     if (!text) continue;
 
     const key = normalizeComparableText(text);
