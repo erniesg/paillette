@@ -96,8 +96,7 @@ export function CaptionSourceToggle({
 
   if (!activeOption) return null;
 
-  const details =
-    activeOption.id === 'generated' ? [] : detailRows(activeOption.details);
+  const details = detailRows(activeOption.details);
 
   return (
     <section className={cn('space-y-3', className)}>

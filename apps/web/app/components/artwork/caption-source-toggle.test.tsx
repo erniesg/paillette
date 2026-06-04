@@ -39,9 +39,10 @@ describe('CaptionSourceToggle', () => {
       screen.getByText('Generated visual caption for search.')
     ).toBeVisible();
     expect(
-      screen.queryByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
-    ).toBeNull();
-    expect(screen.queryByText('Model')).toBeNull();
+      screen.getAllByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
+        .length
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText('Model').length).toBeGreaterThan(0);
     expect(screen.queryByText('Prompt')).toBeNull();
     expect(screen.queryByText('cap-ngs-missing-v1')).toBeNull();
     expect(
