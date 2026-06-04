@@ -23,7 +23,7 @@ type PublicTextSearchRequest = Required<SearchTextRequest>;
 
 export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
-export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '5';
+export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '7';
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
