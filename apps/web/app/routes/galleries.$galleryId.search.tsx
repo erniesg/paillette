@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent,
 } from 'react';
 import {
   useInfiniteQuery,
@@ -73,6 +74,17 @@ import {
   normalizeSearchQuery,
   type EvalSuggestion,
 } from '~/lib/search-suggestions';
+import {
+  CHUNG_CHENG_STATUE_MASK_IMAGE_URL,
+  getChungChengFeaturedArtwork,
+  isChungChengArtwork,
+  isChungChengFeatureSuggestion,
+} from '~/lib/featured-showcase';
+import {
+  buildZhongZhengAsciiParticles,
+  buildZhongZhengMaskParticles,
+  type ZhongZhengAsciiParticle,
+} from '~/lib/zhongzheng-ascii';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
 import {
   trackPublicUsageEvent,
@@ -1413,6 +1425,9 @@ export default function SearchPage() {
   );
   const isIdleShowcaseLoading =
     idleShowcaseQuery.isLoading || idleShowcaseQuery.isFetching;
+  const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
+  const isChungChengFeatureActive =
+    !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
 
   useEffect(() => {
     if (!hasMounted) return undefined;
@@ -1870,9 +1885,19 @@ export default function SearchPage() {
             className={
               hasActiveSearch
                 ? 'relative z-10 w-full'
-                : 'relative z-10 mx-auto w-full max-w-5xl py-12'
+                : `relative z-10 mx-auto w-full max-w-5xl ${
+                    isChungChengFeatureActive ? 'py-4 sm:py-6' : 'py-12'
+                  }`
             }
           >
+            {isChungChengFeatureActive && (
+              <ZhongZhengAsciiFeature
+                artwork={getChungChengFeaturedArtwork(idleShowcaseResults)}
+                isVisible
+                onSelectArtwork={selectArtwork}
+              />
+            )}
+
             <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
@@ -2738,9 +2763,23 @@ const IdleShowcaseBackdrop = forwardRef<
 ) {
   const transitionRunRef = useRef(0);
   const previewWorks = useMemo(
-    () =>
-      artworks.filter((artwork) => getShowcaseImageUrl(artwork)).slice(0, 4),
-    [artworks]
+    () => {
+      const imageableWorks = artworks.filter((artwork) =>
+        getShowcaseImageUrl(artwork)
+      );
+
+      if (isChungChengFeatureSuggestion(suggestion)) {
+        return [
+          getChungChengFeaturedArtwork(artworks),
+          ...imageableWorks
+            .filter((artwork) => !isChungChengArtwork(artwork))
+            .slice(0, 3),
+        ];
+      }
+
+      return imageableWorks.slice(0, 4);
+    },
+    [artworks, suggestion]
   );
   const previewSuggestionKey = suggestion ? getSuggestionKey(suggestion) : '';
   const previewKey = useMemo(() => {
@@ -2898,6 +2937,16 @@ function IdleShowcaseLayer({
   layout: ShowcaseLayoutItem[];
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
+  const isChungChengFeature = isChungChengFeatureSuggestion(layer.suggestion);
+  const showcaseWorks = isChungChengFeature
+    ? layer.works.filter((artwork) => !isChungChengArtwork(artwork))
+    : layer.works;
+  const showcaseItems = isChungChengFeature
+    ? getShowcaseItems(showcaseWorks).filter(
+        (artwork): artwork is ArtworkSearchResult => Boolean(artwork)
+      )
+    : getShowcaseItems(showcaseWorks);
+
   return (
     <div
       className={`absolute inset-0 ${
@@ -2913,7 +2962,7 @@ function IdleShowcaseLayer({
       data-showcase-layer={layer.key || 'empty'}
       data-showcase-suggestion={layer.suggestion?.query || ''}
     >
-      {getShowcaseItems(layer.works).map((artwork, index) => {
+      {showcaseItems.map((artwork, index) => {
         const itemLayout = layout[index];
         const image = artwork
           ? getArtworkImageSources(artwork, 'thumbnail')
@@ -2986,6 +3035,455 @@ function IdleShowcaseLayer({
         );
       })}
     </div>
+  );
+}
+
+const ZHONG_ZHENG_MATRIX_GLYPHS = ['中', '正', '人', '仁', '學', '德'] as const;
+const ZHONG_ZHENG_MASK_WIDTH = 360;
+const ZHONG_ZHENG_MASK_COLUMNS = 64;
+const ZHONG_ZHENG_MASK_MAX_PARTICLES = 680;
+const ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT = 3.5;
+const ZHONG_ZHENG_POINTER_PARTICLE_RADIUS_PERCENT = 7.5;
+const ZHONG_ZHENG_POINTER_CORE_RADIUS_PERCENT = 12;
+
+const getHighResolutionNow = () =>
+  typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+type ZhongZhengMaskState = {
+  particles: ZhongZhengAsciiParticle[];
+};
+
+const getDominantAlphaComponent = (
+  alpha: Uint8ClampedArray,
+  width: number,
+  height: number
+) => {
+  const visited = new Uint8Array(width * height);
+  const componentIds = new Int32Array(width * height);
+  componentIds.fill(-1);
+  const queue = new Int32Array(width * height);
+  const componentWeights: number[] = [];
+  const minAlpha = 34;
+  let componentId = 0;
+
+  for (let index = 0; index < alpha.length; index += 1) {
+    if (visited[index] || (alpha[index] ?? 0) < minAlpha) continue;
+
+    let head = 0;
+    let tail = 0;
+    let weight = 0;
+    visited[index] = 1;
+    queue[tail++] = index;
+
+    while (head < tail) {
+      const current = queue[head++] ?? 0;
+      const x = current % width;
+      const y = Math.floor(current / width);
+      componentIds[current] = componentId;
+      weight += alpha[current] || 0;
+
+      const neighbors: number[] = [
+        x > 0 ? current - 1 : -1,
+        x < width - 1 ? current + 1 : -1,
+        y > 0 ? current - width : -1,
+        y < height - 1 ? current + width : -1,
+      ];
+
+      neighbors.forEach((neighbor) => {
+        if (
+          neighbor >= 0 &&
+          !visited[neighbor] &&
+          (alpha[neighbor] || 0) >= minAlpha
+        ) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      });
+    }
+
+    componentWeights[componentId] = weight;
+    componentId += 1;
+  }
+
+  const dominantComponent = componentWeights.reduce(
+    (strongest, weight, index) =>
+      weight > strongest.weight ? { id: index, weight } : strongest,
+    { id: -1, weight: 0 }
+  );
+
+  return { componentIds, dominantComponentId: dominantComponent.id };
+};
+
+const extractZhongZhengMaskFromImage = (
+  image: HTMLImageElement
+): ZhongZhengMaskState | null => {
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  if (!naturalWidth || !naturalHeight) return null;
+
+  const width = ZHONG_ZHENG_MASK_WIDTH;
+  const height = Math.round((width * naturalHeight) / naturalWidth);
+  const sourceCanvas = document.createElement('canvas');
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  const sourceContext = sourceCanvas.getContext('2d', {
+    willReadFrequently: true,
+  });
+  if (!sourceContext) return null;
+
+  sourceContext.drawImage(image, 0, 0, width, height);
+
+  const imageData = sourceContext.getImageData(0, 0, width, height);
+  const rawAlpha = new Uint8ClampedArray(width * height);
+
+  for (let index = 0; index < rawAlpha.length; index += 1) {
+    const dataIndex = index * 4;
+    const red = imageData.data[dataIndex] || 0;
+    const green = imageData.data[dataIndex + 1] || 0;
+    const blue = imageData.data[dataIndex + 2] || 0;
+    const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+    const ink = clampNumber((248 - luma) / 78, 0, 1);
+    rawAlpha[index] =
+      ink < 0.09 ? 0 : Math.round(clampNumber(ink * 1.32, 0, 1) * 255);
+  }
+
+  const { componentIds, dominantComponentId } = getDominantAlphaComponent(
+    rawAlpha,
+    width,
+    height
+  );
+  if (dominantComponentId < 0) return null;
+
+  const alpha = new Uint8ClampedArray(width * height);
+
+  for (let index = 0; index < alpha.length; index += 1) {
+    const currentAlpha =
+      componentIds[index] === dominantComponentId ? rawAlpha[index] || 0 : 0;
+    const left = index % width > 0 ? rawAlpha[index - 1] || 0 : currentAlpha;
+    const right =
+      index % width < width - 1 ? rawAlpha[index + 1] || 0 : currentAlpha;
+    const top = index >= width ? rawAlpha[index - width] || 0 : currentAlpha;
+    const bottom =
+      index < alpha.length - width
+        ? rawAlpha[index + width] || 0
+        : currentAlpha;
+    const softenedAlpha = Math.round(
+      currentAlpha * 0.78 + ((left + right + top + bottom) / 4) * 0.22
+    );
+    alpha[index] = currentAlpha > 0 ? softenedAlpha : 0;
+  }
+
+  return {
+    particles: buildZhongZhengMaskParticles({
+      width,
+      height,
+      alpha,
+      columns: ZHONG_ZHENG_MASK_COLUMNS,
+      rows: Math.round((ZHONG_ZHENG_MASK_COLUMNS * height) / width),
+      maxParticles: ZHONG_ZHENG_MASK_MAX_PARTICLES,
+    }),
+  };
+};
+
+function ZhongZhengAsciiFeature({
+  artwork,
+  isVisible,
+  onSelectArtwork,
+}: {
+  artwork: ArtworkSearchResult;
+  isVisible: boolean;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  const fallbackParticles = useMemo(() => buildZhongZhengAsciiParticles(), []);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const stageRef = useRef<HTMLSpanElement | null>(null);
+  const [clock, setClock] = useState(0);
+  const [entranceStartedAt, setEntranceStartedAt] = useState<number | null>(
+    null
+  );
+  const [pointer, setPointerState] = useState({
+    x: 50,
+    y: 46,
+    active: false,
+  });
+  const [maskState, setMaskState] = useState<ZhongZhengMaskState | null>(null);
+  const [maskLoadFailed, setMaskLoadFailed] = useState(false);
+  const particles =
+    maskState?.particles ?? (maskLoadFailed ? fallbackParticles : []);
+  const pointerRef = useRef(pointer);
+  const title = getDisplayTitle(artwork);
+  const setPointer = useCallback(
+    (nextPointer: { x: number; y: number; active: boolean }) => {
+      pointerRef.current = nextPointer;
+      setPointerState(nextPointer);
+    },
+    []
+  );
+  const deactivatePointer = useCallback(() => {
+    const currentPointer = pointerRef.current;
+    if (currentPointer.active) {
+      setPointer({ ...currentPointer, active: false });
+    }
+  }, [setPointer]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const nextMaskState = extractZhongZhengMaskFromImage(image);
+        if (!cancelled && nextMaskState) {
+          setMaskState(nextMaskState);
+          setMaskLoadFailed(false);
+        } else if (!cancelled) {
+          setMaskLoadFailed(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setMaskLoadFailed(true);
+        }
+      }
+    };
+    image.onerror = () => {
+      if (!cancelled) {
+        setMaskLoadFailed(true);
+      }
+    };
+    image.src = CHUNG_CHENG_STATUE_MASK_IMAGE_URL;
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    let lastTick = 0;
+    const startedAt = getHighResolutionNow();
+    setEntranceStartedAt(startedAt);
+    setClock(startedAt);
+
+    const tick = (timestamp: number) => {
+      if (timestamp - lastTick > 40) {
+        lastTick = timestamp;
+        setClock(timestamp);
+      }
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+
+    animationFrame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, []);
+
+  useEffect(() => {
+    if (particles.length === 0) return;
+
+    const startedAt = getHighResolutionNow();
+    setEntranceStartedAt(startedAt);
+    setClock(startedAt);
+  }, [particles.length]);
+
+  useEffect(() => {
+    const handleWindowPointerMove = (event: WindowEventMap['pointermove']) => {
+      if (!pointerRef.current.active) return;
+
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const isInside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+
+      if (!isInside) deactivatePointer();
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove, {
+      passive: true,
+    });
+    return () =>
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+  }, [deactivatePointer]);
+
+  const handlePointerMove = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      const rect =
+        stageRef.current?.getBoundingClientRect() ||
+        event.currentTarget.getBoundingClientRect();
+      const rawX = ((event.clientX - rect.left) / rect.width) * 100;
+      const rawY = ((event.clientY - rect.top) / rect.height) * 100;
+
+      const isNearFrame =
+        rawX >= -ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
+        rawX <= 100 + ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
+        rawY >= -ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
+        rawY <= 100 + ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT;
+
+      if (!isNearFrame || particles.length === 0) {
+        deactivatePointer();
+        return;
+      }
+
+      const nextX = clampNumber(rawX, 0, 100);
+      const nextY = clampNumber(rawY, 0, 100);
+      const nearestParticleDistance = particles.reduce(
+        (nearestDistance, particle) =>
+          Math.min(
+            nearestDistance,
+            Math.sqrt((particle.x - nextX) ** 2 + (particle.y - nextY) ** 2)
+          ),
+        Infinity
+      );
+
+      if (
+        nearestParticleDistance > ZHONG_ZHENG_POINTER_PARTICLE_RADIUS_PERCENT
+      ) {
+        deactivatePointer();
+        return;
+      }
+
+      setPointer({ x: nextX, y: nextY, active: true });
+    },
+    [deactivatePointer, particles, setPointer]
+  );
+
+  return (
+    <button
+      type="button"
+      ref={buttonRef}
+      disabled={!isVisible}
+      onClick={() => onSelectArtwork(artwork)}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={deactivatePointer}
+      onPointerCancel={deactivatePointer}
+      onLostPointerCapture={deactivatePointer}
+      onBlur={deactivatePointer}
+      className="chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
+      aria-label={`View ${title} artwork details`}
+      data-pointer-active={pointer.active ? 'true' : 'false'}
+      data-particle-source={maskState ? 'image-alpha-mask' : 'ascii-fallback'}
+    >
+      <span className="chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]">
+        <span
+          ref={stageRef}
+          className="chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(76vw,25rem)] -translate-x-1/2 sm:w-[min(58vw,27rem)]"
+        >
+          <span className="chung-cheng-ascii-statue-orbit absolute inset-0 block">
+            <span className="chung-cheng-ascii-statue absolute inset-0 block">
+              {particles.map((particle) => {
+                const pointerDistance = pointer.active
+                  ? Math.sqrt(
+                      (particle.x - pointer.x) ** 2 +
+                        (particle.y - pointer.y) ** 2
+                    )
+                  : Infinity;
+                const pointerCore = pointer.active
+                  ? Math.max(
+                      0,
+                      1 -
+                        (pointerDistance /
+                          ZHONG_ZHENG_POINTER_CORE_RADIUS_PERCENT) **
+                          1.45
+                    )
+                  : 0;
+                const influence = clampNumber(pointerCore, 0, 1);
+                const entranceProgress =
+                  entranceStartedAt === null
+                    ? 0
+                    : clampNumber(
+                        (clock -
+                          entranceStartedAt -
+                          (particle.y * 4.8 + (particle.phase % 95))) /
+                          680,
+                        0,
+                        1
+                      );
+                const entranceEase =
+                  1 - (1 - entranceProgress) * (1 - entranceProgress);
+                const matrixIndex =
+                  Math.floor(
+                    particle.phase +
+                      pointer.x * 0.17 +
+                      pointer.y * 0.11 +
+                      influence * 9
+                  ) % ZHONG_ZHENG_MATRIX_GLYPHS.length;
+                const matrixGlyph =
+                  ZHONG_ZHENG_MATRIX_GLYPHS[matrixIndex] || particle.zh;
+                const isMorphed = influence > 0.57;
+                const isMatrix = influence > 0.22;
+                const wave =
+                  ((
+                    particle.phase +
+                    particle.z * 2 +
+                    pointer.x * 0.28 +
+                    pointer.y * 0.18
+                  ) *
+                    Math.PI) /
+                  180;
+                const waveX = Math.cos(wave) * influence * 7;
+                const waveY = Math.sin(wave * 1.18) * influence * 9;
+                const pointerParallaxX = pointer.active
+                  ? (pointer.x - 50) * particle.z * 0.006
+                  : 0;
+                const pointerParallaxY = pointer.active
+                  ? (pointer.y - 50) * particle.z * 0.0035
+                  : 0;
+                const scale =
+                  (particle.scale + influence * 0.28) *
+                  (0.88 + entranceEase * 0.12);
+                const opacity =
+                  clampNumber(
+                    0.18 + particle.shade * 0.34 + influence * 0.3,
+                    0.22,
+                    0.9
+                  ) * entranceEase;
+                const entranceY = (1 - entranceEase) * 10;
+
+                return (
+                  <span
+                    key={particle.id}
+                    aria-hidden="true"
+                    className="chung-cheng-ascii-particle absolute font-mono text-[clamp(4.2px,1.16vw,7.2px)] font-semibold leading-none tracking-normal"
+                    data-effect={
+                      isMorphed ? 'morphed' : isMatrix ? 'matrix' : 'base'
+                    }
+                    style={{
+                      left: `${particle.x}%`,
+                      top: `${particle.y}%`,
+                      opacity,
+                      transform: `translate3d(calc(-50% + ${(
+                        waveX + pointerParallaxX
+                      ).toFixed(2)}px), calc(-50% + ${(
+                        waveY + pointerParallaxY + entranceY
+                      ).toFixed(2)}px), ${(particle.z + influence * 28).toFixed(
+                        2
+                      )}px) scale(${scale.toFixed(3)})`,
+                    }}
+                  >
+                    {isMorphed
+                      ? particle.zh
+                      : isMatrix
+                        ? matrixGlyph
+                        : particle.en}
+                  </span>
+                );
+              })}
+            </span>
+          </span>
+        </span>
+      </span>
+      <span className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
+        <span className="truncate">Zhong Zheng Ren</span>
+        <span className="text-white/25">/</span>
+        <span>中正人</span>
+        <span className="text-white/25">/</span>
+        <span>2019-00754</span>
+      </span>
+    </button>
   );
 }
 

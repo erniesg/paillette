@@ -117,6 +117,88 @@
     color 180ms ease;
 }
 
+.chung-cheng-ascii-button {
+  perspective: 1400px;
+  touch-action: manipulation;
+}
+
+.chung-cheng-ascii-stage {
+  contain: layout paint style;
+}
+
+.chung-cheng-ascii-statue-frame {
+  filter:
+    drop-shadow(0 34px 64px rgb(125 211 252 / 0.14))
+    drop-shadow(0 2px 18px rgb(217 249 157 / 0.1));
+  transform-style: preserve-3d;
+}
+
+.chung-cheng-ascii-statue-orbit {
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  animation: chung-cheng-statue-depth-turn 9.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.chung-cheng-ascii-statue {
+  filter: drop-shadow(0 2px 16px rgb(125 211 252 / 0.18));
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.chung-cheng-ascii-particle {
+  color: rgb(207 250 254 / 0.72);
+  mix-blend-mode: screen;
+  text-shadow: 0 0 14px rgb(125 211 252 / 0.3);
+  transition:
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    text-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.chung-cheng-ascii-particle[data-effect='matrix'] {
+  color: rgb(187 247 208 / 0.82);
+  text-shadow:
+    0 0 10px rgb(134 239 172 / 0.34),
+    0 0 22px rgb(125 211 252 / 0.22);
+}
+
+.chung-cheng-ascii-particle[data-effect='morphed'] {
+  color: rgb(251 207 232 / 0.9);
+  text-shadow:
+    0 0 12px rgb(244 114 182 / 0.45),
+    0 0 26px rgb(125 211 252 / 0.25);
+}
+
+@keyframes chung-cheng-statue-depth-turn {
+  0% {
+    transform: rotateY(-8deg) rotateX(4deg) rotateZ(-0.7deg) scale(1.04);
+  }
+
+  45% {
+    transform: rotateY(9deg) rotateX(-2deg) rotateZ(0.6deg) scale(1.055);
+  }
+
+  100% {
+    transform: rotateY(-8deg) rotateX(4deg) rotateZ(-0.7deg) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chung-cheng-ascii-statue-orbit {
+    animation: none;
+  }
+
+  .chung-cheng-ascii-particle {
+    transition: none;
+  }
+}
+
 html[data-theme='light'] .themeable-surface {
   background: var(--app-bg) !important;
   color: var(--app-text) !important;
