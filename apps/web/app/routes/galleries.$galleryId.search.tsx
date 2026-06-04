@@ -1660,6 +1660,12 @@ export default function SearchPage() {
                 <Logo size="sm" framed />
               </Link>
             </div>
+            <Link
+              to="/about"
+              className="text-sm font-medium text-white/55 transition-colors hover:text-white"
+            >
+              About
+            </Link>
           </div>
           <nav className="flex items-center gap-2">
             {isAuthenticated ? (
