@@ -3245,22 +3245,6 @@ export default function ApiDocsPage() {
           </select>
           <button
             type="button"
-            onClick={() => void copyText('docs-markdown', docsMarkdown)}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-2.5 text-xs text-[var(--app-muted-strong)] transition hover:border-[var(--app-line-strong)] hover:text-[var(--app-text)] max-[620px]:px-2"
-            aria-label="Copy API docs as Markdown"
-            title="Copy API docs as Markdown"
-          >
-            {copiedValue === 'docs-markdown' ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" />
-            )}
-            <span className="max-[1080px]:hidden">
-              {copiedValue === 'docs-markdown' ? 'Copied' : 'Copy MD'}
-            </span>
-          </button>
-          <button
-            type="button"
             onClick={toggleTheme}
             className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--app-line)] bg-[var(--app-control)] text-[var(--app-muted-strong)] transition hover:border-[var(--app-line-strong)] hover:text-[var(--app-text)] max-[520px]:h-8 max-[520px]:w-8"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
@@ -3422,6 +3406,21 @@ function StartSections({
           source discovery and collection reads work without a key; search,
           artwork lookup, translation, extract, and management writes require
           one.
+        </p>
+        <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
+          MCP clients connect to <CodeText>/api/v1/mcp</CodeText> using
+          Streamable HTTP JSON-RPC. Protected resource metadata is exposed at{' '}
+          <CodeText>/.well-known/oauth-protected-resource</CodeText> and{' '}
+          <CodeText>/.well-known/oauth-protected-resource/api/v1/mcp</CodeText>.
+        </p>
+        <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
+          API keys can call all available MCP tools. OAuth tokens need{' '}
+          <CodeText>mcp:all</CodeText> or matching grouped scopes such as{' '}
+          <CodeText>mcp:read</CodeText>, <CodeText>mcp:write</CodeText>,{' '}
+          <CodeText>artworks:read</CodeText>,{' '}
+          <CodeText>collections:write</CodeText>,{' '}
+          <CodeText>translations:create</CodeText>, or{' '}
+          <CodeText>extract:create</CodeText>.
         </p>
       </section>
 
