@@ -25,6 +25,9 @@ const MCP_ALL_SCOPE = 'mcp:all';
 const MCP_READ_SCOPE = 'mcp:read';
 const MCP_WRITE_SCOPE = 'mcp:write';
 const ARTWORKS_READ_SCOPE = 'artworks:read';
+const ARTWORKS_WRITE_SCOPE = 'artworks:write';
+const COLLECTIONS_READ_SCOPE = 'collections:read';
+const COLLECTIONS_WRITE_SCOPE = 'collections:write';
 const TRANSLATIONS_CREATE_SCOPE = 'translations:create';
 const EXTRACT_CREATE_SCOPE = 'extract:create';
 const MCP_SCOPES_SUPPORTED = [
@@ -32,6 +35,9 @@ const MCP_SCOPES_SUPPORTED = [
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
   ARTWORKS_READ_SCOPE,
+  ARTWORKS_WRITE_SCOPE,
+  COLLECTIONS_READ_SCOPE,
+  COLLECTIONS_WRITE_SCOPE,
   TRANSLATIONS_CREATE_SCOPE,
   EXTRACT_CREATE_SCOPE,
 ];
@@ -116,6 +122,49 @@ const ExtractImagesArgsSchema = z.object({
 
 const ListOrgsArgsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
+});
+
+const ListCollectionsArgsSchema = z.object({
+  orgId: z.string().optional(),
+  collection: z.string().optional(),
+});
+
+const UpsertCollectionArgsSchema = z.object({
+  orgId: z.string().optional(),
+  collection: z.string().optional(),
+  collectionId: z.string().trim().min(1).max(160).optional(),
+  name: z.string().trim().min(1).max(255),
+  description: z.string().max(2000).nullable().optional(),
+  thumbnailArtworkId: z.string().trim().min(1).max(160).nullable().optional(),
+});
+
+const UpsertArtworkRecordArgsSchema = z.object({
+  orgId: z.string().optional(),
+  collection: z.string().optional(),
+  id: z.string().trim().min(1).max(160).optional(),
+  collectionId: z.string().trim().min(1).max(160).nullable().optional(),
+  title: z.string().trim().min(1).max(500).optional(),
+  artist: z.string().max(255).nullable().optional(),
+  year: z.number().int().min(0).max(9999).nullable().optional(),
+  medium: z.string().max(255).nullable().optional(),
+  description: z.string().max(5000).nullable().optional(),
+  accessionNumber: z.string().max(255).nullable().optional(),
+  sourceInstitution: z.string().max(255).nullable().optional(),
+  sourceCollection: z.string().max(255).nullable().optional(),
+  sourceRecordId: z.string().max(255).nullable().optional(),
+  sourceUrl: z.string().url().nullable().optional(),
+  imageUrl: z.string().url().nullable().optional(),
+  thumbnailUrl: z.string().url().nullable().optional(),
+  fieldSources: z.record(z.any()).optional(),
+  customMetadata: z.record(z.any()).optional(),
+});
+
+const CollectionArtworkArgsSchema = z.object({
+  orgId: z.string().optional(),
+  collection: z.string().optional(),
+  collectionId: z.string().trim().min(1).max(160),
+  artworkId: z.string().trim().min(1).max(160),
+  position: z.number().int().min(0).optional().default(0),
 });
 
 const tools = [
@@ -246,6 +295,127 @@ const tools = [
         },
       },
       required: ['colors'],
+    },
+  },
+  {
+    name: 'list_collections',
+    title: 'List collections',
+    requiredScopeGroups: [[MCP_READ_SCOPE], [COLLECTIONS_READ_SCOPE]],
+    description:
+      'List collections for a Paillette org, gallery, or public collection key.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orgId: {
+          type: 'string',
+          default: NGS_ORG_KEY,
+        },
+        collection: {
+          type: 'string',
+          default: NGS_ORG_KEY,
+          description: 'Alias for orgId.',
+        },
+      },
+    },
+  },
+  {
+    name: 'upsert_collection',
+    title: 'Upsert collection',
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [COLLECTIONS_WRITE_SCOPE]],
+    description:
+      'Create or update a collection inside an org. Provide collectionId to make the operation idempotent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orgId: { type: 'string', default: NGS_ORG_KEY },
+        collection: {
+          type: 'string',
+          default: NGS_ORG_KEY,
+          description: 'Alias for orgId.',
+        },
+        collectionId: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: ['string', 'null'] },
+        thumbnailArtworkId: { type: ['string', 'null'] },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'upsert_artwork_record',
+    title: 'Upsert artwork record',
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [ARTWORKS_WRITE_SCOPE]],
+    description:
+      'Create or update an artwork metadata record by id, source record id, or accession number.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orgId: { type: 'string', default: NGS_ORG_KEY },
+        collection: {
+          type: 'string',
+          default: NGS_ORG_KEY,
+          description: 'Alias for orgId.',
+        },
+        id: { type: 'string' },
+        collectionId: { type: ['string', 'null'] },
+        title: { type: 'string' },
+        artist: { type: ['string', 'null'] },
+        year: { type: ['integer', 'null'] },
+        medium: { type: ['string', 'null'] },
+        description: { type: ['string', 'null'] },
+        accessionNumber: { type: ['string', 'null'] },
+        sourceInstitution: { type: ['string', 'null'] },
+        sourceCollection: { type: ['string', 'null'] },
+        sourceRecordId: { type: ['string', 'null'] },
+        sourceUrl: { type: ['string', 'null'] },
+        imageUrl: { type: ['string', 'null'] },
+        thumbnailUrl: { type: ['string', 'null'] },
+        fieldSources: { type: 'object' },
+        customMetadata: { type: 'object' },
+      },
+    },
+  },
+  {
+    name: 'add_artwork_to_collection',
+    title: 'Add artwork to collection',
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [COLLECTIONS_WRITE_SCOPE]],
+    description:
+      'Attach an artwork record to a collection within the same org.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orgId: { type: 'string', default: NGS_ORG_KEY },
+        collection: {
+          type: 'string',
+          default: NGS_ORG_KEY,
+          description: 'Alias for orgId.',
+        },
+        collectionId: { type: 'string' },
+        artworkId: { type: 'string' },
+        position: { type: 'integer', minimum: 0, default: 0 },
+      },
+      required: ['collectionId', 'artworkId'],
+    },
+  },
+  {
+    name: 'remove_artwork_from_collection',
+    title: 'Remove artwork from collection',
+    requiredScopeGroups: [[MCP_WRITE_SCOPE], [COLLECTIONS_WRITE_SCOPE]],
+    description:
+      'Detach an artwork record from a collection within the same org.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orgId: { type: 'string', default: NGS_ORG_KEY },
+        collection: {
+          type: 'string',
+          default: NGS_ORG_KEY,
+          description: 'Alias for orgId.',
+        },
+        collectionId: { type: 'string' },
+        artworkId: { type: 'string' },
+      },
+      required: ['collectionId', 'artworkId'],
     },
   },
   {
@@ -507,6 +677,103 @@ const callTool = async (
           threshold: input.threshold,
           limit: input.limit,
         }),
+      }
+    );
+    return asToolContent(data);
+  }
+
+  if (name === 'list_collections') {
+    const input = ListCollectionsArgsSchema.parse(args ?? {});
+    const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    const data = await callApi(
+      c,
+      `/orgs/${encodeURIComponent(collection)}/collections`
+    );
+    return asToolContent({ collections: data });
+  }
+
+  if (name === 'upsert_collection') {
+    const input = UpsertCollectionArgsSchema.parse(args ?? {});
+    const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    const data = await callApi(
+      c,
+      `/orgs/${encodeURIComponent(collection)}/collections/upsert`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: input.collectionId,
+          name: input.name,
+          description: input.description,
+          thumbnail_artwork_id: input.thumbnailArtworkId,
+        }),
+      }
+    );
+    return asToolContent(data);
+  }
+
+  if (name === 'upsert_artwork_record') {
+    const input = UpsertArtworkRecordArgsSchema.parse(args ?? {});
+    const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    const data = await callApi(
+      c,
+      `/orgs/${encodeURIComponent(collection)}/artworks/upsert`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: input.id,
+          collection_id: input.collectionId,
+          title: input.title,
+          artist: input.artist,
+          year: input.year,
+          medium: input.medium,
+          description: input.description,
+          accession_number: input.accessionNumber,
+          source_institution: input.sourceInstitution,
+          source_collection: input.sourceCollection,
+          source_record_id: input.sourceRecordId,
+          source_url: input.sourceUrl,
+          image_url: input.imageUrl,
+          thumbnail_url: input.thumbnailUrl,
+          field_sources: input.fieldSources,
+          custom_metadata: input.customMetadata,
+        }),
+      }
+    );
+    return asToolContent(data);
+  }
+
+  if (name === 'add_artwork_to_collection') {
+    const input = CollectionArtworkArgsSchema.parse(args ?? {});
+    const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    const data = await callApi(
+      c,
+      `/orgs/${encodeURIComponent(collection)}/collections/${encodeURIComponent(
+        input.collectionId
+      )}/artworks`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artwork_id: input.artworkId,
+          position: input.position,
+        }),
+      }
+    );
+    return asToolContent(data);
+  }
+
+  if (name === 'remove_artwork_from_collection') {
+    const input = CollectionArtworkArgsSchema.parse(args ?? {});
+    const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    const data = await callApi(
+      c,
+      `/orgs/${encodeURIComponent(collection)}/collections/${encodeURIComponent(
+        input.collectionId
+      )}/artworks/${encodeURIComponent(input.artworkId)}`,
+      {
+        method: 'DELETE',
       }
     );
     return asToolContent(data);

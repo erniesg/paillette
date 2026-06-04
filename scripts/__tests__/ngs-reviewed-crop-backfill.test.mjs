@@ -146,6 +146,128 @@ describe('selectReviewedCropsForBackfill', () => {
     });
   });
 
+  it('uses accepted rows from the exported crop review submission format', () => {
+    const selected = selectReviewedCropsForBackfill({
+      reviewDir: '/tmp/review',
+      decisionsPayload: {
+        rows: [
+          {
+            id: '2013-00306',
+            title: 'Legends - Lu YanShao #4',
+            artist: 'Chua Soo Bin',
+            date: '1985-1988',
+            medium: 'Inkjet print',
+            cropAction: 'crop',
+            cropChoice: 'generated:snap-rectangle',
+            cropChoiceLabel: 'snapped rectangle',
+            cropNativeCropBox: '155,103,1009,697',
+            cropSourceUrl:
+              'roots-image-atlas/roots-source-assets/2013-00306.jpg',
+            cropSourceWidth: 1200,
+            cropSourceHeight: 798,
+            cropOutputWidth: 854,
+            cropOutputHeight: 594,
+            cropReview: {
+              decision: 'accept',
+              choice: 'generated:snap-rectangle',
+              choiceLabel: 'snapped rectangle',
+              box: [155, 103, 1009, 697],
+              cropMetadata: {
+                sourceUrl:
+                  'roots-image-atlas/roots-source-assets/2013-00306.jpg',
+                sourceWidth: 1200,
+                sourceHeight: 798,
+                nativeCropBox: [155, 103, 1009, 697],
+                cropWidth: 854,
+                cropHeight: 594,
+                autoTrimBackground: false,
+                previewCanvasIsNotOutput: true,
+              },
+              activeResult: {
+                method: 'snap-rectangle',
+                box: [155, 103, 1009, 697],
+                cropUrl: null,
+                overlayUrl: null,
+              },
+            },
+          },
+          {
+            id: '2011-00017',
+            cropAction: 'reject',
+            cropReview: { decision: 'reject' },
+          },
+          {
+            id: 'GI-0002',
+            cropAction: 'unreviewed',
+          },
+        ],
+      },
+      rows: [],
+      exists: (path) =>
+        path ===
+        '/tmp/review/roots-image-atlas/roots-source-assets/2013-00306.jpg',
+    });
+
+    assert.equal(selected.length, 1);
+    assert.equal(selected[0].id, '2013-00306');
+    assert.equal(selected[0].dateText, '1985-1988');
+    assert.equal(selected[0].selectedImage.kind, 'review_source_native_crop');
+    assert.equal(
+      selected[0].selectedImage.path,
+      '/tmp/review/roots-image-atlas/roots-source-assets/2013-00306.jpg'
+    );
+    assert.equal(selected[0].selectedImage.reviewCropUrl, null);
+    assert.deepEqual(selected[0].selectedImage.reviewBox, [
+      155, 103, 1009, 697,
+    ]);
+    assert.deepEqual(selected[0].selectedImage.reviewSource, {
+      path: '/tmp/review/roots-image-atlas/roots-source-assets/2013-00306.jpg',
+      sourceUrl: 'roots-image-atlas/roots-source-assets/2013-00306.jpg',
+      width: 1200,
+      height: 798,
+      box: [155, 103, 1009, 697],
+    });
+  });
+
+  it('falls back to cropAction crop when the export has no decisions map', () => {
+    const selected = selectReviewedCropsForBackfill({
+      reviewDir: '/tmp/review',
+      decisionsPayload: {
+        rows: [
+          {
+            id: 'accepted-row',
+            cropAction: 'crop',
+            cropChoice: 'generated:point-rectangle',
+            cropChoiceLabel: 'point rectangle',
+            cropNativeCropBox: '10,20,110,220',
+            cropSourceUrl: 'roots-image-atlas/roots-source-assets/a.jpg',
+            cropSourceWidth: 200,
+            cropSourceHeight: 300,
+          },
+          {
+            id: 'rejected-row',
+            cropAction: 'reject',
+            cropNativeCropBox: '1,2,3,4',
+            cropSourceUrl: 'roots-image-atlas/roots-source-assets/b.jpg',
+          },
+        ],
+      },
+      rows: [],
+      exists: (path) =>
+        path === '/tmp/review/roots-image-atlas/roots-source-assets/a.jpg',
+    });
+
+    assert.equal(selected.length, 1);
+    assert.equal(selected[0].id, 'accepted-row');
+    assert.equal(
+      selected[0].selectedImage.reviewChoice,
+      'generated:point-rectangle'
+    );
+    assert.deepEqual(selected[0].selectedImage.reviewBox, [
+      10, 20, 110, 220,
+    ]);
+  });
+
   it('fails loud when an accepted review choice has no crop asset', () => {
     assert.throws(
       () =>

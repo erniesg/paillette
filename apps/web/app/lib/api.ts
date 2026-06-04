@@ -96,8 +96,7 @@ const sanitizeGeneratedCaptionRecord = (record: unknown) => {
     return record;
   }
 
-  const { model: _model, ...caption } = record as Record<string, unknown>;
-  return caption;
+  return { ...(record as Record<string, unknown>) };
 };
 
 const sanitizeArtworkMetadata = (metadata: Record<string, any>) => {

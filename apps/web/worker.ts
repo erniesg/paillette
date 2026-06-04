@@ -9,6 +9,14 @@ type Env = {
   LOGTO_ENDPOINT?: string;
   LOGTO_APP_ID?: string;
   LOGTO_API_RESOURCE?: string;
+  RESEND_API_KEY?: string;
+  PAILLETTE_FEEDBACK_FROM?: string;
+  PAILLETTE_FEEDBACK_TO?: string;
+  PAILLETTE_FEEDBACK_DISCORD_WEBHOOK_URL?: string;
+  PAILLETTE_FEEDBACK_DISCORD_MENTION?: string;
+  CODEX_DISCORD_WEBHOOK_URL?: string;
+  DISCORD_WEBHOOK_URL?: string;
+  DISCORD_WEBHOOK?: string;
 };
 
 const serverBuild = {

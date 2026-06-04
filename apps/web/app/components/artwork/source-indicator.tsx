@@ -38,11 +38,10 @@ const toneClasses: Record<SourceTone, string> = {
 const cleanSourceLabel = (label: string) =>
   label.replace(/^from\s+/i, '').trim();
 
-const shouldShowDetailRow = ([label, value]: SourceIndicatorDetailRow) =>
+const shouldShowDetailRow = ([, value]: SourceIndicatorDetailRow) =>
   value !== null &&
   value !== undefined &&
-  value !== '' &&
-  label.trim().toLowerCase() !== 'model';
+  value !== '';
 
 export const getSourceIndicatorDetails = (label: string): SourceDetails => {
   const title = cleanSourceLabel(label) || 'Source metadata';

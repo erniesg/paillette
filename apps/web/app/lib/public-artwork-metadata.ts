@@ -576,7 +576,31 @@ const getExplicitNgsThumbnailUrl = (artwork: PublicArtwork) => {
   );
 };
 
+const getExplicitRootsImageUrl = (artwork: PublicArtwork) => {
+  if (shouldSuppressRootsRecord(artwork)) return null;
+
+  const meta = getPublicMetadata(artwork);
+  const sourceRecords = getSourceRecords(artwork);
+  const rootsRecord = asRecord(sourceRecords.roots);
+
+  return firstMatchingText(
+    isRootsUrl,
+    meta.roots_image_url,
+    meta.rootsImageUrl,
+    rootsRecord.imageUrl,
+    rootsRecord.image_url,
+    rootsRecord.thumbnailUrl,
+    rootsRecord.thumbnail_url,
+    rootsRecord.img
+  );
+};
+
+const getExplicitRootsThumbnailUrl = (artwork: PublicArtwork) =>
+  getExplicitRootsImageUrl(artwork);
+
 export const getPublicImageUrl = (artwork: PublicArtwork) => {
+  const rootsImageUrl = getExplicitRootsImageUrl(artwork);
+
   if (hasKnownNgsNoImagePlaceholder(artwork)) {
     return null;
   }
@@ -585,10 +609,16 @@ export const getPublicImageUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsImageUrl(artwork);
   }
 
-  return getStandardImageUrl(artwork) || getExplicitNgsImageUrl(artwork);
+  return (
+    getStandardImageUrl(artwork) ||
+    getExplicitNgsImageUrl(artwork) ||
+    rootsImageUrl
+  );
 };
 
 export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
+  const rootsThumbnailUrl = getExplicitRootsThumbnailUrl(artwork);
+
   if (hasKnownNgsNoImagePlaceholder(artwork)) {
     return null;
   }
@@ -597,7 +627,11 @@ export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsThumbnailUrl(artwork);
   }
 
-  return getStandardThumbnailUrl(artwork) || getExplicitNgsThumbnailUrl(artwork);
+  return (
+    getStandardThumbnailUrl(artwork) ||
+    getExplicitNgsThumbnailUrl(artwork) ||
+    rootsThumbnailUrl
+  );
 };
 
 const getPublicMediumText = (artwork: PublicArtwork) => {
@@ -827,12 +861,33 @@ export const getGeneratedCaptionText = (artwork: PublicArtwork) => {
   const caption = meta.generated_caption || meta.generatedCaption;
   const fieldSources = getPublicFieldSources(artwork);
   const captionSource = getFieldSourceLabel(fieldSources, 'caption');
+  const captionRecord = getGeneratedCaptionRecord(artwork);
 
   if (typeof caption === 'string') return caption.trim() || null;
   return (
-    asText(getGeneratedCaptionRecord(artwork).text) ||
+    asText(captionRecord.text) ||
+    asText(captionRecord.caption) ||
+    asText(captionRecord.description) ||
+    asText(captionRecord.generated_text) ||
+    asText(captionRecord.generatedText) ||
     (isAiSourceLabel(captionSource) ? asText(meta.caption) : null)
   );
+};
+
+export const getGeneratedCaptionModel = (artwork: PublicArtwork) => {
+  const captionRecord = getGeneratedCaptionRecord(artwork);
+
+  return firstText(
+    captionRecord.model,
+    captionRecord.model_name,
+    captionRecord.modelName
+  );
+};
+
+export const getGeneratedCaptionModelDetails = (artwork: PublicArtwork) => {
+  const model = getGeneratedCaptionModel(artwork);
+
+  return model ? ([['Model', model]] as Array<[string, unknown]>) : [];
 };
 
 export const getSourceRecords = (

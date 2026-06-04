@@ -19,6 +19,7 @@
     "LOGTO_ENDPOINT": "https://m2fmae.logto.app/",
     "LOGTO_APP_ID": "zsrsuc0jkv9zhinog3bx5",
     "LOGTO_API_RESOURCE": "https://paillette-api.berlayar.ai",
+    "PAILLETTE_FEEDBACK_FROM": "Paillette <noreply@berlayar.ai>",
   },
   "env": {
     "staging": {
@@ -39,6 +40,7 @@
         "LOGTO_ENDPOINT": "https://m2fmae.logto.app/",
         "LOGTO_APP_ID": "zsrsuc0jkv9zhinog3bx5",
         "LOGTO_API_RESOURCE": "https://paillette-api-stg.berlayar.ai",
+        "PAILLETTE_FEEDBACK_FROM": "Paillette <noreply@berlayar.ai>",
       },
     },
   },

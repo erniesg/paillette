@@ -168,6 +168,26 @@ const searchQueryTokens = (query: string) =>
       (token) => token && token.length > 1 && !SEARCH_CONTROL_WORDS.has(token)
     );
 
+const normalizeArtistFacetQuery = (query: string) =>
+  normalizeSearchWords(
+    query
+      .replace(/\([^)]*(?:\d{3,4}|born|died|b\.|d\.)[^)]*\)/gi, ' ')
+      .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
+  );
+
+const artistFacetTokens = (query: string) =>
+  normalizeArtistFacetQuery(query)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(
+      (token) =>
+        token &&
+        token.length > 1 &&
+        !SEARCH_CONTROL_WORDS.has(token) &&
+        !/^\d{3,4}$/.test(token)
+    )
+    .slice(0, 8);
+
 const backableSearchSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId) ? BACKABLE_NGS_PUBLIC_ARTWORK_SQL : '';
 
@@ -1034,6 +1054,141 @@ async function searchArtworksByMetadata(
   );
 }
 
+async function searchArtworksByArtistFacet(
+  db: D1Database,
+  orgId: string | undefined,
+  query: string,
+  topK: number
+): Promise<ArtworkSearchResult[]> {
+  const normalizedQuery = normalizeArtistFacetQuery(query);
+  const tokens = artistFacetTokens(query);
+  if (!normalizedQuery || tokens.length === 0) {
+    return [];
+  }
+
+  const artistText = normalizedTextSql('artist');
+  const phraseQuery = `% ${escapeLike(normalizedQuery)} %`;
+  const tokenQueries = tokens.map((token) => `% ${escapeLike(token)} %`);
+  const tokenScoreSql = tokenQueries
+    .map(() => `CASE WHEN ${artistText} LIKE ? ESCAPE '\\' THEN 6 ELSE 0 END`)
+    .join(' + ');
+  const tokenWhereSql = tokenQueries
+    .map(() => `${artistText} LIKE ? ESCAPE '\\'`)
+    .join(' AND ');
+  const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const whereSql = `AND (${artistText} LIKE ? ESCAPE '\\' OR (${tokenWhereSql}))`;
+  const params = [
+    normalizedQuery,
+    phraseQuery,
+    ...tokenQueries,
+    ...(orgId ? [orgId] : []),
+    phraseQuery,
+    ...tokenQueries,
+    topK,
+  ];
+
+  const { results } = await db
+    .prepare(
+      `
+    SELECT
+      id,
+      org_id,
+      title,
+      artist,
+      year,
+      date_text,
+      medium,
+      classification,
+      culture,
+      origin,
+      dimensions_height,
+      dimensions_width,
+      dimensions_depth,
+      dimensions_unit,
+      description,
+      provenance,
+      credit_line,
+      rights,
+      accession_number,
+      source_url,
+      source_institution,
+      source_collection,
+      source_record_id,
+      field_sources,
+      dominant_colors,
+      color_palette,
+      citation,
+      image_url,
+      thumbnail_url,
+      custom_metadata,
+      (
+        CASE WHEN lower(trim(coalesce(artist, ''))) = ? THEN 120 ELSE 0 END +
+        CASE WHEN ${artistText} LIKE ? ESCAPE '\\' THEN 100 ELSE 0 END +
+        ${tokenScoreSql}
+      ) AS match_score
+    FROM artworks
+    WHERE deleted_at IS NULL
+      AND artist IS NOT NULL
+      AND trim(artist) <> ''
+      ${orgFilter}
+      ${backableSearchSql(orgId)}
+      ${whereSql}
+    ORDER BY match_score DESC, artist COLLATE NOCASE ASC, year ASC, title COLLATE NOCASE ASC
+    LIMIT ?
+    `
+    )
+    .bind(...params)
+    .all<ArtworkMetadataSearchRow>();
+
+  return results.map((artwork, index) => {
+    const similarity = Math.min(Math.max(artwork.match_score / 120, 0.01), 1);
+    return mapSearchRow(artwork, similarity, [
+      {
+        channel: 'metadata',
+        label: 'Artist',
+        source: 'artworks.artist',
+        weight: 1,
+        rank: index + 1,
+        score: similarity,
+      },
+    ]);
+  });
+}
+
+async function hasExactArtistFacetMatch(
+  db: D1Database,
+  orgId: string | undefined,
+  query: string
+) {
+  const normalizedQuery = normalizeArtistFacetQuery(query);
+  const tokens = artistFacetTokens(query);
+  if (!normalizedQuery || tokens.length < 2) {
+    return false;
+  }
+
+  const artistText = normalizedTextSql('artist');
+  const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const params = [...(orgId ? [orgId] : []), normalizedQuery];
+  const { results } = await db
+    .prepare(
+      `
+    SELECT id
+    FROM artworks
+    WHERE deleted_at IS NULL
+      AND artist IS NOT NULL
+      AND trim(artist) <> ''
+      ${orgFilter}
+      ${backableSearchSql(orgId)}
+      AND trim(${artistText}) = ?
+    LIMIT 1
+    `
+    )
+    .bind(...params)
+    .all<{ id: string }>();
+
+  return results.length > 0;
+}
+
 // Validation schemas
 const textSearchSchema = z.object({
   query: z.string().min(1, 'Query cannot be empty').max(500),
@@ -1045,6 +1200,7 @@ const textSearchSchema = z.object({
     .optional()
     .default(10),
   minScore: z.number().min(0).max(1).optional().default(0.7),
+  facet: z.enum(['artist']).optional(),
 });
 
 export const searchRoutes = new Hono<{ Bindings: Env }>();
@@ -1087,14 +1243,17 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
 
-    const { query, topK, minScore } = validation.data;
+    const { query, topK, minScore, facet } = validation.data;
+    const resolvedFacet =
+      facet === 'artist' ||
+      (!facet && (await hasExactArtistFacetMatch(c.env.DB, orgId, query)))
+        ? 'artist'
+        : facet;
 
-    const enrichedResults = await searchArtworksHybrid(
-      c.env,
-      orgId,
-      query,
-      topK
-    );
+    const enrichedResults =
+      resolvedFacet === 'artist'
+        ? await searchArtworksByArtistFacet(c.env.DB, orgId, query, topK)
+        : await searchArtworksHybrid(c.env, orgId, query, topK);
 
     const queryTime = performance.now() - startTime;
 
@@ -1102,6 +1261,7 @@ searchRoutes.post('/search/text', async (c) => {
       search: {
         mode: 'text',
         query,
+        facet: resolvedFacet,
         topK,
         minScore,
         resultCount: enrichedResults.length,

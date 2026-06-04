@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
-import { Link, useLoaderData } from '@remix-run/react';
-import type { ReactNode } from 'react';
+import { useLoaderData } from '@remix-run/react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useEffect } from 'react';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
@@ -12,6 +12,7 @@ import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
 import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
+  getGeneratedCaptionModelDetails,
   getGeneratedCaptionText,
   getNgsUrl,
   getPublicArtist,
@@ -76,15 +77,46 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
 const clickableCatalogueLabels = new Set([
   'artist',
+  'creator',
   'date',
   'medium',
   'geographic association',
   'credit line',
 ]);
 
+type CatalogueSearchFacet = 'artist';
+
 const getCatalogueRowSearchQuery = (label: string, value: string) => {
   if (!clickableCatalogueLabels.has(label.toLowerCase())) return null;
   return value.trim() || null;
+};
+
+const getCatalogueRowSearchFacet = (
+  label: string
+): CatalogueSearchFacet | null => {
+  const normalizedLabel = label.toLowerCase();
+  return normalizedLabel === 'artist' || normalizedLabel === 'creator'
+    ? 'artist'
+    : null;
+};
+
+const normalizeSearchValue = (value: string) => value.trim();
+
+const normalizeArtistSearchValue = (value: string) =>
+  normalizeSearchValue(
+    value
+      .replace(/\([^)]*(?:\d{3,4}|born|died|b\.|d\.)[^)]*\)/gi, ' ')
+      .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
+  );
+
+const getSearchHrefForQuery = (
+  routeId: string,
+  query: string,
+  facet: CatalogueSearchFacet | null = null
+) => {
+  const params = new URLSearchParams({ q: query });
+  if (facet) params.set('field', facet);
+  return `/${routeId}/search?${params.toString()}`;
 };
 
 export default function ArtworkDetailPage() {
@@ -93,6 +125,7 @@ export default function ArtworkDetailPage() {
   const descriptionDetailsList = getPublicDescriptionDetailList(artwork);
   const rootsDescriptionDetails = descriptionDetailsList[0] || null;
   const generatedCaptionText = getGeneratedCaptionText(artwork);
+  const generatedCaptionDetails = getGeneratedCaptionModelDetails(artwork);
   const imageUrl = getPublicImageUrl(artwork);
   const thumbnailUrl = getPublicThumbnailUrl(artwork);
   const ngsUrl = getNgsUrl(artwork);
@@ -100,6 +133,29 @@ export default function ArtworkDetailPage() {
   const catalogueGroups = getPublicCatalogueRowGroups(artwork);
   const title = getPublicTitle(artwork);
   const artist = getPublicArtist(artwork);
+  const artistSearchHref = artist
+    ? getSearchHrefForQuery(
+        preferredRouteId,
+        normalizeArtistSearchValue(artist),
+        'artist'
+      )
+    : null;
+  const searchReturnHref = returnToSearchPath || `/${preferredRouteId}/search`;
+  const replaceWithSearchReturn = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    window.location.replace(searchReturnHref);
+  };
 
   const trackArtworkInteraction = (
     type: 'view' | 'click' | 'citation_copy',
@@ -146,13 +202,14 @@ export default function ArtworkDetailPage() {
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
-          <Link
-            to={returnToSearchPath || `/${preferredRouteId}/search`}
+          <a
+            href={searchReturnHref}
+            onClick={replaceWithSearchReturn}
             className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
-            Search
-          </Link>
+            Back to search
+          </a>
           <p className="truncate font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">
             {gallery.name}
           </p>
@@ -184,7 +241,19 @@ export default function ArtworkDetailPage() {
             <h1 className="mt-2 font-display text-4xl font-semibold leading-tight text-white">
               {title}
             </h1>
-            {artist && <p className="mt-2 text-lg text-white/65">{artist}</p>}
+            {artist && artistSearchHref && (
+              <a
+                href={artistSearchHref}
+                onClick={() =>
+                  trackArtworkInteraction('click', 'artist_search', {
+                    artist,
+                  })
+                }
+                className="mt-2 inline-block text-lg text-white/65 underline decoration-white/20 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+              >
+                {artist}
+              </a>
+            )}
           </div>
 
           {(rootsDescriptionDetails || generatedCaptionText) && (
@@ -203,6 +272,7 @@ export default function ArtworkDetailPage() {
                     ? {
                         text: generatedCaptionText,
                         sourceLabel: 'Generated by Paillette AI',
+                        details: generatedCaptionDetails,
                       }
                     : null
                 }
@@ -216,10 +286,15 @@ export default function ArtworkDetailPage() {
               groups={catalogueGroups}
               getSearchHref={(label, value) => {
                 const searchQuery = getCatalogueRowSearchQuery(label, value);
+                const facet = getCatalogueRowSearchFacet(label);
                 return searchQuery
-                  ? `/${preferredRouteId}/search?q=${encodeURIComponent(
-                      searchQuery
-                    )}`
+                  ? getSearchHrefForQuery(
+                      preferredRouteId,
+                      facet === 'artist'
+                        ? normalizeArtistSearchValue(searchQuery)
+                        : normalizeSearchValue(searchQuery),
+                      facet
+                    )
                   : null;
               }}
             />

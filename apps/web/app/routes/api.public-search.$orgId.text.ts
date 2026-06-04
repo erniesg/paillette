@@ -28,6 +28,7 @@ const clamp = (value: unknown, min: number, max: number, fallback: number) => {
 };
 
 const DEFAULT_PUBLIC_TEXT_MIN_SCORE = 0.2;
+const PUBLIC_TEXT_SEARCH_FACETS = new Set(['artist']);
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -109,20 +110,28 @@ export const action = async ({
     );
   }
 
-  const requestedSearchPayload: Required<SearchTextRequest> = {
+  const requestedSearchPayload: Required<Omit<SearchTextRequest, 'facet'>> &
+    Pick<SearchTextRequest, 'facet'> = {
     query,
     topK: clamp(body.topK, 1, 100, 30),
     minScore: clamp(body.minScore, 0, 1, DEFAULT_PUBLIC_TEXT_MIN_SCORE),
+    facet:
+      typeof body.facet === 'string' &&
+      PUBLIC_TEXT_SEARCH_FACETS.has(body.facet)
+        ? (body.facet as SearchTextRequest['facet'])
+        : undefined,
   };
   const searchPayload: SearchTextRequest = requestedSearchPayload;
-  const canonicalSearchPayload =
-    getCanonicalPublicTextSearchRequest(requestedSearchPayload);
+  const canonicalSearchPayload = getCanonicalPublicTextSearchRequest(
+    requestedSearchPayload
+  );
   const usageContext = asRecord(body.usageContext);
   const shouldLogUsage = usageContext.auto !== true;
   const resolvedOrgId = resolvePublicSearchOrgId(orgId);
   const apiBaseUrl = getApiBaseUrl(env);
   const cacheKey = buildPublicTextSearchCacheKey({
     apiBaseUrl,
+    facet: requestedSearchPayload.facet,
     orgId: resolvedOrgId,
     query,
   });
@@ -145,6 +154,7 @@ export const action = async ({
           query,
           topK: searchPayload.topK,
           minScore: searchPayload.minScore,
+          facet: requestedSearchPayload.facet,
           rawResultCount: cachedPayload.data?.results.length ?? results.length,
           resultCount: results.length,
           hiddenFilteredCount: 0,
@@ -212,6 +222,7 @@ export const action = async ({
           query,
           topK: searchPayload.topK,
           minScore: searchPayload.minScore,
+          facet: requestedSearchPayload.facet,
           rawResultCount,
           resultCount: requestedResults.length,
           hiddenFilteredCount: rawResultCount - results.length,

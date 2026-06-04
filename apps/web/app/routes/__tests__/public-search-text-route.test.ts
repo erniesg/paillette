@@ -14,11 +14,7 @@ const result = (id: string, similarity: number) => ({
 const searchPayload: ApiResponse<SearchResponse> = {
   success: true,
   data: {
-    results: [
-      result('strong', 0.95),
-      result('good', 0.8),
-      result('weak', 0.4),
-    ],
+    results: [result('strong', 0.95), result('good', 0.8), result('weak', 0.4)],
     count: 3,
     queryTime: 123,
   },
@@ -84,9 +80,7 @@ describe('public text search route caching', () => {
       'strong',
     ]);
     expect(firstPayload.data?.count).toBe(1);
-    expect(firstResponse.headers.get('X-Paillette-Search-Cache')).toBe(
-      'MISS'
-    );
+    expect(firstResponse.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
 
     const secondResponse = await action({
       context: {},
@@ -148,6 +142,45 @@ describe('public text search route caching', () => {
       'good',
       'weak',
     ]);
+    expect(payload.data?.count).toBe(3);
+  });
+
+  it('forwards artist-facet searches upstream with the same broad cache shape', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest({
+        query: 'Zhang Yiqian',
+        topK: 30,
+        minScore: 0.2,
+        facet: 'artist',
+        usageContext: { facet: 'artist' },
+      }),
+    } as any);
+    const payload = (await response.json()) as ApiResponse<SearchResponse>;
+    const upstreamInit = mockFetch.mock.calls[0]?.[1] as
+      | RequestInit
+      | undefined;
+    const upstreamBody =
+      typeof upstreamInit?.body === 'string'
+        ? JSON.parse(upstreamInit.body)
+        : undefined;
+
+    expect(upstreamBody).toEqual({
+      query: 'Zhang Yiqian',
+      topK: 100,
+      minScore: 0,
+      facet: 'artist',
+    });
     expect(payload.data?.count).toBe(3);
   });
 });

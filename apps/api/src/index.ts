@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import orgs from './routes/galleries';
 import artworkRoutes from './routes/artworks';
+import collectionRoutes from './routes/collections';
 import { searchRoutes } from './routes/search';
 import { colorSearchRoutes } from './routes/color-search';
 import { embeddingsRoutes } from './routes/embeddings';
@@ -156,10 +157,12 @@ api.route('/ngs-review', ngsReviewRoutes);
 // Nested routes under orgs. /galleries remains as a legacy alias while the
 // frontend and API clients move over.
 api.route('/orgs/:orgId/artworks', artworkRoutes);
+api.route('/orgs/:orgId/collections', collectionRoutes);
 api.route('/orgs/:orgId', searchRoutes);
 api.route('/orgs/:orgId', colorSearchRoutes);
 api.route('/orgs/:orgId', embeddingsRoutes);
 api.route('/galleries/:galleryId/artworks', artworkRoutes);
+api.route('/galleries/:galleryId/collections', collectionRoutes);
 api.route('/galleries/:galleryId', searchRoutes);
 api.route('/galleries/:galleryId', colorSearchRoutes);
 api.route('/galleries/:galleryId', embeddingsRoutes);

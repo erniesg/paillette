@@ -22,6 +22,13 @@ const detailRows = (details: Array<[string, unknown]> = []) =>
     ([, value]) => value !== null && value !== undefined && value !== ''
   );
 
+const generatedCaptionDetailRows = (
+  details: Array<[string, unknown]> = []
+) =>
+  detailRows(details).filter(
+    ([label]) => label.trim().toLowerCase() === 'model'
+  );
+
 const captionOption = (
   source: CaptionSource | null | undefined,
   id: CaptionOption['id'],
@@ -96,7 +103,11 @@ export function CaptionSourceToggle({
 
   if (!activeOption) return null;
 
-  const details =
+  const sourceIndicatorDetails =
+    activeOption.id === 'generated'
+      ? generatedCaptionDetailRows(activeOption.details)
+      : detailRows(activeOption.details);
+  const captionDetails =
     activeOption.id === 'generated' ? [] : detailRows(activeOption.details);
 
   return (
@@ -109,7 +120,7 @@ export function CaptionSourceToggle({
           <SourceIndicator
             label={activeOption.sourceLabel}
             showLabel
-            details={details}
+            details={sourceIndicatorDetails}
           />
         </div>
 
@@ -141,9 +152,9 @@ export function CaptionSourceToggle({
         {activeOption.text}
       </p>
 
-      {details.length > 0 && (
+      {captionDetails.length > 0 && (
         <dl className="mt-4 grid gap-3 sm:grid-cols-3">
-          {details.map(([label, value]) => (
+          {captionDetails.map(([label, value]) => (
             <div key={label}>
               <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/35">
                 {label}

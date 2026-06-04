@@ -13,7 +13,9 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   try {
     const [gallery, holidaySuggestions] = await Promise.all([
       getApiClientForRequest(request).getGallery(orgId),
-      getUpcomingSingaporeHolidaySuggestions(),
+      getUpcomingSingaporeHolidaySuggestions(new Date(), {
+        allowNetwork: false,
+      }),
     ]);
     return {
       gallery,

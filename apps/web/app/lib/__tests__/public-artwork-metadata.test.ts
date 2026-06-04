@@ -198,6 +198,35 @@ describe('getPublicDescription', () => {
     expect(getPublicDescription(artwork)).toBeNull();
   });
 
+  it('keeps generated captions available when Roots catalogue text is prioritized', () => {
+    const artwork = {
+      metadata: {
+        field_sources: {
+          description: 'roots',
+        },
+        source_records: {
+          roots: {
+            caption: 'A Roots catalogue caption from the public record.',
+          },
+        },
+        generated_caption: {
+          caption: 'A generated visual caption describing the image.',
+        },
+      },
+    };
+
+    expect(getPublicDescriptionDetailList(artwork)).toEqual([
+      {
+        source: 'roots',
+        sourceLabel: 'Roots NHB',
+        text: 'A Roots catalogue caption from the public record.',
+      },
+    ]);
+    expect(getGeneratedCaptionText(artwork)).toBe(
+      'A generated visual caption describing the image.'
+    );
+  });
+
   it('keeps source-labelled metadata captions as catalogue text', () => {
     expect(
       getPublicDescriptionDetails({
@@ -956,6 +985,31 @@ describe('getPublicDescription', () => {
       metadata: {
         ngs_image_url:
           'https://www.nationalgallery.sg/content/dam/national-collections-artworks/external-loan-collection/vasan-sitthiket/2021/2021-00063_cropped.tif',
+      },
+    };
+
+    expect(getPublicImageUrl(artwork)).toBeNull();
+    expect(getPublicThumbnailUrl(artwork)).toBeNull();
+  });
+
+  it('does not use Roots imagery for known NGS no-image placeholder records', () => {
+    const artwork = {
+      id: '2011-00892',
+      accession_number: '2011-00892',
+      title: 'Flight IV',
+      artist: 'Tay Chee Toh',
+      imageUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/ngs-placeholder/content',
+      thumbnailUrl:
+        'https://paillette-api-stg.berlayar.ai/api/v1/assets/ngs-placeholder-thumb/content',
+      metadata: {
+        source_records: {
+          roots: {
+            title: 'Flight IV',
+            creator: 'Tay Chee Toh',
+            img: 'https://www.roots.gov.sg/CollectionImages/1084863.jpg',
+          },
+        },
       },
     };
 

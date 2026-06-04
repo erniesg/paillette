@@ -155,4 +155,20 @@ describe('getUpcomingSingaporeHolidaySuggestions', () => {
       'Mid-Autumn Festival'
     );
   });
+
+  it('can build suggestions without a cold network fetch for route loaders', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const suggestions = await getUpcomingSingaporeHolidaySuggestions(
+      new Date('2026-05-24T00:00:00.000Z'),
+      { allowNetwork: false }
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(suggestions[0]).toMatchObject({
+      label: 'Hari Raya Haji',
+      source: 'fallback',
+    });
+  });
 });

@@ -30,6 +30,13 @@ const extractProductionEnvVars = () => {
   return match?.[1] ?? '';
 };
 
+const extractStagingEnvVars = () => {
+  const match = wranglerToml.match(
+    /\[env\.staging\][\s\S]*?vars = \{([^}]+)\}/
+  );
+  return match?.[1] ?? '';
+};
+
 describe('wrangler production search config', () => {
   it('keeps the default production worker on v2 hybrid search', () => {
     const varsBlock = extractTopLevelVarsBlock();
@@ -44,6 +51,14 @@ describe('wrangler production search config', () => {
 
     for (const [key, value] of Object.entries(requiredProductionSearchVars)) {
       expect(productionVars).toContain(`${key} = "${value}"`);
+    }
+  });
+
+  it('keeps staging on the same v2 hybrid search config as production', () => {
+    const stagingVars = extractStagingEnvVars();
+
+    for (const [key, value] of Object.entries(requiredProductionSearchVars)) {
+      expect(stagingVars).toContain(`${key} = "${value}"`);
     }
   });
 });
