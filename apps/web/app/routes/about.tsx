@@ -72,9 +72,9 @@ function MermaidDiagram({ chart }: { chart: string }) {
           flowchart: {
             curve: 'basis',
             htmlLabels: true,
-            nodeSpacing: 44,
-            rankSpacing: 42,
-            useMaxWidth: false,
+            nodeSpacing: 32,
+            rankSpacing: 34,
+            useMaxWidth: true,
           },
           themeVariables: {
             background: 'transparent',
@@ -94,6 +94,14 @@ function MermaidDiagram({ chart }: { chart: string }) {
         );
         if (isMounted && containerRef.current) {
           containerRef.current.innerHTML = svg;
+          const renderedSvg = containerRef.current.querySelector('svg');
+          if (renderedSvg) {
+            renderedSvg.removeAttribute('width');
+            renderedSvg.removeAttribute('height');
+            renderedSvg.style.width = '100%';
+            renderedSvg.style.maxWidth = '100%';
+            renderedSvg.style.height = 'auto';
+          }
           setRenderError(false);
         }
       } catch {
@@ -114,15 +122,15 @@ function MermaidDiagram({ chart }: { chart: string }) {
   }, [chart, renderId]);
 
   return (
-    <div className="mt-8 overflow-x-auto rounded-lg border border-white/[0.1] bg-white/[0.035] p-4 md:p-6">
+    <div className="mt-8 overflow-hidden rounded-lg border border-white/[0.1] bg-white/[0.035] p-4 md:p-6">
       {renderError ? (
-        <pre className="min-w-[920px] whitespace-pre-wrap text-sm leading-6 text-white/70">
+        <pre className="whitespace-pre-wrap text-sm leading-6 text-white/70">
           {chart}
         </pre>
       ) : (
         <div
           ref={containerRef}
-          className="min-h-[320px] min-w-[920px] [&_svg]:mx-auto [&_svg]:max-w-none"
+          className="min-h-[220px] w-full [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:w-full [&_svg]:max-w-full"
         />
       )}
     </div>
@@ -133,15 +141,17 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen bg-[#0b0b0e] text-white">
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
-          <div className="flex min-w-0 items-center gap-4">
+        <div className="mx-auto flex h-14 max-w-7xl items-end justify-between px-5 pb-3 lg:px-8">
+          <div className="flex min-w-0 items-end gap-4">
             <Link
               to="/ngs/search"
-              className="inline-flex items-center transition-opacity hover:opacity-80"
+              className="inline-flex items-end transition-opacity hover:opacity-80"
             >
               <Logo size="sm" framed />
             </Link>
-            <span className="text-sm font-medium text-white/70">About</span>
+            <span className="pb-[3px] text-sm font-medium leading-none text-white/70">
+              About
+            </span>
           </div>
           <Link
             to="/ngs/search"

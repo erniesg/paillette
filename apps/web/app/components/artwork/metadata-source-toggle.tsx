@@ -7,6 +7,7 @@ import { cn } from '~/lib/utils';
 type MetadataSourceToggleProps = {
   groups: PublicMetadataGroup[];
   getSearchHref?: (label: string, value: string) => string | null;
+  onSearchLinkClick?: () => void;
   className?: string;
 };
 
@@ -23,6 +24,7 @@ const getGroupKey = (groups: PublicMetadataGroup[]) =>
 export function MetadataSourceToggle({
   groups,
   getSearchHref,
+  onSearchLinkClick,
   className,
 }: MetadataSourceToggleProps) {
   const options = useMemo(
@@ -118,6 +120,7 @@ export function MetadataSourceToggle({
                 {href ? (
                   <Link
                     to={href}
+                    onClick={onSearchLinkClick}
                     className="underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/60"
                   >
                     {value}

@@ -2923,7 +2923,13 @@ function SearchArtworkDialog({
                     {title}
                   </Dialog.Title>
                   {artist && (
-                    <p className="mt-2 text-sm text-white/60">{artist}</p>
+                    <Link
+                      to={`/${routeId}/search?q=${encodeURIComponent(artist)}`}
+                      onClick={onClose}
+                      className="mt-2 inline-block text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+                    >
+                      {artist}
+                    </Link>
                   )}
                 </div>
                 <Dialog.Close asChild>
@@ -3035,6 +3041,7 @@ function SearchArtworkDialog({
                         )}`
                       : null;
                   }}
+                  onSearchLinkClick={onClose}
                 />
               )}
 
@@ -3306,13 +3313,20 @@ function ResultsView({
         sortMode={sortMode}
         showSimilarity={showSimilarity}
         onSortModeChange={onSortModeChange}
+        onFacetSearch={onFacetSearch}
         onSelectArtwork={onSelectArtwork}
       />
     );
   }
 
   if (view === 'salon') {
-    return <SalonResults results={results} onSelectArtwork={onSelectArtwork} />;
+    return (
+      <SalonResults
+        results={results}
+        onFacetSearch={onFacetSearch}
+        onSelectArtwork={onSelectArtwork}
+      />
+    );
   }
 
   if (view === 'atlas') {
@@ -3413,9 +3427,11 @@ function MasonryResults({
 
 function SalonResults({
   results,
+  onFacetSearch,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
+  onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
@@ -3428,35 +3444,50 @@ function SalonResults({
         const artist = getDisplayArtist(result);
 
         return (
-          <button
+          <article
             key={result.id}
-            type="button"
-            onClick={() => onSelectArtwork(result)}
             className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
             style={{ transform: `rotate(${rotation}deg)` }}
           >
-            <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
-              <ImageWithFallback
-                src={image.src}
-                fallbackSrc={image.fallbackSrc}
-                alt={title}
-                loading="lazy"
-                className="aspect-[4/5] w-full object-cover"
-                fallback={
-                  <NoImagePlaceholder className="aspect-[4/5] text-white/25" />
-                }
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => onSelectArtwork(result)}
+              className="block w-full appearance-none border-0 bg-transparent p-0 text-left"
+            >
+              <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
+                <ImageWithFallback
+                  src={image.src}
+                  fallbackSrc={image.fallbackSrc}
+                  alt={title}
+                  loading="lazy"
+                  className="aspect-[4/5] w-full object-cover"
+                  fallback={
+                    <NoImagePlaceholder className="aspect-[4/5] text-white/25" />
+                  }
+                />
+              </div>
+            </button>
             <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors group-hover:text-white/75">
               #{rank}
               <br />
-              <span className="font-display text-sm italic normal-case tracking-normal text-white/75">
+              <button
+                type="button"
+                onClick={() => onSelectArtwork(result)}
+                className="font-display text-sm italic normal-case tracking-normal text-white/75 transition-colors hover:text-white"
+              >
                 {title}
-              </span>
+              </button>
               <br />
-              {artist} / {getDateText(result) || 'undated'}
+              <button
+                type="button"
+                onClick={() => onFacetSearch(artist)}
+                className="normal-case tracking-normal underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+              >
+                {artist}
+              </button>{' '}
+              / {getDateText(result) || 'undated'}
             </p>
-          </button>
+          </article>
         );
       })}
     </div>
@@ -3562,16 +3593,25 @@ function ResultCard({
       </button>
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => onSelectArtwork(result)}
-            className="min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
-          >
-            <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
-              {title}
-            </h2>
-            <p className="mt-1 text-sm text-white/60">{artist}</p>
-          </button>
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => onSelectArtwork(result)}
+              className="appearance-none border-0 bg-transparent p-0 text-left"
+            >
+              <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
+                {title}
+              </h2>
+            </button>
+            <button
+              type="button"
+              onClick={() => onFacetSearch(artist)}
+              className="mt-1 block max-w-full truncate text-left text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+              title={`Search ${artist}`}
+            >
+              {artist}
+            </button>
+          </div>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
             #{rank.toString().padStart(2, '0')}
           </span>
@@ -3695,6 +3735,7 @@ function TableResults({
   sortMode,
   showSimilarity,
   onSortModeChange,
+  onFacetSearch,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
@@ -3702,6 +3743,7 @@ function TableResults({
   sortMode: SortMode;
   showSimilarity: boolean;
   onSortModeChange: (sortMode: SortMode) => void;
+  onFacetSearch: (query: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const isColourSort = sortMode === 'colour';
@@ -3801,7 +3843,16 @@ function TableResults({
                     </span>
                   </button>
                 </td>
-                <td className="px-3 py-3 text-white/65">{artist}</td>
+                <td className="px-3 py-3 text-white/65">
+                  <button
+                    type="button"
+                    onClick={() => onFacetSearch(artist)}
+                    className="text-left underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+                    title={`Search ${artist}`}
+                  >
+                    {artist}
+                  </button>
+                </td>
                 <td className="px-3 py-3 text-white/55">
                   {getDateText(result) || '-'}
                 </td>
