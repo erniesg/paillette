@@ -102,6 +102,17 @@ type SchemaField = {
   description: string;
 };
 
+type EndpointMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+
+type EndpointDefinition = {
+  method: EndpointMethod;
+  path: string;
+  title: string;
+  body: string;
+  schema: SchemaField[];
+  runnable?: boolean;
+};
+
 const fallbackOrgs: OrgDirectoryItem[] = [
   {
     id: NGS_ORG_ID,
@@ -112,7 +123,7 @@ const fallbackOrgs: OrgDirectoryItem[] = [
   },
 ];
 
-const endpoints = [
+const endpoints: EndpointDefinition[] = [
   {
     method: 'GET',
     path: '/orgs',
@@ -144,12 +155,47 @@ const endpoints = [
   },
   {
     method: 'POST',
+    path: '/orgs',
+    title: 'Create source',
+    body: `{
+  "name": "Demo Museum",
+  "slug": "demo-museum",
+  "description": "Private source for managed records"
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'name',
+        type: 'string',
+        required: true,
+        description: 'Source display name.',
+      },
+      {
+        name: 'slug',
+        type: 'string',
+        description:
+          'Optional stable URL/API slug. Generated from name if omitted.',
+      },
+      {
+        name: 'description',
+        type: 'string',
+        description: 'Optional public or internal description.',
+      },
+      {
+        name: 'website',
+        type: 'string',
+        description: 'Optional source website URL.',
+      },
+    ],
+  },
+  {
+    method: 'POST',
     path: '/orgs/ngs/search/text',
     title: 'Text search',
     body: `{
   "query": "batik textile pattern",
   "topK": 10,
-  "minScore": 0.3
+  "minScore": 0.7
 }`,
     schema: [
       {
@@ -205,8 +251,8 @@ const endpoints = [
     body: `{
   "colors": ["#cda636", "#365f9c"],
   "matchMode": "any",
-  "threshold": 18,
-  "limit": 10
+  "threshold": 10,
+  "limit": 20
 }`,
     schema: [
       {
@@ -246,6 +292,349 @@ const endpoints = [
         type: 'string',
         required: true,
         description: 'Artwork ID returned by search endpoints.',
+      },
+    ],
+  },
+  {
+    method: 'GET',
+    path: '/orgs/ngs/collections',
+    title: 'List collections',
+    body: 'Public. Returns collections for a source.',
+    runnable: false,
+    schema: [],
+  },
+  {
+    method: 'POST',
+    path: '/orgs/ngs/collections',
+    title: 'Create collection',
+    body: `{
+  "id": "curatorial-highlights",
+  "name": "Curatorial highlights",
+  "description": "Selected records for a project"
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Optional stable collection ID. Generated when omitted.',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        required: true,
+        description: 'Collection display name.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Optional collection description.',
+      },
+      {
+        name: 'thumbnail_artwork_id',
+        type: 'string | null',
+        description: 'Optional artwork ID used as the collection thumbnail.',
+      },
+    ],
+  },
+  {
+    method: 'POST',
+    path: '/orgs/ngs/collections/upsert',
+    title: 'Upsert collection',
+    body: `{
+  "id": "curatorial-highlights",
+  "name": "Curatorial highlights",
+  "description": "Selected records for a project"
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'id',
+        type: 'string',
+        description:
+          'Optional stable collection ID. When present, matching collections are updated.',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        required: true,
+        description: 'Collection display name.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Optional collection description.',
+      },
+      {
+        name: 'thumbnail_artwork_id',
+        type: 'string | null',
+        description: 'Optional artwork ID used as the collection thumbnail.',
+      },
+    ],
+  },
+  {
+    method: 'GET',
+    path: '/orgs/ngs/collections/{collectionId}',
+    title: 'Collection lookup',
+    body: 'Public. Fetches one collection within a source.',
+    runnable: false,
+    schema: [
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID returned by list/create/upsert.',
+      },
+    ],
+  },
+  {
+    method: 'PATCH',
+    path: '/orgs/ngs/collections/{collectionId}',
+    title: 'Update collection',
+    body: `{
+  "name": "Updated highlights",
+  "description": "Refined project selection"
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID to update.',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        description: 'Updated collection display name.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Updated collection description.',
+      },
+      {
+        name: 'thumbnail_artwork_id',
+        type: 'string | null',
+        description: 'Updated thumbnail artwork ID.',
+      },
+    ],
+  },
+  {
+    method: 'DELETE',
+    path: '/orgs/ngs/collections/{collectionId}',
+    title: 'Delete collection',
+    body: 'Deletes a collection in the scoped source.',
+    runnable: false,
+    schema: [
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID to delete.',
+      },
+    ],
+  },
+  {
+    method: 'POST',
+    path: '/orgs/ngs/artworks/upsert',
+    title: 'Upsert artwork record',
+    body: `{
+  "id": "2018-00743",
+  "title": "Singapore",
+  "artist": "John Turnbull Thomson",
+  "source_record_id": "2018-00743"
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Optional stable artwork ID.',
+      },
+      {
+        name: 'collection_id',
+        type: 'string | null',
+        description: 'Optional source collection/group ID.',
+      },
+      {
+        name: 'title',
+        type: 'string',
+        description: 'Artwork title. Required when creating a new record.',
+      },
+      {
+        name: 'artist',
+        type: 'string | null',
+        description: 'Artist or maker display name.',
+      },
+      {
+        name: 'year',
+        type: 'integer | null',
+        description: 'Normalized production year.',
+      },
+      {
+        name: 'date_text',
+        type: 'string | null',
+        description: 'Source date text when a precise year is unavailable.',
+      },
+      {
+        name: 'medium',
+        type: 'string | null',
+        description: 'Medium or materials text.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Catalogue description or caption.',
+      },
+      {
+        name: 'accession_number',
+        type: 'string | null',
+        description: 'Accession or object number. Used as an upsert match key.',
+      },
+      {
+        name: 'source_institution',
+        type: 'string | null',
+        description: 'Institution or system that supplied the source record.',
+      },
+      {
+        name: 'source_collection',
+        type: 'string | null',
+        description: 'Source collection name.',
+      },
+      {
+        name: 'source_record_id',
+        type: 'string | null',
+        description: 'Source system record ID. Used as an upsert match key.',
+      },
+      {
+        name: 'source_url',
+        type: 'string | null',
+        description: 'Canonical source record URL.',
+      },
+      {
+        name: 'image_url',
+        type: 'string | null',
+        description: 'Primary artwork image URL.',
+      },
+      {
+        name: 'thumbnail_url',
+        type: 'string | null',
+        description: 'Thumbnail image URL.',
+      },
+      {
+        name: 'field_sources',
+        type: 'object',
+        description: 'Optional per-field provenance labels.',
+      },
+      {
+        name: 'custom_metadata',
+        type: 'object',
+        description: 'Optional source-specific metadata payload.',
+      },
+    ],
+  },
+  {
+    method: 'PATCH',
+    path: '/orgs/ngs/artworks/{artworkId}',
+    title: 'Update artwork',
+    body: `{
+  "title": "Singapore",
+  "medium": "Oil on canvas"
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'artworkId',
+        type: 'string',
+        required: true,
+        description: 'Artwork ID to update.',
+      },
+      {
+        name: 'title',
+        type: 'string',
+        description: 'Updated artwork title.',
+      },
+      {
+        name: 'artist',
+        type: 'string | null',
+        description: 'Updated artist or maker display name.',
+      },
+      {
+        name: 'medium',
+        type: 'string | null',
+        description: 'Updated medium or materials text.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Updated catalogue description or caption.',
+      },
+    ],
+  },
+  {
+    method: 'DELETE',
+    path: '/orgs/ngs/artworks/{artworkId}',
+    title: 'Delete artwork',
+    body: 'Soft-deletes an artwork in the scoped source.',
+    runnable: false,
+    schema: [
+      {
+        name: 'artworkId',
+        type: 'string',
+        required: true,
+        description: 'Artwork ID to delete.',
+      },
+    ],
+  },
+  {
+    method: 'POST',
+    path: '/orgs/ngs/collections/{collectionId}/artworks',
+    title: 'Add artwork to collection',
+    body: `{
+  "artwork_id": "2018-00743",
+  "position": 0
+}`,
+    runnable: false,
+    schema: [
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID to update.',
+      },
+      {
+        name: 'artwork_id',
+        type: 'string',
+        required: true,
+        description: 'Artwork ID from the same source.',
+      },
+      {
+        name: 'position',
+        type: 'integer',
+        defaultValue: '0',
+        description: 'Sort position within the collection.',
+      },
+    ],
+  },
+  {
+    method: 'DELETE',
+    path: '/orgs/ngs/collections/{collectionId}/artworks/{artworkId}',
+    title: 'Remove artwork from collection',
+    body: 'Removes a collection membership without deleting the artwork.',
+    runnable: false,
+    schema: [
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID to update.',
+      },
+      {
+        name: 'artworkId',
+        type: 'string',
+        required: true,
+        description: 'Artwork ID to remove from the collection.',
       },
     ],
   },
@@ -383,6 +772,22 @@ const responseMetadataFields: SchemaField[] = [
   },
 ];
 
+const mcpSourceSelectorFields: SchemaField[] = [
+  {
+    name: 'orgId',
+    type: 'string',
+    defaultValue: 'ngs',
+    description:
+      'Optional source key, slug, or UUID. Use ngs for National Gallery Singapore.',
+  },
+  {
+    name: 'collection',
+    type: 'string',
+    defaultValue: 'ngs',
+    description: 'Optional alias for orgId.',
+  },
+];
+
 const mcpTools = [
   {
     name: 'list_orgs',
@@ -401,13 +806,7 @@ const mcpTools = [
     name: 'search_artworks',
     description: 'Natural-language artwork search across a source.',
     schema: [
-      {
-        name: 'collection',
-        type: 'string',
-        defaultValue: 'ngs',
-        description:
-          'Optional alias for orgId. Use ngs for National Gallery Singapore.',
-      },
+      ...mcpSourceSelectorFields,
       {
         name: 'query',
         type: 'string',
@@ -432,12 +831,7 @@ const mcpTools = [
     name: 'lookup_artwork',
     description: 'Fetch one artwork by ID with public catalogue metadata.',
     schema: [
-      {
-        name: 'collection',
-        type: 'string',
-        defaultValue: 'ngs',
-        description: 'Optional alias for orgId.',
-      },
+      ...mcpSourceSelectorFields,
       {
         name: 'artworkId',
         type: 'string',
@@ -447,15 +841,147 @@ const mcpTools = [
     ],
   },
   {
+    name: 'list_collections',
+    description: 'List collections for a source.',
+    schema: [...mcpSourceSelectorFields],
+  },
+  {
+    name: 'upsert_collection',
+    description:
+      'Create or update a collection. Provide collectionId for idempotent writes.',
+    schema: [
+      ...mcpSourceSelectorFields,
+      {
+        name: 'collectionId',
+        type: 'string',
+        description: 'Optional stable collection ID.',
+      },
+      {
+        name: 'name',
+        type: 'string',
+        required: true,
+        description: 'Collection display name.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Optional collection description.',
+      },
+      {
+        name: 'thumbnailArtworkId',
+        type: 'string | null',
+        description: 'Optional artwork ID used as the thumbnail.',
+      },
+    ],
+  },
+  {
+    name: 'upsert_artwork_record',
+    description:
+      'Create or update artwork metadata by id, source record id, or accession number.',
+    schema: [
+      ...mcpSourceSelectorFields,
+      {
+        name: 'id',
+        type: 'string',
+        description: 'Optional stable artwork ID.',
+      },
+      {
+        name: 'collectionId',
+        type: 'string | null',
+        description: 'Optional source collection/group ID.',
+      },
+      {
+        name: 'title',
+        type: 'string',
+        description: 'Artwork title. Required when creating a new record.',
+      },
+      {
+        name: 'artist',
+        type: 'string | null',
+        description: 'Artist or maker display name.',
+      },
+      {
+        name: 'year',
+        type: 'integer | null',
+        description: 'Normalized production year.',
+      },
+      {
+        name: 'medium',
+        type: 'string | null',
+        description: 'Medium or materials text.',
+      },
+      {
+        name: 'description',
+        type: 'string | null',
+        description: 'Catalogue description or caption.',
+      },
+      {
+        name: 'accessionNumber',
+        type: 'string | null',
+        description: 'Accession or object number.',
+      },
+      {
+        name: 'sourceRecordId',
+        type: 'string | null',
+        description: 'Source system record ID.',
+      },
+      {
+        name: 'sourceUrl',
+        type: 'string | null',
+        description: 'Canonical source record URL.',
+      },
+    ],
+  },
+  {
+    name: 'add_artwork_to_collection',
+    description: 'Attach an artwork record to a collection in the same source.',
+    schema: [
+      ...mcpSourceSelectorFields,
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID to update.',
+      },
+      {
+        name: 'artworkId',
+        type: 'string',
+        required: true,
+        description: 'Artwork ID to add.',
+      },
+      {
+        name: 'position',
+        type: 'integer',
+        defaultValue: '0',
+        description: 'Sort position within the collection.',
+      },
+    ],
+  },
+  {
+    name: 'remove_artwork_from_collection',
+    description:
+      'Detach an artwork record from a collection without deleting the artwork.',
+    schema: [
+      ...mcpSourceSelectorFields,
+      {
+        name: 'collectionId',
+        type: 'string',
+        required: true,
+        description: 'Collection ID to update.',
+      },
+      {
+        name: 'artworkId',
+        type: 'string',
+        required: true,
+        description: 'Artwork ID to remove.',
+      },
+    ],
+  },
+  {
     name: 'colour_search',
     description: 'Find artworks by extracted palette proximity.',
     schema: [
-      {
-        name: 'collection',
-        type: 'string',
-        defaultValue: 'ngs',
-        description: 'Optional alias for orgId.',
-      },
+      ...mcpSourceSelectorFields,
       {
         name: 'colors',
         type: 'string[]',
@@ -639,7 +1165,6 @@ const defaultDailyUsage = { used: 0, quota: 100 };
 const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultExtractUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
-type EndpointDefinition = (typeof endpoints)[number];
 
 const apiBaseByEnvironment = {
   stg: 'https://paillette-api-stg.berlayar.ai/api/v1',
@@ -647,9 +1172,14 @@ const apiBaseByEnvironment = {
 };
 type ApiEnvironment = keyof typeof apiBaseByEnvironment;
 type LanguageTab = 'curl' | 'js' | 'python' | 'mcp';
-type SectionTone = 'GET' | 'POST' | 'MCP' | 'TEXT';
+type SectionTone = EndpointMethod | 'MCP' | 'TEXT';
 
-const publicEndpointPaths = new Set(['/orgs', '/orgs/slug/{slug}']);
+const publicEndpointPaths = new Set([
+  '/orgs',
+  '/orgs/slug/{slug}',
+  '/orgs/ngs/collections',
+  '/orgs/ngs/collections/{collectionId}',
+]);
 
 const truncateText = (value: unknown, length = 220) => {
   const text =
@@ -663,18 +1193,44 @@ const getOrgKey = (org: OrgDirectoryItem) =>
 const getFieldDefault = (endpoint: EndpointDefinition, field: SchemaField) => {
   const samples: Record<string, string> = {
     artworkId: '2018-00743',
+    artwork_id: '2018-00743',
+    accession_number: '2018-00743',
+    artist: 'John Turnbull Thomson',
+    collectionId: 'curatorial-highlights',
+    collection_id: 'curatorial-highlights',
     colors: '#cda636, #365f9c',
+    date_text: '1851',
+    description: 'Selected records for a project',
     image: '',
+    image_url: 'https://example.com/artwork.jpg',
+    medium: 'Oil on canvas',
+    name: 'Curatorial highlights',
+    position: '0',
     query: 'batik textile pattern',
     slug: NGS_ORG_SLUG,
+    source_collection: 'Permanent Collection',
+    source_institution: 'National Gallery Singapore',
+    source_record_id: '2018-00743',
+    source_url: 'https://www.nationalgallery.sg/sg/en/our-collections/...',
     targetLang: 'zh',
     text: 'Gallery label text',
+    thumbnail_artwork_id: '2018-00743',
+    thumbnail_url: 'https://example.com/artwork-thumb.jpg',
+    title: 'Singapore',
+    website: 'https://example.com',
+    year: '1851',
     imageUrls: 'https://example.com/artwork.tif',
     preserveFilenames: 'true',
     preview: 'false',
   };
 
   if (endpoint.path === '/orgs' && field.name === 'limit') return '20';
+  if (endpoint.path === '/orgs' && endpoint.method === 'POST') {
+    if (field.name === 'name') return 'Demo Museum';
+    if (field.name === 'slug') return 'demo-museum';
+    if (field.name === 'description')
+      return 'Private source for managed records';
+  }
   return samples[field.name] ?? field.defaultValue ?? '';
 };
 
@@ -708,16 +1264,23 @@ const coerceFieldValue = (field: SchemaField, value: string) => {
       .map((item) => item.trim())
       .filter(Boolean);
   }
-  if (field.type === 'integer') {
+  if (field.type.includes('integer')) {
     const parsed = Number.parseInt(trimmed, 10);
     return Number.isFinite(parsed) ? parsed : trimmed;
   }
-  if (field.type === 'number') {
+  if (field.type.includes('number')) {
     const parsed = Number.parseFloat(trimmed);
     return Number.isFinite(parsed) ? parsed : trimmed;
   }
-  if (field.type === 'boolean') {
+  if (field.type.includes('boolean')) {
     return ['1', 'true', 'yes', 'on'].includes(trimmed.toLowerCase());
+  }
+  if (field.type === 'object') {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return trimmed;
+    }
   }
   return trimmed;
 };
@@ -793,8 +1356,9 @@ const buildEndpointRequest = ({
   });
 
   const headers: Record<string, string> = {};
+  const hasJsonBody = Object.keys(jsonBody).length > 0;
   if (requiresAuth && apiKey) headers['X-API-Key'] = apiKey;
-  if (endpoint.method !== 'GET' && !isMultipart) {
+  if (endpoint.method !== 'GET' && !isMultipart && hasJsonBody) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -803,7 +1367,9 @@ const buildEndpointRequest = ({
       ? undefined
       : isMultipart
         ? (formBody ?? undefined)
-        : JSON.stringify(jsonBody);
+        : hasJsonBody
+          ? JSON.stringify(jsonBody)
+          : undefined;
   const curlLines = [`curl -s ${url.toString()}`];
   if (requiresAuth)
     curlLines.push(`  -H "X-API-Key: ${apiKey || maskKey(null)}"`);
@@ -816,7 +1382,7 @@ const buildEndpointRequest = ({
       const value = values[field.name] ?? getFieldDefault(endpoint, field);
       if (value.trim()) curlLines.push(`  -F "${field.name}=${value.trim()}"`);
     });
-  } else if (endpoint.method !== 'GET') {
+  } else if (endpoint.method !== 'GET' && hasJsonBody) {
     curlLines.push('  -H "Content-Type: application/json"');
     curlLines.push(`  -d ${shellQuote(JSON.stringify(jsonBody))}`);
   }
@@ -863,45 +1429,99 @@ const compactSearchResponse = (response: SearchResponse) => ({
   }),
 });
 
-const endpointIdByPath: Record<string, string> = {
-  '/orgs': 'sources-list',
-  '/orgs/slug/{slug}': 'source-lookup',
-  '/orgs/ngs/search/text': 'search-text',
-  '/orgs/ngs/search/image': 'search-image',
-  '/orgs/ngs/search/color': 'search-colour',
-  '/orgs/ngs/artworks/{artworkId}': 'artwork-lookup',
-  '/translate/text': 'translate-text',
-  '/extract': 'extract',
+const getEndpointKey = (endpoint: EndpointDefinition) =>
+  `${endpoint.method} ${endpoint.path}`;
+
+const endpointIdByKey: Record<string, string> = {
+  'GET /orgs': 'sources-list',
+  'POST /orgs': 'source-create',
+  'GET /orgs/slug/{slug}': 'source-lookup',
+  'POST /orgs/ngs/search/text': 'search-text',
+  'POST /orgs/ngs/search/image': 'search-image',
+  'POST /orgs/ngs/search/color': 'search-colour',
+  'GET /orgs/ngs/artworks/{artworkId}': 'artwork-lookup',
+  'GET /orgs/ngs/collections': 'collection-list',
+  'POST /orgs/ngs/collections': 'collection-create',
+  'POST /orgs/ngs/collections/upsert': 'collection-upsert',
+  'GET /orgs/ngs/collections/{collectionId}': 'collection-lookup',
+  'PATCH /orgs/ngs/collections/{collectionId}': 'collection-update',
+  'DELETE /orgs/ngs/collections/{collectionId}': 'collection-delete',
+  'POST /orgs/ngs/artworks/upsert': 'artwork-upsert',
+  'PATCH /orgs/ngs/artworks/{artworkId}': 'artwork-update',
+  'DELETE /orgs/ngs/artworks/{artworkId}': 'artwork-delete',
+  'POST /orgs/ngs/collections/{collectionId}/artworks':
+    'collection-artwork-add',
+  'DELETE /orgs/ngs/collections/{collectionId}/artworks/{artworkId}':
+    'collection-artwork-remove',
+  'POST /translate/text': 'translate-text',
+  'POST /extract': 'extract',
 };
 
-const endpointSummaryByPath: Record<string, string> = {
-  '/orgs':
+const endpointSummaryByKey: Record<string, string> = {
+  'GET /orgs':
     'List public sources and the keys used in REST paths and MCP arguments.',
-  '/orgs/slug/{slug}':
+  'POST /orgs':
+    'Create a source owned by the authenticated principal. The generated source API key is returned only on creation.',
+  'GET /orgs/slug/{slug}':
     'Resolve a source by canonical slug before building source-specific calls.',
-  '/orgs/ngs/search/text':
+  'POST /orgs/ngs/search/text':
     "Natural-language search against a source's text embeddings.",
-  '/orgs/ngs/search/image':
+  'POST /orgs/ngs/search/image':
     "Multipart image search against a source's visual embeddings.",
-  '/orgs/ngs/search/color':
+  'POST /orgs/ngs/search/color':
     'Find artworks whose extracted palettes match one or more hex colours.',
-  '/orgs/ngs/artworks/{artworkId}':
+  'GET /orgs/ngs/artworks/{artworkId}':
     'Fetch one artwork record with source-labelled metadata and imagery.',
-  '/translate/text':
+  'GET /orgs/ngs/collections':
+    'List collections in a source. This route is public for public sources.',
+  'POST /orgs/ngs/collections':
+    'Create a collection in a source. Provide an id when clients need stable collection IDs.',
+  'POST /orgs/ngs/collections/upsert':
+    'Create or update a collection by stable id. The response includes a created flag.',
+  'GET /orgs/ngs/collections/{collectionId}':
+    'Fetch one collection scoped to the source.',
+  'PATCH /orgs/ngs/collections/{collectionId}':
+    'Patch collection metadata scoped to the source.',
+  'DELETE /orgs/ngs/collections/{collectionId}':
+    'Delete a collection scoped to the source.',
+  'POST /orgs/ngs/artworks/upsert':
+    'Create or update an artwork record by id, source record id, or accession number. The response includes a created flag.',
+  'PATCH /orgs/ngs/artworks/{artworkId}':
+    'Patch artwork metadata scoped to the source.',
+  'DELETE /orgs/ngs/artworks/{artworkId}':
+    'Soft-delete an artwork scoped to the source.',
+  'POST /orgs/ngs/collections/{collectionId}/artworks':
+    'Attach an artwork to a collection. Collection and artwork must belong to the same source.',
+  'DELETE /orgs/ngs/collections/{collectionId}/artworks/{artworkId}':
+    'Remove a collection membership without deleting the collection or artwork.',
+  'POST /translate/text':
     'Translate English catalogue text to Chinese, Malay, or Tamil.',
-  '/extract':
+  'POST /extract':
     'Extract image objects from public image URLs. target=object is the default for preserving mounted artworks, scrolls, and visible supports. Live jobs use fal SAM3 when configured. Free accounts get 10 submitted inputs lifetime.',
 };
 
-const endpointNavLabelByPath: Record<string, string> = {
-  '/orgs': '/orgs',
-  '/orgs/slug/{slug}': '/orgs/slug/{slug}',
-  '/orgs/ngs/search/text': 'text',
-  '/orgs/ngs/search/image': 'image',
-  '/orgs/ngs/search/color': 'colour',
-  '/orgs/ngs/artworks/{artworkId}': 'by ID',
-  '/translate/text': 'translate text',
-  '/extract': 'extract image',
+const endpointNavLabelByKey: Record<string, string> = {
+  'GET /orgs': '/orgs',
+  'POST /orgs': 'create source',
+  'GET /orgs/slug/{slug}': '/orgs/slug/{slug}',
+  'POST /orgs/ngs/search/text': 'text',
+  'POST /orgs/ngs/search/image': 'image',
+  'POST /orgs/ngs/search/color': 'colour',
+  'GET /orgs/ngs/artworks/{artworkId}': 'by ID',
+  'GET /orgs/ngs/collections': 'list collections',
+  'POST /orgs/ngs/collections': 'create collection',
+  'POST /orgs/ngs/collections/upsert': 'upsert collection',
+  'GET /orgs/ngs/collections/{collectionId}': 'collection by ID',
+  'PATCH /orgs/ngs/collections/{collectionId}': 'update collection',
+  'DELETE /orgs/ngs/collections/{collectionId}': 'delete collection',
+  'POST /orgs/ngs/artworks/upsert': 'upsert artwork',
+  'PATCH /orgs/ngs/artworks/{artworkId}': 'update artwork',
+  'DELETE /orgs/ngs/artworks/{artworkId}': 'delete artwork',
+  'POST /orgs/ngs/collections/{collectionId}/artworks': 'add artwork',
+  'DELETE /orgs/ngs/collections/{collectionId}/artworks/{artworkId}':
+    'remove artwork',
+  'POST /translate/text': 'translate text',
+  'POST /extract': 'extract image',
 };
 
 const baseResponseFields: SchemaField[] = [
@@ -1023,6 +1643,24 @@ const sourceResponseFields: SchemaField[] = [
   },
 ];
 
+const sourceCreateResponseFields: SchemaField[] = [
+  {
+    name: 'data.id',
+    type: 'string',
+    description: 'Created source ID.',
+  },
+  {
+    name: 'data.slug',
+    type: 'string',
+    description: 'Created source slug.',
+  },
+  {
+    name: 'data.api_key',
+    type: 'string',
+    description: 'Generated source API key. Returned only on creation.',
+  },
+];
+
 const artworkResponseFields: SchemaField[] = [
   {
     name: 'id',
@@ -1046,6 +1684,101 @@ const artworkResponseFields: SchemaField[] = [
   },
 ];
 
+const artworkUpsertResponseFields: SchemaField[] = [
+  {
+    name: 'data.created',
+    type: 'boolean',
+    description: 'True when a new artwork was inserted; false when updated.',
+  },
+  {
+    name: 'data.artwork.id',
+    type: 'string',
+    description: 'Created or updated artwork ID.',
+  },
+  {
+    name: 'data.artwork.metadata',
+    type: 'object',
+    description: 'Normalized artwork metadata, including source fields.',
+  },
+];
+
+const collectionResponseFields: SchemaField[] = [
+  {
+    name: 'data[].id',
+    type: 'string',
+    description: 'Collection ID for list responses.',
+  },
+  {
+    name: 'data.id',
+    type: 'string',
+    description: 'Collection ID for single-record responses.',
+  },
+  {
+    name: 'data.name',
+    type: 'string',
+    description: 'Collection display name.',
+  },
+  {
+    name: 'data.artwork_count',
+    type: 'integer',
+    description: 'Number of artworks currently attached to the collection.',
+  },
+  {
+    name: 'data.thumbnail_artwork_id',
+    type: 'string | null',
+    description: 'Artwork used as the collection thumbnail, when set.',
+  },
+];
+
+const collectionUpsertResponseFields: SchemaField[] = [
+  {
+    name: 'data.created',
+    type: 'boolean',
+    description: 'True when a new collection was inserted; false when updated.',
+  },
+  {
+    name: 'data.collection.id',
+    type: 'string',
+    description: 'Created or updated collection ID.',
+  },
+  {
+    name: 'data.collection.name',
+    type: 'string',
+    description: 'Collection display name.',
+  },
+];
+
+const collectionMembershipResponseFields: SchemaField[] = [
+  {
+    name: 'data.collection_id',
+    type: 'string',
+    description: 'Collection ID that was changed.',
+  },
+  {
+    name: 'data.artwork_id',
+    type: 'string',
+    description: 'Artwork ID that was added or removed.',
+  },
+  {
+    name: 'data.position',
+    type: 'integer',
+    description: 'Stored position for add operations.',
+  },
+];
+
+const deleteResponseFields: SchemaField[] = [
+  {
+    name: 'success',
+    type: 'boolean',
+    description: 'Whether the delete completed successfully.',
+  },
+  {
+    name: 'data.id',
+    type: 'string',
+    description: 'Deleted or detached resource ID, when returned.',
+  },
+];
+
 type EndpointDoc = {
   endpoint: EndpointDefinition;
   id: string;
@@ -1057,25 +1790,48 @@ type EndpointDoc = {
 const getResponseFields = (endpoint: EndpointDefinition) => {
   if (endpoint.path.includes('/search/')) return searchResponseFields;
   if (endpoint.path === '/translate/text') return translationResponseFields;
-  if (endpoint.path === '/extract')
-    return extractResponseFields;
+  if (endpoint.path === '/extract') return extractResponseFields;
+  if (endpoint.method === 'POST' && endpoint.path === '/orgs')
+    return sourceCreateResponseFields;
   if (endpoint.path === '/orgs') return sourceResponseFields;
   if (endpoint.path === '/orgs/slug/{slug}') return sourceResponseFields;
+  if (endpoint.path === '/orgs/ngs/collections/upsert')
+    return collectionUpsertResponseFields;
+  if (
+    endpoint.path.includes('/collections/') &&
+    endpoint.path.endsWith('/artworks')
+  )
+    return collectionMembershipResponseFields;
+  if (
+    endpoint.path.includes('/collections/') &&
+    endpoint.path.includes('/artworks/')
+  )
+    return collectionMembershipResponseFields;
+  if (endpoint.method === 'DELETE') return deleteResponseFields;
+  if (endpoint.path.includes('/collections')) return collectionResponseFields;
+  if (endpoint.path === '/orgs/ngs/artworks/upsert')
+    return artworkUpsertResponseFields;
   if (endpoint.path.includes('/artworks/')) return artworkResponseFields;
   return baseResponseFields;
 };
 
 export const endpointDocs: EndpointDoc[] = endpoints.map((endpoint) => ({
   endpoint,
-  id: endpointIdByPath[endpoint.path] ?? endpoint.path.replace(/\W+/g, '-'),
-  navLabel: endpointNavLabelByPath[endpoint.path] ?? endpoint.title,
+  id:
+    endpointIdByKey[getEndpointKey(endpoint)] ??
+    getEndpointKey(endpoint).replace(/\W+/g, '-'),
+  navLabel: endpointNavLabelByKey[getEndpointKey(endpoint)] ?? endpoint.title,
   responseFields: getResponseFields(endpoint),
-  summary: endpointSummaryByPath[endpoint.path] ?? endpoint.body,
+  summary: endpointSummaryByKey[getEndpointKey(endpoint)] ?? endpoint.body,
 }));
 
 const fieldToMarkdown = (field: SchemaField) =>
   `| \`${field.name}\` | \`${field.type}\` | ${
-    field.required ? 'yes' : field.defaultValue ? `default ${field.defaultValue}` : ''
+    field.required
+      ? 'yes'
+      : field.defaultValue
+        ? `default ${field.defaultValue}`
+        : ''
   } | ${field.description.replace(/\|/g, '\\|')} |`;
 
 export const buildDocsMarkdown = (apiBase: string) => {
@@ -1086,7 +1842,9 @@ export const buildDocsMarkdown = (apiBase: string) => {
     '',
     '## Authentication',
     '',
-    'Server-to-server calls use `X-API-Key: <key>`. Source discovery endpoints are public; search, artwork lookup, translation, and extract require a key.',
+    'Server-to-server calls use `X-API-Key: <key>`. Source discovery and public collection reads are public; search, artwork lookup, translation, extract, and all management writes require a key.',
+    '',
+    'MCP clients connect to `/api/v1/mcp` using Streamable HTTP JSON-RPC. The protected resource metadata is exposed at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/api/v1/mcp`. API keys can call all available tools; OAuth tokens need `mcp:all` or the relevant grouped scopes (`mcp:read`, `mcp:write`, `artworks:read`, `artworks:write`, `collections:read`, `collections:write`, `translations:create`, `extract:create`).',
     '',
     '## Usage',
     '',
@@ -1180,7 +1938,7 @@ export const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
     ],
   },
   {
-    title: 'Sources · public',
+    title: 'Sources',
     items: [
       {
         href: '#sources-list',
@@ -1193,6 +1951,12 @@ export const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
         id: 'source-lookup',
         label: 'GET /orgs/slug/{slug}',
         method: 'GET',
+      },
+      {
+        href: '#source-create',
+        id: 'source-create',
+        label: 'create source',
+        method: 'POST',
       },
     ],
   },
@@ -1227,6 +1991,77 @@ export const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
         id: 'artwork-lookup',
         label: 'by ID',
         method: 'GET',
+      },
+      {
+        href: '#artwork-upsert',
+        id: 'artwork-upsert',
+        label: 'upsert',
+        method: 'POST',
+      },
+      {
+        href: '#artwork-update',
+        id: 'artwork-update',
+        label: 'update',
+        method: 'PATCH',
+      },
+      {
+        href: '#artwork-delete',
+        id: 'artwork-delete',
+        label: 'delete',
+        method: 'DELETE',
+      },
+    ],
+  },
+  {
+    title: 'Collections',
+    items: [
+      {
+        href: '#collection-list',
+        id: 'collection-list',
+        label: 'list',
+        method: 'GET',
+      },
+      {
+        href: '#collection-create',
+        id: 'collection-create',
+        label: 'create',
+        method: 'POST',
+      },
+      {
+        href: '#collection-upsert',
+        id: 'collection-upsert',
+        label: 'upsert',
+        method: 'POST',
+      },
+      {
+        href: '#collection-lookup',
+        id: 'collection-lookup',
+        label: 'by ID',
+        method: 'GET',
+      },
+      {
+        href: '#collection-update',
+        id: 'collection-update',
+        label: 'update',
+        method: 'PATCH',
+      },
+      {
+        href: '#collection-delete',
+        id: 'collection-delete',
+        label: 'delete',
+        method: 'DELETE',
+      },
+      {
+        href: '#collection-artwork-add',
+        id: 'collection-artwork-add',
+        label: 'add artwork',
+        method: 'POST',
+      },
+      {
+        href: '#collection-artwork-remove',
+        id: 'collection-artwork-remove',
+        label: 'remove artwork',
+        method: 'DELETE',
       },
     ],
   },
@@ -1421,7 +2256,7 @@ const payload = await response.json();`;
   }
 
   const body =
-    endpoint.method === 'GET'
+    endpoint.method === 'GET' || request.body === undefined
       ? ''
       : `,
   body: JSON.stringify(${stringify(request.displayBody)}),`;
@@ -1441,7 +2276,8 @@ const buildPythonSample = (
     return `import requests
 
 with open("image.jpg", "rb") as image:
-    response = requests.post(
+    response = requests.request(
+        "${endpoint.method}",
         "${request.url}",
         headers=${stringify(request.headers)},
         files={"image": image},
@@ -1451,16 +2287,16 @@ with open("image.jpg", "rb") as image:
 payload = response.json()`;
   }
 
-  const method = endpoint.method === 'GET' ? 'get' : 'post';
   const body =
-    endpoint.method === 'GET'
+    endpoint.method === 'GET' || request.body === undefined
       ? ''
       : `,
         json=${stringify(request.displayBody)},`;
 
   return `import requests
 
-response = requests.${method}(
+response = requests.request(
+    "${endpoint.method}",
     "${request.url}",
     headers=${stringify(request.headers)}${body}
 )
@@ -1474,6 +2310,7 @@ const buildMcpSample = (
   endpoint: EndpointDefinition,
   values: Record<string, string>
 ) => {
+  const endpointKey = getEndpointKey(endpoint);
   const args = endpoint.schema.reduce<Record<string, unknown>>(
     (argumentsByName, field) => {
       const value = coerceFieldValue(
@@ -1486,7 +2323,7 @@ const buildMcpSample = (
     {}
   );
 
-  if (endpoint.path === '/orgs') {
+  if (endpointKey === 'GET /orgs') {
     return stringify({
       jsonrpc: '2.0',
       id: 1,
@@ -1498,7 +2335,7 @@ const buildMcpSample = (
     });
   }
 
-  if (endpoint.path === '/orgs/ngs/search/text') {
+  if (endpointKey === 'POST /orgs/ngs/search/text') {
     return stringify({
       jsonrpc: '2.0',
       id: 1,
@@ -1513,7 +2350,7 @@ const buildMcpSample = (
     });
   }
 
-  if (endpoint.path === '/orgs/ngs/search/color') {
+  if (endpointKey === 'POST /orgs/ngs/search/color') {
     return stringify({
       jsonrpc: '2.0',
       id: 1,
@@ -1528,7 +2365,7 @@ const buildMcpSample = (
     });
   }
 
-  if (endpoint.path === '/orgs/ngs/artworks/{artworkId}') {
+  if (endpointKey === 'GET /orgs/ngs/artworks/{artworkId}') {
     return stringify({
       jsonrpc: '2.0',
       id: 1,
@@ -1543,7 +2380,108 @@ const buildMcpSample = (
     });
   }
 
-  if (endpoint.path === '/translate/text') {
+  if (endpointKey === 'GET /orgs/ngs/collections') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'list_collections',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+        },
+      },
+    });
+  }
+
+  if (
+    endpointKey === 'POST /orgs/ngs/collections' ||
+    endpointKey === 'POST /orgs/ngs/collections/upsert'
+  ) {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'upsert_collection',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          collectionId: args.id,
+          name: args.name,
+          description: args.description,
+          thumbnailArtworkId: args.thumbnail_artwork_id,
+        },
+      },
+    });
+  }
+
+  if (endpointKey === 'POST /orgs/ngs/artworks/upsert') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'upsert_artwork_record',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          id: args.id,
+          collectionId: args.collection_id,
+          title: args.title,
+          artist: args.artist,
+          year: args.year,
+          medium: args.medium,
+          description: args.description,
+          accessionNumber: args.accession_number,
+          sourceInstitution: args.source_institution,
+          sourceCollection: args.source_collection,
+          sourceRecordId: args.source_record_id,
+          sourceUrl: args.source_url,
+          imageUrl: args.image_url,
+          thumbnailUrl: args.thumbnail_url,
+          fieldSources: args.field_sources,
+          customMetadata: args.custom_metadata,
+        },
+      },
+    });
+  }
+
+  if (endpointKey === 'POST /orgs/ngs/collections/{collectionId}/artworks') {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'add_artwork_to_collection',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          collectionId: args.collectionId,
+          artworkId: args.artwork_id,
+          position: args.position,
+        },
+      },
+    });
+  }
+
+  if (
+    endpointKey ===
+    'DELETE /orgs/ngs/collections/{collectionId}/artworks/{artworkId}'
+  ) {
+    return stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'remove_artwork_from_collection',
+        arguments: {
+          collection: NGS_ORG_SHORTCODE,
+          collectionId: args.collectionId,
+          artworkId: args.artworkId,
+        },
+      },
+    });
+  }
+
+  if (endpointKey === 'POST /translate/text') {
     return stringify({
       jsonrpc: '2.0',
       id: 1,
@@ -1555,7 +2493,7 @@ const buildMcpSample = (
     });
   }
 
-  if (endpoint.path === '/extract') {
+  if (endpointKey === 'POST /extract') {
     const { preview, ...rest } = args;
     return stringify({
       jsonrpc: '2.0',
@@ -1582,7 +2520,7 @@ const buildMcpSample = (
     },
     note:
       endpoint.path === '/orgs/ngs/search/image'
-        ? 'Image search is REST-only; MCP tools cover text, colour, lookup, and translation.'
+        ? 'Image search is REST-only; MCP tools cover text, colour, lookup, collections, upsert management, translation, and extract.'
         : 'No direct MCP tool maps to this REST endpoint.',
   });
 };
@@ -1613,8 +2551,22 @@ const buildExampleResponse = (
   endpoint: EndpointDefinition,
   orgListResponse: unknown
 ) => {
-  if (endpoint.path === '/orgs') return orgListResponse;
-  if (endpoint.path === '/orgs/slug/{slug}') {
+  const endpointKey = getEndpointKey(endpoint);
+
+  if (endpointKey === 'GET /orgs') return orgListResponse;
+  if (endpointKey === 'POST /orgs') {
+    return {
+      success: true,
+      data: {
+        id: 'org_01jxyz',
+        name: 'Demo Museum',
+        slug: 'demo-museum',
+        owner_id: 'user_01jxyz',
+        api_key: 'plt_stg_...',
+      },
+    };
+  }
+  if (endpointKey === 'GET /orgs/slug/{slug}') {
     return {
       success: true,
       data: {
@@ -1625,7 +2577,133 @@ const buildExampleResponse = (
       },
     };
   }
-  if (endpoint.path === '/orgs/ngs/search/color') {
+  if (endpointKey === 'GET /orgs/ngs/collections') {
+    return {
+      success: true,
+      data: [
+        {
+          id: 'curatorial-highlights',
+          org_id: NGS_ORG_ID,
+          gallery_id: NGS_ORG_ID,
+          name: 'Curatorial highlights',
+          description: 'Selected records for a project',
+          artwork_count: 12,
+          thumbnail_artwork_id: '2018-00743',
+        },
+      ],
+    };
+  }
+  if (endpointKey === 'POST /orgs/ngs/collections/upsert') {
+    return {
+      success: true,
+      data: {
+        created: false,
+        collection: {
+          id: 'curatorial-highlights',
+          name: 'Curatorial highlights',
+          artwork_count: 12,
+        },
+      },
+    };
+  }
+  if (endpointKey === 'POST /orgs/ngs/collections') {
+    return {
+      success: true,
+      data: {
+        id: 'curatorial-highlights',
+        name: 'Curatorial highlights',
+        description: 'Selected records for a project',
+        artwork_count: 0,
+      },
+    };
+  }
+  if (endpointKey === 'GET /orgs/ngs/collections/{collectionId}') {
+    return {
+      success: true,
+      data: {
+        id: 'curatorial-highlights',
+        name: 'Curatorial highlights',
+        description: 'Selected records for a project',
+        artwork_count: 12,
+        thumbnail_artwork_id: '2018-00743',
+      },
+    };
+  }
+  if (endpointKey === 'PATCH /orgs/ngs/collections/{collectionId}') {
+    return {
+      success: true,
+      data: {
+        id: 'curatorial-highlights',
+        name: 'Updated highlights',
+        description: 'Refined project selection',
+        artwork_count: 12,
+      },
+    };
+  }
+  if (endpointKey === 'DELETE /orgs/ngs/collections/{collectionId}') {
+    return {
+      success: true,
+      data: { id: 'curatorial-highlights' },
+    };
+  }
+  if (endpointKey === 'POST /orgs/ngs/artworks/upsert') {
+    return {
+      success: true,
+      data: {
+        created: false,
+        artwork: {
+          id: '2018-00743',
+          title: 'Singapore',
+          artist: 'John Turnbull Thomson',
+          metadata: {
+            medium: 'Oil on canvas',
+            source_record_id: '2018-00743',
+          },
+        },
+      },
+    };
+  }
+  if (endpointKey === 'PATCH /orgs/ngs/artworks/{artworkId}') {
+    return {
+      success: true,
+      data: {
+        id: '2018-00743',
+        title: 'Singapore',
+        metadata: {
+          medium: 'Oil on canvas',
+        },
+      },
+    };
+  }
+  if (endpointKey === 'DELETE /orgs/ngs/artworks/{artworkId}') {
+    return {
+      success: true,
+      data: { id: '2018-00743' },
+    };
+  }
+  if (endpointKey === 'POST /orgs/ngs/collections/{collectionId}/artworks') {
+    return {
+      success: true,
+      data: {
+        collection_id: 'curatorial-highlights',
+        artwork_id: '2018-00743',
+        position: 0,
+      },
+    };
+  }
+  if (
+    endpointKey ===
+    'DELETE /orgs/ngs/collections/{collectionId}/artworks/{artworkId}'
+  ) {
+    return {
+      success: true,
+      data: {
+        collection_id: 'curatorial-highlights',
+        artwork_id: '2018-00743',
+      },
+    };
+  }
+  if (endpointKey === 'POST /orgs/ngs/search/color') {
     return {
       results: [
         {
@@ -1697,7 +2775,8 @@ export default function ApiDocsPage() {
   const [activeLanguage, setActiveLanguage] = useState<LanguageTab>('curl');
   const [activeSectionId, setActiveSectionId] = useState('overview');
   const [activeEndpointId, setActiveEndpointId] = useState(
-    endpointIdByPath[defaultBuilderEndpointPath] ?? endpointDocs[0]!.id
+    endpointDocs.find((doc) => doc.endpoint.path === defaultBuilderEndpointPath)
+      ?.id ?? endpointDocs[0]!.id
   );
   const [railResponses, setRailResponses] = useState<
     Record<string, RailRunResult>
@@ -1762,8 +2841,7 @@ export default function ApiDocsPage() {
   const dailyUsage = usageQuery.data ?? defaultDailyUsage;
   const translationUsage =
     translationUsageQuery.data ?? defaultTranslationUsage;
-  const extractUsage =
-    extractUsageQuery.data ?? defaultExtractUsage;
+  const extractUsage = extractUsageQuery.data ?? defaultExtractUsage;
   const dailyPercent =
     dailyUsage.quota > 0
       ? Math.min((dailyUsage.used / dailyUsage.quota) * 100, 100)
@@ -1774,10 +2852,7 @@ export default function ApiDocsPage() {
       : 0;
   const extractPercent =
     extractUsage.quota > 0
-      ? Math.min(
-          (extractUsage.used / extractUsage.quota) * 100,
-          100
-        )
+      ? Math.min((extractUsage.used / extractUsage.quota) * 100, 100)
       : 0;
   const dailyUsageValue = !user
     ? 'Sign in'
@@ -1921,6 +2996,12 @@ export default function ApiDocsPage() {
         endpoint,
         values: activeEndpointValues,
       });
+
+      if (endpoint.runnable === false) {
+        throw new Error(
+          'Copy this sample and run it from your own environment.'
+        );
+      }
 
       if (request.requiresAuth && !liveApiKey) {
         throw new Error('Paste an API key in the top bar to run this request.');
@@ -2271,6 +3352,7 @@ export default function ApiDocsPage() {
             status={railStatus}
             canRun={
               !railRunMutation.isPending &&
+              activeEndpointDoc.endpoint.runnable !== false &&
               (!activeRequest.requiresAuth || Boolean(liveApiKey)) &&
               !activeRequest.missingFiles.length
             }
@@ -2306,8 +3388,8 @@ function StartSections({
           Paillette API
         </h1>
         <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
-          Resolve a source, search or translate through REST, and keep
-          provenance fields with every displayed catalogue value.
+          Resolve a source, search or translate through REST, and manage artwork
+          records and collections with provenance-aware metadata.
         </p>
         <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 text-xs text-[var(--app-muted)]">
           <button
@@ -2337,8 +3419,9 @@ function StartSections({
         <SectionHeading title="Authentication" />
         <p className="text-sm leading-6 text-[var(--app-muted)]">
           Server-to-server calls use <CodeText>X-API-Key</CodeText>. Public
-          source discovery works without a key; search, artwork lookup, and
-          translation require one.
+          source discovery and collection reads work without a key; search,
+          artwork lookup, translation, extract, and management writes require
+          one.
         </p>
       </section>
 
@@ -2426,6 +3509,14 @@ function EndpointSection({ doc }: { doc: EndpointDoc }) {
         >
           {endpointRequiresAuth(endpoint) ? 'requires key' : 'public'}
         </span>
+        {endpoint.runnable === false && (
+          <span
+            className="rounded-full border border-[var(--app-line)] px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-[var(--app-faint)]"
+            style={monoStyle}
+          >
+            sample only
+          </span>
+        )}
       </div>
       <h2
         className="mt-2 text-[1.5rem] font-semibold leading-tight text-[var(--app-text-strong)]"
@@ -2465,7 +3556,18 @@ function McpSections({
         <SectionHeading title="MCP client config" />
         <p className="mb-4 text-sm leading-6 text-[var(--app-muted)]">
           Point the client at <CodeText>/api/v1/mcp</CodeText> and send the same
-          API key used for REST calls.
+          API key used for REST calls. OAuth clients can also discover protected
+          resource metadata from{' '}
+          <CodeText>/.well-known/oauth-protected-resource/api/v1/mcp</CodeText>.
+        </p>
+        <p className="mb-4 text-sm leading-6 text-[var(--app-muted)]">
+          API keys can call all exposed tools. OAuth tokens need{' '}
+          <CodeText>mcp:all</CodeText> or matching grouped scopes such as{' '}
+          <CodeText>mcp:read</CodeText>, <CodeText>mcp:write</CodeText>,{' '}
+          <CodeText>artworks:read</CodeText>,{' '}
+          <CodeText>collections:write</CodeText>,{' '}
+          <CodeText>translations:create</CodeText>, or{' '}
+          <CodeText>extract:create</CodeText>.
         </p>
         <CodePanel
           id="mcp-config"
@@ -2857,11 +3959,13 @@ function CodeRail({
           disabled={!canRun}
           onClick={onRun}
           title={
-            request.missingFiles.length
-              ? 'This endpoint requires a file.'
-              : request.requiresAuth && !canRun
-                ? 'Paste an API key in the top bar.'
-                : undefined
+            endpointDoc.endpoint.runnable === false
+              ? 'Copy this management sample and run it from your own environment.'
+              : request.missingFiles.length
+                ? 'This endpoint requires a file.'
+                : request.requiresAuth && !canRun
+                  ? 'Paste an API key in the top bar.'
+                  : undefined
           }
         >
           {isRunning ? (

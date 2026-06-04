@@ -2,23 +2,27 @@
 
 ## Overview
 
-The Artwork Management API provides full CRUD operations for artwork images and metadata, including R2 storage integration for scalable image hosting.
+The Artwork Management API provides org-scoped CRUD operations for artwork images, artwork metadata records, and collections. Mutating routes require a bearer token, personal API key, or test/dev `X-User-Id` principal.
+
+Canonical routes use `/api/v1/orgs/:orgId`. Legacy `/api/v1/galleries/:galleryId` aliases remain mounted for existing clients.
 
 ## Endpoints
 
 ### Upload Artwork
 
-**POST** `/api/v1/artworks/upload`
+**POST** `/api/v1/orgs/:orgId/artworks/upload`
 
 Upload a new artwork with image and metadata.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body:
   - `image` (File, required): Image file (JPEG, PNG, WebP, GIF, TIFF)
   - `metadata` (JSON string, required): Artwork metadata
 
 **Metadata Schema:**
+
 ```json
 {
   "gallery_id": "uuid",
@@ -33,14 +37,16 @@ Upload a new artwork with image and metadata.
   "dimensions_unit": "cm", // cm | in | m
   "description": "Artwork description", // optional
   "provenance": "Provenance information", // optional
-  "translations": { // optional
+  "translations": {
+    // optional
     "es": {
       "title": "Título en español",
       "description": "Descripción en español"
     }
   },
   "custom_metadata": {}, // optional, any JSON
-  "citation": { // optional
+  "citation": {
+    // optional
     "format": "apa",
     "text": "Citation text"
   }
@@ -48,11 +54,14 @@ Upload a new artwork with image and metadata.
 ```
 
 **Response:** `201 Created`
+
 ```json
 {
   "success": true,
   "data": {
-    "artwork": { /* artwork object */ },
+    "artwork": {
+      /* artwork object */
+    },
     "upload_info": {
       "size": 1234567,
       "content_type": "image/jpeg",
@@ -63,6 +72,7 @@ Upload a new artwork with image and metadata.
 ```
 
 **Features:**
+
 - Automatic filename parsing (e.g., `artist_title_year.jpg`)
 - Duplicate detection via image hash
 - Image validation (size, type, dimensions)
@@ -70,13 +80,46 @@ Upload a new artwork with image and metadata.
 
 ---
 
+### Upsert Artwork Record
+
+**POST** `/api/v1/orgs/:orgId/artworks/upsert`
+
+Create or update a metadata record. Existing records are matched in this order:
+
+- `id` within the route org
+- `source_record_id` plus optional `source_institution` within the route org
+- `accession_number` within the route org
+
+**Request:**
+
+```json
+{
+  "id": "optional-client-record-id",
+  "title": "Artwork Title",
+  "artist": "Artist Name",
+  "medium": "Ink on paper",
+  "description": "Catalogue description",
+  "accession_number": "ACC-001",
+  "source_institution": "National Gallery Singapore",
+  "source_collection": "National Collection",
+  "source_record_id": "SRC-001",
+  "field_sources": { "title": "ngs" },
+  "custom_metadata": {}
+}
+```
+
+**Response:** `200 OK` for updates, `201 Created` for creates.
+
+---
+
 ### List Artworks
 
-**GET** `/api/v1/artworks`
+**GET** `/api/v1/orgs/:orgId/artworks`
 
 List artworks with filtering, sorting, and pagination.
 
 **Query Parameters:**
+
 - `gallery_id` (uuid): Filter by gallery
 - `collection_id` (uuid): Filter by collection
 - `artist` (string): Filter by artist (partial match)
@@ -93,10 +136,13 @@ List artworks with filtering, sorting, and pagination.
   - `asc`, `desc`
 
 **Response:** `200 OK`
+
 ```json
 {
   "success": true,
-  "data": [/* array of artwork objects */],
+  "data": [
+    /* array of artwork objects */
+  ],
   "pagination": {
     "total": 100,
     "limit": 20,
@@ -110,11 +156,12 @@ List artworks with filtering, sorting, and pagination.
 
 ### Get Artwork
 
-**GET** `/api/v1/artworks/:id`
+**GET** `/api/v1/orgs/:orgId/artworks/:id`
 
 Get a single artwork by ID.
 
 **Response:** `200 OK`
+
 ```json
 {
   "success": true,
@@ -158,25 +205,29 @@ Get a single artwork by ID.
 
 ### Update Artwork
 
-**PATCH** `/api/v1/artworks/:id`
+**PATCH** `/api/v1/orgs/:orgId/artworks/:id`
 
 Update artwork metadata (not the image).
 
 **Request:**
+
 ```json
 {
   "title": "Updated Title",
   "artist": "Updated Artist",
-  "description": "Updated description",
+  "description": "Updated description"
   // ... any artwork fields except gallery_id
 }
 ```
 
 **Response:** `200 OK`
+
 ```json
 {
   "success": true,
-  "data": { /* updated artwork object */ }
+  "data": {
+    /* updated artwork object */
+  }
 }
 ```
 
@@ -184,11 +235,12 @@ Update artwork metadata (not the image).
 
 ### Delete Artwork
 
-**DELETE** `/api/v1/artworks/:id`
+**DELETE** `/api/v1/orgs/:orgId/artworks/:id`
 
 Delete an artwork and its associated images from R2 storage.
 
 **Response:** `200 OK`
+
 ```json
 {
   "success": true,
@@ -197,6 +249,7 @@ Delete an artwork and its associated images from R2 storage.
 ```
 
 **Note:** This also deletes:
+
 - Original image from R2
 - Thumbnail image from R2
 - Database record
@@ -204,9 +257,89 @@ Delete an artwork and its associated images from R2 storage.
 
 ---
 
+## Collections
+
+### List Collections
+
+**GET** `/api/v1/orgs/:orgId/collections`
+
+### Create Collection
+
+**POST** `/api/v1/orgs/:orgId/collections`
+
+```json
+{
+  "id": "optional-stable-id",
+  "name": "National Collection",
+  "description": "Collection description",
+  "thumbnail_artwork_id": "optional-artwork-id"
+}
+```
+
+### Upsert Collection
+
+**POST** `/api/v1/orgs/:orgId/collections/upsert`
+
+Uses `id` when provided to update an existing collection or create it if missing.
+
+### Get, Update, Delete Collection
+
+- **GET** `/api/v1/orgs/:orgId/collections/:collectionId`
+- **PATCH** `/api/v1/orgs/:orgId/collections/:collectionId`
+- **DELETE** `/api/v1/orgs/:orgId/collections/:collectionId`
+
+### Collection Membership
+
+- **POST** `/api/v1/orgs/:orgId/collections/:collectionId/artworks`
+- **DELETE** `/api/v1/orgs/:orgId/collections/:collectionId/artworks/:artworkId`
+
+The add route body is:
+
+```json
+{
+  "artwork_id": "artwork-id",
+  "position": 0
+}
+```
+
+---
+
+## MCP Parity
+
+The same source-scoped operations are exposed through the MCP endpoint at
+`/api/v1/mcp` using Streamable HTTP JSON-RPC.
+
+MCP clients can call:
+
+- `list_orgs`
+- `search_artworks`
+- `lookup_artwork`
+- `colour_search`
+- `list_collections`
+- `upsert_collection`
+- `upsert_artwork_record`
+- `add_artwork_to_collection`
+- `remove_artwork_from_collection`
+- `translate_text`
+- `extract_images`
+
+Use `collection` or `orgId` to target a source such as `ngs`. API keys can call
+all exposed tools; OAuth tokens need `mcp:all` or the relevant grouped scopes
+such as `mcp:read`, `mcp:write`, `artworks:read`, `artworks:write`,
+`collections:read`, `collections:write`, `translations:create`, or
+`extract:create`.
+
+OAuth protected resource metadata is available at:
+
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/oauth-protected-resource/api/v1/mcp`
+
+---
+
 ## Image Requirements
 
 ### Supported Formats
+
 - JPEG (`.jpg`, `.jpeg`)
 - PNG (`.png`)
 - WebP (`.webp`)
@@ -214,6 +347,7 @@ Delete an artwork and its associated images from R2 storage.
 - TIFF (`.tif`, `.tiff`)
 
 ### Size Limits
+
 - **Max file size:** 50 MB
 - **Max dimensions:** 10,000 × 10,000 px
 - **Min dimensions:** 100 × 100 px
@@ -222,12 +356,12 @@ Delete an artwork and its associated images from R2 storage.
 
 The API can automatically extract metadata from filenames:
 
-| Pattern | Example | Extracted |
-|---------|---------|-----------|
-| `artist_title_year.jpg` | `monet_waterlilies_1919.jpg` | artist, title, year |
+| Pattern                     | Example                           | Extracted           |
+| --------------------------- | --------------------------------- | ------------------- |
+| `artist_title_year.jpg`     | `monet_waterlilies_1919.jpg`      | artist, title, year |
 | `artist - title (year).jpg` | `monet - Water Lilies (1919).jpg` | artist, title, year |
-| `title_year.jpg` | `waterlilies_1919.jpg` | title, year |
-| `title.jpg` | `waterlilies.jpg` | title |
+| `title_year.jpg`            | `waterlilies_1919.jpg`            | title, year         |
+| `title.jpg`                 | `waterlilies.jpg`                 | title               |
 
 ---
 
@@ -247,6 +381,7 @@ All endpoints return consistent error responses:
 ```
 
 ### Common Error Codes
+
 - `MISSING_FILE`: Image file not provided
 - `INVALID_METADATA`: Metadata validation failed
 - `VALIDATION_ERROR`: Request validation failed
@@ -263,10 +398,7 @@ All endpoints return consistent error responses:
 ## Future Enhancements
 
 - [ ] Thumbnail generation via Cloudflare Images
-- [ ] Color palette extraction
 - [ ] EXIF metadata extraction
 - [ ] Batch upload support
-- [ ] Embedding generation for AI search
 - [ ] Image transformations (resize, crop, filters)
 - [ ] CDN integration for optimized delivery
-- [ ] Authentication & authorization
