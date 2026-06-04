@@ -392,6 +392,7 @@ const makeEnv = (db: FakeSearchDb, quota = 100): Env =>
     EMBEDDING_QUEUE: {} as Queue,
     ENVIRONMENT: 'test',
     API_VERSION: 'v1',
+    SEARCH_FUSION_MODE: 'metadata',
     DAILY_FREE_QUERY_LIMIT: String(quota),
   }) as Env;
 
@@ -741,6 +742,93 @@ describe('Search API auth and quota behavior', () => {
     );
   });
 
+  it('keeps bare keywords semantic in hybrid search instead of exact metadata routing', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [
+          {
+            id: artworkRow.id,
+            score: 0.88,
+            metadata: {
+              model: 'jina-embeddings-v5-text-small',
+              embeddingVersion: 'v2',
+            },
+          },
+        ],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'rabbit',
+        topK: 10,
+      }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(1);
+    expect(captionVectorize.query).toHaveBeenCalled();
+    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({
+        channel: 'generated_caption_embedding',
+        source: 'custom_metadata.generated_caption.text',
+      })
+    );
+  });
+
+  it('keeps accession numbers and years metadata-routed in hybrid search', async () => {
+    env = {
+      ...env,
+      SEARCH_FUSION_MODE: 'hybrid',
+    };
+
+    const accessionRes = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: '1993-01678',
+        topK: 10,
+      }
+    );
+    const accessionBody = (await accessionRes.json()) as any;
+
+    expect(accessionRes.status).toBe(200);
+    expect(accessionBody.data.results[0].id).toBe(artworkRow.id);
+    expect(db.metadataSearchSql).toHaveLength(1);
+
+    db.metadataSearchSql = [];
+
+    const yearRes = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: '1957',
+        topK: 10,
+      }
+    );
+
+    expect(yearRes.status).toBe(200);
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(db.metadataSearchSql[0]).toContain('year BETWEEN ? AND ?');
+  });
+
   it('uses generated caption embeddings by default and exposes them as a search source', async () => {
     const captionVectorize = {
       query: vi.fn().mockResolvedValue({
@@ -759,6 +847,7 @@ describe('Search API auth and quota behavior', () => {
     env = {
       ...env,
       CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
       AI: {
         run: vi.fn().mockResolvedValue({
           data: [new Array(1024).fill(0.01)],

@@ -27,6 +27,8 @@ const clamp = (value: unknown, min: number, max: number, fallback: number) => {
   return Math.min(Math.max(number, min), max);
 };
 
+const DEFAULT_PUBLIC_TEXT_MIN_SCORE = 0.2;
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -110,7 +112,7 @@ export const action = async ({
   const requestedSearchPayload: Required<SearchTextRequest> = {
     query,
     topK: clamp(body.topK, 1, 100, 30),
-    minScore: clamp(body.minScore, 0, 1, 0.3),
+    minScore: clamp(body.minScore, 0, 1, DEFAULT_PUBLIC_TEXT_MIN_SCORE),
   };
   const searchPayload: SearchTextRequest = requestedSearchPayload;
   const canonicalSearchPayload =

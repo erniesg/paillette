@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MASONRY_IMAGE_CLASS_NAME,
   getMasonryImageFrameStyle,
   shouldObserveMasonryColumnEnds,
 } from '../galleries.$galleryId.search';
@@ -39,6 +40,12 @@ describe('masonry image layout', () => {
 
     expect(first).toEqual(second);
     expect(first.aspectRatio).toMatch(/^1 \/ \d+(\.\d+)?$/);
+  });
+
+  it('contains masonry images so single-result cards do not crop the artwork', () => {
+    expect(MASONRY_IMAGE_CLASS_NAME).toContain('object-contain');
+    expect(MASONRY_IMAGE_CLASS_NAME).not.toContain('object-cover');
+    expect(MASONRY_IMAGE_CLASS_NAME).not.toContain('scale-');
   });
 });
 

@@ -93,10 +93,13 @@ const BROWSE_PAGE_SIZE = 60;
 const MIN_BROWSE_PAGE_SIZE = 12;
 const MAX_BROWSE_PAGE_SIZE = 100;
 const MAX_SEARCH_RESULTS = 100;
+const DEFAULT_TEXT_MIN_SCORE = 0.2;
 const PUBLIC_SEARCH_QUERY_STALE_TIME = Infinity;
 const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
 const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
 const GITHUB_URL = 'https://github.com/erniesg/paillette';
+export const MASONRY_IMAGE_CLASS_NAME =
+  'h-full w-full object-contain transition-opacity duration-300 group-hover:opacity-90';
 
 export const meta: MetaFunction = () => {
   return [
@@ -889,7 +892,7 @@ export default function SearchPage() {
   const [sortMode, setSortMode] = useState<SortMode>('relevance');
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
-  const [minScore, setMinScore] = useState(0.3);
+  const [minScore, setMinScore] = useState(DEFAULT_TEXT_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
   const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
   const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
@@ -3541,10 +3544,8 @@ function ResultCard({
             fallbackSrc={image.fallbackSrc}
             alt={title}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-            fallback={
-              <NoImagePlaceholder className="text-white/25" />
-            }
+            className={MASONRY_IMAGE_CLASS_NAME}
+            fallback={<NoImagePlaceholder className="text-white/25" />}
           />
         </div>
       </button>

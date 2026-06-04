@@ -110,4 +110,44 @@ describe('public text search route caching', () => {
     expect(secondPayload.data?.count).toBe(1);
     expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBe('HIT');
   });
+
+  it('defaults public text searches to a broader 20 percent threshold', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest({
+        query: 'rabbit',
+        topK: 30,
+      }),
+    } as any);
+    const payload = (await response.json()) as ApiResponse<SearchResponse>;
+    const upstreamInit = mockFetch.mock.calls[0]?.[1] as
+      | RequestInit
+      | undefined;
+    const upstreamBody =
+      typeof upstreamInit?.body === 'string'
+        ? JSON.parse(upstreamInit.body)
+        : undefined;
+
+    expect(upstreamBody).toEqual({
+      query: 'rabbit',
+      topK: 100,
+      minScore: 0,
+    });
+    expect(payload.data?.results.map((artwork) => artwork.id)).toEqual([
+      'strong',
+      'good',
+      'weak',
+    ]);
+    expect(payload.data?.count).toBe(3);
+  });
 });

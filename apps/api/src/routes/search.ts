@@ -88,10 +88,7 @@ type SearchFusionMode = 'legacy' | 'metadata' | 'hybrid';
 type RoutedSearchIntent =
   | 'balanced'
   | 'accession_exact'
-  | 'artist_exact'
-  | 'title_exact'
   | 'color_visual'
-  | 'medium_exact'
   | 'temporal'
   | 'formal_visual';
 
@@ -130,23 +127,6 @@ const COLOR_TERMS = new Set([
   'red',
   'sage',
   'yellow',
-]);
-const MEDIUM_TERMS = new Set([
-  'batik',
-  'bronze',
-  'canvas',
-  'charcoal',
-  'graphite',
-  'ink',
-  'linocut',
-  'oil',
-  'pencil',
-  'print',
-  'screenprint',
-  'sculpture',
-  'watercolour',
-  'watercolor',
-  'woodcut',
 ]);
 const FORMAL_VISUAL_TERMS = new Set(['brushwork', 'calligraphic', 'gestural']);
 const SEARCH_CONTROL_WORDS = new Set([
@@ -187,14 +167,6 @@ const searchQueryTokens = (query: string) =>
     .filter(
       (token) => token && token.length > 1 && !SEARCH_CONTROL_WORDS.has(token)
     );
-
-const extractTitlePhrase = (query: string) => {
-  const quoted = query.match(/["“”]([^"“”]+)["“”]/);
-  if (quoted?.[1]) return normalizeSearchWords(quoted[1]);
-
-  const titled = query.match(/\b(?:work\s+titled|titled|title)\s+(.+)$/i);
-  return titled?.[1] ? normalizeSearchWords(titled[1]) : undefined;
-};
 
 const backableSearchSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId) ? BACKABLE_NGS_PUBLIC_ARTWORK_SQL : '';
@@ -308,39 +280,7 @@ const normalizedTextSql = (expression: string) => `
   ) || ' ')
 `;
 
-const normalizedFieldExists = async (
-  db: D1Database,
-  orgId: string | undefined,
-  field: 'artist' | 'title',
-  value: string
-) => {
-  if (!value) return false;
-
-  const orgFilter = orgId ? 'AND org_id = ?' : '';
-  const params = [...(orgId ? [orgId] : []), ` ${value} `];
-  const { results } = await db
-    .prepare(
-      `
-      SELECT id
-      FROM artworks
-      WHERE deleted_at IS NULL
-        ${orgFilter}
-        ${backableSearchSql(orgId)}
-        AND ${normalizedTextSql(field)} = ?
-      LIMIT 1
-      `
-    )
-    .bind(...params)
-    .all<{ id: string }>();
-
-  return results.length > 0;
-};
-
-const buildRoutedSearchPlan = async (
-  db: D1Database,
-  orgId: string | undefined,
-  query: string
-): Promise<RoutedSearchPlan> => {
+const buildRoutedSearchPlan = (query: string): RoutedSearchPlan => {
   const accession = extractAccession(query);
   if (accession) {
     return {
@@ -350,41 +290,7 @@ const buildRoutedSearchPlan = async (
     };
   }
 
-  const titlePhrase = extractTitlePhrase(query);
-  if (
-    titlePhrase &&
-    (await normalizedFieldExists(db, orgId, 'title', titlePhrase))
-  ) {
-    return {
-      intent: 'title_exact',
-      weights: { jinaImage: 0.15, caption: 1.2, metadata: 4 },
-    };
-  }
-
-  const entityQuery = normalizeSearchWords(
-    query.replace(/\b(?:works?\s+by|artist|by)\b/gi, ' ')
-  );
-  const [artistExact, titleExact] = await Promise.all([
-    normalizedFieldExists(db, orgId, 'artist', entityQuery),
-    normalizedFieldExists(db, orgId, 'title', entityQuery),
-  ]);
-
-  if (artistExact) {
-    return {
-      intent: 'artist_exact',
-      weights: { jinaImage: 0.1, caption: 1.5, metadata: 2.5 },
-    };
-  }
-
-  if (titleExact) {
-    return {
-      intent: 'title_exact',
-      weights: { jinaImage: 0.15, caption: 1.2, metadata: 4 },
-    };
-  }
-
   const tokens = searchQueryTokens(query);
-  const normalizedQueryForRoute = normalizeSearchWords(query);
   if (
     HEX_COLOR_RE.test(query) ||
     tokens.some((token) => COLOR_TERMS.has(token))
@@ -392,18 +298,6 @@ const buildRoutedSearchPlan = async (
     return {
       intent: 'color_visual',
       weights: { jinaImage: 1.5, caption: 0.25, metadata: 0 },
-    };
-  }
-
-  const hasMediumTerm = tokens.some((token) => MEDIUM_TERMS.has(token));
-  const hasMediumContext =
-    /\b(oil\s+on|watercolou?r|bronze|batik|woodcut|linocut|charcoal|graphite|screenprint|sculpture|medium|canvas)\b/i.test(
-      query
-    ) && !/\boil\s+lamps?\b/i.test(normalizedQueryForRoute);
-  if (hasMediumTerm && hasMediumContext) {
-    return {
-      intent: 'medium_exact',
-      weights: { jinaImage: 0.2, caption: 0.8, metadata: 3 },
     };
   }
 
@@ -417,13 +311,13 @@ const buildRoutedSearchPlan = async (
   if (tokens.some((token) => FORMAL_VISUAL_TERMS.has(token))) {
     return {
       intent: 'formal_visual',
-      weights: { jinaImage: 1.2, caption: 0.8, metadata: 0.2 },
+      weights: { jinaImage: 1.2, caption: 0.8, metadata: 0 },
     };
   }
 
   return {
     intent: 'balanced',
-    weights: { jinaImage: 1, caption: 1, metadata: 1 },
+    weights: { jinaImage: 1, caption: 1, metadata: 0 },
   };
 };
 
@@ -846,7 +740,7 @@ async function searchArtworksHybrid(
     return searchArtworksByMetadata(env.DB, orgId, query, topK);
   }
 
-  const route = await buildRoutedSearchPlan(env.DB, orgId, query);
+  const route = buildRoutedSearchPlan(query);
   const metadataQuery = route.metadataQuery || query;
   const temporalFilter = parseTemporalFilter(metadataQuery);
   const jinaConfig = getJinaConfig(env);
