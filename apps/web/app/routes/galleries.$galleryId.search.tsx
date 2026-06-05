@@ -43,6 +43,10 @@ import {
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
+import {
+  ImageReuseNotice,
+  RequestImageUseLink,
+} from '~/components/artwork/image-rights-notice';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import {
@@ -3001,6 +3005,7 @@ function IdleShowcaseLayer({
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
                   alt=""
+                  protectFromDownload
                   loading="eager"
                   decoding="async"
                   className="block max-w-full object-contain"
@@ -3534,21 +3539,85 @@ function SearchArtworkDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" />
         {artwork && (
-          <Dialog.Content className="themeable-surface fixed left-1/2 top-1/2 z-50 grid max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 grid-rows-[minmax(180px,34dvh)_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none xl:h-[min(86dvh,780px)] xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,0.95fr)] xl:grid-rows-none">
+          <Dialog.Content className="themeable-surface fixed left-1/2 top-1/2 z-50 grid max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 grid-rows-[minmax(280px,48dvh)_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none xl:h-[min(86dvh,780px)] xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,0.95fr)] xl:grid-rows-none">
             <Dialog.Description className="sr-only">
               Source-labelled catalogue text, public fields, and generated
               caption for the selected artwork.
             </Dialog.Description>
-            <div className="flex min-h-0 min-w-0 items-center justify-center bg-black/35 p-4">
-              <ImageWithFallback
-                src={image.src}
-                fallbackSrc={image.fallbackSrc}
-                alt={title}
-                className="max-h-full w-full object-contain"
-                fallback={
-                  <NoImagePlaceholder className="min-h-64 rounded-md text-white/25" />
-                }
-              />
+            <div className="flex min-h-0 min-w-0 flex-col bg-black/35 p-4">
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <ImageWithFallback
+                  src={image.src}
+                  fallbackSrc={image.fallbackSrc}
+                  alt={title}
+                  protectFromDownload
+                  className="max-h-full w-full object-contain"
+                  fallback={
+                    <NoImagePlaceholder className="min-h-48 rounded-md text-white/25" />
+                  }
+                />
+              </div>
+              <div className="mt-3 shrink-0 space-y-3">
+                {image.src && <ImageReuseNotice compact />}
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to={`/${routeId}/artworks/${encodeURIComponent(
+                      artwork.id
+                    )}?from=${encodeURIComponent(returnTo)}`}
+                    onClick={() =>
+                      onTrackArtworkInteraction(
+                        artwork,
+                        'click',
+                        'artwork_full_page_open'
+                      )
+                    }
+                    className="inline-flex h-9 max-w-full items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
+                  >
+                    <span className="truncate">Open full page</span>
+                  </Link>
+                  {ngsUrl && (
+                    <RequestImageUseLink
+                      className="h-9"
+                      onClick={() =>
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'image_permission_request',
+                          { source: 'ngs', surface: 'search_dialog' }
+                        )
+                      }
+                    />
+                  )}
+                  {ngsUrl && (
+                    <PublicRecordLink
+                      href={ngsUrl}
+                      label="National Gallery Singapore record"
+                      onClick={() =>
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'source_record_open',
+                          { source: 'ngs' }
+                        )
+                      }
+                    />
+                  )}
+                  {rootsUrl && (
+                    <PublicRecordLink
+                      href={rootsUrl}
+                      label="Roots NHB record"
+                      onClick={() =>
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'source_record_open',
+                          { source: 'roots' }
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              </div>
             </div>
             <div className="min-h-0 overflow-y-auto p-5 md:p-6">
               <div className="flex items-start justify-between gap-4">
@@ -3587,66 +3656,6 @@ function SearchArtworkDialog({
                     <X className="h-4 w-4" />
                   </button>
                 </Dialog.Close>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link
-                  to={`/${routeId}/artworks/${encodeURIComponent(
-                    artwork.id
-                  )}?from=${encodeURIComponent(returnTo)}`}
-                  onClick={() =>
-                    onTrackArtworkInteraction(
-                      artwork,
-                      'click',
-                      'artwork_full_page_open'
-                    )
-                  }
-                  className="inline-flex h-9 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
-                >
-                  Open full page
-                </Link>
-                {image.src && (
-                  <a
-                    href={image.src}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() =>
-                      onTrackArtworkInteraction(artwork, 'click', 'image_open')
-                    }
-                    className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.09] hover:text-white"
-                  >
-                    Open image
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-                {ngsUrl && (
-                  <PublicRecordLink
-                    href={ngsUrl}
-                    label="National Gallery Singapore record"
-                    onClick={() =>
-                      onTrackArtworkInteraction(
-                        artwork,
-                        'click',
-                        'source_record_open',
-                        { source: 'ngs' }
-                      )
-                    }
-                  />
-                )}
-                {rootsUrl && (
-                  <PublicRecordLink
-                    href={rootsUrl}
-                    label="Roots NHB record"
-                    onClick={() =>
-                      onTrackArtworkInteraction(
-                        artwork,
-                        'click',
-                        'source_record_open',
-                        { source: 'roots' }
-                      )
-                    }
-                  />
-                )}
               </div>
 
               {(rootsDescriptionDetails || caption) && (
@@ -3735,10 +3744,10 @@ function PublicRecordLink({
       target="_blank"
       rel="noreferrer"
       onClick={onClick}
-      className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-cyan-100/75 transition-colors hover:bg-white/[0.09] hover:text-cyan-100"
+      className="inline-flex h-9 max-w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-cyan-100/75 transition-colors hover:bg-white/[0.09] hover:text-cyan-100"
     >
-      {label}
-      <ExternalLink className="h-3.5 w-3.5" />
+      <span className="truncate">{label}</span>
+      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
     </a>
   );
 }
@@ -4100,6 +4109,7 @@ function SalonResults({
                 src={image.src}
                 fallbackSrc={image.fallbackSrc}
                 alt={title}
+                protectFromDownload
                 loading="lazy"
                 className="aspect-[4/5] w-full object-cover"
                 fallback={
@@ -4162,6 +4172,7 @@ function AtlasResults({
                 src={image.src}
                 fallbackSrc={image.fallbackSrc}
                 alt={title}
+                protectFromDownload
                 loading="lazy"
                 className="h-full w-full object-cover"
                 fallback={
@@ -4222,6 +4233,7 @@ function ResultCard({
             src={image.src}
             fallbackSrc={image.fallbackSrc}
             alt={title}
+            protectFromDownload
             loading="lazy"
             className={MASONRY_IMAGE_CLASS_NAME}
             fallback={<NoImagePlaceholder className="text-white/25" />}
@@ -4461,6 +4473,7 @@ function TableResults({
                       src={image.src}
                       fallbackSrc={image.fallbackSrc}
                       alt=""
+                      protectFromDownload
                       loading="lazy"
                       className="h-12 w-12 object-cover"
                       fallback={

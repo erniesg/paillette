@@ -30,13 +30,6 @@ export type EvalSuggestion = {
 const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'keyword',
-    label: CHUNG_CHENG_FEATURE_LABEL,
-    query: CHUNG_CHENG_FEATURE_QUERY,
-    dot: '#7dd3fc',
-    detail: 'featured',
-  },
-  {
-    type: 'keyword',
     label: 'tropical fruit and flowers',
     query: 'a still life of tropical fruit and flowers',
     dot: '#cda636',

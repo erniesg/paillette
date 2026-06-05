@@ -40,8 +40,8 @@ const artwork = (
   }) as ArtworkSearchResult;
 
 describe('isChungChengFeatureSuggestion', () => {
-  it('matches the curated Chung Cheng query only', () => {
-    expect(isChungChengFeatureSuggestion(suggestion())).toBe(true);
+  it('keeps the Chung Cheng showcase disabled', () => {
+    expect(isChungChengFeatureSuggestion(suggestion())).toBe(false);
     expect(
       isChungChengFeatureSuggestion(
         suggestion({ query: 'a still life of tropical fruit and flowers' })

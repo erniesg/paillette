@@ -6,6 +6,10 @@ import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import {
+  ImageReuseNotice,
+  RequestImageUseLink,
+} from '~/components/artwork/image-rights-notice';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
@@ -224,12 +228,16 @@ export default function ArtworkDetailPage() {
                 src={imageUrl}
                 fallbackSrc={thumbnailUrl}
                 alt={title}
+                protectFromDownload
                 className="max-h-[76vh] w-full object-contain"
                 fallback={
                   <NoImagePlaceholder className="h-80 rounded-md text-white/25" />
                 }
               />
             </div>
+            {ngsUrl && (
+              <ImageReuseNotice className="mt-3" />
+            )}
           </div>
         </section>
 
@@ -324,6 +332,17 @@ export default function ArtworkDetailPage() {
                     trackArtworkInteraction('click', 'source_record_open', {
                       source: 'ngs',
                     })
+                  }
+                />
+              )}
+              {ngsUrl && (
+                <RequestImageUseLink
+                  onClick={() =>
+                    trackArtworkInteraction(
+                      'click',
+                      'image_permission_request',
+                      { source: 'ngs' }
+                    )
                   }
                 />
               )}

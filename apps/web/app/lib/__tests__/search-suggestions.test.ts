@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSuggestionPool,
-  CHUNG_CHENG_FEATURE_QUERY,
   getSuggestionPrefetchQueries,
   normalizeSearchQuery,
 } from '../search-suggestions';
@@ -23,21 +22,10 @@ const holiday = (
 });
 
 describe('buildSuggestionPool', () => {
-  it('starts with the Chung Cheng featured artwork', () => {
+  it('starts with the evergreen keyword', () => {
     const suggestions = buildSuggestionPool([]);
 
     expect(suggestions[0]).toMatchObject({
-      type: 'keyword',
-      label: 'Zhong Zheng Ren (中正人)',
-      query: CHUNG_CHENG_FEATURE_QUERY,
-      detail: 'featured',
-    });
-  });
-
-  it('keeps the evergreen keyword after the featured artwork', () => {
-    const suggestions = buildSuggestionPool([]);
-
-    expect(suggestions[1]).toMatchObject({
       type: 'keyword',
       label: 'tropical fruit and flowers',
       query: 'a still life of tropical fruit and flowers',
@@ -69,10 +57,6 @@ describe('buildSuggestionPool', () => {
 
     expect(keywordSuggestions).toEqual([
       expect.objectContaining({
-        label: 'Zhong Zheng Ren (中正人)',
-        query: CHUNG_CHENG_FEATURE_QUERY,
-      }),
-      expect.objectContaining({
         label: 'tropical fruit and flowers',
         query: 'a still life of tropical fruit and flowers',
       }),
@@ -89,7 +73,7 @@ describe('buildSuggestionPool', () => {
     });
     expect(suggestions[1]).toMatchObject({
       type: 'keyword',
-      label: 'Zhong Zheng Ren (中正人)',
+      label: 'tropical fruit and flowers',
     });
   });
 
@@ -106,7 +90,7 @@ describe('buildSuggestionPool', () => {
 
     expect(suggestions[0]).toMatchObject({
       type: 'keyword',
-      label: 'Zhong Zheng Ren (中正人)',
+      label: 'tropical fruit and flowers',
     });
     expect(suggestions[1]).toMatchObject({
       type: 'occasion',
@@ -114,8 +98,8 @@ describe('buildSuggestionPool', () => {
       isToday: false,
     });
     expect(suggestions[2]).toMatchObject({
-      type: 'keyword',
-      label: 'tropical fruit and flowers',
+      type: 'motif',
+      label: 'batik textile pattern',
     });
   });
 
@@ -175,9 +159,8 @@ describe('buildSuggestionPool', () => {
     ]);
 
     expect(getSuggestionPrefetchQueries(suggestions)).toEqual([
-      CHUNG_CHENG_FEATURE_QUERY,
-      'Vesak Day',
       'a still life of tropical fruit and flowers',
+      'Vesak Day',
       'batik or songket textile pattern',
       'serene, still and contemplative',
       'Nanyang-style fusion of Chinese and Southeast Asian',

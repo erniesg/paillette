@@ -15,9 +15,13 @@ export const CHUNG_CHENG_ROOTS_IMAGE_URL =
 export const CHUNG_CHENG_STATUE_MASK_IMAGE_URL =
   'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/yeo-hwee-bin/2019/2019-00754_cropped.tif/_jcr_content/renditions/cq5dam.zoom.2048.2048.jpeg';
 
+const ENABLE_CHUNG_CHENG_FEATURE = false;
+
 export const isChungChengFeatureSuggestion = (
   suggestion: EvalSuggestion | null | undefined
-) => suggestion?.query === CHUNG_CHENG_FEATURE_QUERY;
+) =>
+  ENABLE_CHUNG_CHENG_FEATURE &&
+  suggestion?.query === CHUNG_CHENG_FEATURE_QUERY;
 
 const normalizeMatchText = (value: unknown) =>
   String(value ?? '')
