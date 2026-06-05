@@ -76,14 +76,23 @@ import {
 } from '~/lib/search-suggestions';
 import {
   CHUNG_CHENG_STATUE_MASK_IMAGE_URL,
+  CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS,
   getChungChengFeaturedArtwork,
   isChungChengArtwork,
   isChungChengFeatureSuggestion,
 } from '~/lib/featured-showcase';
 import {
+  buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
-  buildZhongZhengMaskParticles,
-  type ZhongZhengAsciiParticle,
+  buildZhongZhengTextureFragments,
+  clipZhongZhengPixelsToMask,
+  getZhongZhengFragmentRenderState,
+  getZhongZhengSeededUnit,
+  type ZhongZhengPointerState,
+  type ZhongZhengTextureFragment,
+  ZHONG_ZHENG_DISINTEGRATION_FEATHER_PERCENT,
+  ZHONG_ZHENG_DISINTEGRATION_RADIUS_PERCENT,
+  ZHONG_ZHENG_EFFECT_WIDTH,
 } from '~/lib/zhongzheng-ascii';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
 import {
@@ -1428,6 +1437,13 @@ export default function SearchPage() {
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
+  const chungChengMaterialImageUrls = useMemo(
+    () =>
+      isChungChengFeatureActive
+        ? getChungChengMaterialImageUrls(idleShowcaseResults)
+        : [],
+    [idleShowcaseResults, isChungChengFeatureActive]
+  );
 
   useEffect(() => {
     if (!hasMounted) return undefined;
@@ -1894,6 +1910,7 @@ export default function SearchPage() {
               <ZhongZhengAsciiFeature
                 artwork={getChungChengFeaturedArtwork(idleShowcaseResults)}
                 isVisible
+                materialImageUrls={chungChengMaterialImageUrls}
                 onSelectArtwork={selectArtwork}
               />
             )}
@@ -2654,6 +2671,22 @@ const getArtworkImageUrl = (
   role: ArtworkImageRole
 ) => getArtworkImageSources(artwork, role).src;
 
+const getChungChengMaterialImageUrls = (
+  artworks: ArtworkSearchResult[]
+) => {
+  const urls: string[] = [...CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS];
+
+  artworks.forEach((artwork) => {
+    if (isChungChengArtwork(artwork)) return;
+
+    const largeImage = getArtworkImageSources(artwork, 'large');
+    if (largeImage.src) urls.push(largeImage.src);
+    if (largeImage.fallbackSrc) urls.push(largeImage.fallbackSrc);
+  });
+
+  return [...new Set(urls)].slice(0, 8);
+};
+
 const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
   artwork ? getArtworkImageUrl(artwork, 'thumbnail') : null;
 
@@ -3038,19 +3071,18 @@ function IdleShowcaseLayer({
   );
 }
 
-const ZHONG_ZHENG_MATRIX_GLYPHS = ['中', '正', '人', '仁', '學', '德'] as const;
-const ZHONG_ZHENG_MASK_WIDTH = 360;
-const ZHONG_ZHENG_MASK_COLUMNS = 64;
-const ZHONG_ZHENG_MASK_MAX_PARTICLES = 680;
 const ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT = 3.5;
-const ZHONG_ZHENG_POINTER_PARTICLE_RADIUS_PERCENT = 7.5;
-const ZHONG_ZHENG_POINTER_CORE_RADIUS_PERCENT = 12;
-
-const getHighResolutionNow = () =>
-  typeof performance !== 'undefined' ? performance.now() : Date.now();
+const ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS = 8;
+const ZHONG_ZHENG_WORD_PARTICLES = ['中', '正', 'CHUNG', 'CHENG'] as const;
 
 type ZhongZhengMaskState = {
-  particles: ZhongZhengAsciiParticle[];
+  width: number;
+  height: number;
+  alpha: Uint8ClampedArray;
+  sourcePixels: Uint8ClampedArray;
+  noise: Uint8ClampedArray;
+  fragments: ZhongZhengTextureFragment[];
+  textureSource: 'statue-with-artwork-particles';
 };
 
 const getDominantAlphaComponent = (
@@ -3115,14 +3147,17 @@ const getDominantAlphaComponent = (
 };
 
 const extractZhongZhengMaskFromImage = (
-  image: HTMLImageElement
+  image: HTMLImageElement,
+  texturePixels: Uint8ClampedArray
 ): ZhongZhengMaskState | null => {
   const naturalWidth = image.naturalWidth || image.width;
   const naturalHeight = image.naturalHeight || image.height;
   if (!naturalWidth || !naturalHeight) return null;
 
-  const width = ZHONG_ZHENG_MASK_WIDTH;
+  const width = ZHONG_ZHENG_EFFECT_WIDTH;
   const height = Math.round((width * naturalHeight) / naturalWidth);
+  if (texturePixels.length < width * height * 4) return null;
+
   const sourceCanvas = document.createElement('canvas');
   sourceCanvas.width = width;
   sourceCanvas.height = height;
@@ -3155,6 +3190,8 @@ const extractZhongZhengMaskFromImage = (
   if (dominantComponentId < 0) return null;
 
   const alpha = new Uint8ClampedArray(width * height);
+  const sourcePixels = new Uint8ClampedArray(width * height * 4);
+  const noise = new Uint8ClampedArray(width * height);
 
   for (let index = 0; index < alpha.length; index += 1) {
     const currentAlpha =
@@ -3170,121 +3207,629 @@ const extractZhongZhengMaskFromImage = (
     const softenedAlpha = Math.round(
       currentAlpha * 0.78 + ((left + right + top + bottom) / 4) * 0.22
     );
-    alpha[index] = currentAlpha > 0 ? softenedAlpha : 0;
+    const maskAlpha = currentAlpha > 0 ? softenedAlpha : 0;
+    const dataIndex = index * 4;
+    const textureNoise = getZhongZhengSeededUnit(index + maskAlpha * 17);
+    const alphaWeight = maskAlpha / 255;
+    const statueRed = imageData.data[dataIndex] || 0;
+    const statueGreen = imageData.data[dataIndex + 1] || 0;
+    const statueBlue = imageData.data[dataIndex + 2] || 0;
+
+    alpha[index] = maskAlpha;
+    noise[index] = Math.round(textureNoise * 255);
+
+    if (maskAlpha <= 0) {
+      sourcePixels[dataIndex] = 0;
+      sourcePixels[dataIndex + 1] = 0;
+      sourcePixels[dataIndex + 2] = 0;
+      sourcePixels[dataIndex + 3] = 0;
+      continue;
+    }
+
+    sourcePixels[dataIndex] = Math.round(
+      clampNumber(statueRed * (0.9 + alphaWeight * 0.08) + textureNoise * 8, 0, 255)
+    );
+    sourcePixels[dataIndex + 1] = Math.round(
+      clampNumber(
+        statueGreen * (0.9 + alphaWeight * 0.08) +
+          getZhongZhengSeededUnit(index * 3 + 19) * 8,
+        0,
+        255
+      )
+    );
+    sourcePixels[dataIndex + 2] = Math.round(
+      clampNumber(
+        statueBlue * (0.9 + alphaWeight * 0.08) +
+          getZhongZhengSeededUnit(index * 5 + 31) * 8,
+        0,
+        255
+      )
+    );
+    sourcePixels[dataIndex + 3] = maskAlpha;
   }
 
   return {
-    particles: buildZhongZhengMaskParticles({
+    width,
+    height,
+    alpha,
+    sourcePixels,
+    noise,
+    fragments: buildZhongZhengTextureFragments({
       width,
       height,
       alpha,
-      columns: ZHONG_ZHENG_MASK_COLUMNS,
-      rows: Math.round((ZHONG_ZHENG_MASK_COLUMNS * height) / width),
-      maxParticles: ZHONG_ZHENG_MASK_MAX_PARTICLES,
+      sourcePixels: texturePixels,
+      stride: 3,
+      maxFragments: 18000,
     }),
+    textureSource: 'statue-with-artwork-particles',
   };
+};
+
+const loadZhongZhengImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Unable to load ${src}`));
+    image.src = src;
+  });
+
+const drawImageCover = (
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) => {
+  const imageWidth = image.naturalWidth || image.width;
+  const imageHeight = image.naturalHeight || image.height;
+  if (!imageWidth || !imageHeight) return;
+
+  const scale = Math.max(width / imageWidth, height / imageHeight);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = (imageWidth - sourceWidth) / 2;
+  const sourceY = (imageHeight - sourceHeight) / 2;
+
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    width,
+    height
+  );
+};
+
+const ZHONG_ZHENG_ARTWORK_ATLAS_PALETTES = [
+  ['#d9b36f', '#5f6f7a', '#203f4a', '#f0e7d3'],
+  ['#e46f4f', '#2f6f76', '#f3d37a', '#26272b'],
+  ['#b8c7b0', '#536f56', '#c8a45d', '#f1efe8'],
+  ['#dfdde1', '#7a4f8a', '#2f435f', '#d79b72'],
+  ['#f1d8a8', '#304f5f', '#a64735', '#efe8df'],
+] as const;
+
+const getZhongZhengAtlasChannel = (hex: string, offset: number) =>
+  Number.parseInt(hex.slice(offset, offset + 2), 16);
+
+const paintZhongZhengProceduralTextureAtlas = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number
+) => {
+  context.fillStyle = '#16181d';
+  context.fillRect(0, 0, width, height);
+
+  const columns = 3;
+  const rows = Math.ceil(ZHONG_ZHENG_ARTWORK_ATLAS_PALETTES.length / columns);
+  const cellWidth = width / columns;
+  const cellHeight = height / rows;
+
+  ZHONG_ZHENG_ARTWORK_ATLAS_PALETTES.forEach((palette, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = column * cellWidth;
+    const y = row * cellHeight;
+    const gradient = context.createLinearGradient(x, y, x + cellWidth, y + cellHeight);
+
+    palette.forEach((color, colorIndex) => {
+      gradient.addColorStop(colorIndex / Math.max(1, palette.length - 1), color);
+    });
+
+    context.fillStyle = gradient;
+    context.fillRect(x, y, cellWidth, cellHeight);
+
+    for (let band = 0; band < 7; band += 1) {
+      const color = palette[band % palette.length] || palette[0];
+      const red = getZhongZhengAtlasChannel(color, 1);
+      const green = getZhongZhengAtlasChannel(color, 3);
+      const blue = getZhongZhengAtlasChannel(color, 5);
+      context.fillStyle = `rgb(${red} ${green} ${blue} / ${0.12 + band * 0.035})`;
+      context.fillRect(
+        x + ((band * 29) % Math.max(1, cellWidth)),
+        y,
+        Math.max(4, cellWidth * 0.18),
+        cellHeight
+      );
+    }
+  });
+};
+
+const buildZhongZhengProceduralTextureAtlasImageData = (
+  width: number,
+  height: number
+) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+
+  paintZhongZhengProceduralTextureAtlas(context, width, height);
+  return new Uint8ClampedArray(context.getImageData(0, 0, width, height).data);
+};
+
+const buildZhongZhengTextureAtlasImageData = async (
+  urls: string[],
+  width: number,
+  height: number
+) => {
+  const loadedImages = (
+    await Promise.allSettled(urls.map((url) => loadZhongZhengImage(url)))
+  ).flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+
+  if (loadedImages.length === 0) {
+    return buildZhongZhengProceduralTextureAtlasImageData(width, height);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+
+  context.fillStyle = '#111216';
+  context.fillRect(0, 0, width, height);
+
+  const columns =
+    loadedImages.length <= 1 ? 1 : loadedImages.length <= 4 ? 2 : 3;
+  const rows = Math.ceil(loadedImages.length / columns);
+  const cellWidth = width / columns;
+  const cellHeight = height / rows;
+
+  loadedImages.forEach((image, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    drawImageCover(
+      context,
+      image,
+      column * cellWidth,
+      row * cellHeight,
+      cellWidth,
+      cellHeight
+    );
+  });
+
+  try {
+    return new Uint8ClampedArray(context.getImageData(0, 0, width, height).data);
+  } catch {
+    return buildZhongZhengProceduralTextureAtlasImageData(width, height);
+  }
+};
+
+const getZhongZhengMaskAlphaNearPointer = (
+  state: ZhongZhengMaskState,
+  pointerXPercent: number,
+  pointerYPercent: number
+) => {
+  const centerX = Math.round((pointerXPercent / 100) * (state.width - 1));
+  const centerY = Math.round((pointerYPercent / 100) * (state.height - 1));
+  let strongestAlpha = 0;
+
+  for (
+    let offsetY = -ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
+    offsetY <= ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
+    offsetY += ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS
+  ) {
+    for (
+      let offsetX = -ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
+      offsetX <= ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
+      offsetX += ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS
+    ) {
+      const x = Math.max(0, Math.min(state.width - 1, centerX + offsetX));
+      const y = Math.max(0, Math.min(state.height - 1, centerY + offsetY));
+      strongestAlpha = Math.max(
+        strongestAlpha,
+        state.alpha[y * state.width + x] || 0
+      );
+    }
+  }
+
+  return strongestAlpha;
+};
+
+const applyZhongZhengCanvasMask = (
+  context: CanvasRenderingContext2D,
+  state: ZhongZhengMaskState
+) => {
+  const maskPixels = new Uint8ClampedArray(state.width * state.height * 4);
+
+  for (let index = 0; index < state.alpha.length; index += 1) {
+    const dataIndex = index * 4;
+    const maskAlpha = state.alpha[index] || 0;
+    maskPixels[dataIndex] = 255;
+    maskPixels[dataIndex + 1] = 255;
+    maskPixels[dataIndex + 2] = 255;
+    maskPixels[dataIndex + 3] = maskAlpha;
+  }
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = state.width;
+  maskCanvas.height = state.height;
+  const maskContext = maskCanvas.getContext('2d');
+  if (!maskContext) return;
+
+  maskContext.putImageData(
+    new ImageData(maskPixels, state.width, state.height),
+    0,
+    0
+  );
+
+  context.save();
+  context.globalCompositeOperation = 'destination-in';
+  context.drawImage(maskCanvas, 0, 0);
+  context.restore();
+};
+
+const drawZhongZhengDisintegrationFrame = (
+  canvas: HTMLCanvasElement,
+  state: ZhongZhengMaskState,
+  pointer: ZhongZhengPointerState,
+  progress: number
+) => {
+  if (canvas.width !== state.width) canvas.width = state.width;
+  if (canvas.height !== state.height) canvas.height = state.height;
+
+  const context = canvas.getContext('2d');
+  if (!context) return;
+
+  const radiusPixels =
+    (Math.min(state.width, state.height) *
+      ZHONG_ZHENG_DISINTEGRATION_RADIUS_PERCENT) /
+    100;
+  const featherPixels =
+    (Math.min(state.width, state.height) *
+      ZHONG_ZHENG_DISINTEGRATION_FEATHER_PERCENT) /
+    100;
+  const framePixels = buildZhongZhengDisintegrationFramePixels({
+    width: state.width,
+    height: state.height,
+    alpha: state.alpha,
+    sourcePixels: state.sourcePixels,
+    noise: state.noise,
+    pointer,
+    progress,
+  });
+
+  if (pointer.active && progress > 0.02) {
+    state.fragments.forEach((fragment) => {
+      const renderState = getZhongZhengFragmentRenderState({
+        fragment,
+        pointer,
+        width: state.width,
+        height: state.height,
+        progress,
+        radiusPixels,
+        featherPixels,
+      });
+
+      if (!renderState.active || renderState.opacity <= 0.02) return;
+
+      const size = Math.max(1, Math.round(renderState.size));
+      const startX = Math.round(renderState.x - size / 2);
+      const startY = Math.round(renderState.y - size / 2);
+
+      for (let y = startY; y < startY + size; y += 1) {
+        if (y < 0 || y >= state.height) continue;
+
+        for (let x = startX; x < startX + size; x += 1) {
+          if (x < 0 || x >= state.width) continue;
+
+          const index = y * state.width + x;
+          const maskAlpha = state.alpha[index] || 0;
+          if (maskAlpha <= 0) continue;
+
+          const dataIndex = index * 4;
+          const fragmentAlpha = Math.min(
+            maskAlpha,
+            Math.round(fragment.alpha * renderState.opacity * 0.54)
+          );
+          const currentAlpha = framePixels[dataIndex + 3] || 0;
+          if (fragmentAlpha <= currentAlpha) continue;
+
+          const blend = fragmentAlpha / 255;
+          const currentRed = framePixels[dataIndex] || 0;
+          const currentGreen = framePixels[dataIndex + 1] || 0;
+          const currentBlue = framePixels[dataIndex + 2] || 0;
+          framePixels[dataIndex] = Math.round(
+            currentRed * (1 - blend) + fragment.red * blend
+          );
+          framePixels[dataIndex + 1] = Math.round(
+            currentGreen * (1 - blend) + fragment.green * blend
+          );
+          framePixels[dataIndex + 2] = Math.round(
+            currentBlue * (1 - blend) + fragment.blue * blend
+          );
+          framePixels[dataIndex + 3] = fragmentAlpha;
+        }
+      }
+    });
+  }
+
+  const clippedPixels = clipZhongZhengPixelsToMask(
+    framePixels,
+    state.alpha,
+    0.99
+  );
+  context.putImageData(
+    new ImageData(clippedPixels, state.width, state.height),
+    0,
+    0
+  );
+
+  if (pointer.active && progress > 0.08 && state.fragments.length > 0) {
+    const pointerX = (pointer.x / 100) * Math.max(1, state.width - 1);
+    const pointerY = (pointer.y / 100) * Math.max(1, state.height - 1);
+    const dotCount = 132;
+    const wordCount = 22;
+    const fontSize = Math.max(11, Math.min(17, state.width * 0.024));
+
+    context.save();
+
+    for (let index = 0; index < dotCount; index += 1) {
+      const angle =
+        getZhongZhengSeededUnit(index * 89 + Math.round(pointerX) * 11) *
+        Math.PI *
+        2;
+      const distance =
+        radiusPixels *
+        (0.08 +
+          getZhongZhengSeededUnit(index * 43 + Math.round(pointerY) * 3) *
+            1.15) *
+        progress;
+      const x = pointerX + Math.cos(angle) * distance;
+      const y = pointerY + Math.sin(angle) * distance * 0.86;
+      const sampleX = Math.round(x);
+      const sampleY = Math.round(y);
+
+      if (
+        sampleX < 0 ||
+        sampleX >= state.width ||
+        sampleY < 0 ||
+        sampleY >= state.height ||
+        (state.alpha[sampleY * state.width + sampleX] || 0) < 30
+      ) {
+        continue;
+      }
+
+      const fragment = state.fragments[(index * 97) % state.fragments.length];
+      if (!fragment) continue;
+
+      const radius =
+        1.2 +
+        getZhongZhengSeededUnit(index * 137 + Math.round(pointerX)) * 4.1;
+      context.fillStyle = `rgb(${fragment.red} ${fragment.green} ${
+        fragment.blue
+      } / ${Math.min(0.82, 0.26 + progress * 0.56).toFixed(3)})`;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    context.restore();
+    context.save();
+    context.font = `600 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    for (let index = 0; index < wordCount; index += 1) {
+      const angle =
+        getZhongZhengSeededUnit(index * 101 + Math.round(pointerX) * 7) *
+        Math.PI *
+        2;
+      const distance =
+        radiusPixels *
+        (0.16 +
+          getZhongZhengSeededUnit(index * 53 + Math.round(pointerY)) * 0.96) *
+        progress;
+      const x = pointerX + Math.cos(angle) * distance;
+      const y = pointerY + Math.sin(angle) * distance * 0.82;
+      const sampleX = Math.round(x);
+      const sampleY = Math.round(y);
+
+      if (
+        sampleX < 0 ||
+        sampleX >= state.width ||
+        sampleY < 0 ||
+        sampleY >= state.height ||
+        (state.alpha[sampleY * state.width + sampleX] || 0) < 36
+      ) {
+        continue;
+      }
+
+      const token =
+        ZHONG_ZHENG_WORD_PARTICLES[index % ZHONG_ZHENG_WORD_PARTICLES.length] ||
+        '中';
+      const fragment = state.fragments[(index * 131) % state.fragments.length];
+      if (!fragment) continue;
+
+      context.fillStyle = `rgb(${fragment.red} ${fragment.green} ${
+        fragment.blue
+      } / ${Math.min(0.74, 0.2 + progress * 0.5).toFixed(3)})`;
+      context.fillText(token, x, y);
+    }
+
+    context.restore();
+  }
+
+  applyZhongZhengCanvasMask(context, state);
 };
 
 function ZhongZhengAsciiFeature({
   artwork,
   isVisible,
+  materialImageUrls,
   onSelectArtwork,
 }: {
   artwork: ArtworkSearchResult;
   isVisible: boolean;
+  materialImageUrls: string[];
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const fallbackParticles = useMemo(() => buildZhongZhengAsciiParticles(), []);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const stageRef = useRef<HTMLSpanElement | null>(null);
-  const [clock, setClock] = useState(0);
-  const [entranceStartedAt, setEntranceStartedAt] = useState<number | null>(
-    null
-  );
-  const [pointer, setPointerState] = useState({
+  const pointerRef = useRef<ZhongZhengPointerState>({
     x: 50,
     y: 46,
     active: false,
   });
+  const maskStateRef = useRef<ZhongZhengMaskState | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const progressRef = useRef(0);
+  const [pointerActive, setPointerActive] = useState(false);
   const [maskState, setMaskState] = useState<ZhongZhengMaskState | null>(null);
   const [maskLoadFailed, setMaskLoadFailed] = useState(false);
-  const particles =
-    maskState?.particles ?? (maskLoadFailed ? fallbackParticles : []);
-  const pointerRef = useRef(pointer);
   const title = getDisplayTitle(artwork);
-  const setPointer = useCallback(
-    (nextPointer: { x: number; y: number; active: boolean }) => {
-      pointerRef.current = nextPointer;
-      setPointerState(nextPointer);
-    },
-    []
-  );
+
+  const scheduleRender = useCallback((targetProgress: number) => {
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    const tick = () => {
+      const canvas = canvasRef.current;
+      const state = maskStateRef.current;
+      if (!canvas || !state) {
+        animationFrameRef.current = null;
+        return;
+      }
+
+      const currentProgress = progressRef.current;
+      const delta = targetProgress - currentProgress;
+      const nextProgress =
+        Math.abs(delta) < 0.012 ? targetProgress : currentProgress + delta * 0.2;
+
+      progressRef.current = nextProgress;
+      drawZhongZhengDisintegrationFrame(
+        canvas,
+        state,
+        pointerRef.current,
+        nextProgress
+      );
+
+      if (nextProgress === targetProgress) {
+        animationFrameRef.current = null;
+        return;
+      }
+
+      animationFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(tick);
+  }, []);
+
   const deactivatePointer = useCallback(() => {
     const currentPointer = pointerRef.current;
     if (currentPointer.active) {
-      setPointer({ ...currentPointer, active: false });
+      pointerRef.current = { ...currentPointer, active: false };
+      setPointerActive(false);
+      scheduleRender(0);
     }
-  }, [setPointer]);
+  }, [scheduleRender]);
 
   useEffect(() => {
     let cancelled = false;
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => {
+
+    const loadMaskAndTexture = async () => {
       try {
-        const nextMaskState = extractZhongZhengMaskFromImage(image);
+        const maskImage = await loadZhongZhengImage(
+          CHUNG_CHENG_STATUE_MASK_IMAGE_URL
+        );
+        const naturalWidth = maskImage.naturalWidth || maskImage.width;
+        const naturalHeight = maskImage.naturalHeight || maskImage.height;
+        if (!naturalWidth || !naturalHeight) {
+          throw new Error('Unable to read Zhong Zheng mask dimensions');
+        }
+
+        const width = ZHONG_ZHENG_EFFECT_WIDTH;
+        const height = Math.round((width * naturalHeight) / naturalWidth);
+        const textureUrls =
+          materialImageUrls.length > 0
+            ? materialImageUrls
+            : [...CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS];
+        const texturePixels = await buildZhongZhengTextureAtlasImageData(
+          textureUrls,
+          width,
+          height
+        );
+        if (!texturePixels) {
+          throw new Error('Unable to build Zhong Zheng artwork texture atlas');
+        }
+
+        const nextMaskState = extractZhongZhengMaskFromImage(
+          maskImage,
+          texturePixels
+        );
         if (!cancelled && nextMaskState) {
+          maskStateRef.current = nextMaskState;
+          progressRef.current = 0;
           setMaskState(nextMaskState);
           setMaskLoadFailed(false);
         } else if (!cancelled) {
+          maskStateRef.current = null;
+          setMaskState(null);
           setMaskLoadFailed(true);
         }
       } catch {
         if (!cancelled) {
+          maskStateRef.current = null;
+          setMaskState(null);
           setMaskLoadFailed(true);
         }
       }
     };
-    image.onerror = () => {
-      if (!cancelled) {
-        setMaskLoadFailed(true);
-      }
-    };
-    image.src = CHUNG_CHENG_STATUE_MASK_IMAGE_URL;
+
+    void loadMaskAndTexture();
 
     return () => {
       cancelled = true;
-      image.onload = null;
-      image.onerror = null;
     };
-  }, []);
+  }, [materialImageUrls]);
 
   useEffect(() => {
-    let animationFrame = 0;
-    let lastTick = 0;
-    const startedAt = getHighResolutionNow();
-    setEntranceStartedAt(startedAt);
-    setClock(startedAt);
+    maskStateRef.current = maskState;
+    if (!maskState) return;
 
-    const tick = (timestamp: number) => {
-      if (timestamp - lastTick > 40) {
-        lastTick = timestamp;
-        setClock(timestamp);
+    scheduleRender(pointerRef.current.active ? 1 : 0);
+  }, [maskState, scheduleRender]);
+
+  useEffect(
+    () => () => {
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
       }
-      animationFrame = window.requestAnimationFrame(tick);
-    };
-
-    animationFrame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, []);
-
-  useEffect(() => {
-    if (particles.length === 0) return;
-
-    const startedAt = getHighResolutionNow();
-    setEntranceStartedAt(startedAt);
-    setClock(startedAt);
-  }, [particles.length]);
+    },
+    []
+  );
 
   useEffect(() => {
     const handleWindowPointerMove = (event: WindowEventMap['pointermove']) => {
@@ -3311,6 +3856,12 @@ function ZhongZhengAsciiFeature({
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
+      const state = maskStateRef.current;
+      if (!state) {
+        deactivatePointer();
+        return;
+      }
+
       const rect =
         stageRef.current?.getBoundingClientRect() ||
         event.currentTarget.getBoundingClientRect();
@@ -3323,32 +3874,23 @@ function ZhongZhengAsciiFeature({
         rawY >= -ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
         rawY <= 100 + ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT;
 
-      if (!isNearFrame || particles.length === 0) {
+      if (!isNearFrame) {
         deactivatePointer();
         return;
       }
 
       const nextX = clampNumber(rawX, 0, 100);
       const nextY = clampNumber(rawY, 0, 100);
-      const nearestParticleDistance = particles.reduce(
-        (nearestDistance, particle) =>
-          Math.min(
-            nearestDistance,
-            Math.sqrt((particle.x - nextX) ** 2 + (particle.y - nextY) ** 2)
-          ),
-        Infinity
-      );
-
-      if (
-        nearestParticleDistance > ZHONG_ZHENG_POINTER_PARTICLE_RADIUS_PERCENT
-      ) {
+      if (getZhongZhengMaskAlphaNearPointer(state, nextX, nextY) < 48) {
         deactivatePointer();
         return;
       }
 
-      setPointer({ x: nextX, y: nextY, active: true });
+      pointerRef.current = { x: nextX, y: nextY, active: true };
+      if (!pointerActive) setPointerActive(true);
+      scheduleRender(1);
     },
-    [deactivatePointer, particles, setPointer]
+    [deactivatePointer, pointerActive, scheduleRender]
   );
 
   return (
@@ -3364,8 +3906,10 @@ function ZhongZhengAsciiFeature({
       onBlur={deactivatePointer}
       className="chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
       aria-label={`View ${title} artwork details`}
-      data-pointer-active={pointer.active ? 'true' : 'false'}
-      data-particle-source={maskState ? 'image-alpha-mask' : 'ascii-fallback'}
+      data-pointer-active={pointerActive ? 'true' : 'false'}
+      data-particle-source={
+        maskState ? `image-canvas-${maskState.textureSource}` : 'ascii-fallback'
+      }
     >
       <span className="chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]">
         <span
@@ -3374,104 +3918,33 @@ function ZhongZhengAsciiFeature({
         >
           <span className="chung-cheng-ascii-statue-orbit absolute inset-0 block">
             <span className="chung-cheng-ascii-statue absolute inset-0 block">
-              {particles.map((particle) => {
-                const pointerDistance = pointer.active
-                  ? Math.sqrt(
-                      (particle.x - pointer.x) ** 2 +
-                        (particle.y - pointer.y) ** 2
-                    )
-                  : Infinity;
-                const pointerCore = pointer.active
-                  ? Math.max(
-                      0,
-                      1 -
-                        (pointerDistance /
-                          ZHONG_ZHENG_POINTER_CORE_RADIUS_PERCENT) **
-                          1.45
-                    )
-                  : 0;
-                const influence = clampNumber(pointerCore, 0, 1);
-                const entranceProgress =
-                  entranceStartedAt === null
-                    ? 0
-                    : clampNumber(
-                        (clock -
-                          entranceStartedAt -
-                          (particle.y * 4.8 + (particle.phase % 95))) /
-                          680,
-                        0,
-                        1
-                      );
-                const entranceEase =
-                  1 - (1 - entranceProgress) * (1 - entranceProgress);
-                const matrixIndex =
-                  Math.floor(
-                    particle.phase +
-                      pointer.x * 0.17 +
-                      pointer.y * 0.11 +
-                      influence * 9
-                  ) % ZHONG_ZHENG_MATRIX_GLYPHS.length;
-                const matrixGlyph =
-                  ZHONG_ZHENG_MATRIX_GLYPHS[matrixIndex] || particle.zh;
-                const isMorphed = influence > 0.57;
-                const isMatrix = influence > 0.22;
-                const wave =
-                  ((
-                    particle.phase +
-                    particle.z * 2 +
-                    pointer.x * 0.28 +
-                    pointer.y * 0.18
-                  ) *
-                    Math.PI) /
-                  180;
-                const waveX = Math.cos(wave) * influence * 7;
-                const waveY = Math.sin(wave * 1.18) * influence * 9;
-                const pointerParallaxX = pointer.active
-                  ? (pointer.x - 50) * particle.z * 0.006
-                  : 0;
-                const pointerParallaxY = pointer.active
-                  ? (pointer.y - 50) * particle.z * 0.0035
-                  : 0;
-                const scale =
-                  (particle.scale + influence * 0.28) *
-                  (0.88 + entranceEase * 0.12);
-                const opacity =
-                  clampNumber(
-                    0.18 + particle.shade * 0.34 + influence * 0.3,
-                    0.22,
-                    0.9
-                  ) * entranceEase;
-                const entranceY = (1 - entranceEase) * 10;
-
-                return (
+              {maskState ? (
+                <canvas
+                  ref={canvasRef}
+                  width={maskState.width}
+                  height={maskState.height}
+                  className="chung-cheng-disintegration-canvas absolute inset-0 h-full w-full"
+                  aria-hidden="true"
+                />
+              ) : maskLoadFailed ? (
+                fallbackParticles.map((particle) => (
                   <span
                     key={particle.id}
                     aria-hidden="true"
                     className="chung-cheng-ascii-particle absolute font-mono text-[clamp(4.2px,1.16vw,7.2px)] font-semibold leading-none tracking-normal"
-                    data-effect={
-                      isMorphed ? 'morphed' : isMatrix ? 'matrix' : 'base'
-                    }
                     style={{
                       left: `${particle.x}%`,
                       top: `${particle.y}%`,
-                      opacity,
-                      transform: `translate3d(calc(-50% + ${(
-                        waveX + pointerParallaxX
-                      ).toFixed(2)}px), calc(-50% + ${(
-                        waveY + pointerParallaxY + entranceY
-                      ).toFixed(2)}px), ${(particle.z + influence * 28).toFixed(
+                      opacity: 0.18 + particle.shade * 0.42,
+                      transform: `translate3d(-50%, -50%, ${particle.z.toFixed(
                         2
-                      )}px) scale(${scale.toFixed(3)})`,
+                      )}px) scale(${particle.scale.toFixed(3)})`,
                     }}
                   >
-                    {isMorphed
-                      ? particle.zh
-                      : isMatrix
-                        ? matrixGlyph
-                        : particle.en}
+                    {particle.en}
                   </span>
-                );
-              })}
+                ))
+              ) : null}
             </span>
           </span>
         </span>

@@ -15,6 +15,14 @@ export const CHUNG_CHENG_ROOTS_IMAGE_URL =
 export const CHUNG_CHENG_STATUE_MASK_IMAGE_URL =
   'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/yeo-hwee-bin/2019/2019-00754_cropped.tif/_jcr_content/renditions/cq5dam.zoom.2048.2048.jpeg';
 
+export const CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS = [
+  'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/goh-beng-kwan/1993/1993-00014.jpg/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+  'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/anthony-poon/2007/2007-01077.tif/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+  'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/wu-guanzhong/2008/2008-06871(3).tif/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+  'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/arthur-yap/2010/2010-00753(3).tif/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+  'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/chen-wen-hsi/1992/1992-00235.jpg/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+] as const;
+
 export const isChungChengFeatureSuggestion = (
   suggestion: EvalSuggestion | null | undefined
 ) => suggestion?.query === CHUNG_CHENG_FEATURE_QUERY;
