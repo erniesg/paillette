@@ -139,6 +139,45 @@ describe('buildZhongZhengMatrixTextGlyphs', () => {
     expect(glyphs.some((glyph) => glyph.token === 'CHENG')).toBe(true);
     expect(glyphs.some((glyph) => glyph.trailIndex > 0)).toBe(true);
   });
+
+  it('displaces text glyphs from their source samples like particles without leaving the mask', () => {
+    const width = 40;
+    const height = 40;
+    const alpha = new Uint8ClampedArray(width * height);
+
+    for (let y = 8; y <= 31; y += 1) {
+      for (let x = 8; x <= 31; x += 1) {
+        alpha[y * width + x] = 255;
+      }
+    }
+
+    const glyphs = buildZhongZhengMatrixTextGlyphs({
+      width,
+      height,
+      alpha,
+      pointer: { x: 50, y: 50, active: true },
+      progress: 1,
+      elapsedMs: 1200,
+      radiusPixels: 14,
+      fontSize: 3,
+      streamCount: 24,
+      trailLength: 4,
+    });
+    const displacedGlyphs = glyphs.filter((glyph) => {
+      const movement = Math.sqrt(
+        (glyph.x - glyph.sourceX) ** 2 + (glyph.y - glyph.sourceY) ** 2
+      );
+      return movement >= 1.4;
+    });
+
+    expect(displacedGlyphs.length).toBeGreaterThan(4);
+    expect(
+      glyphs.every(
+        (glyph) =>
+          alpha[Math.round(glyph.y) * width + Math.round(glyph.x)] === 255
+      )
+    ).toBe(true);
+  });
 });
 
 describe('buildZhongZhengDisintegrationFramePixels', () => {

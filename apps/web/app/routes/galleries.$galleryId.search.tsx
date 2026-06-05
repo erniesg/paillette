@@ -1875,7 +1875,7 @@ export default function SearchPage() {
               : 'relative -mx-5 -mt-10 flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
           }
         >
-          {!hasActiveSearch && hasMounted && (
+          {!hasActiveSearch && hasMounted && !isChungChengFeatureActive && (
             <IdleShowcaseBackdrop
               ref={idleShowcaseRef}
               artworks={idleShowcaseResults}

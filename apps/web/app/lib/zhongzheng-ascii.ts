@@ -78,8 +78,8 @@ export type ZhongZhengMaskParticleInput = {
 };
 
 export const ZHONG_ZHENG_EFFECT_WIDTH = 560;
-export const ZHONG_ZHENG_DISINTEGRATION_RADIUS_PERCENT = 8.4;
-export const ZHONG_ZHENG_DISINTEGRATION_FEATHER_PERCENT = 4.8;
+export const ZHONG_ZHENG_DISINTEGRATION_RADIUS_PERCENT = 12.8;
+export const ZHONG_ZHENG_DISINTEGRATION_FEATHER_PERCENT = 6.4;
 export const ZHONG_ZHENG_TEXT_MORPH_CYCLE_MS = 7200;
 
 export type ZhongZhengPointerState = {
@@ -105,6 +105,8 @@ export type ZhongZhengMorphTokenInput = {
 export type ZhongZhengMatrixTextGlyph = {
   streamId: number;
   trailIndex: number;
+  sourceX: number;
+  sourceY: number;
   x: number;
   y: number;
   token: ZhongZhengMorphToken;
@@ -141,6 +143,23 @@ export type ZhongZhengDisintegrationFrameInput = {
 
 const clampZhongZhengNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+
+const getZhongZhengMaskAlphaAt = (
+  alpha: Uint8ClampedArray | number[],
+  width: number,
+  height: number,
+  x: number,
+  y: number
+) => {
+  const sampleX = Math.round(x);
+  const sampleY = Math.round(y);
+
+  if (sampleX < 0 || sampleX >= width || sampleY < 0 || sampleY >= height) {
+    return 0;
+  }
+
+  return alpha[sampleY * width + sampleX] || 0;
+};
 
 export const getZhongZhengSeededUnit = (seed: number) => {
   const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
@@ -235,12 +254,20 @@ export const buildZhongZhengMatrixTextGlyphs = ({
         continue;
       }
 
-      const sampleX = Math.round(x);
-      const sampleY = Math.round(y);
-      const maskAlpha = alpha[sampleY * width + sampleX] || 0;
+      const sourceX = x;
+      const sourceY = y;
+      const maskAlpha = getZhongZhengMaskAlphaAt(
+        alpha,
+        width,
+        height,
+        sourceX,
+        sourceY
+      );
       if (maskAlpha < 38) continue;
 
-      const distance = Math.sqrt((x - pointerX) ** 2 + (y - pointerY) ** 2);
+      const distance = Math.sqrt(
+        (sourceX - pointerX) ** 2 + (sourceY - pointerY) ** 2
+      );
       const localInfluence = clampZhongZhengNumber(
         (radius * 1.2 - distance) / Math.max(1, radius * 1.2),
         0,
@@ -251,12 +278,48 @@ export const buildZhongZhengMatrixTextGlyphs = ({
       const trailFalloff =
         trailIndex === 0 ? 1 : Math.max(0.14, 1 - trailIndex * 0.2);
       const morph = getZhongZhengMorphAmount(elapsedMs);
+      const particleSeed =
+        streamId * 157 +
+        trailIndex * 61 +
+        Math.round(pointerX) * 17 +
+        Math.round(pointerY) * 13;
+      const scatterAngle =
+        getZhongZhengSeededUnit(particleSeed) * Math.PI * 2;
+      const scatterDistance =
+        fontSize *
+        (0.52 + getZhongZhengSeededUnit(particleSeed + 29) * 2.7) *
+        localInfluence *
+        clampedProgress;
+      let particleX = sourceX + Math.cos(scatterAngle) * scatterDistance;
+      let particleY =
+        sourceY +
+        Math.sin(scatterAngle) *
+          scatterDistance *
+          (0.72 + getZhongZhengSeededUnit(particleSeed + 43) * 0.46);
+
+      if (
+        getZhongZhengMaskAlphaAt(alpha, width, height, particleX, particleY) <
+        38
+      ) {
+        particleX = sourceX + (particleX - sourceX) * 0.58;
+        particleY = sourceY + (particleY - sourceY) * 0.58;
+      }
+
+      if (
+        getZhongZhengMaskAlphaAt(alpha, width, height, particleX, particleY) <
+        38
+      ) {
+        particleX = sourceX;
+        particleY = sourceY;
+      }
 
       glyphs.push({
         streamId,
         trailIndex,
-        x,
-        y,
+        sourceX,
+        sourceY,
+        x: particleX,
+        y: particleY,
         token: getZhongZhengMorphToken({
           index: streamId + trailIndex,
           elapsedMs,
