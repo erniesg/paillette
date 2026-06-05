@@ -4,10 +4,10 @@ import {
   buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
   buildZhongZhengAsciiRows,
+  buildZhongZhengMatrixTextGlyphs,
   buildZhongZhengMaskParticles,
-  buildZhongZhengTextureFragments,
   clipZhongZhengPixelsToMask,
-  getZhongZhengFragmentRenderState,
+  getZhongZhengMorphToken,
   ZHONG_ZHENG_ASCII_MASK,
 } from '../zhongzheng-ascii';
 
@@ -83,37 +83,61 @@ describe('buildZhongZhengMaskParticles', () => {
   });
 });
 
-describe('buildZhongZhengTextureFragments', () => {
-  it('samples artwork atlas color only from foreground mask pixels', () => {
-    const width = 4;
-    const height = 4;
-    const alpha = new Uint8ClampedArray(width * height);
-    const sourcePixels = new Uint8ClampedArray(width * height * 4);
+describe('getZhongZhengMorphToken', () => {
+  it('cycles from 中正 to Chung Cheng and back as hover dwell grows', () => {
+    const chineseStart = [0, 1, 2, 3].map((index) =>
+      getZhongZhengMorphToken({ index, elapsedMs: 0 })
+    );
+    const latinPeak = [0, 1, 2, 3].map((index) =>
+      getZhongZhengMorphToken({ index, elapsedMs: 3600 })
+    );
+    const chineseReturn = [0, 1, 2, 3].map((index) =>
+      getZhongZhengMorphToken({ index, elapsedMs: 7200 })
+    );
 
-    for (let index = 0; index < sourcePixels.length / 4; index += 1) {
-      sourcePixels[index * 4] = index;
-      sourcePixels[index * 4 + 1] = 80;
-      sourcePixels[index * 4 + 2] = 160;
-      sourcePixels[index * 4 + 3] = 255;
+    expect(new Set(chineseStart)).toEqual(new Set(['中', '正']));
+    expect(new Set(latinPeak)).toEqual(new Set(['CHUNG', 'CHENG']));
+    expect(new Set(chineseReturn)).toEqual(new Set(['中', '正']));
+  });
+});
+
+describe('buildZhongZhengMatrixTextGlyphs', () => {
+  it('builds only Chung Cheng text glyph streams on foreground mask pixels', () => {
+    const width = 24;
+    const height = 24;
+    const alpha = new Uint8ClampedArray(width * height);
+
+    for (let y = 6; y <= 17; y += 1) {
+      for (let x = 6; x <= 17; x += 1) {
+        alpha[y * width + x] = 255;
+      }
     }
 
-    alpha[5] = 255;
-    alpha[10] = 220;
-
-    const fragments = buildZhongZhengTextureFragments({
+    const glyphs = buildZhongZhengMatrixTextGlyphs({
       width,
       height,
       alpha,
-      sourcePixels,
-      stride: 1,
-      maxFragments: 10,
+      pointer: { x: 50, y: 50, active: true },
+      progress: 1,
+      elapsedMs: 3600,
+      radiusPixels: 9,
+      fontSize: 3,
+      streamCount: 12,
+      trailLength: 4,
     });
+    const allowedTokens = new Set(['中', '正', 'CHUNG', 'CHENG']);
 
-    expect(fragments).toHaveLength(2);
-    expect(fragments.map((fragment) => `${fragment.x},${fragment.y}`)).toEqual(
-      ['1,1', '2,2']
-    );
-    expect(fragments.every((fragment) => fragment.green > 70)).toBe(true);
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(glyphs.every((glyph) => allowedTokens.has(glyph.token))).toBe(true);
+    expect(
+      glyphs.every(
+        (glyph) =>
+          alpha[Math.round(glyph.y) * width + Math.round(glyph.x)] === 255
+      )
+    ).toBe(true);
+    expect(glyphs.some((glyph) => glyph.token === 'CHUNG')).toBe(true);
+    expect(glyphs.some((glyph) => glyph.token === 'CHENG')).toBe(true);
+    expect(glyphs.some((glyph) => glyph.trailIndex > 0)).toBe(true);
   });
 });
 
@@ -152,41 +176,6 @@ describe('buildZhongZhengDisintegrationFramePixels', () => {
     expect(pixels[0]).toBe(120);
     expect(pixels[1]).toBe(90);
     expect(pixels[2]).toBe(60);
-  });
-});
-
-describe('getZhongZhengFragmentRenderState', () => {
-  it('keeps cursor scatter bounded instead of drifting outward', () => {
-    const fragment = {
-      id: 'fragment',
-      x: 40,
-      y: 40,
-      size: 3,
-      red: 120,
-      green: 90,
-      blue: 60,
-      alpha: 255,
-      scatterX: 4,
-      scatterY: -3,
-      delay: 0,
-    };
-
-    const renderState = getZhongZhengFragmentRenderState({
-      fragment,
-      pointer: { x: 50, y: 50, active: true },
-      width: 80,
-      height: 80,
-      progress: 1,
-      radiusPixels: 20,
-      featherPixels: 8,
-    });
-
-    const movement = Math.sqrt(
-      (renderState.x - fragment.x) ** 2 + (renderState.y - fragment.y) ** 2
-    );
-
-    expect(renderState.active).toBe(true);
-    expect(movement).toBeLessThanOrEqual(5);
   });
 });
 

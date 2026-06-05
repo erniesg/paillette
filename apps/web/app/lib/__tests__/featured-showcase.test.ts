@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   CHUNG_CHENG_ROOTS_IMAGE_URL,
   CHUNG_CHENG_STATUE_MASK_IMAGE_URL,
-  CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS,
   getChungChengFeaturedArtwork,
   isChungChengFeatureSuggestion,
 } from '../featured-showcase';
@@ -49,19 +48,6 @@ describe('isChungChengFeatureSuggestion', () => {
       )
     ).toBe(false);
     expect(isChungChengFeatureSuggestion(null)).toBe(false);
-  });
-});
-
-describe('CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS', () => {
-  it('keeps a curated NGS artwork material atlas available for the sculpture mask', () => {
-    expect(CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS.length).toBeGreaterThan(2);
-    expect(
-      CHUNG_CHENG_TEXTURE_ATLAS_IMAGE_URLS.every((url) =>
-        url.startsWith(
-          'https://www.nationalgallery.sg/content/dam/national-collections-artworks/'
-        )
-      )
-    ).toBe(true);
   });
 });
 

@@ -80,42 +80,51 @@ export type ZhongZhengMaskParticleInput = {
 export const ZHONG_ZHENG_EFFECT_WIDTH = 560;
 export const ZHONG_ZHENG_DISINTEGRATION_RADIUS_PERCENT = 8.4;
 export const ZHONG_ZHENG_DISINTEGRATION_FEATHER_PERCENT = 4.8;
+export const ZHONG_ZHENG_TEXT_MORPH_CYCLE_MS = 7200;
 
 export type ZhongZhengPointerState = {
   x: number;
   y: number;
   active: boolean;
+  activeSinceMs?: number;
 };
 
-export type ZhongZhengTextureFragment = {
-  id: string;
-  x: number;
-  y: number;
-  size: number;
-  red: number;
-  green: number;
-  blue: number;
-  alpha: number;
-  scatterX: number;
-  scatterY: number;
-  delay: number;
+const ZHONG_ZHENG_CHINESE_MORPH_TOKENS = ['中', '正'] as const;
+const ZHONG_ZHENG_LATIN_MORPH_TOKENS = ['CHUNG', 'CHENG'] as const;
+
+export type ZhongZhengMorphToken =
+  | (typeof ZHONG_ZHENG_CHINESE_MORPH_TOKENS)[number]
+  | (typeof ZHONG_ZHENG_LATIN_MORPH_TOKENS)[number];
+
+export type ZhongZhengMorphTokenInput = {
+  index: number;
+  elapsedMs: number;
+  cycleMs?: number;
 };
 
-export type ZhongZhengTextureFragmentRenderState = {
+export type ZhongZhengMatrixTextGlyph = {
+  streamId: number;
+  trailIndex: number;
   x: number;
   y: number;
-  size: number;
+  token: ZhongZhengMorphToken;
   opacity: number;
-  active: boolean;
+  scale: number;
+  isLead: boolean;
+  morph: number;
 };
 
-export type ZhongZhengTextureFragmentInput = {
+export type ZhongZhengMatrixTextGlyphInput = {
   width: number;
   height: number;
   alpha: Uint8ClampedArray | number[];
-  sourcePixels: Uint8ClampedArray | number[];
-  stride?: number;
-  maxFragments?: number;
+  pointer: ZhongZhengPointerState;
+  progress: number;
+  elapsedMs: number;
+  radiusPixels: number;
+  fontSize: number;
+  streamCount?: number;
+  trailLength?: number;
 };
 
 export type ZhongZhengDisintegrationFrameInput = {
@@ -138,18 +147,135 @@ export const getZhongZhengSeededUnit = (seed: number) => {
   return value - Math.floor(value);
 };
 
-export const enhanceZhongZhengTextureChannel = (
-  value: number,
-  alphaWeight = 1,
-  noise = 0.5
-) =>
-  Math.round(
-    clampZhongZhengNumber(
-      value * (0.76 + alphaWeight * 0.2) + 14 + (noise - 0.5) * 18,
-      0,
-      255
-    )
-  );
+const getZhongZhengMorphAmount = (
+  elapsedMs: number,
+  cycleMs = ZHONG_ZHENG_TEXT_MORPH_CYCLE_MS
+) => {
+  const safeCycle = Math.max(1, cycleMs);
+  const phase = (((elapsedMs % safeCycle) + safeCycle) % safeCycle) / safeCycle;
+  return phase <= 0.5 ? phase * 2 : (1 - phase) * 2;
+};
+
+export const getZhongZhengMorphToken = ({
+  index,
+  elapsedMs,
+  cycleMs,
+}: ZhongZhengMorphTokenInput): ZhongZhengMorphToken => {
+  const tokenIndex = Math.abs(Math.floor(index)) % 2;
+  const morph = getZhongZhengMorphAmount(elapsedMs, cycleMs);
+
+  return morph >= 0.5
+    ? ZHONG_ZHENG_LATIN_MORPH_TOKENS[tokenIndex] ||
+        ZHONG_ZHENG_LATIN_MORPH_TOKENS[0]
+    : ZHONG_ZHENG_CHINESE_MORPH_TOKENS[tokenIndex] ||
+        ZHONG_ZHENG_CHINESE_MORPH_TOKENS[0];
+};
+
+export const buildZhongZhengMatrixTextGlyphs = ({
+  width,
+  height,
+  alpha,
+  pointer,
+  progress,
+  elapsedMs,
+  radiusPixels,
+  fontSize,
+  streamCount = 58,
+  trailLength = 5,
+}: ZhongZhengMatrixTextGlyphInput) => {
+  if (
+    width <= 0 ||
+    height <= 0 ||
+    alpha.length < width * height ||
+    !pointer.active ||
+    progress <= 0 ||
+    radiusPixels <= 0 ||
+    fontSize <= 0
+  ) {
+    return [];
+  }
+
+  const pointerX = (pointer.x / 100) * Math.max(1, width - 1);
+  const pointerY = (pointer.y / 100) * Math.max(1, height - 1);
+  const safeStreamCount = Math.max(1, Math.round(streamCount));
+  const safeTrailLength = Math.max(1, Math.round(trailLength));
+  const radius = Math.max(fontSize * 2, radiusPixels);
+  const horizontalSpan = radius * 2.08;
+  const verticalSpan = radius * 2.18;
+  const fallCycle = verticalSpan + fontSize * safeTrailLength * 1.35;
+  const glyphs: ZhongZhengMatrixTextGlyph[] = [];
+  const clampedProgress = clampZhongZhengNumber(progress, 0, 1);
+
+  for (let streamId = 0; streamId < safeStreamCount; streamId += 1) {
+    const streamUnit =
+      safeStreamCount === 1 ? 0.5 : streamId / (safeStreamCount - 1);
+    const streamSeed = getZhongZhengSeededUnit(streamId * 53 + 11);
+    const x =
+      pointerX -
+      horizontalSpan / 2 +
+      streamUnit * horizontalSpan +
+      (streamSeed - 0.5) * fontSize * 1.4;
+    const fall =
+      (elapsedMs * (0.0065 + streamSeed * 0.0045) +
+        streamSeed * fallCycle) %
+      fallCycle;
+    const headY = pointerY - verticalSpan / 2 + fall;
+
+    for (let trailIndex = 0; trailIndex < safeTrailLength; trailIndex += 1) {
+      const y = headY - trailIndex * fontSize * 1.28;
+
+      if (
+        x < 0 ||
+        x >= width ||
+        y < 0 ||
+        y >= height ||
+        y < pointerY - verticalSpan / 2 - fontSize ||
+        y > pointerY + verticalSpan / 2 + fontSize
+      ) {
+        continue;
+      }
+
+      const sampleX = Math.round(x);
+      const sampleY = Math.round(y);
+      const maskAlpha = alpha[sampleY * width + sampleX] || 0;
+      if (maskAlpha < 38) continue;
+
+      const distance = Math.sqrt((x - pointerX) ** 2 + (y - pointerY) ** 2);
+      const localInfluence = clampZhongZhengNumber(
+        (radius * 1.2 - distance) / Math.max(1, radius * 1.2),
+        0,
+        1
+      );
+      if (localInfluence <= 0) continue;
+
+      const trailFalloff =
+        trailIndex === 0 ? 1 : Math.max(0.14, 1 - trailIndex * 0.2);
+      const morph = getZhongZhengMorphAmount(elapsedMs);
+
+      glyphs.push({
+        streamId,
+        trailIndex,
+        x,
+        y,
+        token: getZhongZhengMorphToken({
+          index: streamId + trailIndex,
+          elapsedMs,
+        }),
+        opacity:
+          clampedProgress *
+          localInfluence *
+          trailFalloff *
+          (maskAlpha / 255) *
+          (trailIndex === 0 ? 0.92 : 0.52),
+        scale: trailIndex === 0 ? 1.08 : Math.max(0.72, 1 - trailIndex * 0.07),
+        isLead: trailIndex === 0,
+        morph,
+      });
+    }
+  }
+
+  return glyphs;
+};
 
 export const buildZhongZhengAsciiRows = (mode: ZhongZhengAsciiMode) => {
   const material = WORD_MATERIAL[mode];
@@ -291,136 +417,6 @@ export const buildZhongZhengMaskParticles = ({
   return candidates
     .filter((_, index) => index % stride === 0)
     .slice(0, maxParticles);
-};
-
-export const buildZhongZhengTextureFragments = ({
-  width,
-  height,
-  alpha,
-  sourcePixels,
-  stride = 3,
-  maxFragments = 18000,
-}: ZhongZhengTextureFragmentInput) => {
-  if (
-    width <= 0 ||
-    height <= 0 ||
-    alpha.length < width * height ||
-    sourcePixels.length < width * height * 4
-  ) {
-    return [];
-  }
-
-  const candidates: ZhongZhengTextureFragment[] = [];
-  const safeStride = Math.max(1, Math.round(stride));
-
-  for (let y = 0; y < height; y += safeStride) {
-    for (let x = 0; x < width; x += safeStride) {
-      const index = y * width + x;
-      const maskAlpha = alpha[index] || 0;
-      if (maskAlpha < 28) continue;
-
-      const dataIndex = index * 4;
-      const noise = getZhongZhengSeededUnit(x * 73 + y * 151 + maskAlpha);
-      const alphaWeight = maskAlpha / 255;
-
-      candidates.push({
-        id: `texture-${x}-${y}`,
-        x,
-        y,
-        size: safeStride + noise * 1.2,
-        red: enhanceZhongZhengTextureChannel(
-          sourcePixels[dataIndex] || 0,
-          alphaWeight,
-          noise
-        ),
-        green: enhanceZhongZhengTextureChannel(
-          sourcePixels[dataIndex + 1] || 0,
-          alphaWeight,
-          getZhongZhengSeededUnit(x * 41 + y * 97)
-        ),
-        blue: enhanceZhongZhengTextureChannel(
-          sourcePixels[dataIndex + 2] || 0,
-          alphaWeight,
-          getZhongZhengSeededUnit(x * 109 + y * 53)
-        ),
-        alpha: maskAlpha,
-        scatterX: (getZhongZhengSeededUnit(x * 127 + y * 31) - 0.5) * 7.2,
-        scatterY: (getZhongZhengSeededUnit(x * 67 + y * 167) - 0.5) * 7.2,
-        delay: getZhongZhengSeededUnit(x * 23 + y * 191),
-      });
-    }
-  }
-
-  if (candidates.length <= maxFragments) return candidates;
-
-  const sampleEvery = Math.ceil(candidates.length / maxFragments);
-  return candidates
-    .filter((_, index) => index % sampleEvery === 0)
-    .slice(0, maxFragments);
-};
-
-export const getZhongZhengFragmentRenderState = ({
-  fragment,
-  pointer,
-  width,
-  height,
-  progress,
-  radiusPixels,
-  featherPixels,
-}: {
-  fragment: ZhongZhengTextureFragment;
-  pointer: ZhongZhengPointerState;
-  width: number;
-  height: number;
-  progress: number;
-  radiusPixels: number;
-  featherPixels: number;
-}): ZhongZhengTextureFragmentRenderState => {
-  if (!pointer.active || progress <= 0) {
-    return {
-      x: fragment.x,
-      y: fragment.y,
-      size: fragment.size,
-      opacity: fragment.alpha / 255,
-      active: false,
-    };
-  }
-
-  const pointerX = (pointer.x / 100) * Math.max(1, width - 1);
-  const pointerY = (pointer.y / 100) * Math.max(1, height - 1);
-  const distance = Math.sqrt(
-    (fragment.x - pointerX) ** 2 + (fragment.y - pointerY) ** 2
-  );
-  const edgeStart = Math.max(0, radiusPixels - featherPixels);
-  const localInfluence = clampZhongZhengNumber(
-    (radiusPixels - distance) / Math.max(1, radiusPixels - edgeStart),
-    0,
-    1
-  );
-  const delayedProgress = clampZhongZhengNumber(
-    (progress - fragment.delay * 0.16) / 0.84,
-    0,
-    1
-  );
-  const dissolve = localInfluence * delayedProgress;
-
-  if (dissolve <= 0) {
-    return {
-      x: fragment.x,
-      y: fragment.y,
-      size: fragment.size,
-      opacity: fragment.alpha / 255,
-      active: false,
-    };
-  }
-
-  return {
-    x: fragment.x + fragment.scatterX * dissolve,
-    y: fragment.y + fragment.scatterY * dissolve,
-    size: fragment.size * (1 - dissolve * 0.22),
-    opacity: (fragment.alpha / 255) * (1 - dissolve * 0.68),
-    active: true,
-  };
 };
 
 export const buildZhongZhengDisintegrationFramePixels = ({
