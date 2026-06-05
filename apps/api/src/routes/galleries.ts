@@ -13,7 +13,9 @@ import {
 } from '../utils/crypto';
 import {
   NGS_ORG_KEY,
+  OPEN_ACCESS_ORG_KEY,
   isNgsPublicOrg,
+  isOpenAccessPublicOrg,
   resolveOrgIdentifier,
 } from '../utils/orgs';
 
@@ -54,7 +56,11 @@ orgs.get(
       return c.json({
         success: true,
         data: result.results.map((org: any) => ({
-          key: isNgsPublicOrg(org.id) ? NGS_ORG_KEY : org.slug || org.id,
+          key: isNgsPublicOrg(org.id)
+            ? NGS_ORG_KEY
+            : isOpenAccessPublicOrg(org.slug)
+              ? OPEN_ACCESS_ORG_KEY
+              : org.slug || org.id,
           ...org,
         })),
         metadata: {

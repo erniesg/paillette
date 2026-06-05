@@ -11,6 +11,7 @@
     "test:coverage": "turbo run test:coverage",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "open:dry-run": "node scripts/open-access-art-dry-run.mjs",
     "ngs:backfill-colors": "node scripts/backfill-ngs-colors.mjs",
     "ngs:backfill-reviewed-crops": "node scripts/backfill-ngs-reviewed-crops.mjs",
     "typecheck": "turbo run typecheck",

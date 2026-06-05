@@ -3,6 +3,7 @@ import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
   buildPublicTextSearchCacheKey,
   isHiddenPublicNgsArtwork,
+  resolvePublicSearchOrgId,
 } from '../public-search.server';
 
 describe('isHiddenPublicNgsArtwork', () => {
@@ -97,5 +98,13 @@ describe('buildPublicTextSearchCacheKey', () => {
 
     expect(artistKey.url).not.toBe(semanticKey.url);
     expect(artistUrl.searchParams.get('facet')).toBe('artist');
+  });
+});
+
+describe('resolvePublicSearchOrgId', () => {
+  it('maps the open collection short key to the Open Access Art slug', () => {
+    expect(resolvePublicSearchOrgId('open')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('OPEN')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('open-access-art')).toBe('open-access-art');
   });
 });
