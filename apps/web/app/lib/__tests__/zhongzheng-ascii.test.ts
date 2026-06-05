@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildZhongZhengArtworkTextureParticles,
   buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
   buildZhongZhengAsciiRows,
@@ -175,6 +176,151 @@ describe('buildZhongZhengMatrixTextGlyphs', () => {
       glyphs.every(
         (glyph) =>
           alpha[Math.round(glyph.y) * width + Math.round(glyph.x)] === 255
+      )
+    ).toBe(true);
+  });
+});
+
+describe('buildZhongZhengArtworkTextureParticles', () => {
+  it('turns cursor-local artwork material into particles clipped inside the statue mask', () => {
+    const width = 40;
+    const height = 40;
+    const alpha = new Uint8ClampedArray(width * height);
+    const materialPixels = new Uint8ClampedArray(width * height * 4);
+
+    for (let y = 7; y <= 32; y += 1) {
+      for (let x = 7; x <= 32; x += 1) {
+        const index = y * width + x;
+        const dataIndex = index * 4;
+        alpha[index] = 255;
+        materialPixels[dataIndex] = 20 + x;
+        materialPixels[dataIndex + 1] = 150 + y;
+        materialPixels[dataIndex + 2] = 210;
+        materialPixels[dataIndex + 3] = 255;
+      }
+    }
+
+    const particles = buildZhongZhengArtworkTextureParticles({
+      width,
+      height,
+      alpha,
+      materialPixels,
+      pointer: { x: 50, y: 50, active: true },
+      progress: 1,
+      elapsedMs: 1800,
+      radiusPixels: 13,
+      particleCount: 160,
+    });
+
+    expect(particles.length).toBeGreaterThan(40);
+    expect(
+      particles.every((particle) => {
+        const maskIndex = Math.round(particle.y) * width + Math.round(particle.x);
+        return alpha[maskIndex] === 255;
+      })
+    ).toBe(true);
+    expect(
+      particles.some((particle) => {
+        const movement = Math.sqrt(
+          (particle.x - particle.sourceX) ** 2 +
+            (particle.y - particle.sourceY) ** 2
+        );
+        return movement >= 0.75;
+      })
+    ).toBe(true);
+    expect(
+      particles.every(
+        (particle) =>
+          particle.red >= 27 &&
+          particle.red <= 52 &&
+          particle.green >= 157 &&
+          particle.green <= 182 &&
+          particle.blue === 210
+      )
+    ).toBe(true);
+    expect(
+      particles.every((particle) =>
+        new Set(['中', '正', 'CHUNG', 'CHENG']).has(particle.token)
+      )
+    ).toBe(true);
+    expect(particles.some((particle) => particle.token === '中')).toBe(true);
+    expect(particles.some((particle) => particle.token === 'CHUNG')).toBe(true);
+  });
+
+  it('matrix-animates particles mostly downward while morphing 中正 into Chung Cheng', () => {
+    const width = 48;
+    const height = 48;
+    const alpha = new Uint8ClampedArray(width * height);
+    const materialPixels = new Uint8ClampedArray(width * height * 4);
+
+    for (let y = 6; y <= 41; y += 1) {
+      for (let x = 6; x <= 41; x += 1) {
+        const index = y * width + x;
+        const dataIndex = index * 4;
+        alpha[index] = 255;
+        materialPixels[dataIndex] = 80;
+        materialPixels[dataIndex + 1] = 180;
+        materialPixels[dataIndex + 2] = 220;
+        materialPixels[dataIndex + 3] = 255;
+      }
+    }
+
+    const baseInput = {
+      width,
+      height,
+      alpha,
+      materialPixels,
+      pointer: { x: 50, y: 50, active: true },
+      progress: 1,
+      radiusPixels: 17,
+      particleCount: 180,
+    };
+    const chineseParticles = buildZhongZhengArtworkTextureParticles({
+      ...baseInput,
+      elapsedMs: 0,
+    });
+    const laterParticles = buildZhongZhengArtworkTextureParticles({
+      ...baseInput,
+      elapsedMs: 900,
+    });
+    const latinParticles = buildZhongZhengArtworkTextureParticles({
+      ...baseInput,
+      elapsedMs: 3600,
+    });
+    const laterById = new Map(
+      laterParticles.map((particle) => [particle.id, particle])
+    );
+    const sharedParticles = chineseParticles
+      .map((particle) => {
+        const later = laterById.get(particle.id);
+        if (!later) return null;
+
+        return {
+          x: Math.abs(later.x - particle.x),
+          y: Math.abs(later.y - particle.y),
+        };
+      })
+      .filter((movement): movement is { x: number; y: number } =>
+        Boolean(movement)
+      );
+    const averageX =
+      sharedParticles.reduce((sum, movement) => sum + movement.x, 0) /
+      sharedParticles.length;
+    const averageY =
+      sharedParticles.reduce((sum, movement) => sum + movement.y, 0) /
+      sharedParticles.length;
+
+    expect(sharedParticles.length).toBeGreaterThan(20);
+    expect(averageY).toBeGreaterThan(averageX * 1.35);
+    expect(
+      chineseParticles.every(
+        (particle) => particle.token === '中' || particle.token === '正'
+      )
+    ).toBe(true);
+    expect(
+      latinParticles.every(
+        (particle) =>
+          particle.token === 'CHUNG' || particle.token === 'CHENG'
       )
     ).toBe(true);
   });
