@@ -72,6 +72,13 @@ function extensionFromUrl(value) {
   return 'jpg';
 }
 
+function contentTypeForExtension(extension) {
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'gif') return 'image/gif';
+  return 'image/jpeg';
+}
+
 function providerFromArtwork(artwork) {
   return (
     artwork?.custom_metadata?.provider ||
@@ -308,6 +315,49 @@ export function buildOpenAccessApplyPlan({
     assetVersion,
     records: plannedRecords,
   };
+}
+
+export function buildOpenAccessAssetDownloads(records, { outDir } = {}) {
+  if (!outDir) {
+    throw new Error('outDir is required for open-access asset downloads');
+  }
+
+  return records
+    .filter((row) => row.assetMode === 'r2')
+    .flatMap((row) => [
+      {
+        artworkId: row.id,
+        provider: row.provider,
+        role: 'web',
+        assetId: row.imageAssetId,
+        objectKey: row.imageObjectKey,
+        sourceUrl: row.sourceImageUrl,
+        localPath: resolve(
+          outDir,
+          'assets',
+          `${row.imageAssetId}.${extensionFromUrl(row.sourceImageUrl)}`
+        ),
+        contentType: contentTypeForExtension(
+          extensionFromUrl(row.sourceImageUrl)
+        ),
+      },
+      {
+        artworkId: row.id,
+        provider: row.provider,
+        role: 'thumb',
+        assetId: row.thumbnailAssetId,
+        objectKey: row.thumbnailObjectKey,
+        sourceUrl: row.sourceThumbnailUrl,
+        localPath: resolve(
+          outDir,
+          'assets',
+          `${row.thumbnailAssetId}.${extensionFromUrl(row.sourceThumbnailUrl)}`
+        ),
+        contentType: contentTypeForExtension(
+          extensionFromUrl(row.sourceThumbnailUrl)
+        ),
+      },
+    ]);
 }
 
 function artworkStatement(row, generatedAt) {

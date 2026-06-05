@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import {
   DEFAULT_STAGING_ASSET_API_BASE,
+  buildOpenAccessAssetDownloads,
   buildOpenAccessApplyPlan,
   buildOpenAccessVectorLine,
   l2Normalize,
@@ -50,12 +53,19 @@ const options = {
   planOnly: args.flags.has('plan-only'),
   seedOnly: args.flags.has('seed-only'),
   apply: args.flags.has('apply'),
+  download:
+    args.flags.has('download') ||
+    args.flags.has('download-only') ||
+    args.flags.has('upload') ||
+    args.flags.has('apply'),
+  downloadOnly: args.flags.has('download-only'),
+  refreshAssets: args.flags.has('refresh-assets'),
   upload: args.flags.has('upload') || args.flags.has('apply'),
   applyD1: args.flags.has('apply-d1') || args.flags.has('apply'),
-  embedImages: args.flags.has('embed-images') || args.flags.has('apply'),
+  embedImages: args.flags.has('embed-images'),
   embedExternalImages: args.flags.has('embed-external-images'),
   embedCaptions: args.flags.has('embed-captions'),
-  upsertVectors: args.flags.has('upsert-vectors') || args.flags.has('apply'),
+  upsertVectors: args.flags.has('upsert-vectors'),
 };
 
 const wranglerExecOptions = {
@@ -113,8 +123,34 @@ if (options.planOnly) {
   process.exit(0);
 }
 
+let assetManifestFile = null;
+let assetDownloads = [];
+if (options.download && plan.records.length) {
+  assetDownloads = await downloadAssets(plan.records);
+  assetManifestFile = writeAssetManifest(assetDownloads);
+}
+
+if (options.downloadOnly) {
+  console.log(
+    JSON.stringify(
+      {
+        summary: summarizePlan(plan),
+        outputs: {
+          ...outputs(sqlFiles),
+          assetManifest: assetManifestFile,
+        },
+      },
+      null,
+      2
+    )
+  );
+  process.exit(0);
+}
+
 if (options.upload && plan.records.length) {
-  await uploadAssets(plan.records);
+  await uploadAssets(
+    assetDownloads.length ? assetDownloads : await downloadAssets(plan.records)
+  );
 }
 
 if (options.applyD1) {
@@ -154,6 +190,7 @@ console.log(
       summary: summarizePlan(plan),
       outputs: {
         ...outputs(sqlFiles),
+        assetManifest: assetManifestFile,
         imageVectors: imageVectorFile,
         captionVectors: captionVectorFile,
       },
@@ -236,25 +273,10 @@ function outputs(sqlFiles) {
   };
 }
 
-async function uploadAssets(records) {
-  const uploads = records
-    .filter((row) => row.assetMode === 'r2')
-    .flatMap((row) => [
-      {
-        url: row.sourceImageUrl,
-        key: row.imageObjectKey,
-        assetId: row.imageAssetId,
-      },
-      {
-        url: row.sourceThumbnailUrl,
-        key: row.thumbnailObjectKey,
-        assetId: row.thumbnailAssetId,
-      },
-    ]);
-  if (!uploads.length) return;
+async function uploadAssets(downloads) {
+  if (!downloads.length) return;
 
-  await mapLimit(uploads, options.uploadConcurrency, async (upload, index) => {
-    const downloaded = await downloadAsset(upload);
+  await mapLimit(downloads, options.uploadConcurrency, async (download, index) => {
     execFileSync(
       'pnpm',
       [
@@ -265,49 +287,76 @@ async function uploadAssets(records) {
         'r2',
         'object',
         'put',
-        `${options.bucket}/${upload.key}`,
+        `${options.bucket}/${download.objectKey}`,
         '--file',
-        downloaded.path,
+        download.localPath,
         '--content-type',
-        downloaded.contentType,
+        download.contentType,
       ],
       wranglerExecOptions
     );
-    if ((index + 1) % 25 === 0 || index + 1 === uploads.length) {
-      console.error(`uploaded ${index + 1}/${uploads.length}`);
+    if ((index + 1) % 25 === 0 || index + 1 === downloads.length) {
+      console.error(`uploaded ${index + 1}/${downloads.length}`);
     }
   });
 }
 
-async function downloadAsset(upload) {
-  if (!upload.url) throw new Error(`missing source URL for ${upload.key}`);
-  const extension = upload.key.split('.').pop() || 'jpg';
-  const path = resolve(options.outDir, 'assets', `${upload.assetId}.${extension}`);
-  if (existsSync(path)) {
-    return { path, contentType: contentTypeForExtension(extension) };
+async function downloadAssets(records) {
+  const downloads = buildOpenAccessAssetDownloads(records, {
+    outDir: options.outDir,
+  });
+  if (!downloads.length) return [];
+
+  await mapLimit(downloads, options.uploadConcurrency, async (download, index) => {
+    await downloadAsset(download);
+    if ((index + 1) % 25 === 0 || index + 1 === downloads.length) {
+      console.error(`downloaded ${index + 1}/${downloads.length}`);
+    }
+  });
+
+  return downloads.map((download) => ({
+    ...download,
+    sizeBytes: statSync(download.localPath).size,
+    sha256: fileSha256(download.localPath),
+  }));
+}
+
+async function downloadAsset(download) {
+  if (!download.sourceUrl) {
+    throw new Error(`missing source URL for ${download.objectKey}`);
+  }
+  if (existsSync(download.localPath) && !options.refreshAssets) {
+    return download;
   }
 
-  const response = await fetch(upload.url, {
+  const response = await fetch(download.sourceUrl, {
     headers: { accept: 'image/avif,image/webp,image/*,*/*;q=0.8' },
   });
   if (!response.ok) {
-    throw new Error(`image fetch failed with ${response.status}: ${upload.url}`);
+    throw new Error(
+      `image fetch failed with ${response.status}: ${download.sourceUrl}`
+    );
   }
   const bytes = Buffer.from(await response.arrayBuffer());
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, bytes);
-  return {
-    path,
-    contentType:
-      response.headers.get('content-type') || contentTypeForExtension(extension),
-  };
+  mkdirSync(dirname(download.localPath), { recursive: true });
+  writeFileSync(download.localPath, bytes);
+  download.contentType = response.headers.get('content-type') || download.contentType;
+  return download;
 }
 
-function contentTypeForExtension(extension) {
-  if (extension === 'png') return 'image/png';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'gif') return 'image/gif';
-  return 'image/jpeg';
+function fileSha256(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function writeAssetManifest(downloads) {
+  const file = resolve(options.outDir, 'asset-manifest.json');
+  writeJson(file, {
+    generatedAt: new Date().toISOString(),
+    bucket: options.bucket,
+    count: downloads.length,
+    assets: downloads,
+  });
+  return file;
 }
 
 function applySqlFiles(files) {
@@ -558,7 +607,7 @@ function printHelp() {
   console.log(`Usage:
   pnpm open:apply -- --manifest tmp/open-access-art-dry-run.json --plan-only
   pnpm open:apply -- --seed-only --apply-d1
-  pnpm open:apply -- --manifest tmp/open-access-art-dry-run.json --limit 20 --upload --apply-d1 --embed-images --upsert-vectors
+  pnpm open:apply -- --manifest tmp/open-access-art-dry-run.json --limit 20 --download --upload --apply-d1
 
 Options:
   --manifest PATH          Dry-run manifest from pnpm open:dry-run -- --out PATH.
@@ -567,14 +616,17 @@ Options:
   --seed-only              Write/apply only org and collection seed SQL.
   --asset-mode r2|external D1 image URL mode. Default: r2.
   --external-providers CSV Provider keys to leave as hotlinked external assets.
-  --upload                 Fetch source images and upload web/thumb objects to R2.
+  --download               Download R2-cached source images into out-dir/assets.
+  --download-only          Download assets, write asset-manifest.json, then stop.
+  --refresh-assets         Re-fetch existing local asset files.
+  --upload                 Upload downloaded web/thumb objects to R2.
   --apply-d1               Apply generated SQL to D1.
   --embed-images           Generate image vector NDJSON with Jina CLIP.
   --embed-external-images  Also embed providers left in external asset mode.
   --caption-jsonl PATH     Generated captions, one JSON object per line.
   --embed-captions         Generate caption vector NDJSON from --caption-jsonl.
   --upsert-vectors         Upsert generated vector NDJSON to Vectorize.
-  --apply                  Upload, apply D1, embed images, and upsert image vectors.
+  --apply                  Download assets, upload to R2, and apply D1.
   --plan-only              Only write plan, summary, and SQL files.
 `);
 }

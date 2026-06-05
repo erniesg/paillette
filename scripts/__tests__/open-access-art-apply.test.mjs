@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_OPEN_ACCESS_COLLECTION_ID,
   DEFAULT_OPEN_ACCESS_ORG_ID,
+  buildOpenAccessAssetDownloads,
   buildOpenAccessApplyPlan,
   buildOpenAccessSeedSql,
   buildOpenAccessVectorLine,
@@ -122,6 +123,48 @@ describe('open access art apply plan', () => {
     assert.equal(plan.records[0].imageUrl, sampleArtwork.image_url);
     assert.equal(plan.records[0].thumbnailUrl, sampleArtwork.thumbnail_url);
     assert.equal(plan.records[0].customMetadata.openAccessArt.assetMode, 'external');
+  });
+
+  it('plans local asset downloads only for R2-cached records', () => {
+    const plan = buildOpenAccessApplyPlan({
+      manifest: {
+        providers: {
+          artic: {
+            normalizedSamples: [sampleArtwork],
+          },
+        },
+      },
+      generatedAt: '2026-06-05T00:00:00.000Z',
+    });
+    const downloads = buildOpenAccessAssetDownloads(plan.records, {
+      outDir: '/tmp/open-access-art',
+    });
+
+    assert.equal(downloads.length, 2);
+    assert.equal(downloads[0].role, 'web');
+    assert.equal(downloads[0].sourceUrl, sampleArtwork.image_url);
+    assert.equal(
+      downloads[0].localPath,
+      `/tmp/open-access-art/assets/${plan.records[0].imageAssetId}.jpg`
+    );
+    assert.equal(downloads[1].role, 'thumb');
+
+    const externalPlan = buildOpenAccessApplyPlan({
+      manifest: {
+        providers: {
+          artic: {
+            normalizedSamples: [sampleArtwork],
+          },
+        },
+      },
+      externalProviders: ['artic'],
+    });
+    assert.deepEqual(
+      buildOpenAccessAssetDownloads(externalPlan.records, {
+        outDir: '/tmp/open-access-art',
+      }),
+      []
+    );
   });
 
   it('writes D1 SQL for seed rows, artwork upserts, asset upserts, and collection membership', () => {

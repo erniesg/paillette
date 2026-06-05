@@ -59,7 +59,25 @@ Default recommendation for the first benchmark:
 
 - Seed the staging org and collection with `pnpm open:apply -- --seed-only --apply-d1`.
 - Build a bounded pilot manifest with `pnpm open:dry-run -- --sample-size=1 --out=tmp/open-access-art-apply-smoke/manifest.json`.
-- Apply the smallest ArtIC+NGA pilot with `pnpm open:apply -- --manifest=tmp/open-access-art-apply-smoke/manifest.json --out-dir=tmp/open-access-art-pilot-2-stg --limit=2 --external-providers=artic --upload --apply-d1 --embed-images --upsert-vectors`.
+- Download first, then upload/apply the same local files with `pnpm open:apply -- --manifest=tmp/open-access-art-apply-smoke/manifest.json --out-dir=tmp/open-access-art-pilot-2-stg --limit=2 --external-providers=artic --download --upload --apply-d1`.
+- Use `--download-only` when preparing local embedding batches; it writes `asset-manifest.json` with local file paths, R2 object keys, content types, sizes, and SHA-256 checksums.
 - ArtIC IIIF URLs are officially hotlinkable, but direct server-side fetches from this environment received a Cloudflare challenge during the pilot. Keep ArtIC as `--external-providers=artic` until there is a fetch path that respects their throttling guidance and avoids challenge pages.
-- NGA image rows can be cached into R2 and embedded with Jina CLIP through the current apply path.
+- NGA image rows can be downloaded locally, cached into R2, and then embedded from the local `asset-manifest.json` in a separate local embedding step.
 - A one-image missing-caption benchmark on NGA row `open-access-art:nga:41526` with `mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit` completed in 8.4 seconds/image on this machine. Treat this as a smoke benchmark only; run a 200-500 image sample before bulk captioning.
+
+## Delta Strategy
+
+The ingest is designed to be rerunnable:
+
+- Artwork IDs are stable: `open-access-art:<provider>:<providerRecordId>`.
+- Asset IDs are stable by artwork ID, role, and asset version.
+- R2 object keys are stable by collection, provider, provider record ID, and role.
+- D1 writes use upserts, so rerunning the same manifest updates rows without duplicating artworks, assets, or collection membership.
+
+For later deltas:
+
+1. Run `pnpm open:dry-run` again for the same provider set.
+2. Compare the new manifest/apply plan against the last applied manifest or D1 `source_record_id`/`custom_metadata.openAccessArt` state.
+3. Treat new IDs as inserts, changed source metadata as updates, and changed `sourceImageUrl`/`sourceThumbnailUrl` as asset refreshes.
+4. Run `pnpm open:apply -- --download --upload --apply-d1` for the delta manifest; add `--refresh-assets` for rows whose provider image bytes may have changed under the same stable URL.
+5. Do not delete provider-missing records automatically until a source-specific deaccession policy is explicit. Mark removals separately, then decide whether to set `deleted_at`.
