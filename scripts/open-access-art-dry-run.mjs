@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import Papa from 'papaparse';
 
 import {
@@ -296,6 +297,7 @@ const manifest = buildDryRunManifest({
 
 const json = `${JSON.stringify(manifest, null, 2)}\n`;
 if (outPath && outPath !== 'true') {
+  await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, json, 'utf8');
 } else {
   process.stdout.write(json);
