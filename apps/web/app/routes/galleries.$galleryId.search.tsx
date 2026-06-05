@@ -68,7 +68,6 @@ import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import {
-  CHUNG_CHENG_FEATURE_QUERY,
   buildSuggestionPool,
   getSuggestionPrefetchQueries,
   getSuggestionKey,
@@ -82,9 +81,9 @@ import {
   isChungChengFeatureSuggestion,
 } from '~/lib/featured-showcase';
 import {
-  buildZhongZhengArtworkTextureParticles,
   buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
+  buildZhongZhengMatrixTextGlyphs,
   clipZhongZhengPixelsToMask,
   getZhongZhengSeededUnit,
   type ZhongZhengPointerState,
@@ -1434,40 +1433,9 @@ export default function SearchPage() {
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
-  const chungChengMaterialQuery = useQuery({
-    queryKey: publicTextSearchQueryKey(
-      galleryId,
-      null,
-      CHUNG_CHENG_FEATURE_QUERY,
-      MAX_SEARCH_RESULTS,
-      0
-    ),
-    queryFn: () =>
-      publicSearchText(
-        galleryId,
-        {
-          query: CHUNG_CHENG_FEATURE_QUERY,
-          topK: MAX_SEARCH_RESULTS,
-          minScore: 0,
-        },
-        {
-          auto: true,
-          source: 'chung_cheng_material_atlas',
-        }
-      ),
-    enabled: hasMounted && isChungChengFeatureActive,
-    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
-    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-  });
   const chungChengFeaturedArtwork = useMemo(
     () => getChungChengFeaturedArtwork(idleShowcaseResults),
     [idleShowcaseResults]
-  );
-  const chungChengMaterialResults =
-    chungChengMaterialQuery.data?.results || idleShowcaseResults;
-  const chungChengMaterialImageSources = useMemo(
-    () => getZhongZhengArtworkMaterialImageUrls(chungChengMaterialResults),
-    [chungChengMaterialResults]
   );
 
   useEffect(() => {
@@ -1934,7 +1902,6 @@ export default function SearchPage() {
             {isChungChengFeatureActive && (
               <ZhongZhengAsciiFeature
                 artwork={chungChengFeaturedArtwork}
-                materialImageSources={chungChengMaterialImageSources}
                 isVisible
                 onSelectArtwork={selectArtwork}
               />
@@ -3094,59 +3061,8 @@ type ZhongZhengMaskState = {
   height: number;
   alpha: Uint8ClampedArray;
   sourcePixels: Uint8ClampedArray;
-  materialPixels: Uint8ClampedArray;
   noise: Uint8ClampedArray;
-  textureSource: 'artwork-atlas-with-text-morph' | 'statue-fallback-with-text-morph';
-  materialSourceCount: number;
-};
-
-const ZHONG_ZHENG_ARTWORK_MATERIAL_LIMIT = 8;
-
-const getCanvasReadablePublicImageUrl = (src: string) =>
-  `/api/public-image-proxy?url=${encodeURIComponent(src)}`;
-
-const getZhongZhengArtworkMaterialImageUrls = (
-  artworks: ArtworkSearchResult[]
-) =>
-  Array.from(
-    new Set(
-      artworks
-        .filter((artwork) => !isChungChengArtwork(artwork))
-        .map((artwork) => getArtworkImageUrl(artwork, 'thumbnail'))
-        .filter((src): src is string => Boolean(src))
-        .map(getCanvasReadablePublicImageUrl)
-    )
-  ).slice(0, ZHONG_ZHENG_ARTWORK_MATERIAL_LIMIT);
-
-const drawZhongZhengImageCover = (
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-) => {
-  const naturalWidth = image.naturalWidth || image.width;
-  const naturalHeight = image.naturalHeight || image.height;
-  if (!naturalWidth || !naturalHeight || width <= 0 || height <= 0) return;
-
-  const scale = Math.max(width / naturalWidth, height / naturalHeight);
-  const sourceWidth = width / scale;
-  const sourceHeight = height / scale;
-  const sourceX = Math.max(0, (naturalWidth - sourceWidth) / 2);
-  const sourceY = Math.max(0, (naturalHeight - sourceHeight) / 2);
-
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    Math.min(sourceWidth, naturalWidth),
-    Math.min(sourceHeight, naturalHeight),
-    x,
-    y,
-    width,
-    height
-  );
+  textureSource: 'statue-with-text-morph';
 };
 
 const getDominantAlphaComponent = (
@@ -3211,8 +3127,7 @@ const getDominantAlphaComponent = (
 };
 
 const extractZhongZhengMaskFromImage = (
-  image: HTMLImageElement,
-  materialImages: HTMLImageElement[] = []
+  image: HTMLImageElement
 ): ZhongZhengMaskState | null => {
   const naturalWidth = image.naturalWidth || image.width;
   const naturalHeight = image.naturalHeight || image.height;
@@ -3232,46 +3147,6 @@ const extractZhongZhengMaskFromImage = (
   sourceContext.drawImage(image, 0, 0, width, height);
 
   const imageData = sourceContext.getImageData(0, 0, width, height);
-  const materialCanvas = document.createElement('canvas');
-  materialCanvas.width = width;
-  materialCanvas.height = height;
-  const materialContext = materialCanvas.getContext('2d', {
-    willReadFrequently: true,
-  });
-  let materialImageData: ImageData | null = null;
-  let materialSourceCount = 0;
-
-  if (materialContext && materialImages.length > 0) {
-    materialContext.fillStyle = '#111113';
-    materialContext.fillRect(0, 0, width, height);
-
-    const columns = Math.min(3, Math.ceil(Math.sqrt(materialImages.length)));
-    const rows = Math.ceil(materialImages.length / columns);
-    const cellWidth = width / columns;
-    const cellHeight = height / rows;
-
-    materialImages.forEach((materialImage, index) => {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      drawZhongZhengImageCover(
-        materialContext,
-        materialImage,
-        column * cellWidth,
-        row * cellHeight,
-        cellWidth,
-        cellHeight
-      );
-    });
-
-    try {
-      materialImageData = materialContext.getImageData(0, 0, width, height);
-      materialSourceCount = materialImages.length;
-    } catch {
-      materialImageData = null;
-      materialSourceCount = 0;
-    }
-  }
-
   const rawAlpha = new Uint8ClampedArray(width * height);
 
   for (let index = 0; index < rawAlpha.length; index += 1) {
@@ -3294,9 +3169,7 @@ const extractZhongZhengMaskFromImage = (
 
   const alpha = new Uint8ClampedArray(width * height);
   const sourcePixels = new Uint8ClampedArray(width * height * 4);
-  const materialPixels = new Uint8ClampedArray(width * height * 4);
   const noise = new Uint8ClampedArray(width * height);
-  const materialData = materialImageData?.data || imageData.data;
 
   for (let index = 0; index < alpha.length; index += 1) {
     const currentAlpha =
@@ -3319,9 +3192,6 @@ const extractZhongZhengMaskFromImage = (
     const statueRed = imageData.data[dataIndex] || 0;
     const statueGreen = imageData.data[dataIndex + 1] || 0;
     const statueBlue = imageData.data[dataIndex + 2] || 0;
-    const materialRed = materialData[dataIndex] || statueRed;
-    const materialGreen = materialData[dataIndex + 1] || statueGreen;
-    const materialBlue = materialData[dataIndex + 2] || statueBlue;
 
     alpha[index] = maskAlpha;
     noise[index] = Math.round(textureNoise * 255);
@@ -3331,10 +3201,6 @@ const extractZhongZhengMaskFromImage = (
       sourcePixels[dataIndex + 1] = 0;
       sourcePixels[dataIndex + 2] = 0;
       sourcePixels[dataIndex + 3] = 0;
-      materialPixels[dataIndex] = 0;
-      materialPixels[dataIndex + 1] = 0;
-      materialPixels[dataIndex + 2] = 0;
-      materialPixels[dataIndex + 3] = 0;
       continue;
     }
 
@@ -3358,32 +3224,6 @@ const extractZhongZhengMaskFromImage = (
       )
     );
     sourcePixels[dataIndex + 3] = maskAlpha;
-
-    materialPixels[dataIndex] = Math.round(
-      clampNumber(
-        materialRed * (0.82 + alphaWeight * 0.14) +
-          getZhongZhengSeededUnit(index * 7 + 43) * 18,
-        0,
-        255
-      )
-    );
-    materialPixels[dataIndex + 1] = Math.round(
-      clampNumber(
-        materialGreen * (0.82 + alphaWeight * 0.14) +
-          getZhongZhengSeededUnit(index * 11 + 47) * 18,
-        0,
-        255
-      )
-    );
-    materialPixels[dataIndex + 2] = Math.round(
-      clampNumber(
-        materialBlue * (0.82 + alphaWeight * 0.14) +
-          getZhongZhengSeededUnit(index * 13 + 53) * 18,
-        0,
-        255
-      )
-    );
-    materialPixels[dataIndex + 3] = maskAlpha;
   }
 
   return {
@@ -3391,13 +3231,8 @@ const extractZhongZhengMaskFromImage = (
     height,
     alpha,
     sourcePixels,
-    materialPixels,
     noise,
-    textureSource:
-      materialSourceCount > 0
-        ? 'artwork-atlas-with-text-morph'
-        : 'statue-fallback-with-text-morph',
-    materialSourceCount,
+    textureSource: 'statue-with-text-morph',
   };
 };
 
@@ -3475,6 +3310,19 @@ const applyZhongZhengCanvasMask = (
   context.restore();
 };
 
+const mixZhongZhengRgb = (
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  amount: number
+) =>
+  from
+    .map((channel, index) =>
+      Math.round(
+        clampNumber(channel + ((to[index] || 0) - channel) * amount, 0, 255)
+      )
+    )
+    .join(' ');
+
 const drawZhongZhengDisintegrationFrame = (
   canvas: HTMLCanvasElement,
   state: ZhongZhengMaskState,
@@ -3515,51 +3363,47 @@ const drawZhongZhengDisintegrationFrame = (
 
   if (pointer.active && progress > 0.08) {
     const elapsedMs = Math.max(0, timeMs - (pointer.activeSinceMs || timeMs));
-    const textureParticles = buildZhongZhengArtworkTextureParticles({
+    const fontSize = Math.max(11, Math.min(18, state.width * 0.027));
+    const glyphs = buildZhongZhengMatrixTextGlyphs({
       width: state.width,
       height: state.height,
       alpha: state.alpha,
-      materialPixels: state.materialPixels,
       pointer,
       progress,
       elapsedMs,
-      radiusPixels: radiusPixels * 1.12,
-      particleCount: 360,
+      radiusPixels: radiusPixels * 1.08,
+      fontSize,
+      streamCount: 54,
+      trailLength: 6,
     });
 
     context.save();
     context.textAlign = 'center';
     context.textBaseline = 'middle';
 
-    for (const particle of textureParticles) {
-      const brightRed = Math.round(clampNumber(particle.red * 0.88 + 34, 0, 255));
-      const brightGreen = Math.round(
-        clampNumber(particle.green * 0.88 + 42, 0, 255)
+    for (const glyph of glyphs) {
+      const glyphFontSize = fontSize * glyph.scale;
+      const headGlow = glyph.isLead ? 13 : 5;
+      const fillRgb = glyph.isLead
+        ? mixZhongZhengRgb([226, 255, 232], [255, 199, 225], glyph.morph)
+        : mixZhongZhengRgb([88, 255, 173], [248, 113, 184], glyph.morph);
+      const shadowRgb = mixZhongZhengRgb(
+        [97, 255, 174],
+        [244, 114, 182],
+        glyph.morph
       );
-      const brightBlue = Math.round(
-        clampNumber(particle.blue * 0.88 + 38, 0, 255)
-      );
-      const rgb = `${brightRed} ${brightGreen} ${brightBlue}`;
-      context.globalAlpha = Math.min(0.96, particle.opacity);
-      context.shadowBlur = particle.token.length > 1 ? 8 : 6;
-      context.shadowColor = `rgb(${rgb} / ${Math.min(
-        0.48,
-        particle.opacity * 0.82
+
+      context.font = `${glyph.isLead ? 700 : 600} ${glyphFontSize}px "IBM Plex Mono", ui-monospace, monospace`;
+      context.shadowBlur = headGlow;
+      context.shadowColor = `rgb(${shadowRgb} / ${Math.min(
+        0.68,
+        glyph.opacity * 0.88
       ).toFixed(3)})`;
-      context.fillStyle = `rgb(${rgb})`;
-
-      context.save();
-      context.translate(particle.x, particle.y);
-      context.rotate(particle.rotation);
-      const glyphFontSize =
-        particle.token.length > 1
-          ? Math.max(10, particle.size * 2.36)
-          : Math.max(14, particle.size * 4.1);
-      context.globalAlpha = Math.min(0.92, particle.tokenOpacity + 0.08);
-      context.font = `700 ${glyphFontSize}px "IBM Plex Mono", ui-monospace, monospace`;
-      context.fillText(particle.token, 0, 0);
-
-      context.restore();
+      context.fillStyle = `rgb(${fillRgb} / ${Math.min(
+        0.96,
+        glyph.opacity
+      ).toFixed(3)})`;
+      context.fillText(glyph.token, glyph.x, glyph.y);
     }
 
     context.restore();
@@ -3570,12 +3414,10 @@ const drawZhongZhengDisintegrationFrame = (
 
 function ZhongZhengAsciiFeature({
   artwork,
-  materialImageSources,
   isVisible,
   onSelectArtwork,
 }: {
   artwork: ArtworkSearchResult;
-  materialImageSources: string[];
   isVisible: boolean;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -3595,7 +3437,6 @@ function ZhongZhengAsciiFeature({
   const [maskState, setMaskState] = useState<ZhongZhengMaskState | null>(null);
   const [maskLoadFailed, setMaskLoadFailed] = useState(false);
   const title = getDisplayTitle(artwork);
-  const materialImageSourceKey = materialImageSources.join('|');
 
   const scheduleRender = useCallback((targetProgress: number) => {
     if (animationFrameRef.current !== null) {
@@ -3653,16 +3494,7 @@ function ZhongZhengAsciiFeature({
         const maskImage = await loadZhongZhengImage(
           CHUNG_CHENG_STATUE_MASK_IMAGE_URL
         );
-        const materialResults = await Promise.allSettled(
-          materialImageSources.map(loadZhongZhengImage)
-        );
-        const materialImages = materialResults.flatMap((result) =>
-          result.status === 'fulfilled' ? [result.value] : []
-        );
-        const nextMaskState = extractZhongZhengMaskFromImage(
-          maskImage,
-          materialImages
-        );
+        const nextMaskState = extractZhongZhengMaskFromImage(maskImage);
         if (!cancelled && nextMaskState) {
           maskStateRef.current = nextMaskState;
           progressRef.current = 0;
@@ -3687,7 +3519,7 @@ function ZhongZhengAsciiFeature({
     return () => {
       cancelled = true;
     };
-  }, [materialImageSourceKey, materialImageSources]);
+  }, []);
 
   useEffect(() => {
     maskStateRef.current = maskState;
@@ -3791,8 +3623,6 @@ function ZhongZhengAsciiFeature({
       data-particle-source={
         maskState ? `image-canvas-${maskState.textureSource}` : 'ascii-fallback'
       }
-      data-material-url-count={materialImageSources.length}
-      data-material-source-count={maskState?.materialSourceCount || 0}
     >
       <span className="chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]">
         <span
