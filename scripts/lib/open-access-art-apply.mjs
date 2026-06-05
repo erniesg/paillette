@@ -207,6 +207,7 @@ export function buildOpenAccessApplyPlan({
   apiBase = DEFAULT_STAGING_ASSET_API_BASE,
   assetMode = 'r2',
   assetVersion = DEFAULT_OPEN_ACCESS_ASSET_VERSION,
+  externalProviders = [],
   generatedAt = new Date().toISOString(),
   limit = 0,
 } = {}) {
@@ -214,9 +215,15 @@ export function buildOpenAccessApplyPlan({
     0,
     limit > 0 ? limit : undefined
   );
+  const externalProviderSet = new Set(
+    externalProviders.map((provider) => String(provider).trim().toLowerCase())
+  );
 
   const plannedRecords = sourceRecords.map((artwork, index) => {
     const provider = providerFromArtwork(artwork);
+    const recordAssetMode = externalProviderSet.has(provider)
+      ? 'external'
+      : assetMode;
     const sourceRecordId = String(sourceRecordIdFromArtwork(artwork));
     const imageAssetId = stableOpenAccessAssetId({
       artworkId: artwork.id,
@@ -238,9 +245,11 @@ export function buildOpenAccessApplyPlan({
     const imageObjectKey = `${objectBase}/web.${imageExtension}`;
     const thumbnailObjectKey = `${objectBase}/thumb.${thumbnailExtension}`;
     const imageUrl =
-      assetMode === 'r2' ? assetContentUrl(apiBase, imageAssetId) : sourceImageUrl;
+      recordAssetMode === 'r2'
+        ? assetContentUrl(apiBase, imageAssetId)
+        : sourceImageUrl;
     const thumbnailUrl =
-      assetMode === 'r2'
+      recordAssetMode === 'r2'
         ? assetContentUrl(apiBase, thumbnailAssetId)
         : sourceThumbnailUrl;
     const customMetadata = {
@@ -248,7 +257,7 @@ export function buildOpenAccessApplyPlan({
       openAccessArt: compactObject({
         appliedAt: generatedAt,
         assetVersion,
-        assetMode,
+        assetMode: recordAssetMode,
         sourceImageUrl,
         sourceThumbnailUrl,
         imageAssetId,
@@ -274,7 +283,7 @@ export function buildOpenAccessApplyPlan({
       provider,
       providerRecordId: sourceRecordId,
       bucket,
-      assetMode,
+      assetMode: recordAssetMode,
       imageAssetId,
       thumbnailAssetId,
       imageObjectKey,

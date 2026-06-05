@@ -105,6 +105,25 @@ describe('open access art apply plan', () => {
     );
   });
 
+  it('can leave selected providers as external hotlinks while caching others', () => {
+    const plan = buildOpenAccessApplyPlan({
+      manifest: {
+        providers: {
+          artic: {
+            normalizedSamples: [sampleArtwork],
+          },
+        },
+      },
+      generatedAt: '2026-06-05T00:00:00.000Z',
+      externalProviders: ['artic'],
+    });
+
+    assert.equal(plan.records[0].assetMode, 'external');
+    assert.equal(plan.records[0].imageUrl, sampleArtwork.image_url);
+    assert.equal(plan.records[0].thumbnailUrl, sampleArtwork.thumbnail_url);
+    assert.equal(plan.records[0].customMetadata.openAccessArt.assetMode, 'external');
+  });
+
   it('writes D1 SQL for seed rows, artwork upserts, asset upserts, and collection membership', () => {
     const plan = buildOpenAccessApplyPlan({
       manifest: {

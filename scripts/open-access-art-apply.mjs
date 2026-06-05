@@ -38,6 +38,7 @@ const options = {
     args.values.get('caption-index') || 'paillette-caption-embeddings-v2-stg',
   apiBase: args.values.get('api-base') || DEFAULT_STAGING_ASSET_API_BASE,
   assetMode: args.values.get('asset-mode') || 'r2',
+  externalProviders: providerList(args.values.get('external-providers')),
   limit: Number(args.values.get('limit') || '0'),
   d1BatchSize: Number(args.values.get('d1-batch-size') || '50'),
   uploadConcurrency: Number(args.values.get('upload-concurrency') || '4'),
@@ -52,6 +53,7 @@ const options = {
   upload: args.flags.has('upload') || args.flags.has('apply'),
   applyD1: args.flags.has('apply-d1') || args.flags.has('apply'),
   embedImages: args.flags.has('embed-images') || args.flags.has('apply'),
+  embedExternalImages: args.flags.has('embed-external-images'),
   embedCaptions: args.flags.has('embed-captions'),
   upsertVectors: args.flags.has('upsert-vectors') || args.flags.has('apply'),
 };
@@ -84,6 +86,7 @@ const plan = buildOpenAccessApplyPlan({
   bucket: options.bucket,
   apiBase: options.apiBase,
   assetMode: options.assetMode,
+  externalProviders: options.externalProviders,
   limit: options.limit,
 });
 if (options.seedOnly) {
@@ -121,7 +124,10 @@ if (options.applyD1) {
 let imageVectorFile = null;
 if (options.embedImages && plan.records.length) {
   loadEnvFile(options.envFile);
-  imageVectorFile = await writeImageVectorNdjson(plan.records);
+  const imageRows = options.embedExternalImages
+    ? plan.records
+    : plan.records.filter((row) => row.assetMode === 'r2');
+  imageVectorFile = await writeImageVectorNdjson(imageRows);
   if (options.upsertVectors) {
     upsertVectorFile(options.imageIndex, imageVectorFile);
   }
@@ -180,6 +186,13 @@ function parseArgs(argv) {
   return { values, flags };
 }
 
+function providerList(value) {
+  return String(value || '')
+    .split(',')
+    .map((provider) => provider.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
@@ -205,6 +218,11 @@ function summarizePlan(plan) {
     collectionId: plan.collectionId,
     assetMode: plan.assetMode,
     recordCount: plan.records.length,
+    cachedRecordCount: plan.records.filter((row) => row.assetMode === 'r2')
+      .length,
+    externalRecordCount: plan.records.filter(
+      (row) => row.assetMode === 'external'
+    ).length,
     providers,
   };
 }
@@ -219,18 +237,21 @@ function outputs(sqlFiles) {
 }
 
 async function uploadAssets(records) {
-  const uploads = records.flatMap((row) => [
-    {
-      url: row.sourceImageUrl,
-      key: row.imageObjectKey,
-      assetId: row.imageAssetId,
-    },
-    {
-      url: row.sourceThumbnailUrl,
-      key: row.thumbnailObjectKey,
-      assetId: row.thumbnailAssetId,
-    },
-  ]);
+  const uploads = records
+    .filter((row) => row.assetMode === 'r2')
+    .flatMap((row) => [
+      {
+        url: row.sourceImageUrl,
+        key: row.imageObjectKey,
+        assetId: row.imageAssetId,
+      },
+      {
+        url: row.sourceThumbnailUrl,
+        key: row.thumbnailObjectKey,
+        assetId: row.thumbnailAssetId,
+      },
+    ]);
+  if (!uploads.length) return;
 
   await mapLimit(uploads, options.uploadConcurrency, async (upload, index) => {
     const downloaded = await downloadAsset(upload);
@@ -545,9 +566,11 @@ Options:
   --limit N                Apply only the first N normalized sample records.
   --seed-only              Write/apply only org and collection seed SQL.
   --asset-mode r2|external D1 image URL mode. Default: r2.
+  --external-providers CSV Provider keys to leave as hotlinked external assets.
   --upload                 Fetch source images and upload web/thumb objects to R2.
   --apply-d1               Apply generated SQL to D1.
   --embed-images           Generate image vector NDJSON with Jina CLIP.
+  --embed-external-images  Also embed providers left in external asset mode.
   --caption-jsonl PATH     Generated captions, one JSON object per line.
   --embed-captions         Generate caption vector NDJSON from --caption-jsonl.
   --upsert-vectors         Upsert generated vector NDJSON to Vectorize.

@@ -53,3 +53,11 @@ Default recommendation for the first benchmark:
 - Keep image inputs small for benchmarking: start at 512px long edge, then compare 768px only if quality is weak.
 - For API-based Jina CLIP image embeddings, token volume scales by image tiling; local embeddings avoid that API bill.
 - Cloudflare costs are low for the pilot; the practical risk is time spent generating captions and vectors.
+
+## Staging Apply Notes
+
+- Seed the staging org and collection with `pnpm open:apply -- --seed-only --apply-d1`.
+- Build a bounded pilot manifest with `pnpm open:dry-run -- --sample-size=1 --out=tmp/open-access-art-apply-smoke/manifest.json`.
+- Apply the smallest ArtIC+NGA pilot with `pnpm open:apply -- --manifest=tmp/open-access-art-apply-smoke/manifest.json --out-dir=tmp/open-access-art-pilot-2-stg --limit=2 --external-providers=artic --upload --apply-d1 --embed-images --upsert-vectors`.
+- ArtIC IIIF URLs are officially hotlinkable, but direct server-side fetches from this environment received a Cloudflare challenge during the pilot. Keep ArtIC as `--external-providers=artic` until there is a fetch path that respects their throttling guidance and avoids challenge pages.
+- NGA image rows can be cached into R2 and embedded with Jina CLIP through the current apply path.
