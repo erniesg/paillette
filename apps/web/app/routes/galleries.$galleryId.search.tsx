@@ -3246,35 +3246,49 @@ const loadZhongZhengImage = (src: string) =>
     image.src = src;
   });
 
-const getZhongZhengMaskAlphaNearPointer = (
+const getZhongZhengMaskHitNearPointer = (
   state: ZhongZhengMaskState,
   pointerXPercent: number,
   pointerYPercent: number
 ) => {
   const centerX = Math.round((pointerXPercent / 100) * (state.width - 1));
   const centerY = Math.round((pointerYPercent / 100) * (state.height - 1));
-  let strongestAlpha = 0;
+  let strongestHit = {
+    alpha: 0,
+    distance: Number.POSITIVE_INFINITY,
+    x: centerX,
+    y: centerY,
+  };
 
   for (
     let offsetY = -ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
     offsetY <= ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
-    offsetY += ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS
+    offsetY += 2
   ) {
     for (
       let offsetX = -ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
       offsetX <= ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS;
-      offsetX += ZHONG_ZHENG_POINTER_HIT_RADIUS_PIXELS
+      offsetX += 2
     ) {
       const x = Math.max(0, Math.min(state.width - 1, centerX + offsetX));
       const y = Math.max(0, Math.min(state.height - 1, centerY + offsetY));
-      strongestAlpha = Math.max(
-        strongestAlpha,
-        state.alpha[y * state.width + x] || 0
-      );
+      const alpha = state.alpha[y * state.width + x] || 0;
+      const distance = offsetX ** 2 + offsetY ** 2;
+
+      if (
+        alpha > strongestHit.alpha ||
+        (alpha === strongestHit.alpha && distance < strongestHit.distance)
+      ) {
+        strongestHit = { alpha, distance, x, y };
+      }
     }
   }
 
-  return strongestAlpha;
+  return {
+    alpha: strongestHit.alpha,
+    x: (strongestHit.x / Math.max(1, state.width - 1)) * 100,
+    y: (strongestHit.y / Math.max(1, state.height - 1)) * 100,
+  };
 };
 
 const applyZhongZhengCanvasMask = (
@@ -3587,14 +3601,15 @@ function ZhongZhengAsciiFeature({
 
       const nextX = clampNumber(rawX, 0, 100);
       const nextY = clampNumber(rawY, 0, 100);
-      if (getZhongZhengMaskAlphaNearPointer(state, nextX, nextY) < 48) {
+      const maskHit = getZhongZhengMaskHitNearPointer(state, nextX, nextY);
+      if (maskHit.alpha < 48) {
         deactivatePointer();
         return;
       }
 
       pointerRef.current = {
-        x: nextX,
-        y: nextY,
+        x: maskHit.x,
+        y: maskHit.y,
         active: true,
         activeSinceMs: pointerRef.current.active
           ? pointerRef.current.activeSinceMs

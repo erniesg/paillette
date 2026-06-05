@@ -542,9 +542,17 @@ export const buildZhongZhengDisintegrationFramePixels = ({
           0,
           1
         ) ** 1.22;
+
+      const coreClear = clampZhongZhengNumber(
+        (radiusPixels * 0.92 - distance) / Math.max(1, featherPixels * 0.75),
+        0,
+        1
+      );
+      dissolve = Math.max(dissolve, coreClear * clampedProgress);
     }
 
-    const alphaMultiplier = 1 - dissolve * 0.94;
+    const clearedCore = clampZhongZhengNumber((dissolve - 0.58) / 0.34, 0, 1);
+    const alphaMultiplier = (1 - dissolve * 0.98) * (1 - clearedCore);
     output[dataIndex] = sourcePixels[dataIndex] || 0;
     output[dataIndex + 1] = sourcePixels[dataIndex + 1] || 0;
     output[dataIndex + 2] = sourcePixels[dataIndex + 2] || 0;

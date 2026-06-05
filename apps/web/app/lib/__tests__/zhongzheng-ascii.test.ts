@@ -256,8 +256,8 @@ describe('buildZhongZhengMatrixTextGlyphs', () => {
 
 describe('buildZhongZhengDisintegrationFramePixels', () => {
   it('erases only the cursor-local texture and preserves distant masked pixels', () => {
-    const width = 9;
-    const height = 9;
+    const width = 21;
+    const height = 21;
     const alpha = new Uint8ClampedArray(width * height).fill(255);
     const sourcePixels = new Uint8ClampedArray(width * height * 4);
     const noise = new Uint8ClampedArray(width * height).fill(0);
@@ -281,10 +281,12 @@ describe('buildZhongZhengDisintegrationFramePixels', () => {
       featherPercent: 8,
     });
 
-    const centerAlpha = pixels[(4 * width + 4) * 4 + 3];
+    const centerAlpha = pixels[(10 * width + 10) * 4 + 3];
+    const nearCoreAlpha = pixels[(10 * width + 11) * 4 + 3];
     const cornerAlpha = pixels[0 * 4 + 3];
 
-    expect(centerAlpha).toBeLessThan(80);
+    expect(centerAlpha).toBe(0);
+    expect(nearCoreAlpha).toBeLessThan(48);
     expect(cornerAlpha).toBe(255);
     expect(pixels[0]).toBe(120);
     expect(pixels[1]).toBe(90);
