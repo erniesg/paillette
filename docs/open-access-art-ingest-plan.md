@@ -30,6 +30,7 @@ Initial caption-generation target:
 - Generate captions only for pilot records missing usable institution text.
 - Benchmark on a 200-500 image sample before running any bulk generation.
 - Record latency, GPU/CPU device, image size, tokens, failure rate, and a small human quality score.
+- Use `pnpm open:dry-run -- --sample-caption=missing` to build benchmark manifests that contain only rows missing institution text in their normalized samples.
 
 ## Caption Model Shortlist
 
@@ -61,3 +62,4 @@ Default recommendation for the first benchmark:
 - Apply the smallest ArtIC+NGA pilot with `pnpm open:apply -- --manifest=tmp/open-access-art-apply-smoke/manifest.json --out-dir=tmp/open-access-art-pilot-2-stg --limit=2 --external-providers=artic --upload --apply-d1 --embed-images --upsert-vectors`.
 - ArtIC IIIF URLs are officially hotlinkable, but direct server-side fetches from this environment received a Cloudflare challenge during the pilot. Keep ArtIC as `--external-providers=artic` until there is a fetch path that respects their throttling guidance and avoids challenge pages.
 - NGA image rows can be cached into R2 and embedded with Jina CLIP through the current apply path.
+- A one-image missing-caption benchmark on NGA row `open-access-art:nga:41526` with `mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit` completed in 8.4 seconds/image on this machine. Treat this as a smoke benchmark only; run a 200-500 image sample before bulk captioning.

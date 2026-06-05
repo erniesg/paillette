@@ -29,6 +29,9 @@ const providers = (
   .map((provider) => provider.trim().toLowerCase())
   .filter(Boolean);
 const sampleSize = Number.parseInt(String(args.get('sample-size') || '3'), 10);
+const sampleCaptionMode = String(args.get('sample-caption') || 'any')
+  .trim()
+  .toLowerCase();
 const monthlyVectorQueries = Number.parseInt(
   String(args.get('monthly-vector-queries') || '100000'),
   10
@@ -65,7 +68,16 @@ const fetchCsv = async (url) => {
   return Papa.parse(text, { header: true, skipEmptyLines: true }).data;
 };
 
-const articSearch = async ({ extraMust = [], limit = 0, fields } = {}) =>
+if (!['any', 'missing', 'present'].includes(sampleCaptionMode)) {
+  throw new Error('--sample-caption must be any, missing, or present');
+}
+
+const articSearch = async ({
+  extraMust = [],
+  extraMustNot = [],
+  limit = 0,
+  fields,
+} = {}) =>
   fetchJson('https://api.artic.edu/api/v1/artworks/search', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -79,6 +91,7 @@ const articSearch = async ({ extraMust = [], limit = 0, fields } = {}) =>
             { exists: { field: 'image_id' } },
             ...extraMust,
           ],
+          ...(extraMustNot.length ? { must_not: extraMustNot } : {}),
         },
       },
     }),
@@ -127,6 +140,14 @@ async function fetchArticSummary() {
     extraMust: [{ exists: { field: 'description' } }],
   });
   const samplePayload = await articSearch({
+    extraMust:
+      sampleCaptionMode === 'present'
+        ? [{ exists: { field: 'description' } }]
+        : [],
+    extraMustNot:
+      sampleCaptionMode === 'missing'
+        ? [{ exists: { field: 'description' } }]
+        : [],
     limit: sampleSize,
     fields: [
       'id',
@@ -237,16 +258,21 @@ async function fetchNgaSummary() {
     if (String(image.openaccess).trim() !== '1') continue;
     const objectId = String(image.depictstmsobjectid || '').trim();
     if (!objectId) continue;
+    const hasCaption = Boolean(String(image.assistivetext || '').trim());
     if (objectIds.has(objectId) && normalizedSamples.length >= sampleSize) {
-      if (String(image.assistivetext || '').trim()) objectIdsWithCaption.add(objectId);
+      if (hasCaption) objectIdsWithCaption.add(objectId);
       objectIds.add(objectId);
       continue;
     }
 
     objectIds.add(objectId);
-    if (String(image.assistivetext || '').trim()) objectIdsWithCaption.add(objectId);
+    if (hasCaption) objectIdsWithCaption.add(objectId);
 
-    if (normalizedSamples.length < sampleSize) {
+    const sampleMatchesCaptionMode =
+      sampleCaptionMode === 'any' ||
+      (sampleCaptionMode === 'present' && hasCaption) ||
+      (sampleCaptionMode === 'missing' && !hasCaption);
+    if (sampleMatchesCaptionMode && normalizedSamples.length < sampleSize) {
       const normalized = normalizeNgaArtwork({
         object: objectsById.get(objectId),
         image,
@@ -294,6 +320,7 @@ const manifest = buildDryRunManifest({
     jinaTilesPerImage,
   },
 });
+manifest.sampleCaptionMode = sampleCaptionMode;
 
 const json = `${JSON.stringify(manifest, null, 2)}\n`;
 if (outPath && outPath !== 'true') {
