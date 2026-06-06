@@ -16,6 +16,10 @@ import usageEventRoutes from './routes/usage-events';
 import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
+import {
+  processOpenAccessAssetBatch,
+  type OpenAccessAssetMessage,
+} from './queues/open-access-assets-queue';
 
 // Environment bindings
 export interface Env {
@@ -30,6 +34,7 @@ export interface Env {
   EMBEDDING_QUEUE: Queue;
   FRAME_REMOVAL_QUEUE: Queue;
   TRANSLATION_QUEUE?: Queue;
+  OPEN_ACCESS_ASSET_QUEUE?: Queue<OpenAccessAssetMessage>;
   BUCKET: R2Bucket;
   ENVIRONMENT: string;
   API_VERSION: string;
@@ -204,3 +209,15 @@ app.onError((err, c) => {
 });
 
 export default app;
+
+(
+  app as unknown as {
+    queue: (
+      batch: MessageBatch<OpenAccessAssetMessage>,
+      env: Env,
+      ctx: ExecutionContext
+    ) => Promise<void>;
+  }
+).queue = async (batch, env) => {
+  await processOpenAccessAssetBatch(batch, env);
+};

@@ -62,3 +62,20 @@ describe('wrangler production search config', () => {
     }
   });
 });
+
+describe('wrangler open access asset queue config', () => {
+  it('binds open access asset producers and consumers for staging and production', () => {
+    expect(wranglerToml).toContain('binding = "OPEN_ACCESS_ASSET_QUEUE"');
+    expect(wranglerToml).toContain('queue = "paillette-open-access-assets"');
+    expect(wranglerToml).toContain(
+      'queue = "paillette-open-access-assets-stg"'
+    );
+    expect(wranglerToml).toContain('max_batch_size = 25');
+    expect(wranglerToml).toContain(
+      'dead_letter_queue = "paillette-open-access-assets-dlq"'
+    );
+    expect(wranglerToml).toContain(
+      'dead_letter_queue = "paillette-open-access-assets-dlq-stg"'
+    );
+  });
+});

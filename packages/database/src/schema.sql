@@ -208,6 +208,34 @@ CREATE INDEX idx_assets_role ON assets(artwork_id, role);
 CREATE INDEX idx_assets_object_key ON assets(object_key);
 
 -- ============================================================================
+-- Open Access Asset Ingest Ledger
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS open_access_asset_ingest (
+  asset_id TEXT PRIMARY KEY,
+  artwork_id TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  role TEXT CHECK(role IN ('web', 'thumb', 'original', 'processed', 'mask', 'metadata', 'other')) NOT NULL,
+  source_url TEXT NOT NULL,
+  object_key TEXT NOT NULL,
+  content_type TEXT,
+  status TEXT CHECK(status IN ('pending', 'queued', 'uploading', 'uploaded', 'failed')) NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  size_bytes INTEGER,
+  sha256 TEXT,
+  queued_at TEXT,
+  uploaded_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_open_access_asset_ingest_status ON open_access_asset_ingest(status, provider);
+CREATE INDEX idx_open_access_asset_ingest_artwork ON open_access_asset_ingest(artwork_id);
+CREATE INDEX idx_open_access_asset_ingest_object_key ON open_access_asset_ingest(object_key);
+
+-- ============================================================================
 -- Collection Artworks (M:M relationship)
 -- ============================================================================
 
@@ -512,6 +540,13 @@ AFTER UPDATE ON assets
 FOR EACH ROW
 BEGIN
   UPDATE assets SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_open_access_asset_ingest_timestamp
+AFTER UPDATE ON open_access_asset_ingest
+FOR EACH ROW
+BEGIN
+  UPDATE open_access_asset_ingest SET updated_at = datetime('now') WHERE asset_id = NEW.asset_id;
 END;
 
 CREATE TRIGGER update_extract_jobs_timestamp
