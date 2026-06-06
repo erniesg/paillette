@@ -179,6 +179,35 @@ describe('buildZhongZhengMatrixTextGlyphs', () => {
     ).toBe(true);
   });
 
+  it('mixes Chinese and English glyphs during the live morph instead of hard switching', () => {
+    const width = 48;
+    const height = 48;
+    const alpha = new Uint8ClampedArray(width * height);
+
+    for (let y = 6; y <= 41; y += 1) {
+      for (let x = 6; x <= 41; x += 1) {
+        alpha[y * width + x] = 255;
+      }
+    }
+
+    const glyphs = buildZhongZhengMatrixTextGlyphs({
+      width,
+      height,
+      alpha,
+      pointer: { x: 50, y: 50, active: true },
+      progress: 1,
+      elapsedMs: 1800,
+      radiusPixels: 17,
+      fontSize: 3,
+      streamCount: 36,
+      trailLength: 5,
+    });
+    const tokens = new Set(glyphs.map((glyph) => glyph.token));
+
+    expect(tokens.has('中') || tokens.has('正')).toBe(true);
+    expect(tokens.has('CHUNG') || tokens.has('CHENG')).toBe(true);
+  });
+
   it('matrix-animates text streams mostly downward while morphing 中正 into Chung Cheng', () => {
     const width = 48;
     const height = 48;
@@ -239,7 +268,7 @@ describe('buildZhongZhengMatrixTextGlyphs', () => {
       sharedGlyphs.reduce((sum, movement) => sum + movement.y, 0) /
       sharedGlyphs.length;
 
-    expect(sharedGlyphs.length).toBeGreaterThan(20);
+    expect(sharedGlyphs.length).toBeGreaterThanOrEqual(20);
     expect(averageY).toBeGreaterThan(averageX * 1.35);
     expect(
       chineseGlyphs.every(

@@ -3377,7 +3377,7 @@ const drawZhongZhengDisintegrationFrame = (
 
   if (pointer.active && progress > 0.08) {
     const elapsedMs = Math.max(0, timeMs - (pointer.activeSinceMs || timeMs));
-    const fontSize = Math.max(11, Math.min(18, state.width * 0.027));
+    const fontSize = Math.max(8.5, Math.min(13.5, state.width * 0.0215));
     const glyphs = buildZhongZhengMatrixTextGlyphs({
       width: state.width,
       height: state.height,
@@ -3385,10 +3385,10 @@ const drawZhongZhengDisintegrationFrame = (
       pointer,
       progress,
       elapsedMs,
-      radiusPixels: radiusPixels * 1.08,
+      radiusPixels: radiusPixels * 1.18,
       fontSize,
-      streamCount: 54,
-      trailLength: 6,
+      streamCount: 88,
+      trailLength: 8,
     });
 
     context.save();

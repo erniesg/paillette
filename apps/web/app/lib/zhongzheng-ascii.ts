@@ -161,6 +161,34 @@ const getZhongZhengMaskAlphaAt = (
   return alpha[sampleY * width + sampleX] || 0;
 };
 
+const clampZhongZhengPointToMask = (
+  alpha: Uint8ClampedArray | number[],
+  width: number,
+  height: number,
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+  minAlpha = 38
+) => {
+  if (
+    getZhongZhengMaskAlphaAt(alpha, width, height, targetX, targetY) >= minAlpha
+  ) {
+    return { x: targetX, y: targetY };
+  }
+
+  for (const amount of [0.82, 0.66, 0.5, 0.34, 0.18]) {
+    const x = sourceX + (targetX - sourceX) * amount;
+    const y = sourceY + (targetY - sourceY) * amount;
+
+    if (getZhongZhengMaskAlphaAt(alpha, width, height, x, y) >= minAlpha) {
+      return { x, y };
+    }
+  }
+
+  return { x: sourceX, y: sourceY };
+};
+
 export const getZhongZhengSeededUnit = (seed: number) => {
   const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return value - Math.floor(value);
@@ -219,9 +247,9 @@ export const buildZhongZhengMatrixTextGlyphs = ({
   const safeStreamCount = Math.max(1, Math.round(streamCount));
   const safeTrailLength = Math.max(1, Math.round(trailLength));
   const radius = Math.max(fontSize * 2, radiusPixels);
-  const horizontalSpan = radius * 2.08;
-  const verticalSpan = radius * 2.18;
-  const fallCycle = verticalSpan + fontSize * safeTrailLength * 1.35;
+  const horizontalSpan = radius * 2.34;
+  const verticalSpan = radius * 2.72;
+  const fallCycle = verticalSpan + fontSize * safeTrailLength * 1.6;
   const glyphs: ZhongZhengMatrixTextGlyph[] = [];
   const clampedProgress = clampZhongZhengNumber(progress, 0, 1);
 
@@ -233,15 +261,15 @@ export const buildZhongZhengMatrixTextGlyphs = ({
       pointerX -
       horizontalSpan / 2 +
       streamUnit * horizontalSpan +
-      (streamSeed - 0.5) * fontSize * 1.4;
+      (streamSeed - 0.5) * fontSize * 1.9;
     const fall =
-      (elapsedMs * (0.0065 + streamSeed * 0.0045) +
+      (elapsedMs * (0.0115 + streamSeed * 0.009) +
         streamSeed * fallCycle) %
       fallCycle;
     const headY = pointerY - verticalSpan / 2 + fall;
 
     for (let trailIndex = 0; trailIndex < safeTrailLength; trailIndex += 1) {
-      const y = headY - trailIndex * fontSize * 1.28;
+      const y = headY - trailIndex * fontSize * 1.12;
 
       if (
         x < 0 ||
@@ -276,7 +304,7 @@ export const buildZhongZhengMatrixTextGlyphs = ({
       if (localInfluence <= 0) continue;
 
       const trailFalloff =
-        trailIndex === 0 ? 1 : Math.max(0.14, 1 - trailIndex * 0.2);
+        trailIndex === 0 ? 1 : Math.max(0.08, 1 - trailIndex * 0.14);
       const morph = getZhongZhengMorphAmount(elapsedMs);
       const particleSeed =
         streamId * 157 +
@@ -285,52 +313,57 @@ export const buildZhongZhengMatrixTextGlyphs = ({
         Math.round(pointerY) * 13;
       const scatterAngle =
         getZhongZhengSeededUnit(particleSeed) * Math.PI * 2;
-      const scatterDistance =
+      const rainDrift =
         fontSize *
-        (0.52 + getZhongZhengSeededUnit(particleSeed + 29) * 2.7) *
+        (1.1 + trailIndex * 0.22 + getZhongZhengSeededUnit(particleSeed + 7)) *
         localInfluence *
         clampedProgress;
-      let particleX = sourceX + Math.cos(scatterAngle) * scatterDistance;
-      let particleY =
+      const scatterDistance =
+        fontSize *
+        (1.05 + getZhongZhengSeededUnit(particleSeed + 29) * 3.6) *
+        localInfluence *
+        clampedProgress;
+      const targetX = sourceX + Math.cos(scatterAngle) * scatterDistance * 0.72;
+      const targetY =
         sourceY +
+        rainDrift +
         Math.sin(scatterAngle) *
           scatterDistance *
-          (0.72 + getZhongZhengSeededUnit(particleSeed + 43) * 0.46);
-
-      if (
-        getZhongZhengMaskAlphaAt(alpha, width, height, particleX, particleY) <
-        38
-      ) {
-        particleX = sourceX + (particleX - sourceX) * 0.58;
-        particleY = sourceY + (particleY - sourceY) * 0.58;
-      }
-
-      if (
-        getZhongZhengMaskAlphaAt(alpha, width, height, particleX, particleY) <
-        38
-      ) {
-        particleX = sourceX;
-        particleY = sourceY;
-      }
+          (0.36 + getZhongZhengSeededUnit(particleSeed + 43) * 0.32);
+      const particle = clampZhongZhengPointToMask(
+        alpha,
+        width,
+        height,
+        sourceX,
+        sourceY,
+        targetX,
+        targetY
+      );
+      const tokenIndex = streamId + trailIndex;
+      const tokenSeed = getZhongZhengSeededUnit(
+        particleSeed + Math.floor(elapsedMs / 420) * 31
+      );
+      const usesLatin = tokenSeed < morph;
 
       glyphs.push({
         streamId,
         trailIndex,
         sourceX,
         sourceY,
-        x: particleX,
-        y: particleY,
-        token: getZhongZhengMorphToken({
-          index: streamId + trailIndex,
-          elapsedMs,
-        }),
+        x: particle.x,
+        y: particle.y,
+        token: usesLatin
+          ? ZHONG_ZHENG_LATIN_MORPH_TOKENS[Math.abs(tokenIndex) % 2] ||
+            ZHONG_ZHENG_LATIN_MORPH_TOKENS[0]
+          : ZHONG_ZHENG_CHINESE_MORPH_TOKENS[Math.abs(tokenIndex) % 2] ||
+            ZHONG_ZHENG_CHINESE_MORPH_TOKENS[0],
         opacity:
           clampedProgress *
           localInfluence *
           trailFalloff *
           (maskAlpha / 255) *
-          (trailIndex === 0 ? 0.92 : 0.52),
-        scale: trailIndex === 0 ? 1.08 : Math.max(0.72, 1 - trailIndex * 0.07),
+          (trailIndex === 0 ? 0.94 : 0.48),
+        scale: trailIndex === 0 ? 1.04 : Math.max(0.58, 1 - trailIndex * 0.075),
         isLead: trailIndex === 0,
         morph,
       });
