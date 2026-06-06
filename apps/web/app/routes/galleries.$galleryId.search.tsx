@@ -83,7 +83,7 @@ import {
 import {
   buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
-  buildZhongZhengMatrixTextGlyphs,
+  buildZhongZhengBurstTextGlyphs,
   clipZhongZhengPixelsToMask,
   getZhongZhengSeededUnit,
   type ZhongZhengPointerState,
@@ -3377,18 +3377,18 @@ const drawZhongZhengDisintegrationFrame = (
 
   if (pointer.active && progress > 0.08) {
     const elapsedMs = Math.max(0, timeMs - (pointer.activeSinceMs || timeMs));
-    const fontSize = Math.max(8.5, Math.min(13.5, state.width * 0.0215));
-    const glyphs = buildZhongZhengMatrixTextGlyphs({
+    const fontSize = Math.max(9.25, Math.min(15.5, state.width * 0.024));
+    const glyphs = buildZhongZhengBurstTextGlyphs({
       width: state.width,
       height: state.height,
       alpha: state.alpha,
       pointer,
       progress,
       elapsedMs,
-      radiusPixels: radiusPixels * 1.18,
+      radiusPixels: radiusPixels * 1.24,
       fontSize,
-      streamCount: 88,
-      trailLength: 8,
+      streamCount: 70,
+      trailLength: 4,
     });
 
     context.save();
@@ -3396,8 +3396,9 @@ const drawZhongZhengDisintegrationFrame = (
     context.textBaseline = 'middle';
 
     for (const glyph of glyphs) {
-      const glyphFontSize = fontSize * glyph.scale;
-      const headGlow = glyph.isLead ? 13 : 5;
+      const isLatin = glyph.token.length > 1;
+      const glyphFontSize = fontSize * glyph.scale * (isLatin ? 0.72 : 1.08);
+      const headGlow = glyph.isLead ? 15 : 6;
       const fillRgb = glyph.isLead
         ? mixZhongZhengRgb([226, 255, 232], [255, 199, 225], glyph.morph)
         : mixZhongZhengRgb([88, 255, 173], [248, 113, 184], glyph.morph);
@@ -3407,11 +3408,11 @@ const drawZhongZhengDisintegrationFrame = (
         glyph.morph
       );
 
-      context.font = `${glyph.isLead ? 700 : 600} ${glyphFontSize}px "IBM Plex Mono", ui-monospace, monospace`;
+      context.font = `${glyph.isLead ? 800 : 650} ${glyphFontSize}px "IBM Plex Mono", ui-monospace, monospace`;
       context.shadowBlur = headGlow;
       context.shadowColor = `rgb(${shadowRgb} / ${Math.min(
-        0.68,
-        glyph.opacity * 0.88
+        0.76,
+        glyph.opacity * 0.94
       ).toFixed(3)})`;
       context.fillStyle = `rgb(${fillRgb} / ${Math.min(
         0.96,

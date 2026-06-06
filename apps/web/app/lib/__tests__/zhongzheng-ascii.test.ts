@@ -4,6 +4,7 @@ import {
   buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
   buildZhongZhengAsciiRows,
+  buildZhongZhengBurstTextGlyphs,
   buildZhongZhengMatrixTextGlyphs,
   buildZhongZhengMaskParticles,
   clipZhongZhengPixelsToMask,
@@ -279,6 +280,75 @@ describe('buildZhongZhengMatrixTextGlyphs', () => {
       latinGlyphs.every(
         (glyph) => glyph.token === 'CHUNG' || glyph.token === 'CHENG'
       )
+    ).toBe(true);
+  });
+});
+
+describe('buildZhongZhengBurstTextGlyphs', () => {
+  it('bursts word particles away from the hover point and recomposes them inside the mask', () => {
+    const width = 64;
+    const height = 64;
+    const alpha = new Uint8ClampedArray(width * height);
+
+    for (let y = 8; y <= 55; y += 1) {
+      for (let x = 8; x <= 55; x += 1) {
+        alpha[y * width + x] = 255;
+      }
+    }
+
+    const baseInput = {
+      width,
+      height,
+      alpha,
+      pointer: { x: 50, y: 50, active: true },
+      progress: 1,
+      radiusPixels: 21,
+      fontSize: 4,
+      streamCount: 42,
+      trailLength: 3,
+      cycleMs: 3600,
+    };
+    const startGlyphs = buildZhongZhengBurstTextGlyphs({
+      ...baseInput,
+      elapsedMs: 0,
+    });
+    const peakGlyphs = buildZhongZhengBurstTextGlyphs({
+      ...baseInput,
+      elapsedMs: 1800,
+    });
+    const returnGlyphs = buildZhongZhengBurstTextGlyphs({
+      ...baseInput,
+      elapsedMs: 3600,
+    });
+    const averageMovement = (
+      glyphs: ReturnType<typeof buildZhongZhengBurstTextGlyphs>
+    ) =>
+      glyphs.reduce(
+        (sum, glyph) =>
+          sum +
+          Math.sqrt((glyph.x - glyph.sourceX) ** 2 + (glyph.y - glyph.sourceY) ** 2),
+        0
+      ) / glyphs.length;
+
+    expect(startGlyphs.length).toBeGreaterThan(40);
+    expect(peakGlyphs.length).toBeGreaterThan(40);
+    expect(averageMovement(peakGlyphs)).toBeGreaterThan(
+      averageMovement(startGlyphs) + 4
+    );
+    expect(averageMovement(returnGlyphs)).toBeLessThan(
+      averageMovement(peakGlyphs) * 0.42
+    );
+    expect(
+      peakGlyphs.every(
+        (glyph) =>
+          alpha[Math.round(glyph.y) * width + Math.round(glyph.x)] === 255
+      )
+    ).toBe(true);
+    expect(
+      peakGlyphs.some((glyph) => glyph.token === 'CHUNG' || glyph.token === 'CHENG')
+    ).toBe(true);
+    expect(
+      returnGlyphs.every((glyph) => glyph.token === '中' || glyph.token === '正')
     ).toBe(true);
   });
 });

@@ -129,6 +129,10 @@ export type ZhongZhengMatrixTextGlyphInput = {
   trailLength?: number;
 };
 
+export type ZhongZhengBurstTextGlyphInput = ZhongZhengMatrixTextGlyphInput & {
+  cycleMs?: number;
+};
+
 export type ZhongZhengDisintegrationFrameInput = {
   width: number;
   height: number;
@@ -364,6 +368,183 @@ export const buildZhongZhengMatrixTextGlyphs = ({
           (maskAlpha / 255) *
           (trailIndex === 0 ? 0.94 : 0.48),
         scale: trailIndex === 0 ? 1.04 : Math.max(0.58, 1 - trailIndex * 0.075),
+        isLead: trailIndex === 0,
+        morph,
+      });
+    }
+  }
+
+  return glyphs;
+};
+
+export const buildZhongZhengBurstTextGlyphs = ({
+  width,
+  height,
+  alpha,
+  pointer,
+  progress,
+  elapsedMs,
+  radiusPixels,
+  fontSize,
+  streamCount = 54,
+  trailLength = 4,
+  cycleMs = 3600,
+}: ZhongZhengBurstTextGlyphInput) => {
+  if (
+    width <= 0 ||
+    height <= 0 ||
+    alpha.length < width * height ||
+    !pointer.active ||
+    progress <= 0 ||
+    radiusPixels <= 0 ||
+    fontSize <= 0
+  ) {
+    return [];
+  }
+
+  const pointerX = (pointer.x / 100) * Math.max(1, width - 1);
+  const pointerY = (pointer.y / 100) * Math.max(1, height - 1);
+  const safeStreamCount = Math.max(1, Math.round(streamCount));
+  const safeTrailLength = Math.max(1, Math.round(trailLength));
+  const radius = Math.max(fontSize * 3, radiusPixels);
+  const safeCycleMs = Math.max(800, cycleMs);
+  const clampedProgress = clampZhongZhengNumber(progress, 0, 1);
+  const glyphs: ZhongZhengMatrixTextGlyph[] = [];
+
+  for (let streamId = 0; streamId < safeStreamCount; streamId += 1) {
+    const streamSeed = streamId * 193 + 23;
+    const baseAngle =
+      streamId * 2.399963229728653 +
+      (getZhongZhengSeededUnit(streamSeed) - 0.5) * 0.58;
+    const baseDistance =
+      radius *
+      (0.08 + Math.sqrt(getZhongZhengSeededUnit(streamSeed + 7)) * 0.82);
+
+    for (let trailIndex = 0; trailIndex < safeTrailLength; trailIndex += 1) {
+      const particleSeed = streamSeed + trailIndex * 71;
+      const sourceAngle =
+        baseAngle + (getZhongZhengSeededUnit(particleSeed + 3) - 0.5) * 0.32;
+      const sourceDistance =
+        baseDistance +
+        (trailIndex - (safeTrailLength - 1) / 2) *
+          fontSize *
+          (0.34 + getZhongZhengSeededUnit(particleSeed + 11) * 0.42);
+      let sourceX = pointerX + Math.cos(sourceAngle) * sourceDistance;
+      let sourceY = pointerY + Math.sin(sourceAngle) * sourceDistance * 0.92;
+      let maskAlpha = getZhongZhengMaskAlphaAt(
+        alpha,
+        width,
+        height,
+        sourceX,
+        sourceY
+      );
+
+      if (maskAlpha < 38) {
+        let foundMaskedSource = false;
+        for (const amount of [0.82, 0.66, 0.5, 0.34, 0.18, 0]) {
+          const candidateX = pointerX + (sourceX - pointerX) * amount;
+          const candidateY = pointerY + (sourceY - pointerY) * amount;
+          const candidateAlpha = getZhongZhengMaskAlphaAt(
+            alpha,
+            width,
+            height,
+            candidateX,
+            candidateY
+          );
+
+          if (candidateAlpha >= 38) {
+            sourceX = candidateX;
+            sourceY = candidateY;
+            maskAlpha = candidateAlpha;
+            foundMaskedSource = true;
+            break;
+          }
+        }
+
+        if (!foundMaskedSource) continue;
+      }
+
+      const distanceFromPointer = Math.sqrt(
+        (sourceX - pointerX) ** 2 + (sourceY - pointerY) ** 2
+      );
+      const localInfluence = clampZhongZhengNumber(
+        (radius * 1.16 - distanceFromPointer) / Math.max(1, radius * 1.16),
+        0,
+        1
+      );
+      if (localInfluence <= 0) continue;
+
+      const phaseOffset =
+        getZhongZhengSeededUnit(particleSeed + 19) * 0.035 +
+        trailIndex * 0.011;
+      const phase =
+        ((((elapsedMs / safeCycleMs - phaseOffset) % 1) + 1) % 1);
+      const burst = Math.sin(phase * Math.PI);
+      const burstEase = burst * burst * (3 - 2 * burst);
+      const morph = burstEase;
+      const outwardAngle =
+        Math.atan2(sourceY - pointerY, sourceX - pointerX) +
+        Math.sin(phase * Math.PI * 2 + particleSeed) * 0.34;
+      const tangentialAngle = outwardAngle + Math.PI / 2;
+      const outwardDistance =
+        radius *
+        (0.44 + getZhongZhengSeededUnit(particleSeed + 29) * 1.08) *
+        burstEase *
+        Math.sqrt(localInfluence) *
+        clampedProgress;
+      const tangentialDistance =
+        radius *
+        (getZhongZhengSeededUnit(particleSeed + 37) - 0.5) *
+        0.3 *
+        burstEase *
+        Math.sqrt(localInfluence) *
+        clampedProgress;
+      const targetX =
+        sourceX +
+        Math.cos(outwardAngle) * outwardDistance +
+        Math.cos(tangentialAngle) * tangentialDistance;
+      const targetY =
+        sourceY +
+        Math.sin(outwardAngle) * outwardDistance * 0.88 +
+        Math.sin(tangentialAngle) * tangentialDistance;
+      const particle = clampZhongZhengPointToMask(
+        alpha,
+        width,
+        height,
+        sourceX,
+        sourceY,
+        targetX,
+        targetY
+      );
+      const tokenIndex = streamId + trailIndex;
+      const tokenSeed = getZhongZhengSeededUnit(
+        particleSeed + Math.floor(phase * 14) * 43
+      );
+      const usesLatin = morph > 0.18 && tokenSeed < morph;
+      const trailFalloff =
+        trailIndex === 0 ? 1 : Math.max(0.22, 1 - trailIndex * 0.18);
+
+      glyphs.push({
+        streamId,
+        trailIndex,
+        sourceX,
+        sourceY,
+        x: particle.x,
+        y: particle.y,
+        token: usesLatin
+          ? ZHONG_ZHENG_LATIN_MORPH_TOKENS[Math.abs(tokenIndex) % 2] ||
+            ZHONG_ZHENG_LATIN_MORPH_TOKENS[0]
+          : ZHONG_ZHENG_CHINESE_MORPH_TOKENS[Math.abs(tokenIndex) % 2] ||
+            ZHONG_ZHENG_CHINESE_MORPH_TOKENS[0],
+        opacity:
+          clampedProgress *
+          localInfluence *
+          trailFalloff *
+          (maskAlpha / 255) *
+          (0.32 + burstEase * 0.68),
+        scale:
+          (trailIndex === 0 ? 1.06 : Math.max(0.68, 1 - trailIndex * 0.09)) *
+          (0.84 + burstEase * 0.22),
         isLead: trailIndex === 0,
         morph,
       });
