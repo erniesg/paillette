@@ -1878,7 +1878,7 @@ export default function SearchPage() {
           className={
             hasActiveSearch
               ? 'mx-auto max-w-6xl'
-              : 'relative -mx-5 -mt-10 flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
+              : 'relative -mx-5 -mt-10 min-h-[calc(100vh-3.5rem)] overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
           }
         >
           {!hasActiveSearch && hasMounted && !isChungChengFeatureActive && (
@@ -1893,23 +1893,24 @@ export default function SearchPage() {
             />
           )}
 
+          {!hasActiveSearch && hasMounted && isChungChengFeatureActive && (
+            <div className="pointer-events-none absolute inset-x-0 top-[clamp(0.75rem,3vh,3rem)] z-10 flex justify-center px-5">
+              <ZhongZhengAsciiFeature
+                artwork={chungChengFeaturedArtwork}
+                isVisible
+                layout="anchored"
+                onSelectArtwork={selectArtwork}
+              />
+            </div>
+          )}
+
           <div
             className={
               hasActiveSearch
                 ? 'relative z-10 w-full'
-                : `relative z-10 mx-auto w-full max-w-5xl ${
-                    isChungChengFeatureActive ? 'py-4 sm:py-6' : 'py-12'
-                  }`
+                : 'absolute left-1/2 top-1/2 z-20 w-[calc(100%-2.5rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2'
             }
           >
-            {isChungChengFeatureActive && (
-              <ZhongZhengAsciiFeature
-                artwork={chungChengFeaturedArtwork}
-                isVisible
-                onSelectArtwork={selectArtwork}
-              />
-            )}
-
             <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
@@ -3474,10 +3475,12 @@ const drawZhongZhengDisintegrationFrame = (
 function ZhongZhengAsciiFeature({
   artwork,
   isVisible,
+  layout = 'default',
   onSelectArtwork,
 }: {
   artwork: ArtworkSearchResult;
   isVisible: boolean;
+  layout?: 'default' | 'anchored';
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const fallbackParticles = useMemo(() => buildZhongZhengAsciiParticles(), []);
@@ -3496,6 +3499,18 @@ function ZhongZhengAsciiFeature({
   const [maskState, setMaskState] = useState<ZhongZhengMaskState | null>(null);
   const [maskLoadFailed, setMaskLoadFailed] = useState(false);
   const title = getDisplayTitle(artwork);
+  const isAnchoredLayout = layout === 'anchored';
+  const buttonClassName = `featured-showcase-hero chung-cheng-ascii-button group pointer-events-auto relative mx-auto flex flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 ${
+    isAnchoredLayout
+      ? 'mb-0 w-[min(92vw,46rem)]'
+      : 'mb-8 w-[min(94vw,72rem)] lg:mb-10'
+  }`;
+  const stageClassName = isAnchoredLayout
+    ? 'chung-cheng-ascii-stage relative block h-[clamp(12rem,28vh,20rem)] w-full max-w-[34rem] sm:h-[clamp(15rem,34vh,24rem)] md:h-[clamp(18rem,42vh,31rem)] md:max-w-[42rem]'
+    : 'chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]';
+  const statueFrameClassName = isAnchoredLayout
+    ? 'chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(46vw,13rem)] -translate-x-1/2 sm:w-[min(40vw,16rem)] md:w-[min(42vw,20rem)]'
+    : 'chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(76vw,25rem)] -translate-x-1/2 sm:w-[min(58vw,27rem)]';
 
   const scheduleRender = useCallback((targetProgress: number) => {
     if (animationFrameRef.current !== null) {
@@ -3682,18 +3697,19 @@ function ZhongZhengAsciiFeature({
       onPointerCancel={deactivatePointer}
       onLostPointerCapture={deactivatePointer}
       onBlur={deactivatePointer}
-      className="featured-showcase-hero chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
+      className={buttonClassName}
       aria-label={`View ${title} artwork details`}
       data-featured-showcase="chung-cheng"
+      data-featured-layout={layout}
       data-pointer-active={pointerActive ? 'true' : 'false'}
       data-particle-source={
         maskState ? `image-canvas-${maskState.textureSource}` : 'ascii-fallback'
       }
     >
-      <span className="chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]">
+      <span className={stageClassName}>
         <span
           ref={stageRef}
-          className="chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(76vw,25rem)] -translate-x-1/2 sm:w-[min(58vw,27rem)]"
+          className={statueFrameClassName}
         >
           <span className="chung-cheng-ascii-statue-orbit absolute inset-0 block">
             <span className="chung-cheng-ascii-statue absolute inset-0 block">
@@ -3728,7 +3744,11 @@ function ZhongZhengAsciiFeature({
           </span>
         </span>
       </span>
-      <span className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
+      <span
+        className={`flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40 ${
+          isAnchoredLayout ? 'mt-2' : 'mt-4'
+        }`}
+      >
         <span className="truncate">Zhong Zheng Ren</span>
         <span className="text-white/25">/</span>
         <span>中正人</span>
