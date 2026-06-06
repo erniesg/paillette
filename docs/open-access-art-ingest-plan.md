@@ -81,3 +81,13 @@ For later deltas:
 3. Treat new IDs as inserts, changed source metadata as updates, and changed `sourceImageUrl`/`sourceThumbnailUrl` as asset refreshes.
 4. Run `pnpm open:apply -- --download --upload --apply-d1` for the delta manifest; add `--refresh-assets` for rows whose provider image bytes may have changed under the same stable URL.
 5. Do not delete provider-missing records automatically until a source-specific deaccession policy is explicit. Mark removals separately, then decide whether to set `deleted_at`.
+
+## Resumable Asset Ledger
+
+Use the SQLite asset ledger before scaling beyond small pilots:
+
+- Seed or refresh the ledger with `pnpm open:assets -- --manifest=tmp/open-access-art-pilot-50-local-first/manifest.json --db=tmp/open-access-art-pilot-50-local-first/apply/assets.sqlite --out-dir=tmp/open-access-art-pilot-50-local-first/apply --external-providers=artic --init --status`.
+- Resume downloads with `pnpm open:assets -- --db=tmp/open-access-art-pilot-50-local-first/apply/assets.sqlite --download --providers=nga --concurrency=8 --status`.
+- The ledger tracks one row per asset role with `pending`, `downloading`, `downloaded`, or `failed` status, attempts, errors, local path, R2 object key, content type, size, checksum, and timestamps.
+- Existing local files are hashed and marked downloaded without re-fetching; use `--refresh-assets` to force a re-download.
+- Run provider-specific workers separately when scaling so provider rate limits and failures do not block unrelated sources.
