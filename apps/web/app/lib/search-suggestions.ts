@@ -3,8 +3,7 @@ import type { HolidaySearchSuggestion } from './singapore-holidays.server';
 const OCCASION_DOT = '#365f9c';
 
 export const CHUNG_CHENG_FEATURE_LABEL = 'Zhong Zheng Ren (中正人)';
-export const CHUNG_CHENG_FEATURE_QUERY =
-  'Zhong Zheng Ren 中正人 Yeo Hwee Bin Chung Cheng High School sculpture';
+export const CHUNG_CHENG_FEATURE_QUERY = '中正人';
 export const CHUNG_CHENG_FEATURE_ACCESSION = '2019-00754';
 
 export type EvalSuggestion = {
@@ -30,7 +29,7 @@ export type EvalSuggestion = {
 const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'keyword',
-    label: CHUNG_CHENG_FEATURE_LABEL,
+    label: '中正人',
     query: CHUNG_CHENG_FEATURE_QUERY,
     dot: '#7dd3fc',
     detail: 'featured',

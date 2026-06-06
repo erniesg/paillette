@@ -137,6 +137,7 @@ export type ZhongZhengDisintegrationFrameInput = {
   width: number;
   height: number;
   alpha: Uint8ClampedArray | number[];
+  effectAlpha?: Uint8ClampedArray | number[];
   sourcePixels: Uint8ClampedArray | number[];
   noise?: Uint8ClampedArray | number[];
   pointer: ZhongZhengPointerState;
@@ -700,6 +701,7 @@ export const buildZhongZhengDisintegrationFramePixels = ({
   width,
   height,
   alpha,
+  effectAlpha,
   sourcePixels,
   noise,
   pointer,
@@ -722,9 +724,12 @@ export const buildZhongZhengDisintegrationFramePixels = ({
   const radiusPixels = (Math.min(width, height) * radiusPercent) / 100;
   const featherPixels = (Math.min(width, height) * featherPercent) / 100;
   const clampedProgress = clampZhongZhengNumber(progress, 0, 1);
+  const dissolveAlpha =
+    effectAlpha && effectAlpha.length >= width * height ? effectAlpha : alpha;
 
   for (let index = 0; index < alpha.length; index += 1) {
     const maskAlpha = alpha[index] || 0;
+    const effectMaskAlpha = dissolveAlpha[index] || 0;
     const dataIndex = index * 4;
 
     if (maskAlpha <= 0) {
@@ -739,7 +744,7 @@ export const buildZhongZhengDisintegrationFramePixels = ({
     const y = Math.floor(index / width);
     let dissolve = 0;
 
-    if (pointer.active && clampedProgress > 0) {
+    if (pointer.active && clampedProgress > 0 && effectMaskAlpha > 0) {
       const distance = Math.sqrt((x - pointerX) ** 2 + (y - pointerY) ** 2);
       const localInfluence = clampZhongZhengNumber(
         (radiusPixels + featherPixels - distance) /
@@ -752,7 +757,9 @@ export const buildZhongZhengDisintegrationFramePixels = ({
         255;
       dissolve =
         clampZhongZhengNumber(
-          (localInfluence * clampedProgress - grain * 0.3) / 0.7,
+          (localInfluence * (effectMaskAlpha / 255) * clampedProgress -
+            grain * 0.3) /
+            0.7,
           0,
           1
         ) ** 1.22;

@@ -391,6 +391,46 @@ describe('buildZhongZhengDisintegrationFramePixels', () => {
     expect(pixels[1]).toBe(90);
     expect(pixels[2]).toBe(60);
   });
+
+  it('uses effectAlpha to limit disintegration while preserving the full sculpture render', () => {
+    const width = 21;
+    const height = 21;
+    const alpha = new Uint8ClampedArray(width * height).fill(255);
+    const effectAlpha = new Uint8ClampedArray(width * height);
+    const sourcePixels = new Uint8ClampedArray(width * height * 4);
+    const noise = new Uint8ClampedArray(width * height).fill(0);
+
+    for (let index = 0; index < width * height; index += 1) {
+      sourcePixels[index * 4] = 120;
+      sourcePixels[index * 4 + 1] = 90;
+      sourcePixels[index * 4 + 2] = 60;
+      sourcePixels[index * 4 + 3] = 255;
+    }
+    for (let y = 15; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        effectAlpha[y * width + x] = 255;
+      }
+    }
+
+    const pixels = buildZhongZhengDisintegrationFramePixels({
+      width,
+      height,
+      alpha,
+      effectAlpha,
+      sourcePixels,
+      noise,
+      pointer: { x: 50, y: 82, active: true },
+      progress: 1,
+      radiusPercent: 28,
+      featherPercent: 8,
+    });
+
+    const bodyCenterAlpha = pixels[(10 * width + 10) * 4 + 3];
+    const pedestalAlpha = pixels[(17 * width + 10) * 4 + 3];
+
+    expect(bodyCenterAlpha).toBe(255);
+    expect(pedestalAlpha).toBeLessThan(48);
+  });
 });
 
 describe('clipZhongZhengPixelsToMask', () => {

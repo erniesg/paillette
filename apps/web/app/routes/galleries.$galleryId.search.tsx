@@ -77,7 +77,6 @@ import {
 import {
   CHUNG_CHENG_STATUE_MASK_IMAGE_URL,
   getChungChengFeaturedArtwork,
-  isChungChengArtwork,
   isChungChengFeatureSuggestion,
 } from '~/lib/featured-showcase';
 import {
@@ -1430,9 +1429,10 @@ export default function SearchPage() {
   );
   const isIdleShowcaseLoading =
     idleShowcaseQuery.isLoading || idleShowcaseQuery.isFetching;
-  const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
+  const activeIdleSuggestionIsChungCheng =
+    isChungChengFeatureSuggestion(activeIdleSuggestion);
   const isChungChengFeatureActive =
-    !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
+    !hasActiveSearch && activeIdleSuggestionIsChungCheng;
   const chungChengFeaturedArtwork = useMemo(
     () => getChungChengFeaturedArtwork(idleShowcaseResults),
     [idleShowcaseResults]
@@ -1884,6 +1884,7 @@ export default function SearchPage() {
               ref={idleShowcaseRef}
               artworks={idleShowcaseResults}
               isLoading={isIdleShowcaseLoading}
+              isVisible
               suggestion={activeIdleSuggestion}
               onCommittedSuggestionChange={setDisplayIdleSuggestion}
               onSelectArtwork={selectArtwork}
@@ -2500,8 +2501,7 @@ function SuggestionPicker({
       activeSearch ||
       open ||
       paused ||
-      suggestions.length < 2 ||
-      isChungChengFeatureSuggestion(suggestion)
+      suggestions.length < 2
     ) {
       return undefined;
     }
@@ -2511,7 +2511,7 @@ function SuggestionPicker({
     }, 9000);
 
     return () => window.clearInterval(handle);
-  }, [activeSearch, open, paused, suggestion, suggestions.length]);
+  }, [activeSearch, open, paused, suggestions.length]);
 
   useEffect(() => {
     if (activeSearch) return;
@@ -2762,6 +2762,7 @@ const IdleShowcaseBackdrop = forwardRef<
   {
     artworks: ArtworkSearchResult[];
     isLoading: boolean;
+    isVisible?: boolean;
     suggestion: EvalSuggestion | null;
     onCommittedSuggestionChange?: (suggestion: EvalSuggestion | null) => void;
     onSelectArtwork: (artwork: ArtworkSearchResult) => void;
@@ -2770,6 +2771,7 @@ const IdleShowcaseBackdrop = forwardRef<
   {
     artworks,
     isLoading,
+    isVisible = true,
     suggestion,
     onCommittedSuggestionChange,
     onSelectArtwork,
@@ -2784,12 +2786,7 @@ const IdleShowcaseBackdrop = forwardRef<
       );
 
       if (isChungChengFeatureSuggestion(suggestion)) {
-        return [
-          getChungChengFeaturedArtwork(artworks),
-          ...imageableWorks
-            .filter((artwork) => !isChungChengArtwork(artwork))
-            .slice(0, 3),
-        ];
+        return [getChungChengFeaturedArtwork(artworks)];
       }
 
       return imageableWorks.slice(0, 4);
@@ -2910,8 +2907,13 @@ const IdleShowcaseBackdrop = forwardRef<
   return (
     <div
       ref={ref}
-      className="absolute inset-0 overflow-hidden bg-[#0b0b0e]"
+      className={`absolute inset-0 overflow-hidden bg-[#0b0b0e] transition-[opacity,transform] duration-700 ease-out ${
+        isVisible
+          ? 'pointer-events-auto translate-y-0 opacity-100'
+          : 'pointer-events-none translate-y-4 opacity-0'
+      }`}
       aria-label="Suggested artworks"
+      aria-hidden={!isVisible}
     >
       <div className="pointer-events-none absolute inset-0">
         <IdleShowcaseLayer
@@ -2952,15 +2954,9 @@ function IdleShowcaseLayer({
   layout: ShowcaseLayoutItem[];
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
-  const isChungChengFeature = isChungChengFeatureSuggestion(layer.suggestion);
-  const showcaseWorks = isChungChengFeature
-    ? layer.works.filter((artwork) => !isChungChengArtwork(artwork))
-    : layer.works;
-  const showcaseItems = isChungChengFeature
-    ? getShowcaseItems(showcaseWorks).filter(
-        (artwork): artwork is ArtworkSearchResult => Boolean(artwork)
-      )
-    : getShowcaseItems(showcaseWorks);
+  const showcaseItems = isChungChengFeatureSuggestion(layer.suggestion)
+    ? []
+    : getShowcaseItems(layer.works);
 
   return (
     <div
@@ -3060,6 +3056,7 @@ type ZhongZhengMaskState = {
   width: number;
   height: number;
   alpha: Uint8ClampedArray;
+  pedestalAlpha: Uint8ClampedArray;
   sourcePixels: Uint8ClampedArray;
   noise: Uint8ClampedArray;
   textureSource: 'statue-with-text-morph';
@@ -3168,8 +3165,10 @@ const extractZhongZhengMaskFromImage = (
   if (dominantComponentId < 0) return null;
 
   const alpha = new Uint8ClampedArray(width * height);
+  const pedestalAlpha = new Uint8ClampedArray(width * height);
   const sourcePixels = new Uint8ClampedArray(width * height * 4);
   const noise = new Uint8ClampedArray(width * height);
+  const pedestalStartY = Math.floor(height * 0.82);
 
   for (let index = 0; index < alpha.length; index += 1) {
     const currentAlpha =
@@ -3192,9 +3191,16 @@ const extractZhongZhengMaskFromImage = (
     const statueRed = imageData.data[dataIndex] || 0;
     const statueGreen = imageData.data[dataIndex + 1] || 0;
     const statueBlue = imageData.data[dataIndex + 2] || 0;
+    const y = Math.floor(index / width);
+    const pedestalLuma =
+      statueRed * 0.2126 + statueGreen * 0.7152 + statueBlue * 0.0722;
 
     alpha[index] = maskAlpha;
     noise[index] = Math.round(textureNoise * 255);
+    pedestalAlpha[index] =
+      y >= pedestalStartY && pedestalLuma >= 104
+        ? Math.round(maskAlpha * clampNumber((pedestalLuma - 86) / 78, 0, 1))
+        : 0;
 
     if (maskAlpha <= 0) {
       sourcePixels[dataIndex] = 0;
@@ -3230,6 +3236,7 @@ const extractZhongZhengMaskFromImage = (
     width,
     height,
     alpha,
+    pedestalAlpha,
     sourcePixels,
     noise,
     textureSource: 'statue-with-text-morph',
@@ -3249,10 +3256,12 @@ const loadZhongZhengImage = (src: string) =>
 const getZhongZhengMaskHitNearPointer = (
   state: ZhongZhengMaskState,
   pointerXPercent: number,
-  pointerYPercent: number
+  pointerYPercent: number,
+  alphaOverride?: Uint8ClampedArray
 ) => {
   const centerX = Math.round((pointerXPercent / 100) * (state.width - 1));
   const centerY = Math.round((pointerYPercent / 100) * (state.height - 1));
+  const hitAlpha = alphaOverride || state.alpha;
   let strongestHit = {
     alpha: 0,
     distance: Number.POSITIVE_INFINITY,
@@ -3272,7 +3281,7 @@ const getZhongZhengMaskHitNearPointer = (
     ) {
       const x = Math.max(0, Math.min(state.width - 1, centerX + offsetX));
       const y = Math.max(0, Math.min(state.height - 1, centerY + offsetY));
-      const alpha = state.alpha[y * state.width + x] || 0;
+      const alpha = hitAlpha[y * state.width + x] || 0;
       const distance = offsetX ** 2 + offsetY ** 2;
 
       if (
@@ -3358,6 +3367,7 @@ const drawZhongZhengDisintegrationFrame = (
     width: state.width,
     height: state.height,
     alpha: state.alpha,
+    effectAlpha: state.pedestalAlpha,
     sourcePixels: state.sourcePixels,
     noise: state.noise,
     pointer,
@@ -3381,7 +3391,7 @@ const drawZhongZhengDisintegrationFrame = (
     const glyphs = buildZhongZhengBurstTextGlyphs({
       width: state.width,
       height: state.height,
-      alpha: state.alpha,
+      alpha: state.pedestalAlpha,
       pointer,
       progress,
       elapsedMs,
@@ -3602,7 +3612,12 @@ function ZhongZhengAsciiFeature({
 
       const nextX = clampNumber(rawX, 0, 100);
       const nextY = clampNumber(rawY, 0, 100);
-      const maskHit = getZhongZhengMaskHitNearPointer(state, nextX, nextY);
+      const maskHit = getZhongZhengMaskHitNearPointer(
+        state,
+        nextX,
+        nextY,
+        state.pedestalAlpha
+      );
       if (maskHit.alpha < 48) {
         deactivatePointer();
         return;
@@ -3633,8 +3648,9 @@ function ZhongZhengAsciiFeature({
       onPointerCancel={deactivatePointer}
       onLostPointerCapture={deactivatePointer}
       onBlur={deactivatePointer}
-      className="chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
+      className="featured-showcase-hero chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
       aria-label={`View ${title} artwork details`}
+      data-featured-showcase="chung-cheng"
       data-pointer-active={pointerActive ? 'true' : 'false'}
       data-particle-source={
         maskState ? `image-canvas-${maskState.textureSource}` : 'ascii-fallback'

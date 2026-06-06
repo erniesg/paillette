@@ -28,10 +28,11 @@ describe('buildSuggestionPool', () => {
 
     expect(suggestions[0]).toMatchObject({
       type: 'keyword',
-      label: 'Zhong Zheng Ren (中正人)',
-      query: CHUNG_CHENG_FEATURE_QUERY,
+      label: '中正人',
+      query: '中正人',
       detail: 'featured',
     });
+    expect(CHUNG_CHENG_FEATURE_QUERY).toBe('中正人');
   });
 
   it('keeps the evergreen keyword after the featured artwork', () => {
@@ -69,7 +70,7 @@ describe('buildSuggestionPool', () => {
 
     expect(keywordSuggestions).toEqual([
       expect.objectContaining({
-        label: 'Zhong Zheng Ren (中正人)',
+        label: '中正人',
         query: CHUNG_CHENG_FEATURE_QUERY,
       }),
       expect.objectContaining({
@@ -89,7 +90,7 @@ describe('buildSuggestionPool', () => {
     });
     expect(suggestions[1]).toMatchObject({
       type: 'keyword',
-      label: 'Zhong Zheng Ren (中正人)',
+      label: '中正人',
     });
   });
 
@@ -106,7 +107,7 @@ describe('buildSuggestionPool', () => {
 
     expect(suggestions[0]).toMatchObject({
       type: 'keyword',
-      label: 'Zhong Zheng Ren (中正人)',
+      label: '中正人',
     });
     expect(suggestions[1]).toMatchObject({
       type: 'occasion',
