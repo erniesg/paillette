@@ -26,6 +26,8 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   Camera,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   ExternalLink,
   Frame,
@@ -2489,7 +2491,8 @@ function SuggestionPicker({
   const suggestion = suggestions[index] ?? suggestions[0] ?? null;
   const visibleSuggestion = activeSearch
     ? null
-    : displaySuggestion || suggestion;
+    : suggestion || displaySuggestion;
+  const canCycleSuggestions = !activeSearch && suggestions.length > 1;
 
   useEffect(() => {
     if (!suggestions.length) return;
@@ -2522,6 +2525,13 @@ function SuggestionPicker({
 
   if (!visibleSuggestion && !activeSearch) return null;
 
+  const cycleSuggestion = (direction: -1 | 1) => {
+    if (suggestions.length < 2) return;
+    setIndex(
+      (value) => (value + direction + suggestions.length) % suggestions.length
+    );
+  };
+
   const activeQuery = currentQuery.trim().toLowerCase();
   const activeLabel = activeSearch?.label.trim();
   const activeStatusLabel = activeSearch
@@ -2539,6 +2549,18 @@ function SuggestionPicker({
       <span className="shrink-0 border-r border-white/10 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
         {activeSearch ? 'Search' : 'Try'}
       </span>
+      {canCycleSuggestions && (
+        <button
+          type="button"
+          data-suggestion-cycle="previous"
+          onClick={() => cycleSuggestion(-1)}
+          className="inline-flex h-8 w-7 shrink-0 items-center justify-center border-r border-white/10 text-white/30 transition-[background-color,color] duration-150 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.1] focus-visible:text-white focus-visible:outline-none"
+          aria-label="Previous suggestion"
+          title="Previous suggestion"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+      )}
       {activeSearch ? (
         <div
           className="inline-flex min-w-0 items-center gap-2 bg-white/[0.08] px-3 py-1.5 text-left text-xs text-white transition-colors"
@@ -2589,6 +2611,18 @@ function SuggestionPicker({
               )}
             </>
           )}
+        </button>
+      )}
+      {canCycleSuggestions && (
+        <button
+          type="button"
+          data-suggestion-cycle="next"
+          onClick={() => cycleSuggestion(1)}
+          className="inline-flex h-8 w-7 shrink-0 items-center justify-center border-l border-white/10 text-white/30 transition-[background-color,color] duration-150 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.1] focus-visible:text-white focus-visible:outline-none"
+          aria-label="Next suggestion"
+          title="Next suggestion"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
         </button>
       )}
       <DropdownMenu.Root open={open} onOpenChange={setOpen}>
