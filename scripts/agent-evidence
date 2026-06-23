@@ -12,6 +12,11 @@ const allLanes = [
     "required": true
   },
   {
+    "id": "workflow-contracts",
+    "command": "node --test scripts/__tests__/rucksack-workflows.test.mjs",
+    "required": true
+  },
+  {
     "id": "build",
     "command": "pnpm run build",
     "required": true

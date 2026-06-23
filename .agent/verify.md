@@ -17,6 +17,7 @@ scripts/agent-evidence --only=lint,type-check
 Validation lanes discovered:
 
 - `lint`: `pnpm run lint` (required)
+- `workflow-contracts`: `node --test scripts/__tests__/rucksack-workflows.test.mjs` (required)
 - `type-check`: `pnpm run typecheck` (required)
 - `test`: `pnpm run test` (required)
 - `build`: `pnpm run build` (required)

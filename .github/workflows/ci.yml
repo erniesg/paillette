@@ -107,6 +107,8 @@ jobs:
           status="${{ steps.agent_evidence.outputs.agent_evidence_status }}"
           echo "### Rucksack agent evidence" >> "$GITHUB_STEP_SUMMARY"
           echo "- Status: \`${status:-not-run}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Artifact: \`rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Download: \`gh run download ${{ github.run_id }} --name rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$manifest" ]; then
             echo "- Manifest: \`$manifest\`" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -119,6 +121,7 @@ jobs:
         with:
           name: rucksack-ci-evidence-${{ github.run_id }}
           path: .agent/evidence
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
 

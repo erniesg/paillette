@@ -213,6 +213,7 @@ jobs:
         with:
           name: rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}
           path: .agent/evidence
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
 
@@ -256,6 +257,7 @@ jobs:
             echo "- Issue: #${{ inputs.issue_number }}"
             echo "- Provider: `${{ inputs.provider }}`"
             echo "- Actions artifact: `rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}`"
+            echo "- Download: `gh run download ${{ github.run_id }} --name rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}`"
             if [ -n "${{ steps.cpr.outputs.pull-request-number }}" ]; then
               echo "- Pull request: #${{ steps.cpr.outputs.pull-request-number }}"
             fi

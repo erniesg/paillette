@@ -56,6 +56,8 @@ jobs:
           if [ -n "$manifest" ] && [ -f "$manifest" ]; then
             echo "## Agent Evidence" >> "$GITHUB_STEP_SUMMARY"
             node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); console.log(`- Result: ${m.result}\n- Commit: ${m.commit}\n- Lanes: ${(m.lanes_run || []).join(", ") || "(none)"}\n- Required failures: ${(m.required_failures || []).join(", ") || "(none)"}`)' "$manifest" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Artifact: \`agent-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Download: \`gh run download ${{ github.run_id }} --name agent-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No evidence manifest found." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -66,6 +68,7 @@ jobs:
         with:
           name: agent-evidence-${{ github.run_id }}
           path: .agent/evidence
+          include-hidden-files: true
           if-no-files-found: warn
 
       - name: Fail if evidence failed
