@@ -37,6 +37,10 @@ Branch: `codex/open-access-art-ingest`
   - `node --test scripts/__tests__/open-access-art-cost-gate.test.mjs`
   - `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json`
   - Result: exit `3` with required secret name `JINA_API_KEY`; no Jina request or secret value used.
+- Live GitHub HITL sync:
+  - `rucksack github issues seed erniesg/paillette --issue-dir docs/issues --label rucksack-ledger --label rucksack-queued --execute`
+  - `rucksack autopilot recommend erniesg/paillette --issue 20 --ping @erniesg --execute`
+  - Result: issue #20 is labeled `rucksack-needs-decision` and `rucksack-needs-clarification`, with recommendation comment `https://github.com/erniesg/paillette/issues/20#issuecomment-4777803760`.
 
 ## Current Gates
 

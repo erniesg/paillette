@@ -8,6 +8,7 @@ Do not store secret values here.
    - Options: local model on trusted machine, Jina API with `JINA_API_KEY`, or defer image vectors for metadata/caption-only launch.
    - Current estimate from `tmp/nga-launch-dry-run.json`: 63,228 NGA works and roughly 252,912,000 Jina image tokens at one tile per image.
    - Gate command: `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk`.
+   - Live HITL issue: https://github.com/erniesg/paillette/issues/20#issuecomment-4777803760
    - Recommendation: local-first benchmark for cost control, then approve Jina only if quality/speed is insufficient.
 
 2. Caption provider for 1,527 NGA rows missing `assistivetext`
