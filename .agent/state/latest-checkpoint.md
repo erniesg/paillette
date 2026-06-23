@@ -8,10 +8,11 @@ Branch: `codex/open-access-art-ingest`
 - Added Rucksack VM/autopilot harness in commit `e321f729`.
 - Cleared the local `type-check` blocker in `apps/web/app/routes/pretext.tsx` by adding strict-index guards.
 - Ran an NGA-only dry run, bounded asset queue proof, bounded local asset download proof, and missing-caption preparation proof.
+- Added `pnpm open:gate` so caption/vector provider choices, missing secrets, and bulk approvals are machine-checkable before paid or quota-consuming work.
 
 ## Evidence
 
-- Full portable harness evidence: `.agent/evidence/20260623T092208377Z/manifest.json`
+- Full portable harness evidence: `.agent/evidence/20260623T093107855Z/manifest.json`
   - `lint`, `type-check`, `test`, and `build` all passed.
   - Manifest is dirty because local app edits remain uncommitted.
 - Rucksack assessment:
@@ -32,6 +33,10 @@ Branch: `codex/open-access-art-ingest`
   - `pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=missing --out=tmp/nga-missing-caption-dry-run.json`
   - `python3 eval/caption_open_access_art.py --manifest tmp/nga-missing-caption-dry-run.json --out tmp/nga-caption-proof/captions.jsonl --metrics-out tmp/nga-caption-proof/metrics.json --image-dir tmp/nga-caption-proof/images --prepare-only`
   - Result: 5 missing-caption rows prepared; no model inference run.
+- Cost gate:
+  - `node --test scripts/__tests__/open-access-art-cost-gate.test.mjs`
+  - `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json`
+  - Result: exit `3` with required secret name `JINA_API_KEY`; no Jina request or secret value used.
 
 ## Current Gates
 

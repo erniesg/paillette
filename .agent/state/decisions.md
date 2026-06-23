@@ -7,11 +7,13 @@ Do not store secret values here.
 1. Embedding provider for NGA image vectors
    - Options: local model on trusted machine, Jina API with `JINA_API_KEY`, or defer image vectors for metadata/caption-only launch.
    - Current estimate from `tmp/nga-launch-dry-run.json`: 63,228 NGA works and roughly 252,912,000 Jina image tokens at one tile per image.
+   - Gate command: `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk`.
    - Recommendation: local-first benchmark for cost control, then approve Jina only if quality/speed is insufficient.
 
 2. Caption provider for 1,527 NGA rows missing `assistivetext`
    - Options: local MLX Qwen captioning on the trusted machine, paid/API captioning, or launch with institution text only and mark missing generated captions as backlog.
    - Current proof: 5 missing-caption rows prepared with `eval/caption_open_access_art.py --prepare-only`.
+   - Gate command: `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=defer --caption-generation=local --caption-embeddings=defer`.
    - Recommendation: run a 200-500 row local benchmark before bulk generation.
 
 3. Staging apply approval

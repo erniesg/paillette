@@ -15,9 +15,15 @@ Estimate embedding/caption cost and define the Jina or equivalent model secret g
 ## Validation command
 
 ```bash
+node --test scripts/__tests__/open-access-art-cost-gate.test.mjs
+pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk
 pnpm test
 pnpm typecheck
 ```
+
+The Jina validation command is expected to exit `3` when `JINA_API_KEY` is not
+configured. That is the desired missing-secret gate; it must not call Jina or
+print secret values.
 
 ## Allowed secrets
 
@@ -25,7 +31,7 @@ Only names such as `JINA_API_KEY` or provider-specific key names may be document
 
 ## Artifact outputs
 
-- Cost estimate note or JSON artifact.
+- Cost estimate note or JSON artifact, for example `tmp/nga-cost-gate-jina-missing-secret.json`.
 - Test output proving missing-secret behavior.
 - `.agent/evidence/<run>/manifest.json` when available.
 

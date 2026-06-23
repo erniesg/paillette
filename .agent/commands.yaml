@@ -21,6 +21,10 @@ commands:
     command: "pnpm run build"
     timeout_seconds: 900
     required: true
+  open-gate:
+    command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json"
+    timeout_seconds: 60
+    required: false
   dev:
     command: "pnpm run dev"
     timeout_seconds: 0
