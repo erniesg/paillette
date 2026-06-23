@@ -28,6 +28,8 @@ Deploy contract:
 - `scripts/agent-evidence` does not execute secret-bearing deploy commands.
 - When `.agent/storage.yaml` exists, `scripts/agent-evidence` records large untracked files over `repo_limit_mb` as manifest caveats and artifact entries.
 - `infra/vm/verify.sh` is the reusable trusted-VM health and hardening check.
+- Rucksack HITL setup uses GitHub issues as canonical state, Discord as a notification mirror, and the generated Cloudflare unlock portal as the browser UI for entering approved secret values into the target secret store.
+- For the NGA launch queue, issue #18 R2/storage readiness must be accepted or explicitly held before issue #20 runs paid or bulk caption/vector work.
 - Detected deploy/IaC hints:
   - `cloudflare` via `wrangler` from `apps/api/wrangler.toml, apps/web/wrangler.jsonc`.
 

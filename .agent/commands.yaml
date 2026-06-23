@@ -25,6 +25,30 @@ commands:
     command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json"
     timeout_seconds: 60
     required: false
+  rucksack-status:
+    command: "python3 -m rucksack autopilot status erniesg/paillette --execute --repo-root ."
+    timeout_seconds: 120
+    required: false
+  rucksack-refresh-github:
+    command: "python3 -m rucksack autopilot status erniesg/paillette --execute --notify-github --repo-root ."
+    timeout_seconds: 120
+    required: false
+  rucksack-refresh-discord:
+    command: "python3 -m rucksack autopilot status erniesg/paillette --execute --notify --repo-root ."
+    timeout_seconds: 120
+    required: false
+  unlock-portal-deploy:
+    command: "cd infra/cloudflare/rucksack-unlock-portal && npm install && npx wrangler types && npx wrangler secret put GITHUB_TOKEN && npx wrangler deploy"
+    timeout_seconds: 600
+    required: false
+  unlock-r2-local-ui:
+    command: "rucksack autopilot unlock-ui erniesg/paillette --issue 18 --env-secret CLOUDFLARE_ACCOUNT_ID --env-secret CLOUDFLARE_API_TOKEN --app-env R2_ACCESS_KEY_ID --app-env R2_SECRET_ACCESS_KEY --app-env R2_ENDPOINT --resource r2 --bucket <approved-r2-bucket> --environment live --repo-root . --decision accept|hold --execute"
+    timeout_seconds: 300
+    required: false
+  unlock-jina-local-ui:
+    command: "rucksack autopilot unlock-ui erniesg/paillette --issue 20 --secret JINA_API_KEY --environment live --repo-root . --decision accept|hold --execute"
+    timeout_seconds: 300
+    required: false
   dev:
     command: "pnpm run dev"
     timeout_seconds: 0

@@ -18,8 +18,28 @@ Required secret/env names for NGA ingest, search, and notifications:
 - `github environment/staging`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 - `github environment/production`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 - `cloudflare queue`: `CLOUDFLARE_QUEUE_ID` when `pnpm open:queue -- --enqueue` is used.
-- `embedding provider`: `JINA_API_KEY` when running `pnpm open:apply -- --embed-images` or `--embed-captions`.
+- `object storage`: `ANVIL_R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT` before issue #18 can run an R2 upload proof.
+- `embedding provider`: `JINA_API_KEY` when issue #20 approves Jina-backed `pnpm open:apply -- --embed-images` or `--embed-captions`.
 - `notifications`: `DISCORD_WEBHOOK_URL` only in the VM/service secret store or GitHub environment that sends notifications.
+- `unlock portal`: `GITHUB_TOKEN` as a Cloudflare Worker secret for the generated unlock portal; `RUCKSACK_UNLOCK_BASE_URL` in the trusted VM/service environment after deploy.
+
+Human unlock surfaces:
+
+- GitHub issues are canonical for accept/hold decisions, audit trail, and resuming blocked work.
+- Discord is a notification mirror. It should link to the GitHub issue, evidence, and hosted unlock page; do not paste secret values into Discord.
+- The generated Cloudflare unlock portal lives at `infra/cloudflare/rucksack-unlock-portal` and is the browser UI for entering GitHub/Cloudflare/R2/Jina values into the approved target secret store.
+- Deploy the unlock portal with Cloudflare Access enabled before expecting unattended GitHub/Discord pings to collect missing setup:
+
+```bash
+cd infra/cloudflare/rucksack-unlock-portal
+npm install
+npx wrangler types
+npx wrangler secret put GITHUB_TOKEN
+npx wrangler deploy
+```
+
+- After deploy, set `RUCKSACK_UNLOCK_BASE_URL` to the Worker URL in the VM/service environment so Rucksack can include hosted unlock links in GitHub and Discord pings.
+- For NGA launch work, unlock issue #18 R2/storage first. Do not start paid or bulk caption/vector work for issue #20 until #18 has either passed a bounded staging upload proof or has been explicitly held by a human.
 
 VM/local-only auth:
 - Codex or Claude subscription login for long-running coding-agent sessions on the trusted VM.
