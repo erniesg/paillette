@@ -109,4 +109,21 @@ describe('Rucksack evidence workflows', () => {
       );
     }
   });
+
+  it('closes reviewed Rucksack issues without redispatching work', () => {
+    const text = workflow('rucksack-autopilot.yml');
+    assert.match(text, /complete\|completed\|done\) action="complete"/u);
+    assert.match(text, /name: Complete reviewed issue/u);
+    assert.match(
+      text,
+      /steps\.request\.outputs\.action == 'complete' && steps\.request\.outputs\.issue_number != ''/u
+    );
+    assert.match(
+      text,
+      /gh issue close "\$\{\{ steps\.request\.outputs\.issue_number \}\}" --reason completed/u
+    );
+    const completeIndex = text.indexOf('name: Complete reviewed issue');
+    const dispatchIndex = text.indexOf('name: Dispatch queued issues');
+    assert.ok(completeIndex !== -1 && dispatchIndex !== -1 && completeIndex < dispatchIndex);
+  });
 });
