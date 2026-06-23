@@ -41,11 +41,11 @@ Stop before running paid batch generation, logging provider keys, or adding fall
 
 ## Human clarification protocol
 
-Ask for approval before running any paid or quota-consuming caption/vector job beyond the sample estimate.
+Ask for approval before running any paid or quota-consuming caption/vector job beyond the sample estimate. Recommended v1 decision is to hold paid/quota-consuming work and launch with metadata plus institution captions only.
 
 ## Recommended response
 
-Make the paid lane explicit and blocked-by-secret by default; keep public metadata ingestion separate from embedding generation.
+Make the paid lane explicit and blocked-by-secret by default; keep public metadata ingestion separate from embedding generation. For v1, defer image embeddings, generated captions, and caption embeddings unless the human explicitly approves a bounded local or Jina benchmark.
 
 ## Trade-offs
 
@@ -53,4 +53,4 @@ Cost gates slow full launch, but they prevent silent spend and make batch size d
 
 ## Free-form response
 
-Add estimated per-provider cost and the recommended first safe batch size.
+Add estimated per-provider cost, the recommended first safe batch size, and the explicit v1 decision: defer vectors/caption generation or approve a named bounded benchmark.

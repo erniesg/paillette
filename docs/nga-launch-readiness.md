@@ -69,6 +69,55 @@ provider records and image tiling assumptions can change.
    - Approval should name the exact branch, environment, bucket, first batch
      size, and rollback owner.
 
+## Recommended V1 Decision
+
+Recommended initial launch posture:
+
+- Launch metadata and institution captions first.
+- Defer generated captions for the 1,550 missing-caption rows.
+- Defer image vectors and generated-caption vectors.
+- Approve only a bounded R2 staging upload after bucket and secret setup.
+- Keep D1 apply, queue enqueue, vector upsert, and deploy blocked until the
+  bounded staging upload evidence is attached to issue #21.
+
+This keeps the public NGA collection launch on the proven open-access metadata
+path while preserving a separate caption/vector workstream for local or Jina
+benchmarks.
+
+Paste-ready decision for issue #20:
+
+```text
+/rucksack hold
+Decision: launch v1 with metadata plus institution captions only.
+Image embeddings: defer.
+Caption generation: defer.
+Caption embeddings: defer.
+Reason: avoid paid/quota-consuming provider work until launch evidence and a
+bounded local/Jina benchmark are reviewed.
+```
+
+Paste-ready decision for issue #18 after the bucket exists and secrets are set:
+
+```text
+/rucksack accept
+Decision: approve bounded staging upload proof only.
+Bucket: <approved-r2-bucket>
+First batch: 5 NGA records / 10 assets.
+Allowed commands: storage setup, bounded `open:apply --download --upload`, and
+evidence capture.
+Still blocked: D1 apply, queue enqueue, vector upsert, deploy, and full ingest.
+Rollback owner: <owner>
+```
+
+Paste-ready hold for issue #21 until the bounded staging upload evidence is
+attached:
+
+```text
+/rucksack hold
+Reason: launch remains blocked until #18 has bounded R2 staging-upload evidence
+and #20 provider/cost scope is held or accepted for v1.
+```
+
 ## Secret Names
 
 Only configure these through GitHub, Cloudflare, the VM, or the approved secret
@@ -98,6 +147,31 @@ pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --capt
 
 Expected paid-provider gate while `JINA_API_KEY` is absent: exit `3` with
 `JINA_API_KEY` named as missing and no provider request.
+
+## Storage Setup Commands
+
+After a human creates or selects the R2 bucket outside git, configure names and
+secret destinations with Rucksack. These commands still must not include secret
+values in logs, docs, issues, or commits.
+
+```bash
+rucksack storage init --repo-root . --provider r2 --bucket <approved-r2-bucket> --prefix nga/ --execute
+rucksack ci resources setup erniesg/paillette --resource r2 --mode existing --bucket <approved-r2-bucket> --environment live --execute
+rucksack ci env collect --environment live --repo-root . --execute
+rucksack ci inspect erniesg/paillette --target workers --environment live --repo-root .
+rucksack ci setup erniesg/paillette --target workers --environment live --repo-root . --execute --yes
+```
+
+For the first bounded staging upload proof, use the approved bucket and a small
+sample only:
+
+```bash
+pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-staging-upload --limit 5 --download --upload --bucket <approved-r2-bucket>
+scripts/agent-evidence
+```
+
+Do not add `--apply-d1`, `--enqueue`, `--embed-images`, `--embed-captions`,
+`--upsert-vectors`, or `wrangler deploy` to this first staging proof.
 
 ## Blocked Commands
 

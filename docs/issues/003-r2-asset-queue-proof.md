@@ -36,11 +36,11 @@ Stop if media download requires non-public access, if files exceed the repo stor
 
 ## Human clarification protocol
 
-Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior.
+Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior. Recommended v1 decision is to approve only a bounded staging upload for 5 NGA records / 10 assets after the R2 bucket exists and storage secrets are configured.
 
 ## Recommended response
 
-Use object storage for artwork media and keep local files in `tmp/` or evidence storage only.
+Use object storage for artwork media and keep local files in `tmp/` or evidence storage only. Keep D1 apply, queue enqueue, vector upsert, deploy, and full ingest blocked until the bounded staging upload evidence is attached to issue #21.
 
 ## Trade-offs
 
@@ -48,4 +48,4 @@ Dry-run asset planning does not prove CDN behavior, but it prevents accidental b
 
 ## Free-form response
 
-Add notes about largest sample asset, total planned bytes, and object key naming.
+Add notes about largest sample asset, total planned bytes, object key naming, approved bucket name, first batch size, and rollback owner.
