@@ -1,0 +1,48 @@
+# Latest Checkpoint
+
+Date: 2026-06-23
+Branch: `codex/open-access-art-ingest`
+
+## What Changed
+
+- Added Rucksack VM/autopilot harness in commit `e321f729`.
+- Cleared the local `type-check` blocker in `apps/web/app/routes/pretext.tsx` by adding strict-index guards.
+- Ran an NGA-only dry run, bounded asset queue proof, bounded local asset download proof, and missing-caption preparation proof.
+
+## Evidence
+
+- Full portable harness evidence: `.agent/evidence/20260623T092208377Z/manifest.json`
+  - `lint`, `type-check`, `test`, and `build` all passed.
+  - Manifest is dirty because local app edits remain uncommitted.
+- Rucksack assessment:
+  - `PYTHONPATH=src python3 -m rucksack autopilot assess erniesg/paillette --repo-root /Users/erniesg/code/erniesg/paillette --json`
+  - Status: `ready`; queue: 6 issue specs ready.
+- NGA dry run:
+  - `pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=any --out=tmp/nga-launch-dry-run.json`
+  - Candidate works: 63,228.
+  - Institution/assistive caption coverage: 61,701 present, 1,527 missing.
+- NGA asset proof:
+  - `pnpm open:assets -- --manifest tmp/nga-launch-dry-run.json --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --providers=nga --limit=10 --init --status`
+  - `pnpm open:assets -- --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --download --providers=nga --download-limit=10 --concurrency=4`
+  - Result: 10/10 assets downloaded for 5 artworks, 1,527,787 bytes, 0 failed.
+- NGA queue proof:
+  - `pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2`
+  - Result: 10 messages, 1 batch, not enqueued.
+- Missing-caption prep:
+  - `pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=missing --out=tmp/nga-missing-caption-dry-run.json`
+  - `python3 eval/caption_open_access_art.py --manifest tmp/nga-missing-caption-dry-run.json --out tmp/nga-caption-proof/captions.jsonl --metrics-out tmp/nga-caption-proof/metrics.json --image-dir tmp/nga-caption-proof/images --prepare-only`
+  - Result: 5 missing-caption rows prepared; no model inference run.
+
+## Current Gates
+
+- Do not run `pnpm open:queue -- --enqueue` until Cloudflare queue/account/token names are configured in the approved secret store.
+- Do not run `pnpm open:apply -- --upload`, `--apply-d1`, `--upsert-vectors`, or deploy until a human approves staging resources.
+- Do not run paid Jina embedding or bulk caption generation until the provider/batch-size decision in `.agent/state/decisions.md` is answered.
+- Keep `tmp/` artifacts local or move durable evidence to GitHub artifacts/R2; do not commit generated images, SQLite ledgers, vectors, captions, or manifests.
+
+## Resume
+
+1. Review `.agent/state/decisions.md`.
+2. If the human approves local-first, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
+3. If the human approves Jina, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
+4. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.

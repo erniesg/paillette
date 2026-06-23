@@ -13,6 +13,18 @@ Deploy/IaC hints detected:
 Required secret/env names for deploy contexts:
 - `cloudflare`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
 
+Required secret/env names for NGA ingest, search, and notifications:
+- `github repository`: `OPENAI_API_KEY` if the agent planner/build workflow uses OpenAI-backed planning.
+- `github environment/staging`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+- `github environment/production`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+- `cloudflare queue`: `CLOUDFLARE_QUEUE_ID` when `pnpm open:queue -- --enqueue` is used.
+- `embedding provider`: `JINA_API_KEY` when running `pnpm open:apply -- --embed-images` or `--embed-captions`.
+- `notifications`: `DISCORD_WEBHOOK_URL` only in the VM/service secret store or GitHub environment that sends notifications.
+
+VM/local-only auth:
+- Codex or Claude subscription login for long-running coding-agent sessions on the trusted VM.
+- Wrangler browser login may be used interactively on the VM; CI/deploy lanes should use scoped Cloudflare API tokens.
+
 Common account bootstrap checks:
 
 - `gh auth status` for GitHub write/read operations.
