@@ -25,6 +25,9 @@ concurrency:
 jobs:
   full-ci:
     runs-on: ubuntu-latest
+    env:
+      RUCKSACK_CI_VENV: ${{ runner.temp }}/rucksack-ci-venv
+      RUCKSACK_NODE_RUNNER_FILE: ${{ runner.temp }}/rucksack-node-runner
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,8 +45,8 @@ jobs:
             echo "no Python project metadata; skipping Python dependency setup"
             exit 0
           fi
-          python3 -m venv .rucksack-ci-venv
-          . .rucksack-ci-venv/bin/activate
+          python3 -m venv "$RUCKSACK_CI_VENV"
+          . "$RUCKSACK_CI_VENV/bin/activate"
           python3 -m pip install --upgrade pip
           if [ -f pyproject.toml ]; then
             python3 -m pip install -e '.[dev]' || python3 -m pip install -e .
@@ -72,14 +75,14 @@ jobs:
             npm install
             runner=npm
           fi
-          echo "$runner" > .rucksack-node-runner
+          echo "$runner" > "$RUCKSACK_NODE_RUNNER_FILE"
       - name: Agent evidence
         id: deploy_agent_evidence
         continue-on-error: true
         run: |
           set -u
-          if [ -d .rucksack-ci-venv ]; then
-            . .rucksack-ci-venv/bin/activate
+          if [ -d "$RUCKSACK_CI_VENV" ]; then
+            . "$RUCKSACK_CI_VENV/bin/activate"
           fi
           status=0
           if [ -x scripts/agent-evidence ]; then
@@ -137,8 +140,8 @@ jobs:
         run: |
           set -eu
           if [ -f package.json ]; then
-            if [ -f .rucksack-node-runner ]; then
-              runner="$(cat .rucksack-node-runner)"
+            if [ -f "$RUCKSACK_NODE_RUNNER_FILE" ]; then
+              runner="$(cat "$RUCKSACK_NODE_RUNNER_FILE")"
             else
               corepack enable || true
               if [ -f pnpm-lock.yaml ]; then

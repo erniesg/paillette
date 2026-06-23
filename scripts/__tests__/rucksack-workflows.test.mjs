@@ -88,4 +88,25 @@ describe('Rucksack evidence workflows', () => {
       );
     }
   });
+
+  it('keeps generated CI helper state outside the repository checkout', () => {
+    for (const file of ['ci.yml', 'deploy.yml']) {
+      const text = workflow(file);
+      assert.match(
+        text,
+        /RUCKSACK_CI_VENV:\s*\$\{\{ runner\.temp \}\}\/rucksack-ci-venv/u,
+        `${file} must place Python venvs in runner temp storage`
+      );
+      assert.match(
+        text,
+        /RUCKSACK_NODE_RUNNER_FILE:\s*\$\{\{ runner\.temp \}\}\/rucksack-node-runner/u,
+        `${file} must place runner markers in runner temp storage`
+      );
+      assert.doesNotMatch(
+        text,
+        /python3 -m venv \.rucksack-ci-venv|echo "\$runner" > \.rucksack-node-runner/u,
+        `${file} must not write Rucksack helper files into the repo root before evidence runs`
+      );
+    }
+  });
 });
