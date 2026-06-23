@@ -1,0 +1,50 @@
+# Vector Caption Cost Gate
+
+depends-on: 001
+
+## Goal
+
+Estimate embedding/caption cost and define the Jina or equivalent model secret gate before scaling NGA ingestion.
+
+## Acceptance tests
+
+- The issue output includes estimated artwork count, embedding count, and cost/rate-limit assumptions.
+- Secret names for embedding or caption providers are documented without values.
+- The implementation refuses to run paid embedding/caption work when required provider secrets are absent.
+
+## Validation command
+
+```bash
+pnpm test
+pnpm typecheck
+```
+
+## Allowed secrets
+
+Only names such as `JINA_API_KEY` or provider-specific key names may be documented. Values must stay in the configured secret store.
+
+## Artifact outputs
+
+- Cost estimate note or JSON artifact.
+- Test output proving missing-secret behavior.
+- `.agent/evidence/<run>/manifest.json` when available.
+
+## Stop conditions
+
+Stop before running paid batch generation, logging provider keys, or adding fallback API execution that bypasses the chosen secret gate.
+
+## Human clarification protocol
+
+Ask for approval before running any paid or quota-consuming caption/vector job beyond the sample estimate.
+
+## Recommended response
+
+Make the paid lane explicit and blocked-by-secret by default; keep public metadata ingestion separate from embedding generation.
+
+## Trade-offs
+
+Cost gates slow full launch, but they prevent silent spend and make batch size decisions reviewable.
+
+## Free-form response
+
+Add estimated per-provider cost and the recommended first safe batch size.
