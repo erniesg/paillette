@@ -7,6 +7,7 @@ Branch: `codex/open-access-art-ingest`
 
 - Added Rucksack VM/autopilot harness in commit `e321f729`.
 - Added a Rucksack hosted unlock portal scaffold in commit `e6279d98` under `infra/cloudflare/rucksack-unlock-portal`.
+- Added repo-local command registry entries for NGA dry-run, R2 ledger/download proof, bounded R2 upload proof, and R2 queue planning.
 - Cleared the local `type-check` blocker in `apps/web/app/routes/pretext.tsx` by adding strict-index guards.
 - Ran an NGA-only dry run, bounded asset queue proof, bounded local asset download proof, and missing-caption preparation proof.
 - Added `pnpm open:gate` so caption/vector provider choices, missing secrets, and bulk approvals are machine-checkable before paid or quota-consuming work.
@@ -50,6 +51,7 @@ Branch: `codex/open-access-art-ingest`
 ## Current Gates
 
 - Resolve issue #18 before issue #20: configure/approve the R2 bucket and storage secrets by name, then run only a bounded staging upload proof.
+- After #18 is accepted, run the bounded R2 proof command from `.agent/commands.yaml`: `nga-r2-upload-proof`. It uploads at most two NGA records through R2 and intentionally omits D1 apply, queue enqueue, vector upsert, caption generation, and deploy flags.
 - Deploy or use the Rucksack unlock portal before expecting unattended GitHub/Discord pings to collect secret values: `cd infra/cloudflare/rucksack-unlock-portal && npm install && npx wrangler types && npx wrangler secret put GITHUB_TOKEN && npx wrangler deploy`.
 - After deploy, set `RUCKSACK_UNLOCK_BASE_URL` in the trusted runtime and refresh pings with `rucksack autopilot status erniesg/paillette --execute --notify-github --repo-root <checkout>` or `--notify`.
 - Do not run `pnpm open:queue -- --enqueue` until Cloudflare queue/account/token names are configured in the approved secret store.
@@ -61,6 +63,7 @@ Branch: `codex/open-access-art-ingest`
 
 1. Review `.agent/state/decisions.md`.
 2. Resolve #18 first: deploy/use the unlock portal, configure the approved R2 bucket and storage secrets, then accept or hold #18 on GitHub.
-3. After #18 is accepted, decide #20: if local-first is approved, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
-4. If Jina is approved, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
-5. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
+3. If #18 is accepted, run `nga-r2-upload-proof` from `.agent/commands.yaml` and capture `tmp/nga-r2-upload-proof/asset-manifest.json` in evidence or object storage without committing binaries.
+4. After #18 is proven or explicitly held, decide #20: if local-first is approved, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
+5. If Jina is approved, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
+6. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.

@@ -25,6 +25,22 @@ commands:
     command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json"
     timeout_seconds: 60
     required: false
+  nga-dry-run:
+    command: "pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=any --out=tmp/nga-launch-dry-run.json"
+    timeout_seconds: 180
+    required: false
+  nga-r2-ledger-proof:
+    command: "pnpm open:assets -- --manifest tmp/nga-launch-dry-run.json --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --providers=nga --limit=10 --init --status && pnpm open:assets -- --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --download --providers=nga --download-limit=10 --concurrency=4 --status"
+    timeout_seconds: 600
+    required: false
+  nga-r2-upload-proof:
+    command: "test -n \"$ANVIL_R2_BUCKET\" && pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --bucket \"$ANVIL_R2_BUCKET\" --download --upload --upload-concurrency=1"
+    timeout_seconds: 600
+    required: false
+  nga-r2-queue-plan:
+    command: "pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2"
+    timeout_seconds: 120
+    required: false
   rucksack-status:
     command: "python3 -m rucksack autopilot status erniesg/paillette --execute --repo-root ."
     timeout_seconds: 120

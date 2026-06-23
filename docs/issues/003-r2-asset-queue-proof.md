@@ -9,34 +9,50 @@ Prove the NGA asset path can download, stage, and upload representative public a
 ## Acceptance tests
 
 - The asset ledger identifies image count, downloaded bytes, and target object keys without writing large files into Git.
-- R2 binding names and bucket names are documented by name only.
+- R2 binding names, bucket names, and credential names are documented by name only.
+- After #18 is accepted and R2 is configured, a bounded staging upload writes no more than two NGA records through R2 and records the uploaded object keys.
 - Queue batch sizing and retry behavior are recorded for at least one sample batch.
+- The proof does not apply D1 SQL, enqueue queue messages, generate captions, upsert vectors, or deploy.
 
 ## Validation command
 
+Plan and local download proof, safe before secrets are configured:
+
 ```bash
-pnpm open:assets -- --manifest=tmp/nga-dry-run.json --db=tmp/nga-assets-ledger.sqlite --out-dir=tmp/nga-assets --providers=nga --init --status
-pnpm open:assets -- --db=tmp/nga-assets-ledger.sqlite --out-dir=tmp/nga-assets --providers=nga --download --download-limit=2 --concurrency=2 --status
+pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=any --out=tmp/nga-launch-dry-run.json
+pnpm open:assets -- --manifest tmp/nga-launch-dry-run.json --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --providers=nga --limit=10 --init --status
+pnpm open:assets -- --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --download --providers=nga --download-limit=10 --concurrency=4 --status
+pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2
 pnpm test
 ```
 
+Bounded staging upload proof, only after the R2 gate is accepted and the approved secret store exposes Cloudflare auth plus `ANVIL_R2_BUCKET`:
+
+```bash
+test -n "$ANVIL_R2_BUCKET"
+pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --bucket "$ANVIL_R2_BUCKET" --download --upload --upload-concurrency=1
+```
+
+Do not add `--apply-d1`, `--apply`, `--upsert-vectors`, or queue `--enqueue` to this issue's proof.
+
 ## Allowed secrets
 
-Only secret names may appear, such as `CLOUDFLARE_API_TOKEN` or `R2_ACCESS_KEY_ID`. Do not write values.
+Only secret names may appear, such as `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `ANVIL_R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, or `R2_ENDPOINT`. Do not write values.
 
 ## Artifact outputs
 
 - Asset ledger/status summary with counts and byte totals.
 - Queue batch plan or dry-run log.
+- `tmp/nga-r2-upload-proof/asset-manifest.json` for the bounded upload proof, including object keys, content types, byte sizes, and SHA-256 hashes.
 - `.agent/evidence/<run>/manifest.json` with large files listed as artifacts or caveats, not commits.
 
 ## Stop conditions
 
-Stop if media download requires non-public access, if files exceed the repo storage policy, or if object-store credentials are missing for a non-plan run.
+Stop if media download requires non-public access, if files exceed the repo storage policy, if object-store credentials are missing for a non-plan run, or if the next proposed command would apply D1, enqueue queue messages, upsert vectors, generate paid captions, or deploy.
 
 ## Human clarification protocol
 
-Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior.
+Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior. The first accepted upload should be bounded to two NGA records and use the staging bucket named by `ANVIL_R2_BUCKET`.
 
 ## Recommended response
 
@@ -48,4 +64,4 @@ Dry-run asset planning does not prove CDN behavior, but it prevents accidental b
 
 ## Free-form response
 
-Add notes about largest sample asset, total planned bytes, and object key naming.
+Add notes about largest sample asset, total planned bytes, object key naming, and whether the bounded upload proof was skipped, accepted, or held.
