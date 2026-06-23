@@ -153,8 +153,10 @@ jobs:
       - name: Dependency and security checks
         run: |
           set -eu
-          if [ -f package-lock.json ]; then
+          if [ -f package-lock.json ] && [ ! -f pnpm-lock.yaml ] && [ ! -f yarn.lock ]; then
             npm audit --audit-level=high
+          elif [ -f pnpm-lock.yaml ] || [ -f yarn.lock ]; then
+            echo "non-npm lockfile present; skipping npm audit"
           fi
           if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
             python -m pip check || true

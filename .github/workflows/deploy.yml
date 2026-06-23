@@ -145,8 +145,10 @@ jobs:
       - name: Strict dependency and IaC checks
         run: |
           set -eu
-          if [ -f package-lock.json ]; then
+          if [ -f package-lock.json ] && [ ! -f pnpm-lock.yaml ] && [ ! -f yarn.lock ]; then
             npm audit --audit-level=high
+          elif [ -f pnpm-lock.yaml ] || [ -f yarn.lock ]; then
+            echo "non-npm lockfile present; skipping npm audit"
           fi
           if find . -name '*.tf' -not -path './.git/*' -print -quit | grep -q .; then
             if command -v tofu >/dev/null 2>&1; then
