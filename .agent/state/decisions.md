@@ -21,7 +21,14 @@ Do not store secret values here.
    - Required before `pnpm open:apply -- --upload`, `--apply-d1`, or `--upsert-vectors`.
    - Required secrets by name: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and resource-specific queue/index names such as `CLOUDFLARE_QUEUE_ID`.
 
-4. Notification surface
+4. NGA object storage bucket and live upload approval
+   - Required before `pnpm open:queue -- --enqueue` or `pnpm open:apply -- --upload`.
+   - Required storage contract: `.agent/storage.yaml` records R2 with prefix `nga/`, empty bucket, and secret names `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`.
+   - Current proof: 10 of 10 sample assets downloaded locally and 10 R2-mode queue messages planned in one batch.
+   - Live HITL issue: https://github.com/erniesg/paillette/issues/18#issuecomment-4778267231
+   - Recommendation: choose/create the actual R2 bucket outside git, set the listed secret values in the approved secret store, then approve only a bounded staging upload before scaling.
+
+5. Notification surface
    - Options: Discord webhook notification only, Discord bot with decision buttons, GitHub-only issue comments, or dashboard later.
    - Recommendation: start with GitHub as canonical state and `DISCORD_WEBHOOK_URL` for concise pings that link back to issues/evidence.
 

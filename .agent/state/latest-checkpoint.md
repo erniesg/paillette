@@ -48,6 +48,8 @@ Branch: `codex/open-access-art-ingest`
   - `rucksack github issues seed erniesg/paillette --issue-dir docs/issues --label rucksack-ledger --label rucksack-queued --execute`
   - `rucksack autopilot recommend erniesg/paillette --issue 20 --ping @erniesg --execute`
   - Result: issue #20 is labeled `rucksack-needs-decision` and `rucksack-needs-clarification`, with recommendation comment `https://github.com/erniesg/paillette/issues/20#issuecomment-4777803760`.
+  - `PYTHONPATH=/Users/erniesg/code/erniesg/rucksack/src python3 -m rucksack autopilot recommend erniesg/paillette --issue 18 --ping @erniesg --execute`
+  - Result: issue #18 is labeled `rucksack-needs-decision` and `rucksack-needs-clarification`, with storage approval comment `https://github.com/erniesg/paillette/issues/18#issuecomment-4778267231`.
 
 ## Current Gates
 
@@ -60,6 +62,7 @@ Branch: `codex/open-access-art-ingest`
 ## Resume
 
 1. Review `.agent/state/decisions.md`.
-2. If the human approves local-first, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
-3. If the human approves Jina, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
-4. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
+2. If the human approves the storage path on issue #18, create/select the R2 bucket outside git, set the listed R2 secret values, then run only a bounded staging upload first.
+3. If the human approves local-first captions/vectors on issue #20, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
+4. If the human approves Jina, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
+5. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
