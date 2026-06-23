@@ -92,6 +92,7 @@ jobs:
       - name: Comment on PR
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         shell: bash
         run: |
@@ -101,7 +102,7 @@ jobs:
             exit 0
           fi
           body="$(MANIFEST="$manifest" node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync(process.env.MANIFEST,"utf8")); const lines=["<!-- agent-evidence -->","### Agent evidence","",`- Result: \`${m.result}\``,`- Commit: \`${m.commit}\``,`- Lanes: \`${(m.lanes_run || []).join(", ") || "(none)"}\``,`- Required failures: \`${(m.required_failures || []).join(", ") || "(none)"}\``]; console.log(lines.join("\n"));')"
-          existing="$(gh pr view "$PR_URL" --json comments --jq '.comments[] | select(.body | contains("<!-- agent-evidence -->")) | .id' | tail -1)"
+          existing="$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" --jq '.[] | select(.body | contains("<!-- agent-evidence -->")) | .id' | tail -1)"
           if [ -n "$existing" ]; then
             gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" -f body="$body" >/dev/null
           else
