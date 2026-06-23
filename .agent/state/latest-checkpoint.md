@@ -6,6 +6,7 @@ Branch: `codex/open-access-art-ingest`
 ## What Changed
 
 - Added Rucksack VM/autopilot harness in commit `e321f729`.
+- Added a Rucksack hosted unlock portal scaffold in commit `e6279d98` under `infra/cloudflare/rucksack-unlock-portal`.
 - Cleared the local `type-check` blocker in `apps/web/app/routes/pretext.tsx` by adding strict-index guards.
 - Ran an NGA-only dry run, bounded asset queue proof, bounded local asset download proof, and missing-caption preparation proof.
 - Added `pnpm open:gate` so caption/vector provider choices, missing secrets, and bulk approvals are machine-checkable before paid or quota-consuming work.
@@ -41,9 +42,16 @@ Branch: `codex/open-access-art-ingest`
   - `rucksack github issues seed erniesg/paillette --issue-dir docs/issues --label rucksack-ledger --label rucksack-queued --execute`
   - `rucksack autopilot recommend erniesg/paillette --issue 20 --ping @erniesg --execute`
   - Result: issue #20 is labeled `rucksack-needs-decision` and `rucksack-needs-clarification`, with recommendation comment `https://github.com/erniesg/paillette/issues/20#issuecomment-4777803760`.
+- Hosted unlock state:
+  - `infra/cloudflare/rucksack-unlock-portal` exists in this checkout.
+  - Rucksack status and GitHub digests now detect the scaffold and tell humans to deploy from this checkout or push/merge it before relying on another runner.
+  - Required Worker/GitHub/R2 names only: `GITHUB_TOKEN`, `RUCKSACK_UNLOCK_BASE_URL`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `ANVIL_R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`.
 
 ## Current Gates
 
+- Resolve issue #18 before issue #20: configure/approve the R2 bucket and storage secrets by name, then run only a bounded staging upload proof.
+- Deploy or use the Rucksack unlock portal before expecting unattended GitHub/Discord pings to collect secret values: `cd infra/cloudflare/rucksack-unlock-portal && npm install && npx wrangler types && npx wrangler secret put GITHUB_TOKEN && npx wrangler deploy`.
+- After deploy, set `RUCKSACK_UNLOCK_BASE_URL` in the trusted runtime and refresh pings with `rucksack autopilot status erniesg/paillette --execute --notify-github --repo-root <checkout>` or `--notify`.
 - Do not run `pnpm open:queue -- --enqueue` until Cloudflare queue/account/token names are configured in the approved secret store.
 - Do not run `pnpm open:apply -- --upload`, `--apply-d1`, `--upsert-vectors`, or deploy until a human approves staging resources.
 - Do not run paid Jina embedding or bulk caption generation until the provider/batch-size decision in `.agent/state/decisions.md` is answered.
@@ -52,6 +60,7 @@ Branch: `codex/open-access-art-ingest`
 ## Resume
 
 1. Review `.agent/state/decisions.md`.
-2. If the human approves local-first, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
-3. If the human approves Jina, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
-4. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
+2. Resolve #18 first: deploy/use the unlock portal, configure the approved R2 bucket and storage secrets, then accept or hold #18 on GitHub.
+3. After #18 is accepted, decide #20: if local-first is approved, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
+4. If Jina is approved, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
+5. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
