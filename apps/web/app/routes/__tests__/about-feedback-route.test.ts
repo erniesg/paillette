@@ -6,7 +6,7 @@ const makeFeedbackRequest = (body: Record<string, string>) =>
   new Request('https://paillette.test/about', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(body),
+    body: new URLSearchParams(body).toString(),
   });
 
 const contextWithEnv = (env: Record<string, string | undefined>) =>

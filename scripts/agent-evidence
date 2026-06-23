@@ -12,6 +12,11 @@ const allLanes = [
     "required": true
   },
   {
+    "id": "build",
+    "command": "pnpm run build",
+    "required": true
+  },
+  {
     "id": "type-check",
     "command": "pnpm run typecheck",
     "required": true
@@ -19,11 +24,6 @@ const allLanes = [
   {
     "id": "test",
     "command": "pnpm run test",
-    "required": true
-  },
-  {
-    "id": "build",
-    "command": "pnpm run build",
     "required": true
   }
 ];
