@@ -26,6 +26,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Secret scan
         run: |
           set -eu
@@ -51,6 +55,29 @@ jobs:
             python3 -m pip install -r requirements.txt
           fi
 
+      - name: Set up Node project dependencies
+        run: |
+          set -eu
+          if [ ! -f package.json ]; then
+            echo "no package.json; skipping Node dependency setup"
+            exit 0
+          fi
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+            runner=pnpm
+          elif [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+            runner=yarn
+          elif [ -f package-lock.json ]; then
+            npm ci
+            runner=npm
+          else
+            npm install
+            runner=npm
+          fi
+          echo "$runner" > .rucksack-node-runner
+
       - name: Agent evidence
         run: |
           set -eu
@@ -70,19 +97,23 @@ jobs:
             echo "no package.json; skipping Node checks"
             exit 0
           fi
-          corepack enable || true
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-            runner=pnpm
-          elif [ -f yarn.lock ]; then
-            yarn install --frozen-lockfile
-            runner=yarn
-          elif [ -f package-lock.json ]; then
-            npm ci
-            runner=npm
+          if [ -f .rucksack-node-runner ]; then
+            runner="$(cat .rucksack-node-runner)"
           else
-            npm install
-            runner=npm
+            corepack enable || true
+            if [ -f pnpm-lock.yaml ]; then
+              pnpm install --frozen-lockfile
+              runner=pnpm
+            elif [ -f yarn.lock ]; then
+              yarn install --frozen-lockfile
+              runner=yarn
+            elif [ -f package-lock.json ]; then
+              npm ci
+              runner=npm
+            else
+              npm install
+              runner=npm
+            fi
           fi
           if node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint?0:1)"; then
             $runner run lint
