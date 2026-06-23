@@ -3,7 +3,7 @@ name: Rucksack Deploy
 
 on:
   push:
-    branches: [staging, main]
+    branches: [staging, master]
   workflow_dispatch:
     inputs:
       environment:
@@ -103,6 +103,8 @@ jobs:
           echo "- Status: \`${status:-not-run}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Artifact: \`rucksack-deploy-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Download: \`gh run download ${{ github.run_id }} --name rucksack-deploy-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest artifact: \`rucksack-deploy-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest download: \`gh run download ${{ github.run_id }} --name rucksack-deploy-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$manifest" ]; then
             echo "- Manifest: \`$manifest\`" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -115,6 +117,14 @@ jobs:
           name: rucksack-deploy-evidence-${{ github.run_id }}
           path: .agent/evidence
           include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload agent evidence manifest
+        if: always() && steps.deploy_agent_evidence.outputs.manifest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-deploy-manifest-${{ github.run_id }}
+          path: ${{ steps.deploy_agent_evidence.outputs.manifest }}
           if-no-files-found: ignore
           retention-days: 14
       - name: Secret scan
@@ -167,7 +177,7 @@ jobs:
           fi
 
   production-checks:
-    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.environment == 'production')) }}
+    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'master') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'master' && inputs.environment == 'production')) }}
     needs: full-ci
     runs-on: ubuntu-latest
     steps:
@@ -236,7 +246,7 @@ jobs:
           ./infra/vm/deploy.sh --github-actions
 
   production:
-    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.environment == 'production')) }}
+    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'master') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'master' && inputs.environment == 'production')) }}
     needs:
       - full-ci
       - production-checks

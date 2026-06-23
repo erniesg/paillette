@@ -36,14 +36,27 @@ describe('Rucksack evidence workflows', () => {
   it('prints artifact download commands next to evidence manifest paths', () => {
     const expectations = [
       ['agent-evidence.yml', 'gh run download ${{ github.run_id }} --name agent-evidence-${{ github.run_id }}'],
+      [
+        'agent-evidence.yml',
+        'gh run download ${{ github.run_id }} --name agent-evidence-manifest-${{ github.run_id }}',
+      ],
       ['ci.yml', 'gh run download ${{ github.run_id }} --name rucksack-ci-evidence-${{ github.run_id }}'],
+      ['ci.yml', 'gh run download ${{ github.run_id }} --name rucksack-ci-manifest-${{ github.run_id }}'],
       [
         'deploy.yml',
         'gh run download ${{ github.run_id }} --name rucksack-deploy-evidence-${{ github.run_id }}',
       ],
       [
+        'deploy.yml',
+        'gh run download ${{ github.run_id }} --name rucksack-deploy-manifest-${{ github.run_id }}',
+      ],
+      [
         'rucksack-build.yml',
         'gh run download ${{ github.run_id }} --name rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}',
+      ],
+      [
+        'rucksack-build.yml',
+        'gh run download ${{ github.run_id }} --name rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}',
       ],
     ];
 
@@ -52,6 +65,26 @@ describe('Rucksack evidence workflows', () => {
         workflow(file),
         new RegExp(downloadCommand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'),
         `${file} must show reviewers how to download the evidence artifact`
+      );
+    }
+  });
+
+  it('uploads evidence manifests as their own artifacts', () => {
+    const expectations = [
+      ['agent-evidence.yml', 'agent-evidence-manifest-${{ github.run_id }}'],
+      ['ci.yml', 'rucksack-ci-manifest-${{ github.run_id }}'],
+      ['deploy.yml', 'rucksack-deploy-manifest-${{ github.run_id }}'],
+      [
+        'rucksack-build.yml',
+        'rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}',
+      ],
+    ];
+
+    for (const [file, artifactName] of expectations) {
+      assert.notEqual(
+        uploadBlock(workflow(file), artifactName).indexOf('path: ${{ steps.'),
+        -1,
+        `${file} must upload the manifest path reported by the evidence step`
       );
     }
   });

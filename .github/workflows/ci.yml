@@ -4,7 +4,7 @@ name: Rucksack CI
 on:
   pull_request:
   push:
-    branches: [staging, main]
+    branches: [staging, master]
   workflow_dispatch:
 
 permissions:
@@ -109,6 +109,8 @@ jobs:
           echo "- Status: \`${status:-not-run}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Artifact: \`rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Download: \`gh run download ${{ github.run_id }} --name rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest artifact: \`rucksack-ci-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest download: \`gh run download ${{ github.run_id }} --name rucksack-ci-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$manifest" ]; then
             echo "- Manifest: \`$manifest\`" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -122,6 +124,15 @@ jobs:
           name: rucksack-ci-evidence-${{ github.run_id }}
           path: .agent/evidence
           include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload agent evidence manifest
+        if: always() && steps.agent_evidence.outputs.manifest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-ci-manifest-${{ github.run_id }}
+          path: ${{ steps.agent_evidence.outputs.manifest }}
           if-no-files-found: ignore
           retention-days: 14
 

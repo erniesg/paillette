@@ -35,12 +35,12 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
     steps:
       - name: Checkout default branch harness
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch || 'main' }}
+          ref: ${{ github.event.repository.default_branch || 'master' }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -203,8 +203,10 @@ jobs:
           else
             validation_result=failed
           fi
+          manifest="$(find .agent/evidence -name manifest.json -print 2>/dev/null | sort | tail -1 || true)"
           echo "result=$validation_result" >> "$GITHUB_OUTPUT"
           echo "exit_code=$validation_status" >> "$GITHUB_OUTPUT"
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
           exit 0
 
       - name: Upload evidence artifact
@@ -214,6 +216,15 @@ jobs:
           name: rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}
           path: .agent/evidence
           include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload evidence manifest
+        if: always() && inputs.provider == 'codex-action' && steps.validation.outputs.manifest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}
+          path: ${{ steps.validation.outputs.manifest }}
           if-no-files-found: ignore
           retention-days: 14
 
@@ -258,6 +269,8 @@ jobs:
             echo "- Provider: `${{ inputs.provider }}`"
             echo "- Actions artifact: `rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}`"
             echo "- Download: `gh run download ${{ github.run_id }} --name rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}`"
+            echo "- Manifest artifact: `rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}`"
+            echo "- Manifest download: `gh run download ${{ github.run_id }} --name rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}`"
             if [ -n "${{ steps.cpr.outputs.pull-request-number }}" ]; then
               echo "- Pull request: #${{ steps.cpr.outputs.pull-request-number }}"
             fi
