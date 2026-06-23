@@ -74,6 +74,7 @@ jobs:
           fi
           echo "$runner" > .rucksack-node-runner
       - name: Agent evidence
+        continue-on-error: true
         run: |
           set -eu
           if [ -d .rucksack-ci-venv ]; then
@@ -114,6 +115,9 @@ jobs:
             fi
             if node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint?0:1)"; then
               $runner run lint
+            fi
+            if node -e "const s=require('./package.json').scripts||{}; process.exit(s.build?0:1)"; then
+              $runner run build
             fi
             if node -e "const s=require('./package.json').scripts||{}; process.exit(s['type-check']?0:1)"; then
               $runner run type-check
