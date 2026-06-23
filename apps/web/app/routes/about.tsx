@@ -340,14 +340,15 @@ function MermaidDiagram({ chart }: { chart: string }) {
         );
         if (isMounted && containerRef.current) {
           containerRef.current.innerHTML = svg;
-          const svgElement = containerRef.current.querySelector('svg');
-          if (svgElement) {
-            svgElement.setAttribute('width', '100%');
-            svgElement.removeAttribute('height');
-            svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            svgElement.style.display = 'block';
-            svgElement.style.height = 'auto';
-            svgElement.style.maxWidth = '100%';
+          const renderedSvg = containerRef.current.querySelector('svg');
+          if (renderedSvg) {
+            renderedSvg.removeAttribute('width');
+            renderedSvg.removeAttribute('height');
+            renderedSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            renderedSvg.style.display = 'block';
+            renderedSvg.style.width = '100%';
+            renderedSvg.style.maxWidth = '100%';
+            renderedSvg.style.height = 'auto';
           }
           setRenderError(false);
         }
@@ -377,7 +378,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
       ) : (
         <div
           ref={containerRef}
-          className="min-h-[260px] w-full [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+          className="min-h-[220px] w-full [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:w-full [&_svg]:max-w-full"
         />
       )}
     </div>

@@ -16,7 +16,7 @@ import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
 import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
-  getGeneratedCaptionModelDetails,
+  getGeneratedCaptionDetails,
   getGeneratedCaptionText,
   getNgsUrl,
   getPublicArtist,
@@ -129,7 +129,7 @@ export default function ArtworkDetailPage() {
   const descriptionDetailsList = getPublicDescriptionDetailList(artwork);
   const rootsDescriptionDetails = descriptionDetailsList[0] || null;
   const generatedCaptionText = getGeneratedCaptionText(artwork);
-  const generatedCaptionDetails = getGeneratedCaptionModelDetails(artwork);
+  const generatedCaptionDetails = getGeneratedCaptionDetails(artwork);
   const imageUrl = getPublicImageUrl(artwork);
   const thumbnailUrl = getPublicThumbnailUrl(artwork);
   const ngsUrl = getNgsUrl(artwork);

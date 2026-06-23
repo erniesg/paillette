@@ -8,7 +8,7 @@ import {
   copyToClipboard,
 } from '~/lib/utils';
 import {
-  getGeneratedCaptionModelDetails,
+  getGeneratedCaptionDetails,
   getGeneratedCaptionText,
   getPublicDescriptionDetails,
 } from '~/lib/public-artwork-metadata';
@@ -29,7 +29,7 @@ export function ArtworkDialog({ artwork, open, onClose }: ArtworkDialogProps) {
   const [copiedMetadata, setCopiedMetadata] = useState(false);
   const descriptionDetails = getPublicDescriptionDetails(artwork);
   const generatedCaption = getGeneratedCaptionText(artwork);
-  const generatedCaptionDetails = getGeneratedCaptionModelDetails(artwork);
+  const generatedCaptionDetails = getGeneratedCaptionDetails(artwork);
 
   const handleCopyCitation = async () => {
     const citation =

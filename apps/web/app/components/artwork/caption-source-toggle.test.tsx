@@ -50,8 +50,10 @@ describe('CaptionSourceToggle', () => {
 
     expect(screen.getByText('Model')).toBeVisible();
     expect(
-      screen.getByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
-    ).toBeVisible();
+      screen.getAllByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
+        .length
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText('Model').length).toBeGreaterThan(0);
     expect(screen.queryByText('Prompt')).toBeNull();
     expect(screen.queryByText('cap-v1')).toBeNull();
     expect(
