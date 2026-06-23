@@ -62,6 +62,11 @@ Branch: `codex/open-access-art-ingest`
   - Result: issue #20 is labeled `rucksack-needs-decision` and `rucksack-needs-clarification`, with recommendation comment `https://github.com/erniesg/paillette/issues/20#issuecomment-4777803760`.
   - `PYTHONPATH=/Users/erniesg/code/erniesg/rucksack/src python3 -m rucksack autopilot recommend erniesg/paillette --issue 18 --ping @erniesg --execute`
   - Result: issue #18 is labeled `rucksack-needs-decision` and `rucksack-needs-clarification`, with storage approval comment `https://github.com/erniesg/paillette/issues/18#issuecomment-4778267231`.
+- Live GitHub issue evidence sync after PR head `72b85812`:
+  - Issue #16 moved to `rucksack-awaiting-review` with dry-run evidence comment `https://github.com/erniesg/paillette/issues/16#issuecomment-4778371513`.
+  - Issue #17 moved to `rucksack-awaiting-review` with seed-only D1 preview evidence comment `https://github.com/erniesg/paillette/issues/17#issuecomment-4778374711`.
+  - Issue #19 moved to `rucksack-awaiting-review` with public search smoke evidence comment `https://github.com/erniesg/paillette/issues/19#issuecomment-4778376724`.
+  - Issue #21 moved to `rucksack-blocked` with dependency note `https://github.com/erniesg/paillette/issues/21#issuecomment-4778378654` until #18 and #20 are resolved.
 - Fresh validation after issue #16/#17 refresh:
   - `pnpm test`: passed.
   - `pnpm typecheck`: passed.
@@ -77,9 +82,9 @@ Branch: `codex/open-access-art-ingest`
 
 ## Resume
 
-1. Move issues #16, #17, and #19 from `rucksack-queued` to `rucksack-awaiting-review` with the refreshed evidence summary.
-2. Review `.agent/state/decisions.md`.
-3. If the human approves the storage path on issue #18, create/select the R2 bucket outside git, set the listed R2 secret values, then run only a bounded staging upload first.
-4. If the human approves local-first captions/vectors on issue #20, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
-5. If the human approves Jina, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
-6. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
+1. Review `.agent/state/decisions.md` and the live decision issues #18 and #20.
+2. If the human approves the storage path on issue #18, create/select the R2 bucket outside git, set the listed R2 secret values, then run only a bounded staging upload first.
+3. If the human approves local-first captions/vectors on issue #20, run a 200-500 row missing-caption preparation and local MLX caption benchmark on the trusted machine.
+4. If the human approves Jina, set `JINA_API_KEY` in the approved secret store and run a small `--embed-images` or `--embed-captions` batch before scaling.
+5. After staging secrets are configured, run a bounded staging apply with `--limit` before full NGA ingest.
+6. Requeue issue #21 only after #18 and #20 are resolved and the awaiting-review evidence issues have been accepted.
