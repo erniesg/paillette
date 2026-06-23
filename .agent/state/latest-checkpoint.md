@@ -14,6 +14,7 @@ Branch: `codex/open-access-art-ingest`
 - Added a live storage approval gate so R2 `--upload` and queue `--enqueue` cannot silently use the default staging bucket; they require explicit `--bucket` or a nonempty approved `.agent/storage.yaml` bucket.
 - Refreshed issue #16/#17 evidence from the current NGA public data path and generated a seed-only D1 preview without writes, uploads, queue enqueue, or secret values.
 - Added a fixture-backed public search smoke for issue #19 that proves the `open` route resolves to `open-access-art` and preserves an NGA result's image, provenance, collection, accession, institution, and source URL metadata.
+- Hardened `pnpm open:gate` so a missing or invalid manifest returns a JSON configuration error with exit code `2` instead of a Node stack trace, and aligned optional gate commands to `tmp/nga-dry-run.json`.
 
 ## Evidence
 
@@ -38,11 +39,11 @@ Branch: `codex/open-access-art-ingest`
   - Proves upstream proxy target `/orgs/open-access-art/search/text` and returned NGA fixture metadata including `provider=nga`, source institution, source collection, accession number, source URL, image URL, and thumbnail URL.
   - Targeted validation: `pnpm --filter @paillette/web test -- app/routes/__tests__/public-search-text-route.test.ts` passed.
 - NGA asset proof:
-  - `pnpm open:assets -- --manifest tmp/nga-launch-dry-run.json --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --providers=nga --limit=10 --init --status`
+  - `pnpm open:assets -- --manifest tmp/nga-dry-run.json --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --providers=nga --limit=10 --init --status`
   - `pnpm open:assets -- --db tmp/nga-launch-assets.sqlite --out-dir tmp/nga-launch-assets --download --providers=nga --download-limit=10 --concurrency=4`
   - Result: 10/10 assets downloaded for 5 artworks, 1,527,787 bytes, 0 failed.
 - NGA queue proof:
-  - `pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2`
+  - `pnpm open:queue -- --manifest tmp/nga-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2`
   - Result: 10 messages, 1 batch, not enqueued.
 - Missing-caption prep:
   - `pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=missing --out=tmp/nga-missing-caption-dry-run.json`
@@ -50,7 +51,7 @@ Branch: `codex/open-access-art-ingest`
   - Result: 5 missing-caption rows prepared; no model inference run.
 - Cost gate:
   - `node --test scripts/__tests__/open-access-art-cost-gate.test.mjs`
-  - `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json`
+  - `pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json`
   - Result: exit `3` with required secret name `JINA_API_KEY`; no Jina request or secret value used.
 - Storage/CI artifact contract:
   - `PYTHONPATH=/Users/erniesg/code/erniesg/rucksack/src python3 -m rucksack ci furnish erniesg/paillette --target vm --repo-root /tmp/paillette-pr22-merge --profile erniesg-ai-vm --force --execute`
@@ -86,6 +87,13 @@ Branch: `codex/open-access-art-ingest`
   - `pnpm test`: passed.
   - `pnpm typecheck`: passed.
   - `scripts/agent-evidence`: passed; latest manifests are written under `.agent/evidence/<timestamp>/manifest.json` with lanes `lint`, `build`, `type-check`, and `test`, no caveats, dirty `true` before commit.
+- Fresh validation after cost-gate CLI hardening:
+  - `node --test scripts/__tests__/open-access-art-cost-gate.test.mjs`: passed, 6 tests.
+  - `pnpm open:gate -- --manifest tmp/does-not-exist.json --image-embeddings=jina`: exited `2` with JSON `manifest not found`, no stack trace, no secret names.
+  - `pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json`: exited `3` with required secret name `JINA_API_KEY`, 63,251 artworks, 1,550 missing captions, and no Jina request.
+  - `pnpm test`: passed.
+  - `pnpm typecheck`: passed.
+  - `scripts/agent-evidence`: passed with `.agent/evidence/20260623T112236152Z/manifest.json`.
 
 ## Current Gates
 

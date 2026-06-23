@@ -16,7 +16,7 @@ Estimate embedding/caption cost and define the Jina or equivalent model secret g
 
 ```bash
 node --test scripts/__tests__/open-access-art-cost-gate.test.mjs
-pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk
+pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk
 pnpm test
 pnpm typecheck
 ```

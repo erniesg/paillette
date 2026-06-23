@@ -16,30 +16,14 @@ const manifestPath = args.values.get('manifest')
   ? resolve(args.values.get('manifest'))
   : null;
 if (!manifestPath) {
-  throw new Error('--manifest is required');
+  failConfig('--manifest is required');
 }
 
 const outPath = args.values.get('out')
   ? resolve(args.values.get('out'))
   : null;
-const report = buildOpenAccessCostGate({
-  manifest: JSON.parse(readFileSync(manifestPath, 'utf8')),
-  providers: {
-    imageEmbeddings: args.values.get('image-embeddings') || 'pending',
-    captionGeneration: args.values.get('caption-generation') || 'pending',
-    captionEmbeddings: args.values.get('caption-embeddings') || 'pending',
-  },
-  approvedBulk: args.flags.has('approve-bulk'),
-  thresholds: {
-    sampleImageEmbeddings: numberArg(args.values.get('sample-image-embeddings')),
-    sampleCaptionGenerationRows: numberArg(
-      args.values.get('sample-caption-generation-rows')
-    ),
-    sampleCaptionEmbeddingRows: numberArg(
-      args.values.get('sample-caption-embedding-rows')
-    ),
-  },
-});
+const manifest = readManifest(manifestPath);
+const report = buildReport(manifest, args);
 
 const json = `${JSON.stringify(report, null, 2)}\n`;
 if (outPath) {
@@ -48,6 +32,63 @@ if (outPath) {
 }
 process.stdout.write(json);
 process.exitCode = report.exitCode;
+
+function buildReport(manifest, args) {
+  try {
+    return buildOpenAccessCostGate({
+      manifest,
+      providers: {
+        imageEmbeddings: args.values.get('image-embeddings') || 'pending',
+        captionGeneration: args.values.get('caption-generation') || 'pending',
+        captionEmbeddings: args.values.get('caption-embeddings') || 'pending',
+      },
+      approvedBulk: args.flags.has('approve-bulk'),
+      thresholds: {
+        sampleImageEmbeddings: numberArg(
+          args.values.get('sample-image-embeddings')
+        ),
+        sampleCaptionGenerationRows: numberArg(
+          args.values.get('sample-caption-generation-rows')
+        ),
+        sampleCaptionEmbeddingRows: numberArg(
+          args.values.get('sample-caption-embedding-rows')
+        ),
+      },
+    });
+  } catch (error) {
+    failConfig(error.message);
+  }
+}
+
+function readManifest(manifestPath) {
+  try {
+    return JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      failConfig(`manifest not found: ${manifestPath}`);
+    }
+    if (error instanceof SyntaxError) {
+      failConfig(`manifest is not valid JSON: ${manifestPath}`);
+    }
+    failConfig(`could not read manifest: ${manifestPath}`);
+  }
+}
+
+function failConfig(message) {
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        schema_version: 'open-access-art-cost-gate-v1',
+        result: 'blocked',
+        exitCode: 2,
+        error: message,
+      },
+      null,
+      2
+    )}\n`
+  );
+  process.exit(2);
+}
 
 function parseArgs(argv) {
   const values = new Map();
@@ -83,8 +124,8 @@ function numberArg(value) {
 
 function printHelp() {
   console.log(`Usage:
-  pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json
-  pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=local --caption-embeddings=jina --approve-bulk --out tmp/nga-cost-gate.json
+  pnpm open:gate -- --manifest tmp/nga-dry-run.json
+  pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=local --caption-embeddings=jina --approve-bulk --out tmp/nga-cost-gate.json
 
 Options:
   --manifest PATH                         Dry-run manifest from pnpm open:dry-run.
