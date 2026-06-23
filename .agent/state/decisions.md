@@ -18,6 +18,15 @@ different launch posture:
   blocked until that evidence is attached to #21.
 - Issue #21: hold launch until #18 has bounded staging-upload evidence and #20
   is explicitly held or accepted for v1.
+- Ordering rule: cheap planning/cost estimation can run before R2 readiness, but
+  paid/quota-consuming caption or embedding work must wait until #18 has an
+  approved bucket, configured secret-store values by name, bounded upload
+  evidence, recorded object keys, and a rollback owner.
+- Provider credential rule: when a human selects an API provider, Rucksack must
+  stop and ping for the required secret name, such as `JINA_API_KEY`; collect the
+  value through the approved secret store, never chat or issue text. When a
+  human selects local captioning, Rucksack must verify local model/runtime setup
+  and treat missing weights or runtime as `rucksack-needs-human`.
 
 Storage setup commands after bucket selection:
 
@@ -44,6 +53,8 @@ Do not include secret values in this file, issues, logs, manifests, or commits.
    - Options: local model on trusted machine, Jina API with `JINA_API_KEY`, or defer image vectors for metadata/caption-only launch.
    - Current estimate from `tmp/nga-dry-run.json`: 63,251 NGA works. Recalculate provider token/cost estimates from the exact manifest before any paid batch because image tiling depends on provider/model settings.
    - Gate command: `pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk`.
+   - Runtime prerequisite: do not run paid or quota-consuming image embedding until #18 proves R2 readiness and the bounded staging upload evidence is attached to #21.
+   - Secret handshake: if Jina is selected, ping the human for `JINA_API_KEY` setup and use the approved secret store; do not ask for the value in chat.
    - Live HITL issue: https://github.com/erniesg/paillette/issues/20#issuecomment-4777803760
    - Recommendation: local-first benchmark for cost control, then approve Jina only if quality/speed is insufficient.
 
@@ -51,6 +62,8 @@ Do not include secret values in this file, issues, logs, manifests, or commits.
    - Options: local MLX Qwen captioning on the trusted machine, paid/API captioning, or launch with institution text only and mark missing generated captions as backlog.
    - Current proof: 5 missing-caption rows prepared with `eval/caption_open_access_art.py --prepare-only`.
    - Gate command: `pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=defer --caption-generation=local --caption-embeddings=defer`.
+   - Runtime prerequisite: do not run bulk caption generation until #18 proves R2 readiness and the bounded staging upload evidence is attached to #21.
+   - Local handshake: if local MLX/Qwen captioning is selected, verify the model weights and runtime locally before the batch; if missing, ping the human rather than falling back to API captioning.
    - Recommendation: run a 200-500 row local benchmark before bulk generation.
 
 3. Staging apply approval

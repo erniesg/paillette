@@ -76,6 +76,8 @@ Recommended initial launch posture:
 - Launch metadata and institution captions first.
 - Defer generated captions for the 1,550 missing-caption rows.
 - Defer image vectors and generated-caption vectors.
+- Configure and verify R2 readiness before any paid, quota-consuming, or bulk
+  caption/vector work.
 - Approve only a bounded R2 staging upload after bucket and secret setup.
 - Keep D1 apply, queue enqueue, vector upsert, and deploy blocked until the
   bounded staging upload evidence is attached to issue #21.
@@ -95,6 +97,14 @@ Caption embeddings: defer.
 Reason: avoid paid/quota-consuming provider work until launch evidence and a
 bounded local/Jina benchmark are reviewed.
 ```
+
+If the human later chooses Jina or another API provider, Rucksack should stop
+and ping for the provider secret by name, for example `JINA_API_KEY`. The value
+must be collected through the approved secret store, not chat or issue text. If
+the human chooses local captioning, Rucksack should verify the local model,
+runtime, and storage path first; missing model weights or local runtime setup
+should be treated as `rucksack-needs-human`, not silently replaced with paid API
+calls.
 
 Paste-ready decision for issue #18 after the bucket exists and secrets are set:
 
@@ -172,6 +182,32 @@ scripts/agent-evidence
 
 Do not add `--apply-d1`, `--enqueue`, `--embed-images`, `--embed-captions`,
 `--upsert-vectors`, or `wrangler deploy` to this first staging proof.
+
+## R2-Ready Before Expensive Ops
+
+Cheap planning and estimates may run before R2 is ready:
+
+- `open:dry-run`
+- `open:apply --plan-only`
+- `open:queue` without `--enqueue`
+- `open:gate` when it exits before provider calls because provider secrets are
+  absent
+
+These operations must wait until R2 readiness is configured and the bounded
+staging upload evidence is attached to issue #21:
+
+- paid or quota-consuming caption generation
+- paid or quota-consuming image or caption embedding
+- local bulk caption generation beyond a tiny benchmark
+- `open:apply --upload`
+- `open:queue --enqueue`
+- `open:apply --apply-d1`
+- `open:apply --upsert-vectors`
+- deploy or launch approval
+
+R2 readiness means: approved bucket name, `nga/` prefix, secret values present in
+the approved store by name, successful bounded upload evidence, object keys
+recorded, and rollback/delete owner named.
 
 ## Blocked Commands
 

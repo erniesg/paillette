@@ -11,6 +11,7 @@ Prove the NGA asset path can download, stage, and upload representative public a
 - The asset ledger identifies image count, downloaded bytes, and target object keys without writing large files into Git.
 - R2 binding names and bucket names are documented by name only.
 - Queue batch sizing and retry behavior are recorded for at least one sample batch.
+- R2 readiness is documented as a prerequisite for paid/quota-consuming caption or vector work.
 
 ## Validation command
 
@@ -32,15 +33,15 @@ Only secret names may appear, such as `CLOUDFLARE_API_TOKEN` or `R2_ACCESS_KEY_I
 
 ## Stop conditions
 
-Stop if media download requires non-public access, if files exceed the repo storage policy, or if object-store credentials are missing for a non-plan run.
+Stop if media download requires non-public access, if files exceed the repo storage policy, if object-store credentials are missing for a non-plan run, or if a downstream expensive operation would run before R2 readiness is proven.
 
 ## Human clarification protocol
 
-Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior. Recommended v1 decision is to approve only a bounded staging upload for 5 NGA records / 10 assets after the R2 bucket exists and storage secrets are configured.
+Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior. Recommended v1 decision is to configure R2 first, then approve only a bounded staging upload for 5 NGA records / 10 assets after the R2 bucket exists and storage secrets are configured.
 
 ## Recommended response
 
-Use object storage for artwork media and keep local files in `tmp/` or evidence storage only. Keep D1 apply, queue enqueue, vector upsert, deploy, and full ingest blocked until the bounded staging upload evidence is attached to issue #21.
+Use object storage for artwork media and keep local files in `tmp/` or evidence storage only. Keep D1 apply, queue enqueue, paid/bulk caption or embedding work, vector upsert, deploy, and full ingest blocked until the bounded staging upload evidence is attached to issue #21.
 
 ## Trade-offs
 

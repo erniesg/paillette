@@ -11,6 +11,8 @@ Estimate embedding/caption cost and define the Jina or equivalent model secret g
 - The issue output includes estimated artwork count, embedding count, and cost/rate-limit assumptions.
 - Secret names for embedding or caption providers are documented without values.
 - The implementation refuses to run paid embedding/caption work when required provider secrets are absent.
+- If an API provider is selected, Rucksack pings for the required secret name such as `JINA_API_KEY` and stops until it is configured in the approved secret store.
+- If local caption generation is selected, Rucksack verifies local model/runtime availability and marks missing setup as human-required rather than falling back to paid API work.
 
 ## Validation command
 
@@ -37,15 +39,15 @@ Only names such as `JINA_API_KEY` or provider-specific key names may be document
 
 ## Stop conditions
 
-Stop before running paid batch generation, logging provider keys, or adding fallback API execution that bypasses the chosen secret gate.
+Stop before running paid batch generation, logging provider keys, adding fallback API execution that bypasses the chosen secret gate, or running local bulk caption generation without verified local model/runtime setup.
 
 ## Human clarification protocol
 
-Ask for approval before running any paid or quota-consuming caption/vector job beyond the sample estimate. Recommended v1 decision is to hold paid/quota-consuming work and launch with metadata plus institution captions only.
+Ask for approval before running any paid or quota-consuming caption/vector job beyond the sample estimate. If the approved path needs an API key, ping for the key by name only and collect it through the approved secret store. If the approved path is local captioning, ping for local model/runtime setup if missing. Recommended v1 decision is to hold paid/quota-consuming work and launch with metadata plus institution captions only.
 
 ## Recommended response
 
-Make the paid lane explicit and blocked-by-secret by default; keep public metadata ingestion separate from embedding generation. For v1, defer image embeddings, generated captions, and caption embeddings unless the human explicitly approves a bounded local or Jina benchmark.
+Make the paid lane explicit and blocked-by-secret by default; keep public metadata ingestion separate from embedding generation. For v1, defer image embeddings, generated captions, and caption embeddings unless the human explicitly approves a bounded local or Jina benchmark. Missing `JINA_API_KEY` or missing local model/runtime setup is a HITL pause, not a reason to continue with another provider.
 
 ## Trade-offs
 
