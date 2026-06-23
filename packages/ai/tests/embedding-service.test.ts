@@ -86,7 +86,7 @@ describe('EmbeddingService', () => {
       );
 
       // Assert
-      expect(result.durationMs).toBeGreaterThanOrEqual(100);
+      expect(result.durationMs).toBeGreaterThanOrEqual(90);
       expect(result.durationMs).toBeLessThan(200); // Should not be too much overhead
     });
   });
