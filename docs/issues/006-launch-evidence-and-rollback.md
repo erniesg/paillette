@@ -25,7 +25,7 @@ No secret values. Use only secret names and links to approved GitHub artifacts o
 
 ## Artifact outputs
 
-- Launch checklist or evidence markdown.
+- `docs/nga-launch-readiness.md` launch checklist and evidence markdown.
 - Search/API screenshot or JSON sample.
 - Rollback notes with reviewed commands in dry-run form.
 
