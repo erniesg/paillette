@@ -94,17 +94,17 @@ describe('Rucksack evidence workflows', () => {
       const text = workflow(file);
       assert.match(
         text,
-        /RUCKSACK_CI_VENV:\s*\$\{\{ runner\.temp \}\}\/rucksack-ci-venv/u,
-        `${file} must place Python venvs in runner temp storage`
+        /python3 -m venv "\$RUNNER_TEMP\/rucksack-ci-venv"/u,
+        `${file} must place Python venvs in runner temp storage from inside the job shell`
       );
       assert.match(
         text,
-        /RUCKSACK_NODE_RUNNER_FILE:\s*\$\{\{ runner\.temp \}\}\/rucksack-node-runner/u,
-        `${file} must place runner markers in runner temp storage`
+        /echo "\$runner" > "\$RUNNER_TEMP\/rucksack-node-runner"/u,
+        `${file} must place runner markers in runner temp storage from inside the job shell`
       );
       assert.doesNotMatch(
         text,
-        /python3 -m venv \.rucksack-ci-venv|echo "\$runner" > \.rucksack-node-runner/u,
+        /runner\.temp|python3 -m venv \.rucksack-ci-venv|echo "\$runner" > \.rucksack-node-runner/u,
         `${file} must not write Rucksack helper files into the repo root before evidence runs`
       );
     }
