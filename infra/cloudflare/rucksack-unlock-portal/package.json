@@ -1,0 +1,16 @@
+{
+  "name": "rucksack-unlock-portal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "libsodium-wrappers-sumo": "^0.7.15"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
