@@ -17,9 +17,16 @@ Required secret/env names for NGA ingest, search, and notifications:
 - `github repository`: `OPENAI_API_KEY` if the agent planner/build workflow uses OpenAI-backed planning.
 - `github environment/staging`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 - `github environment/production`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+- `object storage/R2`: `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`; `.agent/storage.yaml` records only these names plus the `nga/` prefix.
 - `cloudflare queue`: `CLOUDFLARE_QUEUE_ID` when `pnpm open:queue -- --enqueue` is used.
 - `embedding provider`: `JINA_API_KEY` when running `pnpm open:apply -- --embed-images` or `--embed-captions`.
 - `notifications`: `DISCORD_WEBHOOK_URL` only in the VM/service secret store or GitHub environment that sends notifications.
+
+Storage policy:
+
+- `rucksack storage inspect --repo-root .` should show `.agent/storage.yaml` present before any bulk download or upload.
+- Create/select the actual R2 bucket outside git, then set the listed R2 secret values in GitHub Actions or Cloudflare/provider secret storage.
+- Keep generated image downloads, SQLite ledgers, vectors, captions, manifests, and screenshots in `tmp/`, GitHub artifacts, or R2; do not commit them.
 
 VM/local-only auth:
 - Codex or Claude subscription login for long-running coding-agent sessions on the trusted VM.

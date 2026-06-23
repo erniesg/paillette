@@ -79,17 +79,48 @@ jobs:
           echo "$runner" > .rucksack-node-runner
 
       - name: Agent evidence
+        id: agent_evidence
         continue-on-error: true
         run: |
-          set -eu
+          set -u
           if [ -d .rucksack-ci-venv ]; then
             . .rucksack-ci-venv/bin/activate
           fi
+          status=0
           if [ -x scripts/agent-evidence ]; then
-            scripts/agent-evidence
+            scripts/agent-evidence || status=$?
           else
             echo "scripts/agent-evidence not present; run rucksack init to add it"
           fi
+          manifest="$(find .agent/evidence -name manifest.json -type f -print 2>/dev/null | sort | tail -n 1 || true)"
+          echo "agent_evidence_status=$status" >> "$GITHUB_OUTPUT"
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::scripts/agent-evidence exited with status $status"
+          fi
+
+      - name: Summarize agent evidence
+        if: always()
+        run: |
+          set -eu
+          manifest="${{ steps.agent_evidence.outputs.manifest }}"
+          status="${{ steps.agent_evidence.outputs.agent_evidence_status }}"
+          echo "### Rucksack agent evidence" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Status: \`${status:-not-run}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$manifest" ]; then
+            echo "- Manifest: \`$manifest\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Manifest: not found" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload agent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-ci-evidence-${{ github.run_id }}
+          path: .agent/evidence
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Node lint, typecheck, and tests
         run: |

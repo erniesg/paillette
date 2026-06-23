@@ -9,6 +9,8 @@ Branch: `codex/open-access-art-ingest`
 - Cleared the local `type-check` blocker in `apps/web/app/routes/pretext.tsx` by adding strict-index guards.
 - Ran an NGA-only dry run, bounded asset queue proof, bounded local asset download proof, and missing-caption preparation proof.
 - Added `pnpm open:gate` so caption/vector provider choices, missing secrets, and bulk approvals are machine-checkable before paid or quota-consuming work.
+- Refreshed generated Rucksack CI/deploy wrapper evidence handling so `.agent/evidence` is uploaded as a GitHub Actions artifact even when wrapper evidence is advisory.
+- Recorded the NGA R2 storage contract in `.agent/storage.yaml` with secret names only and the `nga/` object prefix.
 
 ## Evidence
 
@@ -37,6 +39,11 @@ Branch: `codex/open-access-art-ingest`
   - `node --test scripts/__tests__/open-access-art-cost-gate.test.mjs`
   - `pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json`
   - Result: exit `3` with required secret name `JINA_API_KEY`; no Jina request or secret value used.
+- Storage/CI artifact contract:
+  - `PYTHONPATH=/Users/erniesg/code/erniesg/rucksack/src python3 -m rucksack ci furnish erniesg/paillette --target vm --repo-root /tmp/paillette-pr22-merge --profile erniesg-ai-vm --force --execute`
+  - `.github/workflows/ci.yml` uploads artifact `rucksack-ci-evidence-${{ github.run_id }}` from `.agent/evidence`.
+  - `.github/workflows/deploy.yml` uploads artifact `rucksack-deploy-evidence-${{ github.run_id }}` from `.agent/evidence`.
+  - `.agent/storage.yaml` records R2 secret names and the `nga/` prefix without a bucket value or credential values.
 - Live GitHub HITL sync:
   - `rucksack github issues seed erniesg/paillette --issue-dir docs/issues --label rucksack-ledger --label rucksack-queued --execute`
   - `rucksack autopilot recommend erniesg/paillette --issue 20 --ping @erniesg --execute`
@@ -45,6 +52,7 @@ Branch: `codex/open-access-art-ingest`
 ## Current Gates
 
 - Do not run `pnpm open:queue -- --enqueue` until Cloudflare queue/account/token names are configured in the approved secret store.
+- Do not run live object-store uploads until the actual R2 bucket is created/selected outside git and `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are set in the approved secret store.
 - Do not run `pnpm open:apply -- --upload`, `--apply-d1`, `--upsert-vectors`, or deploy until a human approves staging resources.
 - Do not run paid Jina embedding or bulk caption generation until the provider/batch-size decision in `.agent/state/decisions.md` is answered.
 - Keep `tmp/` artifacts local or move durable evidence to GitHub artifacts/R2; do not commit generated images, SQLite ledgers, vectors, captions, or manifests.
