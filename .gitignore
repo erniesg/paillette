@@ -83,3 +83,16 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Rucksack outputs and generated artifacts
+.agent/evidence/
+.agent/harness-backups/
+.agent/harness-runs/
+.agent/vm-runs/
+.rucksack/secrets/
+**/.agent/harness-backups/
+**/.agent/harness-runs/
+**/.agent/vm-runs/
+apps/api/tmp/
+apps/web/tmp/
+tmp/
