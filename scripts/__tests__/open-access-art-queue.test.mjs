@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { buildOpenAccessApplyPlan } from '../lib/open-access-art-apply.mjs';
@@ -114,5 +118,39 @@ describe('open access art queue planning', () => {
         },
       ],
     });
+  });
+
+  it('blocks live enqueue when no approved storage bucket is configured', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'paillette-queue-live-gate-'));
+    const manifestPath = join(dir, 'manifest.json');
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        providers: {
+          nga: {
+            normalizedSamples: [sampleArtwork],
+          },
+        },
+      })
+    );
+
+    const proc = spawnSync(
+      process.execPath,
+      [
+        'scripts/open-access-art-queue.mjs',
+        '--manifest',
+        manifestPath,
+        '--out-dir',
+        join(dir, 'queue'),
+        '--enqueue',
+      ],
+      { cwd: process.cwd(), encoding: 'utf8' }
+    );
+
+    assert.notEqual(proc.status, 0);
+    assert.match(
+      `${proc.stderr}\n${proc.stdout}`,
+      /approved R2 bucket is required before live enqueue/u
+    );
   });
 });

@@ -20,6 +20,10 @@ import {
   l2Normalize,
   writeOpenAccessD1Sql,
 } from './lib/open-access-art-apply.mjs';
+import {
+  requireApprovedR2Bucket,
+  resolveR2Bucket,
+} from './lib/rucksack-storage-policy.mjs';
 
 const JINA_EMBEDDINGS_URL = 'https://api.jina.ai/v1/embeddings';
 
@@ -28,6 +32,10 @@ if (args.flags.has('help')) {
   printHelp();
   process.exit(0);
 }
+const r2Bucket = resolveR2Bucket({
+  cliBucket: args.values.get('bucket'),
+  defaultBucket: 'paillette-assets-stg',
+});
 
 const options = {
   manifest: args.values.get('manifest')
@@ -35,7 +43,7 @@ const options = {
     : null,
   outDir: resolve(args.values.get('out-dir') || 'tmp/open-access-art-apply'),
   database: args.values.get('database') || 'paillette-db-stg',
-  bucket: args.values.get('bucket') || 'paillette-assets-stg',
+  bucket: r2Bucket.bucket,
   imageIndex: args.values.get('image-index') || 'paillette-embeddings-v2-stg',
   captionIndex:
     args.values.get('caption-index') || 'paillette-caption-embeddings-v2-stg',
@@ -86,6 +94,12 @@ if (options.assetMode !== 'r2' && options.assetMode !== 'external') {
 }
 if (options.assetMode !== 'r2' && options.upload) {
   throw new Error('--upload requires --asset-mode=r2');
+}
+if (options.assetMode === 'r2' && options.upload) {
+  requireApprovedR2Bucket({
+    approved: r2Bucket.approved,
+    operation: 'live upload',
+  });
 }
 
 mkdirSync(options.outDir, { recursive: true });
@@ -615,11 +629,12 @@ Options:
   --limit N                Apply only the first N normalized sample records.
   --seed-only              Write/apply only org and collection seed SQL.
   --asset-mode r2|external D1 image URL mode. Default: r2.
+  --bucket NAME            Approved R2 bucket for live upload. Falls back to object_storage.bucket in .agent/storage.yaml.
   --external-providers CSV Provider keys to leave as hotlinked external assets.
   --download               Download R2-cached source images into out-dir/assets.
   --download-only          Download assets, write asset-manifest.json, then stop.
   --refresh-assets         Re-fetch existing local asset files.
-  --upload                 Upload downloaded web/thumb objects to R2.
+  --upload                 Upload downloaded web/thumb objects to R2. Requires --bucket or .agent/storage.yaml bucket.
   --apply-d1               Apply generated SQL to D1.
   --embed-images           Generate image vector NDJSON with Jina CLIP.
   --embed-external-images  Also embed providers left in external asset mode.

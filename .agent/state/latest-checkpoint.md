@@ -11,6 +11,7 @@ Branch: `codex/open-access-art-ingest`
 - Added `pnpm open:gate` so caption/vector provider choices, missing secrets, and bulk approvals are machine-checkable before paid or quota-consuming work.
 - Refreshed generated Rucksack CI/deploy wrapper evidence handling so `.agent/evidence` is uploaded as a GitHub Actions artifact even when wrapper evidence is advisory.
 - Recorded the NGA R2 storage contract in `.agent/storage.yaml` with secret names only and the `nga/` object prefix.
+- Added a live storage approval gate so R2 `--upload` and queue `--enqueue` cannot silently use the default staging bucket; they require explicit `--bucket` or a nonempty approved `.agent/storage.yaml` bucket.
 - Refreshed issue #16/#17 evidence from the current NGA public data path and generated a seed-only D1 preview without writes, uploads, queue enqueue, or secret values.
 - Added a fixture-backed public search smoke for issue #19 that proves the `open` route resolves to `open-access-art` and preserves an NGA result's image, provenance, collection, accession, institution, and source URL metadata.
 
@@ -56,6 +57,11 @@ Branch: `codex/open-access-art-ingest`
   - `.github/workflows/ci.yml` uploads artifact `rucksack-ci-evidence-${{ github.run_id }}` from `.agent/evidence`.
   - `.github/workflows/deploy.yml` uploads artifact `rucksack-deploy-evidence-${{ github.run_id }}` from `.agent/evidence`.
   - `.agent/storage.yaml` records R2 secret names and the `nga/` prefix without a bucket value or credential values.
+- Live storage guard:
+  - `node --test scripts/__tests__/open-access-art-apply.test.mjs scripts/__tests__/open-access-art-queue.test.mjs`
+  - `pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-apply-live-gate --upload`
+  - `pnpm open:queue -- --manifest tmp/nga-dry-run.json --out-dir tmp/nga-queue-live-gate --limit=1 --asset-mode=r2 --enqueue`
+  - Expected result: both live commands fail before network upload/enqueue with `approved R2 bucket is required`; plan-only apply and queue generation remain allowed.
 - Live GitHub HITL sync:
   - `rucksack github issues seed erniesg/paillette --issue-dir docs/issues --label rucksack-ledger --label rucksack-queued --execute`
   - `rucksack autopilot recommend erniesg/paillette --issue 20 --ping @erniesg --execute`
@@ -71,11 +77,20 @@ Branch: `codex/open-access-art-ingest`
   - `pnpm test`: passed.
   - `pnpm typecheck`: passed.
   - `scripts/agent-evidence`: passed with `.agent/evidence/20260623T104046942Z/manifest.json`; lanes `lint`, `build`, `type-check`, and `test`, no caveats, dirty `false`.
+- Fresh validation after live storage guard:
+  - `node --test scripts/__tests__/open-access-art-apply.test.mjs scripts/__tests__/open-access-art-queue.test.mjs`: passed, 11 tests.
+  - `pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-apply-plan --plan-only`: passed, 5 NGA records planned.
+  - `pnpm open:queue -- --manifest tmp/nga-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2`: passed, 10 messages in 1 batch, not enqueued.
+  - `pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-apply-live-gate --upload`: failed as intended before upload with `approved R2 bucket is required`.
+  - `pnpm open:queue -- --manifest tmp/nga-dry-run.json --out-dir tmp/nga-queue-live-gate --limit=1 --asset-mode=r2 --enqueue`: failed as intended before enqueue with `approved R2 bucket is required`.
+  - `pnpm test`: passed.
+  - `pnpm typecheck`: passed.
+  - `scripts/agent-evidence`: passed; latest manifests are written under `.agent/evidence/<timestamp>/manifest.json` with lanes `lint`, `build`, `type-check`, and `test`, no caveats, dirty `true` before commit.
 
 ## Current Gates
 
-- Do not run `pnpm open:queue -- --enqueue` until Cloudflare queue/account/token names are configured in the approved secret store.
-- Do not run live object-store uploads until the actual R2 bucket is created/selected outside git and `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are set in the approved secret store.
+- Do not run `pnpm open:queue -- --enqueue` until an approved bucket is passed via `--bucket` or `.agent/storage.yaml`, and Cloudflare queue/account/token names are configured in the approved secret store.
+- Do not run live object-store uploads until the actual R2 bucket is created/selected outside git, the bucket is passed via `--bucket` or committed as an approved nonempty `.agent/storage.yaml` bucket, and `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are set in the approved secret store.
 - Do not run `pnpm open:apply -- --upload`, `--apply-d1`, `--upsert-vectors`, or deploy until a human approves staging resources.
 - Do not run paid Jina embedding or bulk caption generation until the provider/batch-size decision in `.agent/state/decisions.md` is answered.
 - Keep `tmp/` artifacts local or move durable evidence to GitHub artifacts/R2; do not commit generated images, SQLite ledgers, vectors, captions, or manifests.
