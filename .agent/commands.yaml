@@ -57,6 +57,10 @@ commands:
     command: "python3 -m rucksack autopilot status erniesg/paillette --execute --notify --repo-root ."
     timeout_seconds: 120
     required: false
+  unlock-portal-preflight:
+    command: "cd infra/cloudflare/rucksack-unlock-portal && node --check src/index.js && node -e 'const fs=require(\"fs\"); const c=JSON.parse(fs.readFileSync(\"wrangler.jsonc\",\"utf8\")); const repos=String(c.vars?.ALLOWED_REPOS||\"\").split(\",\").map((s)=>s.trim()).filter(Boolean); if(!repos.includes(\"erniesg/paillette\")){ console.error(\"ALLOWED_REPOS must include erniesg/paillette\"); process.exit(2); }'"
+    timeout_seconds: 60
+    required: false
   unlock-portal-deploy:
     command: "cd infra/cloudflare/rucksack-unlock-portal && npm install && npx wrangler types && npx wrangler secret put GITHUB_TOKEN && npx wrangler deploy"
     timeout_seconds: 600

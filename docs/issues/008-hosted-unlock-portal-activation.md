@@ -20,6 +20,9 @@ Secretless scaffold check, safe before the Worker is deployed:
 test -f infra/cloudflare/rucksack-unlock-portal/wrangler.jsonc
 test -f infra/cloudflare/rucksack-unlock-portal/src/index.js
 test -f infra/cloudflare/rucksack-unlock-portal/README.md
+cd infra/cloudflare/rucksack-unlock-portal
+node --check src/index.js
+node -e 'const fs=require("fs"); const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8")); const repos=String(c.vars?.ALLOWED_REPOS||"").split(",").map((s)=>s.trim()).filter(Boolean); if(!repos.includes("erniesg/paillette")){ console.error("ALLOWED_REPOS must include erniesg/paillette"); process.exit(2); }'
 PYTHONPATH=/path/to/rucksack/src python3 -m rucksack autopilot status erniesg/paillette --repo-root . --execute --notify-github
 ```
 
