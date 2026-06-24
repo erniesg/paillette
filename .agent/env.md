@@ -44,7 +44,7 @@ npx wrangler deploy
 - After deploy, set `RUCKSACK_UNLOCK_BASE_URL` to the Worker URL in the VM/service environment, or pass `--unlock-base-url https://<worker>.<account>.workers.dev` during a one-off `rucksack autopilot status ... --notify-github` refresh, so Rucksack can include hosted unlock links in GitHub and Discord pings.
 - Local `rucksack autopilot unlock-ui ... --resource r2` can be opened before the bucket is known; enter the approved bucket name in the form so Rucksack can generate the R2 resource setup step after submission.
 - For NGA launch work, unlock issue #18 R2/storage first. Do not start paid or bulk caption/vector work for issue #20 until #18 has either passed a bounded staging upload proof or has been explicitly held by a human.
-- For issue #20, record one explicit provider decision: defer generated vectors/captions for v1, run a bounded Jina path with `JINA_API_KEY`, or run a bounded local benchmark after #18 and local model/runtime verification.
+- For issue #20, record one explicit provider decision: defer generated vectors/captions for v1, run a bounded Jina path with `JINA_API_KEY`, or select a bounded local benchmark that remains held until #18 and local model/runtime verification are complete.
 
 Storage policy:
 

@@ -14,7 +14,7 @@ Estimate embedding/caption cost and define the Jina or equivalent model secret g
 - The implementation refuses to run paid embedding/caption work when required provider secrets are absent.
 - If an API provider is selected, Rucksack pings for the required secret name such as `JINA_API_KEY` and stops until it is configured in the approved secret store.
 - If local caption generation is selected, Rucksack verifies local model/runtime availability and marks missing setup as human-required rather than falling back to paid API work.
-- The issue records one explicit path: defer generated vectors/captions for v1, approve a bounded Jina benchmark, or approve a bounded local benchmark after #18 R2 proof.
+- The issue records one explicit path: defer generated vectors/captions for v1, approve a bounded Jina benchmark, or select and hold a bounded local benchmark until #18 R2 proof and local runtime verification are complete.
 
 ## Validation command
 
