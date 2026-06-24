@@ -48,6 +48,13 @@ rucksack autopilot status erniesg/paillette --execute --notify-github
 rucksack autopilot status erniesg/paillette --execute --notify
 ```
 
+For one-off refreshes where the runtime env is not updated yet, pass the
+non-secret Worker URL directly:
+
+```bash
+rucksack autopilot status erniesg/paillette --execute --notify-github --unlock-base-url https://rucksack-unlock-portal.<account>.workers.dev
+```
+
 Useful test URL:
 
 ```text

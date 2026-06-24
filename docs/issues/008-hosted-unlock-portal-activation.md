@@ -9,7 +9,7 @@ Activate the hosted Rucksack unlock portal, or explicitly hold it, so humans can
 - The repo contains the unlock portal scaffold under `infra/cloudflare/rucksack-unlock-portal`.
 - The portal is constrained to `erniesg/paillette` with `ALLOWED_REPOS`, protected by Cloudflare Access, and uses a Worker secret named `GITHUB_TOKEN`.
 - The portal fails closed when `GITHUB_TOKEN` is missing and rejects cross-origin unlock form submissions.
-- The trusted Rucksack runtime has `RUCKSACK_UNLOCK_BASE_URL` set after deploy, or the issue is explicitly held with browser-only GitHub secret setup as the fallback.
+- The trusted Rucksack runtime has `RUCKSACK_UNLOCK_BASE_URL` set after deploy, the status refresh passes `--unlock-base-url`, or the issue is explicitly held with browser-only GitHub secret setup as the fallback.
 - A fresh `rucksack autopilot status erniesg/paillette --execute --notify-github --repo-root .` updates #18 and #20 with either per-issue unlock links or an explicit missing-portal state.
 - No secret values are written to files, logs, manifests, GitHub issues, PR comments, or Discord messages.
 
@@ -37,6 +37,7 @@ npm install
 npx wrangler types
 npx wrangler secret put GITHUB_TOKEN
 npx wrangler deploy
+PYTHONPATH=/path/to/rucksack/src python3 -m rucksack autopilot status erniesg/paillette --repo-root . --execute --notify-github --unlock-base-url https://<worker>.<account>.workers.dev
 ```
 
 Do not paste token, webhook, R2, Cloudflare, Jina, or app env values into the issue.
@@ -58,7 +59,7 @@ Stop if Cloudflare auth is unavailable, if Cloudflare Access is not protecting t
 
 ## Human clarification protocol
 
-Ask the human to choose one path: deploy the hosted portal, use browser-only GitHub/Cloudflare secret setup for this launch, or hold the launch gates. If the portal is deployed, ask for the Worker URL to be stored as `RUCKSACK_UNLOCK_BASE_URL` in the trusted Rucksack runtime. If the portal is held, refresh GitHub with `--notify-github` so the digest states that hosted unlock is missing and lists the browser-only fallback.
+Ask the human to choose one path: deploy the hosted portal, use browser-only GitHub/Cloudflare secret setup for this launch, or hold the launch gates. If the portal is deployed, ask for the Worker URL to be stored as `RUCKSACK_UNLOCK_BASE_URL` in the trusted Rucksack runtime or passed as `--unlock-base-url` when refreshing pings. If the portal is held, refresh GitHub with `--notify-github` so the digest states that hosted unlock is missing and lists the browser-only fallback.
 
 ## Recommended response
 

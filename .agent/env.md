@@ -24,7 +24,7 @@ Required secret/env names for NGA ingest, search, and notifications:
 - `object storage`: `ANVIL_R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT` before issue #18 can run an R2 upload proof.
 - `embedding provider`: `JINA_API_KEY` when issue #20 approves Jina-backed `pnpm open:apply -- --embed-images` or `--embed-captions`.
 - `notifications`: `DISCORD_WEBHOOK_URL` only in the VM/service secret store or GitHub environment that sends notifications.
-- `unlock portal`: `GITHUB_TOKEN` as a Cloudflare Worker secret for the generated unlock portal; `RUCKSACK_UNLOCK_BASE_URL` in the trusted VM/service environment after deploy.
+- `unlock portal`: `GITHUB_TOKEN` as a Cloudflare Worker secret for the generated unlock portal; `RUCKSACK_UNLOCK_BASE_URL` in the trusted VM/service environment after deploy, or pass the non-secret Worker URL with `--unlock-base-url` for one-off status refreshes.
 
 Human unlock surfaces:
 
@@ -41,7 +41,7 @@ npx wrangler secret put GITHUB_TOKEN
 npx wrangler deploy
 ```
 
-- After deploy, set `RUCKSACK_UNLOCK_BASE_URL` to the Worker URL in the VM/service environment so Rucksack can include hosted unlock links in GitHub and Discord pings.
+- After deploy, set `RUCKSACK_UNLOCK_BASE_URL` to the Worker URL in the VM/service environment, or pass `--unlock-base-url https://<worker>.<account>.workers.dev` during a one-off `rucksack autopilot status ... --notify-github` refresh, so Rucksack can include hosted unlock links in GitHub and Discord pings.
 - For NGA launch work, unlock issue #18 R2/storage first. Do not start paid or bulk caption/vector work for issue #20 until #18 has either passed a bounded staging upload proof or has been explicitly held by a human.
 
 Storage policy:
