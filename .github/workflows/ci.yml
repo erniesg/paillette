@@ -4,7 +4,7 @@ name: Rucksack CI
 on:
   pull_request:
   push:
-    branches: [staging, main]
+    branches: [staging, master]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Secret scan
         run: |
           set -eu
@@ -41,8 +45,8 @@ jobs:
             echo "no Python project metadata; skipping Python dependency setup"
             exit 0
           fi
-          python3 -m venv .rucksack-ci-venv
-          . .rucksack-ci-venv/bin/activate
+          python3 -m venv "$RUNNER_TEMP/rucksack-ci-venv"
+          . "$RUNNER_TEMP/rucksack-ci-venv/bin/activate"
           python3 -m pip install --upgrade pip
           if [ -f pyproject.toml ]; then
             python3 -m pip install -e '.[dev]' || python3 -m pip install -e .
@@ -51,23 +55,11 @@ jobs:
             python3 -m pip install -r requirements.txt
           fi
 
-      - name: Agent evidence
-        run: |
-          set -eu
-          if [ -d .rucksack-ci-venv ]; then
-            . .rucksack-ci-venv/bin/activate
-          fi
-          if [ -x scripts/agent-evidence ]; then
-            scripts/agent-evidence
-          else
-            echo "scripts/agent-evidence not present; run rucksack init to add it"
-          fi
-
-      - name: Node lint, typecheck, and tests
+      - name: Set up Node project dependencies
         run: |
           set -eu
           if [ ! -f package.json ]; then
-            echo "no package.json; skipping Node checks"
+            echo "no package.json; skipping Node dependency setup"
             exit 0
           fi
           corepack enable || true
@@ -84,10 +76,100 @@ jobs:
             npm install
             runner=npm
           fi
+          echo "$runner" > "$RUNNER_TEMP/rucksack-node-runner"
+
+      - name: Agent evidence
+        id: agent_evidence
+        continue-on-error: true
+        run: |
+          set -u
+          if [ -d "$RUNNER_TEMP/rucksack-ci-venv" ]; then
+            . "$RUNNER_TEMP/rucksack-ci-venv/bin/activate"
+          fi
+          status=0
+          if [ -x scripts/agent-evidence ]; then
+            scripts/agent-evidence || status=$?
+          else
+            echo "scripts/agent-evidence not present; run rucksack init to add it"
+          fi
+          manifest="$(find .agent/evidence -name manifest.json -type f -print 2>/dev/null | sort | tail -n 1 || true)"
+          echo "agent_evidence_status=$status" >> "$GITHUB_OUTPUT"
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::scripts/agent-evidence exited with status $status"
+          fi
+
+      - name: Summarize agent evidence
+        if: always()
+        run: |
+          set -eu
+          manifest="${{ steps.agent_evidence.outputs.manifest }}"
+          status="${{ steps.agent_evidence.outputs.agent_evidence_status }}"
+          echo "### Rucksack agent evidence" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Status: \`${status:-not-run}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Artifact: \`rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Download: \`gh run download ${{ github.run_id }} --name rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest artifact: \`rucksack-ci-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest download: \`gh run download ${{ github.run_id }} --name rucksack-ci-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$manifest" ]; then
+            echo "- Manifest: \`$manifest\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Manifest: not found" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload agent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-ci-evidence-${{ github.run_id }}
+          path: .agent/evidence
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload agent evidence manifest
+        if: always() && steps.agent_evidence.outputs.manifest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-ci-manifest-${{ github.run_id }}
+          path: ${{ steps.agent_evidence.outputs.manifest }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Node lint, typecheck, and tests
+        run: |
+          set -eu
+          if [ ! -f package.json ]; then
+            echo "no package.json; skipping Node checks"
+            exit 0
+          fi
+          if [ -f "$RUNNER_TEMP/rucksack-node-runner" ]; then
+            runner="$(cat "$RUNNER_TEMP/rucksack-node-runner")"
+          else
+            corepack enable || true
+            if [ -f pnpm-lock.yaml ]; then
+              pnpm install --frozen-lockfile
+              runner=pnpm
+            elif [ -f yarn.lock ]; then
+              yarn install --frozen-lockfile
+              runner=yarn
+            elif [ -f package-lock.json ]; then
+              npm ci
+              runner=npm
+            else
+              npm install
+              runner=npm
+            fi
+          fi
           if node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint?0:1)"; then
             $runner run lint
           else
             echo "no lint script"
+          fi
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.build?0:1)"; then
+            $runner run build
+          else
+            echo "no build script"
           fi
           if node -e "const s=require('./package.json').scripts||{}; process.exit(s['type-check']?0:1)"; then
             $runner run type-check
@@ -116,8 +198,10 @@ jobs:
       - name: Dependency and security checks
         run: |
           set -eu
-          if [ -f package-lock.json ]; then
+          if [ -f package-lock.json ] && [ ! -f pnpm-lock.yaml ] && [ ! -f yarn.lock ]; then
             npm audit --audit-level=high
+          elif [ -f pnpm-lock.yaml ] || [ -f yarn.lock ]; then
+            echo "non-npm lockfile present; skipping npm audit"
           fi
           if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
             python -m pip check || true

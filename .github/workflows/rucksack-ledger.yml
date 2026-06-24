@@ -45,7 +45,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
       RUCKSACK_LEDGER_INTENT: ${{ inputs.intent || 'refresh the repository issue ledger with clear definitions of done' }}
       RUCKSACK_LEDGER_MODEL: ${{ inputs.model || '' }}
       RUCKSACK_LEDGER_EFFORT: ${{ inputs.effort || 'medium' }}
@@ -54,7 +54,7 @@ jobs:
       - name: Checkout default branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch || 'main' }}
+          ref: ${{ github.event.repository.default_branch || 'master' }}
           fetch-depth: 0
           persist-credentials: false
 

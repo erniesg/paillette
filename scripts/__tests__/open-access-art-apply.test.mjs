@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
@@ -103,6 +107,40 @@ describe('open access art apply plan', () => {
     assert.equal(
       plan.records[0].customMetadata.openAccessArt.sourceImageUrl,
       sampleArtwork.image_url
+    );
+  });
+
+  it('blocks live uploads when no approved storage bucket is configured', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'paillette-apply-live-gate-'));
+    const manifestPath = join(dir, 'manifest.json');
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        providers: {
+          artic: {
+            normalizedSamples: [sampleArtwork],
+          },
+        },
+      })
+    );
+
+    const proc = spawnSync(
+      process.execPath,
+      [
+        'scripts/open-access-art-apply.mjs',
+        '--manifest',
+        manifestPath,
+        '--out-dir',
+        join(dir, 'out'),
+        '--upload',
+      ],
+      { cwd: process.cwd(), encoding: 'utf8' }
+    );
+
+    assert.notEqual(proc.status, 0);
+    assert.match(
+      `${proc.stderr}\n${proc.stdout}`,
+      /approved R2 bucket is required before live upload/u
     );
   });
 

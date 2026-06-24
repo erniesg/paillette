@@ -54,7 +54,7 @@ import {
   PublicSiteHeader,
 } from '~/components/site/public-shell';
 import {
-  getGeneratedCaptionModelDetails,
+  getGeneratedCaptionDetails,
   getGeneratedCaptionText,
   getGeographicAssociation,
   getNgsUrl,
@@ -3521,7 +3521,7 @@ function SearchArtworkDialog({
   const rootsDescriptionDetails = descriptionDetailsList[0] || null;
   const caption = artwork ? getGeneratedCaptionText(artwork) : null;
   const generatedCaptionDetails = artwork
-    ? getGeneratedCaptionModelDetails(artwork)
+    ? getGeneratedCaptionDetails(artwork)
     : [];
   const catalogueGroups = artwork ? getPublicCatalogueRowGroups(artwork) : [];
   const ngsUrl = artwork ? getNgsUrl(artwork) : null;
@@ -3981,7 +3981,13 @@ function ResultsView({
   }
 
   if (view === 'salon') {
-    return <SalonResults results={results} onSelectArtwork={onSelectArtwork} />;
+    return (
+      <SalonResults
+        results={results}
+        onFacetSearch={onFacetSearch}
+        onSelectArtwork={onSelectArtwork}
+      />
+    );
   }
 
   if (view === 'atlas') {
@@ -4082,9 +4088,11 @@ function MasonryResults({
 
 function SalonResults({
   results,
+  onFacetSearch,
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
@@ -4097,36 +4105,51 @@ function SalonResults({
         const artist = getDisplayArtist(result);
 
         return (
-          <button
+          <article
             key={result.id}
-            type="button"
-            onClick={() => onSelectArtwork(result)}
             className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
             style={{ transform: `rotate(${rotation}deg)` }}
           >
-            <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
-              <ImageWithFallback
-                src={image.src}
-                fallbackSrc={image.fallbackSrc}
-                alt={title}
-                protectFromDownload
-                loading="lazy"
-                className="aspect-[4/5] w-full object-cover"
-                fallback={
-                  <NoImagePlaceholder className="aspect-[4/5] text-white/25" />
-                }
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => onSelectArtwork(result)}
+              className="block w-full appearance-none border-0 bg-transparent p-0 text-left"
+            >
+              <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
+                <ImageWithFallback
+                  src={image.src}
+                  fallbackSrc={image.fallbackSrc}
+                  alt={title}
+                  protectFromDownload
+                  loading="lazy"
+                  className="aspect-[4/5] w-full object-cover"
+                  fallback={
+                    <NoImagePlaceholder className="aspect-[4/5] text-white/25" />
+                  }
+                />
+              </div>
+            </button>
             <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors group-hover:text-white/75">
               #{rank}
               <br />
-              <span className="font-display text-sm italic normal-case tracking-normal text-white/75">
+              <button
+                type="button"
+                onClick={() => onSelectArtwork(result)}
+                className="font-display text-sm italic normal-case tracking-normal text-white/75 transition-colors hover:text-white"
+              >
                 {title}
-              </span>
+              </button>
               <br />
-              {artist} / {getDateText(result) || 'undated'}
+              <button
+                type="button"
+                onClick={() => onFacetSearch(artist, 'artist')}
+                className="normal-case tracking-normal underline decoration-white/15 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+              >
+                {artist}
+              </button>{' '}
+              / {getDateText(result) || 'undated'}
             </p>
-          </button>
+          </article>
         );
       })}
     </div>

@@ -13,6 +13,7 @@ Prove the NGA asset path can download, stage, and upload representative public a
 - After #18 is accepted and R2 is configured, a bounded staging upload writes no more than two NGA records through R2 and records the uploaded object keys.
 - Queue batch sizing and retry behavior are recorded for at least one sample batch.
 - The proof does not apply D1 SQL, enqueue queue messages, generate captions, upsert vectors, or deploy.
+- R2 readiness is documented as a prerequisite for paid/quota-consuming caption or vector work.
 
 ## Validation command
 
@@ -48,15 +49,15 @@ Only secret names may appear, such as `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_T
 
 ## Stop conditions
 
-Stop if media download requires non-public access, if files exceed the repo storage policy, if object-store credentials are missing for a non-plan run, or if the next proposed command would apply D1, enqueue queue messages, upsert vectors, generate paid captions, or deploy.
+Stop if media download requires non-public access, if files exceed the repo storage policy, if object-store credentials are missing for a non-plan run, if a downstream expensive operation would run before R2 readiness is proven, or if the next proposed command would apply D1, enqueue queue messages, upsert vectors, generate paid captions, or deploy.
 
 ## Human clarification protocol
 
-Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior. The first accepted upload should be bounded to two NGA records and use the staging bucket named by `ANVIL_R2_BUCKET`.
+Ask whether to run a live staging upload only after the plan-only evidence names object keys and rollback/delete behavior. Recommended v1 decision is to configure R2 first, then approve only a bounded staging upload after the R2 bucket exists and storage secrets are configured. The strict remote-agent proof is two NGA records; use a larger first batch only if the human explicitly approves it.
 
 ## Recommended response
 
-Use object storage for artwork media and keep local files in `tmp/` or evidence storage only.
+Use object storage for artwork media and keep local files in `tmp/` or evidence storage only. Keep D1 apply, queue enqueue, paid/bulk caption or embedding work, vector upsert, deploy, and full ingest blocked until the bounded staging upload evidence is attached to issue #21.
 
 ## Trade-offs
 
@@ -64,4 +65,4 @@ Dry-run asset planning does not prove CDN behavior, but it prevents accidental b
 
 ## Free-form response
 
-Add notes about largest sample asset, total planned bytes, object key naming, and whether the bounded upload proof was skipped, accepted, or held.
+Add notes about largest sample asset, total planned bytes, object key naming, whether the bounded upload proof was skipped, accepted, or held, approved bucket name, first batch size, and rollback owner.

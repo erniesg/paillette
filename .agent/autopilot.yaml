@@ -8,7 +8,7 @@ issue_dir: docs/issues
 human_ping: '@erniesg'
 rucksack_install: 'rucksack-ai'
 staging_branch: staging
-production_branch: main
+production_branch: master
 labels:
   queue_label: rucksack-queued
   run_label: rucksack-run

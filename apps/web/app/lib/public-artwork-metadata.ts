@@ -874,20 +874,25 @@ export const getGeneratedCaptionText = (artwork: PublicArtwork) => {
   );
 };
 
-export const getGeneratedCaptionModel = (artwork: PublicArtwork) => {
+export const getGeneratedCaptionDetails = (
+  artwork: PublicArtwork
+): Array<[string, unknown]> => {
   const captionRecord = getGeneratedCaptionRecord(artwork);
+  const details: Array<[string, unknown]> = [
+    ['Model', captionRecord.model],
+    [
+      'Prompt',
+      captionRecord.prompt_version || captionRecord.promptVersion,
+    ],
+    [
+      'Generated',
+      captionRecord.generated_at || captionRecord.generatedAt,
+    ],
+  ];
 
-  return firstText(
-    captionRecord.model,
-    captionRecord.model_name,
-    captionRecord.modelName
+  return details.filter(
+    ([, value]) => value !== null && value !== undefined && value !== ''
   );
-};
-
-export const getGeneratedCaptionModelDetails = (artwork: PublicArtwork) => {
-  const model = getGeneratedCaptionModel(artwork);
-
-  return model ? ([['Model', model]] as Array<[string, unknown]>) : [];
 };
 
 export const getSourceRecords = (

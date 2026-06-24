@@ -25,7 +25,7 @@ No secret values. Use only secret names and links to approved GitHub artifacts o
 
 ## Artifact outputs
 
-- Launch checklist or evidence markdown.
+- `docs/nga-launch-readiness.md` launch checklist and evidence markdown.
 - Search/API screenshot or JSON sample.
 - Rollback notes with reviewed commands in dry-run form.
 
@@ -35,7 +35,7 @@ Stop before live launch if any upstream evidence issue is missing, if rollback i
 
 ## Human clarification protocol
 
-Ask the human to approve live launch only after all evidence links and rollback notes are present.
+Ask the human to approve live launch only after all evidence links and rollback notes are present. If #18 or #20 is not resolved, keep launch held and point to `docs/nga-launch-readiness.md` for the recommended v1 decision packet.
 
 ## Recommended response
 
@@ -47,4 +47,4 @@ The launch pack adds process overhead, but it gives autonomous agents a concrete
 
 ## Free-form response
 
-Add final launch caveats, unresolved risks, and the recommended approve/hold decision.
+Add final launch caveats, unresolved risks, and the recommended approve/hold decision. The default hold decision is: defer vectors/caption generation, complete a bounded R2 staging upload first, then request launch approval with branch, environment, bucket, first batch size, and rollback owner.

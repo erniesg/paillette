@@ -7,7 +7,7 @@ ci_cd:
   enabled_variable: RUCKSACK_DEPLOY_ENABLED
   branches:
     staging: staging
-    production: main
+    production: master
 
   environments:
     staging:

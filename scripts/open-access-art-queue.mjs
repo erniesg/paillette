@@ -14,12 +14,20 @@ import {
   chunkOpenAccessQueueMessages,
   writeOpenAccessQueueFiles,
 } from './lib/open-access-art-queue.mjs';
+import {
+  requireApprovedR2Bucket,
+  resolveR2Bucket,
+} from './lib/rucksack-storage-policy.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 if (args.flags.has('help')) {
   printHelp();
   process.exit(0);
 }
+const r2Bucket = resolveR2Bucket({
+  cliBucket: args.values.get('bucket'),
+  defaultBucket: 'paillette-assets-stg',
+});
 
 const options = {
   manifest: args.values.get('manifest')
@@ -27,7 +35,7 @@ const options = {
     : null,
   plan: args.values.get('plan') ? resolve(args.values.get('plan')) : null,
   outDir: resolve(args.values.get('out-dir') || 'tmp/open-access-art-queue'),
-  bucket: args.values.get('bucket') || 'paillette-assets-stg',
+  bucket: r2Bucket.bucket,
   apiBase: args.values.get('api-base') || DEFAULT_STAGING_ASSET_API_BASE,
   assetMode: args.values.get('asset-mode') || 'r2',
   externalProviders: providerList(args.values.get('external-providers')),
@@ -46,6 +54,12 @@ if (!options.plan && !options.manifest) {
 }
 if (options.assetMode !== 'r2' && options.assetMode !== 'external') {
   throw new Error('--asset-mode must be r2 or external');
+}
+if (options.assetMode === 'r2' && options.enqueue) {
+  requireApprovedR2Bucket({
+    approved: r2Bucket.approved,
+    operation: 'live enqueue',
+  });
 }
 
 mkdirSync(options.outDir, { recursive: true });
@@ -186,9 +200,10 @@ Options:
   --out-dir PATH           Output directory. Default: tmp/open-access-art-queue.
   --limit N                Build from only the first N normalized records when using --manifest.
   --asset-mode r2|external Asset mode when building from --manifest. Default: r2.
+  --bucket NAME            Approved R2 bucket for live enqueue. Falls back to object_storage.bucket in .agent/storage.yaml.
   --external-providers CSV Provider keys to skip by leaving as external assets.
   --batch-size N           Queue batch size. Max 100. Default: 100.
-  --enqueue                POST generated batches to Cloudflare Queues REST API.
+  --enqueue                POST generated batches to Cloudflare Queues REST API. Requires --bucket or .agent/storage.yaml bucket.
   --account-id ID          Cloudflare account id. Falls back to CLOUDFLARE_ACCOUNT_ID.
   --queue-id ID            Cloudflare queue id. Falls back to CLOUDFLARE_QUEUE_ID.
   --api-token TOKEN        Cloudflare API token. Falls back to CLOUDFLARE_API_TOKEN.

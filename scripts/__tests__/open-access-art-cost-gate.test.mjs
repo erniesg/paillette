@@ -143,4 +143,31 @@ describe('open access art cost gate', () => {
     assert.doesNotMatch(result.stdout, /Bearer /u);
     assert.equal(result.stderr, '');
   });
+
+  it('CLI exits 2 with JSON when the manifest is missing', () => {
+    const env = { ...process.env };
+    delete env.JINA_API_KEY;
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        'scripts/open-access-art-cost-gate.mjs',
+        '--manifest',
+        join(tmpdir(), 'missing-open-access-manifest.json'),
+        '--image-embeddings=jina',
+      ],
+      {
+        cwd: process.cwd(),
+        env,
+        encoding: 'utf8',
+      }
+    );
+
+    assert.equal(result.status, 2);
+    assert.match(result.stdout, /"exitCode": 2/u);
+    assert.match(result.stdout, /manifest not found/u);
+    assert.doesNotMatch(result.stdout, /JINA_API_KEY/u);
+    assert.doesNotMatch(result.stdout, /Error:/u);
+    assert.equal(result.stderr, '');
+  });
 });

@@ -19,6 +19,9 @@ The GitHub issues are the live queue. Use `/rucksack run #123`, `/rucksack queue
 or labels such as `rucksack-queued` and `rucksack-run` to dispatch work. When
 Rucksack asks for a decision, reply `/rucksack accept`, `/rucksack approve`, or
 `/rucksack resolve` on the issue to clear decision/blocker labels and queue it.
+When review evidence is accepted, use `/rucksack done #123` or
+`rucksack autopilot resolve erniesg/paillette --issue 123 --decision done --execute`
+to close the reviewed issue without dispatching more implementation work.
 
 Issue specs may include optional top-level metadata immediately under the
 `# Title`:
