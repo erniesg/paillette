@@ -14,19 +14,24 @@ Estimate embedding/caption cost and define the Jina or equivalent model secret g
 - The implementation refuses to run paid embedding/caption work when required provider secrets are absent.
 - If an API provider is selected, Rucksack pings for the required secret name such as `JINA_API_KEY` and stops until it is configured in the approved secret store.
 - If local caption generation is selected, Rucksack verifies local model/runtime availability and marks missing setup as human-required rather than falling back to paid API work.
+- The issue records one explicit path: defer generated vectors/captions for v1, approve a bounded Jina benchmark, or approve a bounded local benchmark after #18 R2 proof.
 
 ## Validation command
 
 ```bash
 node --test scripts/__tests__/open-access-art-cost-gate.test.mjs
-pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk
+pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=defer --caption-generation=defer --caption-embeddings=defer --out tmp/nga-cost-gate-defer-v1.json
+pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json
+pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=defer --caption-generation=local --caption-embeddings=defer --out tmp/nga-cost-gate-local-caption-decision.json
 pnpm test
 pnpm typecheck
 ```
 
 The Jina validation command is expected to exit `3` when `JINA_API_KEY` is not
 configured. That is the desired missing-secret gate; it must not call Jina or
-print secret values.
+print secret values. The local-caption command is expected to exit `4` until the
+human approves bulk local generation and the trusted machine model/runtime is
+verified.
 
 ## Allowed secrets
 

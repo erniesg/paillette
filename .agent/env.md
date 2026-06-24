@@ -22,7 +22,7 @@ Required secret/env names for NGA ingest, search, and notifications:
 - `object storage/R2`: `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`; `.agent/storage.yaml` records only these names plus the `nga/` prefix.
 - `cloudflare queue`: `CLOUDFLARE_QUEUE_ID` when `pnpm open:queue -- --enqueue` is used.
 - `object storage`: `ANVIL_R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT` before issue #18 can run an R2 upload proof.
-- `embedding provider`: `JINA_API_KEY` when issue #20 approves Jina-backed `pnpm open:apply -- --embed-images` or `--embed-captions`.
+- `embedding provider`: `JINA_API_KEY` only when issue #20 explicitly approves a Jina-backed benchmark or batch. It is not required for the recommended v1 defer path.
 - `notifications`: `DISCORD_WEBHOOK_URL` only in the VM/service secret store or GitHub environment that sends notifications.
 - `unlock portal`: `GITHUB_TOKEN` as a Cloudflare Worker secret for the generated unlock portal; `RUCKSACK_UNLOCK_BASE_URL` in the trusted VM/service environment after deploy, or pass the non-secret Worker URL with `--unlock-base-url` for one-off status refreshes.
 
@@ -44,6 +44,7 @@ npx wrangler deploy
 - After deploy, set `RUCKSACK_UNLOCK_BASE_URL` to the Worker URL in the VM/service environment, or pass `--unlock-base-url https://<worker>.<account>.workers.dev` during a one-off `rucksack autopilot status ... --notify-github` refresh, so Rucksack can include hosted unlock links in GitHub and Discord pings.
 - Local `rucksack autopilot unlock-ui ... --resource r2` can be opened before the bucket is known; enter the approved bucket name in the form so Rucksack can generate the R2 resource setup step after submission.
 - For NGA launch work, unlock issue #18 R2/storage first. Do not start paid or bulk caption/vector work for issue #20 until #18 has either passed a bounded staging upload proof or has been explicitly held by a human.
+- For issue #20, record one explicit provider decision: defer generated vectors/captions for v1, run a bounded Jina path with `JINA_API_KEY`, or run a bounded local benchmark after #18 and local model/runtime verification.
 
 Storage policy:
 

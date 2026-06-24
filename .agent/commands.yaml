@@ -26,7 +26,19 @@ commands:
     timeout_seconds: 900
     required: true
   open-gate:
-    command: "pnpm open:gate -- --manifest tmp/nga-dry-run.json"
+    command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json"
+    timeout_seconds: 60
+    required: false
+  nga-cost-gate-defer-v1:
+    command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=defer --caption-generation=defer --caption-embeddings=defer --out tmp/nga-cost-gate-defer-v1.json"
+    timeout_seconds: 60
+    required: false
+  nga-cost-gate-jina-secret-check:
+    command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json"
+    timeout_seconds: 60
+    required: false
+  nga-cost-gate-local-caption-decision:
+    command: "pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=defer --caption-generation=local --caption-embeddings=defer --out tmp/nga-cost-gate-local-caption-decision.json"
     timeout_seconds: 60
     required: false
   nga-dry-run:

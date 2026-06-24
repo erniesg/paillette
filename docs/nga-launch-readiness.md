@@ -13,7 +13,7 @@ vector upserts, or deploys.
 | Area | Evidence | State |
 |---|---|---|
 | Harness PR | https://github.com/erniesg/paillette/pull/22 | Draft, checks green as of 2026-06-23. |
-| Dry-run mapping | Issue #16, `tmp/nga-dry-run.json`, `.agent/evidence/20260623T112236152Z/manifest.json` | Awaiting review. |
+| Dry-run mapping | Issue #16, `tmp/nga-launch-dry-run.json`, `.agent/evidence/20260623T112236152Z/manifest.json` | Awaiting review. |
 | Seed-only D1 plan | Issue #17, `tmp/nga-apply-plan/` | Awaiting review, no D1 writes. |
 | Public search smoke | Issue #19, route fixture coverage for `orgId=open` | Awaiting review. |
 | R2 asset and queue proof | Issue #18, `tmp/nga-launch-queue/` | Needs storage decision before live upload or enqueue. |
@@ -149,10 +149,10 @@ data, upload to object storage, enqueue Cloudflare queue messages, or call Jina
 when `JINA_API_KEY` is missing.
 
 ```bash
-pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=any --out=tmp/nga-dry-run.json
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-apply-plan --plan-only
-pnpm open:queue -- --manifest tmp/nga-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2
-pnpm open:gate -- --manifest tmp/nga-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json
+pnpm open:dry-run -- --providers=nga --sample-size=5 --sample-caption=any --out=tmp/nga-launch-dry-run.json
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --out-dir tmp/nga-apply-plan --plan-only
+pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-launch-queue --limit=10 --asset-mode=r2
+pnpm open:gate -- --manifest tmp/nga-launch-dry-run.json --image-embeddings=jina --caption-generation=defer --caption-embeddings=defer --approve-bulk --out tmp/nga-cost-gate-jina-missing-secret.json
 ```
 
 Expected paid-provider gate while `JINA_API_KEY` is absent: exit `3` with
@@ -176,7 +176,7 @@ For the first bounded staging upload proof, use the approved bucket and a small
 sample only:
 
 ```bash
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-staging-upload --limit 5 --download --upload --bucket <approved-r2-bucket>
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --out-dir tmp/nga-staging-upload --limit 5 --download --upload --bucket <approved-r2-bucket>
 scripts/agent-evidence
 ```
 
@@ -214,12 +214,12 @@ recorded, and rollback/delete owner named.
 Do not run these without the matching human approval and secret setup:
 
 ```bash
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --upload
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --apply-d1
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --embed-images
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --embed-captions
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --upsert-vectors
-pnpm open:queue -- --manifest tmp/nga-dry-run.json --asset-mode=r2 --enqueue
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --upload
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --apply-d1
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --embed-images
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --embed-captions
+pnpm open:apply -- --manifest=tmp/nga-launch-dry-run.json --upsert-vectors
+pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --asset-mode=r2 --enqueue
 wrangler deploy
 ```
 
