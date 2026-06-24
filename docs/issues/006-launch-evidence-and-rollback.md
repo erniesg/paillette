@@ -1,6 +1,6 @@
 # Launch Evidence And Rollback
 
-depends-on: 003,004,005
+depends-on: 003,004,005,008
 
 ## Goal
 
@@ -8,7 +8,7 @@ Collect the evidence pack needed to launch the NGA collection and document rollb
 
 ## Acceptance tests
 
-- Evidence links cover dry-run, D1 plan, asset plan, public search smoke, and cost gate.
+- Evidence links cover dry-run, D1 plan, asset plan, public search smoke, cost gate, and hosted unlock portal activation or hold decision.
 - Rollback notes identify how to hide the collection, remove queued batches, and delete staged object keys if needed.
 - No screenshots, manifests, or logs contain secret values.
 
