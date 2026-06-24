@@ -10,6 +10,8 @@ environment secrets, then discarded.
 - Put this Worker behind Cloudflare Access before sharing the URL.
 - Store the GitHub writer token as a Worker secret named `GITHUB_TOKEN`.
 - Scope `GITHUB_TOKEN` to selected repositories and Actions secrets only.
+- The Worker fails closed if `GITHUB_TOKEN` is missing and rejects cross-origin
+  unlock form submissions before handling provided values.
 - Do not put API keys, R2 keys, webhook URLs, or provider tokens in this repo,
   `wrangler.jsonc`, GitHub issues, Discord messages, logs, or manifests.
 - `ALLOWED_REPOS` is required and must be a non-secret comma-separated allowlist

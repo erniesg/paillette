@@ -23,6 +23,8 @@ export default {
         return html(renderForm(url, env, access.email));
       }
       if (request.method === "POST") {
+        const originGate = requireSameOrigin(request);
+        if (originGate) return originGate;
         return await handleUnlock(request, env, access.email);
       }
       return new Response("method not allowed", { status: 405 });
@@ -86,6 +88,25 @@ function repoAllowlistError(env, repo) {
     return { message: "This repo is not in ALLOWED_REPOS.", status: 403 };
   }
   return null;
+}
+
+function requireSameOrigin(request) {
+  const url = new URL(request.url);
+  const origin = request.headers.get("origin") || "";
+  if (origin && origin !== url.origin) {
+    return html(renderError("Cross-origin unlock submission blocked."), 403);
+  }
+  const fetchSite = request.headers.get("sec-fetch-site") || "";
+  if (fetchSite && !["same-origin", "same-site", "none"].includes(fetchSite)) {
+    return html(renderError("Cross-origin unlock submission blocked."), 403);
+  }
+  return null;
+}
+
+function requireGitHubToken(env) {
+  const token = String(env.GITHUB_TOKEN || "").trim();
+  if (!token) throw userError("GITHUB_TOKEN Worker secret is not configured.", 503);
+  return token;
 }
 
 function renderForm(url, env, email) {
@@ -196,26 +217,33 @@ async function handleUnlock(request, env, email) {
   const uniqueRepoSecrets = dedupeSecrets(repoSecrets);
   const uniqueEnvSecrets = dedupeSecrets(envSecrets);
   const uniqueAppEnvValues = dedupeSecrets(appEnvValues);
+  const decision = String(form.get("decision") || "");
+  const needsGitHubToken =
+    uniqueRepoSecrets.length > 0 ||
+    uniqueEnvSecrets.length > 0 ||
+    uniqueAppEnvValues.length > 0 ||
+    decision === "accept" ||
+    decision === "hold";
+  const githubToken = needsGitHubToken ? requireGitHubToken(env) : "";
   if (uniqueAppEnvValues.length && String(form.get("replace_app_env") || "") !== "yes") {
     return html(renderError("App env values replace the whole RUCKSACK_APP_ENV bundle. Confirm that replacement before submitting."), 400);
   }
 
   for (const item of uniqueRepoSecrets) {
-    await putRepositorySecret(env.GITHUB_TOKEN, repo, item.name, item.value);
+    await putRepositorySecret(githubToken, repo, item.name, item.value);
   }
   for (const item of uniqueEnvSecrets) {
-    await putEnvironmentSecret(env.GITHUB_TOKEN, repo, environment, item.name, item.value);
+    await putEnvironmentSecret(githubToken, repo, environment, item.name, item.value);
   }
   if (uniqueAppEnvValues.length) {
     const appEnvBody = uniqueAppEnvValues.map((item) => dotenvLine(item.name, item.value)).join("");
-    await putEnvironmentSecret(env.GITHUB_TOKEN, repo, environment, "RUCKSACK_APP_ENV", appEnvBody);
+    await putEnvironmentSecret(githubToken, repo, environment, "RUCKSACK_APP_ENV", appEnvBody);
   }
 
-  const decision = String(form.get("decision") || "");
   if (decision === "accept" || decision === "hold") {
     const storedNames = storedSecretNames(uniqueRepoSecrets, uniqueEnvSecrets, uniqueAppEnvValues, environment);
     await createIssueComment(
-      env.GITHUB_TOKEN,
+      githubToken,
       repo,
       issue,
       `/rucksack ${decision} #${issue}\n\nUnlocked via Rucksack portal by ${email}.\n\nStored names only: ${storedNames.join(", ") || "(none)"}.`

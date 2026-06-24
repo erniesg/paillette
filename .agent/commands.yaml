@@ -58,7 +58,7 @@ commands:
     timeout_seconds: 120
     required: false
   unlock-portal-preflight:
-    command: "cd infra/cloudflare/rucksack-unlock-portal && node --check src/index.js && node -e 'const fs=require(\"fs\"); const c=JSON.parse(fs.readFileSync(\"wrangler.jsonc\",\"utf8\")); const repos=String(c.vars?.ALLOWED_REPOS||\"\").split(\",\").map((s)=>s.trim()).filter(Boolean); if(!repos.includes(\"erniesg/paillette\")){ console.error(\"ALLOWED_REPOS must include erniesg/paillette\"); process.exit(2); }'"
+    command: "cd infra/cloudflare/rucksack-unlock-portal && node --check src/index.js && grep -q 'GITHUB_TOKEN Worker secret is not configured' src/index.js && grep -q 'Cross-origin unlock submission blocked' src/index.js && node -e 'const fs=require(\"fs\"); const c=JSON.parse(fs.readFileSync(\"wrangler.jsonc\",\"utf8\")); const repos=String(c.vars?.ALLOWED_REPOS||\"\").split(\",\").map((s)=>s.trim()).filter(Boolean); if(!repos.includes(\"erniesg/paillette\")){ console.error(\"ALLOWED_REPOS must include erniesg/paillette\"); process.exit(2); }'"
     timeout_seconds: 60
     required: false
   unlock-portal-deploy:

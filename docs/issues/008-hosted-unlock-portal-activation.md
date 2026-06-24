@@ -8,6 +8,7 @@ Activate the hosted Rucksack unlock portal, or explicitly hold it, so humans can
 
 - The repo contains the unlock portal scaffold under `infra/cloudflare/rucksack-unlock-portal`.
 - The portal is constrained to `erniesg/paillette` with `ALLOWED_REPOS`, protected by Cloudflare Access, and uses a Worker secret named `GITHUB_TOKEN`.
+- The portal fails closed when `GITHUB_TOKEN` is missing and rejects cross-origin unlock form submissions.
 - The trusted Rucksack runtime has `RUCKSACK_UNLOCK_BASE_URL` set after deploy, or the issue is explicitly held with browser-only GitHub secret setup as the fallback.
 - A fresh `rucksack autopilot status erniesg/paillette --execute --notify-github --repo-root .` updates #18 and #20 with either per-issue unlock links or an explicit missing-portal state.
 - No secret values are written to files, logs, manifests, GitHub issues, PR comments, or Discord messages.
@@ -22,6 +23,8 @@ test -f infra/cloudflare/rucksack-unlock-portal/src/index.js
 test -f infra/cloudflare/rucksack-unlock-portal/README.md
 cd infra/cloudflare/rucksack-unlock-portal
 node --check src/index.js
+grep -q 'GITHUB_TOKEN Worker secret is not configured' src/index.js
+grep -q 'Cross-origin unlock submission blocked' src/index.js
 node -e 'const fs=require("fs"); const c=JSON.parse(fs.readFileSync("wrangler.jsonc","utf8")); const repos=String(c.vars?.ALLOWED_REPOS||"").split(",").map((s)=>s.trim()).filter(Boolean); if(!repos.includes("erniesg/paillette")){ console.error("ALLOWED_REPOS must include erniesg/paillette"); process.exit(2); }'
 PYTHONPATH=/path/to/rucksack/src python3 -m rucksack autopilot status erniesg/paillette --repo-root . --execute --notify-github
 ```
