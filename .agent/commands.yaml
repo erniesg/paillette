@@ -66,7 +66,7 @@ commands:
     timeout_seconds: 600
     required: false
   unlock-r2-local-ui:
-    command: "rucksack autopilot unlock-ui erniesg/paillette --issue 18 --env-secret CLOUDFLARE_ACCOUNT_ID --env-secret CLOUDFLARE_API_TOKEN --app-env R2_ACCESS_KEY_ID --app-env R2_SECRET_ACCESS_KEY --app-env R2_ENDPOINT --resource r2 --bucket <approved-r2-bucket> --environment live --repo-root . --decision accept|hold --execute"
+    command: "rucksack autopilot unlock-ui erniesg/paillette --issue 18 --env-secret CLOUDFLARE_ACCOUNT_ID --env-secret CLOUDFLARE_API_TOKEN --app-env R2_ACCESS_KEY_ID --app-env R2_SECRET_ACCESS_KEY --app-env R2_ENDPOINT --resource r2 --environment live --repo-root . --decision accept|hold --execute"
     timeout_seconds: 300
     required: false
   unlock-jina-local-ui:
