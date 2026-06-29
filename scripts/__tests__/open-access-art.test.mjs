@@ -93,4 +93,29 @@ describe('open access art proof helpers', () => {
     }
     assert.equal(report.redaction_checks.report_contains_secret_values, false);
   });
+
+  it('allows documented bucket names without treating them as secret leaks', () => {
+    const env = {
+      [R2_BUCKET_ENV]: 'paillette-assets-stg',
+      CLOUDFLARE_ACCOUNT_ID: 'example-account-value',
+      CLOUDFLARE_API_TOKEN: 'example-token-value',
+      R2_ACCESS_KEY_ID: 'example-access-key',
+      R2_SECRET_ACCESS_KEY: 'example-secret-key',
+      R2_ENDPOINT: 'https://example-endpoint.test',
+    };
+    const report = buildR2ReadinessReport({
+      env,
+      now: '2026-06-29T00:00:00.000Z',
+    });
+    const reportText = JSON.stringify(report);
+
+    assert.equal(report.exit_code, 0);
+    assert.equal(report.status, 'ready');
+    assert.equal(report.redaction_checks.report_contains_secret_values, false);
+    assert.ok(reportText.includes('paillette-assets-stg'));
+    for (const [name, value] of Object.entries(env)) {
+      if (name === R2_BUCKET_ENV) continue;
+      assert.equal(reportText.includes(value), false);
+    }
+  });
 });

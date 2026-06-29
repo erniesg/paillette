@@ -417,7 +417,7 @@ export function buildR2ReadinessReport(options = {}) {
     },
   };
 
-  const secretValues = R2_SECRET_NAMES.map((name) => env[name]).filter(
+  const secretValues = R2_CREDENTIAL_NAMES.map((name) => env[name]).filter(
     (value) => typeof value === 'string' && value.length >= 8
   );
   const reportText = JSON.stringify(report);
