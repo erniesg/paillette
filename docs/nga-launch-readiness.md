@@ -1,7 +1,7 @@
 # NGA Launch Readiness
 
 Status: hold until storage, provider, and launch approvals are resolved.
-Last updated: 2026-06-23.
+Last updated: 2026-06-30.
 
 This is the launch evidence pack for adding National Gallery of Art,
 Washington records to the `open-access-art` collection. It is a review and
@@ -15,10 +15,31 @@ vector upserts, or deploys.
 | Harness PR | https://github.com/erniesg/paillette/pull/22 | Draft, checks green as of 2026-06-23. |
 | Dry-run mapping | Issue #16, `tmp/nga-dry-run.json`, `.agent/evidence/20260623T112236152Z/manifest.json` | Awaiting review. |
 | Seed-only D1 plan | Issue #17, `tmp/nga-apply-plan/` | Awaiting review, no D1 writes. |
-| Public search smoke | Issue #19, route fixture coverage for `orgId=open` | Awaiting review. |
-| R2 asset and queue proof | Issue #18, `tmp/nga-launch-queue/` | Needs storage decision before live upload or enqueue. |
-| Caption and vector cost gate | Issue #20, `tmp/nga-cost-gate-jina-missing-secret.json` | Needs provider and cost decision before paid or quota-consuming work. |
-| Launch and rollback | Issue #21, this document | Blocked until #18 and #20 are approved and reviewed. |
+| Public search smoke | Issue #19, route fixture coverage for `orgId=open` plus staging route smoke | Reviewed/closed; API alias resolves to `open-access-art`. |
+| R2 asset and queue proof | Issue #18, `tmp/nga-launch-queue/` | Reviewed/closed for proof; live upload/enqueue still needs approved bucket and secret-store setup. |
+| Caption and vector cost gate | Issue #20, `tmp/nga-cost-gate-jina-missing-secret.json` | Held for v1: launch metadata plus institution captions only; defer paid/quota-consuming caption/vector work. |
+| Launch and rollback | Issue #21, this document | Still blocked until a bounded staging upload and launch approval are explicitly accepted. |
+
+## Staging Search Route Evidence
+
+Live staging smoke on 2026-06-30 confirmed the public Open Access Art/NGA
+Washington routes:
+
+- Canonical collection-form search route:
+  `https://paillette-stg.berlayar.ai/collections/open-access-art/search`
+  returns `200` with title `Search Artworks - Paillette`.
+- Short deployed search route:
+  `https://paillette-stg.berlayar.ai/open-access-art/search` returns `200`
+  with title `Search Artworks - Paillette`.
+- Artwork detail route:
+  `https://paillette-stg.berlayar.ai/open-access-art/artworks/open-access-art%3Anga%3A17387`
+  returns `200` for `Gemel Bottle`.
+- The API alias `open` is valid only as an app/API identifier that resolves to
+  `open-access-art`; it must not be recorded as the canonical UI route.
+
+Do not use `/open/search`, `/open/artworks/...`, singular
+`/collection/open-access-art/search`, or `/ngs/search` to prove NGA Washington
+search. `/ngs/search` remains reserved for National Gallery Singapore.
 
 ## Proven Counts
 

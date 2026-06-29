@@ -98,7 +98,7 @@ export const getPreferredOrgRouteId = (
     requested === OPEN_ACCESS_ORG_SLUG ||
     canonicalSlug === OPEN_ACCESS_ORG_SLUG
   ) {
-    return OPEN_ACCESS_ORG_KEY;
+    return OPEN_ACCESS_ORG_SLUG;
   }
   return canonicalSlug || requestedOrgId;
 };

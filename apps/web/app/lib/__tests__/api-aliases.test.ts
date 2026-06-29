@@ -8,10 +8,12 @@ describe('open access org aliases', () => {
     expect(resolveOrgIdentifier('OPEN')).toBe('open-access-art');
   });
 
-  it('prefers /open routes for the Open Access Art collection', () => {
-    expect(getPreferredOrgRouteId('open', 'open-access-art')).toBe('open');
+  it('prefers deployed Open Access Art UI routes over the API alias', () => {
+    expect(getPreferredOrgRouteId('open', 'open-access-art')).toBe(
+      'open-access-art'
+    );
     expect(getPreferredOrgRouteId('open-access-art', 'open-access-art')).toBe(
-      'open'
+      'open-access-art'
     );
   });
 });
