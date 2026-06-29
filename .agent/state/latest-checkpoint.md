@@ -15,7 +15,7 @@ Branch: `codex/open-access-art-ingest`
 - Recorded the NGA R2 storage contract in `.agent/storage.yaml` with secret names only and the `nga/` object prefix.
 - Added a live storage approval gate so R2 `--upload` and queue `--enqueue` cannot silently use the default staging bucket; they require explicit `--bucket` or a nonempty approved `.agent/storage.yaml` bucket.
 - Refreshed issue #16/#17 evidence from the current NGA public data path and generated a seed-only D1 preview without writes, uploads, queue enqueue, or secret values.
-- Added a fixture-backed public search smoke for issue #19 that proves the `open` route resolves to `open-access-art` and preserves an NGA result's image, provenance, collection, accession, institution, and source URL metadata.
+- Added a fixture-backed public search smoke for issue #19 that proves `/api/public-search/open/text` is an API/org alias for upstream `/orgs/open-access-art/search/text` and preserves an NGA result's image, provenance, collection, accession, institution, and source URL metadata.
 - Hardened `pnpm open:gate` so a missing or invalid manifest returns a JSON configuration error with exit code `2` instead of a Node stack trace, and aligned optional gate commands to `tmp/nga-dry-run.json`.
 - Added `docs/nga-launch-readiness.md` as the issue #21 launch evidence, rollback, blocked-command, secret-name, and HITL decision pack.
 
