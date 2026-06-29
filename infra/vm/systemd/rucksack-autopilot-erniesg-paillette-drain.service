@@ -7,5 +7,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=sh -lc 'GH_TOKEN="$(rucksack github token erniesg/paillette --role developer --execute)" exec rucksack autopilot work-queue erniesg/paillette --provider vm-codex --max-workers 2 --local --execute'
+WorkingDirectory=%h/code/erniesg/paillette
+# Codex resolves through this deterministic service PATH; compare it with `rucksack vm doctor --execute`.
+Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=sh -lc 'repo=erniesg/paillette; repo_root=$HOME/code/erniesg/paillette; discord_notify_flag=""; if [ -s "$HOME/.config/rucksack/discord.env" ]; then discord_notify_flag="--notify-when-blocked"; fi; GH_TOKEN="$(rucksack github token "$repo" --role developer --execute)"; export GH_TOKEN; default_branch="$(gh repo view "$repo" --json defaultBranchRef --jq '"'"'.defaultBranchRef.name'"'"' 2>/dev/null || printf '"'"'%%s\n'"'"' master)"; current_branch="$(git -C "$repo_root" branch --show-current 2>/dev/null || true)"; git -C "$repo_root" fetch origin "$default_branch"; if [ "$current_branch" != "$default_branch" ]; then if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then printf "%%s\n" "Rucksack VM base checkout is on $current_branch, not $default_branch, and is dirty; refusing drain"; exit 1; fi; git -C "$repo_root" checkout "$default_branch"; fi; git -C "$repo_root" pull --ff-only origin "$default_branch"; exec rucksack autopilot work-queue erniesg/paillette --provider vm-codex --max-workers 2 --local --repo-root $HOME/code/erniesg/paillette --reconcile-issues --plan-when-idle --check-provider-ready $discord_notify_flag --notify-github-when-blocked --execute'
