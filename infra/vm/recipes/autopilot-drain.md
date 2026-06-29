@@ -9,6 +9,8 @@ Prerequisites on the VM:
 command -v rucksack
 command -v gh
 rucksack github token erniesg/paillette --role developer --execute >/dev/null
+cd ~/code/erniesg/paillette
+git status --short --branch
 ```
 
 Install or update the timer from the repository root:
@@ -42,7 +44,7 @@ journalctl --user -u rucksack-autopilot-erniesg-paillette-drain.service -f
 Manual equivalent:
 
 ```bash
-rucksack autopilot work-queue erniesg/paillette --provider vm-codex --max-workers 2 --local --execute
+rucksack autopilot work-queue erniesg/paillette --provider vm-codex --max-workers 2 --local --repo-root ~/code/erniesg/paillette --reconcile-issues --plan-when-idle --check-provider-ready --notify-github-when-blocked --execute
 ```
 
 When GitHub comments a `vm-codex` or `claude` provider handoff, run the VM

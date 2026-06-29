@@ -96,3 +96,7 @@ Thumbs.db
 apps/api/tmp/
 apps/web/tmp/
 tmp/
+
+# Local rucksack outputs and generated artifacts
+.agent/submissions/
+**/.agent/submissions/
