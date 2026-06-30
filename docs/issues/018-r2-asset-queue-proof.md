@@ -30,6 +30,7 @@ proof.
 - Staging bucket name: `paillette-assets-stg`
 - Production bucket name: `paillette-assets`
 - Approved upload bucket env name: `ANVIL_R2_BUCKET`
+- Tracked non-secret fallback: `.agent/storage.yaml` `object_storage.bucket`
 - Credential names: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`,
   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`
 - Object key prefix: `generated/open-access/nga/`
@@ -43,6 +44,10 @@ R2 readiness is a prerequisite for live upload, paid caption generation, vector
 upsert, queue enqueue, D1 apply, and deploy work. The readiness command writes a
 structured JSON report with required names, missing names, exit code, and
 redaction checks before any upload can proceed.
+
+Readiness exit `4` means no bucket decision was found in either
+`ANVIL_R2_BUCKET` or `.agent/storage.yaml`. Exit `3` means the bucket is known
+but Cloudflare/R2 secret or auth names are still missing.
 
 The queue command writes a dry-run batch plan with batch size and retry behavior.
 It does not enqueue messages.

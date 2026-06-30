@@ -369,7 +369,14 @@ export function buildQueuePlan(manifest, options = {}) {
 export function buildR2ReadinessReport(options = {}) {
   const env = options.env || process.env;
   const now = options.now || new Date().toISOString();
-  const bucketPresent = hasValue(env[R2_BUCKET_ENV]);
+  const envBucket = hasValue(env[R2_BUCKET_ENV]) ? env[R2_BUCKET_ENV] : '';
+  const configuredBucket = envBucket
+    ? ''
+    : readConfiguredR2Bucket(options.repoRoot || process.cwd());
+  const bucketName = envBucket || configuredBucket;
+  const bucketPresent = hasValue(bucketName);
+  const bucketNameIsDocumented =
+    bucketPresent && R2_CONFIGURED_BUCKET_NAMES.includes(bucketName);
   const missingCredentials = R2_CREDENTIAL_NAMES.filter(
     (name) => !hasValue(env[name])
   );
@@ -400,7 +407,16 @@ export function buildR2ReadinessReport(options = {}) {
       bucket_name_env: R2_BUCKET_ENV,
       credential_names: R2_CREDENTIAL_NAMES,
     },
-    present_names: R2_SECRET_NAMES.filter((name) => hasValue(env[name])),
+    bucket_name: bucketNameIsDocumented ? bucketName : null,
+    bucket_name_source: envBucket
+      ? 'environment'
+      : configuredBucket
+        ? '.agent/storage.yaml'
+        : null,
+    present_names: [
+      ...(bucketPresent ? [R2_BUCKET_ENV] : []),
+      ...R2_CREDENTIAL_NAMES.filter((name) => hasValue(env[name])),
+    ],
     missing_names: missingNames,
     prerequisite_for: [
       'open:apply --upload',
@@ -431,6 +447,38 @@ export function buildR2ReadinessReport(options = {}) {
   }
 
   return report;
+}
+
+export function readConfiguredR2Bucket(repoRoot = process.cwd()) {
+  const storagePath = resolve(repoRoot, '.agent/storage.yaml');
+  if (!existsSync(storagePath)) return '';
+
+  const text = readFileSync(storagePath, 'utf8');
+  const lines = text.split(/\r?\n/u);
+  let inObjectStorage = false;
+  let objectStorageIndent = -1;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const indent = line.match(/^\s*/u)?.[0].length ?? 0;
+    if (trimmed === 'object_storage:') {
+      inObjectStorage = true;
+      objectStorageIndent = indent;
+      continue;
+    }
+    if (inObjectStorage && indent <= objectStorageIndent) {
+      inObjectStorage = false;
+    }
+    if (!inObjectStorage || !trimmed.startsWith('bucket:')) continue;
+
+    const rawValue = trimmed.slice('bucket:'.length).trim();
+    const unquoted = rawValue.replace(/^['"]|['"]$/gu, '').trim();
+    return unquoted || '';
+  }
+
+  return '';
 }
 
 export function r2NamesReport() {

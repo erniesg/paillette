@@ -41,7 +41,7 @@ Expected R2 readiness exits:
 
 - `0`: bucket and required Cloudflare/R2 names are present.
 - `3`: blocked by missing secret/auth names such as `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, or `R2_ENDPOINT`.
-- `4`: blocked by missing human bucket decision for `ANVIL_R2_BUCKET`.
+- `4`: blocked by missing human bucket decision in `ANVIL_R2_BUCKET` or `.agent/storage.yaml`.
 
 ## Allowed secrets
 

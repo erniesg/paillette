@@ -35,7 +35,8 @@ function printHelp() {
 Exit codes:
   0  R2 bucket name and required Cloudflare/R2 names are present
   3  Missing secret/auth names
-  4  Missing ANVIL_R2_BUCKET human bucket decision
+  4  Missing ANVIL_R2_BUCKET or .agent/storage.yaml bucket decision
 
-The JSON report records names and booleans only; it does not write secret values.`);
+The JSON report records names and booleans only; it does not write secret values.
+The non-secret bucket may come from ANVIL_R2_BUCKET or .agent/storage.yaml.`);
 }

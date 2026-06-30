@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
@@ -56,17 +59,54 @@ describe('open access art proof helpers', () => {
   });
 
   it('blocks R2 readiness on missing bucket decision before secret checks', () => {
-    const report = buildR2ReadinessReport({
-      env: {},
-      now: '2026-06-29T00:00:00.000Z',
-    });
+    const repoRoot = mkdtempSync(join(tmpdir(), 'paillette-r2-no-config-'));
+    try {
+      const report = buildR2ReadinessReport({
+        env: {},
+        repoRoot,
+        now: '2026-06-29T00:00:00.000Z',
+      });
 
-    assert.equal(report.status, 'blocked');
-    assert.equal(report.exit_code, 4);
-    assert.equal(report.blocked_reason, 'missing_human_bucket_decision');
-    assert.ok(report.missing_names.includes(R2_BUCKET_ENV));
-    for (const name of R2_CREDENTIAL_NAMES) {
-      assert.ok(report.missing_names.includes(name));
+      assert.equal(report.status, 'blocked');
+      assert.equal(report.exit_code, 4);
+      assert.equal(report.blocked_reason, 'missing_human_bucket_decision');
+      assert.ok(report.missing_names.includes(R2_BUCKET_ENV));
+      for (const name of R2_CREDENTIAL_NAMES) {
+        assert.ok(report.missing_names.includes(name));
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses tracked storage config for the non-secret bucket fallback', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'paillette-r2-readiness-'));
+    try {
+      mkdirSync(join(repoRoot, '.agent'));
+      writeFileSync(
+        join(repoRoot, '.agent/storage.yaml'),
+        `object_storage:\n  provider: r2\n  bucket: paillette-assets-stg\n`,
+        'utf8'
+      );
+
+      const report = buildR2ReadinessReport({
+        env: {},
+        repoRoot,
+        now: '2026-06-29T00:00:00.000Z',
+      });
+
+      assert.equal(report.status, 'blocked');
+      assert.equal(report.exit_code, 3);
+      assert.equal(report.blocked_reason, 'missing_secret_or_auth_names');
+      assert.equal(report.bucket_name, 'paillette-assets-stg');
+      assert.equal(report.bucket_name_source, '.agent/storage.yaml');
+      assert.equal(report.missing_names.includes(R2_BUCKET_ENV), false);
+      assert.ok(report.present_names.includes(R2_BUCKET_ENV));
+      for (const name of R2_CREDENTIAL_NAMES) {
+        assert.ok(report.missing_names.includes(name));
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
