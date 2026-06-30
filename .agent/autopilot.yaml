@@ -4,7 +4,7 @@ repo: erniesg/paillette
 target: vm
 profile: erniesg-ai-vm
 provider: vm-codex
-issue_dir: docs/issues
+issue_dir: docs/rucksack/issues
 human_ping: '@erniesg'
 rucksack_install: 'rucksack-ai'
 staging_branch: staging
