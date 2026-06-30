@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import orgs from './routes/galleries';
 import artworkRoutes from './routes/artworks';
+import collectionRoutes from './routes/collections';
 import { searchRoutes } from './routes/search';
 import { colorSearchRoutes } from './routes/color-search';
 import { embeddingsRoutes } from './routes/embeddings';
@@ -15,6 +16,10 @@ import usageEventRoutes from './routes/usage-events';
 import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
+import {
+  processOpenAccessAssetBatch,
+  type OpenAccessAssetMessage,
+} from './queues/open-access-assets-queue';
 
 // Environment bindings
 export interface Env {
@@ -29,6 +34,7 @@ export interface Env {
   EMBEDDING_QUEUE: Queue;
   FRAME_REMOVAL_QUEUE: Queue;
   TRANSLATION_QUEUE?: Queue;
+  OPEN_ACCESS_ASSET_QUEUE?: Queue<OpenAccessAssetMessage>;
   BUCKET: R2Bucket;
   ENVIRONMENT: string;
   API_VERSION: string;
@@ -156,10 +162,12 @@ api.route('/ngs-review', ngsReviewRoutes);
 // Nested routes under orgs. /galleries remains as a legacy alias while the
 // frontend and API clients move over.
 api.route('/orgs/:orgId/artworks', artworkRoutes);
+api.route('/orgs/:orgId/collections', collectionRoutes);
 api.route('/orgs/:orgId', searchRoutes);
 api.route('/orgs/:orgId', colorSearchRoutes);
 api.route('/orgs/:orgId', embeddingsRoutes);
 api.route('/galleries/:galleryId/artworks', artworkRoutes);
+api.route('/galleries/:galleryId/collections', collectionRoutes);
 api.route('/galleries/:galleryId', searchRoutes);
 api.route('/galleries/:galleryId', colorSearchRoutes);
 api.route('/galleries/:galleryId', embeddingsRoutes);
@@ -201,3 +209,15 @@ app.onError((err, c) => {
 });
 
 export default app;
+
+(
+  app as unknown as {
+    queue: (
+      batch: MessageBatch<OpenAccessAssetMessage>,
+      env: Env,
+      ctx: ExecutionContext
+    ) => Promise<void>;
+  }
+).queue = async (batch, env) => {
+  await processOpenAccessAssetBatch(batch, env);
+};

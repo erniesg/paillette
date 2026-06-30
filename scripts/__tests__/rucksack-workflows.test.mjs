@@ -36,14 +36,27 @@ describe('Rucksack evidence workflows', () => {
   it('prints artifact download commands next to evidence manifest paths', () => {
     const expectations = [
       ['agent-evidence.yml', 'gh run download ${{ github.run_id }} --name agent-evidence-${{ github.run_id }}'],
+      [
+        'agent-evidence.yml',
+        'gh run download ${{ github.run_id }} --name agent-evidence-manifest-${{ github.run_id }}',
+      ],
       ['ci.yml', 'gh run download ${{ github.run_id }} --name rucksack-ci-evidence-${{ github.run_id }}'],
+      ['ci.yml', 'gh run download ${{ github.run_id }} --name rucksack-ci-manifest-${{ github.run_id }}'],
       [
         'deploy.yml',
         'gh run download ${{ github.run_id }} --name rucksack-deploy-evidence-${{ github.run_id }}',
       ],
       [
+        'deploy.yml',
+        'gh run download ${{ github.run_id }} --name rucksack-deploy-manifest-${{ github.run_id }}',
+      ],
+      [
         'rucksack-build.yml',
         'gh run download ${{ github.run_id }} --name rucksack-autopilot-evidence-${{ inputs.issue_number }}-${{ github.run_id }}',
+      ],
+      [
+        'rucksack-build.yml',
+        'gh run download ${{ github.run_id }} --name rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}',
       ],
     ];
 
@@ -54,5 +67,63 @@ describe('Rucksack evidence workflows', () => {
         `${file} must show reviewers how to download the evidence artifact`
       );
     }
+  });
+
+  it('uploads evidence manifests as their own artifacts', () => {
+    const expectations = [
+      ['agent-evidence.yml', 'agent-evidence-manifest-${{ github.run_id }}'],
+      ['ci.yml', 'rucksack-ci-manifest-${{ github.run_id }}'],
+      ['deploy.yml', 'rucksack-deploy-manifest-${{ github.run_id }}'],
+      [
+        'rucksack-build.yml',
+        'rucksack-autopilot-manifest-${{ inputs.issue_number }}-${{ github.run_id }}',
+      ],
+    ];
+
+    for (const [file, artifactName] of expectations) {
+      assert.notEqual(
+        uploadBlock(workflow(file), artifactName).indexOf('path: ${{ steps.'),
+        -1,
+        `${file} must upload the manifest path reported by the evidence step`
+      );
+    }
+  });
+
+  it('keeps generated CI helper state outside the repository checkout', () => {
+    for (const file of ['ci.yml', 'deploy.yml']) {
+      const text = workflow(file);
+      assert.match(
+        text,
+        /python3 -m venv "\$RUNNER_TEMP\/rucksack-ci-venv"/u,
+        `${file} must place Python venvs in runner temp storage from inside the job shell`
+      );
+      assert.match(
+        text,
+        /echo "\$runner" > "\$RUNNER_TEMP\/rucksack-node-runner"/u,
+        `${file} must place runner markers in runner temp storage from inside the job shell`
+      );
+      assert.doesNotMatch(
+        text,
+        /runner\.temp|python3 -m venv \.rucksack-ci-venv|echo "\$runner" > \.rucksack-node-runner/u,
+        `${file} must not write Rucksack helper files into the repo root before evidence runs`
+      );
+    }
+  });
+
+  it('closes reviewed Rucksack issues without redispatching work', () => {
+    const text = workflow('rucksack-autopilot.yml');
+    assert.match(text, /complete\|completed\|done\) action="complete"/u);
+    assert.match(text, /name: Complete reviewed issue/u);
+    assert.match(
+      text,
+      /steps\.request\.outputs\.action == 'complete' && steps\.request\.outputs\.issue_number != ''/u
+    );
+    assert.match(
+      text,
+      /gh issue close "\$\{\{ steps\.request\.outputs\.issue_number \}\}" --reason completed/u
+    );
+    const completeIndex = text.indexOf('name: Complete reviewed issue');
+    const dispatchIndex = text.indexOf('name: Dispatch queued issues');
+    assert.ok(completeIndex !== -1 && dispatchIndex !== -1 && completeIndex < dispatchIndex);
   });
 });

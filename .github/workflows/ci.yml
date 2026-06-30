@@ -45,8 +45,8 @@ jobs:
             echo "no Python project metadata; skipping Python dependency setup"
             exit 0
           fi
-          python3 -m venv .rucksack-ci-venv
-          . .rucksack-ci-venv/bin/activate
+          python3 -m venv "$RUNNER_TEMP/rucksack-ci-venv"
+          . "$RUNNER_TEMP/rucksack-ci-venv/bin/activate"
           python3 -m pip install --upgrade pip
           if [ -f pyproject.toml ]; then
             python3 -m pip install -e '.[dev]' || python3 -m pip install -e .
@@ -76,15 +76,15 @@ jobs:
             npm install
             runner=npm
           fi
-          echo "$runner" > .rucksack-node-runner
+          echo "$runner" > "$RUNNER_TEMP/rucksack-node-runner"
 
       - name: Agent evidence
         id: agent_evidence
         continue-on-error: true
         run: |
           set -u
-          if [ -d .rucksack-ci-venv ]; then
-            . .rucksack-ci-venv/bin/activate
+          if [ -d "$RUNNER_TEMP/rucksack-ci-venv" ]; then
+            . "$RUNNER_TEMP/rucksack-ci-venv/bin/activate"
           fi
           status=0
           if [ -x scripts/agent-evidence ]; then
@@ -109,6 +109,8 @@ jobs:
           echo "- Status: \`${status:-not-run}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Artifact: \`rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Download: \`gh run download ${{ github.run_id }} --name rucksack-ci-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest artifact: \`rucksack-ci-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manifest download: \`gh run download ${{ github.run_id }} --name rucksack-ci-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$manifest" ]; then
             echo "- Manifest: \`$manifest\`" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -125,6 +127,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Upload agent evidence manifest
+        if: always() && steps.agent_evidence.outputs.manifest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucksack-ci-manifest-${{ github.run_id }}
+          path: ${{ steps.agent_evidence.outputs.manifest }}
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Node lint, typecheck, and tests
         run: |
           set -eu
@@ -132,8 +143,8 @@ jobs:
             echo "no package.json; skipping Node checks"
             exit 0
           fi
-          if [ -f .rucksack-node-runner ]; then
-            runner="$(cat .rucksack-node-runner)"
+          if [ -f "$RUNNER_TEMP/rucksack-node-runner" ]; then
+            runner="$(cat "$RUNNER_TEMP/rucksack-node-runner")"
           else
             corepack enable || true
             if [ -f pnpm-lock.yaml ]; then

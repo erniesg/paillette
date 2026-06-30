@@ -3,8 +3,9 @@
  * Handles artwork CRUD operations and image uploads
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { randomUUID } from 'crypto';
+import { z } from 'zod';
 import type { Env } from '../index';
 import {
   UploadArtworkSchema,
@@ -15,6 +16,7 @@ import {
   type ArtworkListResponse,
   type ArtworkUploadResponse,
 } from '../types/artwork';
+import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
 import { uploadImage, deleteImage } from '../utils/r2';
 import {
   validateImage,
@@ -26,6 +28,275 @@ import { PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { resolveOrgIdentifier } from '../utils/orgs';
 
 const app = new Hono<{ Bindings: Env }>();
+
+const JsonObjectSchema = z.record(z.any());
+
+const NullableStringSchema = z.string().max(5000).nullable();
+
+const UpsertArtworkSchema = z.object({
+  id: z.string().min(1).max(160).optional(),
+  collection_id: z.string().min(1).max(160).nullable().optional(),
+  image_url: z.string().url().nullable().optional(),
+  thumbnail_url: z.string().url().nullable().optional(),
+  original_filename: z.string().max(500).nullable().optional(),
+  image_hash: z.string().max(256).nullable().optional(),
+  title: z.string().min(1).max(500).optional(),
+  artist: z.string().max(255).nullable().optional(),
+  year: z.number().int().min(0).max(9999).nullable().optional(),
+  date_text: z.string().max(255).nullable().optional(),
+  medium: z.string().max(255).nullable().optional(),
+  classification: z.string().max(255).nullable().optional(),
+  culture: z.string().max(255).nullable().optional(),
+  origin: z.string().max(255).nullable().optional(),
+  dimensions_height: z.number().positive().nullable().optional(),
+  dimensions_width: z.number().positive().nullable().optional(),
+  dimensions_depth: z.number().positive().nullable().optional(),
+  dimensions_unit: z.enum(['cm', 'in', 'm']).nullable().optional(),
+  description: NullableStringSchema.optional(),
+  provenance: NullableStringSchema.optional(),
+  credit_line: NullableStringSchema.optional(),
+  rights: NullableStringSchema.optional(),
+  accession_number: z.string().max(255).nullable().optional(),
+  source_url: z.string().url().nullable().optional(),
+  source_institution: z.string().max(255).nullable().optional(),
+  source_collection: z.string().max(255).nullable().optional(),
+  source_record_id: z.string().max(255).nullable().optional(),
+  field_sources: JsonObjectSchema.optional(),
+  translations: JsonObjectSchema.optional(),
+  dominant_colors: z.any().optional(),
+  color_palette: z.any().optional(),
+  custom_metadata: JsonObjectSchema.optional(),
+  citation: z.any().optional(),
+});
+
+type UpsertArtworkInput = z.infer<typeof UpsertArtworkSchema>;
+
+const JSON_FIELDS = new Set([
+  'field_sources',
+  'translations',
+  'dominant_colors',
+  'color_palette',
+  'custom_metadata',
+  'citation',
+]);
+
+const UPSERT_MUTABLE_FIELDS = [
+  'collection_id',
+  'image_url',
+  'thumbnail_url',
+  'original_filename',
+  'image_hash',
+  'title',
+  'artist',
+  'year',
+  'date_text',
+  'medium',
+  'classification',
+  'culture',
+  'origin',
+  'dimensions_height',
+  'dimensions_width',
+  'dimensions_depth',
+  'dimensions_unit',
+  'description',
+  'provenance',
+  'credit_line',
+  'rights',
+  'accession_number',
+  'source_url',
+  'source_institution',
+  'source_collection',
+  'source_record_id',
+  'field_sources',
+  'translations',
+  'dominant_colors',
+  'color_palette',
+  'custom_metadata',
+  'citation',
+] as const;
+
+const toDbValue = (key: string, value: unknown) =>
+  JSON_FIELDS.has(key) && value !== null && value !== undefined
+    ? JSON.stringify(value)
+    : value;
+
+const getRouteOrgId = async (c: Context<{ Bindings: Env }>) =>
+  resolveOrgIdentifier(
+    c.env.DB,
+    c.req.param('orgId') || c.req.param('galleryId')
+  );
+
+const getScopedArtwork = async (
+  db: D1Database,
+  id: string,
+  orgId: string | undefined
+) =>
+  db
+    .prepare(
+      'SELECT * FROM artworks WHERE id = ? AND org_id = ? AND deleted_at IS NULL'
+    )
+    .bind(id, orgId)
+    .first<ArtworkRow>();
+
+const findArtworkForUpsert = async (
+  db: D1Database,
+  orgId: string | undefined,
+  input: UpsertArtworkInput
+) => {
+  if (input.id) {
+    const byId = await getScopedArtwork(db, input.id, orgId);
+    if (byId) return byId;
+  }
+
+  if (input.source_record_id) {
+    return db
+      .prepare(
+        `SELECT * FROM artworks
+         WHERE org_id = ?
+           AND source_record_id = ?
+           AND (? IS NULL OR source_institution = ?)
+           AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .bind(
+        orgId,
+        input.source_record_id,
+        input.source_institution ?? null,
+        input.source_institution ?? null
+      )
+      .first<ArtworkRow>();
+  }
+
+  if (input.accession_number) {
+    return db
+      .prepare(
+        `SELECT * FROM artworks
+         WHERE org_id = ?
+           AND accession_number = ?
+           AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .bind(orgId, input.accession_number)
+      .first<ArtworkRow>();
+  }
+
+  return null;
+};
+
+const updateArtworkRecord = async (
+  db: D1Database,
+  existing: ArtworkRow,
+  input: UpsertArtworkInput
+) => {
+  const updates: string[] = [];
+  const params: unknown[] = [];
+
+  for (const key of UPSERT_MUTABLE_FIELDS) {
+    if (input[key] !== undefined) {
+      updates.push(`${key} = ?`);
+      params.push(toDbValue(key, input[key]));
+    }
+  }
+
+  if (updates.length === 0) {
+    return existing;
+  }
+
+  params.push(existing.id, existing.org_id);
+  await db
+    .prepare(
+      `UPDATE artworks
+       SET ${updates.join(', ')}, updated_at = datetime('now')
+       WHERE id = ? AND org_id = ?`
+    )
+    .bind(...params)
+    .run();
+
+  return getScopedArtwork(db, existing.id, existing.org_id);
+};
+
+const createArtworkRecord = async (
+  db: D1Database,
+  orgId: string,
+  input: UpsertArtworkInput,
+  uploadedBy: string
+) => {
+  const artworkId = input.id || randomUUID();
+  const now = new Date().toISOString();
+
+  await db
+    .prepare(
+      `INSERT INTO artworks (
+        id, org_id, collection_id, image_url, thumbnail_url,
+        original_filename, image_hash,
+        image_url_processed, processing_status, frame_removal_confidence, processed_at, processing_error,
+        embedding_id,
+        title, artist, year, date_text, medium, classification, culture, origin,
+        dimensions_height, dimensions_width, dimensions_depth, dimensions_unit,
+        description, provenance, credit_line, rights, accession_number,
+        source_url, source_institution, source_collection, source_record_id,
+        field_sources, translations,
+        dominant_colors, color_palette, color_extracted_at, color_extraction_version,
+        custom_metadata, citation,
+        created_at, updated_at, uploaded_by, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      artworkId,
+      orgId,
+      input.collection_id ?? null,
+      input.image_url ?? null,
+      input.thumbnail_url ?? null,
+      input.original_filename ?? null,
+      input.image_hash ?? null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      input.title!,
+      input.artist ?? null,
+      input.year ?? null,
+      input.date_text ?? null,
+      input.medium ?? null,
+      input.classification ?? null,
+      input.culture ?? null,
+      input.origin ?? null,
+      input.dimensions_height ?? null,
+      input.dimensions_width ?? null,
+      input.dimensions_depth ?? null,
+      input.dimensions_unit ?? null,
+      input.description ?? null,
+      input.provenance ?? null,
+      input.credit_line ?? null,
+      input.rights ?? null,
+      input.accession_number ?? null,
+      input.source_url ?? null,
+      input.source_institution ?? null,
+      input.source_collection ?? null,
+      input.source_record_id ?? null,
+      JSON.stringify(input.field_sources ?? {}),
+      JSON.stringify(input.translations ?? {}),
+      input.dominant_colors !== undefined
+        ? JSON.stringify(input.dominant_colors)
+        : null,
+      input.color_palette !== undefined
+        ? JSON.stringify(input.color_palette)
+        : null,
+      null,
+      'v1',
+      JSON.stringify(input.custom_metadata ?? {}),
+      input.citation !== undefined ? JSON.stringify(input.citation) : null,
+      now,
+      now,
+      uploadedBy,
+      null
+    )
+    .run();
+
+  return getScopedArtwork(db, artworkId, orgId);
+};
 
 // ============================================================================
 // Helper Functions
@@ -85,8 +356,9 @@ function mapArtworkRowToResponse(row: ArtworkRow): ArtworkResponse {
  * POST /api/v1/artworks/upload
  * Upload a new artwork with image
  */
-app.post('/upload', async (c) => {
+app.post('/upload', requireAuthOrApiKey as any, async (c) => {
   try {
+    const auth = getAuth(c as any);
     // Parse multipart form data
     const formData = await c.req.formData();
     const file = formData.get('image') as File | null;
@@ -190,7 +462,7 @@ app.post('/upload', async (c) => {
     // Upload image to R2
     const uploadResult = await uploadImage(c.env.IMAGES, file, {
       originalFilename: file.name,
-      uploadedBy: 'system', // TODO: Get from auth context
+      uploadedBy: auth.userId,
       galleryId: orgId,
       width: uploadData.image_width,
       height: uploadData.image_height,
@@ -252,7 +524,7 @@ app.post('/upload', async (c) => {
         : null,
       created_at: now,
       updated_at: now,
-      uploaded_by: 'system', // TODO: Get from auth context
+      uploaded_by: auth.userId,
       deleted_at: null,
     };
 
@@ -386,6 +658,101 @@ app.post('/upload', async (c) => {
 });
 
 /**
+ * POST /api/v1/orgs/:orgId/artworks/upsert
+ * Create or update an artwork metadata record by id, source_record_id, or accession_number.
+ */
+app.post('/upsert', requireAuthOrApiKey as any, async (c) => {
+  try {
+    const orgId = await getRouteOrgId(c);
+    if (!orgId) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'Org ID is required',
+          },
+        },
+        400
+      );
+    }
+
+    const validation = UpsertArtworkSchema.safeParse(await c.req.json());
+    if (!validation.success) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid artwork record',
+            details: validation.error.issues,
+          },
+        },
+        400
+      );
+    }
+
+    const input = validation.data;
+    const existing = await findArtworkForUpsert(c.env.DB, orgId, input);
+    const auth = getAuth(c as any);
+
+    if (existing) {
+      const updated = await updateArtworkRecord(c.env.DB, existing, input);
+      return c.json({
+        success: true,
+        data: {
+          created: false,
+          artwork: mapArtworkRowToResponse(updated || existing),
+        },
+      });
+    }
+
+    if (!input.title) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'title is required when creating an artwork record',
+          },
+        },
+        400
+      );
+    }
+
+    const created = await createArtworkRecord(
+      c.env.DB,
+      orgId,
+      input,
+      auth.userId
+    );
+    return c.json(
+      {
+        success: true,
+        data: {
+          created: true,
+          artwork: mapArtworkRowToResponse(created!),
+        },
+      },
+      201
+    );
+  } catch (error) {
+    console.error('Artwork upsert error:', error);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'UPSERT_FAILED',
+          message:
+            error instanceof Error ? error.message : 'Failed to upsert artwork',
+        },
+      },
+      500
+    );
+  }
+});
+
+/**
  * GET /api/v1/artworks
  * List artworks with filtering and pagination
  */
@@ -418,7 +785,7 @@ app.get('/', async (c) => {
     });
 
     // Build query
-    let sql = 'SELECT * FROM artworks WHERE 1=1';
+    let sql = 'SELECT * FROM artworks WHERE 1=1 AND deleted_at IS NULL';
     const params: any[] = [];
 
     const validatedOrgId = validatedQuery.org_id || validatedQuery.gallery_id;
@@ -524,11 +891,8 @@ app.get('/:id', async (c) => {
   try {
     const id = c.req.param('id');
 
-    const artwork = await c.env.DB.prepare(
-      'SELECT * FROM artworks WHERE id = ?'
-    )
-      .bind(id)
-      .first<ArtworkRow>();
+    const orgId = await getRouteOrgId(c);
+    const artwork = await getScopedArtwork(c.env.DB, id, orgId);
 
     if (!artwork) {
       return c.json(
@@ -567,7 +931,7 @@ app.get('/:id', async (c) => {
  * PATCH /api/v1/artworks/:id
  * Update artwork metadata
  */
-app.patch('/:id', async (c) => {
+app.patch('/:id', requireAuthOrApiKey as any, async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -591,11 +955,8 @@ app.patch('/:id', async (c) => {
     const updateData = validationResult.data;
 
     // Check if artwork exists
-    const existing = await c.env.DB.prepare(
-      'SELECT * FROM artworks WHERE id = ?'
-    )
-      .bind(id)
-      .first<ArtworkRow>();
+    const orgId = await getRouteOrgId(c);
+    const existing = await getScopedArtwork(c.env.DB, id, orgId);
 
     if (!existing) {
       return c.json(
@@ -640,20 +1001,16 @@ app.patch('/:id', async (c) => {
       );
     }
 
-    params.push(id);
+    params.push(id, existing.org_id);
 
     await c.env.DB.prepare(
-      `UPDATE artworks SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`
+      `UPDATE artworks SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ? AND org_id = ?`
     )
       .bind(...params)
       .run();
 
     // Fetch updated artwork
-    const updated = await c.env.DB.prepare(
-      'SELECT * FROM artworks WHERE id = ?'
-    )
-      .bind(id)
-      .first<ArtworkRow>();
+    const updated = await getScopedArtwork(c.env.DB, id, existing.org_id);
 
     return c.json({
       success: true,
@@ -679,16 +1036,13 @@ app.patch('/:id', async (c) => {
  * DELETE /api/v1/artworks/:id
  * Delete artwork and its images
  */
-app.delete('/:id', async (c) => {
+app.delete('/:id', requireAuthOrApiKey as any, async (c) => {
   try {
     const id = c.req.param('id');
 
     // Get artwork to delete images
-    const artwork = await c.env.DB.prepare(
-      'SELECT * FROM artworks WHERE id = ?'
-    )
-      .bind(id)
-      .first<ArtworkRow>();
+    const orgId = await getRouteOrgId(c);
+    const artwork = await getScopedArtwork(c.env.DB, id, orgId);
 
     if (!artwork) {
       return c.json(
@@ -710,7 +1064,9 @@ app.delete('/:id', async (c) => {
     }
 
     // Delete from database
-    await c.env.DB.prepare('DELETE FROM artworks WHERE id = ?').bind(id).run();
+    await c.env.DB.prepare('DELETE FROM artworks WHERE id = ? AND org_id = ?')
+      .bind(id, artwork.org_id)
+      .run();
 
     return c.json({
       success: true,

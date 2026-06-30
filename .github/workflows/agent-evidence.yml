@@ -58,6 +58,8 @@ jobs:
             node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); console.log(`- Result: ${m.result}\n- Commit: ${m.commit}\n- Dirty: ${m.dirty === true ? "true" : "false"}\n- Lanes: ${(m.lanes_run || []).join(", ") || "(none)"}\n- Required failures: ${(m.required_failures || []).join(", ") || "(none)"}`)' "$manifest" >> "$GITHUB_STEP_SUMMARY"
             echo "- Artifact: \`agent-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- Download: \`gh run download ${{ github.run_id }} --name agent-evidence-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Manifest artifact: \`agent-evidence-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Manifest download: \`gh run download ${{ github.run_id }} --name agent-evidence-manifest-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No evidence manifest found." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -70,6 +72,14 @@ jobs:
           path: .agent/evidence
           include-hidden-files: true
           if-no-files-found: warn
+
+      - name: Upload evidence manifest
+        if: always() && steps.evidence.outputs.manifest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-evidence-manifest-${{ github.run_id }}
+          path: ${{ steps.evidence.outputs.manifest }}
+          if-no-files-found: ignore
 
       - name: Fail if evidence failed
         if: always()
@@ -105,6 +115,8 @@ jobs:
             exit 0
           fi
           body="$(MANIFEST="$manifest" node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync(process.env.MANIFEST,"utf8")); const lines=["<!-- agent-evidence -->","### Agent evidence","",`- Result: \`${m.result}\``,`- Commit: \`${m.commit}\``,`- Dirty: \`${m.dirty === true ? "true" : "false"}\``,`- Lanes: \`${(m.lanes_run || []).join(", ") || "(none)"}\``,`- Required failures: \`${(m.required_failures || []).join(", ") || "(none)"}\``]; console.log(lines.join("\n"));')"
+          body="$body"$'\n'"- Artifact: \`agent-evidence-${{ github.run_id }}\`"$'\n'"- Download: \`gh run download ${{ github.run_id }} --name agent-evidence-${{ github.run_id }}\`"
+          body="$body"$'\n'"- Manifest artifact: \`agent-evidence-manifest-${{ github.run_id }}\`"$'\n'"- Manifest download: \`gh run download ${{ github.run_id }} --name agent-evidence-manifest-${{ github.run_id }}\`"
           existing="$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" --jq '.[] | select(.body | contains("<!-- agent-evidence -->")) | .id' | tail -1)"
           if [ -n "$existing" ]; then
             gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" -f body="$body" >/dev/null

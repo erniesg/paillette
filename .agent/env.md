@@ -17,7 +17,11 @@ Required secret/env names for the Rucksack control plane:
 - `github repository`: `OPENAI_API_KEY` if the issue-ledger planner or `codex-action` provider is enabled.
 - `github environment/staging`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `RUCKSACK_APP_ENV` when staging deploy lanes are enabled.
 - `github environment/production`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `RUCKSACK_APP_ENV` when production deploy lanes are enabled.
-- `object storage/R2`: `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`; `.agent/storage.yaml` records only these names plus the generated-artifact prefix.
+
+Required secret/env names for NGA ingest, search, and notifications:
+- `object storage/R2`: `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`; `.agent/storage.yaml` records only these names plus the `nga/` prefix.
+- `cloudflare queue`: `CLOUDFLARE_QUEUE_ID` when `pnpm open:queue -- --enqueue` is used.
+- `embedding provider`: `JINA_API_KEY` when running `pnpm open:apply -- --embed-images` or `--embed-captions`.
 - `notifications`: `DISCORD_WEBHOOK_URL` only in the VM/service secret store or GitHub environment that sends notifications.
 
 Storage policy:

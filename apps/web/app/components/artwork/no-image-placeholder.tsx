@@ -10,21 +10,21 @@ type NoImagePlaceholderProps = {
 export function NoImagePlaceholder({
   className,
   iconClassName,
-  showLabel = false,
+  showLabel = true,
 }: NoImagePlaceholderProps) {
   return (
     <div
       className={cn(
-        'flex h-full w-full flex-col items-center justify-center gap-2 bg-white/[0.03] text-white/25',
+        'flex h-full w-full flex-col items-center justify-center gap-1.5 bg-white/[0.025] text-white/20',
         className
       )}
     >
       <ImageOff
-        className={cn('h-5 w-5', iconClassName)}
+        className={cn('h-4 w-4', iconClassName)}
         aria-hidden="true"
       />
       {showLabel ? (
-        <span className="text-xs text-current">No image</span>
+        <span className="text-[11px] text-current">No image</span>
       ) : (
         <span className="sr-only">No image</span>
       )}

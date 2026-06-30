@@ -71,11 +71,15 @@ const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 const NGS_ORG_SLUG = 'national-gallery-singapore';
 const NGS_ORG_KEY = 'ngs';
+const OPEN_ACCESS_ORG_SLUG = 'open-access-art';
+const OPEN_ACCESS_ORG_KEY = 'open';
 
 const ORG_ID_ALIASES: Record<string, string> = {
   [NGS_ORG_KEY]: NGS_ORG_ID,
   [NGS_ORG_SLUG]: NGS_ORG_ID,
   [LEGACY_NGS_ORG_ID]: NGS_ORG_ID,
+  [OPEN_ACCESS_ORG_KEY]: OPEN_ACCESS_ORG_SLUG,
+  [OPEN_ACCESS_ORG_SLUG]: OPEN_ACCESS_ORG_SLUG,
 };
 
 export const resolveOrgIdentifier = (orgId: string) =>
@@ -86,9 +90,17 @@ export const getPreferredOrgRouteId = (
   canonicalSlug?: string | null
 ) => {
   const requested = requestedOrgId.toLowerCase();
-  return ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID
-    ? NGS_ORG_KEY
-    : canonicalSlug || requestedOrgId;
+  if (ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID) {
+    return NGS_ORG_KEY;
+  }
+  if (
+    ORG_ID_ALIASES[requested] === OPEN_ACCESS_ORG_SLUG ||
+    requested === OPEN_ACCESS_ORG_SLUG ||
+    canonicalSlug === OPEN_ACCESS_ORG_SLUG
+  ) {
+    return OPEN_ACCESS_ORG_SLUG;
+  }
+  return canonicalSlug || requestedOrgId;
 };
 
 const sanitizeGeneratedCaptionRecord = (record: unknown) => {
@@ -96,8 +108,7 @@ const sanitizeGeneratedCaptionRecord = (record: unknown) => {
     return record;
   }
 
-  const { model: _model, ...caption } = record as Record<string, unknown>;
-  return caption;
+  return { ...(record as Record<string, unknown>) };
 };
 
 const sanitizeArtworkMetadata = (metadata: Record<string, any>) => {

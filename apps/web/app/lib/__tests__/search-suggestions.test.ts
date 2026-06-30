@@ -22,7 +22,7 @@ const holiday = (
 });
 
 describe('buildSuggestionPool', () => {
-  it('starts with the evergreen keyword copy', () => {
+  it('starts with the evergreen keyword', () => {
     const suggestions = buildSuggestionPool([]);
 
     expect(suggestions[0]).toMatchObject({
@@ -97,6 +97,10 @@ describe('buildSuggestionPool', () => {
       label: 'Vesak Day',
       isToday: false,
     });
+    expect(suggestions[2]).toMatchObject({
+      type: 'motif',
+      label: 'batik textile pattern',
+    });
   });
 
   it('does not include hardcoded festival suggestions when holidays are unavailable', () => {
@@ -132,12 +136,12 @@ describe('buildSuggestionPool', () => {
     const occasionDots = suggestions
       .filter((suggestion) => suggestion.type === 'occasion')
       .map((suggestion) => suggestion.dot);
-    const keywordDot = suggestions.find(
-      (suggestion) => suggestion.type === 'keyword'
+    const tropicalKeywordDot = suggestions.find(
+      (suggestion) => suggestion.label === 'tropical fruit and flowers'
     )?.dot;
 
     expect(new Set(occasionDots)).toEqual(new Set(['#365f9c']));
-    expect(keywordDot).toBe('#cda636');
+    expect(tropicalKeywordDot).toBe('#cda636');
   });
 
   it('returns distinct suggestion queries for try-query cache prefetching', () => {

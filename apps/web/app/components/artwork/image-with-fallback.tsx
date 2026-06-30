@@ -12,13 +12,19 @@ type ImageWithFallbackProps = Omit<
   src?: string | null;
   fallbackSrc?: string | null;
   fallback: ReactNode;
+  protectFromDownload?: boolean;
 };
 
 export function ImageWithFallback({
   src,
   fallbackSrc,
   fallback,
+  protectFromDownload = false,
   onError,
+  onContextMenu,
+  onDragStart,
+  draggable,
+  style,
   ...imageProps
 }: ImageWithFallbackProps) {
   const [failedSources, setFailedSources] = useState<string[]>([]);
@@ -41,6 +47,24 @@ export function ImageWithFallback({
     <img
       {...imageProps}
       src={activeSrc}
+      draggable={protectFromDownload ? false : draggable}
+      style={
+        protectFromDownload
+          ? { ...style, userSelect: 'none' }
+          : style
+      }
+      onContextMenu={(event) => {
+        if (protectFromDownload) {
+          event.preventDefault();
+        }
+        onContextMenu?.(event);
+      }}
+      onDragStart={(event) => {
+        if (protectFromDownload) {
+          event.preventDefault();
+        }
+        onDragStart?.(event);
+      }}
       onError={(event) => {
         setFailedSources((current) =>
           current.includes(activeSrc) ? current : [...current, activeSrc]

@@ -162,13 +162,94 @@ export function normalizeReviewDecision(decision) {
   return null;
 }
 
+function parseBox(value) {
+  if (Array.isArray(value) && value.length === 4) {
+    const box = value.map(Number);
+    return box.every(Number.isFinite) ? box : null;
+  }
+  if (typeof value !== 'string') return null;
+  const box = value
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((number) => Number.isFinite(number));
+  return box.length === 4 ? box : null;
+}
+
+function reviewDecisionFromSubmissionRow(row = {}) {
+  const explicit = normalizeReviewDecision(row.cropReview?.decision);
+  if (explicit) return explicit;
+  const action = String(row.cropAction || '').toLowerCase();
+  if (action === 'crop') return 'accept';
+  if (action === 'reject' || action === 'skip') return 'reject';
+  return normalizeReviewDecision(row.status);
+}
+
+function selectionFromSubmissionRow(row = {}) {
+  const cropReview = row.cropReview || {};
+  const box =
+    cropReview.box || parseBox(row.cropNativeCropBox) || parseBox(row.cropBox);
+  const cropMetadata =
+    cropReview.cropMetadata ||
+    (box
+      ? {
+          sourceUrl: row.cropSourceUrl || null,
+          sourceWidth: positiveNumber(row.cropSourceWidth),
+          sourceHeight: positiveNumber(row.cropSourceHeight),
+          nativeCropBox: box,
+          cropWidth: positiveNumber(row.cropOutputWidth) || box[2] - box[0],
+          cropHeight: positiveNumber(row.cropOutputHeight) || box[3] - box[1],
+          rotationAngle: Number(row.cropRotationAngle || 0),
+          rotationMode:
+            Number(row.cropRotationAngle || 0) &&
+            Math.abs(Number(row.cropRotationAngle || 0)) >= 0.05
+              ? 'rotate-source-then-crop'
+              : 'none',
+          autoTrimBackground: false,
+          sourceRemoteUrl: row.cropSourceRemoteUrl || null,
+          outputMode: row.cropOutputMode || null,
+          previewCanvasIsNotOutput:
+            row.cropPreviewCanvasIsNotOutput === true ||
+            row.cropPreviewCanvasIsNotOutput === 'true',
+        }
+      : null);
+  return {
+    choice: cropReview.choice || row.cropChoice || null,
+    choiceLabel: cropReview.choiceLabel || row.cropChoiceLabel || null,
+    box,
+    cropMetadata,
+    points: cropReview.points || [],
+    manualBox: cropReview.manualBox || null,
+    rotationAngle:
+      cropReview.rotationAngle ?? Number(row.cropRotationAngle || 0),
+    activeResult:
+      cropReview.activeResult ||
+      (box
+        ? {
+            method:
+              String(row.cropChoice || '').replace(/^generated:/, '') || null,
+            box,
+            cropUrl: null,
+            overlayUrl: null,
+          }
+        : null),
+    generatedResults: cropReview.generatedResults || {},
+    decision: reviewDecisionFromSubmissionRow(row),
+  };
+}
+
 export function selectReviewedCropsForBackfill({
   reviewDir,
   decisionsPayload,
   rows,
   exists = existsSync,
 }) {
-  const rowById = new Map((rows || []).map((row) => [String(row.id), row]));
+  const payloadRows = Array.isArray(decisionsPayload?.rows)
+    ? decisionsPayload.rows
+    : [];
+  const rowById = new Map();
+  for (const row of [...payloadRows, ...(rows || [])]) {
+    if (row?.id != null) rowById.set(String(row.id), row);
+  }
   const decisions =
     decisionsPayload?.decisions &&
     typeof decisionsPayload.decisions === 'object'
@@ -176,14 +257,21 @@ export function selectReviewedCropsForBackfill({
       : {};
   const selected = decisionsPayload?.selected || {};
   const output = [];
+  const decisionEntries = Object.keys(decisions).length
+    ? Object.entries(decisions)
+    : payloadRows
+        .filter((row) =>
+          ACCEPTED_DECISIONS.has(reviewDecisionFromSubmissionRow(row))
+        )
+        .map((row) => [String(row.id), 'accept']);
 
-  for (const [id, decision] of Object.entries(decisions)) {
+  for (const [id, decision] of decisionEntries) {
     if (!ACCEPTED_DECISIONS.has(normalizeReviewDecision(decision))) {
       continue;
     }
 
     const row = rowById.get(id) || { id };
-    const selection = selected[id] || {};
+    const selection = selected[id] || selectionFromSubmissionRow(row);
     const activeResult = selection.activeResult || {};
     const cropMetadata =
       selection.cropMetadata || activeResult.cropMetadata || null;
@@ -195,19 +283,32 @@ export function selectReviewedCropsForBackfill({
     const sourceUrl =
       cropMetadata?.sourceUrl ||
       sourceTransform?.sourceUrl ||
+      row.cropSourceUrl ||
       row.original ||
       null;
     const sourceWidth = Number(
-      cropMetadata?.sourceWidth || sourceTransform?.width || row.fullWidth || 0
+      cropMetadata?.sourceWidth ||
+        sourceTransform?.width ||
+        row.cropSourceWidth ||
+        row.fullWidth ||
+        row.width ||
+        0
     );
     const sourceHeight = Number(
       cropMetadata?.sourceHeight ||
         sourceTransform?.height ||
+        row.cropSourceHeight ||
         row.fullHeight ||
+        row.height ||
         0
     );
     const reviewBox =
-      cropMetadata?.nativeCropBox || selection.box || activeResult.box || null;
+      cropMetadata?.nativeCropBox ||
+      selection.box ||
+      activeResult.box ||
+      parseBox(row.cropNativeCropBox) ||
+      parseBox(row.cropBox) ||
+      null;
     const sourcePath =
       sourceUrl && !isDataUrl(sourceUrl)
         ? resolve(reviewDir, stripUrlQuery(sourceUrl))
@@ -244,7 +345,7 @@ export function selectReviewedCropsForBackfill({
       id,
       title: row.title || null,
       artist: row.artist || null,
-      dateText: row.dateText || null,
+      dateText: row.dateText || row.date || null,
       medium: row.medium || null,
       selectedImage: {
         ok: true,

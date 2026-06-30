@@ -3,6 +3,7 @@ import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
   buildPublicTextSearchCacheKey,
   isHiddenPublicNgsArtwork,
+  resolvePublicSearchOrgId,
 } from '../public-search.server';
 
 describe('isHiddenPublicNgsArtwork', () => {
@@ -10,7 +11,8 @@ describe('isHiddenPublicNgsArtwork', () => {
     expect(
       isHiddenPublicNgsArtwork({
         accession_number: 'AB2004-00006',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1030018',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1030018',
       })
     ).toBe(true);
     expect(
@@ -25,13 +27,15 @@ describe('isHiddenPublicNgsArtwork', () => {
     expect(
       isHiddenPublicNgsArtwork({
         accession_number: 'Gi-0007-(AB)',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1202039',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1202039',
       })
     ).toBe(true);
     expect(
       isHiddenPublicNgsArtwork({
         accession_number: '2013-00591',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1284239',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1284239',
       })
     ).toBe(true);
   });
@@ -50,13 +54,15 @@ describe('isHiddenPublicNgsArtwork', () => {
     expect(
       isHiddenPublicNgsArtwork({
         accession_number: '2013-00170',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1271927',
       })
     ).toBe(false);
     expect(
       isHiddenPublicNgsArtwork({
         accession_number: 'GI-0202-(PC)',
-        source_url: 'https://www.roots.gov.sg/Collection-Landing/listing/1016995',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1016995',
       })
     ).toBe(false);
   });
@@ -73,5 +79,32 @@ describe('buildPublicTextSearchCacheKey', () => {
 
     expect(url.searchParams.get('v')).toBe(PUBLIC_TEXT_SEARCH_CACHE_VERSION);
     expect(url.searchParams.get('query')).toBe('chung cheng');
+    expect(url.searchParams.get('facet')).toBeNull();
+  });
+
+  it('separates artist-facet search cache entries from semantic text search', () => {
+    const semanticKey = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+      query: 'Zhang Yiqian',
+    });
+    const artistKey = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      facet: 'artist',
+      orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+      query: 'Zhang Yiqian',
+    });
+    const artistUrl = new URL(artistKey.url);
+
+    expect(artistKey.url).not.toBe(semanticKey.url);
+    expect(artistUrl.searchParams.get('facet')).toBe('artist');
+  });
+});
+
+describe('resolvePublicSearchOrgId', () => {
+  it('maps the open collection short key to the Open Access Art slug', () => {
+    expect(resolvePublicSearchOrgId('open')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('OPEN')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('open-access-art')).toBe('open-access-art');
   });
 });
