@@ -31,16 +31,23 @@ pnpm test
 Bounded staging upload proof, only after the R2 gate is accepted and the approved secret store exposes Cloudflare auth plus `ANVIL_R2_BUCKET`:
 
 ```bash
-node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json
-pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-concurrency=1
+node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json --upload-auth=s3
+pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-auth=s3 --upload-concurrency=1
+```
+
+Trusted-machine alternative when Wrangler is already logged in and the bucket is recorded in `.agent/storage.yaml` or `ANVIL_R2_BUCKET`; do not run this from forked CI or untrusted branches:
+
+```bash
+node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json --upload-auth=wrangler
+pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-auth=wrangler --upload-concurrency=1
 ```
 
 Do not add `--apply-d1`, `--apply`, `--upsert-vectors`, or queue `--enqueue` to this issue's proof.
 
 Expected R2 readiness exits:
 
-- `0`: bucket and required Cloudflare/R2 names are present.
-- `3`: blocked by missing secret/auth names such as `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, or `R2_ENDPOINT`.
+- `0`: bucket and required Cloudflare/R2 names are present, or the explicit Wrangler auth check passed for `--upload-auth=wrangler`.
+- `3`: blocked by missing secret/auth names such as `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, or `R2_ENDPOINT`; for `--upload-auth=wrangler`, blocked by missing `WRANGLER_LOGIN`.
 - `4`: blocked by missing human bucket decision in `ANVIL_R2_BUCKET` or `.agent/storage.yaml`.
 
 ## Allowed secrets
@@ -57,7 +64,7 @@ Only secret names may appear, such as `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_T
 
 ## Stop conditions
 
-Stop if media download requires non-public access, if files exceed the repo storage policy, if R2 readiness exits `3` or `4`, if object-store credentials are missing for a non-plan run, if a downstream expensive operation would run before R2 readiness is proven, or if the next proposed command would apply D1, enqueue queue messages, upsert vectors, generate paid captions, or deploy.
+Stop if media download requires non-public access, if files exceed the repo storage policy, if R2 readiness exits `3` or `4`, if object-store credentials or Wrangler login are missing for a non-plan run, if a downstream expensive operation would run before R2 readiness is proven, or if the next proposed command would apply D1, enqueue queue messages, upsert vectors, generate paid captions, or deploy.
 
 ## Human clarification protocol
 

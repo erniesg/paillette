@@ -31,6 +31,7 @@ try {
   const assetMode = args.values.get('asset-mode') || 'r2';
   if (assetMode !== 'r2')
     throw new Error('--asset-mode=r2 is required for issue #18');
+  const uploadAuth = args.values.get('upload-auth') || 's3';
 
   const uploadRequested = args.flags.has('upload');
   const uploadLimit = numberOption(args.values, 'limit', 2) || 2;
@@ -47,7 +48,7 @@ try {
   }
 
   if (uploadRequested) {
-    const readiness = buildR2ReadinessReport();
+    const readiness = buildR2ReadinessReport({ uploadAuth });
     writeJson(readinessOut, readiness);
     if (readiness.exit_code !== 0) {
       writeAssetManifest(
@@ -55,6 +56,7 @@ try {
         { records: [] },
         {
           assetMode,
+          uploadAuth,
           uploadRequested,
           readinessReport: readinessOut,
         }
@@ -79,6 +81,7 @@ try {
 
   if (uploadRequested) {
     ledger = await uploadLedgerAssetsToR2(ledger, {
+      uploadAuth,
       uploadLimit,
       concurrency: numberOption(args.values, 'upload-concurrency', 1),
     });
@@ -89,6 +92,7 @@ try {
     ledger,
     {
       assetMode,
+      uploadAuth,
       uploadRequested,
       readinessReport: uploadRequested ? readinessOut : null,
     }
@@ -113,9 +117,10 @@ try {
 }
 
 function printHelp() {
-  console.log(`Usage: pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-concurrency=1
+  console.log(`Usage: pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-auth=s3 --upload-concurrency=1
 
 Live upload is capped at two records for issue #18 and is blocked unless the R2
-readiness report exits 0. This command never applies D1 SQL, enqueues queue
-messages, generates paid captions, upserts vectors, or deploys.`);
+readiness report exits 0. Use --upload-auth=wrangler only from a trusted machine
+with Wrangler already logged in. This command never applies D1 SQL, enqueues
+queue messages, generates paid captions, upserts vectors, or deploys.`);
 }

@@ -1,4 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +23,8 @@ export const R2_CONFIGURED_BUCKET_NAMES = [
   'paillette-assets-stg',
   'paillette-assets',
 ];
+export const R2_UPLOAD_AUTH_MODES = ['s3', 'wrangler'];
+export const WRANGLER_AUTH_NAME = 'WRANGLER_LOGIN';
 export const DEFAULT_OBJECT_PREFIX = 'generated/open-access/nga';
 export const DEFAULT_QUEUE_BATCH_SIZE = 10;
 export const DEFAULT_QUEUE_MAX_ATTEMPTS = 3;
@@ -369,22 +372,35 @@ export function buildQueuePlan(manifest, options = {}) {
 export function buildR2ReadinessReport(options = {}) {
   const env = options.env || process.env;
   const now = options.now || new Date().toISOString();
-  const envBucket = hasValue(env[R2_BUCKET_ENV]) ? env[R2_BUCKET_ENV] : '';
-  const configuredBucket = envBucket
-    ? ''
-    : readConfiguredR2Bucket(options.repoRoot || process.cwd());
-  const bucketName = envBucket || configuredBucket;
-  const bucketPresent = hasValue(bucketName);
-  const bucketNameIsDocumented =
-    bucketPresent && R2_CONFIGURED_BUCKET_NAMES.includes(bucketName);
-  const missingCredentials = R2_CREDENTIAL_NAMES.filter(
-    (name) => !hasValue(env[name])
+  const repoRoot = options.repoRoot || process.cwd();
+  const uploadAuth = normalizeR2UploadAuth(
+    options.uploadAuth || options.authMode
   );
+  const bucket = resolveR2Bucket(env, repoRoot);
+  const bucketPresent = hasValue(bucket.name);
+  const bucketNameIsDocumented =
+    bucketPresent && R2_CONFIGURED_BUCKET_NAMES.includes(bucket.name);
+  const missingCredentials =
+    uploadAuth === 's3'
+      ? R2_CREDENTIAL_NAMES.filter((name) => !hasValue(env[name]))
+      : [];
+  const wranglerAuth =
+    uploadAuth === 'wrangler'
+      ? checkWranglerR2Auth({
+          repoRoot,
+          runner: options.runner,
+        })
+      : null;
   const missingNames = [
     ...(bucketPresent ? [] : [R2_BUCKET_ENV]),
     ...missingCredentials,
+    ...(wranglerAuth && !wranglerAuth.ready ? [WRANGLER_AUTH_NAME] : []),
   ];
-  const exitCode = !bucketPresent ? 4 : missingCredentials.length ? 3 : 0;
+  const exitCode = !bucketPresent
+    ? 4
+    : missingCredentials.length || (wranglerAuth && !wranglerAuth.ready)
+      ? 3
+      : 0;
   const status = exitCode === 0 ? 'ready' : 'blocked';
   const blockedReason =
     exitCode === 4
@@ -398,6 +414,7 @@ export function buildR2ReadinessReport(options = {}) {
     kind: 'open_access_art_r2_readiness',
     generated_at: now,
     provider: 'r2',
+    upload_auth: uploadAuth,
     status,
     exit_code: exitCode,
     blocked_reason: blockedReason,
@@ -405,19 +422,21 @@ export function buildR2ReadinessReport(options = {}) {
       binding_names: R2_BINDING_NAMES,
       configured_bucket_names: R2_CONFIGURED_BUCKET_NAMES,
       bucket_name_env: R2_BUCKET_ENV,
-      credential_names: R2_CREDENTIAL_NAMES,
+      credential_names: uploadAuth === 's3' ? R2_CREDENTIAL_NAMES : [],
+      s3_credential_names: R2_CREDENTIAL_NAMES,
+      wrangler_auth_names: [WRANGLER_AUTH_NAME],
     },
-    bucket_name: bucketNameIsDocumented ? bucketName : null,
-    bucket_name_source: envBucket
-      ? 'environment'
-      : configuredBucket
-        ? '.agent/storage.yaml'
-        : null,
+    bucket_name: bucketNameIsDocumented ? bucket.name : null,
+    bucket_name_source: bucket.source,
     present_names: [
       ...(bucketPresent ? [R2_BUCKET_ENV] : []),
       ...R2_CREDENTIAL_NAMES.filter((name) => hasValue(env[name])),
+      ...(wranglerAuth?.ready ? [WRANGLER_AUTH_NAME] : []),
     ],
     missing_names: missingNames,
+    auth_checks: {
+      wrangler: wranglerAuth,
+    },
     prerequisite_for: [
       'open:apply --upload',
       'paid_caption_generation',
@@ -479,6 +498,56 @@ export function readConfiguredR2Bucket(repoRoot = process.cwd()) {
   }
 
   return '';
+}
+
+export function resolveR2Bucket(env = process.env, repoRoot = process.cwd()) {
+  const envBucket = hasValue(env[R2_BUCKET_ENV]) ? env[R2_BUCKET_ENV] : '';
+  const configuredBucket = envBucket ? '' : readConfiguredR2Bucket(repoRoot);
+  return {
+    name: envBucket || configuredBucket,
+    source: envBucket
+      ? 'environment'
+      : configuredBucket
+        ? '.agent/storage.yaml'
+        : null,
+  };
+}
+
+export function normalizeR2UploadAuth(value = 's3') {
+  const auth = String(value || 's3').toLowerCase();
+  if (!R2_UPLOAD_AUTH_MODES.includes(auth)) {
+    throw new Error(
+      `--upload-auth must be one of ${R2_UPLOAD_AUTH_MODES.join(', ')}`
+    );
+  }
+  return auth;
+}
+
+export function checkWranglerR2Auth(options = {}) {
+  const runner = options.runner || execFileSync;
+  const command = ['pnpm', '--dir', 'apps/api', 'exec', 'wrangler', 'whoami'];
+  try {
+    runner(command[0], command.slice(1), {
+      cwd: options.repoRoot || process.cwd(),
+      stdio: 'pipe',
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    return {
+      command: command.join(' '),
+      ready: true,
+      output_recorded: false,
+    };
+  } catch (error) {
+    return {
+      command: command.join(' '),
+      ready: false,
+      output_recorded: false,
+      exit_status: Number.isInteger(error?.status) ? error.status : null,
+      signal: error?.signal || null,
+      error_code: typeof error?.code === 'string' ? error.code : null,
+    };
+  }
 }
 
 export function r2NamesReport() {
@@ -604,6 +673,7 @@ export async function downloadAsset(url, path, options = {}) {
 export async function uploadLedgerAssetsToR2(ledger, options = {}) {
   const uploadLimit =
     options.uploadLimit && options.uploadLimit > 0 ? options.uploadLimit : 2;
+  const uploadAuth = normalizeR2UploadAuth(options.uploadAuth);
   if (uploadLimit > 2 && !options.allowMoreThanTwo) {
     const error = new Error(
       'live R2 upload is capped at two records for issue #18'
@@ -619,28 +689,79 @@ export async function uploadLedgerAssetsToR2(ledger, options = {}) {
     }
 
     const body = readFileSync(record.download.path);
-    const result = await putR2Object({
-      body,
-      key: record.target_object_key,
-      contentType:
-        record.download.content_type || record.content_type || 'image/jpeg',
-      env: options.env || process.env,
-    });
+    const contentType =
+      record.download.content_type || record.content_type || 'image/jpeg';
+    const result =
+      uploadAuth === 'wrangler'
+        ? putR2ObjectWithWrangler({
+            file: record.download.path,
+            key: record.target_object_key,
+            contentType,
+            env: options.env || process.env,
+            repoRoot: options.repoRoot || process.cwd(),
+            runner: options.runner,
+          })
+        : await putR2Object({
+            body,
+            key: record.target_object_key,
+            contentType,
+            env: options.env || process.env,
+          });
     record.upload = {
       status: 'uploaded',
+      upload_auth: uploadAuth,
       object_key: record.target_object_key,
       r2_bucket_env: R2_BUCKET_ENV,
       etag: result.etag,
       bytes: body.length,
       sha256: sha256Hex(body),
-      content_type:
-        record.download.content_type || record.content_type || 'image/jpeg',
+      content_type: contentType,
       error: null,
     };
   });
 
   updateLedgerSummary(ledger);
   return ledger;
+}
+
+export function putR2ObjectWithWrangler({
+  file,
+  key,
+  contentType,
+  env = process.env,
+  repoRoot = process.cwd(),
+  runner = execFileSync,
+}) {
+  const bucket = resolveR2Bucket(env, repoRoot).name;
+  if (!bucket) {
+    throw new Error('Wrangler R2 upload requested before bucket is configured');
+  }
+
+  const command = [
+    'pnpm',
+    '--dir',
+    'apps/api',
+    'exec',
+    'wrangler',
+    'r2',
+    'object',
+    'put',
+    `${bucket}/${key}`,
+    '--file',
+    file,
+    '--content-type',
+    contentType,
+  ];
+  runner(command[0], command.slice(1), {
+    cwd: repoRoot,
+    stdio: 'pipe',
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return {
+    status: 0,
+    etag: null,
+  };
 }
 
 export async function putR2Object({
@@ -730,6 +851,7 @@ export function writeAssetManifest(path, ledger, options = {}) {
       byte_size: record.download.bytes,
       sha256: record.download.sha256,
       uploaded: record.upload?.status === 'uploaded',
+      upload_auth: record.upload?.upload_auth || null,
       upload_etag: record.upload?.etag || null,
       r2_bucket_env: R2_BUCKET_ENV,
     }));
@@ -739,6 +861,7 @@ export function writeAssetManifest(path, ledger, options = {}) {
     kind: 'open_access_art_asset_manifest',
     generated_at: new Date().toISOString(),
     asset_mode: options.assetMode || 'r2',
+    upload_auth: options.uploadAuth || 's3',
     upload_requested: Boolean(options.uploadRequested),
     upload_performed: records.some((record) => record.uploaded),
     readiness_report: options.readinessReport || null,

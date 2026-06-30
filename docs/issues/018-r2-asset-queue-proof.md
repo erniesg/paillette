@@ -17,8 +17,17 @@ pnpm open:queue -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-laun
 The bounded staging upload is held until R2 readiness exits `0`:
 
 ```bash
-node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json
-pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-concurrency=1
+node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json --upload-auth=s3
+pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-auth=s3 --upload-concurrency=1
+```
+
+Trusted-machine alternative when Wrangler is already logged in and the bucket is
+recorded in `.agent/storage.yaml` or `ANVIL_R2_BUCKET`; do not run this from
+forked CI or untrusted branches:
+
+```bash
+node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json --upload-auth=wrangler
+pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-auth=wrangler --upload-concurrency=1
 ```
 
 Do not add `--apply-d1`, `--apply`, `--upsert-vectors`, or `--enqueue` for this
@@ -33,6 +42,7 @@ proof.
 - Tracked non-secret fallback: `.agent/storage.yaml` `object_storage.bucket`
 - Credential names: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`,
   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`
+- Trusted-machine Wrangler auth gate name: `WRANGLER_LOGIN`
 - Object key prefix: `generated/open-access/nga/`
 
 Only names are documented here. Secret values and runtime bucket env values must
@@ -47,7 +57,8 @@ redaction checks before any upload can proceed.
 
 Readiness exit `4` means no bucket decision was found in either
 `ANVIL_R2_BUCKET` or `.agent/storage.yaml`. Exit `3` means the bucket is known
-but Cloudflare/R2 secret or auth names are still missing.
+but Cloudflare/R2 secret names are still missing for `--upload-auth=s3`, or
+Wrangler login is missing for `--upload-auth=wrangler`.
 
 The queue command writes a dry-run batch plan with batch size and retry behavior.
 It does not enqueue messages.
