@@ -1,6 +1,6 @@
 # NGA Launch Readiness
 
-Status: hold until storage, provider, and launch approvals are resolved.
+Status: review-ready evidence pack; live launch remains held.
 Last updated: 2026-06-30.
 
 This is the launch evidence pack for adding National Gallery of Art,
@@ -16,9 +16,10 @@ vector upserts, or deploys.
 | Dry-run mapping | Issue #16, `tmp/nga-dry-run.json`, `.agent/evidence/20260623T112236152Z/manifest.json` | Awaiting review. |
 | Seed-only D1 plan | Issue #17, `tmp/nga-apply-plan/` | Awaiting review, no D1 writes. |
 | Public search smoke | Issue #19, route fixture coverage for `orgId=open` plus staging route smoke | Reviewed/closed; API alias resolves to `open-access-art`. |
-| R2 asset and queue proof | Issue #18, `tmp/nga-launch-queue/` | Reviewed/closed for proof; live upload/enqueue still needs approved bucket and secret-store setup. |
+| R2 asset and queue proof | Issue #18, bounded Wrangler upload proof to `paillette-assets-stg` | Reviewed/closed; 2 NGA objects uploaded as proof, no D1 apply, queue enqueue, vector upsert, paid caption generation, deploy, or full ingest. |
 | Caption and vector cost gate | Issue #20, `tmp/nga-cost-gate-jina-missing-secret.json` | Held for v1: launch metadata plus institution captions only; defer paid/quota-consuming caption/vector work. |
-| Launch and rollback | Issue #21, this document | Still blocked until a bounded staging upload and launch approval are explicitly accepted. |
+| Hosted unlock/control plane | Issue #26 | Held for this launch; GitHub issue comments remain canonical, with browser/approved secret-store setup outside GitHub for secret values. |
+| Launch and rollback | Issue #21, this document plus `tmp/rucksack-human-gates-readiness.json` | Ready for launch-review packaging; live launch approval is still not granted. |
 
 ## Staging Search Route Evidence
 
@@ -62,11 +63,14 @@ provider records and image tiling assumptions can change.
 ## Required Human Decisions
 
 1. Storage bucket and bounded upload
-   - Decide or create the R2 bucket outside git.
-   - Keep `.agent/storage.yaml` as the reviewed policy source.
-   - Live upload and live queue enqueue must stay blocked unless an approved
-     bucket is supplied with `--bucket` or committed as a nonempty
-     `object_storage.bucket`.
+   - The reviewed staging bucket is `paillette-assets-stg`, recorded by name
+     only in `.agent/storage.yaml`.
+   - The bounded #18 proof uploaded two NGA objects through trusted Wrangler
+     auth and recorded object keys, byte sizes, and SHA-256 hashes in issue
+     comments.
+   - Live queue enqueue and any larger upload remain blocked until a separate
+     launch approval names the exact environment, batch size, and rollback
+     owner.
 
 2. Image embedding provider
    - Options: local machine benchmark, Jina API with `JINA_API_KEY`, or defer
@@ -81,12 +85,14 @@ provider records and image tiling assumptions can change.
      are approved.
 
 4. Staging apply approval
-   - Required before `--apply-d1`, `--upload`, `--upsert-vectors`, or queue
-     enqueue.
-   - Start with a bounded staging batch after secrets and bucket are configured.
+   - Still required before `--apply-d1`, queue enqueue, vector upsert, deploy,
+     or any upload beyond the accepted two-object #18 proof.
+   - Start from the bounded proof evidence, then request a named launch batch
+     only after reviewers accept this packet.
 
 5. Launch approval
-   - Required after #18, #20, and the review-ready evidence issues are accepted.
+   - Required after #18, #20, #26, and the review-ready evidence issues are
+     accepted or explicitly held.
    - Approval should name the exact branch, environment, bucket, first batch
      size, and rollback owner.
 
@@ -97,11 +103,9 @@ Recommended initial launch posture:
 - Launch metadata and institution captions first.
 - Defer generated captions for the 1,550 missing-caption rows.
 - Defer image vectors and generated-caption vectors.
-- Configure and verify R2 readiness before any paid, quota-consuming, or bulk
-  caption/vector work.
-- Approve only a bounded R2 staging upload after bucket and secret setup.
-- Keep D1 apply, queue enqueue, vector upsert, and deploy blocked until the
-  bounded staging upload evidence is attached to issue #21.
+- Treat the accepted #18 two-object R2 upload as storage proof for review.
+- Keep D1 apply, queue enqueue, vector upsert, generated captions, larger R2
+  uploads, and deploy blocked until a separate launch approval is posted.
 
 This keeps the public NGA collection launch on the proven open-access metadata
 path while preserving a separate caption/vector workstream for local or Jina
@@ -127,26 +131,23 @@ runtime, and storage path first; missing model weights or local runtime setup
 should be treated as `rucksack-needs-human`, not silently replaced with paid API
 calls.
 
-Paste-ready decision for issue #18 after the bucket exists and secrets are set:
+Issue #18 accepted proof summary:
 
 ```text
-/rucksack accept
-Decision: approve bounded staging upload proof only.
-Bucket: <approved-r2-bucket>
-First batch: 5 NGA records / 10 assets.
-Allowed commands: storage setup, bounded `open:apply --download --upload`, and
-evidence capture.
-Still blocked: D1 apply, queue enqueue, vector upsert, deploy, and full ingest.
-Rollback owner: <owner>
+Decision: bounded R2 proof accepted for review.
+Bucket: paillette-assets-stg.
+Proof batch: 2 NGA records / 2 uploaded objects.
+Still blocked: D1 apply, queue enqueue, vector upsert, deploy, larger upload,
+paid/generated captions, and full ingest.
 ```
 
-Paste-ready hold for issue #21 until the bounded staging upload evidence is
-attached:
+Paste-ready hold for live launch on issue #21:
 
 ```text
 /rucksack hold
-Reason: launch remains blocked until #18 has bounded R2 staging-upload evidence
-and #20 provider/cost scope is held or accepted for v1.
+Reason: evidence pack is review-ready, but live launch remains blocked until a
+human approves exact branch, environment, batch size, rollback owner, D1 apply,
+queue enqueue, R2 upload scope, vector/caption scope, and deploy plan.
 ```
 
 ## Secret Names
@@ -197,7 +198,9 @@ For the first bounded staging upload proof, use the approved bucket and a small
 sample only:
 
 ```bash
-pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-staging-upload --limit 5 --download --upload --bucket <approved-r2-bucket>
+node scripts/open-access-art-r2-readiness.mjs --out tmp/nga-r2-readiness.json --upload-auth=wrangler
+pnpm open:apply -- --manifest=tmp/nga-dry-run.json --out-dir tmp/nga-staging-upload --limit 2 --download --upload --upload-auth=wrangler
+node scripts/rucksack-human-gates-readiness.mjs --repo erniesg/paillette --manifest tmp/nga-dry-run.json --out tmp/rucksack-human-gates-readiness.json
 scripts/agent-evidence
 ```
 
@@ -214,8 +217,8 @@ Cheap planning and estimates may run before R2 is ready:
 - `open:gate` when it exits before provider calls because provider secrets are
   absent
 
-These operations must wait until R2 readiness is configured and the bounded
-staging upload evidence is attached to issue #21:
+These operations must wait until the #21 evidence pack is reviewed and a
+separate launch approval is posted:
 
 - paid or quota-consuming caption generation
 - paid or quota-consuming image or caption embedding
@@ -226,9 +229,11 @@ staging upload evidence is attached to issue #21:
 - `open:apply --upsert-vectors`
 - deploy or launch approval
 
-R2 readiness means: approved bucket name, `nga/` prefix, secret values present in
-the approved store by name, successful bounded upload evidence, object keys
-recorded, and rollback/delete owner named.
+R2 readiness for the current proof means: approved bucket name
+`paillette-assets-stg`, generated object-key prefix, trusted Wrangler auth,
+successful two-object upload evidence, object keys recorded, and no D1 apply,
+queue enqueue, vector upsert, paid/generated caption work, deploy, or full
+ingest.
 
 ## Blocked Commands
 
@@ -246,8 +251,9 @@ wrangler deploy
 
 ## Rollback Plan
 
-No live state has been changed by the current evidence pack, so the immediate
-rollback is to discard local `tmp/` outputs and hold #21 blocked.
+The only live state changed by the current evidence pack is the accepted #18
+two-object R2 proof in `paillette-assets-stg`. No D1 rows, queue messages,
+vectors, generated captions, deploys, or full ingest have been applied.
 
 For a future bounded staging run, record the exact batch manifest, object keys,
 D1 SQL files, queue batches, vector IDs, PR, and evidence manifest before
@@ -266,12 +272,14 @@ review of the exact IDs and object keys.
 
 ## Launch Decision Template
 
-Use this template on issue #21 after upstream evidence is accepted:
+Use this template on issue #21 while holding live launch:
 
 ```text
 /rucksack hold
-Reason: launch remains blocked until #18 storage approval and #20 provider/cost
-approval are resolved.
+Reason: #18/#20/#26 evidence is ready for launch review, but live launch remains
+blocked until a human approves exact branch, environment, batch size, rollback
+owner, D1 apply, queue enqueue, R2 upload scope, vector/caption scope, and
+deploy plan.
 ```
 
 When ready to approve a bounded staging run, include:

@@ -120,7 +120,7 @@ describe('open access art queue planning', () => {
     });
   });
 
-  it('blocks live enqueue when no approved storage bucket is configured', () => {
+  it('blocks live enqueue when Cloudflare queue setup is missing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'paillette-queue-live-gate-'));
     const manifestPath = join(dir, 'manifest.json');
     writeFileSync(
@@ -150,7 +150,7 @@ describe('open access art queue planning', () => {
     assert.notEqual(proc.status, 0);
     assert.match(
       `${proc.stderr}\n${proc.stdout}`,
-      /approved R2 bucket is required before live enqueue/u
+      /--account-id or CLOUDFLARE_ACCOUNT_ID is required/u
     );
   });
 });

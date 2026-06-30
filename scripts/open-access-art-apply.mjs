@@ -13,6 +13,12 @@ import {
 import { dirname, resolve } from 'node:path';
 
 import {
+  buildR2ReadinessReport,
+  putR2Object,
+  putR2ObjectWithWrangler,
+  R2_BUCKET_ENV,
+} from './lib/open-access-art.mjs';
+import {
   DEFAULT_STAGING_ASSET_API_BASE,
   buildOpenAccessAssetDownloads,
   buildOpenAccessApplyPlan,
@@ -53,6 +59,10 @@ const options = {
   limit: Number(args.values.get('limit') || '0'),
   d1BatchSize: Number(args.values.get('d1-batch-size') || '50'),
   uploadConcurrency: Number(args.values.get('upload-concurrency') || '4'),
+  uploadAuth: args.values.get('upload-auth') || 's3',
+  readinessOut: resolve(
+    args.values.get('readiness-out') || 'tmp/nga-r2-readiness.json'
+  ),
   vectorBatchSize: Number(args.values.get('vector-batch-size') || '8'),
   envFile: resolve(args.values.get('env-file') || 'eval/.env'),
   captionJsonl: args.values.get('caption-jsonl')
@@ -116,6 +126,13 @@ const plan = buildOpenAccessApplyPlan({
 if (options.seedOnly) {
   plan.records = [];
 }
+if (options.upload && plan.records.length > 2) {
+  const error = new Error(
+    'live R2 upload is capped at two records for issue #18'
+  );
+  error.exitCode = 4;
+  throw error;
+}
 
 writeJson(resolve(options.outDir, 'apply-plan.json'), plan);
 writeJsonl(resolve(options.outDir, 'apply-plan.jsonl'), plan.records);
@@ -138,6 +155,20 @@ if (options.planOnly) {
 }
 
 let assetManifestFile = null;
+if (options.upload) {
+  const readiness = buildR2ReadinessReport({
+    uploadAuth: options.uploadAuth,
+  });
+  writeJson(options.readinessOut, readiness);
+  if (readiness.exit_code !== 0) {
+    assetManifestFile = writeBlockedAssetManifest(readiness);
+    console.error(
+      `R2 readiness blocked upload with exit code ${readiness.exit_code}`
+    );
+    process.exit(readiness.exit_code);
+  }
+}
+
 let assetDownloads = [];
 if (options.download && plan.records.length) {
   assetDownloads = await downloadAssets(plan.records);
@@ -291,24 +322,24 @@ async function uploadAssets(downloads) {
   if (!downloads.length) return;
 
   await mapLimit(downloads, options.uploadConcurrency, async (download, index) => {
-    execFileSync(
-      'pnpm',
-      [
-        '--dir',
-        'apps/api',
-        'exec',
-        'wrangler',
-        'r2',
-        'object',
-        'put',
-        `${options.bucket}/${download.objectKey}`,
-        '--file',
-        download.localPath,
-        '--content-type',
-        download.contentType,
-      ],
-      wranglerExecOptions
-    );
+    const result =
+      options.uploadAuth === 'wrangler'
+        ? putR2ObjectWithWrangler({
+            file: download.localPath,
+            key: download.objectKey,
+            contentType: download.contentType,
+          })
+        : await putR2Object({
+            body: readFileSync(download.localPath),
+            key: download.objectKey,
+            contentType: download.contentType,
+            env: { ...process.env, [R2_BUCKET_ENV]: options.bucket },
+          });
+    download.upload = {
+      status: 'uploaded',
+      uploadAuth: options.uploadAuth,
+      etag: result.etag || null,
+    };
     if ((index + 1) % 25 === 0 || index + 1 === downloads.length) {
       console.error(`uploaded ${index + 1}/${downloads.length}`);
     }
@@ -368,7 +399,26 @@ function writeAssetManifest(downloads) {
     generatedAt: new Date().toISOString(),
     bucket: options.bucket,
     count: downloads.length,
+    uploadAuth: options.uploadAuth,
+    uploadRequested: options.upload,
+    readinessReport: options.upload ? options.readinessOut : null,
     assets: downloads,
+  });
+  return file;
+}
+
+function writeBlockedAssetManifest(readiness) {
+  const file = resolve(options.outDir, 'asset-manifest.json');
+  writeJson(file, {
+    generatedAt: new Date().toISOString(),
+    bucket: options.bucket,
+    count: 0,
+    uploadAuth: options.uploadAuth,
+    uploadRequested: options.upload,
+    uploadPerformed: false,
+    readinessReport: options.readinessOut,
+    blockedReason: readiness.blocked_reason,
+    assets: [],
   });
   return file;
 }
@@ -621,7 +671,7 @@ function printHelp() {
   console.log(`Usage:
   pnpm open:apply -- --manifest tmp/open-access-art-dry-run.json --plan-only
   pnpm open:apply -- --seed-only --apply-d1
-  pnpm open:apply -- --manifest tmp/open-access-art-dry-run.json --limit 20 --download --upload --apply-d1
+  pnpm open:apply -- --manifest tmp/nga-launch-dry-run.json --out-dir tmp/nga-r2-upload-proof --limit=2 --asset-mode=r2 --download --upload --upload-auth=s3 --upload-concurrency=1
 
 Options:
   --manifest PATH          Dry-run manifest from pnpm open:dry-run -- --out PATH.
@@ -634,7 +684,9 @@ Options:
   --download               Download R2-cached source images into out-dir/assets.
   --download-only          Download assets, write asset-manifest.json, then stop.
   --refresh-assets         Re-fetch existing local asset files.
-  --upload                 Upload downloaded web/thumb objects to R2. Requires --bucket or .agent/storage.yaml bucket.
+  --upload                 Upload downloaded web/thumb objects to R2 after readiness passes. Capped at two records.
+  --upload-auth s3|wrangler R2 upload auth mode. Default: s3.
+  --readiness-out PATH     R2 readiness report path. Default: tmp/nga-r2-readiness.json.
   --apply-d1               Apply generated SQL to D1.
   --embed-images           Generate image vector NDJSON with Jina CLIP.
   --embed-external-images  Also embed providers left in external asset mode.
@@ -643,5 +695,10 @@ Options:
   --upsert-vectors         Upsert generated vector NDJSON to Vectorize.
   --apply                  Download assets, upload to R2, and apply D1.
   --plan-only              Only write plan, summary, and SQL files.
+
+Live upload is blocked unless the R2 readiness report exits 0. Use
+--upload-auth=wrangler only from a trusted machine with Wrangler already logged
+in. Do not combine issue #18 proof runs with --apply-d1, queue enqueue,
+caption generation, vector upsert, or deploy.
 `);
 }

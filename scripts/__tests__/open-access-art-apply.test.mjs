@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -110,9 +110,11 @@ describe('open access art apply plan', () => {
     );
   });
 
-  it('blocks live uploads when no approved storage bucket is configured', () => {
+  it('blocks live uploads when R2 auth names are missing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'paillette-apply-live-gate-'));
     const manifestPath = join(dir, 'manifest.json');
+    const readinessPath = join(dir, 'readiness.json');
+    const outDir = join(dir, 'out');
     writeFileSync(
       manifestPath,
       JSON.stringify({
@@ -131,17 +133,33 @@ describe('open access art apply plan', () => {
         '--manifest',
         manifestPath,
         '--out-dir',
-        join(dir, 'out'),
+        outDir,
+        '--readiness-out',
+        readinessPath,
+        '--limit',
+        '1',
         '--upload',
       ],
       { cwd: process.cwd(), encoding: 'utf8' }
     );
 
-    assert.notEqual(proc.status, 0);
+    assert.equal(proc.status, 3);
     assert.match(
       `${proc.stderr}\n${proc.stdout}`,
-      /approved R2 bucket is required before live upload/u
+      /R2 readiness blocked upload with exit code 3/u
     );
+    assert.equal(existsSync(readinessPath), true);
+    assert.equal(existsSync(join(outDir, 'asset-manifest.json')), true);
+    const readiness = JSON.parse(readFileSync(readinessPath, 'utf8'));
+    assert.equal(readiness.bucket_name, 'paillette-assets-stg');
+    assert.equal(readiness.bucket_name_source, '.agent/storage.yaml');
+    assert.deepEqual(readiness.missing_names, [
+      'CLOUDFLARE_ACCOUNT_ID',
+      'CLOUDFLARE_API_TOKEN',
+      'R2_ACCESS_KEY_ID',
+      'R2_SECRET_ACCESS_KEY',
+      'R2_ENDPOINT',
+    ]);
   });
 
   it('can leave selected providers as external hotlinks while caching others', () => {
