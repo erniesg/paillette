@@ -38,6 +38,20 @@ describe('isHiddenPublicNgsArtwork', () => {
           'https://www.roots.gov.sg/Collection-Landing/listing/1284239',
       })
     ).toBe(true);
+    expect(
+      isHiddenPublicNgsArtwork({
+        accession_number: '1993-01334',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1029137',
+      })
+    ).toBe(true);
+    expect(
+      isHiddenPublicNgsArtwork({
+        accession_number: '1995-01559',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1081040',
+      })
+    ).toBe(true);
   });
 
   it('keeps AB-like accessions when the source is not Roots', () => {

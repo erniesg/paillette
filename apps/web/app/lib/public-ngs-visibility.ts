@@ -14,6 +14,10 @@ const isRootsUrl = (value: string | null) =>
   Boolean(value && /^https:\/\/www\.roots\.gov\.sg\//i.test(value));
 
 const HIDDEN_ROOTS_ONLY_NGS_ACCESSIONS = new Set([
+  '1993-01334',
+  '1993-01352',
+  '1995-01559',
+  '1995-01786',
   '2013-00591',
   '2013-00592',
   '2013-00593',
