@@ -2,6 +2,8 @@ export const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 export const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 export const NGS_ORG_SLUG = 'national-gallery-singapore';
 export const NGS_ORG_KEY = 'ngs';
+export const OPEN_ACCESS_ORG_SLUG = 'open-access-art';
+export const OPEN_ACCESS_ORG_KEY = 'open';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,6 +18,13 @@ export const isNgsPublicOrg = (value: string | null | undefined) => {
     key === NGS_ORG_SLUG ||
     key === NGS_ORG_KEY
   );
+};
+
+export const isOpenAccessPublicOrg = (value: string | null | undefined) => {
+  const key = String(value || '')
+    .trim()
+    .toLowerCase();
+  return key === OPEN_ACCESS_ORG_KEY || key === OPEN_ACCESS_ORG_SLUG;
 };
 
 export async function resolveOrgIdentifier(
@@ -40,6 +49,19 @@ export async function resolveOrgIdentifier(
       return org?.id || NGS_ORG_ID;
     } catch {
       return NGS_ORG_ID;
+    }
+  }
+
+  if (isOpenAccessPublicOrg(key)) {
+    try {
+      const org = await db
+        .prepare('SELECT id FROM orgs WHERE lower(slug) = lower(?) LIMIT 1')
+        .bind(OPEN_ACCESS_ORG_SLUG)
+        .first<{ id: string }>();
+
+      return org?.id || OPEN_ACCESS_ORG_SLUG;
+    } catch {
+      return OPEN_ACCESS_ORG_SLUG;
     }
   }
 

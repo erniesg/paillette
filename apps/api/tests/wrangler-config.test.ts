@@ -30,6 +30,13 @@ const extractProductionEnvVars = () => {
   return match?.[1] ?? '';
 };
 
+const extractStagingEnvVars = () => {
+  const match = wranglerToml.match(
+    /\[env\.staging\][\s\S]*?vars = \{([^}]+)\}/
+  );
+  return match?.[1] ?? '';
+};
+
 describe('wrangler production search config', () => {
   it('keeps the default production worker on v2 hybrid search', () => {
     const varsBlock = extractTopLevelVarsBlock();
@@ -45,5 +52,30 @@ describe('wrangler production search config', () => {
     for (const [key, value] of Object.entries(requiredProductionSearchVars)) {
       expect(productionVars).toContain(`${key} = "${value}"`);
     }
+  });
+
+  it('keeps staging on the same v2 hybrid search config as production', () => {
+    const stagingVars = extractStagingEnvVars();
+
+    for (const [key, value] of Object.entries(requiredProductionSearchVars)) {
+      expect(stagingVars).toContain(`${key} = "${value}"`);
+    }
+  });
+});
+
+describe('wrangler open access asset queue config', () => {
+  it('binds open access asset producers and consumers for staging and production', () => {
+    expect(wranglerToml).toContain('binding = "OPEN_ACCESS_ASSET_QUEUE"');
+    expect(wranglerToml).toContain('queue = "paillette-open-access-assets"');
+    expect(wranglerToml).toContain(
+      'queue = "paillette-open-access-assets-stg"'
+    );
+    expect(wranglerToml).toContain('max_batch_size = 25');
+    expect(wranglerToml).toContain(
+      'dead_letter_queue = "paillette-open-access-assets-dlq"'
+    );
+    expect(wranglerToml).toContain(
+      'dead_letter_queue = "paillette-open-access-assets-dlq-stg"'
+    );
   });
 });

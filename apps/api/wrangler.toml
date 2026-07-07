@@ -56,6 +56,17 @@ queue = "paillette-embedding-jobs"
 binding = "TRANSLATION_QUEUE"
 queue = "paillette-translation-jobs"
 
+[[queues.producers]]
+binding = "OPEN_ACCESS_ASSET_QUEUE"
+queue = "paillette-open-access-assets"
+
+[[queues.consumers]]
+queue = "paillette-open-access-assets"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "paillette-open-access-assets-dlq"
+
 # Environment variables (use .dev.vars for local development)
 [vars]
 ENVIRONMENT = "production"
@@ -120,6 +131,17 @@ binding = "AI"
 binding = "EMBEDDING_QUEUE"
 queue = "paillette-embedding-jobs-stg"
 
+[[env.staging.queues.producers]]
+binding = "OPEN_ACCESS_ASSET_QUEUE"
+queue = "paillette-open-access-assets-stg"
+
+[[env.staging.queues.consumers]]
+queue = "paillette-open-access-assets-stg"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "paillette-open-access-assets-dlq-stg"
+
 # Production environment (deploy from 'master' branch)
 [env.production]
 name = "paillette-api"
@@ -167,3 +189,14 @@ queue = "paillette-embedding-jobs"
 [[env.production.queues.producers]]
 binding = "TRANSLATION_QUEUE"
 queue = "paillette-translation-jobs"
+
+[[env.production.queues.producers]]
+binding = "OPEN_ACCESS_ASSET_QUEUE"
+queue = "paillette-open-access-assets"
+
+[[env.production.queues.consumers]]
+queue = "paillette-open-access-assets"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "paillette-open-access-assets-dlq"

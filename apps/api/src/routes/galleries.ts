@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
 import { orgQueries } from '@paillette/database';
 import { CreateOrgInputSchema } from '@paillette/types';
+import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
 import {
   generateId,
   generateSlug,
@@ -12,11 +13,15 @@ import {
 } from '../utils/crypto';
 import {
   NGS_ORG_KEY,
+  OPEN_ACCESS_ORG_KEY,
   isNgsPublicOrg,
+  isOpenAccessPublicOrg,
   resolveOrgIdentifier,
 } from '../utils/orgs';
 
 const orgs = new Hono<{ Bindings: Env }>();
+
+const CreateOrgRequestSchema = CreateOrgInputSchema.omit({ ownerId: true });
 
 /**
  * GET /orgs
@@ -51,7 +56,11 @@ orgs.get(
       return c.json({
         success: true,
         data: result.results.map((org: any) => ({
-          key: isNgsPublicOrg(org.id) ? NGS_ORG_KEY : org.slug || org.id,
+          key: isNgsPublicOrg(org.id)
+            ? NGS_ORG_KEY
+            : isOpenAccessPublicOrg(org.slug)
+              ? OPEN_ACCESS_ORG_KEY
+              : org.slug || org.id,
           ...org,
         })),
         metadata: {
@@ -212,74 +221,78 @@ orgs.get('/slug/:slug', async (c) => {
  * POST /orgs
  * Create a new org
  */
-orgs.post('/', zValidator('json', CreateOrgInputSchema), async (c) => {
-  const input = c.req.valid('json');
+orgs.post(
+  '/',
+  requireAuthOrApiKey as any,
+  zValidator('json', CreateOrgRequestSchema),
+  async (c) => {
+    const input = c.req.valid('json');
 
-  try {
-    // TODO: Get authenticated user ID (for now using placeholder)
-    const userId = 'user-placeholder'; // Will be replaced with auth
+    try {
+      const userId = getAuth(c as any).userId;
 
-    // Generate org data
-    const orgId = generateId();
-    const slug = input.slug || generateSlug(input.name);
-    const apiKey = generateApiKey();
-    const apiKeyHash = await hashApiKey(apiKey);
+      // Generate org data
+      const orgId = generateId();
+      const slug = input.slug || generateSlug(input.name);
+      const apiKey = generateApiKey();
+      const apiKeyHash = await hashApiKey(apiKey);
 
-    // Transform input to database schema (flatten location object)
-    const settingsObj = input.settings || {
-      allowPublicAccess: false,
-      enableEmbeddingProjector: true,
-      defaultLanguage: 'en',
-      supportedLanguages: ['en'],
-    };
+      // Transform input to database schema (flatten location object)
+      const settingsObj = input.settings || {
+        allowPublicAccess: false,
+        enableEmbeddingProjector: true,
+        defaultLanguage: 'en',
+        supportedLanguages: ['en'],
+      };
 
-    const org = {
-      id: orgId,
-      name: input.name,
-      slug,
-      description: input.description || null,
-      location_country: input.location?.country || null,
-      location_city: input.location?.city || null,
-      location_address: input.location?.address || null,
-      website: input.website || null,
-      api_key: apiKey,
-      api_key_hash: apiKeyHash,
-      owner_id: userId,
-      settings: settingsObj,
-    };
+      const org = {
+        id: orgId,
+        name: input.name,
+        slug,
+        description: input.description || null,
+        location_country: input.location?.country || null,
+        location_city: input.location?.city || null,
+        location_address: input.location?.address || null,
+        website: input.website || null,
+        api_key: apiKey,
+        api_key_hash: apiKeyHash,
+        owner_id: userId,
+        settings: settingsObj,
+      };
 
-    const query = orgQueries.create(org as any);
-    await c.env.DB.prepare(query.sql)
-      .bind(...query.params)
-      .run();
+      const query = orgQueries.create(org as any);
+      await c.env.DB.prepare(query.sql)
+        .bind(...query.params)
+        .run();
 
-    // Return created org (with API key visible only on creation)
-    return c.json(
-      {
-        success: true,
-        data: {
-          ...org,
-          settings: settingsObj,
-          api_key: apiKey, // Only returned on creation
+      // Return created org (with API key visible only on creation)
+      return c.json(
+        {
+          success: true,
+          data: {
+            ...org,
+            settings: settingsObj,
+            api_key: apiKey, // Only returned on creation
+          },
         },
-      },
-      201
-    );
-  } catch (error: any) {
-    console.error('Error creating org:', error);
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'DATABASE_ERROR',
-          message: 'Failed to create org',
-          details: error.message,
+        201
+      );
+    } catch (error: any) {
+      console.error('Error creating org:', error);
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'DATABASE_ERROR',
+            message: 'Failed to create org',
+            details: error.message,
+          },
         },
-      },
-      500
-    );
+        500
+      );
+    }
   }
-});
+);
 
 /**
  * PATCH /orgs/:id
@@ -287,6 +300,7 @@ orgs.post('/', zValidator('json', CreateOrgInputSchema), async (c) => {
  */
 orgs.patch(
   '/:id',
+  requireAuthOrApiKey as any,
   zValidator('json', CreateOrgInputSchema.partial().omit({ ownerId: true })),
   async (c) => {
     const id = c.req.param('id');
@@ -386,7 +400,7 @@ orgs.patch(
  * DELETE /orgs/:id
  * Delete an org
  */
-orgs.delete('/:id', async (c) => {
+orgs.delete('/:id', requireAuthOrApiKey as any, async (c) => {
   const id = c.req.param('id');
 
   try {

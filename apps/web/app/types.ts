@@ -173,6 +173,7 @@ export interface SearchTextRequest {
   query: string;
   topK?: number;
   minScore?: number;
+  facet?: 'artist';
 }
 
 export interface SearchImageRequest {
