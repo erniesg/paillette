@@ -8,9 +8,8 @@ import { CitationPanel } from '~/components/artwork/citation-panel';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import { loadArtworkDetailPage } from '~/lib/public-route-loaders.server';
 import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
-import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
   getGeneratedCaptionDetails,
   getGeneratedCaptionText,
@@ -47,32 +46,12 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
   const { orgId, artworkId } = params;
-  if (!orgId || !artworkId) {
-    throw new Response('Org ID and artwork ID are required', { status: 400 });
-  }
-
-  try {
-    const api = getApiClientForRequest(request);
-    const gallery = await api.getGallery(orgId);
-    const artwork = await api.getArtwork(gallery.id, artworkId);
-    const preferredRouteId = getPreferredOrgRouteId(orgId, gallery.slug);
-    if (shouldHidePublicArtworkDetail(orgId, preferredRouteId, artwork)) {
-      throw new Response('Artwork not found', { status: 404 });
-    }
-    const url = new URL(request.url);
-
-    return {
-      gallery,
-      artwork,
-      preferredRouteId,
-      returnToSearchPath: getSafeSearchReturnPath(
-        url.searchParams.get('from'),
-        preferredRouteId
-      ),
-    };
-  } catch {
-    throw new Response('Artwork not found', { status: 404 });
-  }
+  return loadArtworkDetailPage({
+    request,
+    requestedOrgId: orgId || '',
+    artworkId: artworkId || '',
+    routeScope: 'org',
+  });
 }
 
 const clickableCatalogueLabels = new Set([
@@ -89,7 +68,13 @@ const getCatalogueRowSearchQuery = (label: string, value: string) => {
 };
 
 export default function ArtworkDetailPage() {
-  const { gallery, artwork, preferredRouteId, returnToSearchPath } =
+  const {
+    gallery,
+    artwork,
+    preferredRouteId,
+    publicRouteBasePath = `/${preferredRouteId}`,
+    returnToSearchPath,
+  } =
     useLoaderData<typeof loader>();
   const descriptionDetailsList = getPublicDescriptionDetailList(artwork);
   const rootsDescriptionDetails = descriptionDetailsList[0] || null;
@@ -149,7 +134,7 @@ export default function ArtworkDetailPage() {
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
           <Link
-            to={returnToSearchPath || `/${preferredRouteId}/search`}
+            to={returnToSearchPath || `${publicRouteBasePath}/search`}
             className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -220,7 +205,7 @@ export default function ArtworkDetailPage() {
               getSearchHref={(label, value) => {
                 const searchQuery = getCatalogueRowSearchQuery(label, value);
                 return searchQuery
-                  ? `/${preferredRouteId}/search?q=${encodeURIComponent(
+                  ? `${publicRouteBasePath}/search?q=${encodeURIComponent(
                       searchQuery
                     )}`
                   : null;

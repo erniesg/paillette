@@ -10,7 +10,12 @@ import {
   Settings,
   ExternalLink,
 } from 'lucide-react';
-import { apiClient, getApiClientForRequest } from '~/lib/api';
+import {
+  apiClient,
+  getApiClientForRequest,
+  getPreferredOrgRouteId,
+  getPublicOrgRouteBasePath,
+} from '~/lib/api';
 import { Button } from '~/components/ui/button';
 import {
   Card,
@@ -43,14 +48,28 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     const collection = await getApiClientForRequest(request).getGallery(
       collectionId
     );
-    return { collection, collectionId };
+    const preferredRouteId = getPreferredOrgRouteId(
+      collectionId,
+      collection.slug
+    );
+    return {
+      collection,
+      collectionId,
+      publicRouteBasePath: getPublicOrgRouteBasePath({
+        requestedOrgId: collectionId,
+        preferredRouteId,
+        canonicalSlug: collection.slug,
+        routeScope: 'collection',
+      }),
+    };
   } catch (error) {
     throw new Response('Collection not found', { status: 404 });
   }
 }
 
 export default function CollectionDashboard() {
-  const { collection, collectionId } = useLoaderData<typeof loader>();
+  const { collection, collectionId, publicRouteBasePath } =
+    useLoaderData<typeof loader>();
   const location = useLocation();
 
   // Check if we're on a child route
@@ -83,19 +102,19 @@ export default function CollectionDashboard() {
             </div>
             <nav className="flex items-center gap-4">
               <Link
-                to={`/collections/${collectionId}`}
+                to={publicRouteBasePath}
                 className="text-white font-semibold"
               >
                 Dashboard
               </Link>
               <Link
-                to={`/collections/${collectionId}/search`}
+                to={`${publicRouteBasePath}/search`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Search
               </Link>
               <Link
-                to={`/collections/${collectionId}/explore`}
+                to={`${publicRouteBasePath}/explore`}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
                 Explore
@@ -145,7 +164,7 @@ export default function CollectionDashboard() {
             </div>
             <div className="flex gap-3">
               <Button asChild>
-                <Link to={`/collections/${collectionId}/search`}>
+                <Link to={`${publicRouteBasePath}/search`}>
                   <Search className="h-4 w-4 mr-2" />
                   Search
                 </Link>
@@ -212,7 +231,7 @@ export default function CollectionDashboard() {
             </CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Button variant="outline" asChild className="h-auto py-4 flex-col">
-                <Link to={`/collections/${collectionId}/search`}>
+                <Link to={`${publicRouteBasePath}/search`}>
                   <Search className="h-8 w-8 mb-2 text-primary-400" />
                   <span>Search</span>
                 </Link>
@@ -224,7 +243,7 @@ export default function CollectionDashboard() {
                 </Link>
               </Button>
               <Button variant="outline" asChild className="h-auto py-4 flex-col">
-                <Link to={`/collections/${collectionId}/explore`}>
+                <Link to={`${publicRouteBasePath}/explore`}>
                   <Sparkles className="h-8 w-8 mb-2 text-primary-400" />
                   <span>Explore</span>
                 </Link>

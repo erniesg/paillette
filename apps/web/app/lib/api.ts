@@ -71,24 +71,73 @@ const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 const NGS_ORG_SLUG = 'national-gallery-singapore';
 const NGS_ORG_KEY = 'ngs';
+const OPEN_ACCESS_ART_ORG_SLUG = 'open-access-art';
+const OPEN_ACCESS_ART_ORG_KEY = 'nga';
+const LEGACY_OPEN_ACCESS_ART_ORG_KEY = 'open';
 
 const ORG_ID_ALIASES: Record<string, string> = {
   [NGS_ORG_KEY]: NGS_ORG_ID,
   [NGS_ORG_SLUG]: NGS_ORG_ID,
   [LEGACY_NGS_ORG_ID]: NGS_ORG_ID,
+  [OPEN_ACCESS_ART_ORG_KEY]: OPEN_ACCESS_ART_ORG_SLUG,
+  [LEGACY_OPEN_ACCESS_ART_ORG_KEY]: OPEN_ACCESS_ART_ORG_SLUG,
+  [OPEN_ACCESS_ART_ORG_SLUG]: OPEN_ACCESS_ART_ORG_SLUG,
 };
 
+const normalizeOrgIdentifier = (value: string) => value.trim().toLowerCase();
+
 export const resolveOrgIdentifier = (orgId: string) =>
-  ORG_ID_ALIASES[orgId.toLowerCase()] || orgId;
+  ORG_ID_ALIASES[normalizeOrgIdentifier(orgId)] || orgId;
+
+export const isOpenAccessArtPublicOrg = (
+  requestedOrgId: string,
+  canonicalSlug?: string | null
+) => {
+  const requested = normalizeOrgIdentifier(requestedOrgId);
+  const canonical = canonicalSlug ? normalizeOrgIdentifier(canonicalSlug) : '';
+
+  return (
+    ORG_ID_ALIASES[requested] === OPEN_ACCESS_ART_ORG_SLUG ||
+    canonical === OPEN_ACCESS_ART_ORG_SLUG
+  );
+};
 
 export const getPreferredOrgRouteId = (
   requestedOrgId: string,
   canonicalSlug?: string | null
 ) => {
-  const requested = requestedOrgId.toLowerCase();
-  return ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID
-    ? NGS_ORG_KEY
-    : canonicalSlug || requestedOrgId;
+  const requested = normalizeOrgIdentifier(requestedOrgId);
+  if (ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID) {
+    return NGS_ORG_KEY;
+  }
+
+  if (isOpenAccessArtPublicOrg(requestedOrgId, canonicalSlug)) {
+    return OPEN_ACCESS_ART_ORG_KEY;
+  }
+
+  return canonicalSlug || requestedOrgId;
+};
+
+export const getPublicOrgRouteBasePath = ({
+  requestedOrgId,
+  preferredRouteId,
+  canonicalSlug,
+  routeScope,
+}: {
+  requestedOrgId: string;
+  preferredRouteId: string;
+  canonicalSlug?: string | null;
+  routeScope: 'org' | 'collection';
+}) => {
+  const encodedRouteId = encodeURIComponent(preferredRouteId);
+  if (
+    routeScope === 'collection' ||
+    isOpenAccessArtPublicOrg(requestedOrgId, canonicalSlug)
+  ) {
+    return `/collections/${encodedRouteId}`;
+  }
+
+  return `/${encodedRouteId}`;
 };
 
 const sanitizeGeneratedCaptionRecord = (record: unknown) => {

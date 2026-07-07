@@ -43,7 +43,6 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
@@ -65,8 +64,8 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
-import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
+import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
   buildSuggestionPool,
   getSuggestionPrefetchQueries,
@@ -115,24 +114,11 @@ export const meta: MetaFunction = () => {
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
   const { galleryId } = params;
-  if (!galleryId) {
-    throw new Response('Gallery ID is required', { status: 400 });
-  }
-
-  try {
-    const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(galleryId),
-      getUpcomingSingaporeHolidaySuggestions(),
-    ]);
-    return {
-      gallery,
-      galleryId: gallery.id,
-      preferredRouteId: getPreferredOrgRouteId(galleryId, gallery.slug),
-      holidaySuggestions,
-    };
-  } catch {
-    throw new Response('Gallery not found', { status: 404 });
-  }
+  return loadPublicSearchPage({
+    request,
+    requestedOrgId: galleryId || '',
+    routeScope: 'org',
+  });
 }
 
 type SearchMode = 'text' | 'image' | 'colour';
@@ -872,6 +858,7 @@ export default function SearchPage() {
     gallery,
     galleryId,
     preferredRouteId,
+    publicRouteBasePath = `/${preferredRouteId}`,
     holidaySuggestions = [],
   } = useLoaderData<typeof loader>();
   const location = useLocation();
@@ -909,6 +896,7 @@ export default function SearchPage() {
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const previousUrlQueryRef = useRef(normalizedUrlQuery);
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
+  const searchRoutePath = `${publicRouteBasePath}/search`;
   const [idleSuggestion, setIdleSuggestion] = useState<EvalSuggestion | null>(
     null
   );
@@ -1654,7 +1642,7 @@ export default function SearchPage() {
           <div className="flex min-w-0 items-center gap-3">
             <div className="min-w-0">
               <Link
-                to={`/${preferredRouteId}/search`}
+                to={searchRoutePath}
                 onClick={resetSearchHome}
                 className="inline-flex items-center transition-opacity hover:opacity-80"
               >
@@ -2274,7 +2262,7 @@ export default function SearchPage() {
       </main>
       <SearchArtworkDialog
         artwork={selectedArtwork}
-        routeId={preferredRouteId}
+        routeBasePath={publicRouteBasePath}
         returnTo={searchReturnPath}
         onTrackArtworkInteraction={trackArtworkInteraction}
         onClose={() => setSelectedArtwork(null)}
@@ -2854,13 +2842,13 @@ function IdleShowcaseLayer({
 
 function SearchArtworkDialog({
   artwork,
-  routeId,
+  routeBasePath,
   returnTo,
   onTrackArtworkInteraction,
   onClose,
 }: {
   artwork: ArtworkSearchResult | null;
-  routeId: string;
+  routeBasePath: string;
   returnTo: string;
   onTrackArtworkInteraction: (
     artwork: ArtworkSearchResult,
@@ -2924,7 +2912,9 @@ function SearchArtworkDialog({
                   </Dialog.Title>
                   {artist && (
                     <Link
-                      to={`/${routeId}/search?q=${encodeURIComponent(artist)}`}
+                      to={`${routeBasePath}/search?q=${encodeURIComponent(
+                        artist
+                      )}`}
                       onClick={onClose}
                       className="mt-2 inline-block text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
                     >
@@ -2945,7 +2935,7 @@ function SearchArtworkDialog({
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <Link
-                  to={`/${routeId}/artworks/${encodeURIComponent(
+                  to={`${routeBasePath}/artworks/${encodeURIComponent(
                     artwork.id
                   )}?from=${encodeURIComponent(returnTo)}`}
                   onClick={() =>
@@ -3036,7 +3026,7 @@ function SearchArtworkDialog({
                       value
                     );
                     return searchQuery
-                      ? `/${routeId}/search?q=${encodeURIComponent(
+                      ? `${routeBasePath}/search?q=${encodeURIComponent(
                           searchQuery
                         )}`
                       : null;

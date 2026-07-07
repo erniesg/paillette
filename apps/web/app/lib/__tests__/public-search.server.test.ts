@@ -3,6 +3,7 @@ import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
   buildPublicTextSearchCacheKey,
   isHiddenPublicNgsArtwork,
+  resolvePublicSearchOrgId,
 } from '../public-search.server';
 
 describe('isHiddenPublicNgsArtwork', () => {
@@ -73,5 +74,18 @@ describe('buildPublicTextSearchCacheKey', () => {
 
     expect(url.searchParams.get('v')).toBe(PUBLIC_TEXT_SEARCH_CACHE_VERSION);
     expect(url.searchParams.get('query')).toBe('chung cheng');
+  });
+});
+
+describe('resolvePublicSearchOrgId', () => {
+  it('keeps public API aliases for Open Access Art and NGS distinct', () => {
+    expect(resolvePublicSearchOrgId('nga')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('open')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('open-access-art')).toBe(
+      'open-access-art'
+    );
+    expect(resolvePublicSearchOrgId('ngs')).toBe(
+      'cf98791d-f3cc-4f9f-b40c-a350efadbd05'
+    );
   });
 });
