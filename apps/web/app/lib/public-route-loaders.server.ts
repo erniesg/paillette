@@ -25,7 +25,9 @@ export async function loadPublicSearchPage({
   try {
     const [gallery, holidaySuggestions] = await Promise.all([
       getApiClientForRequest(request).getGallery(requestedOrgId),
-      getUpcomingSingaporeHolidaySuggestions(),
+      getUpcomingSingaporeHolidaySuggestions(new Date(), {
+        allowNetwork: false,
+      }),
     ]);
     const preferredRouteId = getPreferredOrgRouteId(
       requestedOrgId,

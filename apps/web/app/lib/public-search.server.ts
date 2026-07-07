@@ -15,15 +15,17 @@ type CacheLike = {
 
 type PublicTextSearchCacheKeyInput = {
   apiBaseUrl: string;
+  facet?: string | null;
   orgId: string;
   query: string;
 };
 
-type PublicTextSearchRequest = Required<SearchTextRequest>;
+type PublicTextSearchRequest = Required<Omit<SearchTextRequest, 'facet'>> &
+  Pick<SearchTextRequest, 'facet'>;
 
 export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
-export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '7';
+export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '8';
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
@@ -101,6 +103,7 @@ export const filterPublicTextSearchResponse = (
 
 export const buildPublicTextSearchCacheKey = ({
   apiBaseUrl,
+  facet,
   orgId,
   query,
 }: PublicTextSearchCacheKeyInput) => {
@@ -109,6 +112,9 @@ export const buildPublicTextSearchCacheKey = ({
   url.searchParams.set('api', apiBaseUrl);
   url.searchParams.set('org', orgId);
   url.searchParams.set('query', query.trim());
+  if (facet) {
+    url.searchParams.set('facet', facet);
+  }
 
   return new Request(url.toString(), { method: 'GET' });
 };

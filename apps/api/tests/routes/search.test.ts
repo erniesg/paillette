@@ -93,11 +93,23 @@ const artworkRow = {
   match_score: 100,
 };
 
+const makeArtworkRow = (overrides: Partial<typeof artworkRow>) => ({
+  ...artworkRow,
+  ...overrides,
+});
+
 const usageKey = (
   principalType: string,
   principalId: string,
   usageDate: string
 ) => `${principalType}:${principalId}:${usageDate}`;
+
+const normalizeArtistForTest = (value: string | null) =>
+  (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 class FakeStatement {
   private params: unknown[] = [];
@@ -356,9 +368,53 @@ class FakeSearchDb {
 
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
       this.metadataSearchSql.push(sql);
+      if (
+        sql.includes('AND artist IS NOT NULL') &&
+        sql.includes('ORDER BY match_score DESC, artist')
+      ) {
+        const normalizedQuery = String(params[0] || '');
+        const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+        const matchingRows = this.rows.filter((row) => {
+          const normalizedArtist = normalizeArtistForTest(row.artist);
+          return (
+            normalizedArtist === normalizedQuery ||
+            tokens.every((token) =>
+              ` ${normalizedArtist} `.includes(` ${token} `)
+            )
+          );
+        });
+
+        return {
+          success: true,
+          results: applySearchVisibility(matchingRows).map((row, index) => ({
+            ...row,
+            match_score:
+              normalizeArtistForTest(row.artist) === normalizedQuery
+                ? 120
+                : 100 - index,
+          })),
+        } as unknown as { success: boolean; results: T[] };
+      }
+
       return {
         success: true,
         results: applySearchVisibility(this.rows),
+      } as { success: boolean; results: T[] };
+    }
+
+    if (
+      sql.includes('FROM artworks') &&
+      sql.includes('SELECT id') &&
+      sql.includes('artist IS NOT NULL')
+    ) {
+      const normalizedQuery = String(params[params.length - 1] || '');
+      return {
+        success: true,
+        results: applySearchVisibility(
+          this.rows.filter(
+            (row) => normalizeArtistForTest(row.artist) === normalizedQuery
+          )
+        ).map((row) => ({ id: row.id })),
       } as { success: boolean; results: T[] };
     }
 
@@ -789,6 +845,186 @@ describe('Search API auth and quota behavior', () => {
         source: 'custom_metadata.generated_caption.text',
       })
     );
+  });
+
+  it('routes explicit artist facets through the artist field without vector search', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: artworkRow.id, score: 0.88, metadata: {} }],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Chen Chong Swee',
+        topK: 10,
+        facet: 'artist',
+      }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(1);
+    expect(body.data.results[0]).toMatchObject({
+      id: artworkRow.id,
+      artist: 'Chen Chong Swee',
+    });
+    expect(captionVectorize.query).not.toHaveBeenCalled();
+    expect(env.AI.run).not.toHaveBeenCalled();
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(db.metadataSearchSql[0]).toContain('artist IS NOT NULL');
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({
+        channel: 'metadata',
+        label: 'Artist',
+        source: 'artworks.artist',
+      })
+    );
+    const usageMetadata = JSON.parse(db.usageEvents[0].metadata || '{}');
+    expect(usageMetadata.search).toMatchObject({
+      query: 'Chen Chong Swee',
+      facet: 'artist',
+      resultCount: 1,
+    });
+  });
+
+  it('uses the defined artist list to detect exact typed artist names', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: artworkRow.id, score: 0.88, metadata: {} }],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Chen Chong Swee',
+        topK: 10,
+      }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0]).toMatchObject({
+      id: artworkRow.id,
+      artist: 'Chen Chong Swee',
+    });
+    expect(captionVectorize.query).not.toHaveBeenCalled();
+    expect(env.AI.run).not.toHaveBeenCalled();
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({
+        label: 'Artist',
+        source: 'artworks.artist',
+      })
+    );
+    const usageMetadata = JSON.parse(db.usageEvents[0].metadata || '{}');
+    expect(usageMetadata.search).toMatchObject({
+      query: 'Chen Chong Swee',
+      facet: 'artist',
+    });
+  });
+
+  it('prioritizes exact free-text matches from the canonical artist list', async () => {
+    const artistCases = [
+      { query: 'chen chong swee', artist: 'Chen Chong Swee' },
+      { query: 'GEORGETTE CHEN', artist: 'Georgette Chen' },
+      { query: 'liu Kang', artist: 'Liu Kang' },
+      { query: 'Lim Cheng Hoe', artist: 'Lim Cheng Hoe' },
+      { query: 'zhang YIQIAN', artist: 'Zhang Yiqian' },
+    ];
+    db = new FakeSearchDb(
+      artistCases.map(({ artist }, index) =>
+        makeArtworkRow({
+          id: `artist-${index + 1}`,
+          title: `${artist} work`,
+          artist,
+          accession_number: `ARTIST-${index + 1}`,
+          source_record_id: `ARTIST-${index + 1}`,
+          match_score: 100,
+        })
+      )
+    );
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: 'semantic-match', score: 0.92, metadata: {} }],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    for (const { query, artist } of artistCases) {
+      db.metadataSearchSql = [];
+      captionVectorize.query.mockClear();
+      vi.mocked(env.AI.run).mockClear();
+
+      const res = await textSearch(
+        app,
+        env,
+        { 'X-User-Id': 'user-1' },
+        {
+          query,
+          topK: 10,
+        }
+      );
+      const body = (await res.json()) as any;
+      const usageEvent = db.usageEvents[db.usageEvents.length - 1];
+      const usageMetadata = JSON.parse(usageEvent.metadata || '{}');
+
+      expect(res.status).toBe(200);
+      expect(body.data.results.length).toBeGreaterThan(0);
+      expect(
+        body.data.results.every(
+          (result: { artist?: string }) => result.artist === artist
+        )
+      ).toBe(true);
+      expect(captionVectorize.query).not.toHaveBeenCalled();
+      expect(env.AI.run).not.toHaveBeenCalled();
+      expect(db.metadataSearchSql).toHaveLength(1);
+      expect(body.data.results[0].metadata.search_sources).toContainEqual(
+        expect.objectContaining({
+          label: 'Artist',
+          source: 'artworks.artist',
+        })
+      );
+      expect(usageMetadata.search).toMatchObject({
+        query,
+        facet: 'artist',
+      });
+    }
   });
 
   it('keeps accession numbers and years metadata-routed in hybrid search', async () => {

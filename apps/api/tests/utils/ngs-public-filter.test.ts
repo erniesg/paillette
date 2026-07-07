@@ -31,6 +31,18 @@ describe('isHiddenNgsPublicAccession', () => {
         'https://www.roots.gov.sg/Collection-Landing/listing/1284239'
       )
     ).toBe(true);
+    expect(
+      isHiddenNgsPublicAccession(
+        '1993-01334',
+        'https://www.roots.gov.sg/Collection-Landing/listing/1029137'
+      )
+    ).toBe(true);
+    expect(
+      isHiddenNgsPublicAccession(
+        '1995-01559',
+        'https://www.roots.gov.sg/Collection-Landing/listing/1081040'
+      )
+    ).toBe(true);
   });
 
   it('keeps NGS accessions and non-Roots sources', () => {

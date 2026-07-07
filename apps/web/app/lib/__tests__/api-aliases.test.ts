@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import {
   getPreferredOrgRouteId,
   getPublicOrgRouteBasePath,
@@ -7,9 +8,10 @@ import {
 } from '../api';
 
 describe('public org aliases', () => {
-  it('maps NGA public aliases to the Open Access Art backing slug', () => {
+  it('maps Open Access Art public aliases to the backing slug', () => {
     expect(resolveOrgIdentifier('nga')).toBe('open-access-art');
     expect(resolveOrgIdentifier('open')).toBe('open-access-art');
+    expect(resolveOrgIdentifier('OPEN')).toBe('open-access-art');
     expect(resolveOrgIdentifier('open-access-art')).toBe('open-access-art');
   });
 
@@ -22,7 +24,7 @@ describe('public org aliases', () => {
     );
   });
 
-  it('prefers nga for Open Access Art UI routes', () => {
+  it('prefers nga for Open Access Art public UI routes', () => {
     expect(getPreferredOrgRouteId('open', 'open-access-art')).toBe('nga');
     expect(getPreferredOrgRouteId('open-access-art', 'open-access-art')).toBe(
       'nga'

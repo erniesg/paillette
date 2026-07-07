@@ -71,9 +71,11 @@ const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 const NGS_ORG_SLUG = 'national-gallery-singapore';
 const NGS_ORG_KEY = 'ngs';
-const OPEN_ACCESS_ART_ORG_SLUG = 'open-access-art';
+const OPEN_ACCESS_ORG_SLUG = 'open-access-art';
+const OPEN_ACCESS_ORG_KEY = 'open';
 const OPEN_ACCESS_ART_ORG_KEY = 'nga';
-const LEGACY_OPEN_ACCESS_ART_ORG_KEY = 'open';
+const OPEN_ACCESS_ART_ORG_SLUG = OPEN_ACCESS_ORG_SLUG;
+const LEGACY_OPEN_ACCESS_ART_ORG_KEY = OPEN_ACCESS_ORG_KEY;
 
 const ORG_ID_ALIASES: Record<string, string> = {
   [NGS_ORG_KEY]: NGS_ORG_ID,
@@ -145,8 +147,7 @@ const sanitizeGeneratedCaptionRecord = (record: unknown) => {
     return record;
   }
 
-  const { model: _model, ...caption } = record as Record<string, unknown>;
-  return caption;
+  return { ...(record as Record<string, unknown>) };
 };
 
 const sanitizeArtworkMetadata = (metadata: Record<string, any>) => {

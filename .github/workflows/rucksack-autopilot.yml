@@ -97,6 +97,7 @@ jobs:
           action="$(printf '%s' "$action" | tr '[:upper:]' '[:lower:]')"
           case "$action" in
             accept|approve|resolve) action="queue" ;;
+            complete|completed|done) action="complete" ;;
           esac
 
           case "$provider" in
@@ -135,6 +136,12 @@ jobs:
         if: steps.request.outputs.action == 'queue' && steps.request.outputs.issue_number != ''
         run: |
           gh issue edit "${{ steps.request.outputs.issue_number }}"             --add-label rucksack-queued             --remove-label rucksack-run             --remove-label rucksack-running             --remove-label rucksack-blocked             --remove-label rucksack-needs-clarification             --remove-label rucksack-needs-decision             --remove-label rucksack-needs-human             --remove-label rucksack-provider-limited             --remove-label rucksack-out-of-work             --remove-label rucksack-awaiting-review             || true
+
+      - name: Complete reviewed issue
+        if: steps.request.outputs.action == 'complete' && steps.request.outputs.issue_number != ''
+        run: |
+          gh issue edit "${{ steps.request.outputs.issue_number }}"             --remove-label rucksack-queued             --remove-label rucksack-run             --remove-label rucksack-running             --remove-label rucksack-blocked             --remove-label rucksack-needs-clarification             --remove-label rucksack-needs-decision             --remove-label rucksack-needs-human             --remove-label rucksack-provider-limited             --remove-label rucksack-out-of-work             --remove-label rucksack-awaiting-review             || true
+          gh issue close "${{ steps.request.outputs.issue_number }}" --reason completed
 
       - name: Dispatch queued issues
         if: steps.request.outputs.action == 'queue'

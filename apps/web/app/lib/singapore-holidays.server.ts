@@ -22,6 +22,7 @@ const MOM_PUBLIC_HOLIDAYS_URL =
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_OCCASION_SUGGESTIONS = 3;
+const MOM_FETCH_TIMEOUT_MS = 300;
 
 const HOLIDAY_DOTS: Record<string, string> = {
   "New Year's Day": '#cda636',
@@ -256,25 +257,36 @@ const uniqueByName = (holidays: SingaporeHoliday[]) => {
 };
 
 export const getUpcomingSingaporeHolidaySuggestions = async (
-  now = new Date()
+  now = new Date(),
+  options: { allowNetwork?: boolean } = {}
 ): Promise<HolidaySearchSuggestion[]> => {
   const nowTime = Date.now();
   if (holidayCache && holidayCache.expiresAt > nowTime) {
     return buildSuggestions(holidayCache.holidays, now);
   }
 
+  if (options.allowNetwork === false) {
+    return buildSuggestions(holidayCache?.holidays ?? FALLBACK_HOLIDAYS, now);
+  }
+
   let holidays: SingaporeHoliday[] = [];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MOM_FETCH_TIMEOUT_MS);
+
   try {
     const response = await fetch(MOM_PUBLIC_HOLIDAYS_URL, {
       headers: {
         Accept: 'text/html',
       },
+      signal: controller.signal,
     });
     if (response.ok) {
       holidays = parseMomHolidays(await response.text());
     }
   } catch {
     holidays = [];
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!holidays.length) {
