@@ -40,7 +40,6 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import {
@@ -69,8 +68,8 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
-import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
+import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
   buildSuggestionPool,
   getSuggestionPrefetchQueries,
@@ -133,26 +132,11 @@ export const meta: MetaFunction = () => {
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
   const { galleryId } = params;
-  if (!galleryId) {
-    throw new Response('Gallery ID is required', { status: 400 });
-  }
-
-  try {
-    const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(galleryId),
-      getUpcomingSingaporeHolidaySuggestions(new Date(), {
-        allowNetwork: false,
-      }),
-    ]);
-    return {
-      gallery,
-      galleryId: gallery.id,
-      preferredRouteId: getPreferredOrgRouteId(galleryId, gallery.slug),
-      holidaySuggestions,
-    };
-  } catch {
-    throw new Response('Gallery not found', { status: 404 });
-  }
+  return loadPublicSearchPage({
+    request,
+    requestedOrgId: galleryId || '',
+    routeScope: 'org',
+  });
 }
 
 type SearchMode = 'text' | 'image' | 'colour';
@@ -992,6 +976,7 @@ export default function SearchPage() {
     gallery,
     galleryId,
     preferredRouteId,
+    publicRouteBasePath = `/${preferredRouteId}`,
     holidaySuggestions = [],
   } = useLoaderData<typeof loader>();
   const location = useLocation();
@@ -1036,6 +1021,7 @@ export default function SearchPage() {
     `${normalizedUrlQuery}:${urlSearchFacet || ''}`
   );
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
+  const searchRoutePath = `${publicRouteBasePath}/search`;
   const [idleSuggestion, setIdleSuggestion] = useState<EvalSuggestion | null>(
     null
   );
@@ -1858,7 +1844,7 @@ export default function SearchPage() {
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
       <PublicSiteHeader
         active="search"
-        searchHref={`/${preferredRouteId}/search`}
+        searchHref={searchRoutePath}
         isAuthenticated={isAuthenticated}
         onLogoClick={resetSearchHome}
         onLogin={() => void login({ returnTo: getCurrentReturnTo() })}
@@ -2452,7 +2438,7 @@ export default function SearchPage() {
       </main>
       <SearchArtworkDialog
         artwork={selectedArtwork}
-        routeId={preferredRouteId}
+        routeBasePath={publicRouteBasePath}
         returnTo={searchReturnPath}
         onTrackArtworkInteraction={trackArtworkInteraction}
         onSearch={runTextSearch}
@@ -3494,14 +3480,14 @@ function ZhongZhengAsciiFeature({
 
 function SearchArtworkDialog({
   artwork,
-  routeId,
+  routeBasePath,
   returnTo,
   onTrackArtworkInteraction,
   onSearch,
   onClose,
 }: {
   artwork: ArtworkSearchResult | null;
-  routeId: string;
+  routeBasePath: string;
   returnTo: string;
   onTrackArtworkInteraction: (
     artwork: ArtworkSearchResult,
@@ -3558,12 +3544,12 @@ function SearchArtworkDialog({
                 />
               </div>
               <div className="mt-3 shrink-0 space-y-3">
-                {image.src && <ImageReuseNotice compact />}
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    to={`/${routeId}/artworks/${encodeURIComponent(
-                      artwork.id
-                    )}?from=${encodeURIComponent(returnTo)}`}
+                  {image.src && <ImageReuseNotice compact />}
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      to={`${routeBasePath}/artworks/${encodeURIComponent(
+                        artwork.id
+                      )}?from=${encodeURIComponent(returnTo)}`}
                     onClick={() =>
                       onTrackArtworkInteraction(
                         artwork,
@@ -3692,7 +3678,7 @@ function SearchArtworkDialog({
                     );
                     const facet = getCatalogueRowSearchFacet(label);
                     return searchQuery
-                      ? `/${routeId}/search?${new URLSearchParams(
+                      ? `${routeBasePath}/search?${new URLSearchParams(
                           getSearchParamsForQuery(
                             facet === 'artist'
                               ? normalizeArtistSearchQuery(searchQuery)

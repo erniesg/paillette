@@ -3,7 +3,11 @@ import { Link } from '@remix-run/react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Plus, Search, Grid3X3, Sparkles } from 'lucide-react';
-import { apiClient } from '~/lib/api';
+import {
+  apiClient,
+  getPreferredOrgRouteId,
+  getPublicOrgRouteBasePath,
+} from '~/lib/api';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Logo } from '~/components/ui/logo';
@@ -94,14 +98,26 @@ export default function CollectionsIndex() {
             transition={{ delay: 0.1 }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto"
           >
-            {collections.map((collection, index) => (
-              <motion.div
-                key={collection.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Card className="h-full hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 group">
+            {collections.map((collection, index) => {
+              const preferredRouteId = getPreferredOrgRouteId(
+                collection.id,
+                collection.slug
+              );
+              const collectionRouteBasePath = getPublicOrgRouteBasePath({
+                requestedOrgId: collection.id,
+                preferredRouteId,
+                canonicalSlug: collection.slug,
+                routeScope: 'collection',
+              });
+
+              return (
+                <motion.div
+                  key={collection.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Card className="h-full hover:border-primary-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 group">
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
                       <span className="truncate">{collection.name}</span>
@@ -133,22 +149,23 @@ export default function CollectionsIndex() {
                     {/* Actions */}
                     <div className="flex gap-2">
                       <Button asChild className="flex-1" size="sm">
-                        <Link to={`/collections/${collection.id}`}>
+                        <Link to={collectionRouteBasePath}>
                           <Grid3X3 className="h-4 w-4 mr-1" />
                           View
                         </Link>
                       </Button>
                       <Button asChild variant="outline" className="flex-1" size="sm">
-                        <Link to={`/collections/${collection.id}/search`}>
+                        <Link to={`${collectionRouteBasePath}/search`}>
                           <Search className="h-4 w-4 mr-1" />
                           Search
                         </Link>
                       </Button>
                     </div>
                   </CardContent>
-                </Card>
-              </motion.div>
-            ))}
+                  </Card>
+                </motion.div>
+              );
+            })}
           </motion.div>
         )}
 

@@ -4,6 +4,9 @@ export const NGS_ORG_SLUG = 'national-gallery-singapore';
 export const NGS_ORG_KEY = 'ngs';
 export const OPEN_ACCESS_ORG_SLUG = 'open-access-art';
 export const OPEN_ACCESS_ORG_KEY = 'open';
+export const OPEN_ACCESS_ART_ORG_KEY = 'nga';
+export const OPEN_ACCESS_ART_ORG_SLUG = OPEN_ACCESS_ORG_SLUG;
+export const LEGACY_OPEN_ACCESS_ART_ORG_KEY = OPEN_ACCESS_ORG_KEY;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -24,8 +27,14 @@ export const isOpenAccessPublicOrg = (value: string | null | undefined) => {
   const key = String(value || '')
     .trim()
     .toLowerCase();
-  return key === OPEN_ACCESS_ORG_KEY || key === OPEN_ACCESS_ORG_SLUG;
+  return (
+    key === OPEN_ACCESS_ART_ORG_KEY ||
+    key === LEGACY_OPEN_ACCESS_ART_ORG_KEY ||
+    key === OPEN_ACCESS_ORG_SLUG
+  );
 };
+
+export const isOpenAccessArtPublicOrg = isOpenAccessPublicOrg;
 
 export async function resolveOrgIdentifier(
   db: D1Database,

@@ -13,7 +13,7 @@ import {
 } from '../utils/crypto';
 import {
   NGS_ORG_KEY,
-  OPEN_ACCESS_ORG_KEY,
+  OPEN_ACCESS_ART_ORG_KEY,
   isNgsPublicOrg,
   isOpenAccessPublicOrg,
   resolveOrgIdentifier,
@@ -59,7 +59,7 @@ orgs.get(
           key: isNgsPublicOrg(org.id)
             ? NGS_ORG_KEY
             : isOpenAccessPublicOrg(org.slug)
-              ? OPEN_ACCESS_ORG_KEY
+              ? OPEN_ACCESS_ART_ORG_KEY
               : org.slug || org.id,
           ...org,
         })),
@@ -142,7 +142,9 @@ orgs.get('/:id', async (c) => {
     const orgData = {
       key: isNgsPublicOrg((org as any).id)
         ? NGS_ORG_KEY
-        : (org as any).slug || id,
+        : isOpenAccessPublicOrg((org as any).slug)
+          ? OPEN_ACCESS_ART_ORG_KEY
+          : (org as any).slug || id,
       ...org,
       settings: org.settings ? JSON.parse(org.settings as string) : {},
     };

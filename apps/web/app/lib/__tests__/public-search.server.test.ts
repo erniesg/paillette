@@ -122,3 +122,16 @@ describe('resolvePublicSearchOrgId', () => {
     expect(resolvePublicSearchOrgId('open-access-art')).toBe('open-access-art');
   });
 });
+
+describe('resolvePublicSearchOrgId', () => {
+  it('keeps public API aliases for Open Access Art and NGS distinct', () => {
+    expect(resolvePublicSearchOrgId('nga')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('open')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('open-access-art')).toBe(
+      'open-access-art'
+    );
+    expect(resolvePublicSearchOrgId('ngs')).toBe(
+      'cf98791d-f3cc-4f9f-b40c-a350efadbd05'
+    );
+  });
+});

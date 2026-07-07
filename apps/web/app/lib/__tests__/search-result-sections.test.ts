@@ -70,6 +70,15 @@ describe('getSafeSearchReturnPath', () => {
     ).toBe('/ngs/search?q=chung+cheng#results');
   });
 
+  it('keeps search query state for collection route bases', () => {
+    expect(
+      getSafeSearchReturnPath(
+        '/collections/nga/search?q=blue+ceramic+jugs#results',
+        '/collections/nga'
+      )
+    ).toBe('/collections/nga/search?q=blue+ceramic+jugs#results');
+  });
+
   it('rejects external or cross-gallery return paths', () => {
     expect(getSafeSearchReturnPath('https://example.com/ngs/search', 'ngs')).toBe(
       null

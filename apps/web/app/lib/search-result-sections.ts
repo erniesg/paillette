@@ -51,7 +51,7 @@ export function buildSearchResultSections({
 
 export function getSafeSearchReturnPath(
   rawPath: string | null | undefined,
-  preferredRouteId: string
+  publicRouteBasePath: string
 ) {
   if (!rawPath || rawPath.startsWith('//')) return null;
 
@@ -64,7 +64,10 @@ export function getSafeSearchReturnPath(
 
   if (parsed.origin !== 'https://paillette.local') return null;
 
-  const expectedPrefix = `/${encodeURIComponent(preferredRouteId)}/search`;
+  const normalizedRouteBasePath = publicRouteBasePath.startsWith('/')
+    ? publicRouteBasePath.replace(/\/+$/, '')
+    : `/${encodeURIComponent(publicRouteBasePath)}`;
+  const expectedPrefix = `${normalizedRouteBasePath}/search`;
   if (parsed.pathname !== expectedPrefix) return null;
 
   return `${parsed.pathname}${parsed.search}${parsed.hash}`;
