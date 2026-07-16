@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { withWorkOSSessionMock } = vi.hoisted(() => ({
-  withWorkOSSessionMock: vi.fn(),
+const { withWorkOSResourceSessionMock } = vi.hoisted(() => ({
+  withWorkOSResourceSessionMock: vi.fn(),
 }));
 
 vi.mock('~/lib/workos-auth.server', () => ({
-  withWorkOSSession: withWorkOSSessionMock,
+  withWorkOSResourceSession: withWorkOSResourceSessionMock,
 }));
 
 import { action } from '../api.public-search.$orgId.text';
@@ -41,7 +41,7 @@ const makeRequest = (body: Record<string, unknown>) =>
 
 describe('public text search route caching', () => {
   beforeEach(() => {
-    withWorkOSSessionMock.mockImplementation(
+    withWorkOSResourceSessionMock.mockImplementation(
       async (_args: unknown, handler: (session: unknown) => unknown) =>
         handler({
           accessToken: 'workos-access-token',
@@ -63,7 +63,7 @@ describe('public text search route caching', () => {
     };
     vi.stubGlobal('fetch', mockFetch);
     vi.stubGlobal('caches', { default: cache });
-    withWorkOSSessionMock.mockImplementationOnce(
+    withWorkOSResourceSessionMock.mockImplementationOnce(
       async (_args: unknown, handler: (session: unknown) => unknown) =>
         handler({ accessToken: null, user: null })
     );

@@ -15,7 +15,10 @@ import {
   logPublicUsageEvent,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
-import { withWorkOSSession, type WorkOSSession } from '~/lib/workos-auth.server';
+import {
+  withWorkOSResourceSession,
+  type WorkOSSession,
+} from '~/lib/workos-auth.server';
 
 const clamp = (
   value: string | null,
@@ -120,11 +123,10 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
   };
 };
 
-const handleBrowse = async ({
-  context,
-  params,
-  request,
-}: LoaderFunctionArgs, session: WorkOSSession) => {
+const handleBrowse = async (
+  { context, params, request }: LoaderFunctionArgs,
+  session: WorkOSSession
+) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -150,24 +152,30 @@ const handleBrowse = async ({
     : 'asc';
 
   if (!session.accessToken) {
-    const preview = buildLockedSearchPreview({ orgId, count: Math.min(limit, 30) });
-    return json({
-      ...preview,
-      data: preview.data
-        ? {
-            ...preview.data,
-            total: preview.data.count,
-            limit,
-            offset,
-            hasMore: false,
-          }
-        : undefined,
-    }, {
-      headers: {
-        'Cache-Control': 'private, no-store',
-        'X-Paillette-Search-Access': 'locked',
-      },
+    const preview = buildLockedSearchPreview({
+      orgId,
+      count: Math.min(limit, 30),
     });
+    return json(
+      {
+        ...preview,
+        data: preview.data
+          ? {
+              ...preview.data,
+              total: preview.data.count,
+              limit,
+              offset,
+              hasMore: false,
+            }
+          : undefined,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'X-Paillette-Search-Access': 'locked',
+        },
+      }
+    );
   }
 
   const env = getServerEnv(context);
@@ -240,4 +248,4 @@ const handleBrowse = async ({
 };
 
 export const loader = (args: LoaderFunctionArgs) =>
-  withWorkOSSession(args, (session) => handleBrowse(args, session));
+  withWorkOSResourceSession(args, (session) => handleBrowse(args, session));

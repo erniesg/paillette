@@ -25,6 +25,12 @@ Enable account creation and email verification. Configure the access-token JWT t
 
 The API rejects tokens that omit either claim and only uses a verified email for the one-time bootstrap binding.
 
+AuthKit's hosted sign-in page owns password recovery. From Paillette, open
+`/auth/login`, choose **Reset password**, enter the account email, and follow
+the emailed WorkOS link. Operators must never receive, enter, or store the new
+password. The reset response is deliberately non-enumerating: it reports that
+instructions will arrive if the account exists.
+
 ## Worker bindings
 
 Web Worker, per environment:
@@ -84,6 +90,49 @@ Do not deploy the web Worker before the API Worker and migration are ready: the 
 | Approved account after email change | Access remains bound to issuer + subject |
 | Wrong issuer/client/signature/expired token | `401` |
 | Health and OAuth discovery | Public |
+
+## API and MCP compatibility
+
+The WorkOS cutover does not change the API or MCP transport URLs:
+
+- REST API: `https://paillette-api-stg.berlayar.ai/api/v1` in staging and
+  `https://paillette-api.berlayar.ai/api/v1` in production.
+- MCP: `POST /api/v1/mcp` using streamable HTTP JSON-RPC.
+- OAuth discovery: `GET /.well-known/oauth-protected-resource` and
+  `GET /.well-known/oauth-protected-resource/api/v1/mcp`.
+
+Both WorkOS bearer tokens and existing personal Paillette API keys continue to
+authenticate API and MCP requests. Authorization is now evaluated after
+authentication: in `allowlist` mode, the WorkOS identity or API-key owner must
+have an active approval; in `authenticated` mode, any valid signed-in WorkOS
+identity or personal API-key owner is accepted. Anonymous MCP requests retain a
+`401` response with `WWW-Authenticate` resource metadata and the required
+`mcp:read` scope.
+
+Minimum redacted live checks:
+
+```bash
+curl -fsS https://paillette-api-stg.berlayar.ai/health
+curl -fsS https://paillette-api-stg.berlayar.ai/.well-known/oauth-protected-resource
+curl -sS -i https://paillette-api-stg.berlayar.ai/api/v1/mcp \
+  -H 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+The final command must return `401 AUTHENTICATION_REQUIRED` without a
+credential. Repeat it with either `Authorization: Bearer <token>` or
+`X-API-Key: <personal-key>` only from a trusted shell; never paste the
+credential into docs, screenshots, issues, or command output.
+
+After the approved account signs in, verify all of the following before
+production promotion:
+
+1. `/api/v1/me/access` reports `access: "approved"`.
+2. A bounded web search returns real results.
+3. A bounded REST search returns `200` with the normal rate-limit headers.
+4. MCP `initialize` and `tools/list` return JSON-RPC success.
+5. A second signed-in but unapproved identity receives `403 ACCESS_PENDING`
+   from both REST and MCP and cannot cause result/cache/usage writes.
 
 ## Later open-to-members toggle
 

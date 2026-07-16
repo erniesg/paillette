@@ -44,7 +44,8 @@ const getProcessEnv = (): RuntimeEnvironment => {
 
 const getRuntimeEnv = (context: unknown): RuntimeEnvironment => ({
   ...getProcessEnv(),
-  ...(((context as WorkerContext)?.cloudflare?.env ?? {}) as RuntimeEnvironment),
+  ...(((context as WorkerContext)?.cloudflare?.env ??
+    {}) as RuntimeEnvironment),
 });
 
 export const getWorkOSRuntimeConfig = (
@@ -119,6 +120,59 @@ export const withWorkOSSession = async <T>(
         user: auth.user,
       })
   );
+};
+
+const RESOURCE_RESPONSE_KEY = '__pailletteWorkOSResourceResponse';
+
+const appendResponseHeaders = (
+  target: Headers,
+  source: HeadersInit | undefined
+) => {
+  if (!source) return;
+  const headers = new Headers(source);
+  headers.forEach((value, key) => target.append(key, value));
+};
+
+export const withWorkOSResourceSession = async (
+  args: LoaderFunctionArgs,
+  handler: (session: WorkOSSession) => Response | Promise<Response>
+): Promise<Response> => {
+  if (!configureForRequest(args.context)) {
+    return handler({ accessToken: null, user: null });
+  }
+
+  const result = (await (authkitLoader as any)(
+    args,
+    async ({
+      auth,
+      getAccessToken,
+    }: {
+      auth: { user: WorkOSSession['user'] };
+      getAccessToken: () => string | null;
+    }) => ({
+      [RESOURCE_RESPONSE_KEY]: await handler({
+        accessToken: auth.user ? getAccessToken() : null,
+        user: auth.user,
+      }),
+    })
+  )) as {
+    data?: Record<string, unknown>;
+    init?: ResponseInit | null;
+  };
+
+  const response = result?.data?.[RESOURCE_RESPONSE_KEY];
+  if (!(response instanceof Response)) {
+    throw new Error('WorkOS resource response was not preserved');
+  }
+
+  const headers = new Headers(response.headers);
+  appendResponseHeaders(headers, result.init?.headers);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 export const getConfiguredAuthorizationUrl = async (

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { withWorkOSSessionMock } = vi.hoisted(() => ({
-  withWorkOSSessionMock: vi.fn(
+const { withWorkOSResourceSessionMock } = vi.hoisted(() => ({
+  withWorkOSResourceSessionMock: vi.fn(
     async (_args: unknown, handler: (session: unknown) => unknown) =>
       handler({ accessToken: null, user: null })
   ),
 }));
 
 vi.mock('~/lib/workos-auth.server', () => ({
-  withWorkOSSession: withWorkOSSessionMock,
+  withWorkOSResourceSession: withWorkOSResourceSessionMock,
 }));
 
 import { loader as browseLoader } from '../api.public-search.$orgId.browse';
