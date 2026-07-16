@@ -33,6 +33,22 @@ const architectureBands: ArchitectureBand[] = [
     ],
   },
   {
+    id: 'external-model-providers',
+    eyebrow: 'External model providers',
+    nodes: [
+      {
+        title: 'Jina embeddings',
+        detail: 'Creates query vectors for semantic retrieval.',
+        tone: 'border-amber-300/70',
+      },
+      {
+        title: 'Workers AI',
+        detail: 'Provides the alternate managed model path.',
+        tone: 'border-amber-300/70',
+      },
+    ],
+  },
+  {
     id: 'retrieval-storage',
     eyebrow: 'Retrieval + storage',
     nodes: [
@@ -52,25 +68,10 @@ const architectureBands: ArchitectureBand[] = [
         tone: 'border-emerald-300/70',
       },
       {
-        title: 'R2 · image assets',
-        detail: 'Image objects loaded after result ranking.',
+        title: 'Configured asset URLs',
+        detail:
+          'Artwork images resolve from configured asset URLs, including R2-backed assets.',
         tone: 'border-emerald-300/70',
-      },
-    ],
-  },
-  {
-    id: 'external-model-providers',
-    eyebrow: 'External model providers',
-    nodes: [
-      {
-        title: 'Jina embeddings',
-        detail: 'Creates query vectors for semantic retrieval.',
-        tone: 'border-amber-300/70',
-      },
-      {
-        title: 'Workers AI',
-        detail: 'Provides the alternate managed model path.',
-        tone: 'border-amber-300/70',
       },
     ],
   },
@@ -85,7 +86,7 @@ const requestSteps = [
   'Fuse: the API combines candidates into one ranked set.',
   'Hydrate: D1 adds artwork metadata to each candidate.',
   'Record and return: D1 records usage; the API returns ranked results and queryTime.',
-  'Load images: the browser requests the ranked image assets from R2.',
+  'Load images: the browser requests configured asset URLs, including R2-backed assets.',
 ];
 
 export function SystemArchitectureDiagram(): JSX.Element {
@@ -110,7 +111,7 @@ export function SystemArchitectureDiagram(): JSX.Element {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_0.8fr_1.5fr_0.95fr]">
+      <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_0.8fr_0.95fr_1.5fr]">
         {architectureBands.map((band, index) => (
           <section
             key={band.id}
@@ -157,7 +158,10 @@ export function SystemArchitectureDiagram(): JSX.Element {
         <h3 className="text-sm font-semibold text-white">Request sequence</h3>
         <ol className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
           {requestSteps.map((step, index) => (
-            <li key={step} className="flex gap-3 text-sm leading-6 text-slate-300">
+            <li
+              key={step}
+              className="flex gap-3 text-sm leading-6 text-slate-300"
+            >
               <span
                 aria-hidden="true"
                 className="font-mono text-xs tabular-nums text-cyan-200/70"

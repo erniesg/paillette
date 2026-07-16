@@ -34,6 +34,12 @@ export const RETRIEVAL_CHANNELS = [
   },
 ] as const;
 
+export const FUSED_RETRIEVAL_SOURCES = [
+  'image_embedding',
+  'generated_caption_embedding',
+  'metadata',
+] as const;
+
 export const TECHNICAL_EVIDENCE = [
   {
     level: 'Measured',
@@ -133,10 +139,32 @@ export default function TechnicalPage() {
           <div className="max-w-3xl">
             <h2 className={sectionHeadingClassName}>Retrieval and fusion</h2>
             <p className={`mt-4 ${bodyClassName}`}>
-              Each query is routed to the channels that fit its intent. Their
-              ranked candidates are combined with reciprocal rank fusion using{' '}
+              The five user-facing search modes below describe ways to form or
+              refine a query; they are not five separate RRF input lists.
+              Current fusion combines ranked candidates from three concrete
+              sources using reciprocal rank fusion with{' '}
               <span className="font-mono text-cyan-100/80">RRF_K = 60</span>.
             </p>
+            <p className="mt-4 text-sm leading-7 text-white/55">
+              Keyword matching runs within metadata retrieval. Colour language
+              and refinement affect routing rather than contributing a
+              standalone RRF list.
+            </p>
+            <div className="mt-5" aria-label="Current fused retrieval sources">
+              <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-cyan-100/65">
+                Current fused sources
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {FUSED_RETRIEVAL_SOURCES.map((source) => (
+                  <li
+                    key={source}
+                    className="rounded border border-white/10 bg-white/[0.04] px-2.5 py-1 font-mono text-xs text-white/65"
+                  >
+                    {source}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
           <ol className="mt-9 divide-y divide-white/[0.08] border-y border-white/[0.08]">
@@ -163,8 +191,8 @@ export default function TechnicalPage() {
           <div className="max-w-3xl">
             <h2 className={sectionHeadingClassName}>Performance evidence</h2>
             <p className={`mt-4 ${bodyClassName}`}>
-              These labels separate runtime measurement, test evidence,
-              workload structure, and work that remains unmeasured.
+              These labels separate runtime measurement, test evidence, workload
+              structure, and work that remains unmeasured.
             </p>
           </div>
 

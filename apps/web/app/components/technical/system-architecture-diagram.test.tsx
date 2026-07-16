@@ -13,12 +13,12 @@ describe('SystemArchitectureDiagram', () => {
     for (const label of [
       'Remix web Worker',
       'Hono API Worker',
+      'Jina embeddings',
+      'Workers AI',
       'Vectorize · image/text',
       'Vectorize · captions',
       'D1 · metadata + usage',
-      'R2 · image assets',
-      'Jina embeddings',
-      'Workers AI',
+      'Configured asset URLs',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -39,5 +39,26 @@ describe('SystemArchitectureDiagram', () => {
     expect(
       screen.getByText(/returns ranked results and queryTime/i)
     ).toBeInTheDocument();
+    expect(screen.getAllByText(/including R2-backed assets/i)).toHaveLength(2);
+    expect(
+      screen.getByText(
+        /load images.*configured asset URLs, including R2-backed assets/i
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('orders external embedding providers before retrieval and storage', () => {
+    render(<SystemArchitectureDiagram />);
+
+    const bandHeadings = screen
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+
+    expect(bandHeadings.slice(0, 4)).toEqual([
+      'Experience',
+      'Application',
+      'External model providers',
+      'Retrieval + storage',
+    ]);
   });
 });
