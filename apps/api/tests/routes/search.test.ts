@@ -496,7 +496,7 @@ describe('Search API auth and quota behavior', () => {
 
     expect(res.status).toBe(401);
     expect(body.success).toBe(false);
-    expect(body.error.code).toBe('UNAUTHORIZED');
+    expect(body.error.code).toBe('AUTHENTICATION_REQUIRED');
     expect(db.daily.size).toBe(0);
     expect(db.usageEvents).toHaveLength(0);
   });
@@ -1181,7 +1181,7 @@ describe('Search API auth and quota behavior', () => {
     });
   });
 
-  it('lets the public search proxy key bypass user quota in production', async () => {
+  it('rejects the anonymous public search proxy key in production allowlist mode', async () => {
     env = {
       ...env,
       ENVIRONMENT: 'production',
@@ -1193,10 +1193,9 @@ describe('Search API auth and quota behavior', () => {
     });
     const body = (await res.json()) as any;
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
     expect(res.headers.get('X-RateLimit-Limit')).toBeNull();
-    expect(body.success).toBe(true);
-    expect(body.data.results).toHaveLength(1);
+    expect(body.error.code).toBe('ACCESS_PENDING');
     expect(db.daily.size).toBe(0);
     expect(db.usageEvents).toHaveLength(0);
     expect(db.artworkEvents).toHaveLength(0);

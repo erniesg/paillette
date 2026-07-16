@@ -24,6 +24,11 @@ export type SearchAccessDecision =
         | 'IDENTITY_BINDING_REQUIRED';
     };
 
+export type GrantedSearchAccessDecision = Extract<
+  SearchAccessDecision,
+  { granted: true }
+>;
+
 export interface SearchAccessRepository {
   findIdentityUserId(
     identity: Pick<ExternalIdentity, 'issuer' | 'subject'>

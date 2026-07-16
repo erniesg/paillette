@@ -43,7 +43,7 @@ The bootstrap path is idempotent and concurrency-safe. Ambiguous identity state 
 
 The web application uses WorkOS AuthKit's server-supported React Router flow for sign in, sign up, callback, session refresh, sign out, and recovery. Staging and production use separate WorkOS environments, credentials, redirect URLs, cookie secrets, and API audiences.
 
-The API accepts bearer access tokens and verifies them locally using configured issuer, JWKS URI, and audience. Authentication produces a provider-neutral principal containing the external issuer/subject and resolved internal user ID. Authorization then evaluates `SEARCH_ACCESS_MODE` and the approval record.
+The API accepts bearer access tokens and verifies them locally using the configured issuer, client-specific JWKS URI, expiry, and WorkOS `client_id` application claim. A WorkOS JWT template supplies namespaced email and email-verification claims for bootstrap binding. Authentication produces a provider-neutral principal containing the external issuer/subject and resolved internal user ID. Authorization then evaluates `SEARCH_ACCESS_MODE` and the approval record.
 
 Personal Paillette API keys remain a separate authentication mechanism. They do not automatically grant public web search access; their existing API scopes and ownership behavior remain unchanged. The server-side public-search API key may only be used after the web proxy has authenticated and authorized the browser request.
 

@@ -79,12 +79,30 @@ describe('API Health Check', () => {
     const data = (await res.json()) as any;
 
     expect(res.status).toBe(401);
-    expect(data.error.code).toBe('UNAUTHORIZED');
+    expect(data.error.code).toBe('AUTHENTICATION_REQUIRED');
     expect(res.headers.get('WWW-Authenticate')).toBe(
       [
         'Bearer resource_metadata="https://paillette-api-stg.berlayar.ai/.well-known/oauth-protected-resource"',
         'scope="mcp:read"',
       ].join(', ')
     );
+  });
+
+  it('should reject unauthenticated access to every API data route', async () => {
+    const req = new Request(
+      'https://paillette.berlayar.ai/api/v1/galleries/test/embeddings'
+    );
+    const env = {
+      ENVIRONMENT: 'production',
+      API_VERSION: 'v1',
+      AUTH_ISSUER: 'https://api.workos.com/user_management/client_test',
+      AUTH_CLIENT_ID: 'client_test',
+    } as any;
+
+    const res = await app.fetch(req, env);
+    const data = (await res.json()) as any;
+
+    expect(res.status).toBe(401);
+    expect(data.error.code).toBe('AUTHENTICATION_REQUIRED');
   });
 });

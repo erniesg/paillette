@@ -84,7 +84,7 @@ const ensureCollectionAndArtwork = async (
   return { collection, artwork };
 };
 
-collections.get('/', async (c) => {
+collections.get('/', requireAuthOrApiKey as any, async (c) => {
   const orgId = await routeOrgId(c);
   if (!orgId) {
     return c.json(
@@ -261,7 +261,7 @@ collections.post('/upsert', requireAuthOrApiKey as any, async (c) => {
   });
 });
 
-collections.get('/:collectionId', async (c) => {
+collections.get('/:collectionId', requireAuthOrApiKey as any, async (c) => {
   const orgId = await routeOrgId(c);
   const collectionId = c.req.param('collectionId');
   if (!orgId) {

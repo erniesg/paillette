@@ -94,11 +94,11 @@ git commit -m "feat: add approved search identity policy"
 - Consumes: `parseSearchAccessMode`, `resolveSearchAccess`.
 - Produces: principal fields `externalIssuer`, `externalSubject`, `internalUserId`, `searchAccess`.
 - Produces: `requireApprovedDataAccess` middleware.
-- Environment: `AUTH_ISSUER`, `AUTH_JWKS_URI`, `AUTH_API_AUDIENCE`, `SEARCH_ACCESS_MODE`, `SEARCH_ACCESS_BOOTSTRAP_EMAIL`.
+- Environment: `AUTH_ISSUER`, `AUTH_JWKS_URI`, `AUTH_CLIENT_ID`, `SEARCH_ACCESS_MODE`, `SEARCH_ACCESS_BOOTSTRAP_EMAIL`.
 
 - [ ] **Step 1: Write failing token and decision tests**
 
-Generate local JOSE test keys and prove valid WorkOS-style JWTs authenticate; wrong issuer, audience, signature, and expiry fail. Prove an authenticated but unapproved request returns `403 ACCESS_PENDING` and no route handler executes.
+Generate local JOSE test keys and prove valid WorkOS-style JWTs authenticate; wrong issuer, `client_id`, signature, and expiry fail. Require namespaced email and email-verification JWT-template claims. Prove an authenticated but unapproved request returns `403 ACCESS_PENDING` and no route handler executes.
 
 - [ ] **Step 2: Write failing personal API-key owner test**
 
@@ -112,7 +112,7 @@ Expected: FAIL because provider-neutral bindings and approval middleware do not 
 
 - [ ] **Step 4: Refactor authentication names and JWT verification**
 
-Replace active Logto-specific verifier/middleware names with provider-neutral equivalents. Verify issuer, JWKS, audience, expiry, and subject. Resolve the stable internal user and access decision before setting the Hono principal. Keep temporary `LOGTO_*` fallback only outside production and mark it for removal after cutover.
+Replace active Logto-specific verifier/middleware names with provider-neutral equivalents. Verify issuer, client-specific JWKS, `client_id`, expiry, subject, and namespaced verified-email claims. Resolve the stable internal user and access decision before setting the Hono principal. Keep temporary `LOGTO_*` fallback only outside production and mark it for removal after cutover.
 
 - [ ] **Step 5: Enforce approved data access**
 
@@ -159,7 +159,7 @@ git commit -m "feat: enforce approved API data access"
 - Remove after replacement: `apps/web/app/routes/callback.tsx`
 
 **Interfaces:**
-- Environment: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`, `WORKOS_REDIRECT_URI`, `WORKOS_API_AUDIENCE`.
+- Environment: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`, `WORKOS_REDIRECT_URI`.
 - Produces: `getAuthSession(request, env)` returning user, access token, and session headers.
 - Produces: login/signup/callback/logout routes using same-origin validated `returnTo`.
 - Produces: root auth state `{ user, authenticated, access }`.
