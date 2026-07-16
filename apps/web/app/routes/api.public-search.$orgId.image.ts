@@ -2,14 +2,15 @@ import type { ActionFunctionArgs } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
 import type { ApiResponse, ArtworkSearchResult, SearchResponse } from '~/types';
 import {
+  buildLockedSearchPreview,
   buildPublicSearchHeaders,
   getApiBaseUrl,
   getServerEnv,
   isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
-  publicSearchConfigError,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
+import { withWorkOSSession, type WorkOSSession } from '~/lib/workos-auth.server';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -47,11 +48,11 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
   };
 };
 
-export const action = async ({
+const handleImageSearch = async ({
   context,
   params,
   request,
-}: ActionFunctionArgs) => {
+}: ActionFunctionArgs, session: WorkOSSession) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -67,10 +68,15 @@ export const action = async ({
   }
 
   const env = getServerEnv(context);
-  const headers = buildPublicSearchHeaders(request, env);
-  if (!headers) {
-    return publicSearchConfigError();
+  if (!session.accessToken) {
+    return json(buildLockedSearchPreview({ orgId, count: 12 }), {
+      headers: {
+        'Cache-Control': 'private, no-store',
+        'X-Paillette-Search-Access': 'locked',
+      },
+    });
   }
+  const headers = buildPublicSearchHeaders(request, session.accessToken);
 
   const incoming = await request.formData();
   const image = incoming.get('image');
@@ -129,7 +135,7 @@ export const action = async ({
       count: results.length,
     };
 
-    await logPublicUsageEvent(request, env, {
+    await logPublicUsageEvent(request, env, session.accessToken, {
       eventType: 'search',
       queryType: 'public_image_search',
       orgId: resolvedOrgId,
@@ -157,3 +163,6 @@ export const action = async ({
 
   return json(payload, { status: response.status });
 };
+
+export const action = (args: ActionFunctionArgs) =>
+  withWorkOSSession(args as any, (session) => handleImageSearch(args, session));

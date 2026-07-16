@@ -3,6 +3,7 @@ import { json } from '@remix-run/cloudflare';
 import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
 import {
   buildPublicSearchCacheHeaders,
+  buildLockedSearchPreview,
   buildPublicTextSearchCacheKey,
   buildPublicSearchHeaders,
   filterPublicTextSearchResponse,
@@ -11,12 +12,12 @@ import {
   getServerEnv,
   isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
-  publicSearchConfigError,
   readPublicTextSearchCache,
   resolvePublicSearchOrgId,
   writePublicTextSearchCache,
 } from '~/lib/public-search.server';
 import type { ArtworkSearchResult } from '~/types';
+import { withWorkOSSession, type WorkOSSession } from '~/lib/workos-auth.server';
 
 const clamp = (value: unknown, min: number, max: number, fallback: number) => {
   const number = Number(value);
@@ -55,11 +56,11 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
   };
 };
 
-export const action = async ({
+const handleTextSearch = async ({
   context,
   params,
   request,
-}: ActionFunctionArgs) => {
+}: ActionFunctionArgs, session: WorkOSSession) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -75,10 +76,6 @@ export const action = async ({
   }
 
   const env = getServerEnv(context);
-  const headers = buildPublicSearchHeaders(request, env, 'application/json');
-  if (!headers) {
-    return publicSearchConfigError();
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -109,6 +106,24 @@ export const action = async ({
       { status: 400 }
     );
   }
+
+  if (!session.accessToken) {
+    return json(buildLockedSearchPreview({
+      orgId,
+      count: clamp(body.topK, 1, 30, 12),
+    }), {
+      headers: {
+        'Cache-Control': 'private, no-store',
+        'X-Paillette-Search-Access': 'locked',
+      },
+    });
+  }
+
+  const headers = buildPublicSearchHeaders(
+    request,
+    session.accessToken,
+    'application/json'
+  );
 
   const requestedSearchPayload: Required<Omit<SearchTextRequest, 'facet'>> &
     Pick<SearchTextRequest, 'facet'> = {
@@ -145,7 +160,7 @@ export const action = async ({
 
     if (shouldLogUsage && responsePayload.success && responsePayload.data) {
       const results = responsePayload.data.results;
-      await logPublicUsageEvent(request, env, {
+      await logPublicUsageEvent(request, env, session.accessToken, {
         eventType: 'search',
         queryType: `public_${usageContext.mode === 'colour' ? 'colour' : 'text'}_search`,
         orgId: resolvedOrgId,
@@ -213,7 +228,7 @@ export const action = async ({
 
     if (shouldLogUsage) {
       const requestedResults = requestedResponsePayload.data?.results || [];
-      await logPublicUsageEvent(request, env, {
+      await logPublicUsageEvent(request, env, session.accessToken, {
         eventType: 'search',
         queryType: `public_${usageContext.mode === 'colour' ? 'colour' : 'text'}_search`,
         orgId: resolvedOrgId,
@@ -251,3 +266,6 @@ export const action = async ({
     headers: buildPublicSearchCacheHeaders('BYPASS', responsePayload),
   });
 };
+
+export const action = (args: ActionFunctionArgs) =>
+  withWorkOSSession(args as any, (session) => handleTextSearch(args, session));

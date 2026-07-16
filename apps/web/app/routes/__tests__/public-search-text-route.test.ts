@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { withWorkOSSessionMock } = vi.hoisted(() => ({
+  withWorkOSSessionMock: vi.fn(),
+}));
+
+vi.mock('~/lib/workos-auth.server', () => ({
+  withWorkOSSession: withWorkOSSessionMock,
+}));
 
 import { action } from '../api.public-search.$orgId.text';
 import type { ApiResponse, SearchResponse } from '~/types';
@@ -28,9 +36,46 @@ const makeRequest = (body: Record<string, unknown>, orgId = 'ngs') =>
   });
 
 describe('public text search route caching', () => {
+  beforeEach(() => {
+    withWorkOSSessionMock.mockImplementation(
+      async (_args: unknown, handler: (session: unknown) => unknown) =>
+        handler({
+          accessToken: 'workos-access-token',
+          user: { id: 'user_approved', email: 'hello@ernie.sg' },
+        })
+    );
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('returns only synthetic locked tiles to anonymous browsers', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>();
+    const cache = {
+      match: vi.fn(),
+      put: vi.fn(),
+    };
+    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal('caches', { default: cache });
+    withWorkOSSessionMock.mockImplementationOnce(
+      async (_args: unknown, handler: (session: unknown) => unknown) =>
+        handler({ accessToken: null, user: null })
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest({ query: 'private real query', topK: 4 }),
+    } as any);
+    const payload = (await response.json()) as ApiResponse<SearchResponse>;
+
+    expect(response.headers.get('X-Paillette-Search-Access')).toBe('locked');
+    expect(payload.data?.results).toHaveLength(4);
+    expect(payload.data?.results.every((item) => item.id.startsWith('locked-preview-'))).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(cache.match).not.toHaveBeenCalled();
   });
 
   it('caches one broad result set per query and serves requested slices from it', async () => {

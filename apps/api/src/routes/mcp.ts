@@ -20,7 +20,6 @@ type AppBindings = {
 
 type JsonRpcId = string | number | null;
 
-const DEFAULT_LOGTO_ISSUER = 'https://m2fmae.logto.app/oidc';
 const MCP_ALL_SCOPE = 'mcp:all';
 const MCP_READ_SCOPE = 'mcp:read';
 const MCP_WRITE_SCOPE = 'mcp:write';
@@ -57,12 +56,14 @@ export const getMcpProtectedResourceMetadataUrl = (requestUrl: string) => {
 
 export const getMcpProtectedResourceMetadata = (
   requestUrl: string,
-  env: Pick<Env, 'LOGTO_API_RESOURCE' | 'LOGTO_ISSUER'>
+  env: Pick<Env, 'LOGTO_API_RESOURCE' | 'LOGTO_ISSUER' | 'AUTH_ISSUER'>
 ) => ({
   resource: getMcpResourceUri(requestUrl, env),
   resource_name: 'Paillette MCP',
   resource_documentation: 'https://paillette.berlayar.ai/docs/api#mcp',
-  authorization_servers: [env.LOGTO_ISSUER || DEFAULT_LOGTO_ISSUER],
+  authorization_servers: [
+    env.AUTH_ISSUER || env.LOGTO_ISSUER || new URL(requestUrl).origin,
+  ],
   bearer_methods_supported: ['header'],
   scopes_supported: MCP_SCOPES_SUPPORTED,
 });

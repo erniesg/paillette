@@ -13,6 +13,8 @@ import {
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { loadArtworkDetailPage } from '~/lib/public-route-loaders.server';
+import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
+import { withWorkOSSession } from '~/lib/workos-auth.server';
 import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
 import {
   getGeneratedCaptionDetails,
@@ -48,15 +50,18 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params, request }: LoaderFunctionArgs) {
-  const { orgId, artworkId } = params;
-  return loadArtworkDetailPage({
-    request,
-    requestedOrgId: orgId || '',
-    artworkId: artworkId || '',
-    routeScope: 'org',
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSSession(args, (session) => {
+    const { orgId, artworkId } = args.params;
+    return loadArtworkDetailPage({
+      request: args.request,
+      requestedOrgId: orgId || '',
+      artworkId: artworkId || '',
+      routeScope: 'org',
+      accessToken: session.accessToken,
+      apiBaseUrl: getApiBaseUrl(getServerEnv(args.context)),
+    });
   });
-}
 
 const clickableCatalogueLabels = new Set([
   'artist',

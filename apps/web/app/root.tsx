@@ -1,5 +1,4 @@
 import {
-  json,
   type LinksFunction,
   type LoaderFunctionArgs,
   type MetaFunction,
@@ -12,13 +11,16 @@ import {
   ScrollRestoration,
   useLoaderData,
 } from '@remix-run/react';
-import { LogtoProvider, UserScope, type LogtoConfig } from '@logto/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ThemeToggle } from './components/theme/theme-toggle';
 import { UserProvider } from './contexts/user-context';
 import { ThemeProvider } from './contexts/theme-context';
-import type { LogtoRuntimeEnv } from './lib/logto';
+import { getApiBaseUrl, getServerEnv } from './lib/public-search.server';
+import {
+  getWorkOSRuntimeConfig,
+  withWorkOSSession,
+} from './lib/workos-auth.server';
 
 import styles from './tailwind.css?url';
 // import colorfulStyles from 'react-colorful/dist/index.css?url';
@@ -48,51 +50,30 @@ export const links: LinksFunction = () => [
   },
 ];
 
-type WorkerContext = {
-  cloudflare?: {
-    env?: Record<string, string | undefined>;
-  };
-};
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSSession(args, async (session) => {
+    const env = getServerEnv(args.context);
+    let searchAccess: 'anonymous' | 'pending' | 'approved' = session.user
+      ? 'pending'
+      : 'anonymous';
 
-const getProcessEnv = () => {
-  const runtime = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
-  };
+    if (session.accessToken) {
+      try {
+        const response = await fetch(`${getApiBaseUrl(env)}/me/access`, {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+        if (response.ok) searchAccess = 'approved';
+      } catch {
+        // Fail closed. A signed-in account is pending until the API confirms it.
+      }
+    }
 
-  return runtime.process?.env ?? {};
-};
-
-export const loader = ({ context }: LoaderFunctionArgs) => {
-  const workerEnv = (context as WorkerContext).cloudflare?.env ?? {};
-  const processEnv = getProcessEnv();
-  const appEnv =
-    workerEnv.APP_ENV ??
-    processEnv.APP_ENV ??
-    processEnv.NODE_ENV ??
-    'development';
-  const defaultStagingAppId =
-    appEnv === 'production' ? '' : 'zsrsuc0jkv9zhinog3bx5';
-
-  return json({
-    env: {
-      endpoint:
-        workerEnv.LOGTO_ENDPOINT ??
-        processEnv.LOGTO_ENDPOINT ??
-        processEnv.VITE_LOGTO_ENDPOINT ??
-        'https://m2fmae.logto.app/',
-      appId:
-        workerEnv.LOGTO_APP_ID ??
-        processEnv.LOGTO_APP_ID ??
-        processEnv.VITE_LOGTO_APP_ID ??
-        defaultStagingAppId,
-      apiResource:
-        workerEnv.LOGTO_API_RESOURCE ??
-        processEnv.LOGTO_API_RESOURCE ??
-        processEnv.VITE_LOGTO_API_RESOURCE ??
-        '',
-    } satisfies LogtoRuntimeEnv,
+    return {
+      sessionUser: session.user,
+      searchAccess,
+      isWorkOSConfigured: Boolean(getWorkOSRuntimeConfig(args.context)),
+    };
   });
-};
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -119,7 +100,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { env } = useLoaderData<typeof loader>();
+  const { sessionUser, searchAccess, isWorkOSConfigured } =
+    useLoaderData<typeof loader>();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -131,26 +113,17 @@ export default function App() {
         },
       })
   );
-  const logtoConfig = useMemo<LogtoConfig>(() => {
-    return {
-      endpoint: env.endpoint,
-      appId: env.appId,
-      scopes: [UserScope.Email],
-    };
-  }, [env.appId, env.endpoint]);
-
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <LogtoProvider config={logtoConfig}>
-          <UserProvider
-            apiResource={env.apiResource || undefined}
-            isLogtoConfigured={Boolean(env.endpoint && env.appId)}
-          >
-            <Outlet />
-            <ThemeToggle />
-          </UserProvider>
-        </LogtoProvider>
+        <UserProvider
+          initialUser={sessionUser}
+          isWorkOSConfigured={isWorkOSConfigured}
+          searchAccess={searchAccess}
+        >
+          <Outlet />
+          <ThemeToggle />
+        </UserProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

@@ -32,6 +32,7 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   ListFilter,
+  Lock,
   Network,
   Palette,
   Search,
@@ -101,6 +102,8 @@ import type {
   SearchTextRequest,
 } from '~/types';
 import { useUser } from '~/contexts/user-context';
+import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
+import { withWorkOSSession } from '~/lib/workos-auth.server';
 
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
@@ -130,14 +133,20 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-export async function loader({ params, request }: LoaderFunctionArgs) {
-  const { galleryId } = params;
-  return loadPublicSearchPage({
-    request,
-    requestedOrgId: galleryId || '',
-    routeScope: 'org',
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSSession(args, (session) => {
+    const requestedOrgId =
+      args.params.galleryId ||
+      args.params.orgId ||
+      args.params.collectionId ||
+      '';
+    return loadPublicSearchPage({
+      requestedOrgId,
+      routeScope: args.params.collectionId ? 'collection' : 'org',
+      accessToken: session.accessToken,
+      apiBaseUrl: getApiBaseUrl(getServerEnv(args.context)),
+    });
   });
-}
 
 type SearchMode = 'text' | 'image' | 'colour';
 type SearchFacet = 'artist';
@@ -982,7 +991,7 @@ export default function SearchPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { isAuthenticated, login, signup } = useUser();
+  const { isAuthenticated, login, signup, searchAccess } = useUser();
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
@@ -1867,7 +1876,9 @@ export default function SearchPage() {
               isLoading={isIdleShowcaseLoading}
               suggestion={activeIdleSuggestion}
               onCommittedSuggestionChange={setDisplayIdleSuggestion}
-              onSelectArtwork={selectArtwork}
+              onSelectArtwork={
+                searchAccess === 'approved' ? selectArtwork : () => undefined
+              }
             />
           )}
 
@@ -2289,6 +2300,51 @@ export default function SearchPage() {
               </div>
             </div>
 
+            {searchAccess !== 'approved' && (
+              <div className="sticky top-28 z-40 mx-auto mt-8 flex max-w-md justify-center px-4">
+                <div className="w-full rounded-2xl border border-white/15 bg-[#111116]/95 p-6 text-center shadow-2xl shadow-black/60 backdrop-blur-xl">
+                  <Lock className="mx-auto h-6 w-6 text-fuchsia-300" />
+                  <h2 className="mt-3 font-display text-xl font-semibold text-white">
+                    {searchAccess === 'pending'
+                      ? 'Your access is pending'
+                      : 'Sign in to reveal results'}
+                  </h2>
+                  <p className="mt-2 text-sm leading-relaxed text-white/55">
+                    {searchAccess === 'pending'
+                      ? 'This account is signed in but has not been approved for collection search yet.'
+                      : 'Create an account or sign in with an approved account. These tiles are synthetic previews; no collection data was sent.'}
+                  </p>
+                  {searchAccess === 'anonymous' && (
+                    <div className="mt-5 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void login({ returnTo: getCurrentReturnTo() })}
+                        className="rounded-lg border border-white/15 bg-white/[0.08] px-4 py-2 text-sm font-medium text-white hover:bg-white/[0.13]"
+                      >
+                        Log in
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void signup({ returnTo: getCurrentReturnTo() })}
+                        className="rounded-lg bg-fuchsia-400 px-4 py-2 text-sm font-semibold text-black hover:bg-fuchsia-300"
+                      >
+                        Create account
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div
+              className={
+                searchAccess === 'approved'
+                  ? undefined
+                  : 'pointer-events-none select-none blur-md opacity-55'
+              }
+              aria-hidden={searchAccess !== 'approved'}
+            >
+
             {showColourRail && (
               <div ref={colourRailRef} className="mt-3">
                 <ColourRail
@@ -2432,6 +2488,7 @@ export default function SearchPage() {
                   </p>
                 </div>
               )}
+            </div>
           </section>
         )}
         <PublicSiteFooter separated={hasActiveSearch} />
