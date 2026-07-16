@@ -47,6 +47,31 @@ describe('SystemArchitectureDiagram', () => {
     ).toBeInTheDocument();
   });
 
+  it('qualifies optional operations in the routed hybrid text-search hot path', () => {
+    render(<SystemArchitectureDiagram />);
+
+    expect(
+      screen.getByText(/routed hybrid text-search hot path/i)
+    ).toBeInTheDocument();
+
+    const steps = within(screen.getByRole('list')).getAllByRole('listitem');
+    expect(steps).toHaveLength(9);
+    expect(steps[0]).toHaveTextContent(/visitor sends a text query/i);
+    expect(steps[0]).not.toHaveTextContent(/image|caption/i);
+    expect(steps[3]).toHaveTextContent(
+      /embed.*only when the selected route needs vectors/i
+    );
+    expect(steps[4]).toHaveTextContent(
+      /selected Vectorize indexes and\/or D1 return candidates/i
+    );
+    expect(steps[5]).toHaveTextContent(
+      /RRF.*only when multiple ranked sources participate/i
+    );
+    expect(
+      screen.queryByText(/both Vectorize indexes return/i)
+    ).not.toBeInTheDocument();
+  });
+
   it('orders external embedding providers before retrieval and storage', () => {
     render(<SystemArchitectureDiagram />);
 

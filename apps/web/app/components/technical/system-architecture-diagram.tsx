@@ -78,12 +78,12 @@ const architectureBands: ArchitectureBand[] = [
 ];
 
 const requestSteps = [
-  'Submit: the visitor sends an image, text, or caption query.',
+  'Submit: the visitor sends a text query.',
   'Authenticate and reserve: the API validates access and reserves usage.',
   'Route: the API selects the query and model path.',
-  'Embed: Jina embeddings or Workers AI creates the query vector.',
-  'Retrieve: both Vectorize indexes return their nearest matches.',
-  'Fuse: the API combines candidates into one ranked set.',
+  'Embed when needed: only when the selected route needs vectors, Jina embeddings or Workers AI creates the query vector.',
+  'Retrieve: selected Vectorize indexes and/or D1 return candidates.',
+  'Fuse when needed: RRF combines ranked candidates only when multiple ranked sources participate.',
   'Hydrate: D1 adds artwork metadata to each candidate.',
   'Record and return: D1 records usage; the API returns ranked results and queryTime.',
   'Load images: the browser requests configured asset URLs, including R2-backed assets.',
@@ -155,7 +155,13 @@ export function SystemArchitectureDiagram(): JSX.Element {
       </div>
 
       <figcaption className="border-t border-white/10 bg-white/[0.025] px-5 py-6 sm:px-7">
-        <h3 className="text-sm font-semibold text-white">Request sequence</h3>
+        <h3 className="text-sm font-semibold text-white">
+          Routed hybrid text-search hot path
+        </h3>
+        <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
+          The selected route determines which optional embedding, retrieval, and
+          fusion operations participate.
+        </p>
         <ol className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
           {requestSteps.map((step, index) => (
             <li
