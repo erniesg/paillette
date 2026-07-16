@@ -13,7 +13,7 @@ import { UserMenu } from '~/components/user/user-menu';
 export const PAILLETTE_GITHUB_URL = 'https://github.com/erniesg/paillette';
 
 type PublicSiteHeaderProps = {
-  active: 'about' | 'search';
+  active: 'about' | 'technical' | 'search';
   searchHref?: string;
   isAuthenticated?: boolean;
   onLogoClick?: () => void;
@@ -42,17 +42,30 @@ export function PublicSiteHeader({
           >
             <Logo size="sm" framed className="leading-none" />
           </Link>
-          <Link
-            to="/about"
-            aria-current={active === 'about' ? 'page' : undefined}
-            className={`inline-flex shrink-0 text-sm font-medium leading-none transition-colors ${
-              active === 'about'
-                ? 'text-white/75'
-                : 'text-white/55 hover:text-white'
-            }`}
-          >
-            About
-          </Link>
+          <div className="flex min-h-11 flex-col items-start justify-center gap-1 leading-none">
+            <Link
+              to="/about"
+              aria-current={active === 'about' ? 'page' : undefined}
+              className={`text-sm font-medium transition-colors ${
+                active === 'about'
+                  ? 'text-white/75'
+                  : 'text-white/55 hover:text-white'
+              }`}
+            >
+              About
+            </Link>
+            <Link
+              to="/technical"
+              aria-current={active === 'technical' ? 'page' : undefined}
+              className={`font-mono text-[10px] uppercase tracking-[0.14em] transition-colors ${
+                active === 'technical'
+                  ? 'text-white/75'
+                  : 'text-white/55 hover:text-white'
+              }`}
+            >
+              Technical details
+            </Link>
+          </div>
         </div>
 
         <nav className="flex items-center gap-2" aria-label="Primary">
