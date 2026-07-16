@@ -360,6 +360,7 @@ describe('Color Search API', () => {
         `/galleries/${testGalleryId}/artworks/${artworkId}/colors`,
         {
           method: 'GET',
+          headers: authHeaders,
         }
       );
 
@@ -377,6 +378,7 @@ describe('Color Search API', () => {
         `/galleries/${testGalleryId}/artworks/nonexistent/colors`,
         {
           method: 'GET',
+          headers: authHeaders,
         }
       );
 
@@ -392,6 +394,7 @@ describe('Color Search API', () => {
         `/galleries/${testGalleryId}/artworks/${artworkId}/extract-colors`,
         {
           method: 'POST',
+          headers: authHeaders,
         }
       );
 
@@ -409,6 +412,7 @@ describe('Color Search API', () => {
         `/galleries/${testGalleryId}/artworks/batch-extract-colors`,
         {
           method: 'POST',
+          headers: authHeaders,
         }
       );
 

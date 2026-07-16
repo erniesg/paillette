@@ -389,7 +389,7 @@ app.post('/upload', async (c) => {
  * GET /api/v1/artworks
  * List artworks with filtering and pagination
  */
-app.get('/', async (c) => {
+app.get('/', requireAuthOrApiKey as any, async (c) => {
   try {
     const query = c.req.query();
     const routeOrgId = await resolveOrgIdentifier(
@@ -520,7 +520,7 @@ app.get('/', async (c) => {
  * GET /api/v1/artworks/:id
  * Get artwork by ID
  */
-app.get('/:id', async (c) => {
+app.get('/:id', requireAuthOrApiKey as any, async (c) => {
   try {
     const id = c.req.param('id');
 

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
+import { requireAuthOrApiKey } from '../middleware/auth';
 
 interface AssetRow {
   id: string;
@@ -10,6 +11,8 @@ interface AssetRow {
 }
 
 const assets = new Hono<{ Bindings: Env }>();
+
+assets.use('*', requireAuthOrApiKey as any);
 
 assets.get('/:assetId/content', async (c) => {
   const assetId = c.req.param('assetId');

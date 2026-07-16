@@ -27,6 +27,8 @@ colorSearchRoutes.use(
   enforceDailyQuota({ queryType: 'color_search' }) as any
 );
 
+colorSearchRoutes.use('/artworks/*', requireAuthOrApiKey as any);
+
 /**
  * POST /orgs/:orgId/search/color
  * Search artworks by color similarity
