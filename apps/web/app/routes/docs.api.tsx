@@ -1842,9 +1842,9 @@ export const buildDocsMarkdown = (apiBase: string) => {
     '',
     '## Authentication',
     '',
-    'Server-to-server calls use `X-API-Key: <key>`. Source discovery and public collection reads are public; search, artwork lookup, translation, extract, and all management writes require a key.',
+    'Server-to-server calls use `X-API-Key: <key>`. Browser and OAuth clients use a WorkOS bearer token. In allowlist mode, the signed-in identity or API-key owner must also have active Paillette access approval; unapproved requests return `403 ACCESS_PENDING`.',
     '',
-    'MCP clients connect to `/api/v1/mcp` using Streamable HTTP JSON-RPC. The protected resource metadata is exposed at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/api/v1/mcp`. API keys can call all available tools; OAuth tokens need `mcp:all` or the relevant grouped scopes (`mcp:read`, `mcp:write`, `artworks:read`, `artworks:write`, `collections:read`, `collections:write`, `translations:create`, `extract:create`).',
+    'MCP clients connect to `/api/v1/mcp` using Streamable HTTP JSON-RPC. The protected resource metadata is exposed at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/api/v1/mcp`. Approved API-key owners can call all available tools; approved OAuth identities need `mcp:all` or the relevant grouped scopes (`mcp:read`, `mcp:write`, `artworks:read`, `artworks:write`, `collections:read`, `collections:write`, `translations:create`, `extract:create`).',
     '',
     '## Usage',
     '',
@@ -3402,10 +3402,11 @@ function StartSections({
       >
         <SectionHeading title="Authentication" />
         <p className="text-sm leading-6 text-[var(--app-muted)]">
-          Server-to-server calls use <CodeText>X-API-Key</CodeText>. Public
-          source discovery and collection reads work without a key; search,
-          artwork lookup, translation, extract, and management writes require
-          one.
+          Server-to-server calls use <CodeText>X-API-Key</CodeText>. Browser and
+          OAuth clients use a WorkOS bearer token. In{' '}
+          <CodeText>allowlist</CodeText> mode, the signed-in identity or API-key
+          owner must also have active Paillette access approval; unapproved
+          requests return <CodeText>403 ACCESS_PENDING</CodeText>.
         </p>
         <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
           MCP clients connect to <CodeText>/api/v1/mcp</CodeText> using
@@ -3414,10 +3415,10 @@ function StartSections({
           <CodeText>/.well-known/oauth-protected-resource/api/v1/mcp</CodeText>.
         </p>
         <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
-          API keys can call all available MCP tools. OAuth tokens need{' '}
-          <CodeText>mcp:all</CodeText> or matching grouped scopes such as{' '}
-          <CodeText>mcp:read</CodeText>, <CodeText>mcp:write</CodeText>,{' '}
-          <CodeText>artworks:read</CodeText>,{' '}
+          Approved API-key owners can call all available MCP tools. Approved
+          OAuth identities need <CodeText>mcp:all</CodeText> or matching grouped
+          scopes such as <CodeText>mcp:read</CodeText>,{' '}
+          <CodeText>mcp:write</CodeText>, <CodeText>artworks:read</CodeText>,{' '}
           <CodeText>collections:write</CodeText>,{' '}
           <CodeText>translations:create</CodeText>, or{' '}
           <CodeText>extract:create</CodeText>.
@@ -3560,10 +3561,11 @@ function McpSections({
           <CodeText>/.well-known/oauth-protected-resource/api/v1/mcp</CodeText>.
         </p>
         <p className="mb-4 text-sm leading-6 text-[var(--app-muted)]">
-          API keys can call all exposed tools. OAuth tokens need{' '}
-          <CodeText>mcp:all</CodeText> or matching grouped scopes such as{' '}
-          <CodeText>mcp:read</CodeText>, <CodeText>mcp:write</CodeText>,{' '}
-          <CodeText>artworks:read</CodeText>,{' '}
+          In allowlist mode, the API-key owner or OAuth identity must be
+          approved. Approved API-key owners can call all exposed tools. Approved
+          OAuth identities need <CodeText>mcp:all</CodeText> or matching grouped
+          scopes such as <CodeText>mcp:read</CodeText>,{' '}
+          <CodeText>mcp:write</CodeText>, <CodeText>artworks:read</CodeText>,{' '}
           <CodeText>collections:write</CodeText>,{' '}
           <CodeText>translations:create</CodeText>, or{' '}
           <CodeText>extract:create</CodeText>.

@@ -60,9 +60,14 @@ Starting with the **National Gallery Singapore**, we're building a platform that
 
 ### 8. API Access
 - RESTful APIs for all core functionality
-- Proper authentication and authorization
+- WorkOS AuthKit accounts with fail-closed search approval
+- Personal API keys and streamable HTTP MCP compatibility
 - Comprehensive API documentation
 - Easy integration with gallery systems
+
+Account creation, password recovery, staging/production configuration, API/MCP
+smokes, and the later all-members toggle are documented in the
+[WorkOS AuthKit cutover runbook](docs/runbooks/workos-auth-cutover.md).
 
 ## Tech Stack
 

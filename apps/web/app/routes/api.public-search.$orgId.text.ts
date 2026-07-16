@@ -17,7 +17,10 @@ import {
   writePublicTextSearchCache,
 } from '~/lib/public-search.server';
 import type { ArtworkSearchResult } from '~/types';
-import { withWorkOSSession, type WorkOSSession } from '~/lib/workos-auth.server';
+import {
+  withWorkOSResourceSession,
+  type WorkOSSession,
+} from '~/lib/workos-auth.server';
 
 const clamp = (value: unknown, min: number, max: number, fallback: number) => {
   const number = Number(value);
@@ -56,11 +59,10 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
   };
 };
 
-const handleTextSearch = async ({
-  context,
-  params,
-  request,
-}: ActionFunctionArgs, session: WorkOSSession) => {
+const handleTextSearch = async (
+  { context, params, request }: ActionFunctionArgs,
+  session: WorkOSSession
+) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -108,15 +110,18 @@ const handleTextSearch = async ({
   }
 
   if (!session.accessToken) {
-    return json(buildLockedSearchPreview({
-      orgId,
-      count: clamp(body.topK, 1, 30, 12),
-    }), {
-      headers: {
-        'Cache-Control': 'private, no-store',
-        'X-Paillette-Search-Access': 'locked',
-      },
-    });
+    return json(
+      buildLockedSearchPreview({
+        orgId,
+        count: clamp(body.topK, 1, 30, 12),
+      }),
+      {
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'X-Paillette-Search-Access': 'locked',
+        },
+      }
+    );
   }
 
   const headers = buildPublicSearchHeaders(
@@ -268,4 +273,6 @@ const handleTextSearch = async ({
 };
 
 export const action = (args: ActionFunctionArgs) =>
-  withWorkOSSession(args as any, (session) => handleTextSearch(args, session));
+  withWorkOSResourceSession(args as any, (session) =>
+    handleTextSearch(args, session)
+  );

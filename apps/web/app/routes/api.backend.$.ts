@@ -3,7 +3,10 @@ import type {
   LoaderFunctionArgs,
 } from '@remix-run/cloudflare';
 import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
-import { withWorkOSSession, type WorkOSSession } from '~/lib/workos-auth.server';
+import {
+  withWorkOSResourceSession,
+  type WorkOSSession,
+} from '~/lib/workos-auth.server';
 
 type ProxyArgs = LoaderFunctionArgs | ActionFunctionArgs;
 
@@ -78,7 +81,7 @@ const proxyAuthenticatedRequest = async (
 };
 
 const handle = (args: ProxyArgs) =>
-  withWorkOSSession(args as any, (session) =>
+  withWorkOSResourceSession(args as any, (session) =>
     proxyAuthenticatedRequest(args, session)
   );
 

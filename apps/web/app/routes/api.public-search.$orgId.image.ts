@@ -10,7 +10,10 @@ import {
   logPublicUsageEvent,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
-import { withWorkOSSession, type WorkOSSession } from '~/lib/workos-auth.server';
+import {
+  withWorkOSResourceSession,
+  type WorkOSSession,
+} from '~/lib/workos-auth.server';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -48,11 +51,10 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
   };
 };
 
-const handleImageSearch = async ({
-  context,
-  params,
-  request,
-}: ActionFunctionArgs, session: WorkOSSession) => {
+const handleImageSearch = async (
+  { context, params, request }: ActionFunctionArgs,
+  session: WorkOSSession
+) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -165,4 +167,6 @@ const handleImageSearch = async ({
 };
 
 export const action = (args: ActionFunctionArgs) =>
-  withWorkOSSession(args as any, (session) => handleImageSearch(args, session));
+  withWorkOSResourceSession(args as any, (session) =>
+    handleImageSearch(args, session)
+  );
