@@ -22,7 +22,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function SignupPage() {
-  const { signup, isLogtoConfigured } = useUser();
+  const { signup, isWorkOSConfigured } = useUser();
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -79,7 +79,7 @@ export default function SignupPage() {
               <Button
                 type="button"
                 onClick={handleSignup}
-                disabled={isLoading || !isLogtoConfigured}
+                disabled={isLoading || !isWorkOSConfigured}
                 className="w-full"
               >
                 {isLoading ? (
@@ -95,9 +95,9 @@ export default function SignupPage() {
                 )}
               </Button>
 
-              {!isLogtoConfigured && (
+              {!isWorkOSConfigured && (
                 <p className="text-xs text-center text-red-400">
-                  Logto is not configured for this environment.
+                  WorkOS is not configured for this environment.
                 </p>
               )}
 

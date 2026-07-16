@@ -36,7 +36,7 @@ describe('API Health Check', () => {
     const env = {
       ENVIRONMENT: 'staging',
       API_VERSION: 'v1',
-      LOGTO_ISSUER: 'https://m2fmae.logto.app/oidc',
+      AUTH_ISSUER: 'https://api.workos.com/user_management/client_test',
       LOGTO_API_RESOURCE: 'https://paillette-api-stg.berlayar.ai',
     } as any;
 
@@ -46,7 +46,7 @@ describe('API Health Check', () => {
     expect(res.status).toBe(200);
     expect(data.resource).toBe('https://paillette-api-stg.berlayar.ai');
     expect(data.authorization_servers).toEqual([
-      'https://m2fmae.logto.app/oidc',
+      'https://api.workos.com/user_management/client_test',
     ]);
     expect(data.scopes_supported).toContain('mcp:read');
     expect(data.scopes_supported).toContain('mcp:write');

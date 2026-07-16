@@ -8,6 +8,8 @@ const wranglerToml = readFileSync(
 );
 
 const requiredProductionSearchVars = {
+  SEARCH_ACCESS_MODE: 'allowlist',
+  SEARCH_ACCESS_BOOTSTRAP_EMAIL: 'hello@ernie.sg',
   EMBEDDING_INDEX_VERSION: 'v2',
   SEARCH_FUSION_MODE: 'hybrid',
   JINA_MULTIMODAL_MODEL: 'jina-clip-v2',

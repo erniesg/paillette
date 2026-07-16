@@ -26,6 +26,48 @@ export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
 export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '7';
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
+export const PROTECTED_SEARCH_RESPONSE_CACHE_CONTROL = 'private, no-store';
+
+const LOCKED_PREVIEW_COLOURS = [
+  ['#17131f', '#6d28d9'],
+  ['#101827', '#0369a1'],
+  ['#201315', '#be123c'],
+  ['#132019', '#15803d'],
+  ['#211b12', '#b45309'],
+  ['#18181b', '#52525b'],
+] as const;
+
+const getLockedPreviewImage = (index: number) => {
+  const [background, accent] =
+    LOCKED_PREVIEW_COLOURS[index % LOCKED_PREVIEW_COLOURS.length]!;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800" viewBox="0 0 640 800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${background}"/><stop offset="1" stop-color="${accent}"/></linearGradient></defs><rect width="640" height="800" fill="url(#g)"/><circle cx="${150 + index * 37}" cy="${220 + index * 29}" r="150" fill="white" opacity=".08"/><rect x="120" y="430" width="400" height="18" rx="9" fill="white" opacity=".13"/><rect x="180" y="470" width="280" height="12" rx="6" fill="white" opacity=".09"/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+};
+
+export const buildLockedSearchPreview = ({
+  orgId,
+  count = 12,
+}: {
+  orgId: string;
+  query?: string;
+  count?: number;
+}): ApiResponse<SearchResponse> => ({
+  success: true,
+  data: {
+    results: Array.from({ length: Math.max(1, Math.min(count, 30)) }, (_, index) => ({
+      id: `locked-preview-${index + 1}`,
+      galleryId: orgId,
+      title: 'Approved access required',
+      artist: 'Sign in to reveal this result',
+      imageUrl: getLockedPreviewImage(index),
+      thumbnailUrl: getLockedPreviewImage(index),
+      similarity: 0,
+      metadata: { lockedPreview: true },
+    })),
+    count: Math.max(1, Math.min(count, 30)),
+    queryTime: 0,
+  },
+});
 
 const ORG_ID_ALIASES: Record<string, string> = {
   ngs: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
@@ -136,7 +178,7 @@ export const buildPublicSearchCacheHeaders = (
   payload?: ApiResponse
 ) => {
   const headers = new Headers({
-    'Cache-Control': PUBLIC_SEARCH_CACHE_CONTROL,
+    'Cache-Control': PROTECTED_SEARCH_RESPONSE_CACHE_CONTROL,
     'X-Paillette-Search-Cache': status,
   });
 
@@ -199,36 +241,12 @@ export const writePublicTextSearchCache = async (
   }
 };
 
-const getPublicSearchAuthHeaders = (
-  env: Record<string, string | undefined>
-): Record<string, string> | null => {
-  const apiKey = env.PAILLETTE_PUBLIC_SEARCH_API_KEY;
-  if (apiKey) {
-    return { 'X-API-Key': apiKey };
-  }
-
-  if ((env.APP_ENV || env.NODE_ENV) !== 'production') {
-    return {
-      'X-User-Id': 'public-search-web',
-      'X-User-Email': 'public-search-web@paillette.local',
-      'X-User-Name': 'Public Search Web',
-    };
-  }
-
-  return null;
-};
-
 export const buildPublicSearchHeaders = (
   request: Request,
-  env: Record<string, string | undefined>,
+  accessToken: string,
   contentType?: string
 ) => {
-  const authHeaders = getPublicSearchAuthHeaders(env);
-  if (!authHeaders) {
-    return null;
-  }
-
-  const headers = new Headers(authHeaders);
+  const headers = new Headers({ Authorization: `Bearer ${accessToken}` });
   if (contentType) {
     headers.set('Content-Type', contentType);
   }
@@ -275,12 +293,14 @@ export const proxyJsonResponse = async <T>(response: Response) => {
 export const logPublicUsageEvent = async (
   request: Request,
   env: Record<string, string | undefined>,
+  accessToken: string,
   payload: Record<string, unknown>
 ) => {
-  const headers = buildPublicSearchHeaders(request, env, 'application/json');
-  if (!headers) {
-    return;
-  }
+  const headers = buildPublicSearchHeaders(
+    request,
+    accessToken,
+    'application/json'
+  );
 
   try {
     await fetch(`${getApiBaseUrl(env)}/usage-events`, {

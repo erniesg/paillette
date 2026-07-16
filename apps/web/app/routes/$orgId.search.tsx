@@ -1,27 +1,21 @@
 import type { LoaderFunctionArgs } from '@remix-run/cloudflare';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
-import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
+import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
+import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
+import { withWorkOSSession } from '~/lib/workos-auth.server';
 
 export { default, meta } from './galleries.$galleryId.search';
 
-export async function loader({ params, request }: LoaderFunctionArgs) {
-  const { orgId } = params;
-  if (!orgId) {
-    throw new Response('Org ID is required', { status: 400 });
-  }
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSSession(args, (session) => {
+    const { orgId } = args.params;
+    if (!orgId) {
+      throw new Response('Org ID is required', { status: 400 });
+    }
 
-  try {
-    const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(orgId),
-      getUpcomingSingaporeHolidaySuggestions(),
-    ]);
-    return {
-      gallery,
-      galleryId: gallery.id,
-      preferredRouteId: getPreferredOrgRouteId(orgId, gallery.slug),
-      holidaySuggestions,
-    };
-  } catch (error) {
-    throw new Response('Gallery not found', { status: 404 });
-  }
-}
+    return loadPublicSearchPage({
+      requestedOrgId: orgId,
+      routeScope: 'org',
+      accessToken: session.accessToken,
+      apiBaseUrl: getApiBaseUrl(getServerEnv(args.context)),
+    });
+  });

@@ -129,7 +129,7 @@ export default function TranslatePage() {
                     Create an account to translate.
                   </h2>
                   <p className="mt-3 text-neutral-300">
-                    Every account gets 10 free lifetime translations. Logto
+                    Every account gets 10 free lifetime translations. WorkOS
                     handles the secure sign-in screen, then sends you back here.
                   </p>
                   <div className="mt-6 flex flex-col gap-3 sm:flex-row">

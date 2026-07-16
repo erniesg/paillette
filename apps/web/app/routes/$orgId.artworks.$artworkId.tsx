@@ -9,6 +9,8 @@ import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
+import { withWorkOSSession } from '~/lib/workos-auth.server';
 import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
 import { getSafeSearchReturnPath } from '~/lib/search-result-sections';
 import {
@@ -45,21 +47,25 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params, request }: LoaderFunctionArgs) {
-  const { orgId, artworkId } = params;
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSSession(args, async (session) => {
+  const { orgId, artworkId } = args.params;
   if (!orgId || !artworkId) {
     throw new Response('Org ID and artwork ID are required', { status: 400 });
   }
 
   try {
-    const api = getApiClientForRequest(request);
+    const api = getApiClientForRequest(args.request, {
+      accessToken: session.accessToken,
+      apiBaseUrl: getApiBaseUrl(getServerEnv(args.context)),
+    });
     const gallery = await api.getGallery(orgId);
     const artwork = await api.getArtwork(gallery.id, artworkId);
     const preferredRouteId = getPreferredOrgRouteId(orgId, gallery.slug);
     if (shouldHidePublicArtworkDetail(orgId, preferredRouteId, artwork)) {
       throw new Response('Artwork not found', { status: 404 });
     }
-    const url = new URL(request.url);
+    const url = new URL(args.request.url);
 
     return {
       gallery,
@@ -73,7 +79,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   } catch {
     throw new Response('Artwork not found', { status: 404 });
   }
-}
+  });
 
 const clickableCatalogueLabels = new Set([
   'artist',
