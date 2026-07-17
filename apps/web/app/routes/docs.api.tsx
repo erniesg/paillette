@@ -1176,6 +1176,9 @@ const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
 export const getQuickSearchEndpoint = () =>
   endpoints.find((endpoint) => endpoint.path === defaultBuilderEndpointPath)!;
 
+export const isInlineTryItEndpoint = (endpointId: string) =>
+  endpointId === 'search-text';
+
 export const getQuickSearchInitialValues = () => ({
   ...getInitialEndpointValues(getQuickSearchEndpoint()),
   query: 'batik textile pattern',
@@ -3362,7 +3365,27 @@ export default function ApiDocsPage() {
           />
 
           {endpointDocs.map((doc) => (
-            <EndpointSection key={doc.id} doc={doc} />
+            <EndpointSection
+              key={doc.id}
+              doc={doc}
+              inlineTryIt={
+                isInlineTryItEndpoint(doc.id)
+                  ? {
+                      error:
+                        quickSearchMutation.error instanceof Error
+                          ? quickSearchMutation.error.message
+                          : null,
+                      hasApiKey: Boolean(liveApiKey),
+                      isRunning: quickSearchMutation.isPending,
+                      onQueryChange: setQuickSearchQuery,
+                      onRun: () => quickSearchMutation.mutate(),
+                      query: quickSearchQuery,
+                      result: quickSearchMutation.data ?? null,
+                      selectedApiBase,
+                    }
+                  : undefined
+              }
+            />
           ))}
 
           <McpSections
@@ -3661,7 +3684,24 @@ function DocsNav({ activeSectionId }: { activeSectionId: string }) {
   );
 }
 
-function EndpointSection({ doc }: { doc: EndpointDoc }) {
+type InlineTextSearchTryIt = {
+  error: string | null;
+  hasApiKey: boolean;
+  isRunning: boolean;
+  onQueryChange: (value: string) => void;
+  onRun: () => void;
+  query: string;
+  result: RailRunResult | null;
+  selectedApiBase: string;
+};
+
+function EndpointSection({
+  doc,
+  inlineTryIt,
+}: {
+  doc: EndpointDoc;
+  inlineTryIt?: InlineTextSearchTryIt;
+}) {
   const endpoint = doc.endpoint;
   const pathFields = getEndpointPathFields(endpoint);
   const bodyFields = getEndpointBodyFields(endpoint);
@@ -3711,7 +3751,95 @@ function EndpointSection({ doc }: { doc: EndpointDoc }) {
         <SchemaDisclosure title="Body" fields={bodyFields} defaultOpen />
         <SchemaDisclosure title="Response" fields={doc.responseFields} />
       </div>
+
+      {inlineTryIt && <InlineTextSearchConsole {...inlineTryIt} />}
     </section>
+  );
+}
+
+function InlineTextSearchConsole({
+  error,
+  hasApiKey,
+  isRunning,
+  onQueryChange,
+  onRun,
+  query,
+  result,
+  selectedApiBase,
+}: InlineTextSearchTryIt) {
+  return (
+    <div className="mt-6 border-y border-[var(--app-line)] py-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading
+          title="Try this endpoint"
+          description="Change the query, run the live request, and inspect the response below."
+        />
+        <code className="pb-3 text-xs text-[var(--docs-code)]" style={monoStyle}>
+          POST /orgs/ngs/search/text
+        </code>
+      </div>
+
+      <form
+        className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <label className="grid gap-1.5">
+          <span
+            className="text-[10px] uppercase tracking-[0.16em] text-[var(--app-faint)]"
+            style={monoStyle}
+          >
+            Query
+          </span>
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="batik textile pattern"
+            className="h-11 rounded-md border border-[var(--app-line-strong)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)]"
+            aria-label="Text search endpoint query"
+          />
+        </label>
+        <ActionButton
+          className="h-11 self-end px-5"
+          disabled={isRunning || !hasApiKey || !query.trim()}
+          onClick={onRun}
+        >
+          {isRunning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+          Run request
+        </ActionButton>
+      </form>
+
+      <div
+        className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-muted)]"
+        style={monoStyle}
+      >
+        <span>{hasApiKey ? 'API key ready' : 'Create or paste a key above'}</span>
+        <span>{selectedApiBase}</span>
+        {result && (
+          <span className="text-[var(--docs-success)]">
+            {result.status} · {result.durationMs} ms
+          </span>
+        )}
+      </div>
+
+      {error && <Notice tone="error">{error}</Notice>}
+      {result && (
+        <CodePanel
+          className="mt-4"
+          id="text-search-endpoint-response"
+          label="Live response"
+          maxHeight="520px"
+          value={stringify(result.payload)}
+          highlighted
+        />
+      )}
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import {
   docsNavGroups,
   endpointDocs,
   getDocsApiKeyHint,
+  isInlineTryItEndpoint,
   getQuickSearchEndpoint,
   getQuickSearchInitialValues,
 } from '../../routes/docs.api';
@@ -59,5 +60,10 @@ describe('API docs labels', () => {
     expect(canCreateDocsApiKey(true)).toBe(false);
     expect(getDocsApiKeyHint(true)).toContain('cannot be recovered');
     expect(getDocsApiKeyHint(true)).toContain('Create a new key');
+  });
+
+  it('puts an interactive request and response console on text search', () => {
+    expect(isInlineTryItEndpoint('search-text')).toBe(true);
+    expect(isInlineTryItEndpoint('search-image')).toBe(false);
   });
 });
