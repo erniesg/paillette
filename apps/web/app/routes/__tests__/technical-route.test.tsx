@@ -28,7 +28,7 @@ it('matches the centered production About page layout', () => {
   expect(TECHNICAL_MAIN_CLASS_NAME).toBe(
     'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20'
   );
-  expect(TECHNICAL_BODY_GROUP_CLASS_NAME).toBe('mt-5 max-w-4xl space-y-5');
+  expect(TECHNICAL_BODY_GROUP_CLASS_NAME).toBe('mt-5 max-w-6xl space-y-5');
 });
 
 it('keeps performance to a compact four-number summary', () => {

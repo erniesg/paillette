@@ -47,7 +47,7 @@ export function PublicSiteHeader({
               className="text-base leading-none sm:text-xl [&>span:last-child]:hidden sm:[&>span:last-child]:inline"
             />
           </Link>
-          <div className="flex min-h-11 flex-col items-start justify-center gap-1 leading-none">
+          <div className="flex min-h-11 flex-row items-center gap-2 leading-none sm:gap-5">
             <Link
               to="/about"
               aria-current={active === 'about' ? 'page' : undefined}
@@ -63,13 +63,14 @@ export function PublicSiteHeader({
               to="/technical"
               aria-current={active === 'technical' ? 'page' : undefined}
               aria-label="Technical details"
-              className={`inline-flex min-h-6 min-w-6 items-center font-mono text-[10px] uppercase tracking-[0.14em] transition-colors ${
+              className={`inline-flex min-h-6 min-w-6 items-center text-sm font-medium transition-colors ${
                 active === 'technical'
                   ? 'text-white/75'
                   : 'text-white/55 hover:text-white'
               }`}
             >
-              Technical<span className="hidden sm:inline"> details</span>
+              Technical{' '}
+              <span className="hidden sm:inline">details</span>
             </Link>
           </div>
         </div>

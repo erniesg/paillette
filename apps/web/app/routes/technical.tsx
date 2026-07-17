@@ -28,7 +28,7 @@ const bodyClassName =
   'text-base leading-8 text-white/68 md:text-lg md:leading-9';
 export const TECHNICAL_MAIN_CLASS_NAME =
   'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20';
-export const TECHNICAL_BODY_GROUP_CLASS_NAME = 'mt-5 max-w-4xl space-y-5';
+export const TECHNICAL_BODY_GROUP_CLASS_NAME = 'mt-5 max-w-6xl space-y-5';
 
 export default function TechnicalPage() {
   return (

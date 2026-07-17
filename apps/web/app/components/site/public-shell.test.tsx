@@ -28,6 +28,10 @@ describe('PublicSiteHeader', () => {
     expect(technical).toHaveAttribute('href', '/technical');
     expect(technical).toHaveAttribute('aria-current', 'page');
     expect(about.nextElementSibling).toBe(technical);
+    expect(technical.parentElement).toHaveClass('flex-row', 'items-center');
+    expect(technical.parentElement).not.toHaveClass('flex-col');
+    expect(technical).toHaveClass('text-sm', 'font-medium');
+    expect(technical).toHaveTextContent('Technical details');
   });
 
   it('uses compact spacing and labels for narrow Search-only headers', () => {
