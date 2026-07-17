@@ -1,10 +1,14 @@
 import { json } from '@remix-run/cloudflare';
+import { normalizePublicSearchText } from '@paillette/types/public-search-core';
 import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
+import { PUBLIC_TEXT_SEARCH_CACHE_VERSION } from './public-search-cache';
+export { PUBLIC_TEXT_SEARCH_CACHE_VERSION } from './public-search-cache';
 export { isHiddenPublicNgsArtwork } from './public-ngs-visibility';
 
 type WorkerContext = {
   cloudflare?: {
     env?: Record<string, string | undefined>;
+    context?: Pick<ExecutionContext, 'waitUntil'>;
   };
 };
 
@@ -18,14 +22,16 @@ type PublicTextSearchCacheKeyInput = {
   facet?: string | null;
   orgId: string;
   query: string;
+  visualRefinement?: string | null;
 };
 
-type PublicTextSearchRequest = Required<Omit<SearchTextRequest, 'facet'>> &
-  Pick<SearchTextRequest, 'facet'>;
+type PublicTextSearchRequest = Required<
+  Omit<SearchTextRequest, 'facet' | 'visualRefinement'>
+> &
+  Pick<SearchTextRequest, 'facet' | 'visualRefinement'>;
 
 export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
-export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '8';
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
@@ -34,9 +40,27 @@ const ORG_ID_ALIASES: Record<string, string> = {
   'national-gallery-singapore': 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
   '00000000-0000-4000-8000-000000000101':
     'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
-  nga: 'open-access-art',
   open: 'open-access-art',
+  nga: 'nga',
   'open-access-art': 'open-access-art',
+};
+
+const ALLOWED_PUBLIC_SEARCH_ROUTE_IDS = new Set([
+  'ngs',
+  'national-gallery-singapore',
+  'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+  '00000000-0000-4000-8000-000000000101',
+  'nga',
+]);
+
+export const isAllowedPublicSearchRouteId = (orgId: string) => {
+  try {
+    return ALLOWED_PUBLIC_SEARCH_ROUTE_IDS.has(
+      decodeURIComponent(orgId).trim().toLowerCase()
+    );
+  } catch {
+    return false;
+  }
 };
 
 export const resolvePublicSearchOrgId = (orgId: string) =>
@@ -57,6 +81,16 @@ export const getServerEnv = (context: unknown) => ({
     string | undefined
   >),
 });
+
+export const schedulePublicSearchWork = (
+  context: unknown,
+  work: Promise<unknown>
+) => {
+  const executionContext = (context as WorkerContext).cloudflare?.context;
+  if (executionContext) {
+    executionContext.waitUntil(work);
+  }
+};
 
 export const getApiBaseUrl = (env: Record<string, string | undefined>) => {
   const appEnv = env.APP_ENV || env.NODE_ENV || 'development';
@@ -106,14 +140,18 @@ export const buildPublicTextSearchCacheKey = ({
   facet,
   orgId,
   query,
+  visualRefinement,
 }: PublicTextSearchCacheKeyInput) => {
   const url = new URL('https://paillette-public-search-cache.local/text');
   url.searchParams.set('v', PUBLIC_TEXT_SEARCH_CACHE_VERSION);
   url.searchParams.set('api', apiBaseUrl);
   url.searchParams.set('org', orgId);
-  url.searchParams.set('query', query.trim());
+  url.searchParams.set('query', normalizePublicSearchText(query));
   if (facet) {
     url.searchParams.set('facet', facet);
+  }
+  if (visualRefinement) {
+    url.searchParams.set('visual', normalizePublicSearchText(visualRefinement));
   }
 
   return new Request(url.toString(), { method: 'GET' });
@@ -141,7 +179,7 @@ export const getPublicSearchPayloadEtag = (payload: ApiResponse) =>
   `W/"public-search-${hashString(JSON.stringify(payload))}"`;
 
 export const buildPublicSearchCacheHeaders = (
-  status: 'HIT' | 'MISS' | 'BYPASS',
+  status: 'HIT' | 'MISS' | 'BYPASS' | 'KV-FRESH' | 'KV-STALE' | 'COALESCED',
   payload?: ApiResponse
 ) => {
   const headers = new Headers({
@@ -182,7 +220,12 @@ export const writePublicTextSearchCache = async (
   payload: ApiResponse<SearchResponse>,
   status: number
 ) => {
-  if (status !== 200 || !payload.success || !payload.data) {
+  if (
+    status !== 200 ||
+    !payload.success ||
+    !payload.data ||
+    payload.meta?.search?.cacheable === false
+  ) {
     return;
   }
 

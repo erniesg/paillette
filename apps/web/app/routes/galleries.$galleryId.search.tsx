@@ -15,11 +15,8 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from 'react';
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search-core';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -68,11 +65,9 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
-import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
   buildSuggestionPool,
-  getSuggestionPrefetchQueries,
   getSuggestionKey,
   normalizeSearchQuery,
   type EvalSuggestion,
@@ -89,6 +84,15 @@ import {
   type ZhongZhengAsciiParticle,
 } from '~/lib/zhongzheng-ascii';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
+import { buildPublicTextSearchPlan } from '~/lib/public-text-search-plan';
+import {
+  getCachedCandidatePaletteColourDistance,
+  rankByPaletteColour,
+} from '~/lib/local-colour-refinement';
+import {
+  getSpotlightArtworks,
+  loadSearchSpotlightBundle,
+} from '~/lib/search-spotlights';
 import {
   trackPublicUsageEvent,
   type PublicArtworkInteractionType,
@@ -111,11 +115,6 @@ const DEFAULT_TEXT_MIN_SCORE = 0.2;
 const PUBLIC_SEARCH_QUERY_STALE_TIME = Infinity;
 const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
 const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
-const IDLE_SUGGESTION_PREFETCH_DELAY_MS = 2500;
-const IDLE_SUGGESTION_PREFETCH_LIMIT = 2;
-const IDLE_SHOWCASE_CACHE_VERSION = 'v1';
-const IDLE_SHOWCASE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const IDLE_SHOWCASE_QUERY_DELAY_MS = 900;
 export const MASONRY_IMAGE_CLASS_NAME =
   'h-full w-full object-contain transition-opacity duration-300 group-hover:opacity-90';
 
@@ -140,7 +139,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 }
 
 type SearchMode = 'text' | 'image' | 'colour';
-type SearchFacet = 'artist';
+type SearchFacet = 'artist' | 'classification';
 type PublicSearchUsageContext = {
   mode?: 'text' | 'colour';
   colours?: string[];
@@ -343,6 +342,9 @@ const getSelectedColour = (selection: string) => {
   return COLOURS.find((colour) => colour.id === selection) || null;
 };
 
+const getSearchColour = (value: string | null) =>
+  value && getSelectedColour(value) ? value : null;
+
 const getColourSearchText = (selection: string) => {
   const colour = getSelectedColour(selection);
   if (!colour) return '';
@@ -359,7 +361,7 @@ const getColourSearchText = (selection: string) => {
 const asText = (value: unknown) =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
 
-const SEARCH_FACETS = new Set<SearchFacet>(['artist']);
+const SEARCH_FACETS = new Set<SearchFacet>(['artist', 'classification']);
 const getSearchFacet = (value: string | null): SearchFacet | null =>
   value && SEARCH_FACETS.has(value as SearchFacet)
     ? (value as SearchFacet)
@@ -372,13 +374,20 @@ const normalizeArtistSearchQuery = (value: string) =>
       .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
   );
 
-const getSearchParamsForQuery = (
+export const getSearchParamsForQuery = (
   query: string,
-  facet: SearchFacet | null = null
+  facet: SearchFacet | null = null,
+  colour: string | null = null
 ) => {
-  const params: Record<string, string> = { q: query };
+  const params: Record<string, string> = {};
+  if (query) {
+    params.q = query;
+  }
   if (facet) {
     params.field = facet;
+  }
+  if (colour) {
+    params.colour = colour;
   }
   return params;
 };
@@ -480,7 +489,12 @@ const hasPaletteWeight = (item: Record<string, unknown>) => {
   return percentage === null || percentage > 0;
 };
 
-const collectPalette = (result: ArtworkSearchResult): string[] => {
+const paletteByResult = new WeakMap<ArtworkSearchResult, string[]>();
+
+export const collectPalette = (result: ArtworkSearchResult): string[] => {
+  const cached = paletteByResult.get(result);
+  if (cached) return cached;
+
   const meta = getMeta(result);
   const candidates = [
     meta.dominantColors,
@@ -526,7 +540,9 @@ const collectPalette = (result: ArtworkSearchResult): string[] => {
     }
   }
 
-  return [...new Set(colours)];
+  const palette = [...new Set(colours)];
+  paletteByResult.set(result, palette);
+  return palette;
 };
 
 const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
@@ -534,18 +550,16 @@ const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
   if (!selected.length) return 0;
   if (!palette.length) return Infinity;
 
-  const total = selected.reduce((sum, colourId) => {
+  const selectedHexColours = selected.flatMap((colourId) => {
     const selectedColour = getSelectedColour(colourId);
-    if (!selectedColour) return sum;
-    const nearest = Math.min(
-      ...palette.map((paletteColour) =>
-        rgbDistance(selectedColour.hex, paletteColour)
-      )
-    );
-    return sum + nearest;
-  }, 0);
+    return selectedColour ? [selectedColour.hex] : [];
+  });
 
-  return total / selected.length;
+  return getCachedCandidatePaletteColourDistance(
+    result,
+    selectedHexColours,
+    palette
+  );
 };
 
 const colourMatchPercent = (
@@ -555,7 +569,7 @@ const colourMatchPercent = (
   const distance = colourScore(result, selected);
   if (!Number.isFinite(distance)) return null;
 
-  const maxUsefulDistance = 160;
+  const maxUsefulDistance = 100;
   return Math.max(
     0,
     Math.round(
@@ -698,6 +712,17 @@ const sortResults = (
   sortMode: SortMode,
   selectedColours: string[]
 ) => {
+  if (sortMode === 'colour' && selectedColours.length) {
+    const selectedHexColours = selectedColours.flatMap((selection) => {
+      const colour = getSelectedColour(selection);
+      return colour ? [colour.hex] : [];
+    });
+
+    if (selectedHexColours.length) {
+      return rankByPaletteColour(results, selectedHexColours, collectPalette);
+    }
+  }
+
   const sorted = [...results];
   const textCompare = (
     a: ArtworkSearchResult,
@@ -716,11 +741,7 @@ const sortResults = (
 
   sorted.sort((a, b) => {
     if (sortMode === 'colour') {
-      if (selectedColours.length) {
-        const delta =
-          colourScore(a, selectedColours) - colourScore(b, selectedColours);
-        if (Number.isFinite(delta) && delta !== 0) return delta;
-      } else {
+      if (!selectedColours.length) {
         const paletteA = paletteBandSortKey(a);
         const paletteB = paletteBandSortKey(b);
         const bandDelta = paletteA.band - paletteB.band;
@@ -807,7 +828,8 @@ const readSearchResponse = async (response: Response) => {
 const publicSearchText = async (
   orgId: string,
   request: SearchTextRequest,
-  usageContext?: PublicSearchUsageContext
+  usageContext?: PublicSearchUsageContext,
+  signal?: AbortSignal
 ): Promise<SearchResponse> => {
   const response = await fetch(
     `/api/public-search/${encodeURIComponent(orgId)}/text`,
@@ -820,91 +842,17 @@ const publicSearchText = async (
         ...request,
         usageContext,
       }),
+      signal,
     }
   );
 
   return readSearchResponse(response);
 };
 
-const publicTextSearchQueryKey = (
-  orgId: string,
-  facet: SearchFacet | null,
-  query: string,
-  topK: number,
-  minScore: number
-) =>
-  [
-    'search',
-    'text',
-    orgId,
-    facet || 'semantic',
-    query,
-    topK,
-    minScore,
-  ] as const;
-
-type IdleShowcaseCacheEntry = {
-  savedAt: number;
-  data: SearchResponse;
-};
-
-const idleShowcaseCacheKey = (orgId: string, query: string) =>
-  `paillette:idle-showcase:${IDLE_SHOWCASE_CACHE_VERSION}:${orgId}:${query}`;
-
-const readCachedIdleShowcase = (orgId: string, query: string) => {
-  if (typeof window === 'undefined') return undefined;
-
-  try {
-    const raw = window.localStorage.getItem(idleShowcaseCacheKey(orgId, query));
-    if (!raw) return undefined;
-
-    const entry = JSON.parse(raw) as Partial<IdleShowcaseCacheEntry>;
-    if (
-      typeof entry.savedAt !== 'number' ||
-      !entry.data ||
-      !Array.isArray(entry.data.results)
-    ) {
-      return undefined;
-    }
-
-    if (Date.now() - entry.savedAt > IDLE_SHOWCASE_CACHE_TTL_MS) {
-      window.localStorage.removeItem(idleShowcaseCacheKey(orgId, query));
-      return undefined;
-    }
-
-    return entry.data;
-  } catch {
-    return undefined;
-  }
-};
-
-const writeCachedIdleShowcase = (
-  orgId: string,
-  query: string,
-  data: SearchResponse
-) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    const compactData: SearchResponse = {
-      ...data,
-      results: selectIdleShowcaseArtworks(data.results),
-    };
-    window.localStorage.setItem(
-      idleShowcaseCacheKey(orgId, query),
-      JSON.stringify({
-        savedAt: Date.now(),
-        data: compactData,
-      } satisfies IdleShowcaseCacheEntry)
-    );
-  } catch {
-    // The showcase is decorative; storage failures should not affect search.
-  }
-};
-
 const publicSearchImage = async (
   orgId: string,
-  request: SearchImageRequest
+  request: SearchImageRequest,
+  signal?: AbortSignal
 ): Promise<SearchResponse> => {
   const body = new FormData();
   body.set('image', request.image);
@@ -916,6 +864,7 @@ const publicSearchImage = async (
     {
       method: 'POST',
       body,
+      signal,
     }
   );
 
@@ -975,19 +924,22 @@ export default function SearchPage() {
   const {
     gallery,
     galleryId,
+    publicSearchOrgId = galleryId,
     preferredRouteId,
     publicRouteBasePath = `/${preferredRouteId}`,
     holidaySuggestions = [],
   } = useLoaderData<typeof loader>();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const queryClient = useQueryClient();
   const { isAuthenticated, login, signup } = useUser();
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
+  const urlSearchColour = getSearchColour(searchParams.get('colour'));
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('text');
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    urlSearchColour ? 'colour' : 'text'
+  );
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [committedTextQuery, setCommittedTextQuery] =
     useState(normalizedUrlQuery);
@@ -996,29 +948,36 @@ export default function SearchPage() {
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [searchColours, setSearchColours] = useState<string[]>([]);
-  const [sortColours, setSortColours] = useState<string[]>([]);
+  const [searchColours, setSearchColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
+  const [sortColours, setSortColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
   const [customColour, setCustomColour] = useState('#cda636');
-  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+  const [sortMode, setSortMode] = useState<SortMode>(
+    urlSearchColour ? 'colour' : 'relevance'
+  );
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_TEXT_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
   const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
   const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
-  const [shouldSearch, setShouldSearch] = useState(Boolean(normalizedUrlQuery));
+  const [shouldSearch, setShouldSearch] = useState(
+    Boolean(normalizedUrlQuery || urlSearchColour)
+  );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedArtwork, setSelectedArtwork] =
     useState<ArtworkSearchResult | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
-  const [allowIdleShowcaseQuery, setAllowIdleShowcaseQuery] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const colourRailRef = useRef<HTMLDivElement | null>(null);
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const previousUrlSearchStateRef = useRef(
-    `${normalizedUrlQuery}:${urlSearchFacet || ''}`
+    `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`
   );
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
   const searchRoutePath = `${publicRouteBasePath}/search`;
@@ -1029,9 +988,34 @@ export default function SearchPage() {
     useState<EvalSuggestion | null>(null);
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
   const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
+  const activeSearchColour =
+    searchMode === 'colour' ? searchColours[0] || null : null;
+  const activeColourQuery = activeSearchColour
+    ? getColourSearchText(activeSearchColour)
+    : '';
+  const textSearchPlan = useMemo(
+    () =>
+      buildPublicTextSearchPlan({
+        orgId: publicSearchOrgId,
+        facet: searchFacet,
+        committedTextQuery: normalizedCommittedTextQuery,
+        colourQuery: activeColourQuery,
+        topK,
+        minScore,
+      }),
+    [
+      activeColourQuery,
+      minScore,
+      normalizedCommittedTextQuery,
+      publicSearchOrgId,
+      searchFacet,
+      topK,
+    ]
+  );
+  const primaryTextSearchQuery = textSearchPlan?.request.query || '';
   const hasCommittedTextSearch =
     shouldSearch &&
-    normalizedCommittedTextQuery.length > 0 &&
+    primaryTextSearchQuery.length > 0 &&
     (searchMode === 'text' || searchMode === 'colour');
   const canSubmitTextSearch = normalizedTextQuery.length > 0;
   const hasUncommittedInitialText =
@@ -1040,16 +1024,18 @@ export default function SearchPage() {
     normalizedCommittedTextQuery.length === 0;
 
   const suggestionPool = useMemo(
-    () => buildSuggestionPool(holidaySuggestions),
-    [holidaySuggestions]
-  );
-  const suggestionPrefetchQueries = useMemo(
     () =>
-      getSuggestionPrefetchQueries(suggestionPool).slice(
-        1,
-        1 + IDLE_SUGGESTION_PREFETCH_LIMIT
-      ),
-    [suggestionPool]
+      buildSuggestionPool(holidaySuggestions, {
+        routeId: preferredRouteId,
+        source: gallery.settings?.source,
+        institutionName: gallery.name,
+      }),
+    [
+      gallery.name,
+      gallery.settings?.source,
+      holidaySuggestions,
+      preferredRouteId,
+    ]
   );
 
   useEffect(() => {
@@ -1099,15 +1085,21 @@ export default function SearchPage() {
 
       const colour = getSelectedColour(selectedColourId);
       const label = colour?.name || getColourSearchText(selectedColourId);
+      const baseLabel = committedTextQuery.trim();
 
       return {
-        type: 'colour',
-        label,
+        type: baseLabel ? `${searchFacet || 'text'} + colour` : 'colour',
+        label: baseLabel ? `${baseLabel} + ${label}` : label,
+        detail: baseLabel ? 'combined refinement' : undefined,
         dot: colour?.hex || '#d946ef',
       };
     }
 
-    if (searchMode === 'text' && shouldSearch && normalizedCommittedTextQuery) {
+    if (
+      (searchMode === 'text' || searchMode === 'colour') &&
+      shouldSearch &&
+      normalizedCommittedTextQuery
+    ) {
       return {
         type: searchFacet || 'text',
         label: committedTextQuery,
@@ -1143,28 +1135,19 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    if (!hasMounted || hasActiveSearch) {
-      setAllowIdleShowcaseQuery(false);
-      return undefined;
-    }
-
-    const handle = window.setTimeout(() => {
-      setAllowIdleShowcaseQuery(true);
-    }, IDLE_SHOWCASE_QUERY_DELAY_MS);
-
-    return () => window.clearTimeout(handle);
-  }, [hasActiveSearch, hasMounted]);
-
-  useEffect(() => {
     if (urlQuery && normalizedUrlQuery !== urlQuery) {
       setSearchParams(
-        getSearchParamsForQuery(normalizedUrlQuery, urlSearchFacet),
+        getSearchParamsForQuery(
+          normalizedUrlQuery,
+          urlSearchFacet,
+          urlSearchColour
+        ),
         { replace: true }
       );
       return;
     }
 
-    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}`;
+    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
     if (previousUrlSearchStateRef.current === urlSearchState) return;
 
     previousUrlSearchStateRef.current = urlSearchState;
@@ -1172,10 +1155,14 @@ export default function SearchPage() {
     setTextQuery(normalizedUrlQuery);
     setCommittedTextQuery(normalizedUrlQuery);
     setSearchFacet(urlSearchFacet);
-    setShouldSearch(Boolean(normalizedUrlQuery));
+    setSearchColours(urlSearchColour ? [urlSearchColour] : []);
+    setSortColours(urlSearchColour ? [urlSearchColour] : []);
+    setSearchMode(urlSearchColour ? 'colour' : 'text');
+    setSortMode(urlSearchColour ? 'colour' : 'relevance');
+    setShouldSearch(Boolean(normalizedUrlQuery || urlSearchColour));
     setIsBrowsingCollection(false);
 
-    if (!normalizedUrlQuery) {
+    if (!normalizedUrlQuery && !urlSearchColour) {
       setImageFile(null);
       setImagePreview(null);
       setSearchColours([]);
@@ -1184,92 +1171,61 @@ export default function SearchPage() {
       setSortMode('relevance');
       setSearchFacet(null);
     }
-  }, [normalizedUrlQuery, setSearchParams, urlQuery, urlSearchFacet]);
-
-  useEffect(() => {
-    if (!hasMounted || !suggestionPrefetchQueries.length) return undefined;
-
-    let cancelled = false;
-    const handle = window.setTimeout(() => {
-      if (cancelled) return;
-
-      for (const query of suggestionPrefetchQueries) {
-        void queryClient.prefetchQuery({
-          queryKey: publicTextSearchQueryKey(
-            galleryId,
-            null,
-            query,
-            MAX_SEARCH_RESULTS,
-            0
-          ),
-          queryFn: () =>
-            publicSearchText(
-              galleryId,
-              {
-                query,
-                topK: MAX_SEARCH_RESULTS,
-                minScore: 0,
-              },
-              {
-                auto: true,
-                source: 'try_query_prefetch',
-              }
-            ),
-          staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
-          gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-        });
-      }
-    }, IDLE_SUGGESTION_PREFETCH_DELAY_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [galleryId, hasMounted, queryClient, suggestionPrefetchQueries]);
+  }, [
+    normalizedUrlQuery,
+    setSearchParams,
+    urlQuery,
+    urlSearchColour,
+    urlSearchFacet,
+  ]);
 
   const textSearchQuery = useQuery({
-    queryKey: publicTextSearchQueryKey(
-      galleryId,
-      searchFacet,
-      normalizedCommittedTextQuery,
-      topK,
-      minScore
-    ),
-    queryFn: async () => {
-      if (!normalizedCommittedTextQuery) return null;
+    queryKey:
+      textSearchPlan?.queryKey ||
+      (['search', 'text', 'disabled', publicSearchOrgId] as const),
+    queryFn: async ({ signal }) => {
+      if (!textSearchPlan) return null;
       return publicSearchText(
-        galleryId,
-        {
-          query: normalizedCommittedTextQuery,
-          topK,
-          minScore,
-          facet: searchFacet || undefined,
-        },
+        publicSearchOrgId,
+        textSearchPlan.request,
         {
           mode: searchMode === 'colour' ? 'colour' : 'text',
           colours: searchColours,
           facet: searchFacet || undefined,
-        }
+        },
+        signal
       );
     },
     enabled:
       hasMounted &&
       (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
-      normalizedCommittedTextQuery.length > 0,
+      Boolean(textSearchPlan),
+    retry: false,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
   const imageSearchQuery = useQuery({
-    queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore],
-    queryFn: async () => {
+    queryKey: [
+      'search',
+      'image',
+      publicSearchOrgId,
+      imageFile?.name,
+      topK,
+      minScore,
+    ],
+    queryFn: async ({ signal }) => {
       if (!imageFile) return null;
-      return publicSearchImage(galleryId, {
-        image: imageFile,
-        topK,
-        minScore,
-      });
+      return publicSearchImage(
+        publicSearchOrgId,
+        {
+          image: imageFile,
+          topK,
+          minScore,
+        },
+        signal
+      );
     },
     enabled:
       hasMounted &&
@@ -1282,14 +1238,14 @@ export default function SearchPage() {
   const browseQuery = useInfiniteQuery({
     queryKey: [
       'browse',
-      galleryId,
+      publicSearchOrgId,
       browsePageSize,
       browseSort.sortBy,
       browseSort.sortOrder,
     ],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      publicBrowseCollection(galleryId, {
+      publicBrowseCollection(publicSearchOrgId, {
         limit: browsePageSize,
         offset: Number(pageParam),
         sortBy: browseSort.sortBy,
@@ -1301,58 +1257,23 @@ export default function SearchPage() {
   });
 
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
-  const activeIdleSuggestionQuery = activeIdleSuggestion?.query || '';
-  const shouldLoadIdleShowcase = allowIdleShowcaseQuery && !hasActiveSearch;
-  const idleShowcaseQuery = useQuery({
-    queryKey: publicTextSearchQueryKey(
-      galleryId,
-      null,
-      activeIdleSuggestionQuery,
-      MAX_SEARCH_RESULTS,
-      0
-    ),
-    queryFn: () =>
-      publicSearchText(
-        galleryId,
-        {
-          query: activeIdleSuggestionQuery,
-          topK: MAX_SEARCH_RESULTS,
-          minScore: 0,
-        },
-        {
-          auto: true,
-          source: 'idle_showcase',
-        }
-      ),
-    enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestionQuery),
-    placeholderData: () =>
-      activeIdleSuggestionQuery
-        ? readCachedIdleShowcase(galleryId, activeIdleSuggestionQuery)
-        : undefined,
+  const shouldLoadNgaSpotlights =
+    hasMounted && !hasActiveSearch && preferredRouteId === 'nga';
+  const spotlightBundleQuery = useQuery({
+    queryKey: [
+      'search-spotlights',
+      PUBLIC_SEARCH_CONTRACT_VERSION,
+      'nga',
+    ] as const,
+    queryFn: ({ signal }) =>
+      loadSearchSpotlightBundle('nga', {
+        signal,
+      }),
+    enabled: shouldLoadNgaSpotlights,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
+    retry: false,
   });
-
-  useEffect(() => {
-    if (
-      !activeIdleSuggestionQuery ||
-      !idleShowcaseQuery.data?.results.length ||
-      idleShowcaseQuery.isPlaceholderData
-    ) {
-      return;
-    }
-
-    writeCachedIdleShowcase(
-      galleryId,
-      activeIdleSuggestionQuery,
-      idleShowcaseQuery.data
-    );
-  }, [
-    activeIdleSuggestionQuery,
-    galleryId,
-    idleShowcaseQuery.data,
-    idleShowcaseQuery.isPlaceholderData,
-  ]);
 
   const currentQuery =
     searchMode === 'image' ? imageSearchQuery : textSearchQuery;
@@ -1409,12 +1330,29 @@ export default function SearchPage() {
     isLoading,
     view,
   });
+  const activeSpotlightSuggestionId = useMemo(() => {
+    if (!activeIdleSuggestion) return null;
+
+    const spotlightId = activeIdleSuggestion.spotlightId;
+    return spotlightId &&
+      spotlightBundleQuery.data?.suggestions.some(
+        (suggestion) => suggestion.id === spotlightId
+      )
+      ? spotlightId
+      : null;
+  }, [activeIdleSuggestion, spotlightBundleQuery.data?.suggestions]);
   const idleShowcaseResults = useMemo(
-    () => selectIdleShowcaseArtworks(idleShowcaseQuery.data?.results || []),
-    [idleShowcaseQuery.data?.results]
+    () =>
+      activeSpotlightSuggestionId
+        ? getSpotlightArtworks(
+            spotlightBundleQuery.data,
+            activeSpotlightSuggestionId
+          )
+        : [],
+    [activeSpotlightSuggestionId, spotlightBundleQuery.data]
   );
   const isIdleShowcaseLoading =
-    idleShowcaseQuery.isLoading || idleShowcaseQuery.isFetching;
+    shouldLoadNgaSpotlights && spotlightBundleQuery.isLoading;
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
@@ -1629,33 +1567,41 @@ export default function SearchPage() {
   };
 
   const selectColourSearch = (selection: string) => {
-    const query = normalizeSearchQuery(getColourSearchText(selection));
-    if (!query) return;
+    if (!getColourSearchText(selection)) return;
 
     setSelectedArtwork(null);
     setSearchMode('colour');
     setIsBrowsingCollection(false);
     setSearchColours([selection]);
-    setSearchFacet(null);
     setSortColours([selection]);
     setSortMode('colour');
-    setTextQuery(query);
-    setCommittedTextQuery(query);
     setShouldSearch(true);
-    setSearchParams({ q: query });
+    setSearchParams(
+      getSearchParamsForQuery(
+        normalizedCommittedTextQuery,
+        searchFacet,
+        selection
+      )
+    );
   };
 
   const clearColourSearch = () => {
-    const clearedColours = searchColours;
     setSearchColours([]);
-    clearSearch();
-    if (
-      sortMode === 'colour' &&
-      clearedColours.some((colour) => sortColours.includes(colour))
-    ) {
-      setSortColours([]);
-      setSortMode('relevance');
+    setSortColours([]);
+    setSortMode('relevance');
+    setSearchMode('text');
+
+    if (normalizedCommittedTextQuery) {
+      setSelectedArtwork(null);
+      setShouldSearch(true);
+      setSearchParams(
+        getSearchParamsForQuery(normalizedCommittedTextQuery, searchFacet),
+        { replace: true }
+      );
+      return;
     }
+
+    clearSearch();
   };
 
   const clearColourSort = () => {
@@ -1717,9 +1663,17 @@ export default function SearchPage() {
   const colourRailIsSearch = searchMode === 'colour';
 
   const runEvalSearch = (suggestion: EvalSuggestion) => {
+    const suggestionFacet = suggestion.facet || null;
+    const suggestionColour =
+      suggestion.type === 'colour'
+        ? suggestion.colourId || `custom:${suggestion.dot}`
+        : null;
     const active =
       committedTextQuery.trim().toLowerCase() ===
-      suggestion.query.toLowerCase();
+        suggestion.query.toLowerCase() &&
+      searchFacet === suggestionFacet &&
+      (!suggestionColour ||
+        (searchMode === 'colour' && searchColours.includes(suggestionColour)));
     if (active) {
       clearSearch();
       if (suggestion.type === 'colour') {
@@ -1730,12 +1684,27 @@ export default function SearchPage() {
       return;
     }
 
-    if (suggestion.type === 'colour') {
-      runColourSearch(suggestion.colourId || `custom:${suggestion.dot}`);
+    if (suggestionColour) {
+      const normalized = normalizeSearchQuery(suggestion.query);
+      if (!normalized || !getColourSearchText(suggestionColour)) return;
+
+      setSelectedArtwork(null);
+      setIsBrowsingCollection(false);
+      setSearchMode('colour');
+      setSearchColours([suggestionColour]);
+      setSortColours([suggestionColour]);
+      setSortMode('colour');
+      setTextQuery(normalized);
+      setCommittedTextQuery(normalized);
+      setSearchFacet(suggestionFacet);
+      setShouldSearch(true);
+      setSearchParams(
+        getSearchParamsForQuery(normalized, suggestionFacet, suggestionColour)
+      );
       return;
     }
 
-    runTextSearch(suggestion.query);
+    runTextSearch(suggestion.query, suggestionFacet);
   };
 
   const updateTopK = (value: number) => {

@@ -7,6 +7,9 @@ export const OPEN_ACCESS_ORG_KEY = 'open';
 export const OPEN_ACCESS_ART_ORG_KEY = 'nga';
 export const OPEN_ACCESS_ART_ORG_SLUG = OPEN_ACCESS_ORG_SLUG;
 export const LEGACY_OPEN_ACCESS_ART_ORG_KEY = OPEN_ACCESS_ORG_KEY;
+export const OPEN_ACCESS_NGA_KEY = OPEN_ACCESS_ART_ORG_KEY;
+
+export type OpenAccessProviderScope = 'nga';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -32,6 +35,36 @@ export const isOpenAccessPublicOrg = (value: string | null | undefined) => {
     key === LEGACY_OPEN_ACCESS_ART_ORG_KEY ||
     key === OPEN_ACCESS_ORG_SLUG
   );
+};
+
+export const resolveOpenAccessProviderScope = (
+  value: string | null | undefined
+): OpenAccessProviderScope | undefined => {
+  const raw = String(value || '').trim();
+  if (!raw) return undefined;
+
+  let key = raw.toLowerCase();
+  try {
+    key = decodeURIComponent(raw).toLowerCase();
+  } catch {
+    // Keep the raw route value; resolveOrgIdentifier will handle invalid input.
+  }
+
+  return key === OPEN_ACCESS_NGA_KEY ? 'nga' : undefined;
+};
+
+export const isAllowedPublicSearchRouteScope = (
+  value: string | null | undefined
+) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+
+  try {
+    const key = decodeURIComponent(raw).toLowerCase();
+    return isNgsPublicOrg(key) || key === OPEN_ACCESS_NGA_KEY;
+  } catch {
+    return false;
+  }
 };
 
 export const isOpenAccessArtPublicOrg = isOpenAccessPublicOrg;

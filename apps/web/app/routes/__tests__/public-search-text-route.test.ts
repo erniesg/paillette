@@ -27,10 +27,48 @@ const makeRequest = (body: Record<string, unknown>, orgId = 'ngs') =>
     body: JSON.stringify(body),
   });
 
+const countUpstreamSearchCalls = (mockFetch: ReturnType<typeof vi.fn>) =>
+  mockFetch.mock.calls.filter(([input]) =>
+    String(input).includes('/search/text')
+  ).length;
+
 describe('public text search route caching', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('normalizes the forwarded query with the shared contract', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const request = makeRequest({
+      query: '  Cafe\u0301\n\t angels  ',
+    });
+    await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request,
+    } as any);
+
+    const upstreamInit = mockFetch.mock.calls[0]?.[1] as
+      | RequestInit
+      | undefined;
+    const upstreamBody =
+      typeof upstreamInit?.body === 'string'
+        ? JSON.parse(upstreamInit.body)
+        : undefined;
+
+    expect(upstreamBody).toMatchObject({
+      query: 'Café angels',
+    });
+    expect(upstreamInit?.signal).toBe(request.signal);
   });
 
   it('caches one broad result set per query and serves requested slices from it', async () => {
@@ -95,7 +133,7 @@ describe('public text search route caching', () => {
     const secondPayload =
       (await secondResponse.json()) as ApiResponse<SearchResponse>;
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(countUpstreamSearchCalls(mockFetch)).toBe(1);
     expect(cache.match).toHaveBeenCalledTimes(2);
     expect(cache.put).toHaveBeenCalledTimes(1);
     expect(secondPayload.data?.results.map((artwork) => artwork.id)).toEqual([
@@ -103,6 +141,160 @@ describe('public text search route caching', () => {
     ]);
     expect(secondPayload.data?.count).toBe(1);
     expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBe('HIT');
+  });
+
+  it('does not cache a successful response with a degraded search channel', async () => {
+    const cache = {
+      match: vi.fn(async () => undefined),
+      put: vi.fn(async () => undefined),
+    };
+    const degradedPayload: ApiResponse<SearchResponse> = {
+      ...searchPayload,
+      meta: {
+        timestamp: '2026-07-17T08:00:00.000Z',
+        search: {
+          cacheable: false,
+          degradedChannels: ['caption_embedding'],
+        },
+      },
+    };
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async () =>
+      new Response(JSON.stringify(degradedPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('caches', { default: cache });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const requestBody = {
+      query: 'quiet shore',
+      topK: 30,
+      minScore: 0.2,
+      usageContext: { auto: true },
+    };
+    const first = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest(requestBody),
+    } as any);
+    const second = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest(requestBody),
+    } as any);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('BYPASS');
+    expect(countUpstreamSearchCalls(mockFetch)).toBe(2);
+    expect(cache.put).not.toHaveBeenCalled();
+  });
+
+  it('preserves an API L2 cache disposition on an edge miss', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Paillette-Search-Cache': 'KV-FRESH',
+          },
+        })
+      )
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'quiet shore' }),
+    } as any);
+
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+  });
+
+  it('schedules cache persistence without delaying the search response', async () => {
+    let finishPut!: () => void;
+    const slowPut = new Promise<void>((resolve) => {
+      finishPut = resolve;
+    });
+    const cache = {
+      match: vi.fn(async () => undefined),
+      put: vi.fn(() => slowPut),
+    };
+    const waitUntil = vi.fn();
+    vi.stubGlobal('caches', { default: cache });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    );
+
+    const pendingResponse = action({
+      context: { cloudflare: { context: { waitUntil } } },
+      params: { orgId: 'ngs' },
+      request: makeRequest({
+        query: 'quiet shore',
+        usageContext: { auto: true },
+      }),
+    } as any);
+    const raced = await Promise.race([
+      pendingResponse,
+      new Promise<'blocked'>((resolve) =>
+        setTimeout(() => resolve('blocked'), 50)
+      ),
+    ]);
+    finishPut();
+    const response = await pendingResponse;
+
+    expect(raced).toBe(response);
+    expect(waitUntil).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let caller-controlled auto metadata suppress usage logging', async () => {
+    const scheduled: Promise<unknown>[] = [];
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = String(input);
+      return new Response(
+        JSON.stringify(
+          url.endsWith('/usage-events')
+            ? { success: true }
+            : searchPayload
+        ),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await action({
+      context: {
+        cloudflare: {
+          context: {
+            waitUntil: (work: Promise<unknown>) => scheduled.push(work),
+          },
+        },
+      },
+      params: { orgId: 'nga' },
+      request: makeRequest({
+        query: 'quiet shore',
+        usageContext: { auto: true },
+      }),
+    } as any);
+    await Promise.all(scheduled);
+
+    expect(
+      mockFetch.mock.calls.some(([input]) =>
+        String(input).endsWith('/usage-events')
+      )
+    ).toBe(true);
   });
 
   it('defaults public text searches to a broader 20 percent threshold', async () => {
@@ -228,7 +420,7 @@ describe('public text search route caching', () => {
 
     const response = await action({
       context: {},
-      params: { orgId: 'open' },
+      params: { orgId: 'nga' },
       request: makeRequest(
         {
           query: 'blue ceramic jugs',
@@ -236,7 +428,7 @@ describe('public text search route caching', () => {
           minScore: 0.5,
           usageContext: { auto: true, source: 'nga_fixture_smoke' },
         },
-        'open'
+        'nga'
       ),
     } as any);
     const payload = (await response.json()) as ApiResponse<SearchResponse>;
@@ -251,7 +443,7 @@ describe('public text search route caching', () => {
     const artwork = payload.data?.results[0];
 
     expect(upstreamUrl).toBe(
-      'https://paillette-api-stg.berlayar.ai/api/v1/orgs/open-access-art/search/text'
+      'https://paillette-api-stg.berlayar.ai/api/v1/orgs/nga/search/text'
     );
     expect(upstreamBody).toEqual({
       query: 'blue ceramic jugs',
@@ -276,5 +468,80 @@ describe('public text search route caching', () => {
           'https://www.nga.gov/collection/art-object-page.17387.html',
       },
     });
+  });
+
+  it('forwards classification-facet searches upstream', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({
+        query: 'Painting',
+        topK: 30,
+        minScore: 0.2,
+        facet: 'classification',
+      }),
+    } as any);
+    const upstreamInit = mockFetch.mock.calls[0]?.[1] as
+      | RequestInit
+      | undefined;
+    const upstreamBody =
+      typeof upstreamInit?.body === 'string'
+        ? JSON.parse(upstreamInit.body)
+        : undefined;
+
+    expect(upstreamBody).toEqual({
+      query: 'Painting',
+      topK: 100,
+      minScore: 0,
+      facet: 'classification',
+    });
+  });
+
+  it('rejects legacy visual refinement before it can spend another embedding call', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({
+        query: 'angels',
+        visualRefinement: 'dark navy blue',
+        topK: 30,
+        minScore: 0.2,
+      }),
+    } as any);
+
+    expect(response.status).toBe(400);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects arbitrary org IDs before forwarding the quota-exempt public key', async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'private-org' },
+      request: makeRequest({ query: 'anything' }),
+    } as any);
+
+    expect(response.status).toBe(403);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

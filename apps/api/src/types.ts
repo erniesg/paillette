@@ -19,7 +19,17 @@ export interface ResponseMeta {
   timestamp: string;
   requestId?: string;
   duration?: number;
+  search?: {
+    cacheable: boolean;
+    degradedChannels: SearchDegradedChannel[];
+  };
 }
+
+export type SearchDegradedChannel =
+  | 'image_embedding'
+  | 'caption_embedding'
+  | 'metadata'
+  | 'visual_refinement';
 
 export interface SearchTextRequest {
   query: string;

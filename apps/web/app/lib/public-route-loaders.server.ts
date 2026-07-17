@@ -1,6 +1,7 @@
 import {
   getApiClientForRequest,
   getPreferredOrgRouteId,
+  getPublicSearchRouteId,
   getPublicOrgRouteBasePath,
 } from '~/lib/api';
 import { isHiddenPublicNgsArtwork } from '~/lib/public-ngs-visibility';
@@ -37,6 +38,7 @@ export async function loadPublicSearchPage({
     return {
       gallery,
       galleryId: gallery.id,
+      publicSearchOrgId: getPublicSearchRouteId(requestedOrgId, gallery.id),
       preferredRouteId,
       publicRouteBasePath: getPublicOrgRouteBasePath({
         requestedOrgId,

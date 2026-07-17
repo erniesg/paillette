@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
-import { searchRoutes } from '../../src/routes/search';
+import {
+  generateJinaQueryEmbedding,
+  searchRoutes,
+} from '../../src/routes/search';
 import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
+import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/public-search-cold-miss-rate-limit';
 import type { Env } from '../../src/index';
 
 const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
@@ -142,6 +146,8 @@ class FakeSearchDb {
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
   metadataSearchSql: string[] = [];
+  exactArtistPreflightSql: string[] = [];
+  failArtworkUsageInserts = false;
   apiKeyRow: {
     id: string;
     user_id: string;
@@ -284,6 +290,9 @@ class FakeSearchDb {
     }
 
     if (sql.includes('INSERT INTO artwork_usage_events')) {
+      if (this.failArtworkUsageInserts) {
+        throw new Error('artwork usage telemetry unavailable');
+      }
       const [id, usageEventId, artworkId, orgId, rank, score] = params as [
         string,
         string,
@@ -352,12 +361,28 @@ class FakeSearchDb {
   }
 
   async all<T>(sql: string, params: unknown[]) {
-    const applySearchVisibility = (rows: typeof this.rows) => {
-      if (!sql.includes('source_url IS NOT NULL')) {
+    const applyProviderScope = (rows: typeof this.rows) => {
+      if (!sql.includes("json_extract(custom_metadata, '$.provider') = ?")) {
         return rows;
       }
 
-      return rows.filter(
+      const provider = params.find((param) => param === 'nga');
+      return rows.filter((row) => {
+        try {
+          return JSON.parse(row.custom_metadata || '{}').provider === provider;
+        } catch {
+          return false;
+        }
+      });
+    };
+
+    const applySearchVisibility = (rows: typeof this.rows) => {
+      const providerRows = applyProviderScope(rows);
+      if (!sql.includes('source_url IS NOT NULL')) {
+        return providerRows;
+      }
+
+      return providerRows.filter(
         (row) =>
           row.source_url?.trim() &&
           row.accession_number?.trim() &&
@@ -368,6 +393,21 @@ class FakeSearchDb {
 
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
       this.metadataSearchSql.push(sql);
+      if (sql.includes('lower(trim(classification)) = ?')) {
+        const normalizedQuery = String(
+          params[params.length - 2] || ''
+        ).toLowerCase();
+        return {
+          success: true,
+          results: applySearchVisibility(
+            this.rows.filter(
+              (row) =>
+                row.classification?.trim().toLowerCase() === normalizedQuery
+            )
+          ).map((row) => ({ ...row, match_score: 100 })),
+        } as unknown as { success: boolean; results: T[] };
+      }
+
       if (
         sql.includes('AND artist IS NOT NULL') &&
         sql.includes('ORDER BY match_score DESC, artist')
@@ -407,6 +447,7 @@ class FakeSearchDb {
       sql.includes('SELECT id') &&
       sql.includes('artist IS NOT NULL')
     ) {
+      this.exactArtistPreflightSql.push(sql);
       const normalizedQuery = String(params[params.length - 1] || '');
       return {
         success: true,
@@ -452,14 +493,25 @@ const makeEnv = (db: FakeSearchDb, quota = 100): Env =>
     DAILY_FREE_QUERY_LIMIT: String(quota),
   }) as Env;
 
+const makeEmbeddingCache = () => {
+  const values = new Map<string, unknown>();
+  return {
+    get: vi.fn(async (key: string) => values.get(key) ?? null),
+    put: vi.fn(async (key: string, value: string) => {
+      values.set(key, JSON.parse(value) as unknown);
+    }),
+  } as unknown as KVNamespace;
+};
+
 const textSearch = (
   app: Hono<{ Bindings: Env }>,
   env: Env,
   headers: HeadersInit = { 'X-User-Id': 'user-1' },
-  body: Record<string, unknown> = { query: 'pineapple', topK: 1 }
+  body: Record<string, unknown> = { query: 'pineapple', topK: 1 },
+  routeOrgId = ORG_ID
 ) =>
   app.request(
-    `/api/v1/orgs/${ORG_ID}/search/text`,
+    `/api/v1/orgs/${routeOrgId}/search/text`,
     {
       method: 'POST',
       headers: {
@@ -475,12 +527,42 @@ const textSearch = (
     env
   );
 
+const imageSearch = (
+  app: Hono<{ Bindings: Env }>,
+  env: Env,
+  headers: HeadersInit = { 'X-User-Id': 'user-1' },
+  routeOrgId = ORG_ID
+) => {
+  const formData = new FormData();
+  formData.append(
+    'image',
+    new File([new Uint8Array([1, 2, 3, 4])], 'query.png', {
+      type: 'image/png',
+    })
+  );
+
+  return app.request(
+    `/api/v1/orgs/${routeOrgId}/search/image`,
+    {
+      method: 'POST',
+      headers: {
+        'User-Agent': 'vitest-search/1.0',
+        'CF-Connecting-IP': '203.0.113.42',
+        ...headers,
+      },
+      body: formData,
+    },
+    env
+  );
+};
+
 describe('Search API auth and quota behavior', () => {
   let app: Hono<{ Bindings: Env }>;
   let db: FakeSearchDb;
   let env: Env;
 
   beforeEach(() => {
+    resetPublicSearchColdMissRateLimitForTests();
     app = makeApp();
     db = new FakeSearchDb();
     env = makeEnv(db);
@@ -488,6 +570,125 @@ describe('Search API auth and quota behavior', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the configured query embedding endpoint without changing the model contract', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ embedding: new Array(1024).fill(0.01) }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const vector = await generateJinaQueryEmbedding(
+      'vm-token',
+      'blue ceramic bottle',
+      'jina-clip-v2',
+      1024,
+      'https://embedding-vm.example/v1/embeddings'
+    );
+
+    expect(vector).toHaveLength(1024);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://embedding-vm.example/v1/embeddings',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer vm-token' }),
+      })
+    );
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request).toMatchObject({
+      model: 'jina-clip-v2',
+      task: 'retrieval.query',
+      dimensions: 1024,
+    });
+  });
+
+  it('reuses both Jina query embeddings for normalized-equivalent hybrid searches', async () => {
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({ matches: [] }),
+    };
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({ matches: [] }),
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [{ embedding: [0.6, 0.8] }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const embeddingCache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: embeddingCache,
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+      QUERY_EMBEDDING_API_URL: 'https://embedding-vm.example/v1/embeddings',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+      CAPTION_EMBEDDING_PROVIDER: 'jina',
+      JINA_TEXT_EMBEDDING_DIMENSIONS: '2',
+    };
+
+    const first = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: '  quiet\n  shore  ', topK: 1 }
+    );
+    const second = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'quiet shore', topK: 1 }
+    );
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      meta: {
+        search: { cacheable: true, degradedChannels: [] },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(imageVectorize.query).toHaveBeenCalledTimes(2);
+    expect(captionVectorize.query).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(embeddingCache.put)).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips metadata search when the routed metadata weight is zero', async () => {
+    env = {
+      ...makeEnv(db),
+      SEARCH_FUSION_MODE: 'hybrid',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'blue', topK: 1 }
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.metadataSearchSql).toEqual([]);
+  });
+
+  it('keeps search available when result telemetry cannot be recorded', async () => {
+    db.failArtworkUsageInserts = true;
+
+    const response = await textSearch(app, env);
+    const payload = await response.json<{ success: boolean }>();
+
+    expect(response.status).toBe(200);
+    expect(payload.success).toBe(true);
+    expect(db.artworkEvents).toHaveLength(0);
   });
 
   it('returns 401 for unauthenticated text search', async () => {
@@ -798,7 +999,69 @@ describe('Search API auth and quota behavior', () => {
     );
   });
 
-  it('keeps bare keywords semantic in hybrid search instead of exact metadata routing', async () => {
+  it('isolates the NGA route across vector and D1 search channels', async () => {
+    const ngaArtwork = makeArtworkRow({
+      id: 'open-access-art:nga:1',
+      org_id: 'open-access-art',
+      title: 'NGA Annunciation',
+      custom_metadata: JSON.stringify({ provider: 'nga' }),
+    });
+    const articArtwork = makeArtworkRow({
+      id: 'open-access-art:artic:1',
+      org_id: 'open-access-art',
+      title: 'ArtIC Annunciation',
+      custom_metadata: JSON.stringify({ provider: 'artic' }),
+    });
+    db = new FakeSearchDb([ngaArtwork, articArtwork]);
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [
+          { id: ngaArtwork.id, score: 0.9, metadata: { provider: 'nga' } },
+          {
+            id: articArtwork.id,
+            score: 0.99,
+            metadata: { provider: 'artic' },
+          },
+        ],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      CAPTION_VECTOR_SEARCH_ENABLED: 'true',
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'annunciation', topK: 10 },
+      'nga'
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results.map((result: any) => result.id)).toEqual([
+      ngaArtwork.id,
+    ]);
+    expect(captionVectorize.query).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        filter: { galleryId: 'open-access-art', provider: 'nga' },
+      })
+    );
+    expect(db.metadataSearchSql[0]).toContain(
+      "json_extract(custom_metadata, '$.provider') = ?"
+    );
+  });
+
+  it('keeps bare keywords semantic while contributing the balanced metadata channel', async () => {
     const captionVectorize = {
       query: vi.fn().mockResolvedValue({
         matches: [
@@ -838,7 +1101,7 @@ describe('Search API auth and quota behavior', () => {
     expect(res.status).toBe(200);
     expect(body.data.results).toHaveLength(1);
     expect(captionVectorize.query).toHaveBeenCalled();
-    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(db.metadataSearchSql).toHaveLength(1);
     expect(body.data.results[0].metadata.search_sources).toContainEqual(
       expect.objectContaining({
         channel: 'generated_caption_embedding',
@@ -901,6 +1164,127 @@ describe('Search API auth and quota behavior', () => {
     });
   });
 
+  it('routes classification facets through an exact catalogue field filter', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'painting-1',
+        title: 'A Painted Portrait',
+        classification: 'Painting',
+      }),
+      makeArtworkRow({
+        id: 'iad-1',
+        title: 'Wall Painting',
+        classification: 'Index of American Design',
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Painting',
+        topK: 30,
+        facet: 'classification',
+      }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results).toHaveLength(1);
+    expect(body.data.results[0]).toMatchObject({
+      id: 'painting-1',
+      metadata: { classification: 'Painting' },
+    });
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(db.metadataSearchSql[0]).toContain(
+      'lower(trim(classification)) = ?'
+    );
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({
+        channel: 'metadata',
+        label: 'Classification',
+        source: 'artworks.classification',
+      })
+    );
+    const usageMetadata = JSON.parse(db.usageEvents[0].metadata || '{}');
+    expect(usageMetadata.search).toMatchObject({
+      query: 'Painting',
+      facet: 'classification',
+      resultCount: 1,
+    });
+  });
+
+  it('applies visual refinement only within the original text candidates', async () => {
+    const firstAngel = makeArtworkRow({
+      id: 'angel-a',
+      title: 'Angel in Red',
+      artist: 'Artist A',
+    });
+    const navyAngel = makeArtworkRow({
+      id: 'angel-b',
+      title: 'Angel in Navy',
+      artist: 'Artist B',
+    });
+    db = new FakeSearchDb([firstAngel, navyAngel]);
+    const imageVectorize = {
+      getByIds: vi.fn(async (ids: string[]) =>
+        ids.map((id) => ({
+          id,
+          values: id === navyAngel.id ? [0, 1] : [1, 0],
+        }))
+      ),
+      query: vi.fn(),
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0, 1] }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+      QUERY_EMBEDDING_API_URL: 'https://embedding-vm.example/v1/embeddings',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'angels',
+        visualRefinement: 'dark navy blue',
+        topK: 10,
+      }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(
+      body.data.results.map((result: { id: string }) => result.id)
+    ).toEqual([navyAngel.id, firstAngel.id]);
+    expect(imageVectorize.getByIds).toHaveBeenCalledWith([
+      firstAngel.id,
+      navyAngel.id,
+    ]);
+    expect(imageVectorize.query).not.toHaveBeenCalled();
+    expect(body.data.results[0].metadata.visual_refinement).toMatchObject({
+      query: 'dark navy blue',
+      rank: 1,
+    });
+    const usageMetadata = JSON.parse(db.usageEvents[0].metadata || '{}');
+    expect(usageMetadata.search).toMatchObject({
+      query: 'angels',
+      visualRefinement: 'dark navy blue',
+      resultCount: 2,
+    });
+  });
+
   it('uses the defined artist list to detect exact typed artist names', async () => {
     const captionVectorize = {
       query: vi.fn().mockResolvedValue({
@@ -934,13 +1318,14 @@ describe('Search API auth and quota behavior', () => {
       id: artworkRow.id,
       artist: 'Chen Chong Swee',
     });
-    expect(captionVectorize.query).not.toHaveBeenCalled();
-    expect(env.AI.run).not.toHaveBeenCalled();
+    expect(captionVectorize.query).toHaveBeenCalled();
+    expect(env.AI.run).toHaveBeenCalled();
     expect(db.metadataSearchSql).toHaveLength(1);
     expect(body.data.results[0].metadata.search_sources).toContainEqual(
       expect.objectContaining({
-        label: 'Artist',
-        source: 'artworks.artist',
+        channel: 'metadata',
+        label: 'Catalogue metadata',
+        weight: 2.5,
       })
     );
     const usageMetadata = JSON.parse(db.usageEvents[0].metadata || '{}');
@@ -1011,13 +1396,14 @@ describe('Search API auth and quota behavior', () => {
           (result: { artist?: string }) => result.artist === artist
         )
       ).toBe(true);
-      expect(captionVectorize.query).not.toHaveBeenCalled();
-      expect(env.AI.run).not.toHaveBeenCalled();
+      expect(captionVectorize.query).toHaveBeenCalled();
+      expect(env.AI.run).toHaveBeenCalled();
       expect(db.metadataSearchSql).toHaveLength(1);
       expect(body.data.results[0].metadata.search_sources).toContainEqual(
         expect.objectContaining({
-          label: 'Artist',
-          source: 'artworks.artist',
+          channel: 'metadata',
+          label: 'Catalogue metadata',
+          weight: 2.5,
         })
       );
       expect(usageMetadata.search).toMatchObject({
@@ -1063,6 +1449,41 @@ describe('Search API auth and quota behavior', () => {
     expect(yearRes.status).toBe(200);
     expect(db.metadataSearchSql).toHaveLength(1);
     expect(db.metadataSearchSql[0]).toContain('year BETWEEN ? AND ?');
+  });
+
+  it('recognizes dotted NGA accession numbers as exact metadata routes', async () => {
+    const ngaArtwork = makeArtworkRow({
+      id: 'open-access-art:nga:21352',
+      accession_number: '1943.8.5569',
+      source_record_id: '21352',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    db = new FakeSearchDb([ngaArtwork]);
+    const imageVectorize = { query: vi.fn() };
+    const captionVectorize = { query: vi.fn() };
+    env = {
+      ...makeEnv(db),
+      VECTORIZE_V2: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE_V2: captionVectorize as unknown as Vectorize,
+      EMBEDDING_INDEX_VERSION: 'v2',
+      SEARCH_FUSION_MODE: 'hybrid',
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: '1943.8.5569', topK: 10 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].id).toBe(ngaArtwork.id);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({ channel: 'metadata', weight: 8 })
+    );
+    expect(imageVectorize.query).not.toHaveBeenCalled();
+    expect(captionVectorize.query).not.toHaveBeenCalled();
   });
 
   it('uses generated caption embeddings by default and exposes them as a search source', async () => {
@@ -1114,6 +1535,347 @@ describe('Search API auth and quota behavior', () => {
         embeddingVersion: 'v2',
       })
     );
+  });
+
+  it('uses the NGS exact-title RRF weights for a canonical title query', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: artworkRow.id, score: 0.91, metadata: {} }],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'Mangrove Tree', topK: 1 }
+    );
+    const body = (await res.json()) as any;
+    const sources = body.data.results[0].metadata.search_sources;
+
+    expect(res.status).toBe(200);
+    expect(sources).toContainEqual(
+      expect.objectContaining({ channel: 'metadata', weight: 4 })
+    );
+    expect(sources).toContainEqual(
+      expect.objectContaining({
+        channel: 'generated_caption_embedding',
+        weight: 1.2,
+      })
+    );
+  });
+
+  it('keeps an exact catalogue title ahead of a multi-channel semantic distractor', async () => {
+    const exactArtwork = makeArtworkRow({
+      id: 'open-access-art:nga:1138',
+      title: 'The Feast of the Gods',
+      artist: 'Giovanni Bellini and Titian',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    const semanticDistractor = makeArtworkRow({
+      id: 'open-access-art:nga:30212',
+      title: 'Feast of the Gods',
+      artist: 'Honore Daumier, with additions by later hands',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    db = new FakeSearchDb([exactArtwork, semanticDistractor]);
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: semanticDistractor.id, score: 0.94, metadata: {} }],
+      }),
+    };
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: semanticDistractor.id, score: 0.96, metadata: {} }],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'The Feast of the Gods', topK: 10 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].id).toBe(exactArtwork.id);
+    expect(body.data.results[0].similarity).toBeGreaterThan(
+      body.data.results[1].similarity
+    );
+
+    const artistQualifiedRes = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Giovanni Bellini Titian The Feast of the Gods',
+        topK: 10,
+      }
+    );
+    const artistQualifiedBody = (await artistQualifiedRes.json()) as any;
+
+    expect(artistQualifiedRes.status).toBe(200);
+    expect(artistQualifiedBody.data.results[0].id).toBe(exactArtwork.id);
+    expect(artistQualifiedBody.data.results[0].similarity).toBeGreaterThan(
+      artistQualifiedBody.data.results[1].similarity
+    );
+  });
+
+  it('normalizes punctuation and prioritizes an exact artist-title catalogue match', async () => {
+    const exactArtwork = makeArtworkRow({
+      id: 'open-access-art:nga:50724',
+      title: "Ginevra de' Benci [obverse]",
+      artist: 'Leonardo da Vinci',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    const semanticDistractor = makeArtworkRow({
+      id: 'open-access-art:nga:9292',
+      title: 'Madame de Gillier',
+      artist: 'Robert Nanteuil',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    db = new FakeSearchDb([exactArtwork, semanticDistractor]);
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: semanticDistractor.id, score: 0.94, metadata: {} }],
+      }),
+    };
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: semanticDistractor.id, score: 0.96, metadata: {} }],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'Leonardo da Vinci Ginevra de Benci', topK: 10 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].id).toBe(exactArtwork.id);
+    expect(body.data.results[0].similarity).toBeGreaterThan(
+      body.data.results[1].similarity
+    );
+    expect(db.metadataSearchSql[0]).toContain('char(39)');
+    expect(db.metadataSearchSql[0]).toContain("'['");
+    expect(db.metadataSearchSql[0]).toContain("']'");
+  });
+
+  it('keeps actual medium matches ahead of works that only depict the material', async () => {
+    const depictedMaterial = makeArtworkRow({
+      id: 'open-access-art:nga:iad-bronze-object',
+      title: 'Centaur Weather Vane',
+      medium: 'watercolor, graphite, and gouache on paper',
+      classification: 'Index of American Design',
+      description: 'A watercolor study depicting a bronze sculpture.',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    const actualMedium = makeArtworkRow({
+      id: 'open-access-art:nga:bronze-sculpture',
+      title: 'Bacchus and a Faun',
+      medium: 'bronze',
+      classification: 'Sculpture',
+      description: 'Two figures stand together.',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    db = new FakeSearchDb([depictedMaterial, actualMedium]);
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: depictedMaterial.id, score: 0.95, metadata: {} }],
+      }),
+    };
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: depictedMaterial.id, score: 0.96, metadata: {} }],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'bronze sculpture', topK: 10 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].id).toBe(actualMedium.id);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({ channel: 'metadata', weight: 3 })
+    );
+  });
+
+  it('routes common printmaking media such as etching as exact medium queries', async () => {
+    const etching = makeArtworkRow({
+      id: 'open-access-art:nga:etching',
+      title: 'A Man Showing Mercury the Eagle of Jupiter',
+      medium: 'etching',
+      classification: 'Print',
+      source_institution: 'National Gallery of Art, Washington',
+    });
+    db = new FakeSearchDb([etching]);
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: etching.id, score: 0.9, metadata: {} }],
+      }),
+    };
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: etching.id, score: 0.91, metadata: {} }],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'etching', topK: 10 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({ channel: 'metadata', weight: 3 })
+    );
+  });
+
+  it('reports institution caption vectors with their actual provenance', async () => {
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [
+          {
+            id: artworkRow.id,
+            score: 0.9,
+            metadata: {
+              sourceKind: 'institution_caption_embedding',
+              sourceField: 'description',
+              model: 'jina-embeddings-v5-text-small',
+              embeddingVersion: 'v2',
+            },
+          },
+        ],
+      }),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'quiet shore', topK: 1 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({
+        channel: 'institution_caption_embedding',
+        source: 'description',
+        label: 'Institution caption embedding',
+      })
+    );
+  });
+
+  it('falls back to metadata when caption query embedding is unavailable', async () => {
+    const captionVectorize = {
+      query: vi.fn(),
+    };
+    env = {
+      ...env,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi
+          .fn()
+          .mockRejectedValue(new Error('embedding provider unavailable')),
+      } as unknown as Ai,
+    };
+
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'quiet shore', topK: 1 }
+    );
+    const body = (await res.json()) as any;
+
+    expect(res.status).toBe(200);
+    expect(body.data.results[0].id).toBe(artworkRow.id);
+    expect(body.data.results[0].metadata.search_sources).toContainEqual(
+      expect.objectContaining({ channel: 'metadata' })
+    );
+    expect(captionVectorize.query).not.toHaveBeenCalled();
+    expect(body.meta.search).toEqual({
+      cacheable: false,
+      degradedChannels: ['image_embedding', 'caption_embedding'],
+    });
   });
 
   it('does not use NGS payload descriptions as the metadata caption-search source', async () => {
@@ -1188,18 +1950,394 @@ describe('Search API auth and quota behavior', () => {
       PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
     };
 
-    const res = await textSearch(app, env, {
-      'X-API-Key': 'public-search-secret',
-    });
+    const res = await textSearch(
+      app,
+      env,
+      {
+        'X-API-Key': 'public-search-secret',
+      },
+      {
+        query: 'pineapple',
+        topK: 100,
+        minScore: 0,
+      }
+    );
     const body = (await res.json()) as any;
 
     expect(res.status).toBe(200);
     expect(res.headers.get('X-RateLimit-Limit')).toBeNull();
+    expect(res.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
     expect(body.success).toBe(true);
     expect(body.data.results).toHaveLength(1);
     expect(db.daily.size).toBe(0);
     expect(db.usageEvents).toHaveLength(0);
     expect(db.artworkEvents).toHaveLength(0);
+  });
+
+  it.each([
+    'open',
+    'open-access-art',
+    '11111111-1111-4111-8111-111111111111',
+    'private-gallery',
+  ])(
+    'rejects public search access to disallowed route scope %s',
+    async (scope) => {
+      const cache = makeEmbeddingCache();
+      env = {
+        ...makeEnv(db),
+        CACHE: cache,
+        ENVIRONMENT: 'production',
+        PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      };
+
+      const response = await textSearch(
+        app,
+        env,
+        { 'X-API-Key': 'public-search-secret' },
+        { query: 'pineapple', topK: 100, minScore: 0 },
+        scope
+      );
+      const payload = (await response.json()) as any;
+
+      expect(response.status).toBe(403);
+      expect(payload.error.code).toBe('PUBLIC_SEARCH_SCOPE_NOT_ALLOWED');
+      expect(db.metadataSearchSql).toHaveLength(0);
+      expect(cache.get).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects noncanonical public search parameters before retrieval', async () => {
+    const cache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      { query: 'pineapple', topK: 99, minScore: 0 }
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('INVALID_PUBLIC_SEARCH_REQUEST');
+    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(cache.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects visual refinement for the public search principal', async () => {
+    const cache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      {
+        query: 'pineapple',
+        topK: 100,
+        minScore: 0,
+        visualRefinement: 'blue',
+      }
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('INVALID_PUBLIC_SEARCH_REQUEST');
+    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(cache.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects public image search for arbitrary organization scopes', async () => {
+    const cache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await imageSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      'private-gallery'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(403);
+    expect(payload.error.code).toBe('PUBLIC_SEARCH_SCOPE_NOT_ALLOWED');
+    expect(cache.get).not.toHaveBeenCalled();
+  });
+
+  it('rate limits repeated public image-search requests before Jina', async () => {
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({ matches: [] }),
+    };
+    const cache = makeEmbeddingCache();
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ data: [{ embedding: [0.6, 0.8] }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+      QUERY_EMBEDDING_API_URL: 'https://embedding-vm.example/v1/embeddings',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const headers = { 'X-API-Key': 'public-search-secret' };
+
+    for (let index = 0; index < 10; index += 1) {
+      expect((await imageSearch(app, env, headers)).status).toBe(200);
+    }
+    const limited = await imageSearch(app, env, headers);
+    const payload = (await limited.json()) as any;
+
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(imageVectorize.query).toHaveBeenCalledTimes(10);
+  });
+
+  it('reuses a canonical public search result from KV without rerunning retrieval', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        custom_metadata: JSON.stringify({
+          ...JSON.parse(artworkRow.custom_metadata),
+          provider: 'nga',
+        }),
+      }),
+    ]);
+    const cache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const headers = { 'X-API-Key': 'public-search-secret' };
+    const body = { query: 'mangrove shore', topK: 100, minScore: 0 };
+
+    const first = await textSearch(app, env, headers, body, 'nga');
+    const second = await textSearch(app, env, headers, body, 'nga');
+    const secondBody = (await second.json()) as any;
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(secondBody.data.queryTime).toBe(0);
+    expect(secondBody.meta.search).toEqual({
+      cacheable: true,
+      degradedChannels: [],
+    });
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(db.exactArtistPreflightSql).toHaveLength(1);
+    expect(
+      vi
+        .mocked(cache.get)
+        .mock.calls.filter(([key]) =>
+          String(key).startsWith('public-search-cold-miss:')
+        )
+    ).toHaveLength(1);
+    expect(
+      vi
+        .mocked(cache.put)
+        .mock.calls.filter(([key]) =>
+          String(key).startsWith('public-search-result:')
+        )
+    ).toHaveLength(1);
+  });
+
+  it('rate limits the eleventh unique public cold miss without charging hits', async () => {
+    const cache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const headers = { 'X-API-Key': 'public-search-secret' };
+
+    for (let index = 0; index < 10; index += 1) {
+      const response = await textSearch(app, env, headers, {
+        query: `unique public query ${index}`,
+        topK: 100,
+        minScore: 0,
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const cachedHit = await textSearch(app, env, headers, {
+      query: 'unique public query 0',
+      topK: 100,
+      minScore: 0,
+    });
+    const limited = await textSearch(app, env, headers, {
+      query: 'unique public query 10',
+      topK: 100,
+      minScore: 0,
+    });
+    const payload = (await limited.json()) as any;
+
+    expect(cachedHit.status).toBe(200);
+    expect(cachedHit.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
+    expect(db.metadataSearchSql).toHaveLength(10);
+  });
+
+  it('bypasses the result cache for canonical private searches', async () => {
+    const cache = makeEmbeddingCache();
+    env = { ...makeEnv(db), CACHE: cache };
+    const body = { query: 'mangrove shore', topK: 100, minScore: 0 };
+
+    const first = await textSearch(app, env, undefined, body);
+    const second = await textSearch(app, env, undefined, body);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('BYPASS');
+    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('BYPASS');
+    expect(db.metadataSearchSql).toHaveLength(2);
+    expect(cache.put).not.toHaveBeenCalled();
+  });
+
+  it('does not persist degraded canonical public search results', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        custom_metadata: JSON.stringify({
+          ...JSON.parse(artworkRow.custom_metadata),
+          provider: 'nga',
+        }),
+      }),
+    ]);
+    const captionVectorize = { query: vi.fn() };
+    const cache = makeEmbeddingCache();
+    const run = vi.fn().mockRejectedValue(new Error('embedding unavailable'));
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: { run } as unknown as Ai,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const headers = { 'X-API-Key': 'public-search-secret' };
+    const body = { query: 'quiet shore', topK: 100, minScore: 0 };
+
+    const first = await textSearch(app, env, headers, body, 'nga');
+    const second = await textSearch(app, env, headers, body, 'nga');
+    const secondBody = (await second.json()) as any;
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(secondBody.meta.search).toEqual({
+      cacheable: false,
+      degradedChannels: ['image_embedding', 'caption_embedding'],
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(captionVectorize.query).not.toHaveBeenCalled();
+    expect(
+      vi
+        .mocked(cache.put)
+        .mock.calls.filter(([key]) =>
+          String(key).startsWith('public-search-result:')
+        )
+    ).toHaveLength(0);
+  });
+
+  it('charges repeated degraded text misses even when the query is identical', async () => {
+    const captionVectorize = { query: vi.fn() };
+    const cache = makeEmbeddingCache();
+    const run = vi.fn().mockRejectedValue(new Error('embedding unavailable'));
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: { run } as unknown as Ai,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE: '1',
+    };
+    const headers = { 'X-API-Key': 'public-search-secret' };
+    const body = { query: 'same degraded query', topK: 100, minScore: 0 };
+
+    const first = await textSearch(app, env, headers, body);
+    const second = await textSearch(app, env, headers, body);
+    const payload = (await second.json()) as any;
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
+    expect(run).toHaveBeenCalledOnce();
+    expect(captionVectorize.query).not.toHaveBeenCalled();
+  });
+
+  it('marks a weighted image channel degraded when its API key is missing', async () => {
+    const imageVectorize = { query: vi.fn() };
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({ matches: [] }),
+    };
+    const cache = makeEmbeddingCache();
+    env = {
+      ...makeEnv(db),
+      CACHE: cache,
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      SEARCH_FUSION_MODE: 'hybrid',
+      AI: {
+        run: vi.fn().mockResolvedValue({ data: [new Array(1024).fill(0.01)] }),
+      } as unknown as Ai,
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      { query: 'quiet shore', topK: 100, minScore: 0 }
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.meta.search).toEqual({
+      cacheable: false,
+      degradedChannels: ['image_embedding'],
+    });
+    expect(imageVectorize.query).not.toHaveBeenCalled();
+    expect(captionVectorize.query).toHaveBeenCalledOnce();
+    expect(
+      vi
+        .mocked(cache.put)
+        .mock.calls.filter(([key]) =>
+          String(key).startsWith('public-search-result:')
+        )
+    ).toHaveLength(0);
   });
 
   it('does not consume quota or keep usage events for invalid requests', async () => {
