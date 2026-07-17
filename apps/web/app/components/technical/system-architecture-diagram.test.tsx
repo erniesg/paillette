@@ -41,7 +41,8 @@ describe('SystemArchitectureDiagram', () => {
       'metadata query',
       'ranked candidates',
       'ranked JSON',
-      'load images',
+      'GET artwork asset',
+      'image response',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -57,7 +58,7 @@ describe('SystemArchitectureDiagram', () => {
     expect(screen.getByText('Visitor browser')).toHaveAttribute('textLength');
 
     const connections = screen.getAllByTestId('architecture-connection');
-    expect(connections).toHaveLength(9);
+    expect(connections).toHaveLength(10);
     for (const connection of connections) {
       expect(connection).toHaveAttribute('tabindex', '0');
       expect(connection.getAttribute('class')).toContain('group');
@@ -101,6 +102,23 @@ describe('SystemArchitectureDiagram', () => {
       'architecture-connection-active'
     );
     expect(screen.getByLabelText('metadata query connection')).toHaveClass(
+      'architecture-connection-active'
+    );
+  });
+
+  it('shows the two-way browser and R2 asset exchange', () => {
+    render(<SystemArchitectureDiagram />);
+
+    expect(screen.queryByText('load images')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(
+      screen.getByTestId('architecture-node-artwork-assets')
+    );
+
+    expect(screen.getByLabelText('GET artwork asset connection')).toHaveClass(
+      'architecture-connection-active'
+    );
+    expect(screen.getByLabelText('image response connection')).toHaveClass(
       'architecture-connection-active'
     );
   });

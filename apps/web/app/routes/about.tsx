@@ -58,7 +58,7 @@ const headingClassName =
   'font-display text-3xl font-semibold tracking-normal text-white md:text-4xl';
 const bodyClassName =
   'text-base leading-8 text-white/68 md:text-lg md:leading-9';
-const bodyGroupClassName = 'mt-5 max-w-4xl space-y-5';
+export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 space-y-5';
 export const ABOUT_MAIN_CLASS_NAME =
   'w-full px-5 py-14 sm:px-6 lg:px-10 xl:px-14 lg:py-20';
 export const TECHNICAL_DETAILS_HREF = '/technical';
@@ -406,7 +406,7 @@ export default function AboutPage() {
 
         <section className="mt-12 py-4 md:mt-16">
           <h2 className={headingClassName}>Why I built this</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Cause why not? I basically wanted to maximise token use on my AI
               subscriptions.
@@ -416,7 +416,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Context</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Public art collections are interesting because the data is visual,
               textual, and messy. People search collections in different ways:
@@ -429,7 +429,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Data</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               To make the index more comprehensive, we gathered publicly
               available data from{' '}
@@ -453,7 +453,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Approach</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               In order to support different ways of searching the collection,
               Paillette routes each query to the search channels that make
@@ -481,7 +481,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Limitations</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Paillette can only search what is in the corpus. If there are no
               relevant works for something like "Dragon Boat Festival", the

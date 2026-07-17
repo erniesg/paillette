@@ -302,10 +302,17 @@ const CONNECTIONS: ArchitectureConnection[] = [
     nodeIds: ['rrf-hydration', 'remix-web-worker'],
   },
   {
-    paths: ['M 222 360 C 250 360 244 688 318 688 H 1229 V 660'],
-    label: 'load images',
-    labelX: 760,
-    labelY: 678,
+    paths: ['M 222 350 C 252 350 242 680 318 680 H 1215 V 660'],
+    label: 'GET artwork asset',
+    labelX: 1050,
+    labelY: 670,
+    nodeIds: ['visitor-browser', 'artwork-assets'],
+  },
+  {
+    paths: ['M 1245 660 V 710 H 292 C 238 710 250 370 222 370'],
+    label: 'image response',
+    labelX: 610,
+    labelY: 707,
     nodeIds: ['visitor-browser', 'artwork-assets'],
   },
 ];
