@@ -163,6 +163,11 @@ type ActiveSearchSummary = {
   label: string;
   detail?: string;
   dot: string;
+  refinement?: {
+    type: string;
+    label: string;
+    dot: string;
+  };
 };
 type BrowseCollectionResponse = {
   results: ArtworkSearchResult[];
@@ -381,13 +386,17 @@ const normalizeArtistSearchQuery = (value: string) =>
       .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
   );
 
-const getSearchParamsForQuery = (
+export const getSearchParamsForQuery = (
   query: string,
-  facet: SearchFacet | null = null
+  facet: SearchFacet | null = null,
+  colour: string | null = null
 ) => {
   const params: Record<string, string> = { q: query };
   if (facet) {
     params.field = facet;
+  }
+  if (colour) {
+    params.colour = colour;
   }
   return params;
 };
@@ -702,7 +711,7 @@ const getPaletteBandLabel = (result: ArtworkSearchResult) => {
   return nearest.colour.name;
 };
 
-const sortResults = (
+export const sortResults = (
   results: ArtworkSearchResult[],
   sortMode: SortMode,
   selectedColours: string[]
@@ -995,8 +1004,15 @@ export default function SearchPage() {
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
+  const requestedUrlColour = searchParams.get('colour');
+  const urlSearchColour =
+    requestedUrlColour && getColourSearchText(requestedUrlColour)
+      ? requestedUrlColour
+      : null;
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('text');
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    urlSearchColour ? 'colour' : 'text'
+  );
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [committedTextQuery, setCommittedTextQuery] =
     useState(normalizedUrlQuery);
@@ -1005,10 +1021,16 @@ export default function SearchPage() {
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [searchColours, setSearchColours] = useState<string[]>([]);
-  const [sortColours, setSortColours] = useState<string[]>([]);
+  const [searchColours, setSearchColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
+  const [sortColours, setSortColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
   const [customColour, setCustomColour] = useState('#cda636');
-  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+  const [sortMode, setSortMode] = useState<SortMode>(
+    urlSearchColour ? 'colour' : 'relevance'
+  );
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_TEXT_MIN_SCORE);
@@ -1027,7 +1049,7 @@ export default function SearchPage() {
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const previousUrlSearchStateRef = useRef(
-    `${normalizedUrlQuery}:${urlSearchFacet || ''}`
+    `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`
   );
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
   const searchRoutePath = `${publicRouteBasePath}/search`;
@@ -1109,6 +1131,23 @@ export default function SearchPage() {
       const colour = getSelectedColour(selectedColourId);
       const label = colour?.name || getColourSearchText(selectedColourId);
 
+      if (
+        normalizedCommittedTextQuery &&
+        normalizedCommittedTextQuery !==
+          normalizeSearchQuery(getColourSearchText(selectedColourId))
+      ) {
+        return {
+          type: searchFacet || 'text',
+          label: committedTextQuery,
+          dot: '#d946ef',
+          refinement: {
+            type: 'rerank',
+            label,
+            dot: colour?.hex || '#d946ef',
+          },
+        };
+      }
+
       return {
         type: 'colour',
         label,
@@ -1167,13 +1206,17 @@ export default function SearchPage() {
   useEffect(() => {
     if (urlQuery && normalizedUrlQuery !== urlQuery) {
       setSearchParams(
-        getSearchParamsForQuery(normalizedUrlQuery, urlSearchFacet),
+        getSearchParamsForQuery(
+          normalizedUrlQuery,
+          urlSearchFacet,
+          urlSearchColour
+        ),
         { replace: true }
       );
       return;
     }
 
-    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}`;
+    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
     if (previousUrlSearchStateRef.current === urlSearchState) return;
 
     previousUrlSearchStateRef.current = urlSearchState;
@@ -1184,6 +1227,18 @@ export default function SearchPage() {
     setShouldSearch(Boolean(normalizedUrlQuery));
     setIsBrowsingCollection(false);
 
+    if (urlSearchColour) {
+      setSearchColours([urlSearchColour]);
+      setSortColours([urlSearchColour]);
+      setSearchMode('colour');
+      setSortMode('colour');
+    } else {
+      setSearchColours([]);
+      setSortColours([]);
+      setSearchMode('text');
+      setSortMode('relevance');
+    }
+
     if (!normalizedUrlQuery) {
       setImageFile(null);
       setImagePreview(null);
@@ -1193,7 +1248,13 @@ export default function SearchPage() {
       setSortMode('relevance');
       setSearchFacet(null);
     }
-  }, [normalizedUrlQuery, setSearchParams, urlQuery, urlSearchFacet]);
+  }, [
+    normalizedUrlQuery,
+    setSearchParams,
+    urlQuery,
+    urlSearchColour,
+    urlSearchFacet,
+  ]);
 
   useEffect(() => {
     if (!hasMounted || !suggestionPrefetchQueries.length) return undefined;
@@ -1638,26 +1699,51 @@ export default function SearchPage() {
   };
 
   const selectColourSearch = (selection: string) => {
-    const query = normalizeSearchQuery(getColourSearchText(selection));
-    if (!query) return;
+    const colourQuery = normalizeSearchQuery(getColourSearchText(selection));
+    if (!colourQuery) return;
+    const currentColourQuery = searchColours[0]
+      ? normalizeSearchQuery(getColourSearchText(searchColours[0]))
+      : '';
+    const hasTextCandidateSet = Boolean(
+      normalizedCommittedTextQuery &&
+        normalizedCommittedTextQuery !== currentColourQuery
+    );
 
     setSelectedArtwork(null);
     setSearchMode('colour');
     setIsBrowsingCollection(false);
     setSearchColours([selection]);
-    setSearchFacet(null);
     setSortColours([selection]);
     setSortMode('colour');
-    setTextQuery(query);
-    setCommittedTextQuery(query);
     setShouldSearch(true);
-    setSearchParams({ q: query });
+
+    if (hasTextCandidateSet) {
+      setSearchParams(
+        getSearchParamsForQuery(
+          normalizedCommittedTextQuery,
+          searchFacet,
+          selection
+        )
+      );
+      return;
+    }
+
+    setSearchFacet(null);
+    setTextQuery(colourQuery);
+    setCommittedTextQuery(colourQuery);
+    setSearchParams(getSearchParamsForQuery(colourQuery, null, selection));
   };
 
   const clearColourSearch = () => {
     const clearedColours = searchColours;
+    const clearedColourQuery = clearedColours[0]
+      ? normalizeSearchQuery(getColourSearchText(clearedColours[0]))
+      : '';
+    const hasTextCandidateSet = Boolean(
+      normalizedCommittedTextQuery &&
+        normalizedCommittedTextQuery !== clearedColourQuery
+    );
     setSearchColours([]);
-    clearSearch();
     if (
       sortMode === 'colour' &&
       clearedColours.some((colour) => sortColours.includes(colour))
@@ -1665,6 +1751,16 @@ export default function SearchPage() {
       setSortColours([]);
       setSortMode('relevance');
     }
+
+    if (hasTextCandidateSet) {
+      setSearchMode('text');
+      setSearchParams(
+        getSearchParamsForQuery(normalizedCommittedTextQuery, searchFacet)
+      );
+      return;
+    }
+
+    clearSearch();
   };
 
   const clearColourSort = () => {
@@ -2557,7 +2653,11 @@ function SuggestionPicker({
   const activeQuery = currentQuery.trim().toLowerCase();
   const activeLabel = activeSearch?.label.trim();
   const activeStatusLabel = activeSearch
-    ? `Current ${activeSearch.type} search: ${activeSearch.label}`
+    ? `Current ${activeSearch.type} search: ${activeSearch.label}${
+        activeSearch.refinement
+          ? `; ${activeSearch.refinement.type}: ${activeSearch.refinement.label}`
+          : ''
+      }`
     : undefined;
 
   return (
@@ -2589,6 +2689,18 @@ function SuggestionPicker({
           {activeSearch.detail && (
             <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
               {activeSearch.detail}
+            </span>
+          )}
+          {activeSearch.refinement && (
+            <span className="inline-flex min-w-0 items-center gap-2 border-l border-white/10 pl-3">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: activeSearch.refinement.dot }}
+              />
+              <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                {activeSearch.refinement.type}
+              </span>
+              <span className="truncate">{activeSearch.refinement.label}</span>
             </span>
           )}
         </div>
