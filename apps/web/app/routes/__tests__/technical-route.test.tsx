@@ -11,14 +11,12 @@ vi.mock('~/components/technical/system-architecture-diagram', () => ({
 }));
 
 let TechnicalPage: typeof import('../technical').default;
-let PERFORMANCE_METRICS: typeof import('../technical').PERFORMANCE_METRICS;
 let TECHNICAL_MAIN_CLASS_NAME: typeof import('../technical').TECHNICAL_MAIN_CLASS_NAME;
 let TECHNICAL_BODY_GROUP_CLASS_NAME: typeof import('../technical').TECHNICAL_BODY_GROUP_CLASS_NAME;
 
 beforeAll(async () => {
   const technicalRoute = await import('../technical');
   TechnicalPage = technicalRoute.default;
-  PERFORMANCE_METRICS = technicalRoute.PERFORMANCE_METRICS;
   TECHNICAL_MAIN_CLASS_NAME = technicalRoute.TECHNICAL_MAIN_CLASS_NAME;
   TECHNICAL_BODY_GROUP_CLASS_NAME =
     technicalRoute.TECHNICAL_BODY_GROUP_CLASS_NAME;
@@ -31,30 +29,13 @@ it('matches the centered production About page layout', () => {
   expect(TECHNICAL_BODY_GROUP_CLASS_NAME).toBe('mt-5 max-w-6xl space-y-5');
 });
 
-it('keeps performance to a compact four-number summary', () => {
-  expect(PERFORMANCE_METRICS.map((item) => item.label)).toEqual([
-    'p50',
-    'p95',
-    'p99',
-    'Max tested throughput',
-  ]);
-});
-
-it('renders the diagram and compact metrics without methodology prose', () => {
+it('renders the architecture without an empty performance placeholder', () => {
   render(<TechnicalPage />);
 
   expect(screen.getByTestId('architecture-diagram')).toBeInTheDocument();
-  expect(
-    screen.getByRole('heading', { name: 'Performance' })
-  ).toBeInTheDocument();
-  expect(screen.queryByText('Test-backed')).not.toBeInTheDocument();
-  expect(
-    screen.queryByText('Atomic daily quota boundary')
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole('heading', { name: 'Retrieval and fusion' })
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole('heading', { name: 'Expected bottlenecks' })
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Performance' })).toBeNull();
+  expect(screen.queryByText('Staging run required')).toBeNull();
+  expect(screen.queryByText('p50')).toBeNull();
+  expect(screen.queryByText('Max tested throughput')).toBeNull();
+  expect(document.querySelectorAll('main > section')).toHaveLength(1);
 });

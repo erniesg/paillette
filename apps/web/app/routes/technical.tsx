@@ -9,19 +9,10 @@ export const meta: MetaFunction = () => [
   { title: 'Technical Details - Paillette' },
   {
     name: 'description',
-    content:
-      'Paillette system architecture, retrieval flow, and performance evidence.',
+    content: 'Paillette system architecture and retrieval flow.',
   },
 ];
 
-export const PERFORMANCE_METRICS = [
-  { label: 'p50', value: '—' },
-  { label: 'p95', value: '—' },
-  { label: 'p99', value: '—' },
-  { label: 'Max tested throughput', value: '—' },
-] as const;
-
-const sectionClassName = 'border-t border-white/[0.08] py-10 md:py-12';
 const sectionHeadingClassName =
   'font-display text-3xl font-semibold tracking-normal text-white md:text-4xl';
 const bodyClassName =
@@ -50,31 +41,6 @@ export default function TechnicalPage() {
           <div className="mt-8">
             <SystemArchitectureDiagram />
           </div>
-        </section>
-
-        <section className={sectionClassName}>
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className={sectionHeadingClassName}>Performance</h2>
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/35">
-              Staging run required
-            </p>
-          </div>
-
-          <dl className="mt-8 grid grid-cols-2 border-y border-white/[0.08] lg:grid-cols-4">
-            {PERFORMANCE_METRICS.map((item) => (
-              <div
-                key={item.label}
-                className="border-b border-white/[0.08] py-7 even:border-l even:pl-5 lg:border-b-0 lg:border-l lg:px-7 lg:first:border-l-0 lg:first:pl-0"
-              >
-                <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
-                  {item.label}
-                </dt>
-                <dd className="mt-3 font-display text-4xl font-semibold tabular-nums text-white">
-                  {item.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
         </section>
 
         <PublicSiteFooter separated />
