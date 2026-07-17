@@ -49,5 +49,11 @@ describe('about page layout', () => {
     );
     expect(screen.getByTestId('architecture-diagram')).toBeInTheDocument();
     expect(screen.queryByText('Technical details')).toBeNull();
+
+    const approachHeading = screen.getByRole('heading', { name: 'Approach' });
+    expect(
+      heading.compareDocumentPosition(approachHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

@@ -449,6 +449,18 @@ export default function AboutPage() {
           </div>
         </section>
 
+        <section id="technical-details" className={sectionClassName}>
+          <h2 className={headingClassName}>System architecture</h2>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
+            <p className={bodyClassName}>
+              From browser request to ranked result.
+            </p>
+          </div>
+          <div className="mt-8">
+            <SystemArchitectureDiagram />
+          </div>
+        </section>
+
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Approach</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
@@ -468,18 +480,6 @@ export default function AboutPage() {
           </div>
 
           <MermaidDiagram chart={searchFlowDiagram} />
-        </section>
-
-        <section id="technical-details" className={sectionClassName}>
-          <h2 className={headingClassName}>System architecture</h2>
-          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
-            <p className={bodyClassName}>
-              From browser request to ranked result.
-            </p>
-          </div>
-          <div className="mt-8">
-            <SystemArchitectureDiagram />
-          </div>
         </section>
 
         <section className={sectionClassName}>
