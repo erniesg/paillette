@@ -74,4 +74,40 @@ describe('anonymous data boundaries', () => {
     expect(payload.error.code).toBe('AUTHENTICATION_REQUIRED');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('streams authenticated image responses through the generic API proxy', async () => {
+    withWorkOSResourceSessionMock.mockImplementationOnce(
+      async (_args: unknown, handler: (session: unknown) => unknown) =>
+        handler({ accessToken: 'workos-access-token', user: { id: 'user-1' } })
+    );
+    const imageBytes = new Uint8Array([255, 216, 255, 217]);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(imageBytes, {
+        status: 200,
+        headers: { 'Content-Type': 'image/jpeg' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await backendLoader({
+      context: {},
+      params: { '*': 'assets/artwork-1/content' },
+      request: new Request(
+        'https://paillette.test/api/backend/assets/artwork-1/content'
+      ),
+    } as any);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/jpeg');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(imageBytes);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      'https://paillette-api-stg.berlayar.ai/api/v1/assets/artwork-1/content'
+    );
+    const upstreamInit = fetchMock.mock.calls[0]?.[1];
+    expect(upstreamInit?.method).toBe('GET');
+    expect(new Headers(upstreamInit?.headers).get('Authorization')).toBe(
+      'Bearer workos-access-token'
+    );
+  });
 });

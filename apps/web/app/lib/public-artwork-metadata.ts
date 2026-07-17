@@ -598,6 +598,27 @@ const getExplicitRootsImageUrl = (artwork: PublicArtwork) => {
 const getExplicitRootsThumbnailUrl = (artwork: PublicArtwork) =>
   getExplicitRootsImageUrl(artwork);
 
+const PAILLETTE_ASSET_HOSTS = new Set([
+  'paillette-api.berlayar.ai',
+  'paillette-api-stg.berlayar.ai',
+]);
+
+export const toAuthenticatedAssetUrl = (value: string | null) => {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+    if (!PAILLETTE_ASSET_HOSTS.has(url.hostname.toLowerCase())) return value;
+
+    const match = url.pathname.match(
+      /^\/api\/v1\/(assets\/[^/]+\/content)\/?$/
+    );
+    return match?.[1] ? `/api/backend/${match[1]}` : value;
+  } catch {
+    return value;
+  }
+};
+
 export const getPublicImageUrl = (artwork: PublicArtwork) => {
   const rootsImageUrl = getExplicitRootsImageUrl(artwork);
 
@@ -609,10 +630,10 @@ export const getPublicImageUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsImageUrl(artwork);
   }
 
-  return (
+  return toAuthenticatedAssetUrl(
     getStandardImageUrl(artwork) ||
-    getExplicitNgsImageUrl(artwork) ||
-    rootsImageUrl
+      getExplicitNgsImageUrl(artwork) ||
+      rootsImageUrl
   );
 };
 
@@ -627,10 +648,10 @@ export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsThumbnailUrl(artwork);
   }
 
-  return (
+  return toAuthenticatedAssetUrl(
     getStandardThumbnailUrl(artwork) ||
-    getExplicitNgsThumbnailUrl(artwork) ||
-    rootsThumbnailUrl
+      getExplicitNgsThumbnailUrl(artwork) ||
+      rootsThumbnailUrl
   );
 };
 
