@@ -1,5 +1,8 @@
 import { Link } from '@remix-run/react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
+  Check,
+  ChevronDown,
   ExternalLink,
   Github,
   LogIn,
@@ -47,31 +50,65 @@ export function PublicSiteHeader({
               className="text-base leading-none sm:text-xl [&>span:last-child]:hidden sm:[&>span:last-child]:inline"
             />
           </Link>
-          <div className="flex min-h-11 flex-col items-start justify-center leading-none">
-            <Link
-              to="/about"
-              aria-current={active === 'about' ? 'page' : undefined}
-              className={`inline-flex min-h-6 min-w-6 items-center text-sm font-medium transition-colors ${
-                active === 'about'
-                  ? 'text-white/75'
-                  : 'text-white/55 hover:text-white'
-              }`}
-            >
-              About
-            </Link>
-            <Link
-              to="/technical"
-              aria-current={active === 'technical' ? 'page' : undefined}
-              aria-label="Technical details"
-              className={`inline-flex min-h-6 min-w-6 items-center text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${
-                active === 'technical'
-                  ? 'text-white/75'
-                  : 'text-white/55 hover:text-white'
-              }`}
-            >
-              Technical details
-            </Link>
-          </div>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                aria-label="About"
+                className={`group inline-flex min-h-11 min-w-11 items-center gap-1 rounded-sm px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0e] ${
+                  active === 'about' || active === 'technical'
+                    ? 'text-white/75'
+                    : 'text-white/55 hover:text-white'
+                }`}
+              >
+                <span>About</span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 text-white/35 transition-transform duration-150 group-data-[state=open]:rotate-180 group-data-[state=open]:text-white/60"
+                />
+              </button>
+            </DropdownMenu.Trigger>
+
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="start"
+                sideOffset={8}
+                collisionPadding={8}
+                className="z-50 min-w-52 rounded-md border border-white/10 bg-[#111116] p-1 text-white shadow-[0_18px_50px_rgba(0,0,0,0.45)] outline-none"
+              >
+                <DropdownMenu.Item asChild>
+                  <Link
+                    to="/about"
+                    aria-current={active === 'about' ? 'page' : undefined}
+                    className="flex min-h-10 cursor-pointer items-center justify-between gap-4 rounded-sm px-3 py-2 text-sm text-white/65 outline-none transition-colors hover:bg-white/[0.06] hover:text-white focus:bg-white/[0.08] focus:text-white"
+                  >
+                    <span>About</span>
+                    {active === 'about' ? (
+                      <Check
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 text-white/45"
+                      />
+                    ) : null}
+                  </Link>
+                </DropdownMenu.Item>
+                <DropdownMenu.Item asChild>
+                  <Link
+                    to="/technical"
+                    aria-current={active === 'technical' ? 'page' : undefined}
+                    className="flex min-h-10 cursor-pointer items-center justify-between gap-4 rounded-sm px-3 py-2 text-sm text-white/65 outline-none transition-colors hover:bg-white/[0.06] hover:text-white focus:bg-white/[0.08] focus:text-white"
+                  >
+                    <span>Technical details</span>
+                    {active === 'technical' ? (
+                      <Check
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 text-white/45"
+                      />
+                    ) : null}
+                  </Link>
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
 
         <nav className="flex items-center gap-1 sm:gap-2" aria-label="Primary">
