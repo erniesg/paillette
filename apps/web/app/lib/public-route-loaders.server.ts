@@ -1,6 +1,8 @@
 import {
   getApiClientForRequest,
+  getKnownPublicOrg,
   getPreferredOrgRouteId,
+  getPublicOrgDisplay,
   getPublicSearchRouteId,
   getPublicOrgRouteBasePath,
 } from '~/lib/api';
@@ -24,19 +26,22 @@ export async function loadPublicSearchPage({
   }
 
   try {
+    const knownPublicOrg = getKnownPublicOrg(requestedOrgId);
     const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(requestedOrgId),
+      knownPublicOrg ??
+        getApiClientForRequest(request).getGallery(requestedOrgId),
       getUpcomingSingaporeHolidaySuggestions(new Date(), {
         allowNetwork: false,
       }),
     ]);
+    const displayGallery = getPublicOrgDisplay(gallery, requestedOrgId);
     const preferredRouteId = getPreferredOrgRouteId(
       requestedOrgId,
       gallery.slug
     );
 
     return {
-      gallery,
+      gallery: displayGallery,
       galleryId: gallery.id,
       publicSearchOrgId: getPublicSearchRouteId(requestedOrgId, gallery.id),
       preferredRouteId,

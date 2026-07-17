@@ -22,6 +22,7 @@ vi.mock('~/lib/api', () => ({
   getPreferredOrgRouteBasePath: vi.fn(() => '/ngs'),
   getPreferredOrgRouteId: vi.fn(() => 'ngs'),
   getPublicOrgDisplay: vi.fn((gallery) => gallery),
+  getPublicOrgRouteBasePath: vi.fn(() => '/ngs'),
   getPublicSearchRouteId,
   isLegacyOpenAccessRoute: vi.fn(() => false),
 }));
