@@ -106,9 +106,11 @@ describe('SystemArchitectureDiagram', () => {
     const marker = screen.getByTestId('architecture-arrow');
 
     expect(marker).toHaveAttribute('markerUnits', 'userSpaceOnUse');
-    expect(marker).toHaveAttribute('markerWidth', '10');
+    expect(marker).toHaveAttribute('markerWidth', '8');
+    expect(marker).toHaveAttribute('refX', '7.5');
+    expect(marker.querySelector('path')).toHaveAttribute('fill', 'none');
     expect(marker.querySelector('path')).toHaveAttribute(
-      'fill',
+      'stroke',
       'context-stroke'
     );
   });
