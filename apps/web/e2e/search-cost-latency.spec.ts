@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { NGA_SPOTLIGHT_DEFINITIONS } from '../app/lib/nga-spotlight-definitions';
 
 const card = (id: string) => ({
   id,
@@ -14,22 +15,6 @@ const card = (id: string) => ({
   palette: ['#4c78a8'],
 });
 
-const suggestion = (
-  id: string,
-  type: 'motif' | 'metadata' | 'colour',
-  label: string,
-  query: string,
-  extras: Record<string, string> = {}
-) => ({
-  id,
-  type,
-  label,
-  query,
-  dot: '#4c78a8',
-  ...extras,
-  artworks: [1, 2, 3, 4].map((index) => card(`${id}-${index}`)),
-});
-
 const spotlightBundle = {
   schemaVersion: 1,
   contractVersion: '18',
@@ -37,28 +22,12 @@ const spotlightBundle = {
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
   requestDefaults: { topK: 30, minScore: 0.2 },
-  suggestions: [
-    suggestion(
-      'stormy-seas-ships',
-      'motif',
-      'stormy seas and ships',
-      'a stormy sea with ships'
+  suggestions: NGA_SPOTLIGHT_DEFINITIONS.map((definition) => ({
+    ...definition,
+    artworks: [1, 2, 3, 4].map((index) =>
+      card(`${definition.id}-${index}`)
     ),
-    suggestion(
-      'paintings-collection',
-      'metadata',
-      'paintings across the collection',
-      'Painting',
-      { facet: 'classification' }
-    ),
-    suggestion(
-      'blue-painted-ornament',
-      'colour',
-      'blue painted ornament',
-      'blue painted ornament',
-      { colourId: 'custom:#4c78a8' }
-    ),
-  ],
+  })),
 };
 
 type CapturedSearch = {
@@ -88,8 +57,10 @@ const installSearchHarness = async (
   results: ReturnType<typeof searchResult>[] = []
 ) => {
   const searches: CapturedSearch[] = [];
+  const spotlightRequests: string[] = [];
 
   await page.route('**/search-spotlights/nga/v18-*.json', async (route) => {
+    spotlightRequests.push(route.request().url());
     await route.fulfill({ json: spotlightBundle });
   });
   await page.route('**/api/public-search/**', async (route) => {
@@ -106,7 +77,13 @@ const installSearchHarness = async (
     });
   });
 
-  return searches;
+  return { searches, spotlightRequests };
+};
+
+const openNgaSearchPage = async (page: Page) => {
+  const response = await page.goto('/nga/search');
+  await expect(page.getByLabel('Suggested artworks')).toBeVisible();
+  return response;
 };
 
 const chooseSuggestion = async (page: Page, label: string) => {
@@ -114,28 +91,49 @@ const chooseSuggestion = async (page: Page, label: string) => {
   await page.getByRole('menuitem').filter({ hasText: label }).click();
 };
 
-test('idle NGA landing and spotlight rotation issue no live search requests', async ({
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+});
+
+test('idle NGA landing preloads one spotlight asset and issues no live searches', async ({
   page,
 }) => {
-  const searches = await installSearchHarness(page);
+  const searches: string[] = [];
+  const spotlightRequests: string[] = [];
+  page.on('request', (request) => {
+    const url = request.url();
+    if (url.includes('/api/public-search/')) searches.push(url);
+    if (url.includes('/search-spotlights/nga/v18-')) {
+      spotlightRequests.push(url);
+    }
+  });
 
-  const documentResponse = await page.goto('/nga/search');
+  const documentResponse = await openNgaSearchPage(page);
   expect(documentResponse?.headers()['link']).toMatch(
     /<\/search-spotlights\/nga\/v18-[a-f0-9]{64}\.json>; rel=preload; as=fetch; crossorigin/
   );
   await expect(
     page.locator('[data-suggestion-query="a stormy sea with ships"]')
   ).toBeVisible();
+  await expect(
+    page
+      .getByLabel('Suggested artworks')
+      .getByRole('button', { name: /^View / })
+  ).toHaveCount(4);
   await page.waitForTimeout(3_000);
 
   expect(searches).toEqual([]);
+  expect(spotlightRequests).toHaveLength(1);
+  expect(spotlightRequests[0]).toMatch(
+    /\/search-spotlights\/nga\/v18-[a-f0-9]{64}\.json$/
+  );
 });
 
-test('suggestion clicks issue one base request with facet and colour kept client-side', async ({
+test('colour suggestion issues one base request with refinement kept client-side', async ({
   page,
 }) => {
-  const searches = await installSearchHarness(page);
-  await page.goto('/nga/search');
+  const { searches } = await installSearchHarness(page);
+  await openNgaSearchPage(page);
 
   await chooseSuggestion(page, 'blue painted ornament');
   await expect.poll(() => searches.length).toBe(1);
@@ -145,9 +143,12 @@ test('suggestion clicks issue one base request with facet and colour kept client
     minScore: 0.2,
   });
   expect(searches[0]?.body).not.toHaveProperty('visualRefinement');
+});
 
-  await page.goto('/nga/search');
-  searches.length = 0;
+test('metadata suggestion forwards its provider facet', async ({ page }) => {
+  const { searches } = await installSearchHarness(page);
+  await openNgaSearchPage(page);
+
   await chooseSuggestion(page, 'paintings across the collection');
   await expect.poll(() => searches.length).toBe(1);
   expect(searches[0]?.body).toMatchObject({
@@ -159,16 +160,18 @@ test('suggestion clicks issue one base request with facet and colour kept client
 test('changing or clearing colour on an existing text query only reranks fetched candidates', async ({
   page,
 }) => {
-  const searches = await installSearchHarness(page, [
+  const { searches } = await installSearchHarness(page, [
     searchResult('red', 'Red artwork', ['#bf5631'], 0.95),
     searchResult('blue', 'Blue artwork', ['#1a2f52'], 0.8),
   ]);
-  await page.goto('/nga/search');
+  await openNgaSearchPage(page);
 
   await page
     .getByPlaceholder('search by feeling, era, subject...')
     .fill('two portraits');
-  await page.getByRole('button', { name: 'Search text' }).click();
+  const searchButton = page.getByRole('button', { name: 'Search text' });
+  await expect(searchButton).toBeEnabled();
+  await searchButton.click();
   await expect.poll(() => searches.length).toBe(1);
   await expect(page.getByText('Red artwork', { exact: true })).toBeVisible();
 
