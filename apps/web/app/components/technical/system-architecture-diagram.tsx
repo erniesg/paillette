@@ -119,6 +119,31 @@ function Boundary({
         strokeWidth="1.5"
         strokeDasharray="8 7"
       />
+    </g>
+  );
+}
+
+function BoundaryLabel({
+  x,
+  y,
+  label,
+  tone,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  tone: string;
+}) {
+  return (
+    <g className="architecture-boundary-label">
+      <rect
+        x={x + 12}
+        y={y + 10}
+        width={label.length * 8.2 + 14}
+        height="25"
+        rx="4"
+        fill="#080a0f"
+      />
       <text
         x={x + 18}
         y={y + 28}
@@ -139,15 +164,22 @@ function Boundary({
 function FlowLabel({
   x,
   y,
+  active,
   children,
 }: {
   x: number;
   y: number;
+  active: boolean;
   children: string;
 }) {
   return (
-    <g>
+    <g
+      data-testid="architecture-connection-label"
+      className={active ? 'architecture-connection-label-active' : undefined}
+      pointerEvents="none"
+    >
       <rect
+        data-testid="architecture-connection-label-bg"
         x={x - children.length * 3.25 - 7}
         y={y - 12}
         width={children.length * 6.5 + 14}
@@ -174,16 +206,12 @@ function FlowLabel({
 function Connection({
   paths,
   label,
-  labelX,
-  labelY,
   active,
   onActivate,
   onDeactivate,
 }: {
   paths: string[];
   label: string;
-  labelX: number;
-  labelY: number;
   active: boolean;
   onActivate: () => void;
   onDeactivate: () => void;
@@ -220,9 +248,6 @@ function Connection({
           className="architecture-connection-line"
         />
       ))}
-      <FlowLabel x={labelX} y={labelY}>
-        {label}
-      </FlowLabel>
     </g>
   );
 }
@@ -316,6 +341,49 @@ const CONNECTIONS: ArchitectureConnection[] = [
     nodeIds: ['visitor-browser', 'artwork-assets'],
   },
 ];
+
+const BOUNDARIES = [
+  {
+    x: 22,
+    y: 120,
+    width: 224,
+    height: 410,
+    label: 'Client',
+    tone: '#7dd3fc',
+  },
+  {
+    x: 278,
+    y: 34,
+    width: 520,
+    height: 684,
+    label: 'Cloudflare edge',
+    tone: '#c4b5fd',
+  },
+  {
+    x: 838,
+    y: 34,
+    width: 520,
+    height: 178,
+    label: 'Model provider',
+    tone: '#fbbf24',
+  },
+  {
+    x: 838,
+    y: 244,
+    width: 520,
+    height: 474,
+    label: 'Cloudflare data',
+    tone: '#6ee7b7',
+  },
+  {
+    x: 540,
+    y: 78,
+    width: 240,
+    height: 604,
+    label: 'Hono API Worker',
+    tone: '#c4b5fd',
+  },
+] as const;
 
 const NODES = [
   {
@@ -491,10 +559,12 @@ export function SystemArchitectureDiagram(): JSX.Element {
           }
           .architecture-connection:hover .architecture-connection-label,
           .architecture-connection:focus .architecture-connection-label,
-          .architecture-connection-active .architecture-connection-label { fill: #cffafe; }
+          .architecture-connection-active .architecture-connection-label,
+          .architecture-connection-label-active .architecture-connection-label { fill: #cffafe; }
           .architecture-connection:hover .architecture-connection-label-bg,
           .architecture-connection:focus .architecture-connection-label-bg,
-          .architecture-connection-active .architecture-connection-label-bg { fill: #172033; }
+          .architecture-connection-active .architecture-connection-label-bg,
+          .architecture-connection-label-active .architecture-connection-label-bg { fill: #172033; }
           .architecture-node:hover .architecture-node-shell,
           .architecture-node:focus .architecture-node-shell,
           .architecture-node-active .architecture-node-shell {
@@ -520,68 +590,56 @@ export function SystemArchitectureDiagram(): JSX.Element {
 
         <rect width="1400" height="760" fill="url(#architecture-grid)" />
 
-        <Boundary
-          x={22}
-          y={120}
-          width={224}
-          height={410}
-          label="Client"
-          tone="#7dd3fc"
-        />
-        <Boundary
-          x={278}
-          y={34}
-          width={520}
-          height={684}
-          label="Cloudflare edge"
-          tone="#c4b5fd"
-        />
-        <Boundary
-          x={838}
-          y={34}
-          width={520}
-          height={178}
-          label="Model provider"
-          tone="#fbbf24"
-        />
-        <Boundary
-          x={838}
-          y={244}
-          width={520}
-          height={474}
-          label="Cloudflare data"
-          tone="#6ee7b7"
-        />
-        <Boundary
-          x={540}
-          y={78}
-          width={240}
-          height={604}
-          label="Hono API Worker"
-          tone="#c4b5fd"
-        />
+        <g data-testid="architecture-boundary-layer">
+          {BOUNDARIES.map((boundary) => (
+            <Boundary key={boundary.label} {...boundary} />
+          ))}
+        </g>
 
-        {NODES.map((node) => (
-          <DiagramNode
-            key={node.id}
-            {...node}
-            active={isNodeActive(node.id)}
-            onActivate={() => setActiveTarget({ kind: 'node', id: node.id })}
-            onDeactivate={() => setActiveTarget(undefined)}
-          />
-        ))}
+        <g data-testid="architecture-connection-layer">
+          {CONNECTIONS.map((connection) => (
+            <Connection
+              key={connection.label}
+              {...connection}
+              active={isConnectionActive(connection)}
+              onActivate={() =>
+                setActiveTarget({ kind: 'connection', id: connection.label })
+              }
+              onDeactivate={() => setActiveTarget(undefined)}
+            />
+          ))}
+        </g>
 
-        {CONNECTIONS.map((connection) => (
-          <Connection
-            key={connection.label}
-            {...connection}
-            active={isConnectionActive(connection)}
-            onActivate={() =>
-              setActiveTarget({ kind: 'connection', id: connection.label })
-            }
-            onDeactivate={() => setActiveTarget(undefined)}
-          />
-        ))}
+        <g data-testid="architecture-node-layer">
+          {NODES.map((node) => (
+            <DiagramNode
+              key={node.id}
+              {...node}
+              active={isNodeActive(node.id)}
+              onActivate={() => setActiveTarget({ kind: 'node', id: node.id })}
+              onDeactivate={() => setActiveTarget(undefined)}
+            />
+          ))}
+        </g>
+
+        <g data-testid="architecture-connection-label-layer">
+          {CONNECTIONS.map((connection) => (
+            <FlowLabel
+              key={connection.label}
+              x={connection.labelX}
+              y={connection.labelY}
+              active={isConnectionActive(connection)}
+            >
+              {connection.label}
+            </FlowLabel>
+          ))}
+        </g>
+
+        <g data-testid="architecture-boundary-label-layer">
+          {BOUNDARIES.map((boundary) => (
+            <BoundaryLabel key={boundary.label} {...boundary} />
+          ))}
+        </g>
       </svg>
     </figure>
   );

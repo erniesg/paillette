@@ -71,6 +71,35 @@ describe('SystemArchitectureDiagram', () => {
     }
   });
 
+  it('paints connector and boundary labels above every connector path', () => {
+    render(<SystemArchitectureDiagram />);
+
+    const connectionLayer = screen.getByTestId('architecture-connection-layer');
+    const nodeLayer = screen.getByTestId('architecture-node-layer');
+    const connectionLabelLayer = screen.getByTestId(
+      'architecture-connection-label-layer'
+    );
+    const boundaryLabelLayer = screen.getByTestId(
+      'architecture-boundary-label-layer'
+    );
+
+    expect(
+      connectionLayer.compareDocumentPosition(nodeLayer) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      connectionLayer.compareDocumentPosition(connectionLabelLayer) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      connectionLayer.compareDocumentPosition(boundaryLabelLayer) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      screen.getAllByTestId('architecture-connection-label-bg')[0]
+    ).toHaveAttribute('fill', '#080a0f');
+  });
+
   it('keeps the arrowhead fixed-size while a connection is highlighted', () => {
     render(<SystemArchitectureDiagram />);
 
