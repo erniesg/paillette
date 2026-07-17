@@ -12,6 +12,10 @@ type Variables = {
 
 const apiKeys = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+export const MAX_ACTIVE_API_KEYS = 10;
+export const hasReachedApiKeyLimit = (activeCount: number) =>
+  activeCount >= MAX_ACTIVE_API_KEYS;
+
 const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(80).optional().default('Default key'),
 });
@@ -87,13 +91,13 @@ apiKeys.post('/api-keys', zValidator('json', createApiKeySchema), async (c) => {
     .bind(auth.userId)
     .first<{ count: number }>();
 
-  if ((activeCount?.count ?? 0) >= 1) {
+  if (hasReachedApiKeyLimit(activeCount?.count ?? 0)) {
     return c.json(
       {
         success: false,
         error: {
           code: 'API_KEY_LIMIT_REACHED',
-          message: 'Each user can have one active Paillette API key for now.',
+          message: `Each user can have up to ${MAX_ACTIVE_API_KEYS} active Paillette API keys.`,
         },
       },
       409
