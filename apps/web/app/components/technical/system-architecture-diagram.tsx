@@ -1,25 +1,44 @@
+import { useState } from 'react';
+
 type DiagramNodeProps = {
+  id: string;
   x: number;
   y: number;
   width: number;
   label: string;
   badge: string;
   tone: string;
+  active: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
 };
 
 function DiagramNode({
+  id,
   x,
   y,
   width,
   label,
   badge,
   tone,
+  active,
+  onActivate,
+  onDeactivate,
 }: DiagramNodeProps) {
   const labelWidth = width - 82;
   const shouldConstrainLabel = label.length * 7 > labelWidth;
 
   return (
-    <g>
+    <g
+      data-testid={`architecture-node-${id}`}
+      className={`architecture-node${active ? ' architecture-node-active' : ''}`}
+      tabIndex={0}
+      aria-label={`${label} component`}
+      onMouseEnter={onActivate}
+      onMouseLeave={onDeactivate}
+      onFocus={onActivate}
+      onBlur={onDeactivate}
+    >
       <rect
         x={x}
         y={y}
@@ -29,6 +48,7 @@ function DiagramNode({
         fill="#10131d"
         stroke={tone}
         strokeWidth="2"
+        className="architecture-node-shell"
       />
       <rect
         x={x + 14}
@@ -40,6 +60,7 @@ function DiagramNode({
         fillOpacity="0.16"
         stroke={tone}
         strokeOpacity="0.7"
+        className="architecture-node-badge"
       />
       <text
         x={x + 36}
@@ -115,7 +136,15 @@ function Boundary({
   );
 }
 
-function FlowLabel({ x, y, children }: { x: number; y: number; children: string }) {
+function FlowLabel({
+  x,
+  y,
+  children,
+}: {
+  x: number;
+  y: number;
+  children: string;
+}) {
   return (
     <g>
       <rect
@@ -147,18 +176,28 @@ function Connection({
   label,
   labelX,
   labelY,
+  active,
+  onActivate,
+  onDeactivate,
 }: {
   paths: string[];
   label: string;
   labelX: number;
   labelY: number;
+  active: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
 }) {
   return (
     <g
       data-testid="architecture-connection"
-      className="architecture-connection group"
+      className={`architecture-connection group${active ? ' architecture-connection-active' : ''}`}
       tabIndex={0}
       aria-label={`${label} connection`}
+      onMouseEnter={onActivate}
+      onMouseLeave={onDeactivate}
+      onFocus={onActivate}
+      onBlur={onDeactivate}
     >
       {paths.map((path) => (
         <path
@@ -181,12 +220,210 @@ function Connection({
           className="architecture-connection-line"
         />
       ))}
-      <FlowLabel x={labelX} y={labelY}>{label}</FlowLabel>
+      <FlowLabel x={labelX} y={labelY}>
+        {label}
+      </FlowLabel>
     </g>
   );
 }
 
+type ArchitectureConnection = {
+  paths: string[];
+  label: string;
+  labelX: number;
+  labelY: number;
+  nodeIds: string[];
+};
+
+const CONNECTIONS: ArchitectureConnection[] = [
+  {
+    paths: ['M 222 340 H 310'],
+    label: 'HTTPS search',
+    labelX: 266,
+    labelY: 329,
+    nodeIds: ['visitor-browser', 'remix-web-worker'],
+  },
+  {
+    paths: ['M 510 340 C 530 340 536 310 565 310'],
+    label: 'POST /search',
+    labelX: 535,
+    labelY: 322,
+    nodeIds: ['remix-web-worker', 'auth-quota'],
+  },
+  {
+    paths: ['M 660 350 V 390'],
+    label: 'validate + reserve',
+    labelX: 660,
+    labelY: 374,
+    nodeIds: ['auth-quota', 'query-router'],
+  },
+  {
+    paths: ['M 755 418 C 840 418 860 130 978 130'],
+    label: 'embed query',
+    labelX: 849,
+    labelY: 238,
+    nodeIds: ['query-router', 'jina-workers-ai'],
+  },
+  {
+    paths: ['M 1096 170 V 250 H 984 V 304', 'M 1096 250 H 1229 V 304'],
+    label: 'vector query',
+    labelX: 1148,
+    labelY: 242,
+    nodeIds: ['jina-workers-ai', 'vectorize-image-text', 'vectorize-captions'],
+  },
+  {
+    paths: ['M 755 438 C 820 438 812 524 878 524'],
+    label: 'metadata query',
+    labelX: 810,
+    labelY: 466,
+    nodeIds: ['query-router', 'd1-metadata-usage'],
+  },
+  {
+    paths: [
+      'M 984 384 V 436 C 984 470 810 470 760 580',
+      'M 1229 384 V 438 C 1229 468 848 460 760 592',
+      'M 878 524 C 818 524 818 604 760 604',
+    ],
+    label: 'ranked candidates',
+    labelX: 920,
+    labelY: 452,
+    nodeIds: [
+      'vectorize-image-text',
+      'vectorize-captions',
+      'd1-metadata-usage',
+      'rrf-hydration',
+    ],
+  },
+  {
+    paths: ['M 566 590 C 530 590 534 360 510 360'],
+    label: 'ranked JSON',
+    labelX: 530,
+    labelY: 470,
+    nodeIds: ['rrf-hydration', 'remix-web-worker'],
+  },
+  {
+    paths: ['M 222 360 C 250 360 244 688 318 688 H 1229 V 660'],
+    label: 'load images',
+    labelX: 760,
+    labelY: 678,
+    nodeIds: ['visitor-browser', 'artwork-assets'],
+  },
+];
+
+const NODES = [
+  {
+    id: 'visitor-browser',
+    x: 46,
+    y: 300,
+    width: 176,
+    label: 'Visitor browser',
+    badge: 'WEB',
+    tone: '#7dd3fc',
+  },
+  {
+    id: 'remix-web-worker',
+    x: 310,
+    y: 300,
+    width: 200,
+    label: 'Remix web Worker',
+    badge: 'UI',
+    tone: '#a78bfa',
+  },
+  {
+    id: 'auth-quota',
+    x: 565,
+    y: 270,
+    width: 190,
+    label: 'Auth + quota',
+    badge: 'KEY',
+    tone: '#c4b5fd',
+  },
+  {
+    id: 'query-router',
+    x: 565,
+    y: 390,
+    width: 190,
+    label: 'Query router',
+    badge: 'API',
+    tone: '#c4b5fd',
+  },
+  {
+    id: 'rrf-hydration',
+    x: 566,
+    y: 550,
+    width: 194,
+    label: 'RRF + hydration',
+    badge: 'RRF',
+    tone: '#c4b5fd',
+  },
+  {
+    id: 'jina-workers-ai',
+    x: 978,
+    y: 90,
+    width: 236,
+    label: 'Jina / Workers AI',
+    badge: 'AI',
+    tone: '#fbbf24',
+  },
+  {
+    id: 'vectorize-image-text',
+    x: 878,
+    y: 304,
+    width: 212,
+    label: 'Vectorize image + text',
+    badge: 'VEC',
+    tone: '#6ee7b7',
+  },
+  {
+    id: 'vectorize-captions',
+    x: 1134,
+    y: 304,
+    width: 190,
+    label: 'Vectorize captions',
+    badge: 'VEC',
+    tone: '#6ee7b7',
+  },
+  {
+    id: 'd1-metadata-usage',
+    x: 878,
+    y: 484,
+    width: 212,
+    label: 'D1 metadata + usage',
+    badge: 'D1',
+    tone: '#6ee7b7',
+  },
+  {
+    id: 'artwork-assets',
+    x: 1134,
+    y: 580,
+    width: 190,
+    label: 'Artwork assets',
+    badge: 'R2',
+    tone: '#6ee7b7',
+  },
+] as const;
+
 export function SystemArchitectureDiagram(): JSX.Element {
+  const [activeTarget, setActiveTarget] = useState<
+    { kind: 'node' | 'connection'; id: string } | undefined
+  >();
+
+  const activeConnection =
+    activeTarget?.kind === 'connection'
+      ? CONNECTIONS.find((connection) => connection.label === activeTarget.id)
+      : undefined;
+
+  const isNodeActive = (nodeId: string) =>
+    activeTarget?.kind === 'node'
+      ? activeTarget.id === nodeId
+      : (activeConnection?.nodeIds.includes(nodeId) ?? false);
+
+  const isConnectionActive = (connection: ArchitectureConnection) =>
+    activeTarget?.kind === 'connection'
+      ? activeTarget.id === connection.label
+      : activeTarget?.kind === 'node' &&
+        connection.nodeIds.includes(activeTarget.id);
+
   return (
     <figure
       aria-label="Paillette system architecture"
@@ -200,115 +437,144 @@ export function SystemArchitectureDiagram(): JSX.Element {
         className="block min-w-[960px]"
       >
         <defs>
-          <pattern id="architecture-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#94a3b8" strokeOpacity="0.055" />
+          <pattern
+            id="architecture-grid"
+            width="24"
+            height="24"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M 24 0 L 0 0 0 24"
+              fill="none"
+              stroke="#94a3b8"
+              strokeOpacity="0.055"
+            />
           </pattern>
           <marker
             id="architecture-arrow"
-            markerWidth="8"
-            markerHeight="8"
-            refX="7"
-            refY="4"
+            data-testid="architecture-arrow"
+            markerWidth="10"
+            markerHeight="10"
+            refX="9"
+            refY="5"
             orient="auto"
-            markerUnits="strokeWidth"
+            markerUnits="userSpaceOnUse"
           >
-            <path d="M 0 0 L 8 4 L 0 8 z" fill="context-stroke" />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
           </marker>
         </defs>
 
         <style>{`
-          .architecture-connection { cursor: pointer; outline: none; }
+          .architecture-connection,
+          .architecture-node { cursor: pointer; outline: none; }
           .architecture-connection-hit { pointer-events: stroke; }
           .architecture-connection-line,
           .architecture-connection-label,
-          .architecture-connection-label-bg {
-            transition: stroke 160ms ease, stroke-width 160ms ease, fill 160ms ease, filter 160ms ease;
+          .architecture-connection-label-bg,
+          .architecture-node-shell,
+          .architecture-node-badge {
+            transition: stroke 160ms cubic-bezier(0.16, 1, 0.3, 1), stroke-width 160ms cubic-bezier(0.16, 1, 0.3, 1), fill 160ms cubic-bezier(0.16, 1, 0.3, 1), filter 160ms cubic-bezier(0.16, 1, 0.3, 1);
           }
           .architecture-connection:hover .architecture-connection-line,
-          .architecture-connection:focus .architecture-connection-line {
+          .architecture-connection:focus .architecture-connection-line,
+          .architecture-connection-active .architecture-connection-line {
             stroke: #67e8f9;
             stroke-width: 3;
             filter: drop-shadow(0 0 5px rgba(103, 232, 249, 0.45));
           }
           .architecture-connection:hover .architecture-connection-label,
-          .architecture-connection:focus .architecture-connection-label { fill: #cffafe; }
+          .architecture-connection:focus .architecture-connection-label,
+          .architecture-connection-active .architecture-connection-label { fill: #cffafe; }
           .architecture-connection:hover .architecture-connection-label-bg,
-          .architecture-connection:focus .architecture-connection-label-bg { fill: #172033; }
+          .architecture-connection:focus .architecture-connection-label-bg,
+          .architecture-connection-active .architecture-connection-label-bg { fill: #172033; }
+          .architecture-node:hover .architecture-node-shell,
+          .architecture-node:focus .architecture-node-shell,
+          .architecture-node-active .architecture-node-shell {
+            fill: #172033;
+            stroke: #67e8f9;
+            stroke-width: 3;
+            filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.38));
+          }
+          .architecture-node:hover .architecture-node-badge,
+          .architecture-node:focus .architecture-node-badge,
+          .architecture-node-active .architecture-node-badge {
+            fill-opacity: 0.3;
+            stroke: #67e8f9;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .architecture-connection-line,
+            .architecture-connection-label,
+            .architecture-connection-label-bg,
+            .architecture-node-shell,
+            .architecture-node-badge { transition: none; }
+          }
         `}</style>
 
         <rect width="1400" height="760" fill="url(#architecture-grid)" />
 
-        <Boundary x={22} y={120} width={224} height={410} label="Client" tone="#7dd3fc" />
-        <Boundary x={278} y={34} width={520} height={684} label="Cloudflare edge" tone="#c4b5fd" />
-        <Boundary x={838} y={34} width={520} height={178} label="Model provider" tone="#fbbf24" />
-        <Boundary x={838} y={244} width={520} height={474} label="Cloudflare data" tone="#6ee7b7" />
-        <Boundary x={540} y={78} width={240} height={604} label="Hono API Worker" tone="#c4b5fd" />
+        <Boundary
+          x={22}
+          y={120}
+          width={224}
+          height={410}
+          label="Client"
+          tone="#7dd3fc"
+        />
+        <Boundary
+          x={278}
+          y={34}
+          width={520}
+          height={684}
+          label="Cloudflare edge"
+          tone="#c4b5fd"
+        />
+        <Boundary
+          x={838}
+          y={34}
+          width={520}
+          height={178}
+          label="Model provider"
+          tone="#fbbf24"
+        />
+        <Boundary
+          x={838}
+          y={244}
+          width={520}
+          height={474}
+          label="Cloudflare data"
+          tone="#6ee7b7"
+        />
+        <Boundary
+          x={540}
+          y={78}
+          width={240}
+          height={604}
+          label="Hono API Worker"
+          tone="#c4b5fd"
+        />
 
-        <DiagramNode x={46} y={300} width={176} label="Visitor browser" badge="WEB" tone="#7dd3fc" />
-        <DiagramNode x={310} y={300} width={200} label="Remix web Worker" badge="UI" tone="#a78bfa" />
-        <DiagramNode x={565} y={270} width={190} label="Auth + quota" badge="KEY" tone="#c4b5fd" />
-        <DiagramNode x={565} y={390} width={190} label="Query router" badge="API" tone="#c4b5fd" />
-        <DiagramNode x={566} y={550} width={194} label="RRF + hydration" badge="RRF" tone="#c4b5fd" />
+        {NODES.map((node) => (
+          <DiagramNode
+            key={node.id}
+            {...node}
+            active={isNodeActive(node.id)}
+            onActivate={() => setActiveTarget({ kind: 'node', id: node.id })}
+            onDeactivate={() => setActiveTarget(undefined)}
+          />
+        ))}
 
-        <DiagramNode x={978} y={90} width={236} label="Jina / Workers AI" badge="AI" tone="#fbbf24" />
-        <DiagramNode x={878} y={304} width={212} label="Vectorize image + text" badge="VEC" tone="#6ee7b7" />
-        <DiagramNode x={1134} y={304} width={190} label="Vectorize captions" badge="VEC" tone="#6ee7b7" />
-        <DiagramNode x={878} y={484} width={212} label="D1 metadata + usage" badge="D1" tone="#6ee7b7" />
-        <DiagramNode x={1134} y={580} width={190} label="Artwork assets" badge="R2" tone="#6ee7b7" />
-
-        <Connection paths={['M 222 340 H 310']} label="HTTPS search" labelX={266} labelY={329} />
-        <Connection
-          paths={['M 510 340 C 530 340 536 310 565 310']}
-          label="POST /search"
-          labelX={535}
-          labelY={322}
-        />
-        <Connection
-          paths={['M 660 350 V 390']}
-          label="validate + reserve"
-          labelX={660}
-          labelY={374}
-        />
-        <Connection
-          paths={['M 755 418 C 840 418 860 130 978 130']}
-          label="embed query"
-          labelX={849}
-          labelY={238}
-        />
-        <Connection
-          paths={['M 1096 170 V 250 H 984 V 304', 'M 1096 250 H 1229 V 304']}
-          label="vector query"
-          labelX={1148}
-          labelY={242}
-        />
-        <Connection
-          paths={['M 755 438 C 820 438 812 524 878 524']}
-          label="metadata query"
-          labelX={810}
-          labelY={466}
-        />
-        <Connection
-          paths={[
-            'M 984 384 V 436 C 984 470 810 470 760 580',
-            'M 1229 384 V 438 C 1229 468 848 460 760 592',
-            'M 878 524 C 818 524 818 604 760 604',
-          ]}
-          label="ranked candidates"
-          labelX={920}
-          labelY={452}
-        />
-        <Connection
-          paths={['M 566 590 C 530 590 534 360 510 360']}
-          label="ranked JSON"
-          labelX={530}
-          labelY={470}
-        />
-        <Connection
-          paths={['M 222 360 C 250 360 244 688 318 688 H 1229 V 660']}
-          label="load images"
-          labelX={760}
-          labelY={678}
-        />
+        {CONNECTIONS.map((connection) => (
+          <Connection
+            key={connection.label}
+            {...connection}
+            active={isConnectionActive(connection)}
+            onActivate={() =>
+              setActiveTarget({ kind: 'connection', id: connection.label })
+            }
+            onDeactivate={() => setActiveTarget(undefined)}
+          />
+        ))}
       </svg>
     </figure>
   );

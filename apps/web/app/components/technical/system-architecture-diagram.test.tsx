@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { SystemArchitectureDiagram } from './system-architecture-diagram';
 
@@ -68,5 +68,40 @@ describe('SystemArchitectureDiagram', () => {
         connection.querySelector('.architecture-connection-line')
       ).toBeInTheDocument();
     }
+  });
+
+  it('keeps the arrowhead fixed-size while a connection is highlighted', () => {
+    render(<SystemArchitectureDiagram />);
+
+    expect(screen.getByTestId('architecture-arrow')).toHaveAttribute(
+      'markerUnits',
+      'userSpaceOnUse'
+    );
+  });
+
+  it('highlights the components participating in a hovered connection', () => {
+    render(<SystemArchitectureDiagram />);
+
+    fireEvent.mouseEnter(screen.getByLabelText('POST /search connection'));
+
+    expect(
+      screen.getByTestId('architecture-node-remix-web-worker')
+    ).toHaveClass('architecture-node-active');
+    expect(screen.getByTestId('architecture-node-auth-quota')).toHaveClass(
+      'architecture-node-active'
+    );
+  });
+
+  it('highlights connected paths when a component is hovered', () => {
+    render(<SystemArchitectureDiagram />);
+
+    fireEvent.mouseEnter(screen.getByTestId('architecture-node-query-router'));
+
+    expect(screen.getByLabelText('embed query connection')).toHaveClass(
+      'architecture-connection-active'
+    );
+    expect(screen.getByLabelText('metadata query connection')).toHaveClass(
+      'architecture-connection-active'
+    );
   });
 });
