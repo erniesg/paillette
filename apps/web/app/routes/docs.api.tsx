@@ -1159,12 +1159,31 @@ const getCurrentReturnTo = () =>
 
 const maskKey = (key: string | null) => key || 'plt_stg_your_api_key';
 
+export const canCreateDocsApiKey = (isPending: boolean) => !isPending;
+
+export const getDocsApiKeyHint = (hasExistingKeys: boolean) =>
+  hasExistingKeys
+    ? 'Existing keys only show their prefix and cannot be recovered. Create a new key to load its one-time secret into the top bar and run requests now.'
+    : 'Create a key to load its one-time secret into the top bar and run requests now.';
+
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 
 const defaultDailyUsage = { used: 0, quota: 100 };
 const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultExtractUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
+
+export const getQuickSearchEndpoint = () =>
+  endpoints.find((endpoint) => endpoint.path === defaultBuilderEndpointPath)!;
+
+export const isInlineTryItEndpoint = (endpointId: string) =>
+  endpointId === 'search-text';
+
+export const getQuickSearchInitialValues = () => ({
+  ...getInitialEndpointValues(getQuickSearchEndpoint()),
+  query: 'batik textile pattern',
+  minScore: '0.2',
+});
 
 const apiBaseByEnvironment = {
   stg: 'https://paillette-api-stg.berlayar.ai/api/v1',
@@ -1842,9 +1861,9 @@ export const buildDocsMarkdown = (apiBase: string) => {
     '',
     '## Authentication',
     '',
-    'Server-to-server calls use `X-API-Key: <key>`. Source discovery and public collection reads are public; search, artwork lookup, translation, extract, and all management writes require a key.',
+    'Server-to-server calls use `X-API-Key: <key>`. Browser and OAuth clients use a WorkOS bearer token. In allowlist mode, the signed-in identity or API-key owner must also have active Paillette access approval; unapproved requests return `403 ACCESS_PENDING`.',
     '',
-    'MCP clients connect to `/api/v1/mcp` using Streamable HTTP JSON-RPC. The protected resource metadata is exposed at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/api/v1/mcp`. API keys can call all available tools; OAuth tokens need `mcp:all` or the relevant grouped scopes (`mcp:read`, `mcp:write`, `artworks:read`, `artworks:write`, `collections:read`, `collections:write`, `translations:create`, `extract:create`).',
+    'MCP clients connect to `/api/v1/mcp` using Streamable HTTP JSON-RPC. The protected resource metadata is exposed at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/api/v1/mcp`. Approved API-key owners can call all available tools; approved OAuth identities need `mcp:all` or the relevant grouped scopes (`mcp:read`, `mcp:write`, `artworks:read`, `artworks:write`, `collections:read`, `collections:write`, `translations:create`, `extract:create`).',
     '',
     '## Usage',
     '',
@@ -1925,6 +1944,7 @@ export const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
     title: 'Start',
     items: [
       { href: '#overview', id: 'overview', label: 'Overview' },
+      { href: '#try-search', id: 'try-search', label: 'Try search' },
       {
         href: '#authentication',
         id: 'authentication',
@@ -2769,6 +2789,9 @@ export default function ApiDocsPage() {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
+  const [quickSearchQuery, setQuickSearchQuery] = useState(
+    getQuickSearchInitialValues().query
+  );
   const [apiEnvironment, setApiEnvironment] = useState<ApiEnvironment>(() =>
     detectApiEnvironment(apiBase)
   );
@@ -2834,7 +2857,6 @@ export default function ApiDocsPage() {
   });
 
   const keys = apiKeysQuery.data?.keys ?? [];
-  const activeKey = keys.find((key) => key.status === 'active');
   const liveApiKey = testApiKey.trim();
   const shownApiKey = liveApiKey || maskKey(null);
   const selectedApiBase = apiBaseByEnvironment[apiEnvironment];
@@ -3063,6 +3085,60 @@ export default function ApiDocsPage() {
     },
   });
 
+  const quickSearchMutation = useMutation({
+    mutationFn: async () => {
+      const query = quickSearchQuery.trim();
+      if (!liveApiKey) {
+        throw new Error('Create or paste an API key in the top bar first.');
+      }
+      if (!query) throw new Error('Enter a search query.');
+
+      const endpoint = getQuickSearchEndpoint();
+      const startedAt = performance.now();
+      const response = await fetch('/api/docs/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiEnv: apiEnvironment,
+          apiKey: liveApiKey,
+          endpointPath: endpoint.path,
+          values: {
+            ...getQuickSearchInitialValues(),
+            query,
+          },
+        }),
+      });
+      const contentType = response.headers.get('content-type') ?? '';
+      const payload = contentType.includes('application/json')
+        ? await response.json()
+        : await response.text();
+      const apiPayload = payload as ApiResponse<unknown>;
+
+      if (
+        !response.ok ||
+        (typeof apiPayload === 'object' &&
+          apiPayload !== null &&
+          'success' in apiPayload &&
+          apiPayload.success === false)
+      ) {
+        throw new Error(
+          apiPayload.error?.message || `Request failed (${response.status})`
+        );
+      }
+
+      return {
+        durationMs: Math.max(1, Math.round(performance.now() - startedAt)),
+        endpointPath: endpoint.path,
+        payload,
+        status: response.status,
+        statusText: response.statusText || 'OK',
+      } satisfies RailRunResult;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
+    },
+  });
+
   useEffect(() => {
     const sections = Array.from(
       document.querySelectorAll<HTMLElement>('[data-doc-section]')
@@ -3273,12 +3349,43 @@ export default function ApiDocsPage() {
           <StartSections
             copiedValue={copiedValue}
             docsMarkdown={docsMarkdown}
+            isQuickSearchRunning={quickSearchMutation.isPending}
             onCopy={copyText}
+            onQuickSearch={() => quickSearchMutation.mutate()}
+            onQuickSearchQueryChange={setQuickSearchQuery}
+            quickSearchError={
+              quickSearchMutation.error instanceof Error
+                ? quickSearchMutation.error.message
+                : null
+            }
+            quickSearchQuery={quickSearchQuery}
+            quickSearchResult={quickSearchMutation.data ?? null}
             selectedApiBase={selectedApiBase}
+            hasApiKey={Boolean(liveApiKey)}
           />
 
           {endpointDocs.map((doc) => (
-            <EndpointSection key={doc.id} doc={doc} />
+            <EndpointSection
+              key={doc.id}
+              doc={doc}
+              inlineTryIt={
+                isInlineTryItEndpoint(doc.id)
+                  ? {
+                      error:
+                        quickSearchMutation.error instanceof Error
+                          ? quickSearchMutation.error.message
+                          : null,
+                      hasApiKey: Boolean(liveApiKey),
+                      isRunning: quickSearchMutation.isPending,
+                      onQueryChange: setQuickSearchQuery,
+                      onRun: () => quickSearchMutation.mutate(),
+                      query: quickSearchQuery,
+                      result: quickSearchMutation.data ?? null,
+                      selectedApiBase,
+                    }
+                  : undefined
+              }
+            />
           ))}
 
           <McpSections
@@ -3288,7 +3395,6 @@ export default function ApiDocsPage() {
           />
 
           <AccountSections
-            activeKey={activeKey}
             apiKeysLoading={apiKeysQuery.isLoading}
             apiKeysError={apiKeysQuery.isError}
             copiedValue={copiedValue}
@@ -3350,12 +3456,26 @@ export default function ApiDocsPage() {
 function StartSections({
   copiedValue,
   docsMarkdown,
+  hasApiKey,
+  isQuickSearchRunning,
   onCopy,
+  onQuickSearch,
+  onQuickSearchQueryChange,
+  quickSearchError,
+  quickSearchQuery,
+  quickSearchResult,
   selectedApiBase,
 }: {
   copiedValue: string | null;
   docsMarkdown: string;
+  hasApiKey: boolean;
+  isQuickSearchRunning: boolean;
   onCopy: (id: string, value: string) => void;
+  onQuickSearch: () => void;
+  onQuickSearchQueryChange: (value: string) => void;
+  quickSearchError: string | null;
+  quickSearchQuery: string;
+  quickSearchResult: RailRunResult | null;
   selectedApiBase: string;
 }) {
   return (
@@ -3396,16 +3516,98 @@ function StartSections({
       </section>
 
       <section
+        id="try-search"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <SectionHeading
+            title="Try text search"
+            description="Run the primary collection query against the selected environment."
+          />
+          <code
+            className="pb-3 text-xs text-[var(--docs-code)]"
+            style={monoStyle}
+          >
+            POST /orgs/ngs/search/text
+          </code>
+        </div>
+
+        <form
+          className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onQuickSearch();
+          }}
+        >
+          <label className="grid gap-1.5">
+            <span
+              className="text-[10px] uppercase tracking-[0.16em] text-[var(--app-faint)]"
+              style={monoStyle}
+            >
+              Query
+            </span>
+            <input
+              value={quickSearchQuery}
+              onChange={(event) => onQuickSearchQueryChange(event.target.value)}
+              placeholder="batik textile pattern"
+              className="h-11 rounded-md border border-[var(--app-line-strong)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)]"
+              aria-label="Try text search query"
+            />
+          </label>
+          <ActionButton
+            className="h-11 self-end px-5"
+            disabled={isQuickSearchRunning || !hasApiKey}
+            onClick={onQuickSearch}
+          >
+            {isQuickSearchRunning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            Run search
+          </ActionButton>
+        </form>
+
+        <div
+          className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-muted)]"
+          style={monoStyle}
+        >
+          <span>
+            {hasApiKey ? 'API key ready' : 'Create or paste a key above'}
+          </span>
+          <span>{selectedApiBase}</span>
+          {quickSearchResult && (
+            <span className="text-[var(--docs-success)]">
+              {quickSearchResult.status} · {quickSearchResult.durationMs} ms
+            </span>
+          )}
+        </div>
+
+        {quickSearchError && <Notice tone="error">{quickSearchError}</Notice>}
+        {quickSearchResult && (
+          <CodePanel
+            className="mt-4"
+            id="quick-search-response"
+            maxHeight="420px"
+            value={stringify(quickSearchResult.payload)}
+            highlighted
+          />
+        )}
+      </section>
+
+      <section
         id="authentication"
         data-doc-section
         className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
       >
         <SectionHeading title="Authentication" />
         <p className="text-sm leading-6 text-[var(--app-muted)]">
-          Server-to-server calls use <CodeText>X-API-Key</CodeText>. Public
-          source discovery and collection reads work without a key; search,
-          artwork lookup, translation, extract, and management writes require
-          one.
+          Server-to-server calls use <CodeText>X-API-Key</CodeText>. Browser and
+          OAuth clients use a WorkOS bearer token. In{' '}
+          <CodeText>allowlist</CodeText> mode, the signed-in identity or API-key
+          owner must also have active Paillette access approval; unapproved
+          requests return <CodeText>403 ACCESS_PENDING</CodeText>.
         </p>
         <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
           MCP clients connect to <CodeText>/api/v1/mcp</CodeText> using
@@ -3414,10 +3616,10 @@ function StartSections({
           <CodeText>/.well-known/oauth-protected-resource/api/v1/mcp</CodeText>.
         </p>
         <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
-          API keys can call all available MCP tools. OAuth tokens need{' '}
-          <CodeText>mcp:all</CodeText> or matching grouped scopes such as{' '}
-          <CodeText>mcp:read</CodeText>, <CodeText>mcp:write</CodeText>,{' '}
-          <CodeText>artworks:read</CodeText>,{' '}
+          Approved API-key owners can call all available MCP tools. Approved
+          OAuth identities need <CodeText>mcp:all</CodeText> or matching grouped
+          scopes such as <CodeText>mcp:read</CodeText>,{' '}
+          <CodeText>mcp:write</CodeText>, <CodeText>artworks:read</CodeText>,{' '}
           <CodeText>collections:write</CodeText>,{' '}
           <CodeText>translations:create</CodeText>, or{' '}
           <CodeText>extract:create</CodeText>.
@@ -3482,7 +3684,24 @@ function DocsNav({ activeSectionId }: { activeSectionId: string }) {
   );
 }
 
-function EndpointSection({ doc }: { doc: EndpointDoc }) {
+type InlineTextSearchTryIt = {
+  error: string | null;
+  hasApiKey: boolean;
+  isRunning: boolean;
+  onQueryChange: (value: string) => void;
+  onRun: () => void;
+  query: string;
+  result: RailRunResult | null;
+  selectedApiBase: string;
+};
+
+function EndpointSection({
+  doc,
+  inlineTryIt,
+}: {
+  doc: EndpointDoc;
+  inlineTryIt?: InlineTextSearchTryIt;
+}) {
   const endpoint = doc.endpoint;
   const pathFields = getEndpointPathFields(endpoint);
   const bodyFields = getEndpointBodyFields(endpoint);
@@ -3532,7 +3751,95 @@ function EndpointSection({ doc }: { doc: EndpointDoc }) {
         <SchemaDisclosure title="Body" fields={bodyFields} defaultOpen />
         <SchemaDisclosure title="Response" fields={doc.responseFields} />
       </div>
+
+      {inlineTryIt && <InlineTextSearchConsole {...inlineTryIt} />}
     </section>
+  );
+}
+
+function InlineTextSearchConsole({
+  error,
+  hasApiKey,
+  isRunning,
+  onQueryChange,
+  onRun,
+  query,
+  result,
+  selectedApiBase,
+}: InlineTextSearchTryIt) {
+  return (
+    <div className="mt-6 border-y border-[var(--app-line)] py-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading
+          title="Try this endpoint"
+          description="Change the query, run the live request, and inspect the response below."
+        />
+        <code className="pb-3 text-xs text-[var(--docs-code)]" style={monoStyle}>
+          POST /orgs/ngs/search/text
+        </code>
+      </div>
+
+      <form
+        className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <label className="grid gap-1.5">
+          <span
+            className="text-[10px] uppercase tracking-[0.16em] text-[var(--app-faint)]"
+            style={monoStyle}
+          >
+            Query
+          </span>
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="batik textile pattern"
+            className="h-11 rounded-md border border-[var(--app-line-strong)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)]"
+            aria-label="Text search endpoint query"
+          />
+        </label>
+        <ActionButton
+          className="h-11 self-end px-5"
+          disabled={isRunning || !hasApiKey || !query.trim()}
+          onClick={onRun}
+        >
+          {isRunning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+          Run request
+        </ActionButton>
+      </form>
+
+      <div
+        className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-muted)]"
+        style={monoStyle}
+      >
+        <span>{hasApiKey ? 'API key ready' : 'Create or paste a key above'}</span>
+        <span>{selectedApiBase}</span>
+        {result && (
+          <span className="text-[var(--docs-success)]">
+            {result.status} · {result.durationMs} ms
+          </span>
+        )}
+      </div>
+
+      {error && <Notice tone="error">{error}</Notice>}
+      {result && (
+        <CodePanel
+          className="mt-4"
+          id="text-search-endpoint-response"
+          label="Live response"
+          maxHeight="520px"
+          value={stringify(result.payload)}
+          highlighted
+        />
+      )}
+    </div>
   );
 }
 
@@ -3560,10 +3867,11 @@ function McpSections({
           <CodeText>/.well-known/oauth-protected-resource/api/v1/mcp</CodeText>.
         </p>
         <p className="mb-4 text-sm leading-6 text-[var(--app-muted)]">
-          API keys can call all exposed tools. OAuth tokens need{' '}
-          <CodeText>mcp:all</CodeText> or matching grouped scopes such as{' '}
-          <CodeText>mcp:read</CodeText>, <CodeText>mcp:write</CodeText>,{' '}
-          <CodeText>artworks:read</CodeText>,{' '}
+          In allowlist mode, the API-key owner or OAuth identity must be
+          approved. Approved API-key owners can call all exposed tools. Approved
+          OAuth identities need <CodeText>mcp:all</CodeText> or matching grouped
+          scopes such as <CodeText>mcp:read</CodeText>,{' '}
+          <CodeText>mcp:write</CodeText>, <CodeText>artworks:read</CodeText>,{' '}
           <CodeText>collections:write</CodeText>,{' '}
           <CodeText>translations:create</CodeText>, or{' '}
           <CodeText>extract:create</CodeText>.
@@ -3612,7 +3920,6 @@ function McpSections({
 }
 
 function AccountSections({
-  activeKey,
   apiKeysError,
   apiKeysLoading,
   copiedValue,
@@ -3638,9 +3945,6 @@ function AccountSections({
   usageErrorMessage,
   user,
 }: {
-  activeKey:
-    | { id: string; key_prefix: string; name: string; status: string }
-    | undefined;
   apiKeysError: boolean;
   apiKeysLoading: boolean;
   copiedValue: string | null;
@@ -3729,15 +4033,16 @@ function AccountSections({
                 <input
                   value={keyName}
                   onChange={(event) => onKeyNameChange(event.target.value)}
-                  disabled={
-                    Boolean(activeKey) || createApiKeyMutation.isPending
-                  }
+                  disabled={createApiKeyMutation.isPending}
                   className="h-10 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)] disabled:opacity-50"
                 />
               </label>
+              <p className="mt-2 text-xs leading-5 text-[var(--app-faint)]">
+                {getDocsApiKeyHint(keys.some((key) => key.status === 'active'))}
+              </p>
               <ActionButton
                 className="mt-3 w-full justify-center"
-                disabled={Boolean(activeKey) || createApiKeyMutation.isPending}
+                disabled={!canCreateDocsApiKey(createApiKeyMutation.isPending)}
                 onClick={() => createApiKeyMutation.mutate()}
               >
                 {createApiKeyMutation.isPending ? (

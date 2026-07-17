@@ -8,6 +8,7 @@
     "**/.client/**/*.ts",
     "**/.client/**/*.tsx"
   ],
+  "exclude": ["build", "node_modules"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["@remix-run/cloudflare", "vite/client", "vitest/globals"],
@@ -17,7 +18,7 @@
     "resolveJsonModule": true,
     "target": "ES2022",
     "strict": true,
-    "allowJs": true,
+    "allowJs": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",

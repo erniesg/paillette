@@ -22,7 +22,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function LoginPage() {
-  const { login, resetPassword, isLogtoConfigured } = useUser();
+  const { login, resetPassword, isWorkOSConfigured } = useUser();
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -93,7 +93,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 onClick={handleSignIn}
-                disabled={isLoading || isResetting || !isLogtoConfigured}
+                disabled={isLoading || isResetting || !isWorkOSConfigured}
                 className="w-full"
               >
                 {isLoading ? (
@@ -113,7 +113,7 @@ export default function LoginPage() {
                 type="button"
                 variant="outline"
                 onClick={handleResetPassword}
-                disabled={isLoading || isResetting || !isLogtoConfigured}
+                disabled={isLoading || isResetting || !isWorkOSConfigured}
                 className="w-full"
               >
                 {isResetting ? (
@@ -129,9 +129,9 @@ export default function LoginPage() {
                 )}
               </Button>
 
-              {!isLogtoConfigured && (
+              {!isWorkOSConfigured && (
                 <p className="text-xs text-center text-red-400">
-                  Logto is not configured for this environment.
+                  WorkOS is not configured for this environment.
                 </p>
               )}
 

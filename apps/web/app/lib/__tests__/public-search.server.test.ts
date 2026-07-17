@@ -1,10 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
+  buildLockedSearchPreview,
   buildPublicTextSearchCacheKey,
   isHiddenPublicNgsArtwork,
   resolvePublicSearchOrgId,
 } from '../public-search.server';
+
+describe('buildLockedSearchPreview', () => {
+  it('returns synthetic tiles without real artwork data', () => {
+    const payload = buildLockedSearchPreview({
+      orgId: 'ngs',
+      query: 'blue ceramic jugs',
+      count: 6,
+    });
+
+    expect(payload.success).toBe(true);
+    expect(payload.data?.count).toBe(6);
+    expect(payload.data?.results).toHaveLength(6);
+    expect(payload.data?.results[0]).toMatchObject({
+      id: 'locked-preview-1',
+      title: 'Approved access required',
+      artist: 'Sign in to reveal this result',
+      similarity: 0,
+    });
+    expect(payload.data?.results[0]?.imageUrl).toMatch(/^data:image\/svg\+xml/);
+    expect(JSON.stringify(payload)).not.toContain('blue ceramic jugs');
+  });
+});
 
 describe('isHiddenPublicNgsArtwork', () => {
   it('hides Roots-only museum accessions when they point at Roots records', () => {

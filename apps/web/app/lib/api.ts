@@ -59,6 +59,8 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 const API_BASE = `${API_URL}/api/v1`;
+const SESSION_API_BASE =
+  typeof window === 'undefined' ? API_BASE : '/api/backend';
 
 export const getPublicApiBaseUrl = () => API_BASE;
 
@@ -207,9 +209,14 @@ const normalizeArtwork = (artwork: Artwork): Artwork => {
 
 class ApiClient {
   private baseUrl: string;
+  private defaultHeaders: Record<string, string>;
 
-  constructor(baseUrl: string = API_BASE) {
+  constructor(
+    baseUrl: string = API_BASE,
+    defaultHeaders: Record<string, string> = {}
+  ) {
     this.baseUrl = baseUrl;
+    this.defaultHeaders = defaultHeaders;
   }
 
   private async getAuthHeaders(
@@ -489,7 +496,9 @@ class ApiClient {
     const orgPath = UUID_PATTERN.test(resolvedOrgId)
       ? `/orgs/${resolvedOrgId}`
       : `/orgs/slug/${resolvedOrgId}`;
-    const response = await fetch(`${this.baseUrl}${orgPath}`);
+    const response = await fetch(`${this.baseUrl}${orgPath}`, {
+      headers: this.defaultHeaders,
+    });
     const data: ApiResponse<Org> = await response.json();
 
     if (!data.success || !data.data) {
@@ -528,7 +537,8 @@ class ApiClient {
    */
   async getArtwork(orgId: string, artworkId: string): Promise<Artwork> {
     const response = await fetch(
-      `${this.baseUrl}/orgs/${orgId}/artworks/${artworkId}`
+      `${this.baseUrl}/orgs/${orgId}/artworks/${artworkId}`,
+      { headers: this.defaultHeaders }
     );
     const data: ApiResponse<Artwork> = await response.json();
 
@@ -1046,11 +1056,20 @@ const isE2ETest =
   (process.env.E2E_TEST_MODE === 'true' ||
     process.env.PLAYWRIGHT_TEST_MODE === 'true');
 
-export const apiClient = isE2ETest ? new MockApiClient() : new ApiClient();
+export const apiClient = isE2ETest
+  ? new MockApiClient()
+  : new ApiClient(SESSION_API_BASE);
 
-export const getApiClientForRequest = (request: Request) =>
+export const getApiClientForRequest = (
+  request: Request,
+  options?: { accessToken?: string | null; apiBaseUrl?: string }
+) =>
   isE2ETest
     ? new MockApiClient()
     : new ApiClient(
-        `${getApiUrlForHostname(new URL(request.url).hostname)}/api/v1`
+        options?.apiBaseUrl ||
+          `${getApiUrlForHostname(new URL(request.url).hostname)}/api/v1`,
+        options?.accessToken
+          ? { Authorization: `Bearer ${options.accessToken}` }
+          : {}
       );

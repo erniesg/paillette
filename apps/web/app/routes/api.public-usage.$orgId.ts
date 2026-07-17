@@ -5,15 +5,17 @@ import {
   buildPublicSearchHeaders,
   getApiBaseUrl,
   getServerEnv,
-  publicSearchConfigError,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
+import {
+  withWorkOSResourceSession,
+  type WorkOSSession,
+} from '~/lib/workos-auth.server';
 
-export const action = async ({
-  context,
-  params,
-  request,
-}: ActionFunctionArgs) => {
+const handleUsageEvent = async (
+  { context, params, request }: ActionFunctionArgs,
+  session: WorkOSSession
+) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -29,10 +31,22 @@ export const action = async ({
   }
 
   const env = getServerEnv(context);
-  const headers = buildPublicSearchHeaders(request, env, 'application/json');
-  if (!headers) {
-    return publicSearchConfigError();
+  if (!session.accessToken) {
+    return json<ApiResponse>(
+      {
+        success: true,
+        meta: { timestamp: new Date().toISOString() },
+      },
+      {
+        headers: { 'Cache-Control': 'private, no-store' },
+      }
+    );
   }
+  const headers = buildPublicSearchHeaders(
+    request,
+    session.accessToken,
+    'application/json'
+  );
 
   let body: Record<string, unknown>;
   try {
@@ -87,3 +101,8 @@ export const action = async ({
     },
   });
 };
+
+export const action = (args: ActionFunctionArgs) =>
+  withWorkOSResourceSession(args as any, (session) =>
+    handleUsageEvent(args, session)
+  );

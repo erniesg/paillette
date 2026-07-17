@@ -7,12 +7,18 @@ import type {
   ArtworkSearchResult,
 } from '~/types';
 import {
+  buildLockedSearchPreview,
+  buildPublicSearchHeaders,
   getApiBaseUrl,
   getServerEnv,
   isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
+import {
+  withWorkOSResourceSession,
+  type WorkOSSession,
+} from '~/lib/workos-auth.server';
 
 const clamp = (
   value: string | null,
@@ -117,11 +123,10 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
   };
 };
 
-export const loader = async ({
-  context,
-  params,
-  request,
-}: LoaderFunctionArgs) => {
+const handleBrowse = async (
+  { context, params, request }: LoaderFunctionArgs,
+  session: WorkOSSession
+) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -146,6 +151,33 @@ export const loader = async ({
     ? url.searchParams.get('sort_order') || 'asc'
     : 'asc';
 
+  if (!session.accessToken) {
+    const preview = buildLockedSearchPreview({
+      orgId,
+      count: Math.min(limit, 30),
+    });
+    return json(
+      {
+        ...preview,
+        data: preview.data
+          ? {
+              ...preview.data,
+              total: preview.data.count,
+              limit,
+              offset,
+              hasMore: false,
+            }
+          : undefined,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'X-Paillette-Search-Access': 'locked',
+        },
+      }
+    );
+  }
+
   const env = getServerEnv(context);
   const resolvedOrgId = resolvePublicSearchOrgId(orgId);
   const apiUrl = new URL(
@@ -157,7 +189,9 @@ export const loader = async ({
   apiUrl.searchParams.set('sort_by', sortBy);
   apiUrl.searchParams.set('sort_order', sortOrder);
 
-  const response = await fetch(apiUrl.toString());
+  const response = await fetch(apiUrl.toString(), {
+    headers: buildPublicSearchHeaders(request, session.accessToken),
+  });
   const payload = (await response.json()) as ApiResponse<Artwork[]> & {
     pagination?: {
       total?: number;
@@ -175,7 +209,7 @@ export const loader = async ({
     .filter((artwork) => !isHiddenPublicNgsArtwork(artwork as any))
     .map((artwork) => mapArtworkToSearchResult(artwork));
 
-  await logPublicUsageEvent(request, env, {
+  await logPublicUsageEvent(request, env, session.accessToken, {
     eventType: 'browse',
     queryType: 'public_browse',
     orgId: resolvedOrgId,
@@ -212,3 +246,6 @@ export const loader = async ({
     },
   } satisfies ApiResponse);
 };
+
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSResourceSession(args, (session) => handleBrowse(args, session));

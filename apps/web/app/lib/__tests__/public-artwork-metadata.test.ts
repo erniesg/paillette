@@ -700,7 +700,7 @@ describe('getPublicDescription', () => {
     expect(hasPublicSourceMismatch(artwork)).toBe(false);
     expect(getPublicTitle(artwork)).toBe('Lilies with Carps');
     expect(getPublicImageUrl(artwork)).toBe(
-      'https://paillette-api-stg.berlayar.ai/api/v1/assets/bf72b916-8d6c-4c24-be94-8d8b496df029/content'
+      '/api/backend/assets/bf72b916-8d6c-4c24-be94-8d8b496df029/content'
     );
     expect(getPublicCatalogueRows(artwork)).toEqual([
       {
@@ -714,6 +714,15 @@ describe('getPublicDescription', () => {
         sourceLabel: 'Roots NHB',
       },
     ]);
+  });
+
+  it('keeps external catalogue images on their source origin', () => {
+    expect(
+      getPublicImageUrl({
+        id: 'external-image',
+        imageUrl: 'https://images.example/artwork.jpg',
+      })
+    ).toBe('https://images.example/artwork.jpg');
   });
 
   it('does not suppress app assets for harmless title article differences', () => {
@@ -735,7 +744,7 @@ describe('getPublicDescription', () => {
 
     expect(hasPublicSourceMismatch(artwork)).toBe(false);
     expect(getPublicImageUrl(artwork)).toBe(
-      'https://paillette-api-stg.berlayar.ai/api/v1/assets/henri/content'
+      '/api/backend/assets/henri/content'
     );
   });
 
@@ -764,7 +773,7 @@ describe('getPublicDescription', () => {
 
     expect(hasPublicSourceMismatch(artwork)).toBe(false);
     expect(getPublicImageUrl(artwork)).toBe(
-      'https://paillette-api-stg.berlayar.ai/api/v1/assets/a49cb2bf/content'
+      '/api/backend/assets/a49cb2bf/content'
     );
     expect(getPublicDescriptionDetails(artwork)).toEqual({
       source: 'roots',

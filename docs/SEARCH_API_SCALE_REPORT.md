@@ -1,13 +1,14 @@
 # Search API Auth, Quota, and Scale Report
 
-Last updated: 2026-05-23.
+Last updated: 2026-07-17.
 
 ## Current Rule
 
-NGS search is now registered-only at the API layer:
+NGS search is authenticated and access-gated at the API layer:
 
-- `POST /api/v1/orgs/:orgId/search/text` requires a Logto bearer token, a personal API key, or the non-production dev user headers.
-- Anonymous requests return `401 UNAUTHORIZED`.
+- `POST /api/v1/orgs/:orgId/search/text` requires a WorkOS bearer token, a personal API key, or the non-production dev user headers.
+- In the default `allowlist` mode, the WorkOS identity or personal API-key owner must have an active search-access approval. Authenticated but unapproved requests return `403 ACCESS_PENDING` before search or quota work begins.
+- Anonymous requests return `401 AUTHENTICATION_REQUIRED`.
 - Valid signed-in users are tracked as `principal_type=user`.
 - Valid API keys are tracked as `principal_type=api_key`.
 - The daily quota defaults to `DAILY_FREE_QUERY_LIMIT` or `100`, using the current UTC date from `new Date().toISOString().slice(0, 10)`.
@@ -27,6 +28,7 @@ pnpm --filter @paillette/api exec vitest run tests/routes/search.test.ts --confi
 Covered behavior:
 
 - Anonymous text search returns `401`.
+- Authenticated but unapproved access returns `403` without quota or usage writes.
 - Authenticated text search returns `success: true` and `data.results[]`.
 - Successful searches include `X-RateLimit-Limit` and `X-RateLimit-Remaining`.
 - `api_usage_daily` increments exactly once per successful query.
@@ -34,6 +36,7 @@ Covered behavior:
 - `api_usage_events` records method, path, query type, org id, auth kind, and Cloudflare/request metadata fields.
 - `artwork_usage_events` records result artwork ids, ranks, and scores.
 - API key calls are tracked as `principal_type=api_key`.
+- Existing personal API keys remain valid when their owning internal user is approved; changing the identity provider does not rotate or reissue them.
 - 110 concurrent requests against a 100/day quota produce exactly 100 successes and 10 `429 DAILY_QUOTA_EXCEEDED` responses in the fake D1 test harness.
 - Quota resets across UTC dates.
 

@@ -1,13 +1,5 @@
-import type { MetaFunction } from '@remix-run/cloudflare';
-import { LogtoCallback } from '~/components/auth/logto-callback';
+import type { LoaderFunctionArgs } from '@remix-run/cloudflare';
+import { handleWorkOSCallback } from '~/lib/workos-auth.server';
 
-export const meta: MetaFunction = () => {
-  return [
-    { title: 'Signing In - Paillette' },
-    { name: 'description', content: 'Completing your Paillette sign in' },
-  ];
-};
-
-export default function CallbackPage() {
-  return <LogtoCallback />;
-}
+export const loader = (args: LoaderFunctionArgs): Promise<any> =>
+  handleWorkOSCallback(args);

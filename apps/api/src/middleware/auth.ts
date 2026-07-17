@@ -2,6 +2,14 @@ import type { Context, MiddlewareHandler, Next } from 'hono';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import type { Env } from '../index';
 import { generateId, generateToken, hashApiKey } from '../utils/crypto';
+import { verifyIdentityToken } from '../auth/identity-token';
+import {
+  D1SearchAccessRepository,
+  parseSearchAccessMode,
+  resolveSearchAccess,
+  type GrantedSearchAccessDecision,
+  type SearchAccessDecision,
+} from '../auth/search-access';
 
 export type PrincipalKind = 'user' | 'api_key';
 
@@ -12,6 +20,9 @@ export interface AuthPrincipal {
   name?: string;
   apiKeyId?: string;
   scopes: string[];
+  externalIssuer?: string;
+  externalSubject?: string;
+  searchAccess?: GrantedSearchAccessDecision;
 }
 
 type Variables = {
@@ -55,6 +66,48 @@ const getScopes = (payload: JWTPayload) => {
   const scope = payload.scope;
   return typeof scope === 'string' ? scope.split(' ').filter(Boolean) : [];
 };
+
+class AccessDecisionError extends Error {
+  constructor(
+    readonly status: 401 | 403,
+    readonly code:
+      | 'AUTHENTICATION_REQUIRED'
+      | 'ACCESS_PENDING'
+      | 'IDENTITY_BINDING_REQUIRED',
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+const getAccessErrorMessage = (code: AccessDecisionError['code']) => {
+  if (code === 'ACCESS_PENDING') return 'This account is awaiting approval';
+  if (code === 'IDENTITY_BINDING_REQUIRED') {
+    return 'This account requires identity review';
+  }
+  return 'Authentication is required';
+};
+
+const accessErrorResponse = (c: Context<AppBindings>, error: AccessDecisionError) =>
+  c.json(
+    {
+      success: false,
+      error: { code: error.code, message: getAccessErrorMessage(error.code) },
+    },
+    error.status
+  );
+
+function requireGrantedDecision(
+  decision: SearchAccessDecision
+): asserts decision is GrantedSearchAccessDecision {
+  if (!decision.granted) {
+    throw new AccessDecisionError(
+      decision.status,
+      decision.code,
+      getAccessErrorMessage(decision.code)
+    );
+  }
+}
 
 const getUserInfoEndpoint = (issuer: string) =>
   `${trimTrailingSlash(issuer)}/me`;
@@ -425,7 +478,10 @@ const ensureUser = async (c: Context<AppBindings>, auth: AuthPrincipal) => {
     .run();
 };
 
-const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
+const verifyLogtoToken = async (
+  c: Context<AppBindings>,
+  token: string
+): Promise<AuthPrincipal> => {
   const issuer = c.env.LOGTO_ISSUER || 'https://m2fmae.logto.app/oidc';
   const jwks = getJwks(issuer, c.env.LOGTO_JWKS_URI);
   const audience = c.env.LOGTO_API_RESOURCE || undefined;
@@ -474,10 +530,57 @@ const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
   return auth;
 };
 
+const verifyConfiguredIdentityToken = async (
+  c: Context<AppBindings>,
+  token: string
+): Promise<AuthPrincipal> => {
+  const clientId = c.env.AUTH_CLIENT_ID?.trim();
+  if (!clientId) {
+    if (allowsIssuerOnlyLogtoFallback(c.env)) {
+      return verifyLogtoToken(c, token);
+    }
+    throw new Error('Authentication is not configured');
+  }
+
+  const issuer = trimTrailingSlash(
+    c.env.AUTH_ISSUER?.trim() || 'https://api.workos.com'
+  );
+  const jwksUri =
+    c.env.AUTH_JWKS_URI?.trim() ||
+    `https://api.workos.com/sso/jwks/${encodeURIComponent(clientId)}`;
+  const identity = await verifyIdentityToken(
+    token,
+    { issuer, clientId },
+    getJwks(issuer, jwksUri)
+  );
+  const decision = await resolveSearchAccess(
+    new D1SearchAccessRepository(c.env.DB),
+    identity,
+    parseSearchAccessMode(c.env.SEARCH_ACCESS_MODE),
+    c.env.SEARCH_ACCESS_BOOTSTRAP_EMAIL || 'hello@ernie.sg'
+  );
+  requireGrantedDecision(decision);
+
+  if (!decision.internalUserId) {
+    throw new Error('Authenticated identity did not resolve to a user');
+  }
+
+  return {
+    kind: 'user',
+    userId: decision.internalUserId,
+    email: identity.email,
+    name: identity.name,
+    scopes: [],
+    externalIssuer: identity.issuer,
+    externalSubject: identity.subject,
+    searchAccess: decision,
+  } satisfies AuthPrincipal;
+};
+
 const verifyPersonalApiKey = async (
   c: Context<AppBindings>,
   apiKey: string
-) => {
+): Promise<AuthPrincipal | null> => {
   const keyHash = await hashApiKey(getApiKeyHashInput(apiKey, c.env));
   const row = await c.env.DB.prepare(
     `
@@ -536,7 +639,10 @@ const getApiKeyFromRequest = (
   return null;
 };
 
-const verifyPublicSearchApiKey = (c: Context<AppBindings>, apiKey: string) => {
+const verifyPublicSearchApiKey = (
+  c: Context<AppBindings>,
+  apiKey: string
+): AuthPrincipal | null => {
   const configuredKey = c.env.PAILLETTE_PUBLIC_SEARCH_API_KEY?.trim();
   if (!configuredKey || apiKey !== configuredKey) {
     return null;
@@ -551,8 +657,8 @@ const verifyPublicSearchApiKey = (c: Context<AppBindings>, apiKey: string) => {
   } satisfies AuthPrincipal;
 };
 
-const getDevPrincipal = (c: Context<AppBindings>) => {
-  if (c.env.ENVIRONMENT === 'production') {
+const getDevPrincipal = (c: Context<AppBindings>): AuthPrincipal | null => {
+  if (!allowsIssuerOnlyLogtoFallback(c.env)) {
     return null;
   }
 
@@ -571,12 +677,31 @@ const getDevPrincipal = (c: Context<AppBindings>) => {
   } satisfies AuthPrincipal;
 };
 
-export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
+export const requireUser = async (c: Context<AppBindings>, next: Next) => {
   try {
+    const existingAuth = c.get('auth');
+    if (existingAuth) {
+      if (existingAuth.kind === 'user') {
+        await next();
+        return;
+      }
+
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Authentication is required',
+          },
+        },
+        401
+      );
+    }
+
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const devPrincipal = getDevPrincipal(c);
     const auth = bearerToken
-      ? await verifyLogtoToken(c, bearerToken)
+      ? await verifyConfiguredIdentityToken(c, bearerToken)
       : devPrincipal;
 
     if (!auth || auth.kind !== 'user') {
@@ -584,8 +709,8 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
         {
           success: false,
           error: {
-            code: 'UNAUTHORIZED',
-            message: 'Logto sign-in required',
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Authentication is required',
           },
         },
         401
@@ -596,6 +721,9 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
     c.set('auth', auth);
     await next();
   } catch (error) {
+    if (error instanceof AccessDecisionError) {
+      return accessErrorResponse(c, error);
+    }
     console.error('Auth error:', error);
     return c.json(
       {
@@ -610,11 +738,73 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
   }
 };
 
+export const requireLogtoUser = requireUser;
+
+export const requireApprovedDataAccess = async (
+  c: Context<AppBindings>,
+  next: Next
+) => {
+  const mode = parseSearchAccessMode(c.env.SEARCH_ACCESS_MODE);
+  if (mode === 'public') {
+    await next();
+    return;
+  }
+
+  const auth = c.get('auth');
+  if (!auth) {
+    return accessErrorResponse(
+      c,
+      new AccessDecisionError(
+        401,
+        'AUTHENTICATION_REQUIRED',
+        'Authentication is required'
+      )
+    );
+  }
+
+  // Local and unit-test principals are never accepted in staging or production.
+  // Keeping them outside the approval database makes deterministic route tests
+  // and offline development possible without weakening deployed environments.
+  if (allowsIssuerOnlyLogtoFallback(c.env)) {
+    await next();
+    return;
+  }
+
+  if (mode === 'authenticated' || auth.searchAccess?.granted) {
+    await next();
+    return;
+  }
+
+  const approved = await new D1SearchAccessRepository(
+    c.env.DB
+  ).hasActiveApproval(auth.userId);
+  if (!approved) {
+    return accessErrorResponse(
+      c,
+      new AccessDecisionError(
+        403,
+        'ACCESS_PENDING',
+        'This account is awaiting approval'
+      )
+    );
+  }
+
+  await next();
+};
+
 export const requireAuthOrApiKey = async (
   c: Context<AppBindings>,
   next: Next
 ) => {
   try {
+    // Route modules also use this middleware when tested or mounted alone.
+    // The API-wide boundary has already authenticated and approved requests
+    // before those nested handlers run, so avoid repeating token and DB work.
+    if (c.get('auth')) {
+      await next();
+      return;
+    }
+
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const apiKey = getApiKeyFromRequest(c, bearerToken);
 
@@ -622,30 +812,31 @@ export const requireAuthOrApiKey = async (
       (apiKey ? verifyPublicSearchApiKey(c, apiKey) : null) ||
       (apiKey ? await verifyPersonalApiKey(c, apiKey) : null) ||
       (bearerToken && !bearerToken.startsWith('plt_')
-        ? await verifyLogtoToken(c, bearerToken)
+        ? await verifyConfiguredIdentityToken(c, bearerToken)
         : null) ||
       getDevPrincipal(c);
 
     if (!auth) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'A valid bearer token or API key is required',
-          },
-        },
-        401
+      return accessErrorResponse(
+        c,
+        new AccessDecisionError(
+          401,
+          'AUTHENTICATION_REQUIRED',
+          'Authentication is required'
+        )
       );
     }
 
-    if (auth.kind === 'user') {
+    if (auth.kind === 'user' && !auth.externalSubject) {
       await ensureUser(c, auth);
     }
 
     c.set('auth', auth);
-    await next();
+    return requireApprovedDataAccess(c, next);
   } catch (error) {
+    if (error instanceof AccessDecisionError) {
+      return accessErrorResponse(c, error);
+    }
     console.error('Auth error:', error);
     return c.json(
       {

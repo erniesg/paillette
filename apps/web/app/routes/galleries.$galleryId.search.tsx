@@ -32,6 +32,7 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   ListFilter,
+  Lock,
   Network,
   Palette,
   Search,
@@ -101,6 +102,8 @@ import type {
   SearchTextRequest,
 } from '~/types';
 import { useUser } from '~/contexts/user-context';
+import { getApiBaseUrl, getServerEnv } from '~/lib/public-search.server';
+import { withWorkOSSession } from '~/lib/workos-auth.server';
 
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
@@ -130,14 +133,20 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-export async function loader({ params, request }: LoaderFunctionArgs) {
-  const { galleryId } = params;
-  return loadPublicSearchPage({
-    request,
-    requestedOrgId: galleryId || '',
-    routeScope: 'org',
+export const loader = (args: LoaderFunctionArgs) =>
+  withWorkOSSession(args, (session) => {
+    const requestedOrgId =
+      args.params.galleryId ||
+      args.params.orgId ||
+      args.params.collectionId ||
+      '';
+    return loadPublicSearchPage({
+      requestedOrgId,
+      routeScope: args.params.collectionId ? 'collection' : 'org',
+      accessToken: session.accessToken,
+      apiBaseUrl: getApiBaseUrl(getServerEnv(args.context)),
+    });
   });
-}
 
 type SearchMode = 'text' | 'image' | 'colour';
 type SearchFacet = 'artist';
@@ -154,6 +163,11 @@ type ActiveSearchSummary = {
   label: string;
   detail?: string;
   dot: string;
+  refinement?: {
+    type: string;
+    label: string;
+    dot: string;
+  };
 };
 type BrowseCollectionResponse = {
   results: ArtworkSearchResult[];
@@ -372,13 +386,17 @@ const normalizeArtistSearchQuery = (value: string) =>
       .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
   );
 
-const getSearchParamsForQuery = (
+export const getSearchParamsForQuery = (
   query: string,
-  facet: SearchFacet | null = null
+  facet: SearchFacet | null = null,
+  colour: string | null = null
 ) => {
   const params: Record<string, string> = { q: query };
   if (facet) {
     params.field = facet;
+  }
+  if (colour) {
+    params.colour = colour;
   }
   return params;
 };
@@ -693,7 +711,7 @@ const getPaletteBandLabel = (result: ArtworkSearchResult) => {
   return nearest.colour.name;
 };
 
-const sortResults = (
+export const sortResults = (
   results: ArtworkSearchResult[],
   sortMode: SortMode,
   selectedColours: string[]
@@ -982,12 +1000,19 @@ export default function SearchPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { isAuthenticated, login, signup } = useUser();
+  const { isAuthenticated, login, signup, searchAccess } = useUser();
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
+  const requestedUrlColour = searchParams.get('colour');
+  const urlSearchColour =
+    requestedUrlColour && getColourSearchText(requestedUrlColour)
+      ? requestedUrlColour
+      : null;
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('text');
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    urlSearchColour ? 'colour' : 'text'
+  );
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [committedTextQuery, setCommittedTextQuery] =
     useState(normalizedUrlQuery);
@@ -996,10 +1021,16 @@ export default function SearchPage() {
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [searchColours, setSearchColours] = useState<string[]>([]);
-  const [sortColours, setSortColours] = useState<string[]>([]);
+  const [searchColours, setSearchColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
+  const [sortColours, setSortColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
   const [customColour, setCustomColour] = useState('#cda636');
-  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+  const [sortMode, setSortMode] = useState<SortMode>(
+    urlSearchColour ? 'colour' : 'relevance'
+  );
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_TEXT_MIN_SCORE);
@@ -1018,7 +1049,7 @@ export default function SearchPage() {
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const previousUrlSearchStateRef = useRef(
-    `${normalizedUrlQuery}:${urlSearchFacet || ''}`
+    `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`
   );
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
   const searchRoutePath = `${publicRouteBasePath}/search`;
@@ -1100,6 +1131,23 @@ export default function SearchPage() {
       const colour = getSelectedColour(selectedColourId);
       const label = colour?.name || getColourSearchText(selectedColourId);
 
+      if (
+        normalizedCommittedTextQuery &&
+        normalizedCommittedTextQuery !==
+          normalizeSearchQuery(getColourSearchText(selectedColourId))
+      ) {
+        return {
+          type: searchFacet || 'text',
+          label: committedTextQuery,
+          dot: '#d946ef',
+          refinement: {
+            type: 'rerank',
+            label,
+            dot: colour?.hex || '#d946ef',
+          },
+        };
+      }
+
       return {
         type: 'colour',
         label,
@@ -1158,13 +1206,17 @@ export default function SearchPage() {
   useEffect(() => {
     if (urlQuery && normalizedUrlQuery !== urlQuery) {
       setSearchParams(
-        getSearchParamsForQuery(normalizedUrlQuery, urlSearchFacet),
+        getSearchParamsForQuery(
+          normalizedUrlQuery,
+          urlSearchFacet,
+          urlSearchColour
+        ),
         { replace: true }
       );
       return;
     }
 
-    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}`;
+    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
     if (previousUrlSearchStateRef.current === urlSearchState) return;
 
     previousUrlSearchStateRef.current = urlSearchState;
@@ -1175,6 +1227,18 @@ export default function SearchPage() {
     setShouldSearch(Boolean(normalizedUrlQuery));
     setIsBrowsingCollection(false);
 
+    if (urlSearchColour) {
+      setSearchColours([urlSearchColour]);
+      setSortColours([urlSearchColour]);
+      setSearchMode('colour');
+      setSortMode('colour');
+    } else {
+      setSearchColours([]);
+      setSortColours([]);
+      setSearchMode('text');
+      setSortMode('relevance');
+    }
+
     if (!normalizedUrlQuery) {
       setImageFile(null);
       setImagePreview(null);
@@ -1184,7 +1248,13 @@ export default function SearchPage() {
       setSortMode('relevance');
       setSearchFacet(null);
     }
-  }, [normalizedUrlQuery, setSearchParams, urlQuery, urlSearchFacet]);
+  }, [
+    normalizedUrlQuery,
+    setSearchParams,
+    urlQuery,
+    urlSearchColour,
+    urlSearchFacet,
+  ]);
 
   useEffect(() => {
     if (!hasMounted || !suggestionPrefetchQueries.length) return undefined;
@@ -1629,26 +1699,51 @@ export default function SearchPage() {
   };
 
   const selectColourSearch = (selection: string) => {
-    const query = normalizeSearchQuery(getColourSearchText(selection));
-    if (!query) return;
+    const colourQuery = normalizeSearchQuery(getColourSearchText(selection));
+    if (!colourQuery) return;
+    const currentColourQuery = searchColours[0]
+      ? normalizeSearchQuery(getColourSearchText(searchColours[0]))
+      : '';
+    const hasTextCandidateSet = Boolean(
+      normalizedCommittedTextQuery &&
+        normalizedCommittedTextQuery !== currentColourQuery
+    );
 
     setSelectedArtwork(null);
     setSearchMode('colour');
     setIsBrowsingCollection(false);
     setSearchColours([selection]);
-    setSearchFacet(null);
     setSortColours([selection]);
     setSortMode('colour');
-    setTextQuery(query);
-    setCommittedTextQuery(query);
     setShouldSearch(true);
-    setSearchParams({ q: query });
+
+    if (hasTextCandidateSet) {
+      setSearchParams(
+        getSearchParamsForQuery(
+          normalizedCommittedTextQuery,
+          searchFacet,
+          selection
+        )
+      );
+      return;
+    }
+
+    setSearchFacet(null);
+    setTextQuery(colourQuery);
+    setCommittedTextQuery(colourQuery);
+    setSearchParams(getSearchParamsForQuery(colourQuery, null, selection));
   };
 
   const clearColourSearch = () => {
     const clearedColours = searchColours;
+    const clearedColourQuery = clearedColours[0]
+      ? normalizeSearchQuery(getColourSearchText(clearedColours[0]))
+      : '';
+    const hasTextCandidateSet = Boolean(
+      normalizedCommittedTextQuery &&
+        normalizedCommittedTextQuery !== clearedColourQuery
+    );
     setSearchColours([]);
-    clearSearch();
     if (
       sortMode === 'colour' &&
       clearedColours.some((colour) => sortColours.includes(colour))
@@ -1656,6 +1751,16 @@ export default function SearchPage() {
       setSortColours([]);
       setSortMode('relevance');
     }
+
+    if (hasTextCandidateSet) {
+      setSearchMode('text');
+      setSearchParams(
+        getSearchParamsForQuery(normalizedCommittedTextQuery, searchFacet)
+      );
+      return;
+    }
+
+    clearSearch();
   };
 
   const clearColourSort = () => {
@@ -1867,7 +1972,9 @@ export default function SearchPage() {
               isLoading={isIdleShowcaseLoading}
               suggestion={activeIdleSuggestion}
               onCommittedSuggestionChange={setDisplayIdleSuggestion}
-              onSelectArtwork={selectArtwork}
+              onSelectArtwork={
+                searchAccess === 'approved' ? selectArtwork : () => undefined
+              }
             />
           )}
 
@@ -2289,6 +2396,51 @@ export default function SearchPage() {
               </div>
             </div>
 
+            {searchAccess !== 'approved' && (
+              <div className="sticky top-28 z-40 mx-auto mt-8 flex max-w-md justify-center px-4">
+                <div className="w-full rounded-2xl border border-white/15 bg-[#111116]/95 p-6 text-center shadow-2xl shadow-black/60 backdrop-blur-xl">
+                  <Lock className="mx-auto h-6 w-6 text-fuchsia-300" />
+                  <h2 className="mt-3 font-display text-xl font-semibold text-white">
+                    {searchAccess === 'pending'
+                      ? 'Your access is pending'
+                      : 'Sign in to reveal results'}
+                  </h2>
+                  <p className="mt-2 text-sm leading-relaxed text-white/55">
+                    {searchAccess === 'pending'
+                      ? 'This account is signed in but has not been approved for collection search yet.'
+                      : 'Create an account or sign in with an approved account. These tiles are synthetic previews; no collection data was sent.'}
+                  </p>
+                  {searchAccess === 'anonymous' && (
+                    <div className="mt-5 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void login({ returnTo: getCurrentReturnTo() })}
+                        className="rounded-lg border border-white/15 bg-white/[0.08] px-4 py-2 text-sm font-medium text-white hover:bg-white/[0.13]"
+                      >
+                        Log in
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void signup({ returnTo: getCurrentReturnTo() })}
+                        className="rounded-lg bg-fuchsia-400 px-4 py-2 text-sm font-semibold text-black hover:bg-fuchsia-300"
+                      >
+                        Create account
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div
+              className={
+                searchAccess === 'approved'
+                  ? undefined
+                  : 'pointer-events-none select-none blur-md opacity-55'
+              }
+              aria-hidden={searchAccess !== 'approved'}
+            >
+
             {showColourRail && (
               <div ref={colourRailRef} className="mt-3">
                 <ColourRail
@@ -2432,6 +2584,7 @@ export default function SearchPage() {
                   </p>
                 </div>
               )}
+            </div>
           </section>
         )}
         <PublicSiteFooter separated={hasActiveSearch} />
@@ -2500,7 +2653,11 @@ function SuggestionPicker({
   const activeQuery = currentQuery.trim().toLowerCase();
   const activeLabel = activeSearch?.label.trim();
   const activeStatusLabel = activeSearch
-    ? `Current ${activeSearch.type} search: ${activeSearch.label}`
+    ? `Current ${activeSearch.type} search: ${activeSearch.label}${
+        activeSearch.refinement
+          ? `; ${activeSearch.refinement.type}: ${activeSearch.refinement.label}`
+          : ''
+      }`
     : undefined;
 
   return (
@@ -2532,6 +2689,18 @@ function SuggestionPicker({
           {activeSearch.detail && (
             <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-white/35 sm:inline">
               {activeSearch.detail}
+            </span>
+          )}
+          {activeSearch.refinement && (
+            <span className="inline-flex min-w-0 items-center gap-2 border-l border-white/10 pl-3">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: activeSearch.refinement.dot }}
+              />
+              <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                {activeSearch.refinement.type}
+              </span>
+              <span className="truncate">{activeSearch.refinement.label}</span>
             </span>
           )}
         </div>
