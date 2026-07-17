@@ -28,9 +28,10 @@ describe('PublicSiteHeader', () => {
     expect(technical).toHaveAttribute('href', '/technical');
     expect(technical).toHaveAttribute('aria-current', 'page');
     expect(about.nextElementSibling).toBe(technical);
-    expect(technical.parentElement).toHaveClass('flex-row', 'items-center');
-    expect(technical.parentElement).not.toHaveClass('flex-col');
-    expect(technical).toHaveClass('text-sm', 'font-medium');
+    expect(technical.parentElement).toHaveClass('flex-col', 'items-start');
+    expect(technical.parentElement).not.toHaveClass('flex-row');
+    expect(technical).toHaveClass('text-xs', 'font-normal', 'pl-2');
+    expect(technical.parentElement?.parentElement).toHaveClass('items-center');
     expect(technical).toHaveTextContent('Technical details');
   });
 
@@ -40,12 +41,12 @@ describe('PublicSiteHeader', () => {
     const technical = screen.getByRole('link', {
       name: 'Technical details',
     });
-    const details = screen.getByText('details');
     const logo =
       technical.parentElement?.previousElementSibling?.firstElementChild;
     const headerContent = technical.closest('header')?.firstElementChild;
 
-    expect(details).toHaveClass('hidden', 'sm:inline');
+    expect(technical).toHaveTextContent('Technical details');
+    expect(technical).not.toHaveClass('hidden');
     expect(logo).toHaveClass(
       '[&>span:last-child]:hidden',
       'sm:[&>span:last-child]:inline'

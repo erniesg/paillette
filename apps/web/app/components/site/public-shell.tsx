@@ -34,7 +34,7 @@ export function PublicSiteHeader({
   return (
     <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-2 sm:px-5 lg:px-8">
-        <div className="flex min-w-0 items-baseline gap-2 sm:gap-5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-5">
           <Link
             to={searchHref}
             onClick={onLogoClick}
@@ -47,7 +47,7 @@ export function PublicSiteHeader({
               className="text-base leading-none sm:text-xl [&>span:last-child]:hidden sm:[&>span:last-child]:inline"
             />
           </Link>
-          <div className="flex min-h-11 flex-row items-center gap-2 leading-none sm:gap-5">
+          <div className="flex min-h-11 flex-col items-start justify-center leading-none">
             <Link
               to="/about"
               aria-current={active === 'about' ? 'page' : undefined}
@@ -63,14 +63,13 @@ export function PublicSiteHeader({
               to="/technical"
               aria-current={active === 'technical' ? 'page' : undefined}
               aria-label="Technical details"
-              className={`inline-flex min-h-6 min-w-6 items-center text-sm font-medium transition-colors ${
+              className={`inline-flex min-h-6 min-w-6 items-center pl-2 text-xs font-normal transition-colors ${
                 active === 'technical'
                   ? 'text-white/75'
                   : 'text-white/55 hover:text-white'
               }`}
             >
-              Technical{' '}
-              <span className="hidden sm:inline">details</span>
+              Technical details
             </Link>
           </div>
         </div>
