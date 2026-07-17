@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   NGS_ORG_ID,
   OPEN_ACCESS_ORG_SLUG,
+  isAllowedPublicSearchRouteScope,
   isNgsPublicOrg,
   isOpenAccessArtPublicOrg,
   isOpenAccessPublicOrg,
+  resolveOpenAccessProviderScope,
   resolveOrgIdentifier,
 } from '../../src/utils/orgs';
 
@@ -70,5 +72,42 @@ describe('resolveOrgIdentifier', () => {
     expect(isOpenAccessPublicOrg('open-access-art')).toBe(true);
     expect(isOpenAccessArtPublicOrg('nga')).toBe(true);
     expect(isOpenAccessArtPublicOrg('national-gallery-singapore')).toBe(false);
+  });
+});
+
+describe('resolveOpenAccessProviderScope', () => {
+  it('scopes only the dedicated NGA route to the NGA provider', () => {
+    expect(resolveOpenAccessProviderScope('nga')).toBe('nga');
+    expect(resolveOpenAccessProviderScope('NGA')).toBe('nga');
+    expect(resolveOpenAccessProviderScope('open-access-art')).toBeUndefined();
+    expect(resolveOpenAccessProviderScope('open')).toBeUndefined();
+    expect(resolveOpenAccessProviderScope('ngs')).toBeUndefined();
+  });
+});
+
+describe('isAllowedPublicSearchRouteScope', () => {
+  it('allows only NGS public aliases and the dedicated NGA provider route', () => {
+    expect(isAllowedPublicSearchRouteScope('ngs')).toBe(true);
+    expect(isAllowedPublicSearchRouteScope('national-gallery-singapore')).toBe(
+      true
+    );
+    expect(
+      isAllowedPublicSearchRouteScope('cf98791d-f3cc-4f9f-b40c-a350efadbd05')
+    ).toBe(true);
+    expect(
+      isAllowedPublicSearchRouteScope('00000000-0000-4000-8000-000000000101')
+    ).toBe(true);
+    expect(isAllowedPublicSearchRouteScope('nga')).toBe(true);
+    expect(isAllowedPublicSearchRouteScope('NGA')).toBe(true);
+  });
+
+  it('rejects generic open-access and arbitrary org scopes', () => {
+    expect(isAllowedPublicSearchRouteScope('open')).toBe(false);
+    expect(isAllowedPublicSearchRouteScope('open-access-art')).toBe(false);
+    expect(
+      isAllowedPublicSearchRouteScope('11111111-1111-4111-8111-111111111111')
+    ).toBe(false);
+    expect(isAllowedPublicSearchRouteScope('private-gallery')).toBe(false);
+    expect(isAllowedPublicSearchRouteScope(undefined)).toBe(false);
   });
 });

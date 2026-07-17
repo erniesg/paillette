@@ -49,6 +49,7 @@ export interface Env {
   API_KEY_PEPPER?: string;
   PAILLETTE_PUBLIC_SEARCH_API_KEY?: string;
   DAILY_FREE_QUERY_LIMIT?: string;
+  PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE?: string;
   TRANSLATION_FREE_LIFETIME_LIMIT?: string;
   EXTRACT_FREE_LIFETIME_LIMIT?: string;
   FAL_KEY?: string;
@@ -59,6 +60,8 @@ export interface Env {
   CAPTION_EMBEDDING_PROVIDER?: string;
   JINA_TEXT_MODEL?: string;
   JINA_TEXT_EMBEDDING_DIMENSIONS?: string;
+  QUERY_EMBEDDING_API_URL?: string;
+  QUERY_EMBEDDING_API_TOKEN?: string;
   EMBEDDING_INDEX_VERSION?: string;
   SEARCH_FUSION_MODE?: string;
   ENABLE_NGS_REVIEW?: string;
@@ -94,6 +97,8 @@ app.use(
       'X-Request-ID',
       'X-RateLimit-Limit',
       'X-RateLimit-Remaining',
+      'Retry-After',
+      'X-Paillette-Search-Cache',
       'X-Extract-Limit',
       'X-Extract-Remaining',
     ],

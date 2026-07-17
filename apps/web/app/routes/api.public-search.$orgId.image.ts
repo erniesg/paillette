@@ -5,10 +5,12 @@ import {
   buildPublicSearchHeaders,
   getApiBaseUrl,
   getServerEnv,
+  isAllowedPublicSearchRouteId,
   isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   publicSearchConfigError,
   resolvePublicSearchOrgId,
+  schedulePublicSearchWork,
 } from '~/lib/public-search.server';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -66,6 +68,19 @@ export const action = async ({
     );
   }
 
+  if (!isAllowedPublicSearchRouteId(orgId)) {
+    return json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'PUBLIC_SEARCH_SCOPE_FORBIDDEN',
+          message: 'This organization is not available to public search.',
+        },
+      },
+      { status: 403 }
+    );
+  }
+
   const env = getServerEnv(context);
   const headers = buildPublicSearchHeaders(request, env);
   if (!headers) {
@@ -114,6 +129,7 @@ export const action = async ({
       method: 'POST',
       headers,
       body: outbound,
+      signal: request.signal,
     }
   );
 
@@ -129,30 +145,33 @@ export const action = async ({
       count: results.length,
     };
 
-    await logPublicUsageEvent(request, env, {
-      eventType: 'search',
-      queryType: 'public_image_search',
-      orgId: resolvedOrgId,
-      search: {
-        mode: 'image',
-        image: {
-          name: image.name || null,
-          type: image.type || null,
-          size: image.size,
-          lastModified: image.lastModified || null,
+    schedulePublicSearchWork(
+      context,
+      logPublicUsageEvent(request, env, {
+        eventType: 'search',
+        queryType: 'public_image_search',
+        orgId: resolvedOrgId,
+        search: {
+          mode: 'image',
+          image: {
+            name: image.name || null,
+            type: image.type || null,
+            size: image.size,
+            lastModified: image.lastModified || null,
+          },
+          topK,
+          minScore,
+          rawResultCount,
+          resultCount: results.length,
+          hiddenFilteredCount: rawResultCount - results.length,
+          queryTime: payload.data.queryTime,
         },
-        topK,
-        minScore,
-        rawResultCount,
-        resultCount: results.length,
-        hiddenFilteredCount: rawResultCount - results.length,
-        queryTime: payload.data.queryTime,
-      },
-      results: results.map(getUsageResult),
-      metadata: {
-        routeOrgId: orgId,
-      },
-    });
+        results: results.map(getUsageResult),
+        metadata: {
+          routeOrgId: orgId,
+        },
+      })
+    );
   }
 
   return json(payload, { status: response.status });

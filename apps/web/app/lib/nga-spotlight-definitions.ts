@@ -1,0 +1,83 @@
+export const NGA_SPOTLIGHT_DEFINITIONS = [
+  {
+    id: 'stormy-seas-ships',
+    type: 'motif',
+    label: 'stormy seas and ships',
+    query: 'a stormy sea with ships',
+    dot: '#4c78a8',
+  },
+  {
+    id: 'paintings-collection',
+    type: 'metadata',
+    label: 'paintings across the collection',
+    query: 'Painting',
+    dot: '#8a9a7a',
+    facet: 'classification',
+  },
+  {
+    id: 'ginevra-de-benci',
+    type: 'metadata',
+    label: "Ginevra de' Benci",
+    query: "Leonardo da Vinci Ginevra de' Benci",
+    dot: '#6e8ea8',
+  },
+  {
+    id: 'the-annunciation',
+    type: 'metadata',
+    label: 'The Annunciation',
+    query: 'Jan van Eyck The Annunciation',
+    dot: '#365f9c',
+  },
+  {
+    id: 'feast-of-the-gods',
+    type: 'metadata',
+    label: 'The Feast of the Gods',
+    query: 'Giovanni Bellini Titian The Feast of the Gods',
+    dot: '#cda636',
+  },
+  {
+    id: 'women-profile',
+    type: 'motif',
+    label: 'women in profile',
+    query: 'a portrait of a woman in profile',
+    dot: '#8a9a7a',
+  },
+  {
+    id: 'mother-child',
+    type: 'motif',
+    label: 'mother and child',
+    query: 'a mother holding a child',
+    dot: '#bf5631',
+  },
+  {
+    id: 'quiet-interiors',
+    type: 'mood',
+    label: 'quiet domestic interiors',
+    query: 'a quiet domestic interior',
+    dot: '#6a5238',
+  },
+  {
+    id: 'index-american-design',
+    type: 'metadata',
+    label: 'Index of American Design',
+    query: 'Index of American Design',
+    dot: '#8c5a3c',
+  },
+  {
+    id: 'photographs',
+    type: 'medium',
+    label: 'photographs',
+    query: 'Photograph',
+    dot: '#6a5238',
+  },
+  {
+    id: 'blue-painted-ornament',
+    type: 'colour',
+    label: 'blue painted ornament',
+    query: 'blue painted ornament',
+    dot: '#4c78a8',
+    colourId: 'custom:#4c78a8',
+  },
+] as const;
+
+export type NgaSpotlightDefinition = (typeof NGA_SPOTLIGHT_DEFINITIONS)[number];

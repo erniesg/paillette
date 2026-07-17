@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
   buildPublicTextSearchCacheKey,
+  isAllowedPublicSearchRouteId,
   isHiddenPublicNgsArtwork,
   resolvePublicSearchOrgId,
 } from '../public-search.server';
@@ -92,8 +93,26 @@ describe('buildPublicTextSearchCacheKey', () => {
     const url = new URL(key.url);
 
     expect(url.searchParams.get('v')).toBe(PUBLIC_TEXT_SEARCH_CACHE_VERSION);
+    expect(PUBLIC_TEXT_SEARCH_CACHE_VERSION).toBe('18');
     expect(url.searchParams.get('query')).toBe('chung cheng');
     expect(url.searchParams.get('facet')).toBeNull();
+  });
+
+  it('uses the shared NFC and whitespace-normalized query identity', () => {
+    const decomposedKey = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      orgId: 'nga',
+      query: '  Cafe\u0301\n\t angels  ',
+      visualRefinement: '  dark\n navy  ',
+    });
+    const canonicalKey = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      orgId: 'nga',
+      query: 'Café angels',
+      visualRefinement: 'dark navy',
+    });
+
+    expect(decomposedKey.url).toBe(canonicalKey.url);
   });
 
   it('separates artist-facet search cache entries from semantic text search', () => {
@@ -113,25 +132,52 @@ describe('buildPublicTextSearchCacheKey', () => {
     expect(artistKey.url).not.toBe(semanticKey.url);
     expect(artistUrl.searchParams.get('facet')).toBe('artist');
   });
-});
 
-describe('resolvePublicSearchOrgId', () => {
-  it('maps the open collection short key to the Open Access Art slug', () => {
-    expect(resolvePublicSearchOrgId('open')).toBe('open-access-art');
-    expect(resolvePublicSearchOrgId('OPEN')).toBe('open-access-art');
-    expect(resolvePublicSearchOrgId('open-access-art')).toBe('open-access-art');
+  it('separates visual refinements from the base text-search cache entry', () => {
+    const baseKey = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      orgId: 'open-access-art',
+      query: 'angels',
+    });
+    const refinedKey = buildPublicTextSearchCacheKey({
+      apiBaseUrl: 'https://paillette-api-stg.berlayar.ai/api/v1',
+      orgId: 'open-access-art',
+      query: 'angels',
+      visualRefinement: 'dark navy blue',
+    });
+    const refinedUrl = new URL(refinedKey.url);
+
+    expect(refinedKey.url).not.toBe(baseKey.url);
+    expect(refinedUrl.searchParams.get('query')).toBe('angels');
+    expect(refinedUrl.searchParams.get('visual')).toBe('dark navy blue');
   });
 });
 
 describe('resolvePublicSearchOrgId', () => {
-  it('keeps public API aliases for Open Access Art and NGS distinct', () => {
-    expect(resolvePublicSearchOrgId('nga')).toBe('open-access-art');
+  it('keeps the NGA route distinct while mapping generic Open Access aliases', () => {
     expect(resolvePublicSearchOrgId('open')).toBe('open-access-art');
-    expect(resolvePublicSearchOrgId('open-access-art')).toBe(
-      'open-access-art'
-    );
+    expect(resolvePublicSearchOrgId('OPEN')).toBe('open-access-art');
+    expect(resolvePublicSearchOrgId('nga')).toBe('nga');
+    expect(resolvePublicSearchOrgId('NGA')).toBe('nga');
+    expect(resolvePublicSearchOrgId('open-access-art')).toBe('open-access-art');
     expect(resolvePublicSearchOrgId('ngs')).toBe(
       'cf98791d-f3cc-4f9f-b40c-a350efadbd05'
     );
+  });
+});
+
+describe('isAllowedPublicSearchRouteId', () => {
+  it('allows only the explicit NGS and NGA public-search scopes', () => {
+    expect(isAllowedPublicSearchRouteId('nga')).toBe(true);
+    expect(isAllowedPublicSearchRouteId('ngs')).toBe(true);
+    expect(
+      isAllowedPublicSearchRouteId('cf98791d-f3cc-4f9f-b40c-a350efadbd05')
+    ).toBe(true);
+
+    expect(isAllowedPublicSearchRouteId('open-access-art')).toBe(false);
+    expect(isAllowedPublicSearchRouteId('private-org')).toBe(false);
+    expect(
+      isAllowedPublicSearchRouteId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    ).toBe(false);
   });
 });

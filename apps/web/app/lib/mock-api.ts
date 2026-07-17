@@ -28,6 +28,13 @@ const mockGallery: Gallery = {
   updatedAt: '2024-01-01T00:00:00Z',
 };
 
+const mockNgaGallery: Gallery = {
+  ...mockGallery,
+  id: 'open-access-art',
+  name: 'Open Access Art',
+  slug: 'open-access-art',
+};
+
 const mockArtworks: Artwork[] = [
   {
     id: 'artwork-1',
@@ -188,6 +195,10 @@ export class MockApiClient {
 
     if (galleryId === 'test-gallery-123') {
       return mockGallery;
+    }
+
+    if (['nga', 'open', 'open-access-art'].includes(galleryId)) {
+      return mockNgaGallery;
     }
 
     throw new Error('Gallery not found');

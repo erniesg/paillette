@@ -821,14 +821,18 @@ export const recordArtworkResults = async (
     return;
   }
 
-  await recordArtworkUsageEvents(
-    c,
-    usageEventId,
-    results.map((result) => ({
-      ...result,
-      interaction: 'result',
-    }))
-  );
+  try {
+    await recordArtworkUsageEvents(
+      c,
+      usageEventId,
+      results.map((result) => ({
+        ...result,
+        interaction: 'result',
+      }))
+    );
+  } catch (error) {
+    console.warn('Result telemetry failed; continuing search response', error);
+  }
 };
 
 export const recordArtworkUsageEvents = async (
