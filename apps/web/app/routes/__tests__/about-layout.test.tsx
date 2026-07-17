@@ -56,4 +56,15 @@ describe('about page layout', () => {
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
+
+  it('keeps feedback on the same content width as the preceding sections', () => {
+    render(<AboutPage />);
+
+    const feedbackHeading = screen.getByRole('heading', { name: 'Feedback' });
+    expect(feedbackHeading.nextElementSibling).toHaveClass(
+      'mt-5',
+      'max-w-6xl',
+      'space-y-5'
+    );
+  });
 });

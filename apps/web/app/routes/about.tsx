@@ -499,7 +499,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Feedback</h2>
-          <div className="mt-5 max-w-3xl space-y-5">
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Send bugs, confusing results, missing workflows, or ideas for the
               search. You will get an email acknowledgement.
