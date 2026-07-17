@@ -1166,6 +1166,15 @@ const defaultTranslationUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultExtractUsage = { used: 0, quota: 10, remaining: 10 };
 const defaultBuilderEndpointPath = '/orgs/ngs/search/text';
 
+export const getQuickSearchEndpoint = () =>
+  endpoints.find((endpoint) => endpoint.path === defaultBuilderEndpointPath)!;
+
+export const getQuickSearchInitialValues = () => ({
+  ...getInitialEndpointValues(getQuickSearchEndpoint()),
+  query: 'batik textile pattern',
+  minScore: '0.2',
+});
+
 const apiBaseByEnvironment = {
   stg: 'https://paillette-api-stg.berlayar.ai/api/v1',
   prod: 'https://paillette-api.berlayar.ai/api/v1',
@@ -1925,6 +1934,7 @@ export const docsNavGroups: Array<{ title: string; items: NavItem[] }> = [
     title: 'Start',
     items: [
       { href: '#overview', id: 'overview', label: 'Overview' },
+      { href: '#try-search', id: 'try-search', label: 'Try search' },
       {
         href: '#authentication',
         id: 'authentication',
@@ -2769,6 +2779,9 @@ export default function ApiDocsPage() {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
+  const [quickSearchQuery, setQuickSearchQuery] = useState(
+    getQuickSearchInitialValues().query
+  );
   const [apiEnvironment, setApiEnvironment] = useState<ApiEnvironment>(() =>
     detectApiEnvironment(apiBase)
   );
@@ -3063,6 +3076,60 @@ export default function ApiDocsPage() {
     },
   });
 
+  const quickSearchMutation = useMutation({
+    mutationFn: async () => {
+      const query = quickSearchQuery.trim();
+      if (!liveApiKey) {
+        throw new Error('Create or paste an API key in the top bar first.');
+      }
+      if (!query) throw new Error('Enter a search query.');
+
+      const endpoint = getQuickSearchEndpoint();
+      const startedAt = performance.now();
+      const response = await fetch('/api/docs/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiEnv: apiEnvironment,
+          apiKey: liveApiKey,
+          endpointPath: endpoint.path,
+          values: {
+            ...getQuickSearchInitialValues(),
+            query,
+          },
+        }),
+      });
+      const contentType = response.headers.get('content-type') ?? '';
+      const payload = contentType.includes('application/json')
+        ? await response.json()
+        : await response.text();
+      const apiPayload = payload as ApiResponse<unknown>;
+
+      if (
+        !response.ok ||
+        (typeof apiPayload === 'object' &&
+          apiPayload !== null &&
+          'success' in apiPayload &&
+          apiPayload.success === false)
+      ) {
+        throw new Error(
+          apiPayload.error?.message || `Request failed (${response.status})`
+        );
+      }
+
+      return {
+        durationMs: Math.max(1, Math.round(performance.now() - startedAt)),
+        endpointPath: endpoint.path,
+        payload,
+        status: response.status,
+        statusText: response.statusText || 'OK',
+      } satisfies RailRunResult;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['api-usage-today'] });
+    },
+  });
+
   useEffect(() => {
     const sections = Array.from(
       document.querySelectorAll<HTMLElement>('[data-doc-section]')
@@ -3273,8 +3340,19 @@ export default function ApiDocsPage() {
           <StartSections
             copiedValue={copiedValue}
             docsMarkdown={docsMarkdown}
+            isQuickSearchRunning={quickSearchMutation.isPending}
             onCopy={copyText}
+            onQuickSearch={() => quickSearchMutation.mutate()}
+            onQuickSearchQueryChange={setQuickSearchQuery}
+            quickSearchError={
+              quickSearchMutation.error instanceof Error
+                ? quickSearchMutation.error.message
+                : null
+            }
+            quickSearchQuery={quickSearchQuery}
+            quickSearchResult={quickSearchMutation.data ?? null}
             selectedApiBase={selectedApiBase}
+            hasApiKey={Boolean(liveApiKey)}
           />
 
           {endpointDocs.map((doc) => (
@@ -3350,12 +3428,26 @@ export default function ApiDocsPage() {
 function StartSections({
   copiedValue,
   docsMarkdown,
+  hasApiKey,
+  isQuickSearchRunning,
   onCopy,
+  onQuickSearch,
+  onQuickSearchQueryChange,
+  quickSearchError,
+  quickSearchQuery,
+  quickSearchResult,
   selectedApiBase,
 }: {
   copiedValue: string | null;
   docsMarkdown: string;
+  hasApiKey: boolean;
+  isQuickSearchRunning: boolean;
   onCopy: (id: string, value: string) => void;
+  onQuickSearch: () => void;
+  onQuickSearchQueryChange: (value: string) => void;
+  quickSearchError: string | null;
+  quickSearchQuery: string;
+  quickSearchResult: RailRunResult | null;
   selectedApiBase: string;
 }) {
   return (
@@ -3393,6 +3485,87 @@ function StartSections({
           <InlineDatum label="Auth" value="X-API-Key" />
           <InlineDatum label="Source" value={NGS_ORG_SHORTCODE} />
         </div>
+      </section>
+
+      <section
+        id="try-search"
+        data-doc-section
+        className="scroll-mt-20 border-b border-[var(--app-line)] py-6"
+      >
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <SectionHeading
+            title="Try text search"
+            description="Run the primary collection query against the selected environment."
+          />
+          <code
+            className="pb-3 text-xs text-[var(--docs-code)]"
+            style={monoStyle}
+          >
+            POST /orgs/ngs/search/text
+          </code>
+        </div>
+
+        <form
+          className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onQuickSearch();
+          }}
+        >
+          <label className="grid gap-1.5">
+            <span
+              className="text-[10px] uppercase tracking-[0.16em] text-[var(--app-faint)]"
+              style={monoStyle}
+            >
+              Query
+            </span>
+            <input
+              value={quickSearchQuery}
+              onChange={(event) => onQuickSearchQueryChange(event.target.value)}
+              placeholder="batik textile pattern"
+              className="h-11 rounded-md border border-[var(--app-line-strong)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)]"
+              aria-label="Try text search query"
+            />
+          </label>
+          <ActionButton
+            className="h-11 self-end px-5"
+            disabled={isQuickSearchRunning || !hasApiKey}
+            onClick={onQuickSearch}
+          >
+            {isQuickSearchRunning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            Run search
+          </ActionButton>
+        </form>
+
+        <div
+          className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-muted)]"
+          style={monoStyle}
+        >
+          <span>
+            {hasApiKey ? 'API key ready' : 'Create or paste a key above'}
+          </span>
+          <span>{selectedApiBase}</span>
+          {quickSearchResult && (
+            <span className="text-[var(--docs-success)]">
+              {quickSearchResult.status} · {quickSearchResult.durationMs} ms
+            </span>
+          )}
+        </div>
+
+        {quickSearchError && <Notice tone="error">{quickSearchError}</Notice>}
+        {quickSearchResult && (
+          <CodePanel
+            className="mt-4"
+            id="quick-search-response"
+            maxHeight="420px"
+            value={stringify(quickSearchResult.payload)}
+            highlighted
+          />
+        )}
       </section>
 
       <section
