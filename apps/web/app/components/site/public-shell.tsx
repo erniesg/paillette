@@ -63,7 +63,7 @@ export function PublicSiteHeader({
               to="/technical"
               aria-current={active === 'technical' ? 'page' : undefined}
               aria-label="Technical details"
-              className={`inline-flex min-h-6 min-w-6 items-center pl-2 text-xs font-normal transition-colors ${
+              className={`inline-flex min-h-6 min-w-6 items-center text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors ${
                 active === 'technical'
                   ? 'text-white/75'
                   : 'text-white/55 hover:text-white'

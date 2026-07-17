@@ -30,7 +30,13 @@ describe('PublicSiteHeader', () => {
     expect(about.nextElementSibling).toBe(technical);
     expect(technical.parentElement).toHaveClass('flex-col', 'items-start');
     expect(technical.parentElement).not.toHaveClass('flex-row');
-    expect(technical).toHaveClass('text-xs', 'font-normal', 'pl-2');
+    expect(technical).toHaveClass(
+      'text-[10px]',
+      'font-semibold',
+      'uppercase',
+      'tracking-[0.12em]'
+    );
+    expect(technical).not.toHaveClass('pl-2');
     expect(technical.parentElement?.parentElement).toHaveClass('items-center');
     expect(technical).toHaveTextContent('Technical details');
   });
