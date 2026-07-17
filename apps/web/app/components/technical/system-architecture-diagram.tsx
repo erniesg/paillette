@@ -319,10 +319,10 @@ const CONNECTIONS: ArchitectureConnection[] = [
     ],
   },
   {
-    paths: ['M 566 590 C 530 590 534 360 510 360'],
+    paths: ['M 566 590 C 520 590 490 500 480 380'],
     label: 'ranked JSON',
-    labelX: 530,
-    labelY: 470,
+    labelX: 500,
+    labelY: 478,
     nodeIds: ['rrf-hydration', 'remix-web-worker'],
   },
   {
@@ -527,21 +527,14 @@ export function SystemArchitectureDiagram(): JSX.Element {
           <marker
             id="architecture-arrow"
             data-testid="architecture-arrow"
-            markerWidth="8"
-            markerHeight="8"
-            refX="7.5"
-            refY="4"
+            markerWidth="10"
+            markerHeight="10"
+            refX="9"
+            refY="5"
             orient="auto"
             markerUnits="userSpaceOnUse"
           >
-            <path
-              d="M 1.5 1.5 L 6 4 L 1.5 6.5"
-              fill="none"
-              stroke="context-stroke"
-              strokeWidth="1.35"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
           </marker>
         </defs>
 

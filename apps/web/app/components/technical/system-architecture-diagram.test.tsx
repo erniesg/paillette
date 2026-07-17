@@ -106,9 +106,21 @@ describe('SystemArchitectureDiagram', () => {
     const marker = screen.getByTestId('architecture-arrow');
 
     expect(marker).toHaveAttribute('markerUnits', 'userSpaceOnUse');
-    expect(marker).toHaveAttribute('markerWidth', '8');
-    expect(marker).toHaveAttribute('refX', '7.5');
-    expect(marker.querySelector('path')).toHaveAttribute('fill', 'none');
+    expect(marker).toHaveAttribute('markerWidth', '10');
+    expect(marker.querySelector('path')).toHaveAttribute(
+      'fill',
+      'context-stroke'
+    );
+  });
+
+  it('routes the ranked response naturally into the bottom of the web worker', () => {
+    render(<SystemArchitectureDiagram />);
+
+    expect(
+      screen
+        .getByLabelText('ranked JSON connection')
+        .querySelector('.architecture-connection-line')
+    ).toHaveAttribute('d', 'M 566 590 C 520 590 490 500 480 380');
   });
 
   it('highlights the components participating in a hovered connection', () => {
