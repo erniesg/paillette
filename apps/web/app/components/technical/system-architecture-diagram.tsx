@@ -326,14 +326,14 @@ const CONNECTIONS: ArchitectureConnection[] = [
     nodeIds: ['rrf-hydration', 'remix-web-worker'],
   },
   {
-    paths: ['M 222 350 C 252 350 242 680 318 680 H 1215 V 660'],
+    paths: ['M 190 380 V 610 C 190 654 226 680 278 680 H 1215 V 660'],
     label: 'GET artwork asset',
     labelX: 1050,
     labelY: 670,
     nodeIds: ['visitor-browser', 'artwork-assets'],
   },
   {
-    paths: ['M 1245 660 V 710 H 292 C 238 710 250 370 222 370'],
+    paths: ['M 1245 660 V 710 H 244 C 188 710 160 660 160 610 V 380'],
     label: 'image response',
     labelX: 610,
     labelY: 707,

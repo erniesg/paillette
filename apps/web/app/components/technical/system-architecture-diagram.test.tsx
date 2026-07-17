@@ -154,6 +154,23 @@ describe('SystemArchitectureDiagram', () => {
 
     expect(screen.queryByText('load images')).not.toBeInTheDocument();
 
+    expect(
+      screen
+        .getByLabelText('GET artwork asset connection')
+        .querySelector('.architecture-connection-line')
+    ).toHaveAttribute(
+      'd',
+      'M 190 380 V 610 C 190 654 226 680 278 680 H 1215 V 660'
+    );
+    expect(
+      screen
+        .getByLabelText('image response connection')
+        .querySelector('.architecture-connection-line')
+    ).toHaveAttribute(
+      'd',
+      'M 1245 660 V 710 H 244 C 188 710 160 660 160 610 V 380'
+    );
+
     fireEvent.mouseEnter(
       screen.getByTestId('architecture-node-artwork-assets')
     );
