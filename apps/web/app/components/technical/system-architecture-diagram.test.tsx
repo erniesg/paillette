@@ -103,10 +103,12 @@ describe('SystemArchitectureDiagram', () => {
   it('keeps the arrowhead fixed-size while a connection is highlighted', () => {
     render(<SystemArchitectureDiagram />);
 
-    expect(screen.getByTestId('architecture-arrow')).toHaveAttribute(
-      'markerUnits',
-      'userSpaceOnUse'
-    );
+    const marker = screen.getByTestId('architecture-arrow');
+
+    expect(marker).toHaveAttribute('markerUnits', 'userSpaceOnUse');
+    expect(marker).toHaveAttribute('markerWidth', '8');
+    expect(marker).toHaveAttribute('refX', '7.5');
+    expect(marker.querySelector('path')).toHaveAttribute('fill', 'none');
   });
 
   it('highlights the components participating in a hovered connection', () => {

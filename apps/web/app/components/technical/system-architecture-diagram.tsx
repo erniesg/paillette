@@ -527,14 +527,21 @@ export function SystemArchitectureDiagram(): JSX.Element {
           <marker
             id="architecture-arrow"
             data-testid="architecture-arrow"
-            markerWidth="10"
-            markerHeight="10"
-            refX="9"
-            refY="5"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7.5"
+            refY="4"
             orient="auto"
             markerUnits="userSpaceOnUse"
           >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+            <path
+              d="M 1.5 1.5 L 6 4 L 1.5 6.5"
+              fill="none"
+              stroke="context-stroke"
+              strokeWidth="1.35"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </marker>
         </defs>
 
