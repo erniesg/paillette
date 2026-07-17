@@ -58,9 +58,9 @@ const headingClassName =
   'font-display text-3xl font-semibold tracking-normal text-white md:text-4xl';
 const bodyClassName =
   'text-base leading-8 text-white/68 md:text-lg md:leading-9';
-export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 space-y-5';
+export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 max-w-4xl space-y-5';
 export const ABOUT_MAIN_CLASS_NAME =
-  'w-full px-5 py-14 sm:px-6 lg:px-10 xl:px-14 lg:py-20';
+  'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20';
 export const TECHNICAL_DETAILS_HREF = '/technical';
 export const TECHNICAL_DETAILS_CTA =
   'See architecture, retrieval flow, and performance evidence';

@@ -24,11 +24,11 @@ beforeAll(async () => {
     technicalRoute.TECHNICAL_BODY_GROUP_CLASS_NAME;
 });
 
-it('matches the full-width About page layout', () => {
+it('matches the centered production About page layout', () => {
   expect(TECHNICAL_MAIN_CLASS_NAME).toBe(
-    'w-full px-5 py-14 sm:px-6 lg:px-10 xl:px-14 lg:py-20'
+    'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20'
   );
-  expect(TECHNICAL_BODY_GROUP_CLASS_NAME).not.toContain('max-w-');
+  expect(TECHNICAL_BODY_GROUP_CLASS_NAME).toBe('mt-5 max-w-4xl space-y-5');
 });
 
 it('keeps performance to a compact four-number summary', () => {

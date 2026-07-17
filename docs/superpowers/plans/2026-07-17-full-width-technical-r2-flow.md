@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make About and Technical share the same full-width editorial layout and make the Browser-to-R2 asset exchange unmistakable.
+**Goal:** Make About and Technical share the same centered production editorial layout and make the Browser-to-R2 asset exchange unmistakable.
 
 **Architecture:** Keep the existing route and SVG component boundaries. Change only layout tokens and the diagram's declared connection data so the visual treatment remains lightweight, responsive, and testable.
 
@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- Narrative sections use the available page width without an early `max-w-*` cutoff.
+- Page content uses the production `mx-auto max-w-7xl` frame with matching responsive gutters.
+- Narrative copy uses the production `max-w-4xl` reading column.
 - The feedback form remains constrained because it is an input workflow, not narrative copy.
 - Technical uses About's page padding, heading scale, body leading, and section rhythm.
 - RRF remains separate from R2; the browser requests and receives artwork assets directly.
@@ -34,17 +35,17 @@
 
 - [ ] **Step 1: Write failing tests**
 
-Assert narrative copy has no `max-w-*` cutoff and Technical exports the same main layout class as About.
+Assert About and Technical export the production `max-w-7xl` page frame and `max-w-4xl` reading-column contracts.
 
 - [ ] **Step 2: Verify the tests fail**
 
 Run: `pnpm --filter @paillette/web exec vitest run app/routes/__tests__/about-layout.test.tsx app/routes/__tests__/technical-route.test.tsx`
 
-Expected: FAIL because the full-width layout contracts do not exist.
+Expected: FAIL when either route diverges from the production layout contracts.
 
 - [ ] **Step 3: Implement the layout changes**
 
-Export the narrative layout constant from About, remove its `max-w-4xl`, and restyle Technical with the matching main, heading, body, and section classes.
+Export the production layout constants from About and restyle Technical with the matching main, heading, body, and section classes.
 
 - [ ] **Step 4: Verify the tests pass**
 
