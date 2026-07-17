@@ -100,18 +100,21 @@ describe('SystemArchitectureDiagram', () => {
     ).toHaveAttribute('fill', '#080a0f');
   });
 
-  it('keeps the arrowhead fixed-size while a connection is highlighted', () => {
+  it('keeps the filled arrowhead fixed-size while a connection is highlighted', () => {
     render(<SystemArchitectureDiagram />);
 
     const marker = screen.getByTestId('architecture-arrow');
 
     expect(marker).toHaveAttribute('markerUnits', 'userSpaceOnUse');
-    expect(marker).toHaveAttribute('markerWidth', '8');
-    expect(marker).toHaveAttribute('refX', '7.5');
-    expect(marker.querySelector('path')).toHaveAttribute('fill', 'none');
+    expect(marker).toHaveAttribute('markerWidth', '10');
+    expect(marker).toHaveAttribute('refX', '9');
     expect(marker.querySelector('path')).toHaveAttribute(
-      'stroke',
+      'fill',
       'context-stroke'
+    );
+    expect(marker.querySelector('path')).toHaveAttribute(
+      'd',
+      'M 0 0 L 10 5 L 0 10 z'
     );
   });
 
