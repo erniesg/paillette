@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MASONRY_IMAGE_CLASS_NAME,
+  getSearchParamsForQuery,
   getMasonryImageFrameStyle,
+  collectPalette,
   shouldObserveMasonryColumnEnds,
 } from '../galleries.$galleryId.search';
 import type { ArtworkSearchResult } from '~/types';
@@ -79,5 +81,42 @@ describe('masonry infinite loading', () => {
         view: 'masonry',
       })
     ).toBe(false);
+  });
+});
+
+describe('composable colour refinement', () => {
+  it('parses and memoizes each result palette once per result object', () => {
+    const result = artwork({
+      colorPalette: {
+        colors: ['#4c78a8', '#ffffff'],
+        percentages: [0.8, 0.2],
+      },
+    });
+
+    const first = collectPalette(result);
+    const second = collectPalette(result);
+
+    expect(first).toEqual(['#4c78a8', '#ffffff']);
+    expect(second).toBe(first);
+  });
+
+  it('keeps text, facet, and colour as separate shareable URL state', () => {
+    expect(getSearchParamsForQuery('angels', null, 'navy')).toEqual({
+      q: 'angels',
+      colour: 'navy',
+    });
+    expect(
+      getSearchParamsForQuery('blue painted ornament', null, 'custom:#4c78a8')
+    ).toEqual({
+      q: 'blue painted ornament',
+      colour: 'custom:#4c78a8',
+    });
+    expect(
+      getSearchParamsForQuery('Painting', 'classification', 'navy')
+    ).toEqual({
+      q: 'Painting',
+      field: 'classification',
+      colour: 'navy',
+    });
   });
 });

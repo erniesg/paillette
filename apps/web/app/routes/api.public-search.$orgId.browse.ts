@@ -9,9 +9,11 @@ import type {
 import {
   getApiBaseUrl,
   getServerEnv,
+  isAllowedPublicSearchRouteId,
   isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   resolvePublicSearchOrgId,
+  schedulePublicSearchWork,
 } from '~/lib/public-search.server';
 
 const clamp = (
@@ -136,6 +138,19 @@ export const loader = async ({
     );
   }
 
+  if (!isAllowedPublicSearchRouteId(orgId)) {
+    return json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'PUBLIC_SEARCH_SCOPE_FORBIDDEN',
+          message: 'This organization is not available to public search.',
+        },
+      },
+      { status: 403 }
+    );
+  }
+
   const url = new URL(request.url);
   const limit = clamp(url.searchParams.get('limit'), 1, 100, 60);
   const offset = clamp(url.searchParams.get('offset'), 0, 100000, 0);
@@ -157,7 +172,7 @@ export const loader = async ({
   apiUrl.searchParams.set('sort_by', sortBy);
   apiUrl.searchParams.set('sort_order', sortOrder);
 
-  const response = await fetch(apiUrl.toString());
+  const response = await fetch(apiUrl.toString(), { signal: request.signal });
   const payload = (await response.json()) as ApiResponse<Artwork[]> & {
     pagination?: {
       total?: number;
@@ -175,27 +190,30 @@ export const loader = async ({
     .filter((artwork) => !isHiddenPublicNgsArtwork(artwork as any))
     .map((artwork) => mapArtworkToSearchResult(artwork));
 
-  await logPublicUsageEvent(request, env, {
-    eventType: 'browse',
-    queryType: 'public_browse',
-    orgId: resolvedOrgId,
-    search: {
-      mode: 'browse',
-      limit,
-      offset,
-      sortBy,
-      sortOrder,
-      rawResultCount: payload.data.length,
-      resultCount: results.length,
-      hiddenFilteredCount: payload.data.length - results.length,
-      total: payload.pagination?.total ?? results.length,
-      hasMore: payload.pagination?.has_more ?? results.length === limit,
-    },
-    results: results.map(getUsageResult),
-    metadata: {
-      routeOrgId: orgId,
-    },
-  });
+  schedulePublicSearchWork(
+    context,
+    logPublicUsageEvent(request, env, {
+      eventType: 'browse',
+      queryType: 'public_browse',
+      orgId: resolvedOrgId,
+      search: {
+        mode: 'browse',
+        limit,
+        offset,
+        sortBy,
+        sortOrder,
+        rawResultCount: payload.data.length,
+        resultCount: results.length,
+        hiddenFilteredCount: payload.data.length - results.length,
+        total: payload.pagination?.total ?? results.length,
+        hasMore: payload.pagination?.has_more ?? results.length === limit,
+      },
+      results: results.map(getUsageResult),
+      metadata: {
+        routeOrgId: orgId,
+      },
+    })
+  );
 
   return json({
     success: true,

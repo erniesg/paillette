@@ -25,7 +25,11 @@ import {
   parseFilename,
 } from '../utils/image';
 import { PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
-import { resolveOrgIdentifier } from '../utils/orgs';
+import {
+  isAllowedPublicSearchRouteScope,
+  resolveOpenAccessProviderScope,
+  resolveOrgIdentifier,
+} from '../utils/orgs';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -126,16 +130,26 @@ const getRouteOrgId = async (c: Context<{ Bindings: Env }>) =>
     c.req.param('orgId') || c.req.param('galleryId')
   );
 
+const getRouteProvider = (c: Context<{ Bindings: Env }>) =>
+  resolveOpenAccessProviderScope(
+    c.req.param('orgId') || c.req.param('galleryId')
+  );
+
 const getScopedArtwork = async (
   db: D1Database,
   id: string,
-  orgId: string | undefined
+  orgId: string | undefined,
+  provider?: string
 ) =>
   db
     .prepare(
-      'SELECT * FROM artworks WHERE id = ? AND org_id = ? AND deleted_at IS NULL'
+      `SELECT * FROM artworks WHERE id = ? AND org_id = ? AND deleted_at IS NULL ${
+        provider
+          ? "AND json_valid(custom_metadata) AND json_extract(custom_metadata, '$.provider') = ?"
+          : ''
+      }`
     )
-    .bind(id, orgId)
+    .bind(id, orgId, ...(provider ? [provider] : []))
     .first<ArtworkRow>();
 
 const findArtworkForUpsert = async (
@@ -759,16 +773,44 @@ app.post('/upsert', requireAuthOrApiKey as any, async (c) => {
 app.get('/', async (c) => {
   try {
     const query = c.req.query();
-    const routeOrgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
-    );
-    const queryOrgId =
-      query.org_id || query.gallery_id
-        ? await resolveOrgIdentifier(c.env.DB, query.org_id || query.gallery_id)
-        : routeOrgId;
+    const routeIdentifier = c.req.param('orgId') || c.req.param('galleryId');
+    const routeProvider = getRouteProvider(c);
+    const routeOrgId = await resolveOrgIdentifier(c.env.DB, routeIdentifier);
+    const queryIdentifier = query.org_id || query.gallery_id;
+    const queryOrgId = queryIdentifier
+      ? await resolveOrgIdentifier(c.env.DB, queryIdentifier)
+      : routeOrgId;
+    const publicOnly =
+      query.public_only === 'true' || query.public_only === '1';
+
+    if (queryOrgId !== routeOrgId) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'ORG_SCOPE_MISMATCH',
+            message: 'Artwork listing scope must match the route org',
+          },
+        },
+        403
+      );
+    }
+
+    if (publicOnly && !isAllowedPublicSearchRouteScope(routeIdentifier)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SCOPE_FORBIDDEN',
+            message: 'Public artwork browsing is not enabled for this org',
+          },
+        },
+        403
+      );
+    }
+
     const validatedQuery = ArtworkQuerySchema.parse({
-      org_id: queryOrgId,
+      org_id: routeOrgId,
       collection_id: query.collection_id,
       artist: query.artist,
       year: query.year ? parseInt(query.year) : undefined,
@@ -776,8 +818,7 @@ app.get('/', async (c) => {
       year_max: query.year_max ? parseInt(query.year_max) : undefined,
       medium: query.medium,
       search: query.search,
-      public_only:
-        query.public_only === 'true' || query.public_only === '1' || undefined,
+      public_only: publicOnly || undefined,
       limit: query.limit ? parseInt(query.limit) : undefined,
       offset: query.offset ? parseInt(query.offset) : undefined,
       sort_by: query.sort_by,
@@ -792,6 +833,12 @@ app.get('/', async (c) => {
     if (validatedOrgId) {
       sql += ' AND org_id = ?';
       params.push(validatedOrgId);
+    }
+
+    if (routeProvider) {
+      sql +=
+        " AND json_valid(custom_metadata) AND json_extract(custom_metadata, '$.provider') = ?";
+      params.push(routeProvider);
     }
 
     if (validatedQuery.collection_id) {
@@ -892,7 +939,12 @@ app.get('/:id', async (c) => {
     const id = c.req.param('id');
 
     const orgId = await getRouteOrgId(c);
-    const artwork = await getScopedArtwork(c.env.DB, id, orgId);
+    const artwork = await getScopedArtwork(
+      c.env.DB,
+      id,
+      orgId,
+      getRouteProvider(c)
+    );
 
     if (!artwork) {
       return c.json(

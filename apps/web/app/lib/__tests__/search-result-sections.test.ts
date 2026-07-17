@@ -68,6 +68,12 @@ describe('getSafeSearchReturnPath', () => {
     expect(
       getSafeSearchReturnPath('/ngs/search?q=chung+cheng#results', 'ngs')
     ).toBe('/ngs/search?q=chung+cheng#results');
+    expect(
+      getSafeSearchReturnPath(
+        '/nga/search?q=blue+jugs#results',
+        '/nga'
+      )
+    ).toBe('/nga/search?q=blue+jugs#results');
   });
 
   it('keeps search query state for collection route bases', () => {

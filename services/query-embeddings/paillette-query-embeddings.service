@@ -1,0 +1,20 @@
+[Unit]
+Description=Paillette query embedding service
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/code/erniesg/paillette/services/query-embeddings
+EnvironmentFile=/etc/paillette/query-embeddings.env
+Environment=HF_HOME=/home/ubuntu/.cache/huggingface
+Environment=PRELOAD_MODELS=jina-embeddings-v5-text-small,jina-clip-v2
+ExecStart=/home/ubuntu/code/erniesg/paillette/services/query-embeddings/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8001
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
