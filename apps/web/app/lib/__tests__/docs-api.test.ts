@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDocsMarkdown,
+  canCreateDocsApiKey,
   docsNavGroups,
   endpointDocs,
+  getDocsApiKeyHint,
   getQuickSearchEndpoint,
   getQuickSearchInitialValues,
 } from '../../routes/docs.api';
@@ -50,5 +52,12 @@ describe('API docs labels', () => {
       topK: '10',
       minScore: '0.2',
     });
+  });
+
+  it('allows a replacement docs key when an existing key is only a masked prefix', () => {
+    expect(canCreateDocsApiKey(false)).toBe(true);
+    expect(canCreateDocsApiKey(true)).toBe(false);
+    expect(getDocsApiKeyHint(true)).toContain('cannot be recovered');
+    expect(getDocsApiKeyHint(true)).toContain('Create a new key');
   });
 });

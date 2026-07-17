@@ -1159,6 +1159,13 @@ const getCurrentReturnTo = () =>
 
 const maskKey = (key: string | null) => key || 'plt_stg_your_api_key';
 
+export const canCreateDocsApiKey = (isPending: boolean) => !isPending;
+
+export const getDocsApiKeyHint = (hasExistingKeys: boolean) =>
+  hasExistingKeys
+    ? 'Existing keys only show their prefix and cannot be recovered. Create a new key to load its one-time secret into the top bar and run requests now.'
+    : 'Create a key to load its one-time secret into the top bar and run requests now.';
+
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 
 const defaultDailyUsage = { used: 0, quota: 100 };
@@ -2847,7 +2854,6 @@ export default function ApiDocsPage() {
   });
 
   const keys = apiKeysQuery.data?.keys ?? [];
-  const activeKey = keys.find((key) => key.status === 'active');
   const liveApiKey = testApiKey.trim();
   const shownApiKey = liveApiKey || maskKey(null);
   const selectedApiBase = apiBaseByEnvironment[apiEnvironment];
@@ -3366,7 +3372,6 @@ export default function ApiDocsPage() {
           />
 
           <AccountSections
-            activeKey={activeKey}
             apiKeysLoading={apiKeysQuery.isLoading}
             apiKeysError={apiKeysQuery.isError}
             copiedValue={copiedValue}
@@ -3787,7 +3792,6 @@ function McpSections({
 }
 
 function AccountSections({
-  activeKey,
   apiKeysError,
   apiKeysLoading,
   copiedValue,
@@ -3813,9 +3817,6 @@ function AccountSections({
   usageErrorMessage,
   user,
 }: {
-  activeKey:
-    | { id: string; key_prefix: string; name: string; status: string }
-    | undefined;
   apiKeysError: boolean;
   apiKeysLoading: boolean;
   copiedValue: string | null;
@@ -3904,15 +3905,16 @@ function AccountSections({
                 <input
                   value={keyName}
                   onChange={(event) => onKeyNameChange(event.target.value)}
-                  disabled={
-                    Boolean(activeKey) || createApiKeyMutation.isPending
-                  }
+                  disabled={createApiKeyMutation.isPending}
                   className="h-10 rounded-md border border-[var(--app-line)] bg-[var(--app-control)] px-3 text-sm text-[var(--app-text)] outline-none transition focus:border-[var(--docs-code)] disabled:opacity-50"
                 />
               </label>
+              <p className="mt-2 text-xs leading-5 text-[var(--app-faint)]">
+                {getDocsApiKeyHint(keys.some((key) => key.status === 'active'))}
+              </p>
               <ActionButton
                 className="mt-3 w-full justify-center"
-                disabled={Boolean(activeKey) || createApiKeyMutation.isPending}
+                disabled={!canCreateDocsApiKey(createApiKeyMutation.isPending)}
                 onClick={() => createApiKeyMutation.mutate()}
               >
                 {createApiKeyMutation.isPending ? (
