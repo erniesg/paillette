@@ -6,6 +6,7 @@ import {
   PublicSiteFooter,
   PublicSiteHeader,
 } from '~/components/site/public-shell';
+import { SystemArchitectureDiagram } from '~/components/technical/system-architecture-diagram';
 import { getServerEnv } from '~/lib/public-search.server';
 
 export const meta: MetaFunction = () => {
@@ -58,7 +59,9 @@ const headingClassName =
   'font-display text-3xl font-semibold tracking-normal text-white md:text-4xl';
 const bodyClassName =
   'text-base leading-8 text-white/68 md:text-lg md:leading-9';
-const bodyGroupClassName = 'mt-5 max-w-4xl space-y-5';
+export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 max-w-6xl space-y-5';
+export const ABOUT_MAIN_CLASS_NAME =
+  'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20';
 const inputClassName =
   'w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/28 focus:border-cyan-200/40 focus:bg-white/[0.065] focus:ring-2 focus:ring-cyan-200/20';
 const fieldLabelClassName =
@@ -394,14 +397,14 @@ export default function AboutPage() {
     <div className="min-h-screen bg-[#0b0b0e] text-white">
       <PublicSiteHeader active="about" />
 
-      <main className="mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20">
+      <main className={ABOUT_MAIN_CLASS_NAME}>
         <h1 className="font-display text-6xl font-semibold tracking-normal text-white md:text-7xl">
           About
         </h1>
 
         <section className="mt-12 py-4 md:mt-16">
           <h2 className={headingClassName}>Why I built this</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Cause why not? I basically wanted to maximise token use on my AI
               subscriptions.
@@ -411,7 +414,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Context</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Public art collections are interesting because the data is visual,
               textual, and messy. People search collections in different ways:
@@ -424,7 +427,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Data</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               To make the index more comprehensive, we gathered publicly
               available data from{' '}
@@ -446,9 +449,21 @@ export default function AboutPage() {
           </div>
         </section>
 
+        <section id="technical-details" className={sectionClassName}>
+          <h2 className={headingClassName}>System architecture</h2>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
+            <p className={bodyClassName}>
+              From browser request to ranked result.
+            </p>
+          </div>
+          <div className="mt-8">
+            <SystemArchitectureDiagram />
+          </div>
+        </section>
+
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Approach</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               In order to support different ways of searching the collection,
               Paillette routes each query to the search channels that make
@@ -462,14 +477,14 @@ export default function AboutPage() {
               painting" leans on colour and image similarity. "Works about
               migration" leans on captions and keywords.
             </p>
-
-            <MermaidDiagram chart={searchFlowDiagram} />
           </div>
+
+          <MermaidDiagram chart={searchFlowDiagram} />
         </section>
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Limitations</h2>
-          <div className={bodyGroupClassName}>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Paillette can only search what is in the corpus. If there are no
               relevant works for something like "Dragon Boat Festival", the
@@ -484,7 +499,7 @@ export default function AboutPage() {
 
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Feedback</h2>
-          <div className="mt-5 max-w-3xl space-y-5">
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
               Send bugs, confusing results, missing workflows, or ideas for the
               search. You will get an email acknowledgement.

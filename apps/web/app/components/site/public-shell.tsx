@@ -33,19 +33,24 @@ export function PublicSiteHeader({
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
-        <div className="flex min-w-0 items-baseline gap-5">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-2 sm:px-5 lg:px-8">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-5">
           <Link
             to={searchHref}
             onClick={onLogoClick}
+            aria-label="Paillette search"
             className="inline-flex shrink-0 leading-none transition-opacity hover:opacity-80"
           >
-            <Logo size="sm" framed className="leading-none" />
+            <Logo
+              size="sm"
+              framed
+              className="text-base leading-none sm:text-xl [&>span:last-child]:hidden sm:[&>span:last-child]:inline"
+            />
           </Link>
           <Link
             to="/about"
             aria-current={active === 'about' ? 'page' : undefined}
-            className={`inline-flex shrink-0 text-sm font-medium leading-none transition-colors ${
+            className={`inline-flex min-h-11 min-w-11 items-center rounded-sm px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0e] ${
               active === 'about'
                 ? 'text-white/75'
                 : 'text-white/55 hover:text-white'
@@ -55,7 +60,7 @@ export function PublicSiteHeader({
           </Link>
         </div>
 
-        <nav className="flex items-center gap-2" aria-label="Primary">
+        <nav className="flex items-center gap-1 sm:gap-2" aria-label="Primary">
           {isAuthenticated ? (
             <UserMenu />
           ) : canShowAuthActions ? (
@@ -63,24 +68,26 @@ export function PublicSiteHeader({
               <button
                 type="button"
                 onClick={onLogin}
-                className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white"
+                aria-label="Log in"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center gap-0 rounded-md border border-white/10 bg-white/[0.06] px-2 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white sm:gap-2 sm:px-3"
               >
-                <LogIn className="h-3.5 w-3.5" />
-                Log in
+                <LogIn className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Log in</span>
               </button>
               <button
                 type="button"
                 onClick={onSignup}
-                className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white px-3 py-1.5 text-xs font-semibold text-[#0b0b0e] transition-colors hover:bg-white/85"
+                aria-label="Create account"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center gap-0 rounded-md border border-white/10 bg-white px-2 py-1.5 text-xs font-semibold text-[#0b0b0e] transition-colors hover:bg-white/85 sm:gap-2 sm:px-3"
               >
-                <UserPlus className="h-3.5 w-3.5" />
-                Create account
+                <UserPlus className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Create account</span>
               </button>
             </>
           ) : (
             <Link
               to={searchHref}
-              className="rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] px-2 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white sm:px-3"
             >
               Search
             </Link>
