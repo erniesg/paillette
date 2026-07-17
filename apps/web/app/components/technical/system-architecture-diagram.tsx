@@ -94,7 +94,6 @@ function Boundary({
   y,
   width,
   height,
-  label,
   tone,
 }: {
   x: number;
@@ -271,8 +270,8 @@ const CONNECTIONS: ArchitectureConnection[] = [
   {
     paths: ['M 510 340 C 530 340 536 310 565 310'],
     label: 'POST /search',
-    labelX: 535,
-    labelY: 322,
+    labelX: 520,
+    labelY: 286,
     nodeIds: ['remix-web-worker', 'auth-quota'],
   },
   {
@@ -555,7 +554,7 @@ export function SystemArchitectureDiagram(): JSX.Element {
           .architecture-connection-active .architecture-connection-line {
             stroke: #67e8f9;
             stroke-width: 3;
-            filter: drop-shadow(0 0 5px rgba(103, 232, 249, 0.45));
+            filter: drop-shadow(0 0 3px rgba(103, 232, 249, 0.36));
           }
           .architecture-connection:hover .architecture-connection-label,
           .architecture-connection:focus .architecture-connection-label,
@@ -571,7 +570,7 @@ export function SystemArchitectureDiagram(): JSX.Element {
             fill: #172033;
             stroke: #67e8f9;
             stroke-width: 3;
-            filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.38));
+            filter: drop-shadow(0 0 4px rgba(103, 232, 249, 0.3));
           }
           .architecture-node:hover .architecture-node-badge,
           .architecture-node:focus .architecture-node-badge,
