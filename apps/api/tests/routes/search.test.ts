@@ -2358,6 +2358,76 @@ describe('Search API auth and quota behavior', () => {
     expect(db.artworkEvents).toHaveLength(0);
   });
 
+  it('exposes safe public-search cost and latency diagnostics', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      JINA_API_KEY: 'provider-secret',
+      QUERY_EMBEDDING_API_URL: 'https://provider.example/private',
+      SEARCH_FUSION_MODE: 'metadata',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      { query: 'PRIVATE_QUERY_SENTINEL', topK: 100, minScore: 0 },
+      'ngs'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(response.headers.get('X-Paillette-Upstream-Embeddings')).toBe('0');
+    expect(response.headers.get('X-Paillette-Embedding-Cache')).toBe(
+      'image=not-needed,caption=not-needed'
+    );
+    expect(response.headers.get('X-Paillette-Search-Path')).toBe(
+      'metadata:metadata'
+    );
+    expect(response.headers.get('X-Paillette-Search-Contract')).toBe('18');
+
+    const serverTiming = response.headers.get('Server-Timing') || '';
+    for (const stage of [
+      'result_kv',
+      'artist_lookup',
+      'image_embedding_cache',
+      'image_embedding_upstream',
+      'image_vectorize',
+      'caption_embedding_cache',
+      'caption_embedding_upstream',
+      'caption_vectorize',
+      'metadata',
+      'hydration',
+      'usage',
+      'telemetry',
+      'total',
+    ]) {
+      expect(serverTiming).toContain(`${stage};dur=`);
+    }
+
+    const diagnostic = log.mock.calls
+      .map(([message]) => String(message))
+      .find((message) => message.startsWith('{"event":"public_search"'));
+    expect(diagnostic).toBeDefined();
+    const event = JSON.parse(diagnostic || '{}');
+    expect(event).toMatchObject({
+      scope: 'NGS',
+      routed_intent: 'metadata',
+      cache_disposition: 'MISS',
+      revisions: { contract: '18', embedding_index: 'v1', fusion: 'metadata' },
+      d1: { rows_read: 0, rows_written: 0 },
+      result_count: 1,
+      degraded: false,
+      error_class: null,
+    });
+    expect(diagnostic).not.toMatch(
+      /PRIVATE_QUERY_SENTINEL|provider\.example|public-search-secret|provider-secret|Authorization|Bearer|query-embedding:|public-search-result:|\[0\.1/
+    );
+  });
+
   it('returns 429 DAILY_QUOTA_EXCEEDED on the 101st query in the same UTC day', async () => {
     for (let i = 0; i < 100; i += 1) {
       const res = await textSearch(app, env);

@@ -16,6 +16,12 @@ export interface QueryEmbeddingCacheOptions extends QueryEmbeddingIdentity {
   cache?: KVNamespace;
   generate: (normalizedQuery: string) => Promise<number[]>;
   schedule?: (work: Promise<void>) => void;
+  observe?: (event: {
+    disposition: 'hit' | 'miss' | 'coalesced';
+    cacheDurationMs: number;
+    upstreamDurationMs: number;
+    cacheValueBytes: number;
+  }) => void;
 }
 
 const inFlightEmbeddings = new Map<string, Promise<number[]>>();
@@ -123,18 +129,50 @@ const resolveQueryEmbedding = async (
   key: string,
   options: QueryEmbeddingCacheOptions
 ): Promise<number[]> => {
+  const cacheStartedAt = performance.now();
   const cached = await readCachedEmbedding(
     options.cache,
     key,
     options.dimensions
   );
+  const cacheDurationMs = performance.now() - cacheStartedAt;
   if (cached) {
+    options.observe?.({
+      disposition: 'hit',
+      cacheDurationMs,
+      upstreamDurationMs: 0,
+      cacheValueBytes: new TextEncoder().encode(JSON.stringify(cached))
+        .byteLength,
+    });
     return cached;
   }
 
-  const generated = await options.generate(
-    normalizeQueryEmbeddingText(options.query)
-  );
+  const upstreamStartedAt = performance.now();
+  let generated: number[];
+  try {
+    generated = await options.generate(
+      normalizeQueryEmbeddingText(options.query)
+    );
+  } catch (error) {
+    options.observe?.({
+      disposition: 'miss',
+      cacheDurationMs,
+      upstreamDurationMs: performance.now() - upstreamStartedAt,
+      cacheValueBytes: 0,
+    });
+    throw error;
+  }
+  const upstreamDurationMs = performance.now() - upstreamStartedAt;
+  const cacheValueBytes = isValidEmbedding(generated, options.dimensions)
+    ? new TextEncoder().encode(JSON.stringify(generated)).byteLength
+    : 0;
+
+  options.observe?.({
+    disposition: 'miss',
+    cacheDurationMs,
+    upstreamDurationMs,
+    cacheValueBytes,
+  });
 
   if (isValidEmbedding(generated, options.dimensions)) {
     const persistence = writeCachedEmbedding(options.cache, key, generated);
@@ -152,7 +190,15 @@ export const getOrCreateQueryEmbedding = async (
   const key = await buildQueryEmbeddingCacheKey(options);
   const existing = inFlightEmbeddings.get(key);
   if (existing) {
-    return existing;
+    const startedAt = performance.now();
+    const value = await existing;
+    options.observe?.({
+      disposition: 'coalesced',
+      cacheDurationMs: performance.now() - startedAt,
+      upstreamDurationMs: 0,
+      cacheValueBytes: 0,
+    });
+    return value;
   }
 
   const pending = resolveQueryEmbedding(key, options);

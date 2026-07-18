@@ -43,6 +43,11 @@ export interface PublicSearchResultCacheOptions
   load: () => Promise<PublicSearchResultCacheLoadResult>;
   schedule?: (work: Promise<void>) => void;
   now?: () => number;
+  observe?: (event: {
+    disposition: PublicSearchResultCacheDisposition;
+    lookupDurationMs: number;
+    cacheValueBytes: number;
+  }) => void;
 }
 
 export interface PublicSearchResultCacheResult {
@@ -90,8 +95,8 @@ const CachedPublicSearchResultSchema = z
 type CachedPublicSearchResult = z.infer<typeof CachedPublicSearchResultSchema>;
 
 type CacheLookup =
-  | { state: 'fresh'; value: CachedPublicSearchResult }
-  | { state: 'stale'; value: CachedPublicSearchResult }
+  | { state: 'fresh'; value: CachedPublicSearchResult; valueBytes: number }
+  | { state: 'stale'; value: CachedPublicSearchResult; valueBytes: number }
   | { state: 'miss' };
 
 const inFlightLoads = new Map<
@@ -217,6 +222,9 @@ const lookupCachedResult = async (
   const rawValue = await readCacheValue(cache, key);
   const parsed = CachedPublicSearchResultSchema.safeParse(rawValue);
   if (!parsed.success) return { state: 'miss' };
+  const valueBytes = new TextEncoder().encode(
+    JSON.stringify(parsed.data)
+  ).byteLength;
 
   const expectedOrgId = normalizeScope(identity.orgId);
   const expectedProvider = normalizeScope(identity.provider);
@@ -230,10 +238,10 @@ const lookupCachedResult = async (
   const age = now - parsed.data.storedAt;
   if (age < 0) return { state: 'miss' };
   if (age <= PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS) {
-    return { state: 'fresh', value: parsed.data };
+    return { state: 'fresh', value: parsed.data, valueBytes };
   }
   if (age <= PUBLIC_SEARCH_RESULT_CACHE_HARD_TTL_SECONDS * 1000) {
-    return { state: 'stale', value: parsed.data };
+    return { state: 'stale', value: parsed.data, valueBytes };
   }
   return { state: 'miss' };
 };
@@ -327,20 +335,38 @@ const resolveResult = async (
   options: PublicSearchResultCacheOptions,
   now: () => number
 ): Promise<DirectPublicSearchResultCacheResult> => {
+  const lookupStartedAt = performance.now();
   const lookup = await lookupCachedResult(options.cache, key, options, now());
+  const lookupDurationMs = performance.now() - lookupStartedAt;
   if (lookup.state === 'fresh') {
+    options.observe?.({
+      disposition: 'kv-fresh',
+      lookupDurationMs,
+      cacheValueBytes: lookup.valueBytes,
+    });
     return {
       response: reconstructResponse(lookup.value),
       disposition: 'kv-fresh',
     };
   }
   if (lookup.state === 'stale') {
+    options.observe?.({
+      disposition: 'kv-stale',
+      lookupDurationMs,
+      cacheValueBytes: lookup.valueBytes,
+    });
     beginStaleRefresh(key, options, now);
     return {
       response: reconstructResponse(lookup.value),
       disposition: 'kv-stale',
     };
   }
+
+  options.observe?.({
+    disposition: 'miss',
+    lookupDurationMs,
+    cacheValueBytes: 0,
+  });
 
   const loaded = await options.load();
   if (loaded.cacheable === true) {
@@ -361,7 +387,13 @@ export const getOrLoadPublicSearchResult = async (
   const inFlightIdentity = serializePublicSearchResultCacheIdentity(options);
   const existing = inFlightLoads.get(inFlightIdentity);
   if (existing) {
+    const startedAt = performance.now();
     const resolved = await existing;
+    options.observe?.({
+      disposition: 'coalesced',
+      lookupDurationMs: performance.now() - startedAt,
+      cacheValueBytes: 0,
+    });
     return { response: resolved.response, disposition: 'coalesced' };
   }
 

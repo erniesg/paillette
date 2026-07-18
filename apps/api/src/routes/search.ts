@@ -22,6 +22,17 @@ import {
 } from '../utils/public-search-cold-miss-rate-limit';
 import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
 import {
+  addPublicSearchTiming,
+  buildPublicSearchServerTiming,
+  buildPublicSearchStructuredEvent,
+  createPublicSearchObservation,
+  getPublicSearchErrorClass,
+  measurePublicSearchStage,
+  recordPublicSearchD1,
+  type PublicSearchEmbeddingChannel,
+  type PublicSearchObservation,
+} from '../utils/public-search-observability';
+import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   normalizePublicSearchText,
 } from '@paillette/types/public-search';
@@ -797,7 +808,9 @@ const getCachedJinaQueryEmbedding = (
   config: ReturnType<typeof getJinaConfig>,
   model: string,
   dimensions: number,
-  schedule?: ScheduleBackgroundWork
+  schedule?: ScheduleBackgroundWork,
+  observation?: PublicSearchObservation,
+  channel: PublicSearchEmbeddingChannel = 'image'
 ) =>
   getOrCreateQueryEmbedding({
     cache: env.CACHE,
@@ -807,6 +820,32 @@ const getCachedJinaQueryEmbedding = (
     dimensions,
     indexVersion: `${PUBLIC_SEARCH_CONTRACT_VERSION}:${getEmbeddingIndexVersion(env)}:retrieval.query`,
     schedule,
+    observe: (event) => {
+      if (observation) {
+        observation.embeddingCache[channel] = event.disposition;
+      }
+      addPublicSearchTiming(
+        observation,
+        `${channel}_embedding_cache`,
+        event.cacheDurationMs
+      );
+      addPublicSearchTiming(
+        observation,
+        `${channel}_embedding_upstream`,
+        event.upstreamDurationMs
+      );
+      if (event.disposition === 'miss' && event.upstreamDurationMs > 0) {
+        if (observation) {
+          observation.upstreamEmbeddings[channel] += 1;
+        }
+      }
+      if (observation) {
+        observation.cacheValueBytes = Math.max(
+          observation.cacheValueBytes,
+          event.cacheValueBytes
+        );
+      }
+    },
     generate: (normalizedQuery) =>
       generateJinaQueryEmbedding(
         config.apiKey!,
@@ -969,7 +1008,8 @@ const getSearchResultModelIdentity = (env: Env) => {
 async function generateCaptionQueryEmbedding(
   env: Env,
   query: string,
-  schedule?: ScheduleBackgroundWork
+  schedule?: ScheduleBackgroundWork,
+  observation?: PublicSearchObservation
 ): Promise<number[]> {
   const captionConfig = getCaptionConfig(env);
   if (captionConfig.provider === 'jina') {
@@ -986,11 +1026,21 @@ async function generateCaptionQueryEmbedding(
       queryConfig,
       captionConfig.model,
       captionConfig.dimensions,
-      schedule
+      schedule,
+      observation,
+      'caption'
     );
   }
 
-  return generateCloudflareCaptionQueryEmbedding(env.AI, query);
+  if (observation) {
+    observation.embeddingCache.caption = 'bypass';
+    observation.upstreamEmbeddings.caption += 1;
+  }
+  return measurePublicSearchStage(
+    observation,
+    'caption_embedding_upstream',
+    () => generateCloudflareCaptionQueryEmbedding(env.AI, query)
+  );
 }
 
 async function searchJinaTextVectors(
@@ -1001,7 +1051,8 @@ async function searchJinaTextVectors(
   provider: string | undefined,
   query: string,
   topK: number,
-  schedule?: ScheduleBackgroundWork
+  schedule?: ScheduleBackgroundWork,
+  observation?: PublicSearchObservation
 ): Promise<CaptionVectorMatch[]> {
   if (!vectorize || !config.apiKey) {
     return [];
@@ -1013,14 +1064,24 @@ async function searchJinaTextVectors(
     config,
     config.model,
     config.dimensions,
-    schedule
+    schedule,
+    observation,
+    'image'
   );
-  const result = await vectorize.query(queryEmbedding, {
-    topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    filter: getVectorFilter(orgId, provider),
-    returnValues: false,
-    returnMetadata: VECTORIZE_QUERY_METADATA,
-  });
+  if (observation) {
+    observation.vectorizeCalls.image += 1;
+  }
+  const result = await measurePublicSearchStage(
+    observation,
+    'image_vectorize',
+    () =>
+      vectorize.query(queryEmbedding, {
+        topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
+        filter: getVectorFilter(orgId, provider),
+        returnValues: false,
+        returnMetadata: VECTORIZE_QUERY_METADATA,
+      })
+  );
 
   return canonicalizeMatches(
     result.matches.map((match) => ({
@@ -1038,7 +1099,8 @@ async function searchCaptionVectors(
   provider: string | undefined,
   query: string,
   topK: number,
-  schedule?: ScheduleBackgroundWork
+  schedule?: ScheduleBackgroundWork,
+  observation?: PublicSearchObservation
 ): Promise<CaptionVectorMatch[]> {
   if (!vectorize || !isCaptionVectorSearchEnabled(env)) {
     return [];
@@ -1047,14 +1109,23 @@ async function searchCaptionVectors(
   const queryEmbedding = await generateCaptionQueryEmbedding(
     env,
     query,
-    schedule
+    schedule,
+    observation
   );
-  const result = await vectorize.query(queryEmbedding, {
-    topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    filter: getVectorFilter(orgId, provider),
-    returnValues: false,
-    returnMetadata: VECTORIZE_QUERY_METADATA,
-  });
+  if (observation) {
+    observation.vectorizeCalls.caption += 1;
+  }
+  const result = await measurePublicSearchStage(
+    observation,
+    'caption_vectorize',
+    () =>
+      vectorize.query(queryEmbedding, {
+        topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
+        filter: getVectorFilter(orgId, provider),
+        returnValues: false,
+        returnMetadata: VECTORIZE_QUERY_METADATA,
+      })
+  );
 
   return canonicalizeMatches(
     result.matches.map((match) => ({
@@ -1123,7 +1194,8 @@ async function getArtworksByIds(
   db: D1Database,
   ids: string[],
   orgId?: string,
-  provider?: string
+  provider?: string,
+  observation?: PublicSearchObservation
 ): Promise<Map<string, ArtworkSearchRow>> {
   if (ids.length === 0) {
     return new Map();
@@ -1136,9 +1208,13 @@ async function getArtworksByIds(
     const placeholders = chunk.map(() => '?').join(',');
     const orgFilter = orgId ? 'AND org_id = ?' : '';
     const providerFilter = providerSearchSql(provider);
-    const { results } = await db
-      .prepare(
-        `
+    const d1Result = await measurePublicSearchStage(
+      observation,
+      'hydration',
+      () =>
+        db
+          .prepare(
+            `
       SELECT
         id,
         org_id,
@@ -1177,15 +1253,17 @@ async function getArtworksByIds(
         ${providerFilter}
         ${backableSearchSql(orgId)}
       `
-      )
-      .bind(
-        ...chunk,
-        ...(orgId ? [orgId] : []),
-        ...(provider ? [provider] : [])
-      )
-      .all<ArtworkSearchRow>();
+          )
+          .bind(
+            ...chunk,
+            ...(orgId ? [orgId] : []),
+            ...(provider ? [provider] : [])
+          )
+          .all<ArtworkSearchRow>()
+    );
+    recordPublicSearchD1(observation, d1Result);
 
-    artworks.push(...results);
+    artworks.push(...d1Result.results);
   }
 
   return new Map(artworks.map((artwork) => [artwork.id, artwork]));
@@ -1199,14 +1277,28 @@ async function searchArtworksHybrid(
   topK: number,
   forcedIntent?: 'artist_exact',
   schedule?: ScheduleBackgroundWork,
-  degradedChannels?: Set<SearchDegradedChannel>
+  degradedChannels?: Set<SearchDegradedChannel>,
+  observation?: PublicSearchObservation
 ): Promise<ArtworkSearchResult[]> {
   const fusionMode = getSearchFusionMode(env, orgId);
   if (fusionMode === 'legacy' || fusionMode === 'metadata') {
-    return searchArtworksByMetadata(env.DB, orgId, provider, query, topK);
+    if (observation) {
+      observation.routedIntent = 'metadata';
+    }
+    return searchArtworksByMetadata(
+      env.DB,
+      orgId,
+      provider,
+      query,
+      topK,
+      observation
+    );
   }
 
   const initialRoute = buildRoutedSearchPlan(query, forcedIntent);
+  if (observation) {
+    observation.routedIntent = initialRoute.intent;
+  }
   const metadataQuery = initialRoute.metadataQuery || query;
   const temporalFilter = parseTemporalFilter(metadataQuery);
   const jinaConfig = getJinaConfig(env);
@@ -1236,12 +1328,13 @@ async function searchArtworksHybrid(
           provider,
           query,
           topK,
-          schedule
+          schedule,
+          observation
         ).catch((error) => {
           degradedChannels?.add('image_embedding');
           console.warn(
             'Jina text query embedding failed; falling back to caption search',
-            error
+            getPublicSearchErrorClass(error)
           );
           return [] as CaptionVectorMatch[];
         })
@@ -1257,31 +1350,40 @@ async function searchArtworksHybrid(
           provider,
           query,
           topK,
-          schedule
+          schedule,
+          observation
         ).catch((error) => {
           degradedChannels?.add('caption_embedding');
           console.warn(
             'Caption query embedding failed; continuing without caption vectors',
-            error
+            getPublicSearchErrorClass(error)
           );
           return [] as CaptionVectorMatch[];
         })
       : Promise.resolve([] as CaptionVectorMatch[]),
     initialRoute.weights.metadata > 0
       ? (forcedIntent === 'artist_exact'
-          ? searchArtworksByArtistFacet(env.DB, orgId, provider, query, topK)
+          ? searchArtworksByArtistFacet(
+              env.DB,
+              orgId,
+              provider,
+              query,
+              topK,
+              observation
+            )
           : searchArtworksByMetadata(
               env.DB,
               orgId,
               provider,
               metadataQuery,
-              Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS)
+              Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS),
+              observation
             )
         ).catch((error) => {
           degradedChannels?.add('metadata');
           console.warn(
             'Metadata search failed during hybrid search; continuing with vector channels',
-            error
+            getPublicSearchErrorClass(error)
           );
           return [] as ArtworkSearchResult[];
         })
@@ -1430,7 +1532,8 @@ async function searchArtworksHybrid(
     env.DB,
     rankedIds,
     orgId,
-    provider
+    provider,
+    observation
   );
   const maxScore = Math.max(...rankingScoreById.values(), 0.001);
 
@@ -1461,7 +1564,8 @@ async function searchArtworksByMetadata(
   orgId: string | undefined,
   provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  observation?: PublicSearchObservation
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
   const normalizedWordQuery = normalizeSearchWords(query);
@@ -1535,9 +1639,10 @@ async function searchArtworksByMetadata(
     topK,
   ];
 
-  const { results } = await db
-    .prepare(
-      `
+  const d1Result = await measurePublicSearchStage(observation, 'metadata', () =>
+    db
+      .prepare(
+        `
     SELECT
       id,
       org_id,
@@ -1589,11 +1694,13 @@ async function searchArtworksByMetadata(
     ORDER BY match_score DESC, title COLLATE NOCASE ASC
     LIMIT ?
     `
-    )
-    .bind(...params)
-    .all<ArtworkMetadataSearchRow>();
+      )
+      .bind(...params)
+      .all<ArtworkMetadataSearchRow>()
+  );
+  recordPublicSearchD1(observation, d1Result);
 
-  return results.map((artwork) =>
+  return d1Result.results.map((artwork) =>
     mapSearchRow(
       artwork,
       Math.min(Math.max(artwork.match_score / 100, 0.01), 1)
@@ -1606,7 +1713,8 @@ async function searchArtworksByArtistFacet(
   orgId: string | undefined,
   provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  observation?: PublicSearchObservation
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = normalizeArtistFacetQuery(query);
   const tokens = artistFacetTokens(query);
@@ -1637,9 +1745,10 @@ async function searchArtworksByArtistFacet(
     topK,
   ];
 
-  const { results } = await db
-    .prepare(
-      `
+  const d1Result = await measurePublicSearchStage(observation, 'metadata', () =>
+    db
+      .prepare(
+        `
     SELECT
       id,
       org_id,
@@ -1687,11 +1796,13 @@ async function searchArtworksByArtistFacet(
     ORDER BY match_score DESC, artist COLLATE NOCASE ASC, year ASC, title COLLATE NOCASE ASC
     LIMIT ?
     `
-    )
-    .bind(...params)
-    .all<ArtworkMetadataSearchRow>();
+      )
+      .bind(...params)
+      .all<ArtworkMetadataSearchRow>()
+  );
+  recordPublicSearchD1(observation, d1Result);
 
-  return results.map((artwork, index) => {
+  return d1Result.results.map((artwork, index) => {
     const similarity = Math.min(Math.max(artwork.match_score / 120, 0.01), 1);
     return mapSearchRow(artwork, similarity, [
       {
@@ -1711,7 +1822,8 @@ async function searchArtworksByClassificationFacet(
   orgId: string | undefined,
   provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  observation?: PublicSearchObservation
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -1726,9 +1838,10 @@ async function searchArtworksByClassificationFacet(
     normalizedQuery,
     topK,
   ];
-  const { results } = await db
-    .prepare(
-      `
+  const d1Result = await measurePublicSearchStage(observation, 'metadata', () =>
+    db
+      .prepare(
+        `
     SELECT
       id,
       org_id,
@@ -1772,11 +1885,13 @@ async function searchArtworksByClassificationFacet(
     ORDER BY year ASC, title COLLATE NOCASE ASC
     LIMIT ?
     `
-    )
-    .bind(...params)
-    .all<ArtworkMetadataSearchRow>();
+      )
+      .bind(...params)
+      .all<ArtworkMetadataSearchRow>()
+  );
+  recordPublicSearchD1(observation, d1Result);
 
-  return results.map((artwork, index) =>
+  return d1Result.results.map((artwork, index) =>
     mapSearchRow(artwork, 1, [
       {
         channel: 'metadata',
@@ -1794,7 +1909,8 @@ async function hasExactArtistFacetMatch(
   db: D1Database,
   orgId: string | undefined,
   provider: string | undefined,
-  query: string
+  query: string,
+  observation?: PublicSearchObservation
 ) {
   const normalizedQuery = normalizeArtistFacetQuery(query);
   const tokens = artistFacetTokens(query);
@@ -1810,9 +1926,13 @@ async function hasExactArtistFacetMatch(
     ...(provider ? [provider] : []),
     normalizedQuery,
   ];
-  const { results } = await db
-    .prepare(
-      `
+  const d1Result = await measurePublicSearchStage(
+    observation,
+    'artist_lookup',
+    () =>
+      db
+        .prepare(
+          `
     SELECT id
     FROM artworks
     WHERE deleted_at IS NULL
@@ -1824,11 +1944,13 @@ async function hasExactArtistFacetMatch(
       AND trim(${artistText}) = ?
     LIMIT 1
     `
-    )
-    .bind(...params)
-    .all<{ id: string }>();
+        )
+        .bind(...params)
+        .all<{ id: string }>()
+  );
+  recordPublicSearchD1(observation, d1Result);
 
-  return results.length > 0;
+  return d1Result.results.length > 0;
 }
 
 // Validation schemas
@@ -1860,13 +1982,21 @@ searchRoutes.use(
  */
 searchRoutes.post('/search/text', async (c) => {
   const startTime = performance.now();
+  const observation = createPublicSearchObservation();
+  observation.startedAt = startTime;
+  let publicSearch = false;
+  let requestedScope: string | undefined;
+  let providerScope: string | undefined;
+  let cacheDisposition = 'BYPASS';
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    requestedScope = requestedOrgId;
     const isPublicSearchPrincipal = getAuth(c as any).scopes.includes(
       'public_search'
     );
+    publicSearch = isPublicSearchPrincipal;
     if (
       isPublicSearchPrincipal &&
       !isAllowedPublicSearchRouteScope(requestedOrgId)
@@ -1922,6 +2052,7 @@ searchRoutes.post('/search/text', async (c) => {
     }
 
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    providerScope = provider;
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
@@ -1936,7 +2067,13 @@ searchRoutes.post('/search/text', async (c) => {
     const executeSearch = async (): Promise<SearchResponse> => {
       const exactFreeTextArtist =
         !facet &&
-        (await hasExactArtistFacetMatch(c.env.DB, orgId, provider, query));
+        (await hasExactArtistFacetMatch(
+          c.env.DB,
+          orgId,
+          provider,
+          query,
+          isPublicSearchPrincipal ? observation : undefined
+        ));
       resolvedFacet = exactFreeTextArtist ? 'artist' : facet;
 
       const baseResults =
@@ -1946,7 +2083,8 @@ searchRoutes.post('/search/text', async (c) => {
               orgId,
               provider,
               query,
-              topK
+              topK,
+              isPublicSearchPrincipal ? observation : undefined
             )
           : facet === 'classification'
             ? await searchArtworksByClassificationFacet(
@@ -1954,7 +2092,8 @@ searchRoutes.post('/search/text', async (c) => {
                 orgId,
                 provider,
                 query,
-                topK
+                topK,
+                isPublicSearchPrincipal ? observation : undefined
               )
             : await searchArtworksHybrid(
                 c.env,
@@ -1964,7 +2103,8 @@ searchRoutes.post('/search/text', async (c) => {
                 topK,
                 exactFreeTextArtist ? 'artist_exact' : undefined,
                 scheduleBackgroundWork,
-                degradedChannels
+                degradedChannels,
+                isPublicSearchPrincipal ? observation : undefined
               );
       const enrichedResults = visualRefinement
         ? await rerankByVisualRefinement(
@@ -1988,6 +2128,15 @@ searchRoutes.post('/search/text', async (c) => {
     let searchResponse: SearchResponse;
 
     if (isPublicSearchPrincipal) {
+      const fusionMode = getSearchFusionMode(c.env, orgId);
+      observation.routedIntent =
+        facet === 'artist'
+          ? 'artist_facet'
+          : facet === 'classification'
+            ? 'classification_facet'
+            : fusionMode === 'hybrid'
+              ? buildRoutedSearchPlan(query).intent
+              : 'metadata';
       const cached = await getOrLoadPublicSearchResult({
         cache: c.env.CACHE,
         query,
@@ -2000,6 +2149,17 @@ searchRoutes.post('/search/text', async (c) => {
         embeddingIndexVersion: getEmbeddingIndexVersion(c.env),
         fusionMode: getSearchFusionMode(c.env, orgId),
         modelIdentity: getSearchResultModelIdentity(c.env),
+        observe: (event) => {
+          addPublicSearchTiming(
+            observation,
+            'result_kv',
+            event.lookupDurationMs
+          );
+          observation.cacheValueBytes = Math.max(
+            observation.cacheValueBytes,
+            event.cacheValueBytes
+          );
+        },
         schedule: scheduleBackgroundWork,
         load: async () => {
           await enforcePublicSearchColdMissRateLimit({
@@ -2027,6 +2187,7 @@ searchRoutes.post('/search/text', async (c) => {
       });
       searchResponse = cached.response;
       cacheHeader = cached.disposition.toUpperCase();
+      cacheDisposition = cacheHeader;
       // A coalesced follower cannot observe the leader's degradation set, so
       // keep it out of downstream caches conservatively.
       responseCacheable =
@@ -2037,46 +2198,141 @@ searchRoutes.post('/search/text', async (c) => {
     }
     c.header('X-Paillette-Search-Cache', cacheHeader);
 
-    await annotateUsageEvent(c as any, {
-      search: {
-        mode: 'text',
-        query,
-        visualRefinement,
-        facet: resolvedFacet,
-        topK,
-        minScore,
-        resultCount: searchResponse.count,
-        queryTime: searchResponse.queryTime,
-      },
-    });
+    await measurePublicSearchStage(
+      isPublicSearchPrincipal ? observation : undefined,
+      'usage',
+      async () => {
+        await annotateUsageEvent(c as any, {
+          search: {
+            mode: 'text',
+            query,
+            visualRefinement,
+            facet: resolvedFacet,
+            topK,
+            minScore,
+            resultCount: searchResponse.count,
+            queryTime: searchResponse.queryTime,
+          },
+        });
 
-    await recordArtworkResults(
-      c as any,
-      searchResponse.results.map((result, index) => ({
-        artworkId: result.id,
-        galleryId: result.orgId || result.galleryId,
-        rank: index + 1,
-        score: result.similarity,
-      }))
+        await recordArtworkResults(
+          c as any,
+          searchResponse.results.map((result, index) => ({
+            artworkId: result.id,
+            galleryId: result.orgId || result.galleryId,
+            rank: index + 1,
+            score: result.similarity,
+          }))
+        );
+      }
     );
 
-    return c.json<ApiResponse<SearchResponse>>({
+    const degraded = SEARCH_DEGRADED_CHANNEL_ORDER.filter((channel) =>
+      degradedChannels.has(channel)
+    );
+    const responsePayload: ApiResponse<SearchResponse> = {
       success: true,
       data: searchResponse,
       meta: {
         timestamp: new Date().toISOString(),
         search: {
           cacheable: responseCacheable,
-          degradedChannels: SEARCH_DEGRADED_CHANNEL_ORDER.filter((channel) =>
-            degradedChannels.has(channel)
-          ),
+          degradedChannels: degraded,
         },
       },
-    });
+    };
+
+    if (isPublicSearchPrincipal) {
+      const responseBytes = new TextEncoder().encode(
+        JSON.stringify(responsePayload)
+      ).byteLength;
+      if (observation.cacheValueBytes === 0 && responseCacheable) {
+        observation.cacheValueBytes = responseBytes;
+      }
+      const imageConfig = getJinaConfig(c.env);
+      const captionConfig = getCaptionConfig(c.env);
+      const fusionMode = getSearchFusionMode(c.env, orgId);
+      const event = buildPublicSearchStructuredEvent({
+        observation,
+        requestedOrgId,
+        provider,
+        cacheDisposition,
+        embeddingIndexVersion: getEmbeddingIndexVersion(c.env),
+        fusionMode,
+        imageModel: imageConfig.model,
+        captionModel:
+          captionConfig.provider === 'jina'
+            ? captionConfig.model
+            : CAPTION_TEXT_MODEL,
+        degradedChannels: degraded,
+        resultCount: searchResponse.count,
+        responseBytes,
+      });
+      const telemetryStartedAt = performance.now();
+      console.log(JSON.stringify(event));
+      addPublicSearchTiming(
+        observation,
+        'telemetry',
+        performance.now() - telemetryStartedAt
+      );
+
+      c.header(
+        'X-Paillette-Upstream-Embeddings',
+        String(
+          observation.upstreamEmbeddings.image +
+            observation.upstreamEmbeddings.caption
+        )
+      );
+      c.header(
+        'X-Paillette-Embedding-Cache',
+        `image=${observation.embeddingCache.image},caption=${observation.embeddingCache.caption}`
+      );
+      c.header(
+        'X-Paillette-Search-Path',
+        `${fusionMode}:${observation.routedIntent}`
+      );
+      c.header('X-Paillette-Search-Contract', PUBLIC_SEARCH_CONTRACT_VERSION);
+      c.header('Server-Timing', buildPublicSearchServerTiming(observation));
+    }
+
+    return c.json<ApiResponse<SearchResponse>>(responsePayload);
   } catch (error) {
     if (error instanceof PublicSearchColdMissRateLimitError) {
       c.header('Retry-After', String(error.retryAfterSeconds));
       c.header('X-Paillette-Search-Cache', 'MISS');
+      if (publicSearch) {
+        const imageConfig = getJinaConfig(c.env);
+        const captionConfig = getCaptionConfig(c.env);
+        console.log(
+          JSON.stringify(
+            buildPublicSearchStructuredEvent({
+              observation,
+              requestedOrgId: requestedScope,
+              provider: providerScope,
+              cacheDisposition: 'MISS',
+              embeddingIndexVersion: getEmbeddingIndexVersion(c.env),
+              fusionMode: getSearchFusionMode(c.env, undefined),
+              imageModel: imageConfig.model,
+              captionModel:
+                captionConfig.provider === 'jina'
+                  ? captionConfig.model
+                  : CAPTION_TEXT_MODEL,
+              degradedChannels: [],
+              resultCount: 0,
+              responseBytes: 0,
+              errorClass: 'rate_limited',
+            })
+          )
+        );
+        c.header('X-Paillette-Upstream-Embeddings', '0');
+        c.header(
+          'X-Paillette-Embedding-Cache',
+          `image=${observation.embeddingCache.image},caption=${observation.embeddingCache.caption}`
+        );
+        c.header('X-Paillette-Search-Path', 'rate-limited');
+        c.header('X-Paillette-Search-Contract', PUBLIC_SEARCH_CONTRACT_VERSION);
+        c.header('Server-Timing', buildPublicSearchServerTiming(observation));
+      }
       return c.json<ApiResponse>(
         {
           success: false,
@@ -2088,7 +2344,39 @@ searchRoutes.post('/search/text', async (c) => {
         429
       );
     }
-    console.error('Text search error:', error);
+    const errorClass = getPublicSearchErrorClass(error);
+    if (publicSearch) {
+      const imageConfig = getJinaConfig(c.env);
+      const captionConfig = getCaptionConfig(c.env);
+      const event = buildPublicSearchStructuredEvent({
+        observation,
+        requestedOrgId: requestedScope,
+        provider: providerScope,
+        cacheDisposition,
+        embeddingIndexVersion: getEmbeddingIndexVersion(c.env),
+        fusionMode: getSearchFusionMode(c.env, undefined),
+        imageModel: imageConfig.model,
+        captionModel:
+          captionConfig.provider === 'jina'
+            ? captionConfig.model
+            : CAPTION_TEXT_MODEL,
+        degradedChannels: [],
+        resultCount: 0,
+        responseBytes: 0,
+        errorClass,
+      });
+      console.log(JSON.stringify(event));
+      c.header('X-Paillette-Upstream-Embeddings', '0');
+      c.header(
+        'X-Paillette-Embedding-Cache',
+        `image=${observation.embeddingCache.image},caption=${observation.embeddingCache.caption}`
+      );
+      c.header('X-Paillette-Search-Path', 'error');
+      c.header('X-Paillette-Search-Contract', PUBLIC_SEARCH_CONTRACT_VERSION);
+      c.header('Server-Timing', buildPublicSearchServerTiming(observation));
+    } else {
+      console.error('Text search error:', error);
+    }
     return c.json<ApiResponse>(
       {
         success: false,

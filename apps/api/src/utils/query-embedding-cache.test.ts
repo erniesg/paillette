@@ -230,9 +230,9 @@ describe('getOrCreateQueryEmbedding', () => {
         generate: vi.fn().mockResolvedValue(embedding),
       })
     ).resolves.toHaveLength(dimensions);
-    expect(new TextEncoder().encode(JSON.stringify(embedding)).byteLength).toBeGreaterThan(
-      QUERY_EMBEDDING_CACHE_MAX_BYTES
-    );
+    expect(
+      new TextEncoder().encode(JSON.stringify(embedding)).byteLength
+    ).toBeGreaterThan(QUERY_EMBEDDING_CACHE_MAX_BYTES);
     expect(cache.put).not.toHaveBeenCalled();
   });
 
@@ -272,7 +272,8 @@ describe('getOrCreateQueryEmbedding', () => {
       generate,
     });
 
-    await vi.waitFor(() => expect(started).toEqual(['Blue sky', 'Red sky']));
+    await vi.waitFor(() => expect(started).toHaveLength(2));
+    expect(new Set(started)).toEqual(new Set(['Blue sky', 'Red sky']));
     resolvers.get('Red sky')?.([0.4, 0.5, 0.6]);
     resolvers.get('Blue sky')?.([0.1, 0.2, 0.3]);
 
@@ -315,5 +316,28 @@ describe('getOrCreateQueryEmbedding', () => {
       })
     ).resolves.toEqual([0.7, 0.8, 0.9]);
     expect(generate).toHaveBeenCalledTimes(2);
+  });
+
+  it('observes failed upstream invocations without exposing their inputs', async () => {
+    const observe = vi.fn();
+
+    await expect(
+      getOrCreateQueryEmbedding({
+        ...identity,
+        query: 'PRIVATE_QUERY_SENTINEL',
+        endpointIdentity: 'https://provider.example/private',
+        generate: vi.fn().mockRejectedValue(new Error('provider failed')),
+        observe,
+      })
+    ).rejects.toThrow('provider failed');
+
+    expect(observe).toHaveBeenCalledOnce();
+    expect(observe.mock.calls[0]?.[0]).toMatchObject({
+      disposition: 'miss',
+      cacheValueBytes: 0,
+    });
+    expect(JSON.stringify(observe.mock.calls)).not.toMatch(
+      /PRIVATE_QUERY_SENTINEL|provider\.example/
+    );
   });
 });

@@ -45,7 +45,7 @@ Script:
 scripts/search-load.k6.js
 ```
 
-Smoke test, intentionally small so it does not burn the quota:
+Cache-coverage benchmark (NGS and NGA; L1, L2, and embedding-hit/result-miss):
 
 ```bash
 API_KEY=plt_stg_... k6 run scripts/search-load.k6.js
@@ -57,7 +57,15 @@ Bearer-token variant:
 TOKEN="$ACCESS_TOKEN" k6 run scripts/search-load.k6.js
 ```
 
-Low-risk ramp/spike profile:
+Add one to ten explicitly bounded fully-cold requests:
+
+```bash
+ALLOW_COLD=1 COLD_ITERATIONS=2 \
+API_KEY=plt_stg_... \
+k6 run scripts/search-load.k6.js
+```
+
+Low-risk warm-cache ramp profile:
 
 ```bash
 PROFILE=load \
@@ -71,18 +79,18 @@ k6 run scripts/search-load.k6.js
 Useful overrides:
 
 - `API_BASE=https://paillette-api-stg.berlayar.ai`
-- `ORG_ID=cf98791d-f3cc-4f9f-b40c-a350efadbd05`
+- `WEB_BASE=https://paillette-stg.berlayar.ai`
+- `NGS_ID=cf98791d-f3cc-4f9f-b40c-a350efadbd05`
+- `NGA_ID=nga`
 - `QUERIES="pineapple,fishing boats,self portrait"`
-- `TOP_K=10`
-- `MIN_SCORE=0.3`
-- `ITERATIONS=5` for smoke runs
-- `--summary-export search-load-summary.json` to persist k6 output
+- `ALLOW_COLD=1` to opt into fully-cold work
+- `COLD_ITERATIONS=1` (hard-capped at 10)
 
-The script records p50/p95/p99 via k6 summary stats, HTTP status mix, `429` rate-limit rate, server error rate, and app-level `data.queryTime` as `search_query_time_ms`.
+The script records NGS/NGA and cache-tier p50/p95/p99, user-visible request latency, upstream embedding call counts, response bytes, `429` rate-limit rate, and server errors. It writes `tmp/public-search-baseline.json` and `tmp/public-search-cost-units.json`; D1 rows are joined from the matching structured Worker events because they are deliberately not exposed in public response headers.
 
 ## Live Load Status
 
-No live high-RPS load run has been executed from this session because registered-only search now requires a real API key or bearer token, and `k6` is not installed locally. Start with the smoke test, then 1-3 VUs, then the ramp profile above.
+No live high-RPS run is included in portable validation. Direct API cache-tier priming requires a trusted credential, and fully-cold work is opt-in and bounded. Start with the cache-coverage benchmark, then the 1-3 VU warm-cache profile above.
 
 During any live run, watch:
 
@@ -126,12 +134,12 @@ Assumptions for the table below:
 - R2 image reads are excluded because they depend on result browsing, not the search API call itself.
 - Jina cost is excluded and must be checked against the active Jina plan.
 
-| Searches/month | Expected CF cost |
-| --- | --- |
-| 1k | About the Workers Paid minimum if on Standard; D1, Vectorize, and Workers AI are effectively inside included usage. |
-| 10k | Same shape as 1k; Workers minimum dominates. |
-| 100k | Workers minimum dominates; Vectorize is about $1.55 after the 50M queried-dim allowance; Workers AI is about $0.41. |
-| 1M | Workers minimum still covers request count; D1 writes stay below 50M at `topK=10`; Vectorize is about $20; Workers AI is about $4.08. |
+| Searches/month | Expected CF cost                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1k             | About the Workers Paid minimum if on Standard; D1, Vectorize, and Workers AI are effectively inside included usage.                   |
+| 10k            | Same shape as 1k; Workers minimum dominates.                                                                                          |
+| 100k           | Workers minimum dominates; Vectorize is about $1.55 after the 50M queried-dim allowance; Workers AI is about $0.41.                   |
+| 1M             | Workers minimum still covers request count; D1 writes stay below 50M at `topK=10`; Vectorize is about $20; Workers AI is about $4.08. |
 
 These are infrastructure estimates, not a capacity measurement. The live k6 run is still required to answer the actual QPS threshold for p95/p99 degradation.
 

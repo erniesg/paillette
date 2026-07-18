@@ -140,7 +140,17 @@ describe('public text search route caching', () => {
       'strong',
     ]);
     expect(secondPayload.data?.count).toBe(1);
+    expect(secondPayload.data?.queryTime).toBe(0);
     expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBe('HIT');
+    expect(secondResponse.headers.get('X-Paillette-Upstream-Embeddings')).toBe(
+      '0'
+    );
+    expect(secondResponse.headers.get('X-Paillette-Search-Contract')).toBe(
+      '18'
+    );
+    expect(secondResponse.headers.get('Server-Timing')).toContain(
+      'edge_cache;dur='
+    );
   });
 
   it('does not cache a successful response with a degraded search channel', async () => {
@@ -158,11 +168,12 @@ describe('public text search route caching', () => {
         },
       },
     };
-    const mockFetch = vi.fn<typeof globalThis.fetch>(async () =>
-      new Response(JSON.stringify(degradedPayload), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(degradedPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
     );
     vi.stubGlobal('caches', { default: cache });
     vi.stubGlobal('fetch', mockFetch);
@@ -194,14 +205,20 @@ describe('public text search route caching', () => {
   it('preserves an API L2 cache disposition on an edge miss', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>(async () =>
-        new Response(JSON.stringify(searchPayload), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Paillette-Search-Cache': 'KV-FRESH',
-          },
-        })
+      vi.fn<typeof globalThis.fetch>(
+        async () =>
+          new Response(JSON.stringify(searchPayload), {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Paillette-Search-Cache': 'KV-FRESH',
+              'X-Paillette-Upstream-Embeddings': '1',
+              'X-Paillette-Embedding-Cache': 'image=hit,caption=miss',
+              'X-Paillette-Search-Path': 'hybrid:balanced',
+              'X-Paillette-Search-Contract': '18',
+              'Server-Timing': 'result_kv;dur=1.2, total;dur=8.5',
+            },
+          })
       )
     );
 
@@ -212,6 +229,17 @@ describe('public text search route caching', () => {
     } as any);
 
     expect(response.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(response.headers.get('X-Paillette-Upstream-Embeddings')).toBe('1');
+    expect(response.headers.get('X-Paillette-Embedding-Cache')).toBe(
+      'image=hit,caption=miss'
+    );
+    expect(response.headers.get('X-Paillette-Search-Path')).toBe(
+      'hybrid:balanced'
+    );
+    expect(response.headers.get('X-Paillette-Search-Contract')).toBe('18');
+    expect(response.headers.get('Server-Timing')).toMatch(
+      /result_kv;dur=1\.2, total;dur=8\.5, edge_cache;dur=.*web_total;dur=/
+    );
   });
 
   it('schedules cache persistence without delaying the search response', async () => {
@@ -227,11 +255,12 @@ describe('public text search route caching', () => {
     vi.stubGlobal('caches', { default: cache });
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>(async () =>
-        new Response(JSON.stringify(searchPayload), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
+      vi.fn<typeof globalThis.fetch>(
+        async () =>
+          new Response(JSON.stringify(searchPayload), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
       )
     );
 
@@ -256,15 +285,13 @@ describe('public text search route caching', () => {
     expect(waitUntil).toHaveBeenCalledTimes(2);
   });
 
-  it('does not let caller-controlled auto metadata suppress usage logging', async () => {
+  it('logs public usage without query text, provider URLs, or caller metadata', async () => {
     const scheduled: Promise<unknown>[] = [];
     const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const url = String(input);
       return new Response(
         JSON.stringify(
-          url.endsWith('/usage-events')
-            ? { success: true }
-            : searchPayload
+          url.endsWith('/usage-events') ? { success: true } : searchPayload
         ),
         {
           status: 200,
@@ -284,17 +311,26 @@ describe('public text search route caching', () => {
       },
       params: { orgId: 'nga' },
       request: makeRequest({
-        query: 'quiet shore',
-        usageContext: { auto: true },
+        query: 'PRIVATE_QUERY_SENTINEL',
+        usageContext: {
+          auto: true,
+          source: 'https://provider.example/private',
+          authorization: 'Bearer provider-secret',
+          vector: [0.1, 0.2, 0.3],
+          cacheKey: 'public-search-result:private',
+        },
       }),
     } as any);
     await Promise.all(scheduled);
 
-    expect(
-      mockFetch.mock.calls.some(([input]) =>
-        String(input).endsWith('/usage-events')
-      )
-    ).toBe(true);
+    const usageCall = mockFetch.mock.calls.find(([input]) =>
+      String(input).endsWith('/usage-events')
+    );
+    expect(usageCall).toBeDefined();
+    const usageInit = usageCall?.[1] as RequestInit | undefined;
+    expect(String(usageInit?.body)).not.toMatch(
+      /PRIVATE_QUERY_SENTINEL|provider\.example|provider-secret|Authorization|Bearer|public-search-result:|"vector"|\[0\.1/
+    );
   });
 
   it('defaults public text searches to a broader 20 percent threshold', async () => {
@@ -464,8 +500,7 @@ describe('public text search route caching', () => {
         provider: 'nga',
         sourceCollection: 'CG-W',
         sourceInstitution: 'National Gallery of Art, Washington',
-        sourceUrl:
-          'https://www.nga.gov/collection/art-object-page.17387.html',
+        sourceUrl: 'https://www.nga.gov/collection/art-object-page.17387.html',
       },
     });
   });

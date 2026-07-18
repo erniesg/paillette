@@ -51,7 +51,6 @@ const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
       artist: artwork.artist || metadata.artist || null,
       accessionNumber:
         metadata.accessionNumber || metadata.accession_number || null,
-      sourceUrl: metadata.sourceUrl || metadata.source_url || null,
       sourceInstitution:
         metadata.sourceInstitution || metadata.source_institution || null,
     },
@@ -63,6 +62,7 @@ export const action = async ({
   params,
   request,
 }: ActionFunctionArgs) => {
+  const requestStartedAt = performance.now();
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -172,7 +172,9 @@ export const action = async ({
     visualRefinement: requestedSearchPayload.visualRefinement,
   });
 
+  const edgeCacheStartedAt = performance.now();
   const cachedPayload = await readPublicTextSearchCache(cacheKey);
+  const edgeCacheMs = performance.now() - edgeCacheStartedAt;
   if (cachedPayload) {
     const responsePayload = filterPublicTextSearchResponse(
       cachedPayload,
@@ -189,8 +191,6 @@ export const action = async ({
           orgId: resolvedOrgId,
           search: {
             mode: usageContext.mode === 'colour' ? 'colour' : 'text',
-            query,
-            visualRefinement: requestedSearchPayload.visualRefinement,
             topK: searchPayload.topK,
             minScore: searchPayload.minScore,
             facet: requestedSearchPayload.facet,
@@ -199,15 +199,11 @@ export const action = async ({
             resultCount: results.length,
             hiddenFilteredCount: 0,
             queryTime: responsePayload.data.queryTime,
-            colours: Array.isArray(usageContext.colours)
-              ? usageContext.colours
-              : undefined,
             cache: 'hit',
           },
           results: results.map(getUsageResult),
           metadata: {
             routeOrgId: orgId,
-            usageContext,
           },
         })
       );
@@ -215,7 +211,13 @@ export const action = async ({
 
     return json(responsePayload, {
       status: 200,
-      headers: buildPublicSearchCacheHeaders('HIT', responsePayload),
+      headers: buildPublicSearchCacheHeaders(
+        'HIT',
+        responsePayload,
+        undefined,
+        edgeCacheMs,
+        performance.now() - requestStartedAt
+      ),
     });
   }
 
@@ -272,8 +274,6 @@ export const action = async ({
         orgId: resolvedOrgId,
         search: {
           mode: usageContext.mode === 'colour' ? 'colour' : 'text',
-          query,
-          visualRefinement: requestedSearchPayload.visualRefinement,
           topK: searchPayload.topK,
           minScore: searchPayload.minScore,
           facet: requestedSearchPayload.facet,
@@ -281,15 +281,11 @@ export const action = async ({
           resultCount: requestedResults.length,
           hiddenFilteredCount: rawResultCount - results.length,
           queryTime: requestedResponsePayload.data?.queryTime,
-          colours: Array.isArray(usageContext.colours)
-            ? usageContext.colours
-            : undefined,
           cache: 'miss',
         },
         results: requestedResults.map(getUsageResult),
         metadata: {
           routeOrgId: orgId,
-          usageContext,
         },
       })
     );
@@ -298,13 +294,22 @@ export const action = async ({
       status: response.status,
       headers: buildPublicSearchCacheHeaders(
         cacheStatus,
-        requestedResponsePayload
+        requestedResponsePayload,
+        response.headers,
+        edgeCacheMs,
+        performance.now() - requestStartedAt
       ),
     });
   }
 
   return json(responsePayload, {
     status: response.status,
-    headers: buildPublicSearchCacheHeaders('BYPASS', responsePayload),
+    headers: buildPublicSearchCacheHeaders(
+      'BYPASS',
+      responsePayload,
+      response.headers,
+      edgeCacheMs,
+      performance.now() - requestStartedAt
+    ),
   });
 };

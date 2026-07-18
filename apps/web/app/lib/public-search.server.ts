@@ -34,6 +34,23 @@ export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
+const EMPTY_API_SEARCH_SERVER_TIMING = [
+  'result_kv',
+  'artist_lookup',
+  'image_embedding_cache',
+  'image_embedding_upstream',
+  'image_vectorize',
+  'caption_embedding_cache',
+  'caption_embedding_upstream',
+  'caption_vectorize',
+  'metadata',
+  'hydration',
+  'usage',
+  'telemetry',
+  'total',
+]
+  .map((stage) => `${stage};dur=0.0`)
+  .join(', ');
 
 const ORG_ID_ALIASES: Record<string, string> = {
   ngs: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
@@ -180,12 +197,42 @@ export const getPublicSearchPayloadEtag = (payload: ApiResponse) =>
 
 export const buildPublicSearchCacheHeaders = (
   status: 'HIT' | 'MISS' | 'BYPASS' | 'KV-FRESH' | 'KV-STALE' | 'COALESCED',
-  payload?: ApiResponse
+  payload?: ApiResponse,
+  upstreamHeaders?: Headers,
+  edgeCacheMs = 0,
+  webTotalMs = edgeCacheMs
 ) => {
   const headers = new Headers({
     'Cache-Control': PUBLIC_SEARCH_CACHE_CONTROL,
     'X-Paillette-Search-Cache': status,
+    'X-Paillette-Upstream-Embeddings': '0',
+    'X-Paillette-Embedding-Cache': 'image=not-needed,caption=not-needed',
+    'X-Paillette-Search-Path': 'web-edge-cache',
+    'X-Paillette-Search-Contract': PUBLIC_TEXT_SEARCH_CACHE_VERSION,
   });
+
+  for (const name of [
+    'X-Paillette-Upstream-Embeddings',
+    'X-Paillette-Embedding-Cache',
+    'X-Paillette-Search-Path',
+    'X-Paillette-Search-Contract',
+  ]) {
+    const value = upstreamHeaders?.get(name);
+    if (value) headers.set(name, value);
+  }
+
+  const upstreamTiming =
+    upstreamHeaders?.get('Server-Timing') || EMPTY_API_SEARCH_SERVER_TIMING;
+  headers.set(
+    'Server-Timing',
+    [
+      upstreamTiming,
+      `edge_cache;dur=${Math.max(edgeCacheMs, 0).toFixed(1)}`,
+      `web_total;dur=${Math.max(webTotalMs, 0).toFixed(1)}`,
+    ]
+      .filter(Boolean)
+      .join(', ')
+  );
 
   if (payload) {
     headers.set('ETag', getPublicSearchPayloadEtag(payload));
@@ -208,9 +255,20 @@ export const readPublicTextSearchCache = async (
       return null;
     }
 
-    return (await cachedResponse.json()) as ApiResponse<SearchResponse>;
+    const payload =
+      (await cachedResponse.json()) as ApiResponse<SearchResponse>;
+    if (payload.success && payload.data) {
+      return {
+        ...payload,
+        data: { ...payload.data, queryTime: 0 },
+      };
+    }
+    return payload;
   } catch (error) {
-    console.warn('Failed to read public text search cache:', error);
+    console.warn(
+      'Failed to read public text search cache:',
+      error instanceof Error ? error.name : 'Error'
+    );
     return null;
   }
 };
@@ -235,19 +293,31 @@ export const writePublicTextSearchCache = async (
   }
 
   try {
+    const stablePayload: ApiResponse<SearchResponse> = {
+      ...payload,
+      data: payload.data
+        ? {
+            ...payload.data,
+            queryTime: 0,
+          }
+        : payload.data,
+    };
     await cache.put(
       cacheKey,
-      new Response(JSON.stringify(payload), {
+      new Response(JSON.stringify(stablePayload), {
         status: 200,
         headers: {
           'Cache-Control': PUBLIC_SEARCH_CACHE_CONTROL,
           'Content-Type': 'application/json',
-          ETag: getPublicSearchPayloadEtag(payload),
+          ETag: getPublicSearchPayloadEtag(stablePayload),
         },
       })
     );
   } catch (error) {
-    console.warn('Failed to write public text search cache:', error);
+    console.warn(
+      'Failed to write public text search cache:',
+      error instanceof Error ? error.name : 'Error'
+    );
   }
 };
 
@@ -341,7 +411,10 @@ export const logPublicUsageEvent = async (
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    console.warn('Failed to log public usage event:', error);
+    console.warn(
+      'Failed to log public usage event:',
+      error instanceof Error ? error.name : 'Error'
+    );
   }
 };
 
