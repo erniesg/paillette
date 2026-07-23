@@ -93,6 +93,21 @@ export const getPreferredOrgRouteId = (
     : canonicalSlug || requestedOrgId;
 };
 
+export const getPublicOrgRouteBasePath = ({
+  preferredRouteId,
+  routeScope,
+}: {
+  requestedOrgId: string;
+  preferredRouteId: string;
+  canonicalSlug?: string | null;
+  routeScope: 'org' | 'collection';
+}) => {
+  const encodedRouteId = encodeURIComponent(preferredRouteId);
+  return routeScope === 'collection'
+    ? `/collections/${encodedRouteId}`
+    : `/${encodedRouteId}`;
+};
+
 const sanitizeGeneratedCaptionRecord = (record: unknown) => {
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     return record;

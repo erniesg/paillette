@@ -32,6 +32,7 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   ListFilter,
+  Lock,
   LogIn,
   Network,
   Palette,
@@ -43,7 +44,6 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
@@ -65,7 +65,6 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
-import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import {
   buildSuggestionPool,

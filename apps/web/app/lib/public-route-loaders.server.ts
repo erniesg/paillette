@@ -51,9 +51,7 @@ export async function loadPublicSearchPage({
         : Promise.resolve(lockedGallery);
     const [gallery, holidaySuggestions] = await Promise.all([
       galleryPromise,
-      getUpcomingSingaporeHolidaySuggestions(new Date(), {
-        allowNetwork: false,
-      }),
+      getUpcomingSingaporeHolidaySuggestions(),
     ]);
     const preferredRouteId = getPreferredOrgRouteId(
       requestedOrgId,

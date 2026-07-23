@@ -124,8 +124,7 @@ const handleTextSearch = async ({
     'application/json'
   );
 
-  const requestedSearchPayload: Required<Omit<SearchTextRequest, 'facet'>> &
-    Pick<SearchTextRequest, 'facet'> = {
+  const requestedSearchPayload: Required<SearchTextRequest> = {
     query,
     topK: clamp(body.topK, 1, 100, 30),
     minScore: clamp(body.minScore, 0, 1, DEFAULT_PUBLIC_TEXT_MIN_SCORE),
