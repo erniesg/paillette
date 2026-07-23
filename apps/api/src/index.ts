@@ -16,6 +16,8 @@ import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
 import { requireAuthOrApiKey } from './middleware/auth';
+import { processEmbeddingJob } from './queues/embedding-queue';
+import { handleTranslationQueue } from './queues/translation-queue';
 
 // Environment bindings
 export interface Env {
@@ -216,4 +218,20 @@ app.onError((err, c) => {
   );
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+    if (batch.queue.includes('translation')) {
+      await handleTranslationQueue(
+        batch as Parameters<typeof handleTranslationQueue>[0],
+        env
+      );
+      return;
+    }
+
+    await processEmbeddingJob(
+      batch as Parameters<typeof processEmbeddingJob>[0],
+      env
+    );
+  },
+};
