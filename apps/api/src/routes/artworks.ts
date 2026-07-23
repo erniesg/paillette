@@ -24,6 +24,7 @@ import {
 } from '../utils/image';
 import { PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { resolveOrgIdentifier } from '../utils/orgs';
+import { requireAuthOrApiKey } from '../middleware/auth';
 
 const app = new Hono<{ Bindings: Env }>();
 
