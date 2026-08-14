@@ -65,6 +65,7 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import {
   buildSuggestionPool,
@@ -2541,8 +2542,10 @@ const getArtworkImageSources = (
     image_url?: string | null;
     thumbnail_url?: string | null;
   };
-  const imageUrl = getPublicImageUrl(asset);
-  const thumbnailUrl = getPublicThumbnailUrl(asset);
+  const imageUrl = getAuthenticatedAssetUrl(getPublicImageUrl(asset));
+  const thumbnailUrl = getAuthenticatedAssetUrl(
+    getPublicThumbnailUrl(asset)
+  );
 
   if (role === 'large') {
     return {
