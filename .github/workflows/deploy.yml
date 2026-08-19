@@ -207,7 +207,7 @@ jobs:
           fi
 
   staging:
-    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'staging') || (github.event_name == 'workflow_dispatch' && (github.ref_name == 'staging' || github.ref_name == 'deploy-nga-open-access') && inputs.environment == 'staging')) }}
+    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'staging') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'master' && inputs.environment == 'staging')) }}
     needs: full-ci
     runs-on: ubuntu-latest
     environment: staging
@@ -246,7 +246,7 @@ jobs:
           ./infra/vm/deploy.sh --github-actions
 
   production:
-    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'master') || (github.event_name == 'workflow_dispatch' && (github.ref_name == 'master' || github.ref_name == 'deploy-nga-open-access') && inputs.environment == 'production')) }}
+    if: ${{ vars.RUCKSACK_DEPLOY_ENABLED == 'true' && ((github.event_name == 'push' && github.ref_name == 'master') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'master' && inputs.environment == 'production')) }}
     needs:
       - full-ci
       - production-checks
