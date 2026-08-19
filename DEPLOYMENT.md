@@ -67,6 +67,7 @@ wrangler queues create embedding-jobs-staging
 
 # Secrets
 wrangler secret put FAL_KEY --env staging
+wrangler secret put PAILLETTE_PUBLIC_SEARCH_API_KEY --env staging
 ```
 
 ### Production Environment
@@ -91,6 +92,7 @@ wrangler queues create embedding-jobs
 
 # Secrets
 wrangler secret put FAL_KEY --env production
+wrangler secret put PAILLETTE_PUBLIC_SEARCH_API_KEY --env production
 ```
 
 ## Database Migrations
