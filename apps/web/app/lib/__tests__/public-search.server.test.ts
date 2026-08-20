@@ -93,7 +93,7 @@ describe('buildPublicTextSearchCacheKey', () => {
     const url = new URL(key.url);
 
     expect(url.searchParams.get('v')).toBe(PUBLIC_TEXT_SEARCH_CACHE_VERSION);
-    expect(PUBLIC_TEXT_SEARCH_CACHE_VERSION).toBe('21');
+    expect(PUBLIC_TEXT_SEARCH_CACHE_VERSION).toBe('22');
     expect(url.searchParams.get('query')).toBe('chung cheng');
     expect(url.searchParams.get('facet')).toBeNull();
   });
