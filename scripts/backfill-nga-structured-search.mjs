@@ -5,6 +5,7 @@ import { basename, join, resolve } from 'node:path';
 import {
   buildStructuredMetadataUpdateSql,
   enrichVectorLine,
+  mergeAuthoritativeRecords,
 } from './lib/nga-structured-search-backfill.mjs';
 
 const args = new Map();
@@ -23,9 +24,14 @@ const outDir = resolve(args.get('out-dir') || 'tmp/nga-structured-search-backfil
 const limit = Number(args.get('limit') || 0);
 const chunkSize = Number(args.get('sql-chunk-size') || 500);
 const manifest = JSON.parse(readFileSync(resolve(manifestPath), 'utf8'));
-const allRecords = Object.values(manifest.providers || {}).flatMap(
+const freshRecords = Object.values(manifest.providers || {}).flatMap(
   (provider) => provider.normalizedSamples || []
 );
+const fallbackPlanPath = args.get('fallback-plan');
+const fallbackRecords = fallbackPlanPath
+  ? JSON.parse(readFileSync(resolve(fallbackPlanPath), 'utf8')).records || []
+  : [];
+const allRecords = mergeAuthoritativeRecords(freshRecords, fallbackRecords);
 const records = limit > 0 ? allRecords.slice(0, limit) : allRecords;
 const byId = new Map(records.map((record) => [record.id, record]));
 
