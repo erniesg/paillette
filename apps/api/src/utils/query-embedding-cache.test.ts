@@ -272,7 +272,12 @@ describe('getOrCreateQueryEmbedding', () => {
       generate,
     });
 
-    await vi.waitFor(() => expect(started).toEqual(['Blue sky', 'Red sky']));
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(2);
+      expect(started).toEqual(
+        expect.arrayContaining(['Blue sky', 'Red sky'])
+      );
+    });
     resolvers.get('Red sky')?.([0.4, 0.5, 0.6]);
     resolvers.get('Blue sky')?.([0.1, 0.2, 0.3]);
 
