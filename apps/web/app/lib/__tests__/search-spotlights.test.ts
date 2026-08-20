@@ -36,7 +36,7 @@ const artwork = (id: string) => ({
 
 const validBundle: PublicSearchSpotlightBundle = {
   schemaVersion: 1,
-  contractVersion: '23',
+  contractVersion: '24',
   corpusVersion: 'nga-fixture-v1',
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
@@ -67,7 +67,7 @@ describe('search spotlight loading', () => {
 
     const assetPath = getSearchSpotlightPath('nga');
     expect(assetPath).toMatch(
-      /^\/search-spotlights\/nga\/v23-[a-f0-9]{64}\.json$/
+      /^\/search-spotlights\/nga\/v24-[a-f0-9]{64}\.json$/
     );
     expect(loaded).toEqual(validBundle);
     expect(fetcher).toHaveBeenCalledTimes(1);

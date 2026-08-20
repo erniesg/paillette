@@ -91,7 +91,7 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v3:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v4:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
