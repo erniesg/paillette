@@ -1,0 +1,85 @@
+version: nga-constraints-v1
+queries:
+  - { id: date-01, text: "paintings from 1750", startYear: 1750, endYear: 1750, classification: Painting }
+  - { id: date-02, text: "paintings from 1750s", startYear: 1750, endYear: 1759, classification: Painting }
+  - { id: date-03, text: "paintings from 18th century", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: date-04, text: "paintings from eighteenth century", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: date-05, text: "paintings from XVIII century", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: date-06, text: "early 18th century paintings", startYear: 1700, endYear: 1733, classification: Painting }
+  - { id: date-07, text: "mid 18th century paintings", startYear: 1734, endYear: 1766, classification: Painting }
+  - { id: date-08, text: "late 18th century paintings", startYear: 1767, endYear: 1799, classification: Painting }
+  - { id: date-09, text: "between 1720 and 1780", startYear: 1720, endYear: 1780 }
+  - { id: date-10, text: "1720-1780", startYear: 1720, endYear: 1780 }
+  - { id: date-11, text: "around 1750", startYear: 1740, endYear: 1760 }
+  - { id: date-12, text: "circa 1750", startYear: 1740, endYear: 1760 }
+  - { id: date-13, text: "before 1800", startYear: 1000, endYear: 1799 }
+  - { id: date-14, text: "after 1750", startYear: 1751, endYear: 2100 }
+  - { id: class-01, text: "paintings", classification: Painting }
+  - { id: class-02, text: "drawings", classification: Drawing }
+  - { id: class-03, text: "prints", classification: Print }
+  - { id: class-04, text: "sculptures", classification: Sculpture }
+  - { id: class-05, text: "photographs", classification: Photograph }
+  - { id: class-06, text: "decorative arts", classification: Decorative Art }
+  - { id: medium-01, text: "oil paintings", medium: oil, classification: Painting }
+  - { id: medium-02, text: "watercolor drawings", medium: watercolor, classification: Drawing }
+  - { id: medium-03, text: "ink drawings", medium: ink, classification: Drawing }
+  - { id: medium-04, text: "graphite drawings", medium: graphite, classification: Drawing }
+  - { id: medium-05, text: "charcoal drawings", medium: charcoal, classification: Drawing }
+  - { id: medium-06, text: "etchings", medium: etching }
+  - { id: medium-07, text: "engravings", medium: engraving }
+  - { id: medium-08, text: "woodcuts", medium: woodcut }
+  - { id: medium-09, text: "bronze sculptures", medium: bronze, classification: Sculpture }
+  - { id: medium-10, text: "marble sculptures", medium: marble, classification: Sculpture }
+  - { id: typo-01, text: "paintngs from 18th centry", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: typo-02, text: "scultpures before 1900", startYear: 1000, endYear: 1899, classification: Sculpture }
+  - { id: typo-03, text: "watercolur drawings", medium: watercolor, classification: Drawing }
+  - { id: case-01, text: "PAINTINGS FROM THE 18TH CENTURY", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: case-02, text: "Paintings From 18th Century", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: combined-01, text: "Dutch landscape paintings from the 18th century", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: combined-02, text: "oil paintings of ships before 1800", startYear: 1000, endYear: 1799, medium: oil, classification: Painting }
+  - { id: combined-03, text: "French drawings from late nineteenth century", startYear: 1867, endYear: 1899, classification: Drawing }
+  - { id: combined-04, text: "bronze sculptures after 1900", startYear: 1901, endYear: 2100, medium: bronze, classification: Sculpture }
+  - { id: subject-01, text: "landscapes" }
+  - { id: subject-02, text: "women reading" }
+  - { id: subject-03, text: "ships at night" }
+  - { id: subject-04, text: "biblical scenes" }
+  - { id: subject-05, text: "portraits of children" }
+  - { id: subject-06, text: "stormy seas" }
+  - { id: casual-01, text: "famous paintings", classification: Painting }
+  - { id: casual-02, text: "beautiful blue landscapes" }
+  - { id: casual-03, text: "scary paintings", classification: Painting }
+  - { id: casual-04, text: "peaceful winter scenes" }
+  - { id: academic-01, text: "works attributed to Rembrandt" }
+  - { id: academic-02, text: "school of Rembrandt" }
+  - { id: academic-03, text: "works with provenance mentioning Paris" }
+  - { id: academic-04, text: "objects with inscriptions" }
+  - { id: academic-05, text: "accession 2003-03860" }
+  - { id: ambiguous-01, text: "painting of a sculpture", ambiguous: true }
+  - { id: ambiguous-02, text: "works after Rembrandt", ambiguous: true }
+  - { id: ambiguous-03, text: "18th-century style", ambiguous: true }
+  - { id: ambiguous-04, text: "orange paintings", classification: Painting }
+  - { id: ambiguous-05, text: "Washington paintings", classification: Painting }
+  - { id: ambiguity-06, text: "picture of a drawing" }
+  - { id: norm-01, text: "paintings   from   1750", startYear: 1750, endYear: 1750, classification: Painting }
+  - { id: norm-02, text: "paintings-from-1750", startYear: 1750, endYear: 1750, classification: Painting }
+  - { id: norm-03, text: "18th-century paintings", startYear: 1700, endYear: 1799, classification: Painting }
+  - { id: extra-01, text: "Italian paintings from 1500", startYear: 1500, endYear: 1500, classification: Painting }
+  - { id: extra-02, text: "Dutch prints from 1600s", startYear: 1600, endYear: 1609, classification: Print }
+  - { id: extra-03, text: "French sculpture circa 1880", startYear: 1870, endYear: 1890, classification: Sculpture }
+  - { id: extra-04, text: "American photographs after 1945", startYear: 1946, endYear: 2100, classification: Photograph }
+  - { id: extra-05, text: "ink on paper before 1700", startYear: 1000, endYear: 1699, medium: ink }
+  - { id: extra-06, text: "oil on panel in 1750", startYear: 1750, endYear: 1750, medium: oil }
+  - { id: extra-07, text: "marble before 1800", startYear: 1000, endYear: 1799, medium: marble }
+  - { id: extra-08, text: "etchings from 1790s", startYear: 1790, endYear: 1799, medium: etching }
+  - { id: extra-09, text: "late twentieth century photographs", startYear: 1967, endYear: 1999, classification: Photograph }
+  - { id: extra-10, text: "early seventeenth century drawings", startYear: 1600, endYear: 1633, classification: Drawing }
+  - { id: extra-11, text: "mid nineteenth century prints", startYear: 1834, endYear: 1866, classification: Print }
+  - { id: extra-12, text: "works made 1900", startYear: 1900, endYear: 1900 }
+  - { id: extra-13, text: "photography from 1920", startYear: 1920, endYear: 1920, classification: Photograph }
+  - { id: extra-14, text: "decorative art from 1750", startYear: 1750, endYear: 1750, classification: Decorative Art }
+  - { id: extra-15, text: "woodblock prints", medium: woodcut, classification: Print }
+  - { id: extra-16, text: "pencil drawings", medium: graphite, classification: Drawing }
+  - { id: extra-17, text: "photos before 2000", startYear: 1000, endYear: 1999, classification: Photograph }
+  - { id: extra-18, text: "oils after 1800", startYear: 1801, endYear: 2100, medium: oil }
+  - { id: extra-19, text: "engravings around 1650", startYear: 1640, endYear: 1660, medium: engraving }
+  - { id: extra-20, text: "charcoal portraits from 1890", startYear: 1890, endYear: 1890, medium: charcoal }

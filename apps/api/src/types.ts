@@ -36,6 +36,7 @@ export interface SearchTextRequest {
   topK?: number;
   minScore?: number;
   facet?: 'artist';
+  constraints?: import('@paillette/types/public-search').PublicSearchConstraints;
 }
 
 export interface SearchImageRequest {
@@ -61,4 +62,5 @@ export interface SearchResponse {
   results: ArtworkSearchResult[];
   count: number;
   queryTime: number;
+  interpretation?: import('@paillette/types/public-search').PublicSearchInterpretation;
 }
