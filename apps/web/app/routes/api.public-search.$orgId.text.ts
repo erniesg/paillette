@@ -144,9 +144,9 @@ export const action = async ({
   }
 
   const requestedSearchPayload: Required<
-    Omit<SearchTextRequest, 'facet' | 'visualRefinement'>
+    Omit<SearchTextRequest, 'facet' | 'visualRefinement' | 'constraints'>
   > &
-    Pick<SearchTextRequest, 'facet' | 'visualRefinement'> = {
+    Pick<SearchTextRequest, 'facet' | 'visualRefinement' | 'constraints'> = {
     query,
     topK: clamp(body.topK, 1, 100, 30),
     minScore: clamp(body.minScore, 0, 1, DEFAULT_PUBLIC_TEXT_MIN_SCORE),
@@ -156,6 +156,10 @@ export const action = async ({
         ? (body.facet as SearchTextRequest['facet'])
         : undefined,
     visualRefinement: undefined,
+    constraints:
+      body.constraints && typeof body.constraints === 'object'
+        ? (body.constraints as SearchTextRequest['constraints'])
+        : undefined,
   };
   const searchPayload: SearchTextRequest = requestedSearchPayload;
   const canonicalSearchPayload = getCanonicalPublicTextSearchRequest(
@@ -170,6 +174,7 @@ export const action = async ({
     orgId: resolvedOrgId,
     query,
     visualRefinement: requestedSearchPayload.visualRefinement,
+    constraints: requestedSearchPayload.constraints,
   });
 
   const cachedPayload = await readPublicTextSearchCache(cacheKey);

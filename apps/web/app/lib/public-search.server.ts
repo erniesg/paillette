@@ -23,12 +23,13 @@ type PublicTextSearchCacheKeyInput = {
   orgId: string;
   query: string;
   visualRefinement?: string | null;
+  constraints?: SearchTextRequest['constraints'];
 };
 
 type PublicTextSearchRequest = Required<
-  Omit<SearchTextRequest, 'facet' | 'visualRefinement'>
+  Omit<SearchTextRequest, 'facet' | 'visualRefinement' | 'constraints'>
 > &
-  Pick<SearchTextRequest, 'facet' | 'visualRefinement'>;
+  Pick<SearchTextRequest, 'facet' | 'visualRefinement' | 'constraints'>;
 
 export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
@@ -137,6 +138,7 @@ export const buildPublicTextSearchCacheKey = ({
   orgId,
   query,
   visualRefinement,
+  constraints,
 }: PublicTextSearchCacheKeyInput) => {
   const url = new URL('https://paillette-public-search-cache.local/text');
   url.searchParams.set('v', PUBLIC_TEXT_SEARCH_CACHE_VERSION);
@@ -148,6 +150,9 @@ export const buildPublicTextSearchCacheKey = ({
   }
   if (visualRefinement) {
     url.searchParams.set('visual', normalizePublicSearchText(visualRefinement));
+  }
+  if (constraints) {
+    url.searchParams.set('constraints', JSON.stringify(constraints));
   }
 
   return new Request(url.toString(), { method: 'GET' });

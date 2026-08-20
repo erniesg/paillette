@@ -178,12 +178,14 @@ export interface SearchResponse {
   results: ArtworkSearchResult[];
   count: number;
   queryTime: number;
+  interpretation?: import('@paillette/types/public-search-core').PublicSearchInterpretation;
 }
 
 export interface SearchTextRequest {
   query: string;
   topK?: number;
   minScore?: number;
+  constraints?: import('@paillette/types/public-search-core').PublicSearchConstraints;
   facet?: 'artist' | 'classification';
   visualRefinement?: string;
 }

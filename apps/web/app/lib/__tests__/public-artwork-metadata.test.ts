@@ -458,6 +458,18 @@ describe('getPublicDescription', () => {
     expect(labels).not.toContain('Source collection');
   });
 
+  it('shows authoritative classification for NGA catalogue records', () => {
+    const labels = getPublicCatalogueRows({
+      classification: 'Painting',
+      metadata: {
+        provider: 'nga',
+        classification: 'Painting',
+      },
+    }).map((row) => row.label);
+
+    expect(labels).toContain('Classification');
+  });
+
   it('builds an NGS-style Chicago citation from public fields', () => {
     expect(
       getPublicCitation({

@@ -12,6 +12,7 @@ type PublicTextSearchPlanInput = {
   colourQuery: string | null;
   topK: number;
   minScore: number;
+  constraints?: import('@paillette/types/public-search-core').PublicSearchConstraints;
 };
 
 export const buildPublicTextSearchPlan = ({
@@ -21,6 +22,7 @@ export const buildPublicTextSearchPlan = ({
   colourQuery,
   topK,
   minScore,
+  constraints,
 }: PublicTextSearchPlanInput) => {
   const textQuery = normalizePublicSearchText(committedTextQuery);
   const fallbackColourQuery = colourQuery
@@ -34,6 +36,7 @@ export const buildPublicTextSearchPlan = ({
     topK,
     minScore,
     ...(facet ? { facet } : {}),
+    ...(constraints ? { constraints } : {}),
   };
 
   return {
@@ -47,6 +50,7 @@ export const buildPublicTextSearchPlan = ({
       query,
       topK,
       minScore,
+      JSON.stringify(constraints || null),
     ] as const,
   };
 };

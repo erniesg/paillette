@@ -1752,6 +1752,13 @@ export const getPublicCatalogueRows = (
   const meta = getPublicMetadata(artwork);
   const fieldSources = getPublicFieldSources(artwork);
   const inferredRecordSource = getInferredCatalogueSourceLabel(artwork);
+  const sourceRecord =
+    meta.source && typeof meta.source === 'object'
+      ? (meta.source as Record<string, unknown>)
+      : {};
+  const isNgaRecord =
+    firstPublicCatalogueText(meta.provider, sourceRecord.provider)
+      ?.toLowerCase() === 'nga';
 
   if (shouldPreferRootsRecord(artwork)) {
     const rootsYearPeriod = getRootsRecordText(
@@ -1855,6 +1862,25 @@ export const getPublicCatalogueRows = (
       value: getPublicMediumText(artwork),
       sourceLabel: getFieldSourceLabel(fieldSources, 'medium'),
     },
+    ...(isNgaRecord
+      ? [
+          {
+            label: 'Classification',
+            value: firstPublicCatalogueText(
+              artwork.classification,
+              meta.visualClassification,
+              meta.visual_classification,
+              meta.classification
+            ),
+            sourceLabel: getFieldSourceLabel(
+              fieldSources,
+              'classification',
+              'visual_classification',
+              'visualClassification'
+            ),
+          },
+        ]
+      : []),
     {
       label: 'Geographic association',
       value: getGeographicAssociation(artwork),

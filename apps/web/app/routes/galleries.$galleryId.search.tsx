@@ -85,6 +85,7 @@ import {
 } from '~/lib/zhongzheng-ascii';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
 import { buildPublicTextSearchPlan } from '~/lib/public-text-search-plan';
+import type { PublicSearchConstraints } from '@paillette/types/public-search-core';
 import {
   getCachedCandidatePaletteColourDistance,
   rankByPaletteColour,
@@ -945,6 +946,8 @@ export default function SearchPage() {
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [committedTextQuery, setCommittedTextQuery] =
     useState(normalizedUrlQuery);
+  const [explicitConstraints, setExplicitConstraints] =
+    useState<PublicSearchConstraints | undefined>(undefined);
   const [searchFacet, setSearchFacet] = useState<SearchFacet | null>(
     urlSearchFacet
   );
@@ -1004,9 +1007,11 @@ export default function SearchPage() {
         colourQuery: activeColourQuery,
         topK,
         minScore,
+        constraints: explicitConstraints,
       }),
     [
       activeColourQuery,
+      explicitConstraints,
       minScore,
       normalizedCommittedTextQuery,
       publicSearchOrgId,
@@ -1156,6 +1161,7 @@ export default function SearchPage() {
     setSelectedArtwork(null);
     setTextQuery(normalizedUrlQuery);
     setCommittedTextQuery(normalizedUrlQuery);
+    setExplicitConstraints(undefined);
     setSearchFacet(urlSearchFacet);
     setSearchColours(urlSearchColour ? [urlSearchColour] : []);
     setSortColours(urlSearchColour ? [urlSearchColour] : []);
@@ -1536,6 +1542,7 @@ export default function SearchPage() {
     setSearchColours([]);
     setTextQuery(normalized);
     setCommittedTextQuery(normalized);
+    setExplicitConstraints(undefined);
     setSearchFacet(facet);
     setShouldSearch(true);
     setSearchParams(getSearchParamsForQuery(normalized, facet));
@@ -1545,10 +1552,26 @@ export default function SearchPage() {
     setSelectedArtwork(null);
     setTextQuery('');
     setCommittedTextQuery('');
+    setExplicitConstraints(undefined);
     setSearchFacet(null);
     setShouldSearch(false);
     setIsBrowsingCollection(false);
     setSearchParams({}, { replace: true });
+  };
+
+  const removeInterpretationConstraint = (
+    key: keyof PublicSearchConstraints
+  ) => {
+    const interpretation = textSearchQuery.data?.interpretation;
+    if (!interpretation) return;
+    const nextConstraints = { ...interpretation.constraints };
+    delete nextConstraints[key];
+    const nextQuery = interpretation.semanticQuery || 'art';
+    setExplicitConstraints(nextConstraints);
+    setTextQuery(nextQuery);
+    setCommittedTextQuery(nextQuery);
+    setShouldSearch(true);
+    setSearchParams(getSearchParamsForQuery(nextQuery, searchFacet));
   };
 
   const updateTextDraft = (value: string) => {
@@ -2077,6 +2100,77 @@ export default function SearchPage() {
                       </span>
                     )}
                   </p>
+                  {textSearchQuery.data?.interpretation &&
+                    (Object.keys(
+                      textSearchQuery.data.interpretation.constraints
+                    ).length > 0 ||
+                      textSearchQuery.data.interpretation.corrections.length >
+                        0) && (
+                      <div className="flex flex-1 flex-wrap items-center gap-1.5">
+                        {textSearchQuery.data.interpretation.constraints
+                          .dateRange && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeInterpretationConstraint('dateRange')
+                            }
+                            className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 font-mono text-[10px] text-amber-100 transition hover:bg-amber-300/20"
+                          >
+                            {textSearchQuery.data.interpretation.constraints
+                              .dateRange.startYear ===
+                            textSearchQuery.data.interpretation.constraints
+                              .dateRange.endYear
+                              ? textSearchQuery.data.interpretation.constraints
+                                  .dateRange.startYear
+                              : `${textSearchQuery.data.interpretation.constraints.dateRange.startYear}-${textSearchQuery.data.interpretation.constraints.dateRange.endYear}`}{' '}
+                            ×
+                          </button>
+                        )}
+                        {textSearchQuery.data.interpretation.constraints.classifications?.map(
+                          (classification) => (
+                            <button
+                              key={`classification-${classification}`}
+                              type="button"
+                              onClick={() =>
+                                removeInterpretationConstraint(
+                                  'classifications'
+                                )
+                              }
+                              className="rounded-full border border-sky-300/25 bg-sky-300/10 px-2.5 py-1 font-mono text-[10px] text-sky-100 transition hover:bg-sky-300/20"
+                            >
+                              {classification} ×
+                            </button>
+                          )
+                        )}
+                        {textSearchQuery.data.interpretation.constraints.mediumFamilies?.map(
+                          (medium) => (
+                            <button
+                              key={`medium-${medium}`}
+                              type="button"
+                              onClick={() =>
+                                removeInterpretationConstraint(
+                                  'mediumFamilies'
+                                )
+                              }
+                              className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 font-mono text-[10px] text-emerald-100 transition hover:bg-emerald-300/20"
+                            >
+                              {medium} ×
+                            </button>
+                          )
+                        )}
+                        {textSearchQuery.data.interpretation.corrections.length >
+                          0 && (
+                          <span className="font-mono text-[9px] text-white/45">
+                            Interpreted{' '}
+                            {textSearchQuery.data.interpretation.corrections
+                              .map(
+                                ({ from, to }) => `${from} as ${to}`
+                              )
+                              .join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
                       <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">

@@ -74,4 +74,11 @@ describe('buildPublicTextSearchPlan', () => {
       })
     ).toBeNull();
   });
+
+  it('includes explicit removable constraints in the request and cache identity', () => {
+    const constraints = { dateRange: { startYear: 1700, endYear: 1799 }, classifications: ['Painting'] };
+    const plan = buildPublicTextSearchPlan({ ...baseInput, committedTextQuery: 'landscape', constraints });
+    expect(plan?.request).toMatchObject({ query: 'landscape', constraints });
+    expect(plan?.queryKey.join(':')).toContain('Painting');
+  });
 });
