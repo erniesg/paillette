@@ -34,7 +34,7 @@ describe('about page layout', () => {
     expect(ABOUT_MAIN_CLASS_NAME).toBe(
       'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20'
     );
-    expect(ABOUT_BODY_GROUP_CLASS_NAME).toBe('mt-5 max-w-7xl space-y-5');
+    expect(ABOUT_BODY_GROUP_CLASS_NAME).toBe('mt-5 w-full space-y-5');
   });
 
   it('includes the system architecture in the About flow', () => {
@@ -63,7 +63,7 @@ describe('about page layout', () => {
     const feedbackHeading = screen.getByRole('heading', { name: 'Feedback' });
     expect(feedbackHeading.nextElementSibling).toHaveClass(
       'mt-5',
-      'max-w-7xl',
+      'w-full',
       'space-y-5'
     );
   });
