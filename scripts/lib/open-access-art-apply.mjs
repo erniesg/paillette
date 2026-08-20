@@ -501,9 +501,13 @@ function assetStatement(row, role, generatedAt) {
   ${sqlValue(generatedAt)},
   ${sqlValue(generatedAt)}
 )
-ON CONFLICT(artwork_id, role, object_key) DO UPDATE SET
+ON CONFLICT(id) DO UPDATE SET
+  artwork_id = excluded.artwork_id,
+  org_id = excluded.org_id,
+  role = excluded.role,
   storage_provider = excluded.storage_provider,
   bucket = excluded.bucket,
+  object_key = excluded.object_key,
   url = excluded.url,
   mime_type = excluded.mime_type,
   metadata = excluded.metadata,

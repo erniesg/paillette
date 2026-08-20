@@ -241,6 +241,11 @@ describe('open access art apply plan', () => {
     assert.match(files[0].sql, /INSERT INTO artworks/u);
     assert.match(files[0].sql, /ON CONFLICT\(id\) DO UPDATE/u);
     assert.match(files[0].sql, /INSERT INTO assets/u);
+    assert.match(
+      files[0].sql,
+      /ON CONFLICT\(id\) DO UPDATE SET\n  artwork_id = excluded\.artwork_id,/u
+    );
+    assert.match(files[0].sql, /object_key = excluded\.object_key/u);
     assert.match(files[0].sql, /storage_provider/u);
     assert.match(files[0].sql, /INSERT INTO collection_artworks/u);
     assert.match(files[0].sql, /UPDATE collections SET artwork_count/u);
