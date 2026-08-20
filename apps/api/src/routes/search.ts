@@ -24,7 +24,13 @@ import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   normalizePublicSearchText,
+  type PublicSearchConstraints,
 } from '@paillette/types/public-search';
+import {
+  matchesNgaSearchConstraints,
+  parseNgaSearchIntent,
+  validateNgaSearchConstraints,
+} from '../utils/nga-search-intent';
 import {
   isAllowedPublicSearchRouteScope,
   isNgsPublicOrg,
@@ -330,6 +336,14 @@ const parseTemporalFilter = (query: string): TemporalFilter | null => {
     return null;
   }
 
+  const structuredRange = parseNgaSearchIntent(query).constraints.dateRange;
+  if (structuredRange) {
+    return {
+      ...structuredRange,
+      textQuery: query,
+    };
+  }
+
   const decadeMatch = query.match(/\b((?:1[0-9]{2}|20[0-9])0)'?s\b/i);
   if (decadeMatch?.[1]) {
     const startYear = Number(decadeMatch[1]);
@@ -360,6 +374,32 @@ const artworkMatchesTemporalFilter = (
   const year = artwork.year ?? firstYearFromText(artwork.date_text);
   return Boolean(
     year && year >= temporalFilter.startYear && year <= temporalFilter.endYear
+  );
+};
+
+const artworkMatchesStructuredConstraints = (
+  artwork: ArtworkSearchRow,
+  constraints: PublicSearchConstraints
+) => {
+  const enriched = artwork as ArtworkSearchRow & {
+    year_start?: number | null;
+    year_end?: number | null;
+    visual_classification?: string | null;
+    medium_family?: string | null;
+    primary_artist_id?: string | null;
+  };
+  return matchesNgaSearchConstraints(
+    {
+      year: artwork.year,
+      yearStart: enriched.year_start,
+      yearEnd: enriched.year_end,
+      classification: artwork.classification,
+      visualClassification: enriched.visual_classification,
+      medium: artwork.medium,
+      mediumFamily: enriched.medium_family,
+      primaryArtistId: enriched.primary_artist_id,
+    },
+    constraints
   );
 };
 
@@ -1145,9 +1185,15 @@ async function getArtworksByIds(
         title,
         artist,
         year,
+        year_start,
+        year_end,
         date_text,
         medium,
+        medium_family,
         classification,
+        subclassification,
+        visual_classification,
+        primary_artist_id,
         culture,
         origin,
         dimensions_height,
@@ -1199,11 +1245,48 @@ async function searchArtworksHybrid(
   topK: number,
   forcedIntent?: 'artist_exact',
   schedule?: ScheduleBackgroundWork,
-  degradedChannels?: Set<SearchDegradedChannel>
+  degradedChannels?: Set<SearchDegradedChannel>,
+  structuredConstraints?: PublicSearchConstraints
 ): Promise<ArtworkSearchResult[]> {
   const fusionMode = getSearchFusionMode(env, orgId);
   if (fusionMode === 'legacy' || fusionMode === 'metadata') {
-    return searchArtworksByMetadata(env.DB, orgId, provider, query, topK);
+    const metadataResults = await searchArtworksByMetadata(
+      env.DB,
+      orgId,
+      provider,
+      query,
+      structuredConstraints ? MAX_SEARCH_RESULTS : topK
+    );
+    return structuredConstraints
+      ? metadataResults.filter((result) =>
+          matchesNgaSearchConstraints(
+            {
+              year: result.year,
+              classification:
+                typeof result.metadata?.classification === 'string'
+                  ? result.metadata.classification
+                  : null,
+              visualClassification:
+                typeof result.metadata?.visualClassification === 'string'
+                  ? result.metadata.visualClassification
+                  : null,
+              medium:
+                typeof result.metadata?.medium === 'string'
+                  ? result.metadata.medium
+                  : null,
+              mediumFamily:
+                typeof result.metadata?.mediumFamily === 'string'
+                  ? result.metadata.mediumFamily
+                  : null,
+              primaryArtistId:
+                typeof result.metadata?.primaryArtistId === 'string'
+                  ? result.metadata.primaryArtistId
+                  : null,
+            },
+            structuredConstraints
+          )
+        ).slice(0, topK)
+      : metadataResults;
   }
 
   const initialRoute = buildRoutedSearchPlan(query, forcedIntent);
@@ -1422,7 +1505,7 @@ async function searchArtworksHybrid(
         (rankingScoreById.get(idB) || 0) - (rankingScoreById.get(idA) || 0)
     )
     .map(([id]) => id);
-  const rankedIds = temporalFilter
+  const rankedIds = temporalFilter || structuredConstraints
     ? rankedCandidateIds
     : rankedCandidateIds.slice(0, topK);
 
@@ -1442,6 +1525,12 @@ async function searchArtworksHybrid(
     if (
       temporalFilter &&
       !artworkMatchesTemporalFilter(artwork, temporalFilter)
+    ) {
+      return [];
+    }
+    if (
+      structuredConstraints &&
+      !artworkMatchesStructuredConstraints(artwork, structuredConstraints)
     ) {
       return [];
     }
@@ -1844,6 +1933,17 @@ const textSearchSchema = z.object({
   minScore: z.number().min(0).max(1).optional().default(0.7),
   facet: z.enum(['artist', 'classification']).optional(),
   visualRefinement: z.string().trim().min(1).max(100).optional(),
+  constraints: z
+    .object({
+      dateRange: z
+        .object({ startYear: z.number().int(), endYear: z.number().int() })
+        .optional(),
+      classifications: z.array(z.string().min(1)).max(8).optional(),
+      mediumFamilies: z.array(z.string().min(1)).max(8).optional(),
+      artistIds: z.array(z.string().min(1)).max(8).optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 export const searchRoutes = new Hono<{ Bindings: Env }>();
@@ -1901,7 +2001,7 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
 
-    const { query, topK, minScore, facet, visualRefinement } = validation.data;
+    const { query, topK, minScore, facet, visualRefinement, constraints } = validation.data;
     if (
       isPublicSearchPrincipal &&
       (topK !== MAX_SEARCH_RESULTS ||
@@ -1923,6 +2023,29 @@ searchRoutes.post('/search/text', async (c) => {
 
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const structuredSearchEnabled =
+      provider === 'nga' &&
+      (c.env as Env & { NGA_STRUCTURED_SEARCH_ENABLED?: string })
+        .NGA_STRUCTURED_SEARCH_ENABLED !== 'false';
+    const interpretation = structuredSearchEnabled
+      ? parseNgaSearchIntent(query, constraints)
+      : undefined;
+    const constraintError = interpretation
+      ? validateNgaSearchConstraints(interpretation.constraints)
+      : null;
+    if (constraintError) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_SEARCH_CONSTRAINTS',
+            message: constraintError,
+          },
+        },
+        400
+      );
+    }
+    const structuredConstraints = interpretation?.constraints;
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
       try {
@@ -1964,7 +2087,8 @@ searchRoutes.post('/search/text', async (c) => {
                 topK,
                 exactFreeTextArtist ? 'artist_exact' : undefined,
                 scheduleBackgroundWork,
-                degradedChannels
+                degradedChannels,
+                structuredConstraints
               );
       const enrichedResults = visualRefinement
         ? await rerankByVisualRefinement(
@@ -1980,6 +2104,7 @@ searchRoutes.post('/search/text', async (c) => {
         results: enrichedResults,
         count: enrichedResults.length,
         queryTime: performance.now() - startTime,
+        ...(interpretation ? { interpretation } : {}),
       };
     };
 
@@ -2000,6 +2125,8 @@ searchRoutes.post('/search/text', async (c) => {
         embeddingIndexVersion: getEmbeddingIndexVersion(c.env),
         fusionMode: getSearchFusionMode(c.env, orgId),
         modelIdentity: getSearchResultModelIdentity(c.env),
+        parserVersion: interpretation?.parserVersion,
+        constraints: structuredConstraints,
         schedule: scheduleBackgroundWork,
         load: async () => {
           await enforcePublicSearchColdMissRateLimit({
@@ -2014,6 +2141,8 @@ searchRoutes.post('/search/text', async (c) => {
               orgId,
               provider: provider || null,
               facet: facet || null,
+              parserVersion: interpretation?.parserVersion || null,
+              constraints: structuredConstraints || null,
             }),
             countRepeatedRequests: true,
             limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),

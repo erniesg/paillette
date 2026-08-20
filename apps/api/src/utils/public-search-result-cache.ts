@@ -5,9 +5,9 @@ import {
 } from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '../types';
 
-const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 1;
+const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 2;
 
-export const PUBLIC_SEARCH_RESULT_CACHE_SCHEMA_VERSION = 1 as const;
+export const PUBLIC_SEARCH_RESULT_CACHE_SCHEMA_VERSION = 2 as const;
 export const PUBLIC_SEARCH_RESULT_CACHE_READ_TIMEOUT_MS = 300;
 export const PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS = 24 * 60 * 60 * 1000;
 export const PUBLIC_SEARCH_RESULT_CACHE_HARD_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -30,6 +30,8 @@ export interface PublicSearchResultCacheIdentity {
   embeddingIndexVersion: string;
   fusionMode: string;
   modelIdentity: string;
+  parserVersion?: string;
+  constraints?: import('@paillette/types/public-search').PublicSearchConstraints;
 }
 
 export interface PublicSearchResultCacheLoadResult {
@@ -81,6 +83,7 @@ const CachedPublicSearchResultSchema = z
     storedAt: z.number().int().nonnegative(),
     results: z.array(ArtworkSearchResultSchema),
     count: z.number().int().nonnegative(),
+    interpretation: z.unknown().optional(),
   })
   .strict()
   .refine((value) => value.count === value.results.length, {
@@ -163,7 +166,7 @@ const serializePublicSearchResultCacheIdentity = (
   return JSON.stringify({
     keyVersion: PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION,
     contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-    query: normalizePublicSearchText(identity.query),
+    query: normalizePublicSearchText(identity.query).toLocaleLowerCase('en-US'),
     orgId: normalizeScope(identity.orgId),
     provider: normalizeScope(identity.provider),
     facet: identity.facet || null,
@@ -173,6 +176,15 @@ const serializePublicSearchResultCacheIdentity = (
     embeddingIndexVersion: identity.embeddingIndexVersion.trim(),
     fusionMode: identity.fusionMode.trim(),
     modelIdentity: identity.modelIdentity.trim(),
+    parserVersion: identity.parserVersion?.trim() || null,
+    constraints: identity.constraints
+      ? {
+          ...(identity.constraints.dateRange ? { dateRange: identity.constraints.dateRange } : {}),
+          classifications: [...(identity.constraints.classifications || [])].sort(),
+          mediumFamilies: [...(identity.constraints.mediumFamilies || [])].sort(),
+          artistIds: [...(identity.constraints.artistIds || [])].sort(),
+        }
+      : null,
   });
 };
 
@@ -182,6 +194,12 @@ const reconstructResponse = (
   results: value.results,
   count: value.count,
   queryTime: 0,
+  ...(value.interpretation
+    ? {
+        interpretation:
+          value.interpretation as SearchResponse['interpretation'],
+      }
+    : {}),
 });
 
 const readCacheValue = async (
@@ -251,6 +269,7 @@ const stableValueFromResponse = (
     storedAt,
     results: response.results,
     count: response.count,
+    interpretation: response.interpretation,
   });
   return parsed.success ? parsed.data : null;
 };

@@ -2416,4 +2416,65 @@ describe('Search API auth and quota behavior', () => {
       quota: 1,
     });
   });
+
+  it('interprets and hard-filters NGA century and classification constraints', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-painting-1750',
+        year: 1750,
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-drawing-1750',
+        year: 1750,
+        classification: 'Drawing',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-painting-1850',
+        year: 1850,
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'paintings from 18th century', topK: 100, minScore: 0 },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.interpretation.constraints).toEqual({
+      dateRange: { startYear: 1700, endYear: 1799 },
+      classifications: ['Painting'],
+    });
+    expect(payload.data.results.map((row: any) => row.id)).toEqual([
+      'nga-painting-1750',
+    ]);
+  });
+
+  it('rejects unknown explicit NGA constraints', async () => {
+    const response = await textSearch(
+      app,
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'landscape',
+        topK: 100,
+        minScore: 0,
+        constraints: { classifications: ['Definitely Not An NGA Class'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('INVALID_SEARCH_CONSTRAINTS');
+  });
 });

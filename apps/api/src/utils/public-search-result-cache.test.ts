@@ -63,12 +63,13 @@ const createCache = (overrides: Partial<KVNamespace> = {}) =>
   }) as unknown as KVNamespace;
 
 describe('buildPublicSearchResultCacheKey', () => {
-  it('hashes the complete retrieval identity with case-preserving text normalization', async () => {
+  it('hashes the complete retrieval identity with canonical text and constraints', async () => {
     const baseKey = await buildPublicSearchResultCacheKey(identity);
     const normalizedEquivalent = await buildPublicSearchResultCacheKey({
       ...identity,
       query: '  Blue\n sky  ',
     });
+    const caseEquivalent = await buildPublicSearchResultCacheKey({ ...identity, query: 'blue SKY' });
     const composedEquivalent = await buildPublicSearchResultCacheKey({
       ...identity,
       query: 'Cafe\u0301 sky',
@@ -87,14 +88,15 @@ describe('buildPublicSearchResultCacheKey', () => {
     } as PublicSearchResultCacheIdentity);
 
     expect(baseKey).toBe(normalizedEquivalent);
+    expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v1:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v2:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
     const variants: PublicSearchResultCacheIdentity[] = [
-      { ...identity, query: 'blue sky' },
+      { ...identity, constraints: { classifications: ['Painting'] }, parserVersion: 'nga-v1' },
       { ...identity, orgId: 'org-2' },
       { ...identity, provider: undefined },
       { ...identity, facet: 'artist' },
