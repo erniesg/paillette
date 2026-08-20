@@ -20,7 +20,7 @@ const searchPayload: ApiResponse<SearchResponse> = {
   },
 };
 
-const makeRequest = (body: Record<string, unknown>, orgId = 'ngs') =>
+const makeRequest = (body: Record<string, unknown>, orgId = 'nga') =>
   new Request(`https://paillette.test/api/public-search/${orgId}/text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -91,7 +91,7 @@ describe('public text search route caching', () => {
 
     const firstResponse = await action({
       context: {},
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest({
         query: 'serene, still and contemplative',
         topK: 1,
@@ -122,7 +122,7 @@ describe('public text search route caching', () => {
 
     const secondResponse = await action({
       context: {},
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest({
         query: 'serene, still and contemplative',
         topK: 2,
@@ -175,12 +175,12 @@ describe('public text search route caching', () => {
     };
     const first = await action({
       context: {},
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest(requestBody),
     } as any);
     const second = await action({
       context: {},
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest(requestBody),
     } as any);
 
@@ -237,7 +237,7 @@ describe('public text search route caching', () => {
 
     const pendingResponse = action({
       context: { cloudflare: { context: { waitUntil } } },
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest({
         query: 'quiet shore',
         usageContext: { auto: true },
@@ -309,7 +309,7 @@ describe('public text search route caching', () => {
 
     const response = await action({
       context: {},
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest({
         query: 'rabbit',
         topK: 30,
@@ -349,7 +349,7 @@ describe('public text search route caching', () => {
 
     const response = await action({
       context: {},
-      params: { orgId: 'ngs' },
+      params: { orgId: 'nga' },
       request: makeRequest({
         query: 'Zhang Yiqian',
         topK: 30,
