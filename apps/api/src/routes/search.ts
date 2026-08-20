@@ -417,7 +417,7 @@ const artworkMatchesStructuredConstraints = (
   );
 };
 
-const buildStructuredConstraintSql = (
+export const buildStructuredConstraintSql = (
   constraints?: PublicSearchConstraints
 ): { sql: string; params: Array<string | number> } => {
   if (!constraints) return { sql: '', params: [] };
@@ -447,7 +447,7 @@ const buildStructuredConstraintSql = (
       .map(() => `lower(coalesce(medium, '')) LIKE ? ESCAPE '\\'`)
       .join(' OR ');
     clauses.push(
-      `(lower(trim(coalesce(medium_family, ''))) IN (${placeholders}) OR ${mediumFallbacks})`
+      `(lower(trim(coalesce(medium_family, ''))) IN (${placeholders}) OR (trim(coalesce(medium_family, '')) = '' AND (${mediumFallbacks})))`
     );
     params.push(
       ...constraints.mediumFamilies.map((value) => value.toLowerCase()),

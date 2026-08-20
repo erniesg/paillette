@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import {
+  buildStructuredConstraintSql,
   generateJinaQueryEmbedding,
   searchRoutes,
 } from '../../src/routes/search';
@@ -9,6 +10,19 @@ import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/publ
 import type { Env } from '../../src/index';
 
 const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
+
+describe('buildStructuredConstraintSql', () => {
+  it('uses raw medium text only when canonical medium family is blank', () => {
+    const result = buildStructuredConstraintSql({
+      mediumFamilies: ['woodcut'],
+    });
+
+    expect(result.sql).toContain(
+      "trim(coalesce(medium_family, '')) = '' AND (lower(coalesce(medium, '')) LIKE ? ESCAPE '\\')"
+    );
+    expect(result.params).toEqual(['woodcut', '%woodcut%']);
+  });
+});
 
 type DailyUsage = {
   used: number;
