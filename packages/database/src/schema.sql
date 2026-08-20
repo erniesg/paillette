@@ -115,9 +115,15 @@ CREATE TABLE IF NOT EXISTS artworks (
   title TEXT NOT NULL,
   artist TEXT,
   year INTEGER,
+  year_start INTEGER,
+  year_end INTEGER,
   date_text TEXT,
   medium TEXT,
+  medium_family TEXT,
   classification TEXT,
+  subclassification TEXT,
+  visual_classification TEXT,
+  primary_artist_id TEXT,
   culture TEXT,
   origin TEXT,
   dimensions_height REAL,
@@ -167,6 +173,10 @@ CREATE INDEX idx_artworks_org_id ON artworks(org_id);
 CREATE INDEX idx_artworks_collection_id ON artworks(collection_id);
 CREATE INDEX idx_artworks_artist ON artworks(artist);
 CREATE INDEX idx_artworks_year ON artworks(year);
+CREATE INDEX idx_artworks_org_year_range ON artworks(org_id, year_start, year_end) WHERE deleted_at IS NULL;
+CREATE INDEX idx_artworks_org_visual_classification ON artworks(org_id, visual_classification) WHERE deleted_at IS NULL;
+CREATE INDEX idx_artworks_org_medium_family ON artworks(org_id, medium_family) WHERE deleted_at IS NULL;
+CREATE INDEX idx_artworks_org_primary_artist ON artworks(org_id, primary_artist_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_artworks_accession_number ON artworks(accession_number);
 CREATE INDEX idx_artworks_image_hash ON artworks(image_hash) WHERE image_hash IS NOT NULL;
 CREATE INDEX idx_artworks_created_at ON artworks(created_at DESC);

@@ -36,6 +36,24 @@ describe('open access artwork normalization', () => {
     );
   });
 
+  it('preserves authoritative NGA date ranges and normalized facets', () => {
+    const normalized = normalizeNgaArtwork({
+      object: {
+        objectid: '42', title: 'Landscape', attribution: 'Example Artist',
+        beginyear: '1740', endyear: '1760', displaydate: 'c. 1750',
+        medium: 'oil on panel', classification: 'Painting',
+        subclassification: 'Landscape', visualbrowserclassification: 'Painting',
+        primaryartistid: 'artist-1', artistalternativenames: ['E. Artist'],
+      },
+      image: { openaccess: '1', depictstmsobjectid: '42', iiifurl: 'https://example.com/iiif/42' },
+    });
+    assert.equal(normalized?.year_start, 1740);
+    assert.equal(normalized?.year_end, 1760);
+    assert.equal(normalized?.visual_classification, 'Painting');
+    assert.equal(normalized?.primary_artist_id, 'artist-1');
+    assert.deepEqual(normalized?.custom_metadata.artistAlternativeNames, ['E. Artist']);
+  });
+
   it('normalizes eligible Met public-domain image records without inventing captions', () => {
     const normalized = normalizeMetArtwork({
       objectID: 12345,
