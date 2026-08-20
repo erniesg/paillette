@@ -2046,6 +2046,7 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
     const structuredConstraints = interpretation?.constraints;
+    const retrievalQuery = interpretation?.semanticQuery.trim() || query;
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
       try {
@@ -2059,7 +2060,12 @@ searchRoutes.post('/search/text', async (c) => {
     const executeSearch = async (): Promise<SearchResponse> => {
       const exactFreeTextArtist =
         !facet &&
-        (await hasExactArtistFacetMatch(c.env.DB, orgId, provider, query));
+        (await hasExactArtistFacetMatch(
+          c.env.DB,
+          orgId,
+          provider,
+          retrievalQuery
+        ));
       resolvedFacet = exactFreeTextArtist ? 'artist' : facet;
 
       const baseResults =
@@ -2068,7 +2074,7 @@ searchRoutes.post('/search/text', async (c) => {
               c.env.DB,
               orgId,
               provider,
-              query,
+              retrievalQuery,
               topK
             )
           : facet === 'classification'
@@ -2076,14 +2082,14 @@ searchRoutes.post('/search/text', async (c) => {
                 c.env.DB,
                 orgId,
                 provider,
-                query,
+                retrievalQuery,
                 topK
               )
             : await searchArtworksHybrid(
                 c.env,
                 orgId,
                 provider,
-                query,
+                retrievalQuery,
                 topK,
                 exactFreeTextArtist ? 'artist_exact' : undefined,
                 scheduleBackgroundWork,
@@ -2115,7 +2121,7 @@ searchRoutes.post('/search/text', async (c) => {
     if (isPublicSearchPrincipal) {
       const cached = await getOrLoadPublicSearchResult({
         cache: c.env.CACHE,
-        query,
+        query: retrievalQuery,
         orgId,
         provider,
         facet,
@@ -2137,7 +2143,7 @@ searchRoutes.post('/search/text', async (c) => {
             ),
             searchIdentity: JSON.stringify({
               contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-              query: normalizePublicSearchText(query),
+              query: normalizePublicSearchText(retrievalQuery),
               orgId,
               provider: provider || null,
               facet: facet || null,
@@ -2154,7 +2160,10 @@ searchRoutes.post('/search/text', async (c) => {
           };
         },
       });
-      searchResponse = cached.response;
+      searchResponse = {
+        ...cached.response,
+        ...(interpretation ? { interpretation } : {}),
+      };
       cacheHeader = cached.disposition.toUpperCase();
       // A coalesced follower cannot observe the leader's degradation set, so
       // keep it out of downstream caches conservatively.

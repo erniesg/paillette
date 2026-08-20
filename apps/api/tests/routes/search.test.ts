@@ -146,6 +146,7 @@ class FakeSearchDb {
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
   metadataSearchSql: string[] = [];
+  metadataSearchParams: unknown[][] = [];
   exactArtistPreflightSql: string[] = [];
   failArtworkUsageInserts = false;
   apiKeyRow: {
@@ -393,6 +394,7 @@ class FakeSearchDb {
 
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
       this.metadataSearchSql.push(sql);
+      this.metadataSearchParams.push(params);
       if (sql.includes('lower(trim(classification)) = ?')) {
         const normalizedQuery = String(
           params[params.length - 2] || ''
@@ -2457,6 +2459,35 @@ describe('Search API auth and quota behavior', () => {
     expect(payload.data.results.map((row: any) => row.id)).toEqual([
       'nga-painting-1750',
     ]);
+  });
+
+  it('uses the residual semantic query for inferred NGA retrieval', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-landscape-1750',
+        title: 'River Landscape',
+        year: 1750,
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'landscape paintings from 18th century',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(db.metadataSearchParams[0])).toContain('landscape');
+    expect(JSON.stringify(db.metadataSearchParams[0])).not.toContain('18th');
   });
 
   it('rejects unknown explicit NGA constraints', async () => {
