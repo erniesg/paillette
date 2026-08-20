@@ -2488,6 +2488,8 @@ describe('Search API auth and quota behavior', () => {
     expect(response.status).toBe(200);
     expect(JSON.stringify(db.metadataSearchParams[0])).toContain('landscape');
     expect(JSON.stringify(db.metadataSearchParams[0])).not.toContain('18th');
+    expect(db.metadataSearchSql[0]).toContain('coalesce(year_start, year)');
+    expect(db.metadataSearchSql[0]).toContain('visual_classification');
   });
 
   it('rejects unknown explicit NGA constraints', async () => {
