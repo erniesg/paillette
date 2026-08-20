@@ -17,7 +17,7 @@ const card = (id: string) => ({
 
 const spotlightBundle = {
   schemaVersion: 1,
-  contractVersion: '18',
+  contractVersion: '19',
   corpusVersion: 'e2e-fixture',
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
