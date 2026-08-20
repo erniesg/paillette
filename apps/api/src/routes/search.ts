@@ -273,11 +273,25 @@ const providerSearchSql = (provider: string | undefined) =>
 
 const getVectorFilter = (
   orgId: string | undefined,
-  provider: string | undefined
+  provider: string | undefined,
+  constraints?: PublicSearchConstraints
 ) => {
-  const filter: Record<string, string | number | boolean> = {};
+  const filter: VectorizeVectorMetadataFilter = {};
   if (orgId) filter.galleryId = orgId;
   if (provider) filter.provider = provider;
+  if (constraints?.dateRange) {
+    filter.yearStart = { $lte: constraints.dateRange.endYear };
+    filter.yearEnd = { $gte: constraints.dateRange.startYear };
+  }
+  if (constraints?.classifications?.length) {
+    filter.classification = { $in: constraints.classifications };
+  }
+  if (constraints?.mediumFamilies?.length) {
+    filter.mediumFamily = { $in: constraints.mediumFamilies };
+  }
+  if (constraints?.artistIds?.length) {
+    filter.primaryArtistId = { $in: constraints.artistIds };
+  }
   return Object.keys(filter).length > 0 ? filter : undefined;
 };
 
@@ -1107,6 +1121,7 @@ async function searchJinaTextVectors(
   provider: string | undefined,
   query: string,
   topK: number,
+  structuredConstraints?: PublicSearchConstraints,
   schedule?: ScheduleBackgroundWork
 ): Promise<CaptionVectorMatch[]> {
   if (!vectorize || !config.apiKey) {
@@ -1123,7 +1138,7 @@ async function searchJinaTextVectors(
   );
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    filter: getVectorFilter(orgId, provider),
+    filter: getVectorFilter(orgId, provider, structuredConstraints),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -1144,6 +1159,7 @@ async function searchCaptionVectors(
   provider: string | undefined,
   query: string,
   topK: number,
+  structuredConstraints?: PublicSearchConstraints,
   schedule?: ScheduleBackgroundWork
 ): Promise<CaptionVectorMatch[]> {
   if (!vectorize || !isCaptionVectorSearchEnabled(env)) {
@@ -1157,7 +1173,7 @@ async function searchCaptionVectors(
   );
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    filter: getVectorFilter(orgId, provider),
+    filter: getVectorFilter(orgId, provider, structuredConstraints),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -1386,6 +1402,7 @@ async function searchArtworksHybrid(
           provider,
           query,
           topK,
+          structuredConstraints,
           schedule
         ).catch((error) => {
           degradedChannels?.add('image_embedding');
@@ -1407,6 +1424,7 @@ async function searchArtworksHybrid(
           provider,
           query,
           topK,
+          structuredConstraints,
           schedule
         ).catch((error) => {
           degradedChannels?.add('caption_embedding');

@@ -15,7 +15,7 @@ export type PublicSearchConstraints = {
 };
 
 export type PublicSearchInterpretation = {
-  parserVersion: 'nga-v1';
+  parserVersion: 'nga-v1' | 'nga-v2';
   originalQuery: string;
   semanticQuery: string;
   constraints: PublicSearchConstraints;

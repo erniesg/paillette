@@ -2492,6 +2492,58 @@ describe('Search API auth and quota behavior', () => {
     expect(db.metadataSearchSql[0]).toContain('visual_classification');
   });
 
+  it('applies NGA hard constraints to vector retrieval before top-K', async () => {
+    const religiousPainting = makeArtworkRow({
+      id: 'nga-religious-painting-1450',
+      title: 'The Annunciation',
+      year: 1450,
+      classification: 'Painting',
+      custom_metadata: JSON.stringify({ provider: 'nga' }),
+    });
+    db = new FakeSearchDb([religiousPainting]);
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: religiousPainting.id, score: 0.92, metadata: {} }],
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      SEARCH_FUSION_MODE: 'hybrid',
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'religious paintings from 15th century',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+
+    expect(response.status).toBe(200);
+    expect(captionVectorize.query).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        filter: {
+          galleryId: 'open-access-art',
+          provider: 'nga',
+          yearStart: { $lte: 1499 },
+          yearEnd: { $gte: 1400 },
+          classification: { $in: ['Painting'] },
+        },
+      })
+    );
+  });
+
   it('rejects unknown explicit NGA constraints', async () => {
     const response = await textSearch(
       app,
