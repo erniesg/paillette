@@ -1,4 +1,8 @@
-import type { ActionFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
+import type {
+  ActionFunctionArgs,
+  LoaderFunctionArgs,
+  MetaFunction,
+} from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
 import { Form, useActionData, useNavigation } from '@remix-run/react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -59,7 +63,9 @@ const headingClassName =
   'font-display text-3xl font-semibold tracking-normal text-white md:text-4xl';
 const bodyClassName =
   'text-base leading-8 text-white/68 md:text-lg md:leading-9';
-export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 max-w-7xl space-y-5';
+const ABOUT_CACHE_CONTROL =
+  'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 w-full space-y-5';
 export const ABOUT_MAIN_CLASS_NAME =
   'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20';
 const inputClassName =
@@ -229,6 +235,10 @@ const notifyDiscord = async (
     console.warn('Discord feedback notification failed:', error);
   }
 };
+
+export async function loader(_: LoaderFunctionArgs) {
+  return json({}, { headers: { 'Cache-Control': ABOUT_CACHE_CONTROL } });
+}
 
 export const action = async ({ context, request }: ActionFunctionArgs) => {
   const env = getServerEnv(context);

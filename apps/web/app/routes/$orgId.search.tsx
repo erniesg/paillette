@@ -9,6 +9,9 @@ import { getSearchSpotlightPath } from '~/lib/search-spotlights';
 
 export { default, meta } from './galleries.$galleryId.search';
 
+const SEARCH_PAGE_CACHE_CONTROL =
+  'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+
 export const headers: HeadersFunction = ({ loaderHeaders, parentHeaders }) => {
   const responseHeaders = new Headers(parentHeaders);
   const preload = loaderHeaders.get('Link');
@@ -35,12 +38,14 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       publicSearchOrgId,
     },
     {
-      headers:
-        publicSearchOrgId === 'nga'
+      headers: {
+        'Cache-Control': SEARCH_PAGE_CACHE_CONTROL,
+        ...(publicSearchOrgId === 'nga'
           ? {
               Link: `<${getSearchSpotlightPath('nga')}>; rel=preload; as=fetch; crossorigin`,
             }
-          : undefined,
+          : {}),
+      },
     }
   );
 }

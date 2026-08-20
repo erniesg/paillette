@@ -46,10 +46,6 @@ const ORG_ID_ALIASES: Record<string, string> = {
 };
 
 const ALLOWED_PUBLIC_SEARCH_ROUTE_IDS = new Set([
-  'ngs',
-  'national-gallery-singapore',
-  'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
-  '00000000-0000-4000-8000-000000000101',
   'nga',
 ]);
 

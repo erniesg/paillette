@@ -932,6 +932,8 @@ export default function SearchPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, login, signup } = useUser();
+  const isNgsSearchLocked = preferredRouteId === 'ngs' && !isAuthenticated;
+  const canSearchOnPage = !isNgsSearchLocked;
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
@@ -1180,9 +1182,10 @@ export default function SearchPage() {
   ]);
 
   const textSearchQuery = useQuery({
-    queryKey:
-      textSearchPlan?.queryKey ||
-      (['search', 'text', 'disabled', publicSearchOrgId] as const),
+    queryKey: canSearchOnPage
+      ? textSearchPlan?.queryKey ||
+        (['search', 'text', 'disabled', publicSearchOrgId] as const)
+      : (['search', 'text', 'locked', publicSearchOrgId] as const),
     queryFn: async ({ signal }) => {
       if (!textSearchPlan) return null;
       return publicSearchText(
@@ -1200,21 +1203,24 @@ export default function SearchPage() {
       hasMounted &&
       (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
-      Boolean(textSearchPlan),
+      Boolean(textSearchPlan) &&
+      canSearchOnPage,
     retry: false,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
   const imageSearchQuery = useQuery({
-    queryKey: [
-      'search',
-      'image',
-      publicSearchOrgId,
-      imageFile?.name,
-      topK,
-      minScore,
-    ],
+    queryKey: canSearchOnPage
+      ? [
+          'search',
+          'image',
+          publicSearchOrgId,
+          imageFile?.name,
+          topK,
+          minScore,
+        ]
+      : (['search', 'image', 'locked', publicSearchOrgId] as const),
     queryFn: async ({ signal }) => {
       if (!imageFile) return null;
       return publicSearchImage(
@@ -1231,18 +1237,21 @@ export default function SearchPage() {
       hasMounted &&
       searchMode === 'image' &&
       shouldSearch &&
-      imageFile !== null,
+      imageFile !== null &&
+      canSearchOnPage,
   });
 
   const browseSort = useMemo(() => getBrowseSort(sortMode), [sortMode]);
   const browseQuery = useInfiniteQuery({
-    queryKey: [
-      'browse',
-      publicSearchOrgId,
-      browsePageSize,
-      browseSort.sortBy,
-      browseSort.sortOrder,
-    ],
+    queryKey: canSearchOnPage
+      ? [
+          'browse',
+          publicSearchOrgId,
+          browsePageSize,
+          browseSort.sortBy,
+          browseSort.sortOrder,
+        ]
+      : (['browse', 'locked', publicSearchOrgId] as const),
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
       publicBrowseCollection(publicSearchOrgId, {
@@ -1253,7 +1262,7 @@ export default function SearchPage() {
       }),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
-    enabled: hasMounted && isBrowsingCollection,
+    enabled: hasMounted && isBrowsingCollection && canSearchOnPage,
   });
 
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
@@ -1416,6 +1425,8 @@ export default function SearchPage() {
   }, [hasActiveSearch, hasMounted]);
 
   const loadMoreResults = useCallback(() => {
+    if (isNgsSearchLocked) return;
+
     if (isBrowsingCollection) {
       if (browseQuery.hasNextPage && !browseQuery.isFetchingNextPage) {
         void browseQuery.fetchNextPage();
@@ -1426,7 +1437,7 @@ export default function SearchPage() {
     setVisibleCount((count) =>
       Math.min(count + SEARCH_DISPLAY_INCREMENT, results.length)
     );
-  }, [browseQuery, isBrowsingCollection, results.length]);
+  }, [browseQuery, isBrowsingCollection, isNgsSearchLocked, results.length]);
   const loadMoreMasonryColumnResults = useCallback(() => {
     if (!shouldWatchMasonryColumnEnds) return;
 
@@ -1479,6 +1490,8 @@ export default function SearchPage() {
   ]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (isNgsSearchLocked) return;
+
     const file = acceptedFiles[0];
     if (file) {
       setSelectedArtwork(null);
@@ -1494,6 +1507,7 @@ export default function SearchPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    disabled: isNgsSearchLocked,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
@@ -1506,6 +1520,8 @@ export default function SearchPage() {
     query = textQuery,
     facet: SearchFacet | null = null
   ) => {
+    if (isNgsSearchLocked) return;
+
     const trimmed = query.trim();
     if (!trimmed) return;
     const normalized =
@@ -1567,6 +1583,7 @@ export default function SearchPage() {
   };
 
   const selectColourSearch = (selection: string) => {
+    if (isNgsSearchLocked) return;
     if (!getColourSearchText(selection)) return;
 
     setSelectedArtwork(null);
@@ -1616,6 +1633,7 @@ export default function SearchPage() {
   };
 
   const runColourSearch = (selection: string) => {
+    if (isNgsSearchLocked) return;
     const active = searchMode === 'colour' && searchColours.includes(selection);
     if (active) {
       clearColourSearch();
@@ -1663,6 +1681,8 @@ export default function SearchPage() {
   const colourRailIsSearch = searchMode === 'colour';
 
   const runEvalSearch = (suggestion: EvalSuggestion) => {
+    if (isNgsSearchLocked) return;
+
     const suggestionFacet = suggestion.facet || null;
     const suggestionColour =
       suggestion.type === 'colour'
@@ -1871,6 +1891,24 @@ export default function SearchPage() {
             </div>
 
             <div className="space-y-4">
+              {isNgsSearchLocked ? (
+                <div className="rounded-lg border border-fuchsia-300/30 bg-fuchsia-300/10 px-4 py-3 text-center">
+                  <p className="text-sm font-medium text-fuchsia-100">
+                    NGS search is private.
+                  </p>
+                  <p className="mt-1 text-xs text-white/70">
+                    Sign in to access National Gallery Singapore collections.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void login({ returnTo: getCurrentReturnTo() })}
+                    className="mt-2 inline-flex h-8 items-center rounded-md border border-white/20 bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/20"
+                  >
+                    Log in to continue
+                  </button>
+                </div>
+              ) : null}
+
               {searchMode === 'text' && (
                 <form
                   className="relative"
@@ -1885,11 +1923,12 @@ export default function SearchPage() {
                     onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl"
+                    disabled={isNgsSearchLocked}
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
                   />
                   <button
                     type="submit"
-                    disabled={!canSubmitTextSearch}
+                    disabled={isNgsSearchLocked || !canSubmitTextSearch}
                     className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
                     aria-label="Search text"
                   >
@@ -1905,7 +1944,9 @@ export default function SearchPage() {
                   className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
                     isDragActive
                       ? 'border-fuchsia-300 bg-fuchsia-300/10'
-                      : 'border-white/15 bg-white/[0.025] hover:border-white/30'
+                      : isNgsSearchLocked
+                        ? 'border-white/10 bg-white/[0.015] opacity-45'
+                        : 'border-white/15 bg-white/[0.025] hover:border-white/30'
                   }`}
                 >
                   <input {...getInputProps()} />
@@ -1956,6 +1997,7 @@ export default function SearchPage() {
                   displaySuggestion={displayIdleSuggestion}
                   onSelect={runEvalSearch}
                   onPreviewChange={setIdleSuggestion}
+                  disabled={isNgsSearchLocked}
                 />
               )}
               <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
@@ -1963,6 +2005,7 @@ export default function SearchPage() {
                   active={searchMode === 'text'}
                   icon={Search}
                   label="Text"
+                  disabled={isNgsSearchLocked}
                   onClick={() => {
                     setIsBrowsingCollection(false);
                     setSearchMode('text');
@@ -1972,6 +2015,7 @@ export default function SearchPage() {
                   active={searchMode === 'image'}
                   icon={ImageIcon}
                   label="Image"
+                  disabled={isNgsSearchLocked}
                   onClick={() => {
                     setIsBrowsingCollection(false);
                     setSearchMode('image');
@@ -1981,6 +2025,7 @@ export default function SearchPage() {
                   active={searchMode === 'colour'}
                   icon={Palette}
                   label="Colour"
+                  disabled={isNgsSearchLocked}
                   onClick={() => {
                     if (searchMode === 'colour') {
                       if (searchColours.length) {
@@ -2056,7 +2101,9 @@ export default function SearchPage() {
                             <button
                               key={option.id}
                               type="button"
+                              disabled={isNgsSearchLocked}
                               onClick={() => {
+                                if (isNgsSearchLocked) return;
                                 if (option.id === 'time') {
                                   setSortMode(
                                     sortMode === 'time-desc'
@@ -2096,6 +2143,10 @@ export default function SearchPage() {
                                 active
                                   ? 'bg-white/[0.14] text-white'
                                   : 'text-white/45 hover:text-white/80'
+                              }${
+                                isNgsSearchLocked
+                                  ? ' cursor-not-allowed opacity-45'
+                                  : ''
                               }`}
                             >
                               <Icon className="h-3.5 w-3.5" />
@@ -2116,12 +2167,20 @@ export default function SearchPage() {
                             <button
                               key={option.id}
                               type="button"
-                              onClick={() => setView(option.id)}
+                              disabled={isNgsSearchLocked}
+                              onClick={() => {
+                                if (isNgsSearchLocked) return;
+                                setView(option.id);
+                              }}
                               title={option.label}
                               className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
                                 view === option.id
                                   ? 'bg-white/[0.14] text-white'
                                   : 'text-white/45 hover:text-white/80'
+                              }${
+                                isNgsSearchLocked
+                                  ? ' cursor-not-allowed opacity-45'
+                                  : ''
                               }`}
                             >
                               <Icon className="h-3.5 w-3.5" />
@@ -2135,14 +2194,18 @@ export default function SearchPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setIsSettingsOpen((value) => !value)}
+                      disabled={isNgsSearchLocked}
+                      onClick={() => {
+                        if (isNgsSearchLocked) return;
+                        setIsSettingsOpen((value) => !value);
+                      }}
                       aria-expanded={isSettingsOpen}
                       aria-label="Search settings"
                       className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
                         isSettingsOpen
                           ? 'border-white/20 bg-white/[0.12] text-white'
                           : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                      }`}
+                      }${isNgsSearchLocked ? ' cursor-not-allowed opacity-45' : ''}`}
                     >
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       <span>Settings</span>
@@ -2160,14 +2223,16 @@ export default function SearchPage() {
                     <div className="md:col-span-2">
                       <button
                         type="button"
+                        disabled={isNgsSearchLocked}
                         onClick={() => {
+                          if (isNgsSearchLocked) return;
                           setIsBrowsingCollection((value) => !value);
                         }}
                         className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
                           isBrowsingCollection
                             ? 'border-fuchsia-300/35 bg-fuchsia-300/10 text-white'
                             : 'border-white/10 bg-white/[0.035] text-white/65 hover:bg-white/[0.07] hover:text-white'
-                        }`}
+                        }${isNgsSearchLocked ? ' cursor-not-allowed opacity-45' : ''}`}
                       >
                         <span>
                           <span className="block text-sm font-medium">
@@ -2197,12 +2262,17 @@ export default function SearchPage() {
                               : MAX_SEARCH_RESULTS
                           }
                           value={isBrowsingCollection ? browsePageSize : topK}
+                          disabled={isNgsSearchLocked}
                           onChange={(event) =>
                             isBrowsingCollection
                               ? updateBrowsePageSize(Number(event.target.value))
                               : updateTopK(Number(event.target.value))
                           }
-                          className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                          className={`h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300 ${
+                            isNgsSearchLocked || isBrowsingCollection
+                              ? 'cursor-not-allowed opacity-45'
+                              : ''
+                          }`}
                         />
                       </span>
                       <input
@@ -2219,6 +2289,7 @@ export default function SearchPage() {
                             ? updateBrowsePageSize(Number(event.target.value))
                             : updateTopK(Number(event.target.value))
                         }
+                        disabled={isNgsSearchLocked}
                         className="w-full accent-fuchsia-300"
                       />
                     </label>
@@ -2233,11 +2304,15 @@ export default function SearchPage() {
                           max={100}
                           step={5}
                           value={Math.round(minScore * 100)}
-                          disabled={isBrowsingCollection}
+                          disabled={isNgsSearchLocked || isBrowsingCollection}
                           onChange={(event) =>
                             updateMinScorePercent(Number(event.target.value))
                           }
-                          className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                          className={`h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300 ${
+                            isNgsSearchLocked || isBrowsingCollection
+                              ? 'cursor-not-allowed opacity-45'
+                              : ''
+                          }`}
                         />
                       </span>
                       <input
@@ -2246,10 +2321,10 @@ export default function SearchPage() {
                         max={100}
                         step={5}
                         value={Math.round(minScore * 100)}
-                        disabled={isBrowsingCollection}
                         onChange={(event) =>
                           updateMinScorePercent(Number(event.target.value))
                         }
+                        disabled={isNgsSearchLocked || isBrowsingCollection}
                         className="w-full accent-fuchsia-300"
                       />
                     </label>
@@ -2265,6 +2340,7 @@ export default function SearchPage() {
                   selected={colourRailIsSearch ? searchColours : sortColours}
                   activeSort={sortMode === 'colour'}
                   customColour={customColour}
+                  disabled={isNgsSearchLocked}
                   onSelect={
                     colourRailIsSearch ? runColourSearch : runTargetColourSort
                   }
@@ -2368,11 +2444,12 @@ export default function SearchPage() {
                 )}
                 <div ref={loadMoreRef} className="flex justify-center py-8">
                   {hasMoreResults ? (
-                    <button
+                <button
                       type="button"
                       onClick={loadMoreResults}
                       disabled={
-                        isBrowsingCollection && browseQuery.isFetchingNextPage
+                        isNgsSearchLocked ||
+                        (isBrowsingCollection && browseQuery.isFetchingNextPage)
                       }
                       className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
                     >
@@ -2395,10 +2472,18 @@ export default function SearchPage() {
               shouldSearch &&
               results.length === 0 && (
                 <div className="py-16 text-center">
-                  <p className="text-white/55">No artworks found.</p>
-                  <p className="mt-1 text-sm text-white/35">
-                    Try a broader query or lower the minimum score.
-                  </p>
+                  {isNgsSearchLocked ? (
+                    <p className="text-white/55">
+                      Sign in to browse and search NGS works.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-white/55">No artworks found.</p>
+                      <p className="mt-1 text-sm text-white/35">
+                        Try a broader query or lower the minimum score.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
           </section>
@@ -2424,6 +2509,7 @@ function SuggestionPicker({
   displaySuggestion,
   onSelect,
   onPreviewChange,
+  disabled = false,
 }: {
   suggestions: EvalSuggestion[];
   currentQuery: string;
@@ -2431,6 +2517,7 @@ function SuggestionPicker({
   displaySuggestion?: EvalSuggestion | null;
   onSelect: (suggestion: EvalSuggestion) => void;
   onPreviewChange?: (suggestion: EvalSuggestion) => void;
+  disabled?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
@@ -2508,13 +2595,17 @@ function SuggestionPicker({
         <button
           type="button"
           data-suggestion-query={visibleSuggestion?.query || ''}
-          onClick={() => visibleSuggestion && onSelect(visibleSuggestion)}
+          disabled={disabled}
+          onClick={() => {
+            if (disabled || !visibleSuggestion) return;
+            onSelect(visibleSuggestion);
+          }}
           className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
             visibleSuggestion &&
             activeQuery === visibleSuggestion.query.toLowerCase()
               ? 'bg-white/[0.12] text-white'
               : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
-          }`}
+          }${disabled ? ' cursor-not-allowed opacity-45' : ''}`}
         >
           {visibleSuggestion && (
             <>
@@ -2535,11 +2626,20 @@ function SuggestionPicker({
           )}
         </button>
       )}
-      <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <DropdownMenu.Root
+        open={disabled ? false : open}
+        onOpenChange={(nextOpen) => {
+          if (disabled) return;
+          setOpen(nextOpen);
+        }}
+      >
         <DropdownMenu.Trigger asChild>
           <button
             type="button"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border-l border-white/10 text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white"
+            disabled={disabled}
+            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center border-l border-white/10 text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white ${
+              disabled ? 'cursor-not-allowed opacity-45' : ''
+            }`}
             aria-label="Choose another suggestion"
           >
             <ChevronDown className="h-3.5 w-3.5" />
@@ -2554,7 +2654,9 @@ function SuggestionPicker({
             {suggestions.map((option, optionIndex) => (
               <DropdownMenu.Item
                 key={getSuggestionKey(option)}
+                disabled={disabled}
                 onSelect={() => {
+                  if (disabled) return;
                   setIndex(optionIndex);
                   onSelect(option);
                 }}
@@ -3712,6 +3814,7 @@ function ColourRail({
   selected,
   activeSort,
   customColour,
+  disabled = false,
   onSelect,
   onCustomChange,
   onClear,
@@ -3720,6 +3823,7 @@ function ColourRail({
   selected: string[];
   activeSort: boolean;
   customColour: string;
+  disabled?: boolean;
   onSelect: (id: string) => void;
   onCustomChange: (hex: string) => void;
   onClear: () => void;
@@ -3750,6 +3854,7 @@ function ColourRail({
         </div>
         <ColourStrip
           selected={selected}
+          disabled={disabled}
           onToggle={onSelect}
           customColour={customColour}
           onCustomChange={onCustomChange}
@@ -3764,6 +3869,7 @@ function ColourRail({
           {activeColour ? (
             <button
               type="button"
+              disabled={disabled}
               onClick={onClear}
               className="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-white/12 bg-white/[0.04] px-2.5 text-xs text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
               aria-label={`Clear ${activeColour.name} colour target`}
@@ -3793,22 +3899,25 @@ function ModeButton({
   icon: Icon,
   label,
   onClick,
+  disabled = false,
 }: {
   active: boolean;
   icon: LucideIcon;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       aria-label={`${label} search mode`}
       className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
         active
           ? 'bg-white/[0.14] text-white'
           : 'text-white/45 hover:text-white/80'
-      }`}
+      }${disabled ? ' cursor-not-allowed opacity-45' : ''}`}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
@@ -3819,6 +3928,7 @@ function ModeButton({
 function ColourStrip({
   selected,
   onToggle,
+  disabled = false,
   customColour,
   onCustomChange,
   customAriaLabel = 'Choose custom colour',
@@ -3827,6 +3937,7 @@ function ColourStrip({
 }: {
   selected: string[];
   onToggle: (id: string) => void;
+  disabled?: boolean;
   customColour?: string;
   onCustomChange?: (hex: string) => void;
   customAriaLabel?: string;
@@ -3848,10 +3959,16 @@ function ColourStrip({
           <button
             key={colour.id}
             type="button"
-            onClick={() => onToggle(colour.id)}
+            disabled={disabled}
+            onClick={() => {
+              if (disabled) return;
+              onToggle(colour.id);
+            }}
             title={colour.name}
             aria-pressed={active}
-            className="relative min-w-7 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none"
+            className={`relative min-w-7 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none ${
+              disabled ? 'cursor-not-allowed opacity-45' : ''
+            }`}
             style={{ background: colour.hex, flex: `${grow} 1 0` }}
           >
             {active && (
@@ -3877,8 +3994,11 @@ function ColourStrip({
           <input
             type="color"
             value={customColour}
+            disabled={disabled}
             onChange={(event) => onCustomChange(event.target.value)}
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            className={`absolute inset-0 h-full w-full opacity-0 ${
+              disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+            }`}
             aria-label={customAriaLabel}
           />
           <span className="pointer-events-none absolute inset-0 flex items-center justify-center">

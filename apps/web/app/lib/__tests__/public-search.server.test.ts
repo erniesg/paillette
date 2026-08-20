@@ -167,17 +167,20 @@ describe('resolvePublicSearchOrgId', () => {
 });
 
 describe('isAllowedPublicSearchRouteId', () => {
-  it('allows only the explicit NGS and NGA public-search scopes', () => {
+  it('allows only the explicit NGA public-search scope', () => {
     expect(isAllowedPublicSearchRouteId('nga')).toBe(true);
-    expect(isAllowedPublicSearchRouteId('ngs')).toBe(true);
+    expect(isAllowedPublicSearchRouteId('nga')).toBe(true);
+    expect(isAllowedPublicSearchRouteId('open-access-art')).toBe(false);
+    expect(isAllowedPublicSearchRouteId('ngs')).toBe(false);
     expect(
       isAllowedPublicSearchRouteId('cf98791d-f3cc-4f9f-b40c-a350efadbd05')
-    ).toBe(true);
-
-    expect(isAllowedPublicSearchRouteId('open-access-art')).toBe(false);
-    expect(isAllowedPublicSearchRouteId('private-org')).toBe(false);
-    expect(
-      isAllowedPublicSearchRouteId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
     ).toBe(false);
+    expect(
+      isAllowedPublicSearchRouteId('00000000-0000-4000-8000-000000000101')
+    ).toBe(false);
+    expect(isAllowedPublicSearchRouteId('private-org')).toBe(false);
+    expect(isAllowedPublicSearchRouteId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toBe(
+      false
+    );
   });
 });
