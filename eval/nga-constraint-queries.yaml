@@ -83,3 +83,8 @@ queries:
   - { id: extra-18, text: "oils after 1800", startYear: 1801, endYear: 2100, medium: oil }
   - { id: extra-19, text: "engravings around 1650", startYear: 1640, endYear: 1660, medium: engraving }
   - { id: extra-20, text: "charcoal portraits from 1890", startYear: 1890, endYear: 1890, medium: charcoal }
+  - { id: live-regression-01, text: "religious paintings from 15th century", startYear: 1400, endYear: 1499, classification: Painting }
+  - { id: live-regression-02, text: "landscpae paintngs from 18th centry", startYear: 1700, endYear: 1799, classification: Painting, semanticQuery: landscape }
+  - { id: live-regression-03, text: "painting of a sculpture", ambiguous: true }
+  - { id: live-regression-04, text: "works after Rembrandt", ambiguous: true }
+  - { id: live-regression-05, text: "Italian Renaissance drawings", classification: Drawing }

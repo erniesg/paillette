@@ -28,8 +28,31 @@ describe('parseNgaSearchIntent', () => {
   it('corrects safe controlled-vocabulary typos', () => {
     const intent = parseNgaSearchIntent('landscpae paintngs from 18th centry');
     expect(intent.constraints).toMatchObject({ dateRange: { startYear: 1700, endYear: 1799 }, classifications: ['Painting'] });
-    expect(intent.semanticQuery).toContain('landscpae');
-    expect(intent.corrections).toEqual(expect.arrayContaining([{ from: 'paintngs', to: 'painting' }, { from: 'centry', to: 'century' }]));
+    expect(intent.semanticQuery).toBe('landscape');
+    expect(intent.corrections).toEqual(expect.arrayContaining([
+      { from: 'landscpae', to: 'landscape' },
+      { from: 'paintngs', to: 'painting' },
+      { from: 'centry', to: 'century' },
+    ]));
+  });
+
+  it.each([
+    ['religious paintings from 15th century', 'religious biblical sacred scene'],
+    ['painting of a sculpture', 'painting depicting a sculpture'],
+    ['works after Rembrandt', 'after rembrandt attribution'],
+    ['Italian Renaissance drawings', 'italian renaissance 1400s 1500s'],
+  ])('adds soft retrieval context without hard-filtering %s', (query, semanticQuery) => {
+    const intent = parseNgaSearchIntent(query);
+    expect(intent.semanticQuery).toBe(semanticQuery);
+    if (query === 'painting of a sculpture') {
+      expect(intent.constraints.classifications).toBeUndefined();
+    }
+    if (query === 'works after Rembrandt') {
+      expect(intent.constraints.dateRange).toBeUndefined();
+    }
+    if (query === 'Italian Renaissance drawings') {
+      expect(intent.constraints.dateRange).toBeUndefined();
+    }
   });
 
   it.each(['painting of a sculpture', 'works after Rembrandt', '18th-century style'])('does not invent a hard constraint for ambiguous query %s', (query) => {

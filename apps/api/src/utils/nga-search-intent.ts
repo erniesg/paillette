@@ -3,7 +3,7 @@ import type {
   PublicSearchInterpretation,
 } from '@paillette/types/public-search';
 
-export const NGA_SEARCH_PARSER_VERSION = 'nga-v1' as const;
+export const NGA_SEARCH_PARSER_VERSION = 'nga-v2' as const;
 
 type VocabularyEntry = {
   canonical: string;
@@ -30,6 +30,15 @@ const MEDIUMS: VocabularyEntry[] = [
   { canonical: 'woodcut', aliases: ['woodcut', 'woodcuts', 'woodblock', 'woodblocks'] },
   { canonical: 'bronze', aliases: ['bronze'] },
   { canonical: 'marble', aliases: ['marble'] },
+];
+
+const SUBJECTS: VocabularyEntry[] = [
+  { canonical: 'landscape', aliases: ['landscape'] },
+  { canonical: 'portrait', aliases: ['portrait'] },
+  { canonical: 'religious', aliases: ['religious'] },
+  { canonical: 'seascape', aliases: ['seascape'] },
+  { canonical: 'interior', aliases: ['interior'] },
+  { canonical: 'vessel', aliases: ['vessel'] },
 ];
 
 const ORDINALS: Record<string, number> = {
@@ -260,6 +269,36 @@ export const parseNgaSearchIntent = (
     .replace(/\b(?:from|in|made|works?|artworks?|art|the|of|by)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  const subjectTokens = semanticQuery.split(' ');
+  for (const token of subjectTokens) {
+    const subject = findVocabularyMatch(token, SUBJECTS);
+    if (!subject?.correctedFrom || token === subject.canonical) continue;
+    semanticQuery = semanticQuery.replace(
+      new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'),
+      subject.canonical
+    );
+    corrections.push({ from: token, to: subject.canonical });
+  }
+
+  if (/\breligious\b/.test(semanticQuery)) {
+    semanticQuery = semanticQuery.replace(
+      /\breligious\b/,
+      'religious biblical sacred scene'
+    );
+  }
+  if (/\bpainting a sculpture\b/.test(semanticQuery)) {
+    semanticQuery = semanticQuery.replace(
+      /\bpainting a sculpture\b/,
+      'painting depicting a sculpture'
+    );
+  }
+  if (semanticQuery === 'after rembrandt') {
+    semanticQuery = 'after rembrandt attribution';
+  }
+  if (semanticQuery === 'italian renaissance') {
+    semanticQuery = 'italian renaissance 1400s 1500s';
+  }
 
   return {
     parserVersion: NGA_SEARCH_PARSER_VERSION,
