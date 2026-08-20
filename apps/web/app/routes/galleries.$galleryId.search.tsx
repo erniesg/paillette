@@ -13,12 +13,10 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent,
 } from 'react';
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search-core';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -26,29 +24,31 @@ import {
   Camera,
   ChevronDown,
   Clock,
-  Github,
   ExternalLink,
   Frame,
   Image as ImageIcon,
   LayoutGrid,
   ListFilter,
-  LogIn,
   Network,
   Palette,
   Search,
-  ShieldCheck,
   SlidersHorizontal,
   Table2,
-  UserPlus,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
+import {
+  ImageReuseNotice,
+  RequestImageUseLink,
+} from '~/components/artwork/image-rights-notice';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
-import { Logo } from '~/components/ui/logo';
+import {
+  PublicSiteFooter,
+  PublicSiteHeader,
+} from '~/components/site/public-shell';
 import {
   getGeneratedCaptionDetails,
   getGeneratedCaptionText,
@@ -65,16 +65,34 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
-import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
-import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
+import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
   buildSuggestionPool,
-  getSuggestionPrefetchQueries,
   getSuggestionKey,
   normalizeSearchQuery,
   type EvalSuggestion,
 } from '~/lib/search-suggestions';
+import {
+  CHUNG_CHENG_STATUE_MASK_IMAGE_URL,
+  getChungChengFeaturedArtwork,
+  isChungChengArtwork,
+  isChungChengFeatureSuggestion,
+} from '~/lib/featured-showcase';
+import {
+  buildZhongZhengAsciiParticles,
+  buildZhongZhengMaskParticles,
+  type ZhongZhengAsciiParticle,
+} from '~/lib/zhongzheng-ascii';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
+import { buildPublicTextSearchPlan } from '~/lib/public-text-search-plan';
+import {
+  getCachedCandidatePaletteColourDistance,
+  rankByPaletteColour,
+} from '~/lib/local-colour-refinement';
+import {
+  getSpotlightArtworks,
+  loadSearchSpotlightBundle,
+} from '~/lib/search-spotlights';
 import {
   trackPublicUsageEvent,
   type PublicArtworkInteractionType,
@@ -87,7 +105,6 @@ import type {
   SearchTextRequest,
 } from '~/types';
 import { useUser } from '~/contexts/user-context';
-import { UserMenu } from '~/components/user/user-menu';
 
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
@@ -98,7 +115,6 @@ const DEFAULT_TEXT_MIN_SCORE = 0.2;
 const PUBLIC_SEARCH_QUERY_STALE_TIME = Infinity;
 const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
 const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
-const GITHUB_URL = 'https://github.com/erniesg/paillette';
 export const MASONRY_IMAGE_CLASS_NAME =
   'h-full w-full object-contain transition-opacity duration-300 group-hover:opacity-90';
 
@@ -115,30 +131,19 @@ export const meta: MetaFunction = () => {
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
   const { galleryId } = params;
-  if (!galleryId) {
-    throw new Response('Gallery ID is required', { status: 400 });
-  }
-
-  try {
-    const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(galleryId),
-      getUpcomingSingaporeHolidaySuggestions(),
-    ]);
-    return {
-      gallery,
-      galleryId: gallery.id,
-      preferredRouteId: getPreferredOrgRouteId(galleryId, gallery.slug),
-      holidaySuggestions,
-    };
-  } catch {
-    throw new Response('Gallery not found', { status: 404 });
-  }
+  return loadPublicSearchPage({
+    request,
+    requestedOrgId: galleryId || '',
+    routeScope: 'org',
+  });
 }
 
 type SearchMode = 'text' | 'image' | 'colour';
+type SearchFacet = 'artist' | 'classification';
 type PublicSearchUsageContext = {
   mode?: 'text' | 'colour';
   colours?: string[];
+  facet?: SearchFacet;
   source?: string;
   auto?: boolean;
 };
@@ -337,6 +342,9 @@ const getSelectedColour = (selection: string) => {
   return COLOURS.find((colour) => colour.id === selection) || null;
 };
 
+const getSearchColour = (value: string | null) =>
+  value && getSelectedColour(value) ? value : null;
+
 const getColourSearchText = (selection: string) => {
   const colour = getSelectedColour(selection);
   if (!colour) return '';
@@ -352,6 +360,37 @@ const getColourSearchText = (selection: string) => {
 
 const asText = (value: unknown) =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
+
+const SEARCH_FACETS = new Set<SearchFacet>(['artist', 'classification']);
+const getSearchFacet = (value: string | null): SearchFacet | null =>
+  value && SEARCH_FACETS.has(value as SearchFacet)
+    ? (value as SearchFacet)
+    : null;
+
+const normalizeArtistSearchQuery = (value: string) =>
+  normalizeSearchQuery(
+    value
+      .replace(/\([^)]*(?:\d{3,4}|born|died|b\.|d\.)[^)]*\)/gi, ' ')
+      .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
+  );
+
+export const getSearchParamsForQuery = (
+  query: string,
+  facet: SearchFacet | null = null,
+  colour: string | null = null
+) => {
+  const params: Record<string, string> = {};
+  if (query) {
+    params.q = query;
+  }
+  if (facet) {
+    params.field = facet;
+  }
+  if (colour) {
+    params.colour = colour;
+  }
+  return params;
+};
 
 const asNumber = (value: unknown) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -411,6 +450,11 @@ const getCatalogueRowSearchQuery = (label: string, value: string) => {
   return value.trim() || null;
 };
 
+const getCatalogueRowSearchFacet = (label: string): SearchFacet | null =>
+  label.toLowerCase() === 'artist' || label.toLowerCase() === 'creator'
+    ? 'artist'
+    : null;
+
 type MetadataFacet = {
   value: string;
   query: string;
@@ -445,7 +489,12 @@ const hasPaletteWeight = (item: Record<string, unknown>) => {
   return percentage === null || percentage > 0;
 };
 
-const collectPalette = (result: ArtworkSearchResult): string[] => {
+const paletteByResult = new WeakMap<ArtworkSearchResult, string[]>();
+
+export const collectPalette = (result: ArtworkSearchResult): string[] => {
+  const cached = paletteByResult.get(result);
+  if (cached) return cached;
+
   const meta = getMeta(result);
   const candidates = [
     meta.dominantColors,
@@ -491,7 +540,9 @@ const collectPalette = (result: ArtworkSearchResult): string[] => {
     }
   }
 
-  return [...new Set(colours)];
+  const palette = [...new Set(colours)];
+  paletteByResult.set(result, palette);
+  return palette;
 };
 
 const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
@@ -499,18 +550,16 @@ const colourScore = (result: ArtworkSearchResult, selected: string[]) => {
   if (!selected.length) return 0;
   if (!palette.length) return Infinity;
 
-  const total = selected.reduce((sum, colourId) => {
+  const selectedHexColours = selected.flatMap((colourId) => {
     const selectedColour = getSelectedColour(colourId);
-    if (!selectedColour) return sum;
-    const nearest = Math.min(
-      ...palette.map((paletteColour) =>
-        rgbDistance(selectedColour.hex, paletteColour)
-      )
-    );
-    return sum + nearest;
-  }, 0);
+    return selectedColour ? [selectedColour.hex] : [];
+  });
 
-  return total / selected.length;
+  return getCachedCandidatePaletteColourDistance(
+    result,
+    selectedHexColours,
+    palette
+  );
 };
 
 const colourMatchPercent = (
@@ -520,7 +569,7 @@ const colourMatchPercent = (
   const distance = colourScore(result, selected);
   if (!Number.isFinite(distance)) return null;
 
-  const maxUsefulDistance = 160;
+  const maxUsefulDistance = 100;
   return Math.max(
     0,
     Math.round(
@@ -663,6 +712,17 @@ const sortResults = (
   sortMode: SortMode,
   selectedColours: string[]
 ) => {
+  if (sortMode === 'colour' && selectedColours.length) {
+    const selectedHexColours = selectedColours.flatMap((selection) => {
+      const colour = getSelectedColour(selection);
+      return colour ? [colour.hex] : [];
+    });
+
+    if (selectedHexColours.length) {
+      return rankByPaletteColour(results, selectedHexColours, collectPalette);
+    }
+  }
+
   const sorted = [...results];
   const textCompare = (
     a: ArtworkSearchResult,
@@ -681,11 +741,7 @@ const sortResults = (
 
   sorted.sort((a, b) => {
     if (sortMode === 'colour') {
-      if (selectedColours.length) {
-        const delta =
-          colourScore(a, selectedColours) - colourScore(b, selectedColours);
-        if (Number.isFinite(delta) && delta !== 0) return delta;
-      } else {
+      if (!selectedColours.length) {
         const paletteA = paletteBandSortKey(a);
         const paletteB = paletteBandSortKey(b);
         const bandDelta = paletteA.band - paletteB.band;
@@ -772,7 +828,8 @@ const readSearchResponse = async (response: Response) => {
 const publicSearchText = async (
   orgId: string,
   request: SearchTextRequest,
-  usageContext?: PublicSearchUsageContext
+  usageContext?: PublicSearchUsageContext,
+  signal?: AbortSignal
 ): Promise<SearchResponse> => {
   const response = await fetch(
     `/api/public-search/${encodeURIComponent(orgId)}/text`,
@@ -785,22 +842,17 @@ const publicSearchText = async (
         ...request,
         usageContext,
       }),
+      signal,
     }
   );
 
   return readSearchResponse(response);
 };
 
-const publicTextSearchQueryKey = (
-  orgId: string,
-  query: string,
-  topK: number,
-  minScore: number
-) => ['search', 'text', orgId, query, topK, minScore] as const;
-
 const publicSearchImage = async (
   orgId: string,
-  request: SearchImageRequest
+  request: SearchImageRequest,
+  signal?: AbortSignal
 ): Promise<SearchResponse> => {
   const body = new FormData();
   body.set('image', request.image);
@@ -812,6 +864,7 @@ const publicSearchImage = async (
     {
       method: 'POST',
       body,
+      signal,
     }
   );
 
@@ -871,33 +924,51 @@ export default function SearchPage() {
   const {
     gallery,
     galleryId,
+    publicSearchOrgId = galleryId,
     preferredRouteId,
+    publicRouteBasePath = `/${preferredRouteId}`,
     holidaySuggestions = [],
   } = useLoaderData<typeof loader>();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const queryClient = useQueryClient();
   const { isAuthenticated, login, signup } = useUser();
+  const isNgsSearchLocked = preferredRouteId === 'ngs' && !isAuthenticated;
+  const canSearchOnPage = !isNgsSearchLocked;
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
+  const urlSearchFacet = getSearchFacet(searchParams.get('field'));
+  const urlSearchColour = getSearchColour(searchParams.get('colour'));
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('text');
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    urlSearchColour ? 'colour' : 'text'
+  );
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [committedTextQuery, setCommittedTextQuery] =
     useState(normalizedUrlQuery);
+  const [searchFacet, setSearchFacet] = useState<SearchFacet | null>(
+    urlSearchFacet
+  );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [searchColours, setSearchColours] = useState<string[]>([]);
-  const [sortColours, setSortColours] = useState<string[]>([]);
+  const [searchColours, setSearchColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
+  const [sortColours, setSortColours] = useState<string[]>(
+    urlSearchColour ? [urlSearchColour] : []
+  );
   const [customColour, setCustomColour] = useState('#cda636');
-  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+  const [sortMode, setSortMode] = useState<SortMode>(
+    urlSearchColour ? 'colour' : 'relevance'
+  );
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_TEXT_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
   const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
   const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
-  const [shouldSearch, setShouldSearch] = useState(Boolean(normalizedUrlQuery));
+  const [shouldSearch, setShouldSearch] = useState(
+    Boolean(normalizedUrlQuery || urlSearchColour)
+  );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedArtwork, setSelectedArtwork] =
     useState<ArtworkSearchResult | null>(null);
@@ -907,8 +978,11 @@ export default function SearchPage() {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
-  const previousUrlQueryRef = useRef(normalizedUrlQuery);
+  const previousUrlSearchStateRef = useRef(
+    `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`
+  );
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
+  const searchRoutePath = `${publicRouteBasePath}/search`;
   const [idleSuggestion, setIdleSuggestion] = useState<EvalSuggestion | null>(
     null
   );
@@ -916,9 +990,34 @@ export default function SearchPage() {
     useState<EvalSuggestion | null>(null);
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
   const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
+  const activeSearchColour =
+    searchMode === 'colour' ? searchColours[0] || null : null;
+  const activeColourQuery = activeSearchColour
+    ? getColourSearchText(activeSearchColour)
+    : '';
+  const textSearchPlan = useMemo(
+    () =>
+      buildPublicTextSearchPlan({
+        orgId: publicSearchOrgId,
+        facet: searchFacet,
+        committedTextQuery: normalizedCommittedTextQuery,
+        colourQuery: activeColourQuery,
+        topK,
+        minScore,
+      }),
+    [
+      activeColourQuery,
+      minScore,
+      normalizedCommittedTextQuery,
+      publicSearchOrgId,
+      searchFacet,
+      topK,
+    ]
+  );
+  const primaryTextSearchQuery = textSearchPlan?.request.query || '';
   const hasCommittedTextSearch =
     shouldSearch &&
-    normalizedCommittedTextQuery.length > 0 &&
+    primaryTextSearchQuery.length > 0 &&
     (searchMode === 'text' || searchMode === 'colour');
   const canSubmitTextSearch = normalizedTextQuery.length > 0;
   const hasUncommittedInitialText =
@@ -927,12 +1026,18 @@ export default function SearchPage() {
     normalizedCommittedTextQuery.length === 0;
 
   const suggestionPool = useMemo(
-    () => buildSuggestionPool(holidaySuggestions),
-    [holidaySuggestions]
-  );
-  const suggestionPrefetchQueries = useMemo(
-    () => getSuggestionPrefetchQueries(suggestionPool),
-    [suggestionPool]
+    () =>
+      buildSuggestionPool(holidaySuggestions, {
+        routeId: preferredRouteId,
+        source: gallery.settings?.source,
+        institutionName: gallery.name,
+      }),
+    [
+      gallery.name,
+      gallery.settings?.source,
+      holidaySuggestions,
+      preferredRouteId,
+    ]
   );
 
   useEffect(() => {
@@ -952,7 +1057,7 @@ export default function SearchPage() {
     if (isBrowsingCollection) {
       if (shouldSearch && normalizedCommittedTextQuery) {
         return {
-          type: 'browse',
+          type: searchFacet ? `${searchFacet} browse` : 'browse',
           label: committedTextQuery,
           detail: 'ranked + infinite browse',
           dot: '#d946ef',
@@ -982,17 +1087,23 @@ export default function SearchPage() {
 
       const colour = getSelectedColour(selectedColourId);
       const label = colour?.name || getColourSearchText(selectedColourId);
+      const baseLabel = committedTextQuery.trim();
 
       return {
-        type: 'colour',
-        label,
+        type: baseLabel ? `${searchFacet || 'text'} + colour` : 'colour',
+        label: baseLabel ? `${baseLabel} + ${label}` : label,
+        detail: baseLabel ? 'combined refinement' : undefined,
         dot: colour?.hex || '#d946ef',
       };
     }
 
-    if (searchMode === 'text' && shouldSearch && normalizedCommittedTextQuery) {
+    if (
+      (searchMode === 'text' || searchMode === 'colour') &&
+      shouldSearch &&
+      normalizedCommittedTextQuery
+    ) {
       return {
-        type: 'text',
+        type: searchFacet || 'text',
         label: committedTextQuery,
         dot: '#d946ef',
       };
@@ -1005,6 +1116,7 @@ export default function SearchPage() {
     searchColours,
     searchMode,
     shouldSearch,
+    searchFacet,
     committedTextQuery,
     normalizedCommittedTextQuery,
   ]);
@@ -1026,128 +1138,123 @@ export default function SearchPage() {
 
   useEffect(() => {
     if (urlQuery && normalizedUrlQuery !== urlQuery) {
-      setSearchParams({ q: normalizedUrlQuery }, { replace: true });
+      setSearchParams(
+        getSearchParamsForQuery(
+          normalizedUrlQuery,
+          urlSearchFacet,
+          urlSearchColour
+        ),
+        { replace: true }
+      );
       return;
     }
 
-    if (previousUrlQueryRef.current === normalizedUrlQuery) return;
+    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
+    if (previousUrlSearchStateRef.current === urlSearchState) return;
 
-    previousUrlQueryRef.current = normalizedUrlQuery;
+    previousUrlSearchStateRef.current = urlSearchState;
+    setSelectedArtwork(null);
     setTextQuery(normalizedUrlQuery);
     setCommittedTextQuery(normalizedUrlQuery);
-    setShouldSearch(Boolean(normalizedUrlQuery));
+    setSearchFacet(urlSearchFacet);
+    setSearchColours(urlSearchColour ? [urlSearchColour] : []);
+    setSortColours(urlSearchColour ? [urlSearchColour] : []);
+    setSearchMode(urlSearchColour ? 'colour' : 'text');
+    setSortMode(urlSearchColour ? 'colour' : 'relevance');
+    setShouldSearch(Boolean(normalizedUrlQuery || urlSearchColour));
     setIsBrowsingCollection(false);
 
-    if (!normalizedUrlQuery) {
+    if (!normalizedUrlQuery && !urlSearchColour) {
       setImageFile(null);
       setImagePreview(null);
       setSearchColours([]);
       setSortColours([]);
       setSearchMode('text');
       setSortMode('relevance');
+      setSearchFacet(null);
     }
-  }, [normalizedUrlQuery, setSearchParams, urlQuery]);
-
-  useEffect(() => {
-    if (!hasMounted || !suggestionPrefetchQueries.length) return undefined;
-
-    let cancelled = false;
-    const handle = window.setTimeout(() => {
-      if (cancelled) return;
-
-      for (const query of suggestionPrefetchQueries) {
-        void queryClient.prefetchQuery({
-          queryKey: publicTextSearchQueryKey(
-            galleryId,
-            query,
-            MAX_SEARCH_RESULTS,
-            0
-          ),
-          queryFn: () =>
-            publicSearchText(
-              galleryId,
-              {
-                query,
-                topK: MAX_SEARCH_RESULTS,
-                minScore: 0,
-              },
-              {
-                auto: true,
-                source: 'try_query_prefetch',
-              }
-            ),
-          staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
-          gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-        });
-      }
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [galleryId, hasMounted, queryClient, suggestionPrefetchQueries]);
+  }, [
+    normalizedUrlQuery,
+    setSearchParams,
+    urlQuery,
+    urlSearchColour,
+    urlSearchFacet,
+  ]);
 
   const textSearchQuery = useQuery({
-    queryKey: publicTextSearchQueryKey(
-      galleryId,
-      normalizedCommittedTextQuery,
-      topK,
-      minScore
-    ),
-    queryFn: async () => {
-      if (!normalizedCommittedTextQuery) return null;
+    queryKey: canSearchOnPage
+      ? textSearchPlan?.queryKey ||
+        (['search', 'text', 'disabled', publicSearchOrgId] as const)
+      : (['search', 'text', 'locked', publicSearchOrgId] as const),
+    queryFn: async ({ signal }) => {
+      if (!textSearchPlan) return null;
       return publicSearchText(
-        galleryId,
-        {
-          query: normalizedCommittedTextQuery,
-          topK,
-          minScore,
-        },
+        publicSearchOrgId,
+        textSearchPlan.request,
         {
           mode: searchMode === 'colour' ? 'colour' : 'text',
           colours: searchColours,
-        }
+          facet: searchFacet || undefined,
+        },
+        signal
       );
     },
     enabled:
       hasMounted &&
       (searchMode === 'text' || searchMode === 'colour') &&
       shouldSearch &&
-      normalizedCommittedTextQuery.length > 0,
+      Boolean(textSearchPlan) &&
+      canSearchOnPage,
+    retry: false,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
   const imageSearchQuery = useQuery({
-    queryKey: ['search', 'image', galleryId, imageFile?.name, topK, minScore],
-    queryFn: async () => {
+    queryKey: canSearchOnPage
+      ? [
+          'search',
+          'image',
+          publicSearchOrgId,
+          imageFile?.name,
+          topK,
+          minScore,
+        ]
+      : (['search', 'image', 'locked', publicSearchOrgId] as const),
+    queryFn: async ({ signal }) => {
       if (!imageFile) return null;
-      return publicSearchImage(galleryId, {
-        image: imageFile,
-        topK,
-        minScore,
-      });
+      return publicSearchImage(
+        publicSearchOrgId,
+        {
+          image: imageFile,
+          topK,
+          minScore,
+        },
+        signal
+      );
     },
     enabled:
       hasMounted &&
       searchMode === 'image' &&
       shouldSearch &&
-      imageFile !== null,
+      imageFile !== null &&
+      canSearchOnPage,
   });
 
   const browseSort = useMemo(() => getBrowseSort(sortMode), [sortMode]);
   const browseQuery = useInfiniteQuery({
-    queryKey: [
-      'browse',
-      galleryId,
-      browsePageSize,
-      browseSort.sortBy,
-      browseSort.sortOrder,
-    ],
+    queryKey: canSearchOnPage
+      ? [
+          'browse',
+          publicSearchOrgId,
+          browsePageSize,
+          browseSort.sortBy,
+          browseSort.sortOrder,
+        ]
+      : (['browse', 'locked', publicSearchOrgId] as const),
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      publicBrowseCollection(galleryId, {
+      publicBrowseCollection(publicSearchOrgId, {
         limit: browsePageSize,
         offset: Number(pageParam),
         sortBy: browseSort.sortBy,
@@ -1155,34 +1262,26 @@ export default function SearchPage() {
       }),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
-    enabled: hasMounted && isBrowsingCollection,
+    enabled: hasMounted && isBrowsingCollection && canSearchOnPage,
   });
 
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
-  const shouldLoadIdleShowcase = hasMounted && !hasActiveSearch;
-  const idleShowcaseQuery = useQuery({
-    queryKey: publicTextSearchQueryKey(
-      galleryId,
-      activeIdleSuggestion?.query || '',
-      MAX_SEARCH_RESULTS,
-      0
-    ),
-    queryFn: () =>
-      publicSearchText(
-        galleryId,
-        {
-          query: activeIdleSuggestion?.query || '',
-          topK: MAX_SEARCH_RESULTS,
-          minScore: 0,
-        },
-        {
-          auto: true,
-          source: 'idle_showcase',
-        }
-      ),
-    enabled: shouldLoadIdleShowcase && Boolean(activeIdleSuggestion?.query),
+  const shouldLoadNgaSpotlights =
+    hasMounted && !hasActiveSearch && preferredRouteId === 'nga';
+  const spotlightBundleQuery = useQuery({
+    queryKey: [
+      'search-spotlights',
+      PUBLIC_SEARCH_CONTRACT_VERSION,
+      'nga',
+    ] as const,
+    queryFn: ({ signal }) =>
+      loadSearchSpotlightBundle('nga', {
+        signal,
+      }),
+    enabled: shouldLoadNgaSpotlights,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
+    retry: false,
   });
 
   const currentQuery =
@@ -1240,12 +1339,32 @@ export default function SearchPage() {
     isLoading,
     view,
   });
+  const activeSpotlightSuggestionId = useMemo(() => {
+    if (!activeIdleSuggestion) return null;
+
+    const spotlightId = activeIdleSuggestion.spotlightId;
+    return spotlightId &&
+      spotlightBundleQuery.data?.suggestions.some(
+        (suggestion) => suggestion.id === spotlightId
+      )
+      ? spotlightId
+      : null;
+  }, [activeIdleSuggestion, spotlightBundleQuery.data?.suggestions]);
   const idleShowcaseResults = useMemo(
-    () => selectIdleShowcaseArtworks(idleShowcaseQuery.data?.results || []),
-    [idleShowcaseQuery.data?.results]
+    () =>
+      activeSpotlightSuggestionId
+        ? getSpotlightArtworks(
+            spotlightBundleQuery.data,
+            activeSpotlightSuggestionId
+          )
+        : [],
+    [activeSpotlightSuggestionId, spotlightBundleQuery.data]
   );
   const isIdleShowcaseLoading =
-    idleShowcaseQuery.isLoading || idleShowcaseQuery.isFetching;
+    shouldLoadNgaSpotlights && spotlightBundleQuery.isLoading;
+  const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
+  const isChungChengFeatureActive =
+    !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
 
   useEffect(() => {
     if (!hasMounted) return undefined;
@@ -1306,6 +1425,8 @@ export default function SearchPage() {
   }, [hasActiveSearch, hasMounted]);
 
   const loadMoreResults = useCallback(() => {
+    if (isNgsSearchLocked) return;
+
     if (isBrowsingCollection) {
       if (browseQuery.hasNextPage && !browseQuery.isFetchingNextPage) {
         void browseQuery.fetchNextPage();
@@ -1316,7 +1437,7 @@ export default function SearchPage() {
     setVisibleCount((count) =>
       Math.min(count + SEARCH_DISPLAY_INCREMENT, results.length)
     );
-  }, [browseQuery, isBrowsingCollection, results.length]);
+  }, [browseQuery, isBrowsingCollection, isNgsSearchLocked, results.length]);
   const loadMoreMasonryColumnResults = useCallback(() => {
     if (!shouldWatchMasonryColumnEnds) return;
 
@@ -1333,6 +1454,7 @@ export default function SearchPage() {
     sortMode,
     sortColours,
     committedTextQuery,
+    searchFacet,
     topK,
     isBrowsingCollection,
   ]);
@@ -1368,12 +1490,16 @@ export default function SearchPage() {
   ]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (isNgsSearchLocked) return;
+
     const file = acceptedFiles[0];
     if (file) {
+      setSelectedArtwork(null);
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
       setSearchMode('image');
       setSearchColours([]);
+      setSearchFacet(null);
       setIsBrowsingCollection(false);
       setShouldSearch(true);
     }
@@ -1381,6 +1507,7 @@ export default function SearchPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    disabled: isNgsSearchLocked,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
@@ -1389,23 +1516,36 @@ export default function SearchPage() {
     maxFiles: 1,
   });
 
-  const runTextSearch = (query = textQuery) => {
+  const runTextSearch = (
+    query = textQuery,
+    facet: SearchFacet | null = null
+  ) => {
+    if (isNgsSearchLocked) return;
+
     const trimmed = query.trim();
     if (!trimmed) return;
-    const normalized = normalizeSearchQuery(trimmed);
+    const normalized =
+      facet === 'artist'
+        ? normalizeArtistSearchQuery(trimmed)
+        : normalizeSearchQuery(trimmed);
+    if (!normalized) return;
 
+    setSelectedArtwork(null);
     setIsBrowsingCollection(false);
     setSearchMode('text');
     setSearchColours([]);
     setTextQuery(normalized);
     setCommittedTextQuery(normalized);
+    setSearchFacet(facet);
     setShouldSearch(true);
-    setSearchParams({ q: normalized });
+    setSearchParams(getSearchParamsForQuery(normalized, facet));
   };
 
   const clearSearch = () => {
+    setSelectedArtwork(null);
     setTextQuery('');
     setCommittedTextQuery('');
+    setSearchFacet(null);
     setShouldSearch(false);
     setIsBrowsingCollection(false);
     setSearchParams({}, { replace: true });
@@ -1413,6 +1553,7 @@ export default function SearchPage() {
 
   const updateTextDraft = (value: string) => {
     setTextQuery(value);
+    setSearchFacet(null);
 
     if (value.trim()) return;
 
@@ -1433,38 +1574,51 @@ export default function SearchPage() {
   };
 
   const clearImage = () => {
+    setSelectedArtwork(null);
     setImageFile(null);
     setImagePreview(null);
+    setSearchFacet(null);
     setShouldSearch(false);
     setIsBrowsingCollection(false);
   };
 
   const selectColourSearch = (selection: string) => {
-    const query = normalizeSearchQuery(getColourSearchText(selection));
-    if (!query) return;
+    if (isNgsSearchLocked) return;
+    if (!getColourSearchText(selection)) return;
 
+    setSelectedArtwork(null);
     setSearchMode('colour');
     setIsBrowsingCollection(false);
     setSearchColours([selection]);
     setSortColours([selection]);
     setSortMode('colour');
-    setTextQuery(query);
-    setCommittedTextQuery(query);
     setShouldSearch(true);
-    setSearchParams({ q: query });
+    setSearchParams(
+      getSearchParamsForQuery(
+        normalizedCommittedTextQuery,
+        searchFacet,
+        selection
+      )
+    );
   };
 
   const clearColourSearch = () => {
-    const clearedColours = searchColours;
     setSearchColours([]);
-    clearSearch();
-    if (
-      sortMode === 'colour' &&
-      clearedColours.some((colour) => sortColours.includes(colour))
-    ) {
-      setSortColours([]);
-      setSortMode('relevance');
+    setSortColours([]);
+    setSortMode('relevance');
+    setSearchMode('text');
+
+    if (normalizedCommittedTextQuery) {
+      setSelectedArtwork(null);
+      setShouldSearch(true);
+      setSearchParams(
+        getSearchParamsForQuery(normalizedCommittedTextQuery, searchFacet),
+        { replace: true }
+      );
+      return;
     }
+
+    clearSearch();
   };
 
   const clearColourSort = () => {
@@ -1479,6 +1633,7 @@ export default function SearchPage() {
   };
 
   const runColourSearch = (selection: string) => {
+    if (isNgsSearchLocked) return;
     const active = searchMode === 'colour' && searchColours.includes(selection);
     if (active) {
       clearColourSearch();
@@ -1526,9 +1681,19 @@ export default function SearchPage() {
   const colourRailIsSearch = searchMode === 'colour';
 
   const runEvalSearch = (suggestion: EvalSuggestion) => {
+    if (isNgsSearchLocked) return;
+
+    const suggestionFacet = suggestion.facet || null;
+    const suggestionColour =
+      suggestion.type === 'colour'
+        ? suggestion.colourId || `custom:${suggestion.dot}`
+        : null;
     const active =
       committedTextQuery.trim().toLowerCase() ===
-      suggestion.query.toLowerCase();
+        suggestion.query.toLowerCase() &&
+      searchFacet === suggestionFacet &&
+      (!suggestionColour ||
+        (searchMode === 'colour' && searchColours.includes(suggestionColour)));
     if (active) {
       clearSearch();
       if (suggestion.type === 'colour') {
@@ -1539,12 +1704,27 @@ export default function SearchPage() {
       return;
     }
 
-    if (suggestion.type === 'colour') {
-      runColourSearch(suggestion.colourId || `custom:${suggestion.dot}`);
+    if (suggestionColour) {
+      const normalized = normalizeSearchQuery(suggestion.query);
+      if (!normalized || !getColourSearchText(suggestionColour)) return;
+
+      setSelectedArtwork(null);
+      setIsBrowsingCollection(false);
+      setSearchMode('colour');
+      setSearchColours([suggestionColour]);
+      setSortColours([suggestionColour]);
+      setSortMode('colour');
+      setTextQuery(normalized);
+      setCommittedTextQuery(normalized);
+      setSearchFacet(suggestionFacet);
+      setShouldSearch(true);
+      setSearchParams(
+        getSearchParamsForQuery(normalized, suggestionFacet, suggestionColour)
+      );
       return;
     }
 
-    runTextSearch(suggestion.query);
+    runTextSearch(suggestion.query, suggestionFacet);
   };
 
   const updateTopK = (value: number) => {
@@ -1571,6 +1751,7 @@ export default function SearchPage() {
     () => ({
       mode: isBrowsingCollection ? 'browse' : searchMode,
       query: normalizedCommittedTextQuery || null,
+      facet: searchFacet,
       colours: searchMode === 'colour' ? searchColours : [],
       sortMode,
       view,
@@ -1585,6 +1766,7 @@ export default function SearchPage() {
       location.search,
       minScore,
       normalizedCommittedTextQuery,
+      searchFacet,
       searchColours,
       searchMode,
       sortMode,
@@ -1649,53 +1831,14 @@ export default function SearchPage() {
 
   return (
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
-      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0b0e]/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="min-w-0">
-              <Link
-                to={`/${preferredRouteId}/search`}
-                onClick={resetSearchHome}
-                className="inline-flex items-center transition-opacity hover:opacity-80"
-              >
-                <Logo size="sm" framed />
-              </Link>
-            </div>
-            <Link
-              to="/about"
-              className="text-sm font-medium text-white/55 transition-colors hover:text-white"
-            >
-              About
-            </Link>
-          </div>
-          <nav className="flex items-center gap-2">
-            {isAuthenticated ? (
-              <UserMenu />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void login({ returnTo: getCurrentReturnTo() })}
-                  className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white"
-                >
-                  <LogIn className="h-3.5 w-3.5" />
-                  Log in
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void signup({ returnTo: getCurrentReturnTo() })
-                  }
-                  className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white px-3 py-1.5 text-xs font-semibold text-[#0b0b0e] transition-colors hover:bg-white/85"
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Create account
-                </button>
-              </>
-            )}
-          </nav>
-        </div>
-      </header>
+      <PublicSiteHeader
+        active="search"
+        searchHref={searchRoutePath}
+        isAuthenticated={isAuthenticated}
+        onLogoClick={resetSearchHome}
+        onLogin={() => void login({ returnTo: getCurrentReturnTo() })}
+        onSignup={() => void signup({ returnTo: getCurrentReturnTo() })}
+      />
 
       <main className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
         <section
@@ -1721,9 +1864,19 @@ export default function SearchPage() {
             className={
               hasActiveSearch
                 ? 'relative z-10 w-full'
-                : 'relative z-10 mx-auto w-full max-w-5xl py-12'
+                : `relative z-10 mx-auto w-full max-w-5xl ${
+                    isChungChengFeatureActive ? 'py-4 sm:py-6' : 'py-12'
+                  }`
             }
           >
+            {isChungChengFeatureActive && (
+              <ZhongZhengAsciiFeature
+                artwork={getChungChengFeaturedArtwork(idleShowcaseResults)}
+                isVisible
+                onSelectArtwork={selectArtwork}
+              />
+            )}
+
             <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
@@ -1738,6 +1891,24 @@ export default function SearchPage() {
             </div>
 
             <div className="space-y-4">
+              {isNgsSearchLocked ? (
+                <div className="rounded-lg border border-fuchsia-300/30 bg-fuchsia-300/10 px-4 py-3 text-center">
+                  <p className="text-sm font-medium text-fuchsia-100">
+                    NGS search is private.
+                  </p>
+                  <p className="mt-1 text-xs text-white/70">
+                    Sign in to access National Gallery Singapore collections.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void login({ returnTo: getCurrentReturnTo() })}
+                    className="mt-2 inline-flex h-8 items-center rounded-md border border-white/20 bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/20"
+                  >
+                    Log in to continue
+                  </button>
+                </div>
+              ) : null}
+
               {searchMode === 'text' && (
                 <form
                   className="relative"
@@ -1752,11 +1923,12 @@ export default function SearchPage() {
                     onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl"
+                    disabled={isNgsSearchLocked}
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
                   />
                   <button
                     type="submit"
-                    disabled={!canSubmitTextSearch}
+                    disabled={isNgsSearchLocked || !canSubmitTextSearch}
                     className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
                     aria-label="Search text"
                   >
@@ -1772,7 +1944,9 @@ export default function SearchPage() {
                   className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
                     isDragActive
                       ? 'border-fuchsia-300 bg-fuchsia-300/10'
-                      : 'border-white/15 bg-white/[0.025] hover:border-white/30'
+                      : isNgsSearchLocked
+                        ? 'border-white/10 bg-white/[0.015] opacity-45'
+                        : 'border-white/15 bg-white/[0.025] hover:border-white/30'
                   }`}
                 >
                   <input {...getInputProps()} />
@@ -1823,6 +1997,7 @@ export default function SearchPage() {
                   displaySuggestion={displayIdleSuggestion}
                   onSelect={runEvalSearch}
                   onPreviewChange={setIdleSuggestion}
+                  disabled={isNgsSearchLocked}
                 />
               )}
               <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
@@ -1830,6 +2005,7 @@ export default function SearchPage() {
                   active={searchMode === 'text'}
                   icon={Search}
                   label="Text"
+                  disabled={isNgsSearchLocked}
                   onClick={() => {
                     setIsBrowsingCollection(false);
                     setSearchMode('text');
@@ -1839,6 +2015,7 @@ export default function SearchPage() {
                   active={searchMode === 'image'}
                   icon={ImageIcon}
                   label="Image"
+                  disabled={isNgsSearchLocked}
                   onClick={() => {
                     setIsBrowsingCollection(false);
                     setSearchMode('image');
@@ -1848,6 +2025,7 @@ export default function SearchPage() {
                   active={searchMode === 'colour'}
                   icon={Palette}
                   label="Colour"
+                  disabled={isNgsSearchLocked}
                   onClick={() => {
                     if (searchMode === 'colour') {
                       if (searchColours.length) {
@@ -1923,7 +2101,9 @@ export default function SearchPage() {
                             <button
                               key={option.id}
                               type="button"
+                              disabled={isNgsSearchLocked}
                               onClick={() => {
+                                if (isNgsSearchLocked) return;
                                 if (option.id === 'time') {
                                   setSortMode(
                                     sortMode === 'time-desc'
@@ -1963,6 +2143,10 @@ export default function SearchPage() {
                                 active
                                   ? 'bg-white/[0.14] text-white'
                                   : 'text-white/45 hover:text-white/80'
+                              }${
+                                isNgsSearchLocked
+                                  ? ' cursor-not-allowed opacity-45'
+                                  : ''
                               }`}
                             >
                               <Icon className="h-3.5 w-3.5" />
@@ -1983,12 +2167,20 @@ export default function SearchPage() {
                             <button
                               key={option.id}
                               type="button"
-                              onClick={() => setView(option.id)}
+                              disabled={isNgsSearchLocked}
+                              onClick={() => {
+                                if (isNgsSearchLocked) return;
+                                setView(option.id);
+                              }}
                               title={option.label}
                               className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
                                 view === option.id
                                   ? 'bg-white/[0.14] text-white'
                                   : 'text-white/45 hover:text-white/80'
+                              }${
+                                isNgsSearchLocked
+                                  ? ' cursor-not-allowed opacity-45'
+                                  : ''
                               }`}
                             >
                               <Icon className="h-3.5 w-3.5" />
@@ -2002,14 +2194,18 @@ export default function SearchPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setIsSettingsOpen((value) => !value)}
+                      disabled={isNgsSearchLocked}
+                      onClick={() => {
+                        if (isNgsSearchLocked) return;
+                        setIsSettingsOpen((value) => !value);
+                      }}
                       aria-expanded={isSettingsOpen}
                       aria-label="Search settings"
                       className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
                         isSettingsOpen
                           ? 'border-white/20 bg-white/[0.12] text-white'
                           : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                      }`}
+                      }${isNgsSearchLocked ? ' cursor-not-allowed opacity-45' : ''}`}
                     >
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       <span>Settings</span>
@@ -2027,14 +2223,16 @@ export default function SearchPage() {
                     <div className="md:col-span-2">
                       <button
                         type="button"
+                        disabled={isNgsSearchLocked}
                         onClick={() => {
+                          if (isNgsSearchLocked) return;
                           setIsBrowsingCollection((value) => !value);
                         }}
                         className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
                           isBrowsingCollection
                             ? 'border-fuchsia-300/35 bg-fuchsia-300/10 text-white'
                             : 'border-white/10 bg-white/[0.035] text-white/65 hover:bg-white/[0.07] hover:text-white'
-                        }`}
+                        }${isNgsSearchLocked ? ' cursor-not-allowed opacity-45' : ''}`}
                       >
                         <span>
                           <span className="block text-sm font-medium">
@@ -2064,12 +2262,17 @@ export default function SearchPage() {
                               : MAX_SEARCH_RESULTS
                           }
                           value={isBrowsingCollection ? browsePageSize : topK}
+                          disabled={isNgsSearchLocked}
                           onChange={(event) =>
                             isBrowsingCollection
                               ? updateBrowsePageSize(Number(event.target.value))
                               : updateTopK(Number(event.target.value))
                           }
-                          className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                          className={`h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300 ${
+                            isNgsSearchLocked || isBrowsingCollection
+                              ? 'cursor-not-allowed opacity-45'
+                              : ''
+                          }`}
                         />
                       </span>
                       <input
@@ -2086,6 +2289,7 @@ export default function SearchPage() {
                             ? updateBrowsePageSize(Number(event.target.value))
                             : updateTopK(Number(event.target.value))
                         }
+                        disabled={isNgsSearchLocked}
                         className="w-full accent-fuchsia-300"
                       />
                     </label>
@@ -2100,11 +2304,15 @@ export default function SearchPage() {
                           max={100}
                           step={5}
                           value={Math.round(minScore * 100)}
-                          disabled={isBrowsingCollection}
+                          disabled={isNgsSearchLocked || isBrowsingCollection}
                           onChange={(event) =>
                             updateMinScorePercent(Number(event.target.value))
                           }
-                          className="h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300"
+                          className={`h-8 w-16 rounded-md border border-white/10 bg-black/20 px-2 text-sm text-white outline-none focus:border-fuchsia-300 ${
+                            isNgsSearchLocked || isBrowsingCollection
+                              ? 'cursor-not-allowed opacity-45'
+                              : ''
+                          }`}
                         />
                       </span>
                       <input
@@ -2113,10 +2321,10 @@ export default function SearchPage() {
                         max={100}
                         step={5}
                         value={Math.round(minScore * 100)}
-                        disabled={isBrowsingCollection}
                         onChange={(event) =>
                           updateMinScorePercent(Number(event.target.value))
                         }
+                        disabled={isNgsSearchLocked || isBrowsingCollection}
                         className="w-full accent-fuchsia-300"
                       />
                     </label>
@@ -2132,6 +2340,7 @@ export default function SearchPage() {
                   selected={colourRailIsSearch ? searchColours : sortColours}
                   activeSort={sortMode === 'colour'}
                   customColour={customColour}
+                  disabled={isNgsSearchLocked}
                   onSelect={
                     colourRailIsSearch ? runColourSearch : runTargetColourSort
                   }
@@ -2235,11 +2444,12 @@ export default function SearchPage() {
                 )}
                 <div ref={loadMoreRef} className="flex justify-center py-8">
                   {hasMoreResults ? (
-                    <button
+                <button
                       type="button"
                       onClick={loadMoreResults}
                       disabled={
-                        isBrowsingCollection && browseQuery.isFetchingNextPage
+                        isNgsSearchLocked ||
+                        (isBrowsingCollection && browseQuery.isFetchingNextPage)
                       }
                       className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-50"
                     >
@@ -2262,64 +2472,33 @@ export default function SearchPage() {
               shouldSearch &&
               results.length === 0 && (
                 <div className="py-16 text-center">
-                  <p className="text-white/55">No artworks found.</p>
-                  <p className="mt-1 text-sm text-white/35">
-                    Try a broader query or lower the minimum score.
-                  </p>
+                  {isNgsSearchLocked ? (
+                    <p className="text-white/55">
+                      Sign in to browse and search NGS works.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-white/55">No artworks found.</p>
+                      <p className="mt-1 text-sm text-white/35">
+                        Try a broader query or lower the minimum score.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
           </section>
         )}
-        <SearchInfoFooter separated={hasActiveSearch} />
+        <PublicSiteFooter separated={hasActiveSearch} />
       </main>
       <SearchArtworkDialog
         artwork={selectedArtwork}
-        routeId={preferredRouteId}
+        routeBasePath={publicRouteBasePath}
         returnTo={searchReturnPath}
         onTrackArtworkInteraction={trackArtworkInteraction}
+        onSearch={runTextSearch}
         onClose={() => setSelectedArtwork(null)}
       />
     </div>
-  );
-}
-
-function SearchInfoFooter({ separated }: { separated: boolean }) {
-  return (
-    <section
-      className={
-        separated ? 'mt-12 border-t border-white/[0.08] pt-8' : 'mt-8 pt-0'
-      }
-    >
-      <div className="flex flex-col gap-3 text-sm leading-6 text-white/55 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex max-w-4xl items-start gap-2">
-          <ShieldCheck className="mt-1 h-3.5 w-3.5 shrink-0 text-white/35" />
-          <p>
-            Experimental search, not an official catalogue; verify important
-            details with linked source records.
-          </p>
-        </div>
-
-        <div className="flex shrink-0 flex-wrap items-center gap-4 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
-          <Link
-            to="/docs/api"
-            className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
-          >
-            <Network className="h-3.5 w-3.5" />
-            Docs
-          </Link>
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
-          >
-            <Github className="h-3.5 w-3.5" />
-            GitHub
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -2330,6 +2509,7 @@ function SuggestionPicker({
   displaySuggestion,
   onSelect,
   onPreviewChange,
+  disabled = false,
 }: {
   suggestions: EvalSuggestion[];
   currentQuery: string;
@@ -2337,6 +2517,7 @@ function SuggestionPicker({
   displaySuggestion?: EvalSuggestion | null;
   onSelect: (suggestion: EvalSuggestion) => void;
   onPreviewChange?: (suggestion: EvalSuggestion) => void;
+  disabled?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
@@ -2414,13 +2595,17 @@ function SuggestionPicker({
         <button
           type="button"
           data-suggestion-query={visibleSuggestion?.query || ''}
-          onClick={() => visibleSuggestion && onSelect(visibleSuggestion)}
+          disabled={disabled}
+          onClick={() => {
+            if (disabled || !visibleSuggestion) return;
+            onSelect(visibleSuggestion);
+          }}
           className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
             visibleSuggestion &&
             activeQuery === visibleSuggestion.query.toLowerCase()
               ? 'bg-white/[0.12] text-white'
               : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
-          }`}
+          }${disabled ? ' cursor-not-allowed opacity-45' : ''}`}
         >
           {visibleSuggestion && (
             <>
@@ -2441,11 +2626,20 @@ function SuggestionPicker({
           )}
         </button>
       )}
-      <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <DropdownMenu.Root
+        open={disabled ? false : open}
+        onOpenChange={(nextOpen) => {
+          if (disabled) return;
+          setOpen(nextOpen);
+        }}
+      >
         <DropdownMenu.Trigger asChild>
           <button
             type="button"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border-l border-white/10 text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white"
+            disabled={disabled}
+            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center border-l border-white/10 text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white ${
+              disabled ? 'cursor-not-allowed opacity-45' : ''
+            }`}
             aria-label="Choose another suggestion"
           >
             <ChevronDown className="h-3.5 w-3.5" />
@@ -2460,7 +2654,9 @@ function SuggestionPicker({
             {suggestions.map((option, optionIndex) => (
               <DropdownMenu.Item
                 key={getSuggestionKey(option)}
+                disabled={disabled}
                 onSelect={() => {
+                  if (disabled) return;
                   setIndex(optionIndex);
                   onSelect(option);
                 }}
@@ -2628,9 +2824,23 @@ const IdleShowcaseBackdrop = forwardRef<
 ) {
   const transitionRunRef = useRef(0);
   const previewWorks = useMemo(
-    () =>
-      artworks.filter((artwork) => getShowcaseImageUrl(artwork)).slice(0, 4),
-    [artworks]
+    () => {
+      const imageableWorks = artworks.filter((artwork) =>
+        getShowcaseImageUrl(artwork)
+      );
+
+      if (isChungChengFeatureSuggestion(suggestion)) {
+        return [
+          getChungChengFeaturedArtwork(artworks),
+          ...imageableWorks
+            .filter((artwork) => !isChungChengArtwork(artwork))
+            .slice(0, 3),
+        ];
+      }
+
+      return imageableWorks.slice(0, 4);
+    },
+    [artworks, suggestion]
   );
   const previewSuggestionKey = suggestion ? getSuggestionKey(suggestion) : '';
   const previewKey = useMemo(() => {
@@ -2647,6 +2857,8 @@ const IdleShowcaseBackdrop = forwardRef<
     null
   );
   const [isCrossfading, setIsCrossfading] = useState(false);
+  const [suppressCommittedTransition, setSuppressCommittedTransition] =
+    useState(false);
 
   useEffect(() => {
     onCommittedSuggestionChange?.(committedLayer.suggestion);
@@ -2670,12 +2882,15 @@ const IdleShowcaseBackdrop = forwardRef<
     let cancelled = false;
     let revealFrame = 0;
     let promoteTimeout = 0;
+    let restoreTransitionFrame = 0;
+    let restoreTransitionFrameAfterPaint = 0;
     const runId = transitionRunRef.current + 1;
     transitionRunRef.current = runId;
 
     const transitionToBufferedWorks = async () => {
       setIncomingLayer(null);
       setIsCrossfading(false);
+      setSuppressCommittedTransition(false);
 
       await Promise.allSettled(
         previewWorks
@@ -2708,9 +2923,21 @@ const IdleShowcaseBackdrop = forwardRef<
           if (cancelled || runId !== transitionRunRef.current) return;
 
           committedKeyRef.current = previewKey;
+          setSuppressCommittedTransition(true);
           setCommittedLayer(nextLayer);
           setIncomingLayer(null);
           setIsCrossfading(false);
+          restoreTransitionFrame = window.requestAnimationFrame(() => {
+            if (cancelled || runId !== transitionRunRef.current) return;
+
+            restoreTransitionFrameAfterPaint = window.requestAnimationFrame(
+              () => {
+                if (cancelled || runId !== transitionRunRef.current) return;
+
+                setSuppressCommittedTransition(false);
+              }
+            );
+          });
         }, SHOWCASE_TRANSITION_MS);
       });
     };
@@ -2720,6 +2947,8 @@ const IdleShowcaseBackdrop = forwardRef<
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(revealFrame);
+      window.cancelAnimationFrame(restoreTransitionFrame);
+      window.cancelAnimationFrame(restoreTransitionFrameAfterPaint);
       window.clearTimeout(promoteTimeout);
     };
   }, [isLoading, previewKey, previewWorks, suggestion]);
@@ -2735,6 +2964,7 @@ const IdleShowcaseBackdrop = forwardRef<
           layer={committedLayer}
           isLoading={isLoading}
           isVisible={!incomingLayer || !isCrossfading}
+          disableTransition={suppressCommittedTransition}
           layout={SHOWCASE_LAYOUT}
           onSelectArtwork={onSelectArtwork}
         />
@@ -2743,6 +2973,7 @@ const IdleShowcaseBackdrop = forwardRef<
             layer={incomingLayer}
             isLoading={isLoading}
             isVisible={isCrossfading}
+            disableTransition={false}
             layout={SHOWCASE_LAYOUT}
             onSelectArtwork={onSelectArtwork}
           />
@@ -2756,18 +2987,34 @@ function IdleShowcaseLayer({
   layer,
   isLoading,
   isVisible,
+  disableTransition = false,
   layout,
   onSelectArtwork,
 }: {
   layer: ShowcaseLayerModel;
   isLoading: boolean;
   isVisible: boolean;
+  disableTransition?: boolean;
   layout: ShowcaseLayoutItem[];
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
+  const isChungChengFeature = isChungChengFeatureSuggestion(layer.suggestion);
+  const showcaseWorks = isChungChengFeature
+    ? layer.works.filter((artwork) => !isChungChengArtwork(artwork))
+    : layer.works;
+  const showcaseItems = isChungChengFeature
+    ? getShowcaseItems(showcaseWorks).filter(
+        (artwork): artwork is ArtworkSearchResult => Boolean(artwork)
+      )
+    : getShowcaseItems(showcaseWorks);
+
   return (
     <div
-      className={`absolute inset-0 transition-[opacity,transform] duration-[420ms] ease-out ${
+      className={`absolute inset-0 ${
+        disableTransition
+          ? ''
+          : 'transition-[opacity,transform] duration-[420ms] ease-out'
+      } ${
         isVisible
           ? 'translate-y-0 scale-100 opacity-100'
           : 'translate-y-3 scale-[0.985] opacity-0'
@@ -2776,7 +3023,7 @@ function IdleShowcaseLayer({
       data-showcase-layer={layer.key || 'empty'}
       data-showcase-suggestion={layer.suggestion?.query || ''}
     >
-      {getShowcaseItems(layer.works).map((artwork, index) => {
+      {showcaseItems.map((artwork, index) => {
         const itemLayout = layout[index];
         const image = artwork
           ? getArtworkImageSources(artwork, 'thumbnail')
@@ -2815,6 +3062,7 @@ function IdleShowcaseLayer({
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
                   alt=""
+                  protectFromDownload
                   loading="eager"
                   decoding="async"
                   className="block max-w-full object-contain"
@@ -2852,15 +3100,465 @@ function IdleShowcaseLayer({
   );
 }
 
+const ZHONG_ZHENG_MATRIX_GLYPHS = ['中', '正', '人', '仁', '學', '德'] as const;
+const ZHONG_ZHENG_MASK_WIDTH = 360;
+const ZHONG_ZHENG_MASK_COLUMNS = 64;
+const ZHONG_ZHENG_MASK_MAX_PARTICLES = 680;
+const ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT = 3.5;
+const ZHONG_ZHENG_POINTER_PARTICLE_RADIUS_PERCENT = 7.5;
+const ZHONG_ZHENG_POINTER_CORE_RADIUS_PERCENT = 12;
+
+const getHighResolutionNow = () =>
+  typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+type ZhongZhengMaskState = {
+  particles: ZhongZhengAsciiParticle[];
+};
+
+const getDominantAlphaComponent = (
+  alpha: Uint8ClampedArray,
+  width: number,
+  height: number
+) => {
+  const visited = new Uint8Array(width * height);
+  const componentIds = new Int32Array(width * height);
+  componentIds.fill(-1);
+  const queue = new Int32Array(width * height);
+  const componentWeights: number[] = [];
+  const minAlpha = 34;
+  let componentId = 0;
+
+  for (let index = 0; index < alpha.length; index += 1) {
+    if (visited[index] || (alpha[index] ?? 0) < minAlpha) continue;
+
+    let head = 0;
+    let tail = 0;
+    let weight = 0;
+    visited[index] = 1;
+    queue[tail++] = index;
+
+    while (head < tail) {
+      const current = queue[head++] ?? 0;
+      const x = current % width;
+      const y = Math.floor(current / width);
+      componentIds[current] = componentId;
+      weight += alpha[current] || 0;
+
+      const neighbors: number[] = [
+        x > 0 ? current - 1 : -1,
+        x < width - 1 ? current + 1 : -1,
+        y > 0 ? current - width : -1,
+        y < height - 1 ? current + width : -1,
+      ];
+
+      neighbors.forEach((neighbor) => {
+        if (
+          neighbor >= 0 &&
+          !visited[neighbor] &&
+          (alpha[neighbor] || 0) >= minAlpha
+        ) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      });
+    }
+
+    componentWeights[componentId] = weight;
+    componentId += 1;
+  }
+
+  const dominantComponent = componentWeights.reduce(
+    (strongest, weight, index) =>
+      weight > strongest.weight ? { id: index, weight } : strongest,
+    { id: -1, weight: 0 }
+  );
+
+  return { componentIds, dominantComponentId: dominantComponent.id };
+};
+
+const extractZhongZhengMaskFromImage = (
+  image: HTMLImageElement
+): ZhongZhengMaskState | null => {
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  if (!naturalWidth || !naturalHeight) return null;
+
+  const width = ZHONG_ZHENG_MASK_WIDTH;
+  const height = Math.round((width * naturalHeight) / naturalWidth);
+  const sourceCanvas = document.createElement('canvas');
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  const sourceContext = sourceCanvas.getContext('2d', {
+    willReadFrequently: true,
+  });
+  if (!sourceContext) return null;
+
+  sourceContext.drawImage(image, 0, 0, width, height);
+
+  const imageData = sourceContext.getImageData(0, 0, width, height);
+  const rawAlpha = new Uint8ClampedArray(width * height);
+
+  for (let index = 0; index < rawAlpha.length; index += 1) {
+    const dataIndex = index * 4;
+    const red = imageData.data[dataIndex] || 0;
+    const green = imageData.data[dataIndex + 1] || 0;
+    const blue = imageData.data[dataIndex + 2] || 0;
+    const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+    const ink = clampNumber((248 - luma) / 78, 0, 1);
+    rawAlpha[index] =
+      ink < 0.09 ? 0 : Math.round(clampNumber(ink * 1.32, 0, 1) * 255);
+  }
+
+  const { componentIds, dominantComponentId } = getDominantAlphaComponent(
+    rawAlpha,
+    width,
+    height
+  );
+  if (dominantComponentId < 0) return null;
+
+  const alpha = new Uint8ClampedArray(width * height);
+
+  for (let index = 0; index < alpha.length; index += 1) {
+    const currentAlpha =
+      componentIds[index] === dominantComponentId ? rawAlpha[index] || 0 : 0;
+    const left = index % width > 0 ? rawAlpha[index - 1] || 0 : currentAlpha;
+    const right =
+      index % width < width - 1 ? rawAlpha[index + 1] || 0 : currentAlpha;
+    const top = index >= width ? rawAlpha[index - width] || 0 : currentAlpha;
+    const bottom =
+      index < alpha.length - width
+        ? rawAlpha[index + width] || 0
+        : currentAlpha;
+    const softenedAlpha = Math.round(
+      currentAlpha * 0.78 + ((left + right + top + bottom) / 4) * 0.22
+    );
+    alpha[index] = currentAlpha > 0 ? softenedAlpha : 0;
+  }
+
+  return {
+    particles: buildZhongZhengMaskParticles({
+      width,
+      height,
+      alpha,
+      columns: ZHONG_ZHENG_MASK_COLUMNS,
+      rows: Math.round((ZHONG_ZHENG_MASK_COLUMNS * height) / width),
+      maxParticles: ZHONG_ZHENG_MASK_MAX_PARTICLES,
+    }),
+  };
+};
+
+function ZhongZhengAsciiFeature({
+  artwork,
+  isVisible,
+  onSelectArtwork,
+}: {
+  artwork: ArtworkSearchResult;
+  isVisible: boolean;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  const fallbackParticles = useMemo(() => buildZhongZhengAsciiParticles(), []);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const stageRef = useRef<HTMLSpanElement | null>(null);
+  const [clock, setClock] = useState(0);
+  const [entranceStartedAt, setEntranceStartedAt] = useState<number | null>(
+    null
+  );
+  const [pointer, setPointerState] = useState({
+    x: 50,
+    y: 46,
+    active: false,
+  });
+  const [maskState, setMaskState] = useState<ZhongZhengMaskState | null>(null);
+  const [maskLoadFailed, setMaskLoadFailed] = useState(false);
+  const particles =
+    maskState?.particles ?? (maskLoadFailed ? fallbackParticles : []);
+  const pointerRef = useRef(pointer);
+  const title = getDisplayTitle(artwork);
+  const setPointer = useCallback(
+    (nextPointer: { x: number; y: number; active: boolean }) => {
+      pointerRef.current = nextPointer;
+      setPointerState(nextPointer);
+    },
+    []
+  );
+  const deactivatePointer = useCallback(() => {
+    const currentPointer = pointerRef.current;
+    if (currentPointer.active) {
+      setPointer({ ...currentPointer, active: false });
+    }
+  }, [setPointer]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const nextMaskState = extractZhongZhengMaskFromImage(image);
+        if (!cancelled && nextMaskState) {
+          setMaskState(nextMaskState);
+          setMaskLoadFailed(false);
+        } else if (!cancelled) {
+          setMaskLoadFailed(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setMaskLoadFailed(true);
+        }
+      }
+    };
+    image.onerror = () => {
+      if (!cancelled) {
+        setMaskLoadFailed(true);
+      }
+    };
+    image.src = CHUNG_CHENG_STATUE_MASK_IMAGE_URL;
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    let lastTick = 0;
+    const startedAt = getHighResolutionNow();
+    setEntranceStartedAt(startedAt);
+    setClock(startedAt);
+
+    const tick = (timestamp: number) => {
+      if (timestamp - lastTick > 40) {
+        lastTick = timestamp;
+        setClock(timestamp);
+      }
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+
+    animationFrame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, []);
+
+  useEffect(() => {
+    if (particles.length === 0) return;
+
+    const startedAt = getHighResolutionNow();
+    setEntranceStartedAt(startedAt);
+    setClock(startedAt);
+  }, [particles.length]);
+
+  useEffect(() => {
+    const handleWindowPointerMove = (event: WindowEventMap['pointermove']) => {
+      if (!pointerRef.current.active) return;
+
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const isInside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+
+      if (!isInside) deactivatePointer();
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove, {
+      passive: true,
+    });
+    return () =>
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+  }, [deactivatePointer]);
+
+  const handlePointerMove = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      const rect =
+        stageRef.current?.getBoundingClientRect() ||
+        event.currentTarget.getBoundingClientRect();
+      const rawX = ((event.clientX - rect.left) / rect.width) * 100;
+      const rawY = ((event.clientY - rect.top) / rect.height) * 100;
+
+      const isNearFrame =
+        rawX >= -ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
+        rawX <= 100 + ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
+        rawY >= -ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT &&
+        rawY <= 100 + ZHONG_ZHENG_POINTER_FRAME_MARGIN_PERCENT;
+
+      if (!isNearFrame || particles.length === 0) {
+        deactivatePointer();
+        return;
+      }
+
+      const nextX = clampNumber(rawX, 0, 100);
+      const nextY = clampNumber(rawY, 0, 100);
+      const nearestParticleDistance = particles.reduce(
+        (nearestDistance, particle) =>
+          Math.min(
+            nearestDistance,
+            Math.sqrt((particle.x - nextX) ** 2 + (particle.y - nextY) ** 2)
+          ),
+        Infinity
+      );
+
+      if (
+        nearestParticleDistance > ZHONG_ZHENG_POINTER_PARTICLE_RADIUS_PERCENT
+      ) {
+        deactivatePointer();
+        return;
+      }
+
+      setPointer({ x: nextX, y: nextY, active: true });
+    },
+    [deactivatePointer, particles, setPointer]
+  );
+
+  return (
+    <button
+      type="button"
+      ref={buttonRef}
+      disabled={!isVisible}
+      onClick={() => onSelectArtwork(artwork)}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={deactivatePointer}
+      onPointerCancel={deactivatePointer}
+      onLostPointerCapture={deactivatePointer}
+      onBlur={deactivatePointer}
+      className="chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
+      aria-label={`View ${title} artwork details`}
+      data-pointer-active={pointer.active ? 'true' : 'false'}
+      data-particle-source={maskState ? 'image-alpha-mask' : 'ascii-fallback'}
+    >
+      <span className="chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]">
+        <span
+          ref={stageRef}
+          className="chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(76vw,25rem)] -translate-x-1/2 sm:w-[min(58vw,27rem)]"
+        >
+          <span className="chung-cheng-ascii-statue-orbit absolute inset-0 block">
+            <span className="chung-cheng-ascii-statue absolute inset-0 block">
+              {particles.map((particle) => {
+                const pointerDistance = pointer.active
+                  ? Math.sqrt(
+                      (particle.x - pointer.x) ** 2 +
+                        (particle.y - pointer.y) ** 2
+                    )
+                  : Infinity;
+                const pointerCore = pointer.active
+                  ? Math.max(
+                      0,
+                      1 -
+                        (pointerDistance /
+                          ZHONG_ZHENG_POINTER_CORE_RADIUS_PERCENT) **
+                          1.45
+                    )
+                  : 0;
+                const influence = clampNumber(pointerCore, 0, 1);
+                const entranceProgress =
+                  entranceStartedAt === null
+                    ? 0
+                    : clampNumber(
+                        (clock -
+                          entranceStartedAt -
+                          (particle.y * 4.8 + (particle.phase % 95))) /
+                          680,
+                        0,
+                        1
+                      );
+                const entranceEase =
+                  1 - (1 - entranceProgress) * (1 - entranceProgress);
+                const matrixIndex =
+                  Math.floor(
+                    particle.phase +
+                      pointer.x * 0.17 +
+                      pointer.y * 0.11 +
+                      influence * 9
+                  ) % ZHONG_ZHENG_MATRIX_GLYPHS.length;
+                const matrixGlyph =
+                  ZHONG_ZHENG_MATRIX_GLYPHS[matrixIndex] || particle.zh;
+                const isMorphed = influence > 0.57;
+                const isMatrix = influence > 0.22;
+                const wave =
+                  ((
+                    particle.phase +
+                    particle.z * 2 +
+                    pointer.x * 0.28 +
+                    pointer.y * 0.18
+                  ) *
+                    Math.PI) /
+                  180;
+                const waveX = Math.cos(wave) * influence * 7;
+                const waveY = Math.sin(wave * 1.18) * influence * 9;
+                const pointerParallaxX = pointer.active
+                  ? (pointer.x - 50) * particle.z * 0.006
+                  : 0;
+                const pointerParallaxY = pointer.active
+                  ? (pointer.y - 50) * particle.z * 0.0035
+                  : 0;
+                const scale =
+                  (particle.scale + influence * 0.28) *
+                  (0.88 + entranceEase * 0.12);
+                const opacity =
+                  clampNumber(
+                    0.18 + particle.shade * 0.34 + influence * 0.3,
+                    0.22,
+                    0.9
+                  ) * entranceEase;
+                const entranceY = (1 - entranceEase) * 10;
+
+                return (
+                  <span
+                    key={particle.id}
+                    aria-hidden="true"
+                    className="chung-cheng-ascii-particle absolute font-mono text-[clamp(4.2px,1.16vw,7.2px)] font-semibold leading-none tracking-normal"
+                    data-effect={
+                      isMorphed ? 'morphed' : isMatrix ? 'matrix' : 'base'
+                    }
+                    style={{
+                      left: `${particle.x}%`,
+                      top: `${particle.y}%`,
+                      opacity,
+                      transform: `translate3d(calc(-50% + ${(
+                        waveX + pointerParallaxX
+                      ).toFixed(2)}px), calc(-50% + ${(
+                        waveY + pointerParallaxY + entranceY
+                      ).toFixed(2)}px), ${(particle.z + influence * 28).toFixed(
+                        2
+                      )}px) scale(${scale.toFixed(3)})`,
+                    }}
+                  >
+                    {isMorphed
+                      ? particle.zh
+                      : isMatrix
+                        ? matrixGlyph
+                        : particle.en}
+                  </span>
+                );
+              })}
+            </span>
+          </span>
+        </span>
+      </span>
+      <span className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
+        <span className="truncate">Zhong Zheng Ren</span>
+        <span className="text-white/25">/</span>
+        <span>中正人</span>
+        <span className="text-white/25">/</span>
+        <span>2019-00754</span>
+      </span>
+    </button>
+  );
+}
+
 function SearchArtworkDialog({
   artwork,
-  routeId,
+  routeBasePath,
   returnTo,
   onTrackArtworkInteraction,
+  onSearch,
   onClose,
 }: {
   artwork: ArtworkSearchResult | null;
-  routeId: string;
+  routeBasePath: string;
   returnTo: string;
   onTrackArtworkInteraction: (
     artwork: ArtworkSearchResult,
@@ -2868,6 +3566,7 @@ function SearchArtworkDialog({
     action: string,
     metadata?: Record<string, unknown>
   ) => void;
+  onSearch: (query: string, facet?: SearchFacet | null) => void;
   onClose: () => void;
 }) {
   const image = artwork
@@ -2897,21 +3596,85 @@ function SearchArtworkDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm" />
         {artwork && (
-          <Dialog.Content className="themeable-surface fixed left-1/2 top-1/2 z-50 grid max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 grid-rows-[minmax(180px,34dvh)_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none xl:h-[min(86dvh,780px)] xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,0.95fr)] xl:grid-rows-none">
+          <Dialog.Content className="themeable-surface fixed left-1/2 top-1/2 z-50 grid max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 grid-rows-[minmax(280px,48dvh)_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/10 bg-[#101014] shadow-2xl outline-none xl:h-[min(86dvh,780px)] xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,0.95fr)] xl:grid-rows-none">
             <Dialog.Description className="sr-only">
               Source-labelled catalogue text, public fields, and generated
               caption for the selected artwork.
             </Dialog.Description>
-            <div className="flex min-h-0 min-w-0 items-center justify-center bg-black/35 p-4">
-              <ImageWithFallback
-                src={image.src}
-                fallbackSrc={image.fallbackSrc}
-                alt={title}
-                className="max-h-full w-full object-contain"
-                fallback={
-                  <NoImagePlaceholder className="min-h-64 rounded-md text-white/25" />
-                }
-              />
+            <div className="flex min-h-0 min-w-0 flex-col bg-black/35 p-4">
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <ImageWithFallback
+                  src={image.src}
+                  fallbackSrc={image.fallbackSrc}
+                  alt={title}
+                  protectFromDownload
+                  className="max-h-full w-full object-contain"
+                  fallback={
+                    <NoImagePlaceholder className="min-h-48 rounded-md text-white/25" />
+                  }
+                />
+              </div>
+              <div className="mt-3 shrink-0 space-y-3">
+                  {image.src && <ImageReuseNotice compact />}
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      to={`${routeBasePath}/artworks/${encodeURIComponent(
+                        artwork.id
+                      )}?from=${encodeURIComponent(returnTo)}`}
+                    onClick={() =>
+                      onTrackArtworkInteraction(
+                        artwork,
+                        'click',
+                        'artwork_full_page_open'
+                      )
+                    }
+                    className="inline-flex h-9 max-w-full items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
+                  >
+                    <span className="truncate">Open full page</span>
+                  </Link>
+                  {ngsUrl && (
+                    <RequestImageUseLink
+                      className="h-9"
+                      onClick={() =>
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'image_permission_request',
+                          { source: 'ngs', surface: 'search_dialog' }
+                        )
+                      }
+                    />
+                  )}
+                  {ngsUrl && (
+                    <PublicRecordLink
+                      href={ngsUrl}
+                      label="National Gallery Singapore record"
+                      onClick={() =>
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'source_record_open',
+                          { source: 'ngs' }
+                        )
+                      }
+                    />
+                  )}
+                  {rootsUrl && (
+                    <PublicRecordLink
+                      href={rootsUrl}
+                      label="Roots NHB record"
+                      onClick={() =>
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'source_record_open',
+                          { source: 'roots' }
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              </div>
             </div>
             <div className="min-h-0 overflow-y-auto p-5 md:p-6">
               <div className="flex items-start justify-between gap-4">
@@ -2923,13 +3686,22 @@ function SearchArtworkDialog({
                     {title}
                   </Dialog.Title>
                   {artist && (
-                    <Link
-                      to={`/${routeId}/search?q=${encodeURIComponent(artist)}`}
-                      onClick={onClose}
-                      className="mt-2 inline-block text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onTrackArtworkInteraction(
+                          artwork,
+                          'click',
+                          'artist_search',
+                          { artist }
+                        );
+                        onSearch(artist, 'artist');
+                      }}
+                      className="mt-2 block text-left text-sm text-white/60 underline decoration-white/20 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+                      title={`Search ${artist}`}
                     >
                       {artist}
-                    </Link>
+                    </button>
                   )}
                 </div>
                 <Dialog.Close asChild>
@@ -2941,66 +3713,6 @@ function SearchArtworkDialog({
                     <X className="h-4 w-4" />
                   </button>
                 </Dialog.Close>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link
-                  to={`/${routeId}/artworks/${encodeURIComponent(
-                    artwork.id
-                  )}?from=${encodeURIComponent(returnTo)}`}
-                  onClick={() =>
-                    onTrackArtworkInteraction(
-                      artwork,
-                      'click',
-                      'artwork_full_page_open'
-                    )
-                  }
-                  className="inline-flex h-9 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-black transition-opacity hover:opacity-85"
-                >
-                  Open full page
-                </Link>
-                {image.src && (
-                  <a
-                    href={image.src}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() =>
-                      onTrackArtworkInteraction(artwork, 'click', 'image_open')
-                    }
-                    className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-white/75 transition-colors hover:bg-white/[0.09] hover:text-white"
-                  >
-                    Open image
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-                {ngsUrl && (
-                  <PublicRecordLink
-                    href={ngsUrl}
-                    label="National Gallery Singapore record"
-                    onClick={() =>
-                      onTrackArtworkInteraction(
-                        artwork,
-                        'click',
-                        'source_record_open',
-                        { source: 'ngs' }
-                      )
-                    }
-                  />
-                )}
-                {rootsUrl && (
-                  <PublicRecordLink
-                    href={rootsUrl}
-                    label="Roots NHB record"
-                    onClick={() =>
-                      onTrackArtworkInteraction(
-                        artwork,
-                        'click',
-                        'source_record_open',
-                        { source: 'roots' }
-                      )
-                    }
-                  />
-                )}
               </div>
 
               {(rootsDescriptionDetails || caption) && (
@@ -3035,10 +3747,16 @@ function SearchArtworkDialog({
                       label,
                       value
                     );
+                    const facet = getCatalogueRowSearchFacet(label);
                     return searchQuery
-                      ? `/${routeId}/search?q=${encodeURIComponent(
-                          searchQuery
-                        )}`
+                      ? `${routeBasePath}/search?${new URLSearchParams(
+                          getSearchParamsForQuery(
+                            facet === 'artist'
+                              ? normalizeArtistSearchQuery(searchQuery)
+                              : normalizeSearchQuery(searchQuery),
+                            facet
+                          )
+                        ).toString()}`
                       : null;
                   }}
                   onSearchLinkClick={onClose}
@@ -3083,10 +3801,10 @@ function PublicRecordLink({
       target="_blank"
       rel="noreferrer"
       onClick={onClick}
-      className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-cyan-100/75 transition-colors hover:bg-white/[0.09] hover:text-cyan-100"
+      className="inline-flex h-9 max-w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-cyan-100/75 transition-colors hover:bg-white/[0.09] hover:text-cyan-100"
     >
-      {label}
-      <ExternalLink className="h-3.5 w-3.5" />
+      <span className="truncate">{label}</span>
+      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
     </a>
   );
 }
@@ -3096,6 +3814,7 @@ function ColourRail({
   selected,
   activeSort,
   customColour,
+  disabled = false,
   onSelect,
   onCustomChange,
   onClear,
@@ -3104,6 +3823,7 @@ function ColourRail({
   selected: string[];
   activeSort: boolean;
   customColour: string;
+  disabled?: boolean;
   onSelect: (id: string) => void;
   onCustomChange: (hex: string) => void;
   onClear: () => void;
@@ -3134,6 +3854,7 @@ function ColourRail({
         </div>
         <ColourStrip
           selected={selected}
+          disabled={disabled}
           onToggle={onSelect}
           customColour={customColour}
           onCustomChange={onCustomChange}
@@ -3148,6 +3869,7 @@ function ColourRail({
           {activeColour ? (
             <button
               type="button"
+              disabled={disabled}
               onClick={onClear}
               className="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-white/12 bg-white/[0.04] px-2.5 text-xs text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
               aria-label={`Clear ${activeColour.name} colour target`}
@@ -3177,22 +3899,25 @@ function ModeButton({
   icon: Icon,
   label,
   onClick,
+  disabled = false,
 }: {
   active: boolean;
   icon: LucideIcon;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       aria-label={`${label} search mode`}
       className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
         active
           ? 'bg-white/[0.14] text-white'
           : 'text-white/45 hover:text-white/80'
-      }`}
+      }${disabled ? ' cursor-not-allowed opacity-45' : ''}`}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
@@ -3203,6 +3928,7 @@ function ModeButton({
 function ColourStrip({
   selected,
   onToggle,
+  disabled = false,
   customColour,
   onCustomChange,
   customAriaLabel = 'Choose custom colour',
@@ -3211,6 +3937,7 @@ function ColourStrip({
 }: {
   selected: string[];
   onToggle: (id: string) => void;
+  disabled?: boolean;
   customColour?: string;
   onCustomChange?: (hex: string) => void;
   customAriaLabel?: string;
@@ -3232,10 +3959,16 @@ function ColourStrip({
           <button
             key={colour.id}
             type="button"
-            onClick={() => onToggle(colour.id)}
+            disabled={disabled}
+            onClick={() => {
+              if (disabled) return;
+              onToggle(colour.id);
+            }}
             title={colour.name}
             aria-pressed={active}
-            className="relative min-w-7 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none"
+            className={`relative min-w-7 transition-[filter] hover:brightness-125 focus:z-10 focus:outline-none ${
+              disabled ? 'cursor-not-allowed opacity-45' : ''
+            }`}
             style={{ background: colour.hex, flex: `${grow} 1 0` }}
           >
             {active && (
@@ -3261,8 +3994,11 @@ function ColourStrip({
           <input
             type="color"
             value={customColour}
+            disabled={disabled}
             onChange={(event) => onCustomChange(event.target.value)}
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            className={`absolute inset-0 h-full w-full opacity-0 ${
+              disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+            }`}
             aria-label={customAriaLabel}
           />
           <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -3301,7 +4037,7 @@ function ResultsView({
   showSimilarity: boolean;
   onMasonryColumnEndVisible?: () => void;
   onSortModeChange: (sortMode: SortMode) => void;
-  onFacetSearch: (query: string) => void;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -3359,7 +4095,7 @@ function MasonryResults({
   selectedColours: string[];
   showSimilarity: boolean;
   onColumnEndVisible?: () => void;
-  onFacetSearch: (query: string) => void;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -3431,7 +4167,7 @@ function SalonResults({
   onSelectArtwork,
 }: {
   results: ArtworkSearchResult[];
-  onFacetSearch: (query: string) => void;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   return (
@@ -3459,6 +4195,7 @@ function SalonResults({
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
                   alt={title}
+                  protectFromDownload
                   loading="lazy"
                   className="aspect-[4/5] w-full object-cover"
                   fallback={
@@ -3480,8 +4217,8 @@ function SalonResults({
               <br />
               <button
                 type="button"
-                onClick={() => onFacetSearch(artist)}
-                className="normal-case tracking-normal underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+                onClick={() => onFacetSearch(artist, 'artist')}
+                className="normal-case tracking-normal underline decoration-white/15 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
               >
                 {artist}
               </button>{' '}
@@ -3533,9 +4270,15 @@ function AtlasResults({
                 src={image.src}
                 fallbackSrc={image.fallbackSrc}
                 alt={title}
+                protectFromDownload
                 loading="lazy"
                 className="h-full w-full object-cover"
-                fallback={<NoImagePlaceholder iconClassName="h-4 w-4" />}
+                fallback={
+                  <NoImagePlaceholder
+                    iconClassName="h-4 w-4"
+                    showLabel={false}
+                  />
+                }
               />
             </div>
             <div className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-black/90 px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -3563,7 +4306,7 @@ function ResultCard({
   selectedColours: string[];
   showSimilarity: boolean;
   imageRole: ArtworkImageRole;
-  onFacetSearch: (query: string) => void;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
@@ -3580,11 +4323,15 @@ function ResultCard({
         onClick={() => onSelectArtwork(result)}
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
-        <div className="overflow-hidden bg-white/[0.03]" style={imageFrameStyle}>
+        <div
+          className="overflow-hidden bg-white/[0.03]"
+          style={imageFrameStyle}
+        >
           <ImageWithFallback
             src={image.src}
             fallbackSrc={image.fallbackSrc}
             alt={title}
+            protectFromDownload
             loading="lazy"
             className={MASONRY_IMAGE_CLASS_NAME}
             fallback={<NoImagePlaceholder className="text-white/25" />}
@@ -3597,7 +4344,7 @@ function ResultCard({
             <button
               type="button"
               onClick={() => onSelectArtwork(result)}
-              className="appearance-none border-0 bg-transparent p-0 text-left"
+              className="min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
             >
               <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
                 {title}
@@ -3605,8 +4352,8 @@ function ResultCard({
             </button>
             <button
               type="button"
-              onClick={() => onFacetSearch(artist)}
-              className="mt-1 block max-w-full truncate text-left text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+              onClick={() => onFacetSearch(artist, 'artist')}
+              className="mt-1 block max-w-full truncate text-left text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
               title={`Search ${artist}`}
             >
               {artist}
@@ -3649,7 +4396,7 @@ function MetadataLine({
   onFacetSearch,
 }: {
   result: ArtworkSearchResult;
-  onFacetSearch: (query: string) => void;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
 }) {
   const facets = getMetadataFacets(result);
 
@@ -3743,7 +4490,7 @@ function TableResults({
   sortMode: SortMode;
   showSimilarity: boolean;
   onSortModeChange: (sortMode: SortMode) => void;
-  onFacetSearch: (query: string) => void;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const isColourSort = sortMode === 'colour';
@@ -3824,12 +4571,14 @@ function TableResults({
                       src={image.src}
                       fallbackSrc={image.fallbackSrc}
                       alt=""
+                      protectFromDownload
                       loading="lazy"
                       className="h-12 w-12 object-cover"
                       fallback={
                         <NoImagePlaceholder
                           className="h-12 w-12 rounded-md"
                           iconClassName="h-4 w-4"
+                          showLabel={false}
                         />
                       }
                     />
@@ -3843,11 +4592,11 @@ function TableResults({
                     </span>
                   </button>
                 </td>
-                <td className="px-3 py-3 text-white/65">
+                <td className="px-3 py-3">
                   <button
                     type="button"
-                    onClick={() => onFacetSearch(artist)}
-                    className="text-left underline decoration-white/15 underline-offset-4 transition-colors hover:text-white hover:decoration-white/55"
+                    onClick={() => onFacetSearch(artist, 'artist')}
+                    className="text-left text-white/65 underline decoration-white/15 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
                     title={`Search ${artist}`}
                   >
                     {artist}

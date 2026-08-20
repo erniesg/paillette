@@ -1,8 +1,11 @@
 import type { LoaderFunctionArgs } from '@remix-run/cloudflare';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
-import { getUpcomingSingaporeHolidaySuggestions } from '~/lib/singapore-holidays.server';
+import { json } from '@remix-run/cloudflare';
+import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 
 export { default, meta } from './galleries.$galleryId.search';
+
+const SEARCH_PAGE_CACHE_CONTROL =
+  'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
   const { collectionId } = params;
@@ -10,19 +13,15 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     throw new Response('Collection ID is required', { status: 400 });
   }
 
-  try {
-    const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(collectionId),
-      getUpcomingSingaporeHolidaySuggestions(),
-    ]);
+  const data = await loadPublicSearchPage({
+    request,
+    requestedOrgId: collectionId,
+    routeScope: 'collection',
+  });
 
-    return {
-      gallery,
-      galleryId: gallery.id,
-      preferredRouteId: getPreferredOrgRouteId(collectionId, gallery.slug),
-      holidaySuggestions,
-    };
-  } catch {
-    throw new Response('Collection not found', { status: 404 });
-  }
+  return json(data, {
+    headers: {
+      'Cache-Control': SEARCH_PAGE_CACHE_CONTROL,
+    },
+  });
 }

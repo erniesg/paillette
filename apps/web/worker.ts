@@ -23,12 +23,36 @@ const serverBuild = {
   routes: build.routes,
 } as unknown as ServerBuild;
 
+const PUBLIC_PAGE_CACHE_CONTROL =
+  'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+const PUBLIC_SEARCH_HTML_PATHS = ['/ngs/search', '/nga/search'];
+
+const getPublicHtmlCacheControl = (pathname: string) => {
+  if (pathname === '/about') {
+    return PUBLIC_PAGE_CACHE_CONTROL;
+  }
+
+  if (PUBLIC_SEARCH_HTML_PATHS.includes(pathname)) {
+    return PUBLIC_PAGE_CACHE_CONTROL;
+  }
+
+  return null;
+};
+
 const handleRemixRequest = createRequestHandler(serverBuild, 'production');
 
 export default {
-  fetch(request: Request, env: Env, context: ExecutionContext) {
-    return handleRemixRequest(request, {
+  async fetch(request: Request, env: Env, context: ExecutionContext) {
+    const response = await handleRemixRequest(request, {
       cloudflare: { env, context },
     });
+
+    const requestUrl = new URL(request.url);
+    const cacheControl = getPublicHtmlCacheControl(requestUrl.pathname);
+    if (cacheControl && request.method === 'GET') {
+      response.headers.set('Cache-Control', cacheControl);
+    }
+
+    return response;
   },
 };
