@@ -3,14 +3,18 @@ from __future__ import annotations
 import importlib.util
 import http.server
 import hashlib
+import io
 import json
 import math
 import os
+import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+import zipfile
+import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -166,6 +170,153 @@ PLAYWRIGHT_SCREENSHOTS = [
     "06-invalid-upload-preserves-results.png",
     "07-ngs-locked.png",
 ]
+PLAYWRIGHT_TITLES = [
+    "pre-upload Image is compact, accessible, truthful, and passive",
+    "Text remains the truthful result owner while Image is only being edited",
+    "constrained Image becomes owner and Palette order stays local",
+    "separate live same-filename image requests execute distinctly",
+    "controlled out-of-order image responses keep replacement result ownership",
+    "invalid uploads preserve prior results and expose an alert",
+    "NGS stays visibly locked and sends no public-search request",
+]
+PLAYWRIGHT_PROJECT = "nga-staging-chrome"
+
+
+def evidence_response(payload, url, *, status=200, headers=None):
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return {
+        "requestUrl": url,
+        "finalUrl": url,
+        "status": status,
+        "elapsedMs": 1,
+        "headers": headers or {},
+        "json": payload,
+        "jsonByteLength": len(body),
+        "jsonSha256": hashlib.sha256(body).hexdigest(),
+        "bodyLength": len(body),
+        "bodySha256": hashlib.sha256(body).hexdigest(),
+    }
+
+
+def refresh_response_digest(response):
+    body = json.dumps(
+        response["json"],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    response["bodyLength"] = len(body)
+    response["bodySha256"] = hashlib.sha256(body).hexdigest()
+    response["jsonByteLength"] = len(body)
+    response["jsonSha256"] = hashlib.sha256(body).hexdigest()
+
+
+def json_mutate(path, mutation):
+    document = json.loads(path.read_text(encoding="utf-8"))
+    mutation(document)
+    path.write_text(json.dumps(document) + "\n", encoding="utf-8")
+
+
+def evidence_row(case, *, artwork_id="open-access-art:nga:32679"):
+    constraints = case.get("expected", {}).get(
+        "constraints", case.get("constraints", {})
+    )
+    row = passing_row(id=artwork_id)
+    metadata = dict(row["metadata"])
+    date_range = constraints.get("dateRange")
+    if date_range:
+        year = date_range["startYear"]
+        row["year"] = year
+        metadata.update(dateText=str(year), yearStart=year, yearEnd=year)
+    classifications = constraints.get("classifications")
+    if classifications:
+        metadata["visualClassification"] = classifications[0]
+    media = constraints.get("mediumFamilies")
+    if media:
+        metadata.update(mediumFamily=media[0], medium=media[0])
+    artist_ids = constraints.get("artistIds")
+    if artist_ids:
+        metadata["primaryArtistId"] = artist_ids[0]
+    row["metadata"] = metadata
+    return row
+
+
+def text_evidence_response(case, parser_version, url):
+    expected = case.get("expected", {})
+    constraints = expected.get("constraints", {})
+    rows = [] if case.get("expectedZeroResults") is True else [evidence_row(case)]
+    interpretation = {
+        "parserVersion": parser_version,
+        "originalQuery": case["query"],
+        "semanticQuery": expected.get("semanticQuery", case["query"]),
+        "constraints": constraints,
+        "corrections": [],
+        "unresolved": (
+            [case["query"]] if expected.get("unresolved") is True else []
+        ),
+    }
+    if "relation" in expected:
+        interpretation["relation"] = expected["relation"]
+    payload = {
+        "success": True,
+        "data": {
+            "results": rows,
+            "count": len(rows),
+            "queryTime": 1,
+            "interpretation": interpretation,
+        },
+        "meta": {"search": {"cacheable": True, "degradedChannels": []}},
+    }
+    return evidence_response(
+        payload,
+        url,
+        headers={
+            "cache-control": "public, max-age=0, s-maxage=86400",
+            "etag": f'W/"{case["id"]}"',
+            "x-paillette-search-cache": "MISS",
+        },
+    )
+
+
+def png_evidence(width=640, height=480):
+    def chunk(kind, data):
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+        )
+
+    scanlines = b"".join(
+        b"\x00"
+        + bytes(
+            component
+            for x in range(width)
+            for component in ((x + y) % 256, (x * 3 + y) % 256, (x + y * 5) % 256)
+        )
+        for y in range(height)
+    )
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(scanlines, 6))
+        + chunk(b"IEND", b"")
+    )
+
+
+def trace_evidence(index):
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "trace.trace",
+            json.dumps({"type": "context-options", "testIndex": index}) + "\n",
+        )
+    return output.getvalue()
 
 
 def make_complete_evidence_bundle(
@@ -175,7 +326,7 @@ def make_complete_evidence_bundle(
     phase="pilot",
     snapshot="candidate",
     evaluator_sha="a" * 40,
-    deployment_hash="d" * 64,
+    run_id="0123456789abcdef0123456789abcdef",
 ):
     inventory = gate.load_case_inventory(
         ROOT / "eval" / "nga-staging-cases.yaml",
@@ -184,13 +335,30 @@ def make_complete_evidence_bundle(
     selected = gate.select_cases(inventory, phase)
     text_ids = [case["id"] for case in selected["text"]]
     image_ids = [case["id"] for case in selected["image"]]
+    manual_case_ids = [
+        case["id"] for case in selected["text"] if case.get("manualGradeTop")
+    ]
+    deployed_identity = deployment_identity(snapshot, evaluator_sha)
+    deployment_hash = gate.sha256_json(deployed_identity)
+    deployment_binding = gate.evaluate_deployment_binding(
+        deployed_identity,
+        snapshot=snapshot,
+        evaluator_git_sha=evaluator_sha,
+    )
+    parser_version = deployment_binding["deployedVersions"]["parser"]
+    binding = {
+        "runId": run_id,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_sha,
+        "deploymentIdentityHash": deployment_hash,
+    }
     manual_by_case = {
         case_id: {"precisionAt5": 0.8, "mrr": 1.0, "ndcgAt10": 0.9}
-        for case_id in PILOT_RELATION_IDS
+        for case_id in manual_case_ids
     }
     manual = {
         "status": "graded",
-        "caseCount": len(PILOT_RELATION_IDS),
+        "caseCount": len(manual_case_ids),
         "gradedAt": "2026-08-22T00:00:00Z",
         "reviewer": "release-reviewer",
         "labelsSha256": "e" * 64,
@@ -200,20 +368,15 @@ def make_complete_evidence_bundle(
         },
     }
     identity = {
+        **binding,
         "generatedAt": "2026-08-22T00:00:00Z",
-        "evaluatorGitSha": evaluator_sha,
         "phase": phase,
-        "snapshot": snapshot,
-        "deploymentBinding": {
-            "passed": True,
-            "deploymentIdentityHash": deployment_hash,
-        },
+        "deploymentIdentity": deployed_identity,
+        "deploymentBinding": deployment_binding,
     }
     summary = {
+        **binding,
         "generatedAt": "2026-08-22T00:01:00Z",
-        "evaluatorGitSha": evaluator_sha,
-        "deploymentIdentityHash": deployment_hash,
-        "snapshot": snapshot,
         "phase": phase,
         "caseCounts": selected["counts"],
         "text": {"selected": len(text_ids), "passed": len(text_ids)},
@@ -230,11 +393,9 @@ def make_complete_evidence_bundle(
     }
     completed = datetime(2026, 8, 22, tzinfo=timezone.utc)
     handoff = {
+        **binding,
         "schemaVersion": "nga-playwright-handoff-v1",
         "phase": phase,
-        "snapshot": snapshot,
-        "evaluatorGitSha": evaluator_sha,
-        "deploymentIdentityHash": deployment_hash,
         "pythonCompletedAt": completed.isoformat().replace("+00:00", "Z"),
         "playwrightNotBefore": (completed + timedelta(seconds=60))
         .isoformat()
@@ -250,29 +411,237 @@ def make_complete_evidence_bundle(
         "summary.json": summary,
         "case-inventory.json": case_inventory,
         "fixtures-manifest.json": {"fixtures": []},
-        "manual-relevance.json": {"summary": manual, "cases": []},
-        "playwright-handoff.json": handoff,
-        "raw/cache-probe.json": {"evaluation": {"passed": True}},
-        "raw/image-identity-probe.json": {
-            "identityEvaluation": {"passed": True},
-            "repeat": {"evaluation": {"passed": True}},
+        "manual-relevance.json": {
+            **binding,
+            "summary": manual,
+            "evaluation": gate.evaluate_manual_relevance_completion(
+                manual, snapshot
+            ),
+            "cases": [
+                {
+                    "caseId": case_id,
+                    "status": "manual_review_required",
+                    "instructions": "Assign each relevance field an integer 0-3; do not infer it from similarity.",
+                    "results": [
+                        {
+                            "rank": 1,
+                            "id": "open-access-art:nga:32679",
+                            "title": "Allegory of Painting",
+                            "artist": "François Boucher",
+                            "relevance": None,
+                        }
+                    ],
+                }
+                for case_id in manual_case_ids
+            ],
         },
-        "raw/ngs-probe.json": {"evaluation": {"passed": True}},
+        "playwright-handoff.json": handoff,
+    }
+
+    text_endpoint = "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    for case in selected["text"]:
+        response = text_evidence_response(case, parser_version, text_endpoint)
+        documents[f"raw/text/{case['id'].replace(':', '_')}.json"] = {
+            **binding,
+            "case": case,
+            "request": {
+                "url": text_endpoint,
+                "method": "POST",
+                "body": gate._text_request_body(case),
+                "identity": gate.canonical_text_identity(case),
+            },
+            "response": response,
+            "evaluation": gate.evaluate_text_case(
+                case, response, deployment_binding["deployedVersions"]
+            ),
+        }
+
+    cache_case = {
+        "id": "cache-probe",
+        "query": "validation 0123456789ab oil paintings after 1700 before 1800",
+        "expected": {
+            "constraints": {
+                "dateRange": {"startYear": 1701, "endYear": 1799},
+                "classifications": ["Painting"],
+                "mediumFamilies": ["oil"],
+            }
+        },
+    }
+    changed_cache_case = {
+        **cache_case,
+        "id": "cache-probe-changed",
+        "request": {"constraints": {"classifications": ["Drawing"]}},
+        "expected": {"constraints": {"classifications": ["Drawing"]}},
+    }
+    first_cache = text_evidence_response(cache_case, parser_version, text_endpoint)
+    repeat_cache = json.loads(json.dumps(first_cache))
+    repeat_cache["headers"]["x-paillette-search-cache"] = "HIT"
+    changed_cache = text_evidence_response(
+        changed_cache_case, parser_version, text_endpoint
+    )
+    first_identity = gate.canonical_text_identity(cache_case)
+    changed_identity = gate.canonical_text_identity(changed_cache_case)
+    documents["raw/cache-probe.json"] = {
+        **binding,
+        "query": cache_case["query"],
+        "firstRequest": gate._text_request_body(cache_case),
+        "repeatRequest": gate._text_request_body(cache_case),
+        "changedRequest": gate._text_request_body(changed_cache_case),
+        "firstIdentity": first_identity,
+        "changedIdentity": changed_identity,
+        "first": first_cache,
+        "repeat": repeat_cache,
+        "changed": changed_cache,
+        "evaluation": gate.evaluate_text_cache_probe(
+            first_cache,
+            repeat_cache,
+            changed_cache,
+            first_identity=first_identity,
+            changed_identity=changed_identity,
+            snapshot=snapshot,
+        ),
+    }
+
+    fixture_document = json.loads(
+        (ROOT / "eval/nga-image-fixtures.json").read_text(encoding="utf-8")
+    )
+    fixtures = {
+        fixture["artworkId"]: fixture for fixture in fixture_document["fixtures"]
+    }
+    documents["fixtures-manifest.json"] = {
+        "fixtures": [
+            fixtures[fixture_id]
+            for fixture_id in sorted(
+                {case["fixtureId"] for case in selected["image"]}
+            )
+        ],
+        "note": "Full image bytes were verified in memory and were not written to evidence.",
+    }
+    image_endpoint = "https://paillette-stg.berlayar.ai/api/public-search/nga/image"
+    first_image_response = None
+    first_image_request = None
+    first_image_case = selected["image"][0]
+    for case in selected["image"]:
+        fixture = fixtures[case["fixtureId"]]
+        row = evidence_row(case, artwork_id=fixture["artworkId"])
+        response = evidence_response(
+            {"success": True, "data": {"results": [row], "count": 1, "queryTime": 1}},
+            image_endpoint,
+            headers={"cache-control": "no-store"},
+        )
+        identity_value = gate.sha256_json(
+            {
+                "version": "public-image-search-v1",
+                "contractVersion": gate.EXPECTED_VERSIONS["contract"],
+                "mode": "image",
+                "orgId": "nga",
+                "imageDigest": fixture["sha256"],
+                "constraints": gate.normalize_constraints(case.get("constraints")) or None,
+                "topK": 30,
+                "minScore": 0.0,
+            }
+        )
+        request = {
+            "url": image_endpoint,
+            "method": "POST",
+            "filename": case["filename"],
+            "mimeType": fixture["mimeType"],
+            "byteLength": fixture["byteLength"],
+            "sha256": fixture["sha256"],
+            "constraints": gate.normalize_constraints(case.get("constraints")),
+            "topK": 30,
+            "minScore": 0,
+            "identity": identity_value,
+        }
+        documents[f"raw/image/{case['id']}.json"] = {
+            **binding,
+            "case": case,
+            "request": request,
+            "response": response,
+            "evaluation": gate.evaluate_image_case(case, response),
+        }
+        if case is first_image_case:
+            first_image_response = response
+            first_image_request = request
+
+    changed_image_sha = "f" * 64
+    changed_constraints = {"classifications": ["Drawing"]}
+    identity_inputs = {
+        "stable_first": first_image_request["identity"],
+        "stable_repeat": first_image_request["identity"],
+        "same_name_first": first_image_request["identity"],
+        "same_name_changed": gate.canonical_image_identity_from_digest(
+            changed_image_sha, first_image_case.get("constraints"), 30, 0
+        ),
+        "constraint_first": first_image_request["identity"],
+        "constraint_changed": gate.canonical_image_identity_from_digest(
+            first_image_request["sha256"], changed_constraints, 30, 0
+        ),
+    }
+    repeat_evaluation = gate.evaluate_image_response(
+        first_image_response, first_image_case.get("constraints")
+    )
+    documents["raw/image-identity-probe.json"] = {
+        **binding,
+        "request": first_image_request,
+        "identityInputs": identity_inputs,
+        "sameNameChangedSha256": changed_image_sha,
+        "changedConstraints": changed_constraints,
+        "stableIdentity": first_image_request["identity"],
+        "repeat": {
+            "response": first_image_response,
+            "evaluation": repeat_evaluation,
+        },
+        "identityEvaluation": gate.evaluate_image_identity_probe(
+            **identity_inputs
+        ),
+    }
+
+    invalid_messages = {
+        "invalid_mime": "Image must be a JPEG, PNG, or WebP file.",
+        "zero_byte": "Image must not be empty.",
+        "multiple_files": "Exactly one image file is required.",
+        "oversize": "Image must be 10 MB or smaller.",
     }
     if phase == "full":
+        negative_responses = {
+            name: evidence_response(
+                {
+                    "success": False,
+                    "error": {"code": "INVALID_INPUT", "message": message},
+                },
+                image_endpoint,
+                status=400,
+                headers={"cache-control": "no-store"},
+            )
+            for name, message in invalid_messages.items()
+        }
         documents["raw/image-negative-probes.json"] = {
-            "evaluation": {"passed": True}
+            **binding,
+            "responses": negative_responses,
+            "evaluation": gate.evaluate_negative_image_probes(negative_responses),
         }
-    for case_id in text_ids:
-        documents[f"raw/text/{case_id.replace(':', '_')}.json"] = {
-            "case": {"id": case_id},
-            "evaluation": {"passed": True},
-        }
-    for case_id in image_ids:
-        documents[f"raw/image/{case_id}.json"] = {
-            "case": {"id": case_id},
-            "evaluation": {"passed": True},
-        }
+
+    ngs_url = "https://paillette-stg.berlayar.ai/api/public-search/ngs/text"
+    ngs_response = evidence_response(
+        {
+            "success": False,
+            "error": {"code": "PUBLIC_SEARCH_SCOPE_FORBIDDEN", "message": "locked"},
+        },
+        ngs_url,
+        status=403,
+        headers={"cache-control": "no-store"},
+    )
+    documents["raw/ngs-probe.json"] = {
+        **binding,
+        "request": {
+            "url": ngs_url,
+            "method": "POST",
+            "body": {"query": "paintings", "topK": 30, "minScore": 0},
+        },
+        "response": ngs_response,
+        "evaluation": gate.evaluate_ngs_probe(ngs_response),
+    }
     for relative, document in documents.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,8 +657,30 @@ def make_complete_evidence_bundle(
             "metadata": {
                 "ngaStagingRun": handoff,
                 "bindingSha256": hashlib.sha256(handoff_bytes).hexdigest(),
-            }
+            },
+            "projects": [{"name": PLAYWRIGHT_PROJECT}],
         },
+        "suites": [
+            {
+                "title": "nga-staging-gate.spec.ts",
+                "file": "nga-staging-gate.spec.ts",
+                "specs": [
+                    {
+                        "title": title,
+                        "ok": True,
+                        "tests": [
+                            {
+                                "expectedStatus": "passed",
+                                "status": "expected",
+                                "projectName": PLAYWRIGHT_PROJECT,
+                                "results": [{"status": "passed"}],
+                            }
+                        ],
+                    }
+                    for title in PLAYWRIGHT_TITLES
+                ],
+            }
+        ],
         "stats": {
             "expected": 7,
             "skipped": 0,
@@ -305,11 +696,11 @@ def make_complete_evidence_bundle(
         encoding="utf-8",
     )
     for screenshot in PLAYWRIGHT_SCREENSHOTS:
-        (playwright / screenshot).write_bytes(b"png evidence")
+        (playwright / screenshot).write_bytes(png_evidence())
     for index in range(7):
         trace_dir = artifacts / f"test-{index}"
         trace_dir.mkdir()
-        (trace_dir / "trace.zip").write_bytes(b"trace evidence")
+        (trace_dir / "trace.zip").write_bytes(trace_evidence(index))
     return gate.rehash_evidence(root)
 
 
@@ -333,6 +724,49 @@ class GateTestCase(unittest.TestCase):
 
 
 class HostAndEnvironmentTests(GateTestCase):
+    def test_run_start_rejects_preexisting_output_and_generates_random_nonce(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.call("start_evidence_run", root / "first")
+            second = self.call("start_evidence_run", root / "second")
+            self.assertRegex(first, r"^[a-f0-9]{32}$")
+            self.assertRegex(second, r"^[a-f0-9]{32}$")
+            self.assertNotEqual(first, second)
+
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("start_evidence_run", root / "first")
+
+            existing = root / "existing"
+            existing.mkdir()
+
+            class Transport:
+                def request(self, *_args, **_kwargs):
+                    raise AssertionError("network must not be reached")
+
+            identity_path = root / "deployment.json"
+            identity_path.write_text(
+                json.dumps(
+                    deployment_identity(
+                        snapshot="baseline", git_sha="b" * 40
+                    )
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(self.gate.GateStopped):
+                self.gate.run_gate(
+                    self.gate.RunConfig(
+                        phase="pilot",
+                        snapshot="baseline",
+                        api_base_url="https://paillette-api-stg.berlayar.ai",
+                        web_base_url="https://paillette-stg.berlayar.ai",
+                        out_dir=existing,
+                        deployment_identity=identity_path,
+                        fail_on_gates=False,
+                        repo_root=ROOT,
+                    ),
+                    Transport(),
+                )
+
     def test_only_exact_staging_origins_are_accepted(self):
         self.call(
             "validate_staging_origins",
@@ -1414,7 +1848,6 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(graded["failureCodes"], [])
 
     def test_full_candidate_pilot_inspection_binds_reviewed_pilot_evidence(self):
-        deployment_hash = "d" * 64
         evaluator_sha = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1423,9 +1856,13 @@ class InventoryAndRelevanceTests(GateTestCase):
                 self.gate,
                 evidence,
                 evaluator_sha=evaluator_sha,
-                deployment_hash=deployment_hash,
             )
+            summary_document = json.loads(
+                (evidence / "summary.json").read_text(encoding="utf-8")
+            )
+            deployment_hash = summary_document["deploymentIdentityHash"]
             summary_path = evidence / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
             manifest_path = evidence / "artifact-manifest.json"
             summary_bytes = summary_path.read_bytes()
             manifest_bytes = manifest_path.read_bytes()
@@ -1501,7 +1938,6 @@ class InventoryAndRelevanceTests(GateTestCase):
             self.assertIn("pilot_artifact_manifest_missing", result["failureCodes"])
 
     def test_pilot_inspection_rejects_self_consistent_wrong_cases_and_metrics(self):
-        deployment_hash = "d" * 64
         evaluator_sha = "a" * 40
         mutations = {
             "wrong case ids": lambda summary, inventory: inventory.__setitem__(
@@ -1527,12 +1963,12 @@ class InventoryAndRelevanceTests(GateTestCase):
                     self.gate,
                     evidence,
                     evaluator_sha=evaluator_sha,
-                    deployment_hash=deployment_hash,
                 )
                 summary_path = evidence / "summary.json"
                 inventory_path = evidence / "case-inventory.json"
                 manifest_path = evidence / "artifact-manifest.json"
                 summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                deployment_hash = summary["deploymentIdentityHash"]
                 inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
                 mutate(summary, inventory)
                 summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
@@ -1593,23 +2029,174 @@ class InventoryAndRelevanceTests(GateTestCase):
             self.assertEqual(first["phase"], "pilot")
             self.assertEqual(first["snapshot"], "candidate")
             self.assertEqual(first["evaluatorGitSha"], "a" * 40)
+            self.assertEqual(
+                first["runId"], "0123456789abcdef0123456789abcdef"
+            )
 
             playwright = root / "playwright"
             later_trace = (
                 playwright / "playwright-artifacts" / "test-0" / "trace.zip"
             )
-            later_trace.write_bytes(b"later changed trace")
+            changed_trace = trace_evidence(99)
+            later_trace.write_bytes(changed_trace)
             second = self.call("rehash_evidence", root)
             self.assertEqual(
                 second["artifacts"][
                     "playwright/playwright-artifacts/test-0/trace.zip"
                 ]["sha256"],
-                hashlib.sha256(b"later changed trace").hexdigest(),
+                hashlib.sha256(changed_trace).hexdigest(),
             )
             manifest = json.loads(
                 (root / "artifact-manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(second, manifest)
+
+    def test_rehash_rejects_foreign_run_records_and_forged_deployment_binding(self):
+        mutations = {
+            "foreign raw run": lambda root: json_mutate(
+                root / "raw/text/relation-active-depicts.json",
+                lambda record: record.__setitem__("runId", "f" * 32),
+            ),
+            "forged deployment verdict": lambda root: json_mutate(
+                root / "identity.json",
+                lambda record: record["deploymentIdentity"]["api"].__setitem__(
+                    "deploymentId", "copied-foreign-deployment"
+                ),
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                mutate(root)
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
+
+    def test_rehash_binds_every_required_record_to_one_run_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root, phase="full")
+            paths = [
+                "identity.json",
+                "summary.json",
+                "manual-relevance.json",
+                "playwright-handoff.json",
+                "raw/text/relation-active-depicts.json",
+                "raw/image/image-pilot-painting-date.json",
+                "raw/cache-probe.json",
+                "raw/image-identity-probe.json",
+                "raw/image-negative-probes.json",
+                "raw/ngs-probe.json",
+            ]
+            for relative in paths:
+                with self.subTest(path=relative):
+                    path = root / relative
+                    original = path.read_bytes()
+                    json_mutate(
+                        path,
+                        lambda record: record.__setitem__("runId", "f" * 32),
+                    )
+                    with self.assertRaises(self.gate.GateStopped):
+                        self.call("rehash_evidence", root)
+                    path.write_bytes(original)
+
+            report_path = root / "playwright/playwright-report.json"
+            original_report = report_path.read_bytes()
+            json_mutate(
+                report_path,
+                lambda report: report["config"]["metadata"]["ngaStagingRun"].__setitem__(
+                    "runId", "f" * 32
+                ),
+            )
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+            report_path.write_bytes(original_report)
+
+    def test_rehash_recomputes_requests_responses_and_stored_evaluations(self):
+        def wrong_request(root):
+            json_mutate(
+                root / "raw/text/relation-active-depicts.json",
+                lambda record: record["request"]["body"].__setitem__(
+                    "query", "copied foreign query"
+                ),
+            )
+
+        def forged_text_result(root):
+            def mutate(record):
+                record["response"]["json"]["data"]["results"][0]["metadata"].pop(
+                    "sourceUrl"
+                )
+                refresh_response_digest(record["response"])
+
+            json_mutate(root / "raw/text/relation-active-depicts.json", mutate)
+
+        def forged_cache_result(root):
+            def mutate(record):
+                record["changed"] = record["first"]
+
+            json_mutate(root / "raw/cache-probe.json", mutate)
+
+        for label, mutate in {
+            "wrong committed request": wrong_request,
+            "forged passing text evaluation": forged_text_result,
+            "forged passing cache evaluation": forged_cache_result,
+        }.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                mutate(root)
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
+
+    def test_rehash_requires_exact_passing_browser_specs_and_real_artifacts(self):
+        def wrong_title(root):
+            json_mutate(
+                root / "playwright/playwright-report.json",
+                lambda report: report["suites"][0]["specs"][0].__setitem__(
+                    "title", "foreign test"
+                ),
+            )
+
+        def failed_status(root):
+            json_mutate(
+                root / "playwright/playwright-report.json",
+                lambda report: report["suites"][0]["specs"][0]["tests"][0][
+                    "results"
+                ][0].__setitem__("status", "failed"),
+            )
+
+        def wrong_project(root):
+            json_mutate(
+                root / "playwright/playwright-report.json",
+                lambda report: report["suites"][0]["specs"][0]["tests"][0].__setitem__(
+                    "projectName", "chromium"
+                ),
+            )
+
+        def fake_png(root):
+            (root / "playwright" / PLAYWRIGHT_SCREENSHOTS[0]).write_bytes(
+                b"not a png"
+            )
+
+        def fake_zip(root):
+            (
+                root
+                / "playwright/playwright-artifacts/test-0/trace.zip"
+            ).write_bytes(b"PK\x03\x04not-readable")
+
+        for label, mutate in {
+            "wrong title": wrong_title,
+            "failed result": failed_status,
+            "wrong project": wrong_project,
+            "fake png": fake_png,
+            "fake trace": fake_zip,
+        }.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                mutate(root)
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
 
     def test_pilot_inspection_rejects_self_consistent_failed_raw_case(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1632,6 +2219,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
             manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
             summary_path = evidence / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
             inspection = {
                 "schemaVersion": "nga-pilot-inspection-v1",
                 "decision": "proceed",
@@ -1651,7 +2239,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             result = self.call(
                 "evaluate_pilot_inspection",
                 inspection_path,
-                deployment_identity_hash="d" * 64,
+                deployment_identity_hash=summary["deploymentIdentityHash"],
                 evaluator_git_sha="a" * 40,
             )
             self.assertFalse(result["passed"], result)
@@ -1701,10 +2289,16 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
             raw_path = root / "raw/text/relation-active-depicts.json"
             raw = json.loads(raw_path.read_text(encoding="utf-8"))
-            raw["evaluation"] = {
-                "passed": False,
-                "failures": [{"code": "relation_direction_mismatch"}],
-            }
+            raw["response"]["json"]["data"]["results"][0]["metadata"].pop(
+                "sourceUrl"
+            )
+            refresh_response_digest(raw["response"])
+            raw["evaluation"] = self.call(
+                "evaluate_text_case",
+                raw["case"],
+                raw["response"],
+                {"parser": "nga-v4"},
+            )
             raw_path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
             summary_path = root / "summary.json"
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -1712,7 +2306,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             summary["gatePassed"] = False
             summary["failureCount"] = 1
             summary["gateFailures"] = [
-                {"scope": "text", "code": "relation_direction_mismatch"}
+                {"scope": "text", "code": "hard_constraint_violation"}
             ]
             summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
             manifest = self.call("rehash_evidence", root)
@@ -1729,6 +2323,7 @@ class InventoryAndRelevanceTests(GateTestCase):
         completed = datetime(2026, 8, 22, tzinfo=timezone.utc)
         handoff = self.call(
             "build_playwright_handoff",
+            run_id="0123456789abcdef0123456789abcdef",
             phase="pilot",
             snapshot="candidate",
             evaluator_git_sha="a" * 40,
@@ -1736,6 +2331,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             completed_at=completed,
         )
         self.assertEqual(handoff["cooldownSeconds"], 60)
+        self.assertEqual(
+            handoff["runId"], "0123456789abcdef0123456789abcdef"
+        )
         self.assertEqual(handoff["browserPublicSearchRequestBudget"], 6)
         completed_at = datetime.fromisoformat(
             handoff["pythonCompletedAt"].replace("Z", "+00:00")
@@ -1751,6 +2349,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             now = datetime.now(timezone.utc)
             handoff = {
                 "schemaVersion": "nga-playwright-handoff-v1",
+                "runId": "0123456789abcdef0123456789abcdef",
                 "phase": "pilot",
                 "snapshot": "candidate",
                 "evaluatorGitSha": "a" * 40,
@@ -1824,7 +2423,6 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertIn("candidate result title", source)
         self.assertIn("separate live same-filename image requests", source)
         self.assertIn("LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = 6", source)
-        self.assertIn("livePublicSearchRequestCount", source)
         self.assertIn("screenshot: 'off'", config)
         self.assertNotIn("screenshot: 'on'", config)
 

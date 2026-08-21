@@ -15,14 +15,17 @@ import hashlib
 import json
 import math
 import re
+import secrets
+import struct
 import subprocess
 import sys
-import tempfile
 import time
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
+import zlib
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -59,6 +62,19 @@ PLAYWRIGHT_SCREENSHOTS = (
     "06-invalid-upload-preserves-results.png",
     "07-ngs-locked.png",
 )
+PLAYWRIGHT_SPEC_TITLES = (
+    "pre-upload Image is compact, accessible, truthful, and passive",
+    "Text remains the truthful result owner while Image is only being edited",
+    "constrained Image becomes owner and Palette order stays local",
+    "separate live same-filename image requests execute distinctly",
+    "controlled out-of-order image responses keep replacement result ownership",
+    "invalid uploads preserve prior results and expose an alert",
+    "NGS stays visibly locked and sends no public-search request",
+)
+PLAYWRIGHT_PROJECT_NAME = "nga-staging-chrome"
+RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
+MAX_EVIDENCE_JSON_BYTES = 2 * 1024 * 1024
+MAX_EVIDENCE_HEADERS_BYTES = 64 * 1024
 VALID_REPEAT_CACHE_STATES = {"HIT", "KV-FRESH", "COALESCED"}
 VALID_FIRST_CACHE_STATES = {"MISS"}
 VALID_TEXT_CACHE_STATES = {
@@ -108,8 +124,37 @@ def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def start_evidence_run(out_dir: Path) -> str:
+    """Atomically reserve a fresh evidence root and return its random nonce."""
+    if out_dir.exists():
+        raise GateStopped(f"evidence output directory already exists: {out_dir}")
+    try:
+        out_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise GateStopped(
+            f"evidence output directory already exists: {out_dir}"
+        ) from error
+    return secrets.token_hex(16)
+
+
+def run_binding(
+    *,
+    run_id: str,
+    snapshot: str,
+    evaluator_git_sha: str,
+    deployment_identity_hash: str,
+) -> dict[str, str]:
+    return {
+        "runId": run_id,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_git_sha,
+        "deploymentIdentityHash": deployment_identity_hash,
+    }
+
+
 def build_playwright_handoff(
     *,
+    run_id: str,
     phase: str,
     snapshot: str,
     evaluator_git_sha: str,
@@ -122,11 +167,14 @@ def build_playwright_handoff(
     completed = completed.astimezone(dt.timezone.utc)
     not_before = completed + dt.timedelta(seconds=PLAYWRIGHT_COOLDOWN_SECONDS)
     return {
+        **run_binding(
+            run_id=run_id,
+            snapshot=snapshot,
+            evaluator_git_sha=evaluator_git_sha,
+            deployment_identity_hash=deployment_identity_hash,
+        ),
         "schemaVersion": "nga-playwright-handoff-v1",
         "phase": phase,
-        "snapshot": snapshot,
-        "evaluatorGitSha": evaluator_git_sha,
-        "deploymentIdentityHash": deployment_identity_hash,
         "pythonCompletedAt": completed.isoformat().replace("+00:00", "Z"),
         "playwrightNotBefore": not_before.isoformat().replace("+00:00", "Z"),
         "cooldownSeconds": PLAYWRIGHT_COOLDOWN_SECONDS,
@@ -986,13 +1034,24 @@ def canonical_image_identity(
     top_k: int,
     min_score: float,
 ) -> str:
+    return canonical_image_identity_from_digest(
+        sha256_bytes(image_bytes), constraints, top_k, min_score
+    )
+
+
+def canonical_image_identity_from_digest(
+    image_digest: str,
+    constraints: Mapping[str, Any] | None,
+    top_k: int,
+    min_score: float,
+) -> str:
     return sha256_json(
         {
             "version": "public-image-search-v1",
             "contractVersion": EXPECTED_VERSIONS["contract"],
             "mode": "image",
             "orgId": "nga",
-            "imageDigest": sha256_bytes(image_bytes),
+            "imageDigest": image_digest,
             "constraints": normalize_constraints(constraints) or None,
             "topK": int(top_k),
             "minScore": float(min_score),
@@ -1877,13 +1936,17 @@ def _post_image(
 
 
 def _safe_response(response: Mapping[str, Any]) -> dict[str, Any]:
+    json_value = response.get("json")
+    json_bytes = canonical_json(json_value).encode("utf-8")
     return {
         "requestUrl": response.get("requestUrl"),
         "finalUrl": response.get("finalUrl"),
         "status": response.get("status"),
         "elapsedMs": response.get("elapsedMs"),
         "headers": response.get("headers"),
-        "json": response.get("json"),
+        "json": json_value,
+        "jsonByteLength": len(json_bytes),
+        "jsonSha256": sha256_bytes(json_bytes),
         "bodyLength": len(response.get("body") or b""),
         "bodySha256": sha256_bytes(response.get("body") or b""),
     }
@@ -1999,6 +2062,168 @@ def _expected_run_cases(phase: str) -> dict[str, Any]:
     return select_cases(inventory, phase)
 
 
+def _validate_run_binding(
+    record: Mapping[str, Any],
+    expected: Mapping[str, str],
+    path: str,
+    failures: list[dict[str, Any]],
+) -> None:
+    for field, value in expected.items():
+        if record.get(field) != value:
+            failures.append(
+                _failure(
+                    "evidence_run_binding_mismatch",
+                    path=path,
+                    field=field,
+                    expected=value,
+                    actual=record.get(field),
+                )
+            )
+
+
+def _validate_stored_response(
+    value: Any,
+    *,
+    expected_url: str,
+    path: str,
+    failures: list[dict[str, Any]],
+) -> Mapping[str, Any]:
+    response = value if isinstance(value, Mapping) else {}
+    payload = response.get("json")
+    headers = response.get("headers")
+    status = response.get("status")
+    body_length = response.get("bodyLength")
+    body_sha = response.get("bodySha256")
+    try:
+        payload_size = len(canonical_json(payload).encode("utf-8"))
+        header_size = len(canonical_json(headers).encode("utf-8"))
+    except (TypeError, ValueError):
+        payload_size = MAX_EVIDENCE_JSON_BYTES + 1
+        header_size = MAX_EVIDENCE_HEADERS_BYTES + 1
+    valid = (
+        isinstance(value, Mapping)
+        and response.get("requestUrl") == expected_url
+        and response.get("finalUrl") == expected_url
+        and type(status) is int
+        and isinstance(headers, Mapping)
+        and bool(headers)
+        and isinstance(payload, Mapping)
+        and bool(payload)
+        and 0 < payload_size <= MAX_EVIDENCE_JSON_BYTES
+        and response.get("jsonByteLength") == payload_size
+        and response.get("jsonSha256")
+        == sha256_bytes(canonical_json(payload).encode("utf-8"))
+        and 0 < header_size <= MAX_EVIDENCE_HEADERS_BYTES
+        and type(body_length) is int
+        and 0 < body_length <= MAX_EVIDENCE_JSON_BYTES
+        and isinstance(body_sha, str)
+        and re.fullmatch(r"[a-f0-9]{64}", body_sha) is not None
+    )
+    if not valid:
+        failures.append(
+            _failure("stored_response_evidence_invalid", path=path)
+        )
+    return response
+
+
+def _evaluation_drift(
+    stored: Any,
+    recomputed: Mapping[str, Any],
+    *,
+    path: str,
+    failures: list[dict[str, Any]],
+) -> None:
+    if stored != recomputed:
+        failures.append(_failure("stored_evaluation_drift", path=path))
+
+
+def _expected_image_request(
+    case: Mapping[str, Any], fixture: Mapping[str, Any], endpoint: str
+) -> dict[str, Any]:
+    constraints = normalize_constraints(case.get("constraints"))
+    return {
+        "url": endpoint,
+        "method": "POST",
+        "filename": case["filename"],
+        "mimeType": fixture["mimeType"],
+        "byteLength": fixture["byteLength"],
+        "sha256": fixture["sha256"],
+        "constraints": constraints,
+        "topK": 30,
+        "minScore": 0,
+        "identity": canonical_image_identity_from_digest(
+            str(fixture["sha256"]), constraints, 30, 0
+        ),
+    }
+
+
+def _collect_playwright_specs(suites: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(suites, list):
+        return []
+    specs: list[Mapping[str, Any]] = []
+    for suite_value in suites:
+        suite = suite_value if isinstance(suite_value, Mapping) else {}
+        for spec in suite.get("specs", []):
+            if isinstance(spec, Mapping):
+                specs.append(spec)
+        specs.extend(_collect_playwright_specs(suite.get("suites")))
+    return specs
+
+
+def _valid_png(path: Path) -> bool:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    if len(data) < 1024 or len(data) > 20 * 1024 * 1024:
+        return False
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    offset = 8
+    width = height = 0
+    saw_idat = saw_iend = False
+    while offset + 12 <= len(data):
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        kind = data[offset + 4 : offset + 8]
+        end = offset + 12 + length
+        if end > len(data):
+            return False
+        payload = data[offset + 8 : offset + 8 + length]
+        expected_crc = struct.unpack(">I", data[offset + 8 + length : end])[0]
+        if zlib.crc32(kind + payload) & 0xFFFFFFFF != expected_crc:
+            return False
+        if kind == b"IHDR":
+            if length != 13:
+                return False
+            width, height = struct.unpack(">II", payload[:8])
+        elif kind == b"IDAT":
+            saw_idat = saw_idat or bool(payload)
+        elif kind == b"IEND":
+            saw_iend = True
+            break
+        offset = end
+    return width >= 320 and height >= 200 and saw_idat and saw_iend
+
+
+def _valid_trace_zip(path: Path) -> bool:
+    try:
+        if path.stat().st_size < 32 or path.stat().st_size > 100 * 1024 * 1024:
+            return False
+        with path.open("rb") as stream:
+            signature = stream.read(4)
+        if signature not in {b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"}:
+            return False
+        with zipfile.ZipFile(path) as archive:
+            entries = [item for item in archive.infolist() if not item.is_dir()]
+            return (
+                bool(entries)
+                and archive.testzip() is None
+                and any(item.file_size > 0 for item in entries)
+            )
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
 def evaluate_evidence_bundle(
     out_dir: Path,
     manifest: Mapping[str, Any] | None = None,
@@ -2020,6 +2245,9 @@ def evaluate_evidence_bundle(
     manual_document = _read_evidence_json(
         out_dir, "manual-relevance.json", failures
     )
+    fixtures_document = _read_evidence_json(
+        out_dir, "fixtures-manifest.json", failures
+    )
     handoff = _read_evidence_json(out_dir, "playwright-handoff.json", failures)
     report = _read_evidence_json(
         out_dir, "playwright/playwright-report.json", failures
@@ -2027,6 +2255,7 @@ def evaluate_evidence_bundle(
 
     phase = summary.get("phase")
     snapshot = summary.get("snapshot")
+    run_id = summary.get("runId")
     evaluator_git_sha = summary.get("evaluatorGitSha")
     deployment_hash = summary.get("deploymentIdentityHash")
     if phase not in {"pilot", "full"}:
@@ -2038,8 +2267,12 @@ def evaluate_evidence_bundle(
         }
     else:
         selected = _expected_run_cases(str(phase))
+    if phase not in {"pilot", "full"}:
+        return _result(failures, phase=phase, snapshot=snapshot)
     if snapshot not in {"baseline", "candidate"}:
         failures.append(_failure("evidence_snapshot_invalid", actual=snapshot))
+    if not isinstance(run_id, str) or RUN_ID_PATTERN.fullmatch(run_id) is None:
+        failures.append(_failure("evidence_run_id_invalid", actual=run_id))
     if not isinstance(evaluator_git_sha, str) or not re.fullmatch(
         r"[a-f0-9]{40}", evaluator_git_sha
     ):
@@ -2053,6 +2286,24 @@ def evaluate_evidence_bundle(
             _failure("evidence_deployment_identity_invalid", actual=deployment_hash)
         )
 
+    expected_binding = {
+        "runId": run_id,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_git_sha,
+        "deploymentIdentityHash": deployment_hash,
+    }
+    _validate_run_binding(identity, expected_binding, "identity.json", failures)
+    deployment_identity_value = identity.get("deploymentIdentity")
+    deployment_identity = (
+        deployment_identity_value
+        if isinstance(deployment_identity_value, Mapping)
+        else {}
+    )
+    recomputed_deployment_binding = evaluate_deployment_binding(
+        deployment_identity,
+        snapshot=str(snapshot),
+        evaluator_git_sha=str(evaluator_git_sha),
+    )
     deployment_binding_value = identity.get("deploymentBinding")
     deployment_binding = (
         deployment_binding_value
@@ -2075,8 +2326,10 @@ def evaluate_evidence_bundle(
                 )
             )
     if (
-        deployment_binding.get("passed") is not True
-        or deployment_binding.get("deploymentIdentityHash") != deployment_hash
+        recomputed_deployment_binding.get("passed") is not True
+        or recomputed_deployment_binding.get("deploymentIdentityHash")
+        != deployment_hash
+        or deployment_binding != recomputed_deployment_binding
     ):
         failures.append(_failure("evidence_deployment_binding_mismatch"))
 
@@ -2123,11 +2376,20 @@ def evaluate_evidence_bundle(
     summary_manual = (
         summary_manual_value if isinstance(summary_manual_value, Mapping) else {}
     )
+    _validate_run_binding(
+        manual_document, expected_binding, "manual-relevance.json", failures
+    )
     if manual_document.get("summary") != summary_manual:
         failures.append(_failure("evidence_manual_summary_mismatch"))
+    recomputed_manual_gate = evaluate_manual_relevance_completion(
+        summary_manual, str(snapshot)
+    )
+    if manual_document.get("evaluation") != recomputed_manual_gate:
+        failures.append(_failure("manual_relevance_evaluation_drift"))
 
     handoff_expectations = {
         "schemaVersion": "nga-playwright-handoff-v1",
+        "runId": run_id,
         "phase": phase,
         "snapshot": snapshot,
         "evaluatorGitSha": evaluator_git_sha,
@@ -2191,6 +2453,56 @@ def evaluate_evidence_bundle(
                 )
             )
 
+    projects_value = report_config.get("projects")
+    projects = projects_value if isinstance(projects_value, list) else []
+    project_names = [
+        project.get("name")
+        for project in projects
+        if isinstance(project, Mapping)
+    ]
+    if project_names != [PLAYWRIGHT_PROJECT_NAME]:
+        failures.append(
+            _failure(
+                "playwright_project_mismatch",
+                expected=PLAYWRIGHT_PROJECT_NAME,
+                actual=project_names,
+            )
+        )
+    specs = _collect_playwright_specs(report.get("suites"))
+    if report.get("errors") not in (None, []):
+        failures.append(_failure("playwright_report_contains_errors"))
+    titles = [spec.get("title") for spec in specs]
+    if titles != list(PLAYWRIGHT_SPEC_TITLES):
+        failures.append(
+            _failure(
+                "playwright_spec_inventory_mismatch",
+                expected=list(PLAYWRIGHT_SPEC_TITLES),
+                actual=titles,
+            )
+        )
+    for spec in specs:
+        tests_value = spec.get("tests")
+        tests = tests_value if isinstance(tests_value, list) else []
+        valid_test = len(tests) == 1 and isinstance(tests[0], Mapping)
+        test_record = tests[0] if valid_test else {}
+        results_value = test_record.get("results")
+        results = results_value if isinstance(results_value, list) else []
+        if (
+            spec.get("ok") is not True
+            or not valid_test
+            or test_record.get("expectedStatus") != "passed"
+            or test_record.get("status") != "expected"
+            or test_record.get("projectName") != PLAYWRIGHT_PROJECT_NAME
+            or len(results) != 1
+            or not isinstance(results[0], Mapping)
+            or results[0].get("status") != "passed"
+        ):
+            failures.append(
+                _failure(
+                    "playwright_spec_not_passed", title=spec.get("title")
+                )
+            )
+
     required_python_paths = {
         "identity.json",
         "summary.json",
@@ -2228,6 +2540,20 @@ def evaluate_evidence_bundle(
                 actual=len(trace_paths),
             )
         )
+    for screenshot_name in PLAYWRIGHT_SCREENSHOTS:
+        screenshot_path = out_dir / "playwright" / screenshot_name
+        if not _valid_png(screenshot_path):
+            failures.append(
+                _failure(
+                    "playwright_screenshot_invalid",
+                    path=f"playwright/{screenshot_name}",
+                )
+            )
+    for trace_path in sorted(trace_paths):
+        if not _valid_trace_zip(out_dir / trace_path):
+            failures.append(
+                _failure("playwright_trace_invalid", path=trace_path)
+            )
     required_paths = required_python_paths | required_playwright_paths | trace_paths
     actual_paths = {
         path.relative_to(out_dir).as_posix()
@@ -2248,81 +2574,312 @@ def evaluate_evidence_bundle(
     if last_run.get("status") != "passed" or last_run.get("failedTests") != []:
         failures.append(_failure("playwright_last_run_incomplete"))
 
+    deployed_versions_value = recomputed_deployment_binding.get("deployedVersions")
+    deployed_versions = (
+        deployed_versions_value
+        if isinstance(deployed_versions_value, Mapping)
+        else {}
+    )
+    text_endpoint = f"{EXPECTED_WEB_ORIGIN}/api/public-search/nga/text"
+    text_by_id = {case["id"]: case for case in selected["text"]}
+    recomputed_text_by_id: dict[str, Mapping[str, Any]] = {}
     for case_id in expected_text_ids:
         relative = f"raw/text/{case_id.replace(':', '_')}.json"
         record = _read_evidence_json(out_dir, relative, failures)
-        case_value = record.get("case")
-        case_record = case_value if isinstance(case_value, Mapping) else {}
-        evaluation_value = record.get("evaluation")
-        case_evaluation = (
-            evaluation_value if isinstance(evaluation_value, Mapping) else {}
+        _validate_run_binding(record, expected_binding, relative, failures)
+        expected_case = text_by_id[case_id]
+        if record.get("case") != expected_case:
+            failures.append(
+                _failure("raw_case_inventory_drift", path=relative, caseId=case_id)
+            )
+        expected_request = {
+            "url": text_endpoint,
+            "method": "POST",
+            "body": _text_request_body(expected_case),
+            "identity": canonical_text_identity(expected_case),
+        }
+        if record.get("request") != expected_request:
+            failures.append(_failure("raw_request_drift", path=relative))
+        response = _validate_stored_response(
+            record.get("response"),
+            expected_url=text_endpoint,
+            path=relative,
+            failures=failures,
         )
-        if case_record.get("id") != case_id or (
-            require_hard_pass and case_evaluation.get("passed") is not True
-        ):
+        recomputed = evaluate_text_case(expected_case, response, deployed_versions)
+        recomputed_text_by_id[case_id] = recomputed
+        _evaluation_drift(
+            record.get("evaluation"), recomputed, path=relative, failures=failures
+        )
+        if require_hard_pass and recomputed.get("passed") is not True:
             failures.append(
                 _failure("raw_case_evidence_failed", path=relative, caseId=case_id)
             )
+
+    expected_manual_cases = [
+        make_manual_grading_template(
+            case["id"],
+            recomputed_text_by_id[case["id"]]["rows"][
+                : int(case["manualGradeTop"])
+            ],
+        )
+        for case in selected["text"]
+        if case.get("manualGradeTop")
+    ]
+    if manual_document.get("cases") != expected_manual_cases:
+        failures.append(_failure("manual_relevance_case_inventory_drift"))
+    manual_case_ids = [case["caseId"] for case in expected_manual_cases]
+    metrics_value = summary_manual.get("metrics")
+    metrics = metrics_value if isinstance(metrics_value, Mapping) else {}
+    by_case_value = metrics.get("byCase")
+    by_case = by_case_value if isinstance(by_case_value, Mapping) else {}
+    if (
+        summary_manual.get("caseCount") != len(manual_case_ids)
+        or (
+            summary_manual.get("status") == "graded"
+            and set(by_case) != set(manual_case_ids)
+        )
+    ):
+        failures.append(_failure("manual_relevance_case_inventory_drift"))
+
+    repo_root = Path(__file__).resolve().parents[1]
+    committed_fixture_document = load_json_object(
+        repo_root / "eval/nga-image-fixtures.json", "image fixture manifest"
+    )
+    fixture_values = committed_fixture_document.get("fixtures")
+    fixture_list = fixture_values if isinstance(fixture_values, list) else []
+    fixtures_by_id = {
+        fixture.get("artworkId"): fixture
+        for fixture in fixture_list
+        if isinstance(fixture, Mapping)
+    }
+    expected_fixture_ids = sorted(
+        {case["fixtureId"] for case in selected["image"]}
+    )
+    expected_fixture_evidence = {
+        "fixtures": [fixtures_by_id[fixture_id] for fixture_id in expected_fixture_ids],
+        "note": "Full image bytes were verified in memory and were not written to evidence.",
+    }
+    if fixtures_document != expected_fixture_evidence:
+        failures.append(_failure("fixture_evidence_inventory_drift"))
+
+    image_endpoint = f"{EXPECTED_WEB_ORIGIN}/api/public-search/nga/image"
+    image_by_id = {case["id"]: case for case in selected["image"]}
     for case_id in expected_image_ids:
         relative = f"raw/image/{case_id}.json"
         record = _read_evidence_json(out_dir, relative, failures)
-        case_value = record.get("case")
-        case_record = case_value if isinstance(case_value, Mapping) else {}
-        evaluation_value = record.get("evaluation")
-        case_evaluation = (
-            evaluation_value if isinstance(evaluation_value, Mapping) else {}
+        _validate_run_binding(record, expected_binding, relative, failures)
+        expected_case = image_by_id[case_id]
+        fixture = fixtures_by_id[expected_case["fixtureId"]]
+        if record.get("case") != expected_case:
+            failures.append(
+                _failure("raw_case_inventory_drift", path=relative, caseId=case_id)
+            )
+        expected_request = _expected_image_request(
+            expected_case, fixture, image_endpoint
         )
-        if case_record.get("id") != case_id or (
-            require_hard_pass and case_evaluation.get("passed") is not True
-        ):
+        if record.get("request") != expected_request:
+            failures.append(_failure("raw_request_drift", path=relative))
+        response = _validate_stored_response(
+            record.get("response"),
+            expected_url=image_endpoint,
+            path=relative,
+            failures=failures,
+        )
+        recomputed = evaluate_image_case(expected_case, response)
+        _evaluation_drift(
+            record.get("evaluation"), recomputed, path=relative, failures=failures
+        )
+        if require_hard_pass and recomputed.get("passed") is not True:
             failures.append(
                 _failure("raw_case_evidence_failed", path=relative, caseId=case_id)
             )
-    for relative in ("raw/cache-probe.json", "raw/ngs-probe.json"):
-        record = _read_evidence_json(out_dir, relative, failures)
-        evaluation_value = record.get("evaluation")
-        probe_evaluation = (
-            evaluation_value if isinstance(evaluation_value, Mapping) else {}
+
+    cache_relative = "raw/cache-probe.json"
+    cache_record = _read_evidence_json(out_dir, cache_relative, failures)
+    _validate_run_binding(cache_record, expected_binding, cache_relative, failures)
+    cache_query = cache_record.get("query")
+    if not isinstance(cache_query, str) or re.fullmatch(
+        r"validation [a-f0-9]{12} oil paintings after 1700 before 1800",
+        cache_query,
+    ) is None:
+        failures.append(_failure("cache_probe_query_invalid"))
+        cache_query = "invalid"
+    cache_case = {
+        "id": "cache-probe",
+        "query": cache_query,
+        "expected": {
+            "constraints": {
+                "dateRange": {"startYear": 1701, "endYear": 1799},
+                "classifications": ["Painting"],
+                "mediumFamilies": ["oil"],
+            }
+        },
+    }
+    changed_cache_case = {
+        **cache_case,
+        "id": "cache-probe-changed",
+        "request": {"constraints": {"classifications": ["Drawing"]}},
+        "expected": {"constraints": {"classifications": ["Drawing"]}},
+    }
+    first_identity = canonical_text_identity(cache_case)
+    changed_identity = canonical_text_identity(changed_cache_case)
+    expected_cache_requests = {
+        "firstRequest": _text_request_body(cache_case),
+        "repeatRequest": _text_request_body(cache_case),
+        "changedRequest": _text_request_body(changed_cache_case),
+        "firstIdentity": first_identity,
+        "changedIdentity": changed_identity,
+    }
+    if any(
+        cache_record.get(field) != value
+        for field, value in expected_cache_requests.items()
+    ):
+        failures.append(_failure("cache_probe_request_drift"))
+    cache_responses = {
+        field: _validate_stored_response(
+            cache_record.get(field),
+            expected_url=text_endpoint,
+            path=f"{cache_relative}:{field}",
+            failures=failures,
         )
-        if require_hard_pass and probe_evaluation.get("passed") is not True:
-            failures.append(_failure("raw_probe_evidence_failed", path=relative))
-    identity_record = _read_evidence_json(
-        out_dir, "raw/image-identity-probe.json", failures
+        for field in ("first", "repeat", "changed")
+    }
+    recomputed_cache = evaluate_text_cache_probe(
+        cache_responses["first"],
+        cache_responses["repeat"],
+        cache_responses["changed"],
+        first_identity=first_identity,
+        changed_identity=changed_identity,
+        snapshot=str(snapshot),
     )
-    identity_value = identity_record.get("identityEvaluation")
-    identity_evaluation = (
-        identity_value if isinstance(identity_value, Mapping) else {}
+    _evaluation_drift(
+        cache_record.get("evaluation"),
+        recomputed_cache,
+        path=cache_relative,
+        failures=failures,
     )
+    if require_hard_pass and recomputed_cache.get("passed") is not True:
+        failures.append(_failure("raw_probe_evidence_failed", path=cache_relative))
+
+    identity_relative = "raw/image-identity-probe.json"
+    identity_record = _read_evidence_json(out_dir, identity_relative, failures)
+    _validate_run_binding(identity_record, expected_binding, identity_relative, failures)
+    first_image_case = selected["image"][0]
+    first_fixture = fixtures_by_id[first_image_case["fixtureId"]]
+    expected_first_request = _expected_image_request(
+        first_image_case, first_fixture, image_endpoint
+    )
+    if identity_record.get("request") != expected_first_request:
+        failures.append(_failure("image_identity_request_drift"))
+    changed_digest = identity_record.get("sameNameChangedSha256")
+    changed_constraints = {"classifications": ["Drawing"]}
+    expected_identity_inputs = {
+        "stable_first": expected_first_request["identity"],
+        "stable_repeat": expected_first_request["identity"],
+        "same_name_first": expected_first_request["identity"],
+        "same_name_changed": canonical_image_identity_from_digest(
+            str(changed_digest), first_image_case.get("constraints"), 30, 0
+        ),
+        "constraint_first": expected_first_request["identity"],
+        "constraint_changed": canonical_image_identity_from_digest(
+            str(first_fixture["sha256"]), changed_constraints, 30, 0
+        ),
+    }
+    if (
+        not isinstance(changed_digest, str)
+        or re.fullmatch(r"[a-f0-9]{64}", changed_digest) is None
+        or identity_record.get("changedConstraints") != changed_constraints
+        or identity_record.get("identityInputs") != expected_identity_inputs
+        or identity_record.get("stableIdentity")
+        != expected_first_request["identity"]
+    ):
+        failures.append(_failure("image_identity_inputs_drift"))
     repeat_value = identity_record.get("repeat")
     repeat = repeat_value if isinstance(repeat_value, Mapping) else {}
-    repeat_evaluation_value = repeat.get("evaluation")
-    repeat_evaluation = (
-        repeat_evaluation_value
-        if isinstance(repeat_evaluation_value, Mapping)
-        else {}
+    repeat_response = _validate_stored_response(
+        repeat.get("response"),
+        expected_url=image_endpoint,
+        path=f"{identity_relative}:repeat",
+        failures=failures,
+    )
+    recomputed_repeat = evaluate_image_response(
+        repeat_response, first_image_case.get("constraints")
+    )
+    recomputed_identity = evaluate_image_identity_probe(**expected_identity_inputs)
+    _evaluation_drift(
+        repeat.get("evaluation"),
+        recomputed_repeat,
+        path=f"{identity_relative}:repeat",
+        failures=failures,
+    )
+    _evaluation_drift(
+        identity_record.get("identityEvaluation"),
+        recomputed_identity,
+        path=identity_relative,
+        failures=failures,
     )
     if require_hard_pass and (
-        identity_evaluation.get("passed") is not True
-        or repeat_evaluation.get("passed") is not True
+        recomputed_identity.get("passed") is not True
+        or recomputed_repeat.get("passed") is not True
     ):
-        failures.append(
-            _failure("raw_probe_evidence_failed", path="raw/image-identity-probe.json")
-        )
+        failures.append(_failure("raw_probe_evidence_failed", path=identity_relative))
+
     if phase == "full":
-        negative_record = _read_evidence_json(
-            out_dir, "raw/image-negative-probes.json", failures
+        negative_relative = "raw/image-negative-probes.json"
+        negative_record = _read_evidence_json(out_dir, negative_relative, failures)
+        _validate_run_binding(
+            negative_record, expected_binding, negative_relative, failures
         )
-        negative_value = negative_record.get("evaluation")
-        negative_evaluation = (
-            negative_value if isinstance(negative_value, Mapping) else {}
-        )
-        if require_hard_pass and negative_evaluation.get("passed") is not True:
-            failures.append(
-                _failure(
-                    "raw_probe_evidence_failed",
-                    path="raw/image-negative-probes.json",
-                )
+        responses_value = negative_record.get("responses")
+        responses = responses_value if isinstance(responses_value, Mapping) else {}
+        validated_negative = {
+            name: _validate_stored_response(
+                responses.get(name),
+                expected_url=image_endpoint,
+                path=f"{negative_relative}:{name}",
+                failures=failures,
             )
+            for name in ("invalid_mime", "zero_byte", "multiple_files", "oversize")
+        }
+        recomputed_negative = evaluate_negative_image_probes(validated_negative)
+        _evaluation_drift(
+            negative_record.get("evaluation"),
+            recomputed_negative,
+            path=negative_relative,
+            failures=failures,
+        )
+        if require_hard_pass and recomputed_negative.get("passed") is not True:
+            failures.append(
+                _failure("raw_probe_evidence_failed", path=negative_relative)
+            )
+
+    ngs_relative = "raw/ngs-probe.json"
+    ngs_record = _read_evidence_json(out_dir, ngs_relative, failures)
+    _validate_run_binding(ngs_record, expected_binding, ngs_relative, failures)
+    ngs_endpoint = f"{EXPECTED_WEB_ORIGIN}/api/public-search/ngs/text"
+    expected_ngs_request = {
+        "url": ngs_endpoint,
+        "method": "POST",
+        "body": {"query": "paintings", "topK": 30, "minScore": 0},
+    }
+    if ngs_record.get("request") != expected_ngs_request:
+        failures.append(_failure("ngs_probe_request_drift"))
+    ngs_response = _validate_stored_response(
+        ngs_record.get("response"),
+        expected_url=ngs_endpoint,
+        path=ngs_relative,
+        failures=failures,
+    )
+    recomputed_ngs = evaluate_ngs_probe(ngs_response)
+    _evaluation_drift(
+        ngs_record.get("evaluation"),
+        recomputed_ngs,
+        path=ngs_relative,
+        failures=failures,
+    )
+    if require_hard_pass and recomputed_ngs.get("passed") is not True:
+        failures.append(_failure("raw_probe_evidence_failed", path=ngs_relative))
     for relative in sorted(required_paths & actual_paths):
         path = out_dir / relative
         if path.is_symlink() or path.stat().st_size == 0:
@@ -2342,6 +2899,7 @@ def evaluate_evidence_bundle(
     if manifest is not None:
         manifest_expectations = {
             "schemaVersion": "nga-staging-evidence-manifest-v2",
+            "runId": run_id,
             "phase": phase,
             "snapshot": snapshot,
             "evaluatorGitSha": evaluator_git_sha,
@@ -2394,6 +2952,7 @@ def evaluate_evidence_bundle(
         failures,
         phase=phase,
         snapshot=snapshot,
+        runId=run_id,
         evaluatorGitSha=evaluator_git_sha,
         deploymentIdentityHash=deployment_hash,
         playwrightBindingSha256=handoff_hash,
@@ -2430,6 +2989,7 @@ def rehash_evidence(out_dir: Path) -> dict[str, Any]:
     }
     manifest = {
         "schemaVersion": "nga-staging-evidence-manifest-v2",
+        "runId": evaluation["runId"],
         "phase": evaluation["phase"],
         "snapshot": evaluation["snapshot"],
         "evaluatorGitSha": evaluation["evaluatorGitSha"],
@@ -2511,9 +3071,10 @@ class RunConfig:
 
 
 def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
-    # This is the first executable line by design. No files or clients are
-    # created until both user-provided origins pass exact equality.
+    # No files or clients are created until both user-provided origins pass
+    # exact equality. The fresh directory reservation prevents cross-run reuse.
     validate_staging_origins(config.api_base_url, config.web_base_url)
+    run_id = start_evidence_run(config.out_dir)
     candidate_sha = _git_sha(config.repo_root)
     deployment_identity = load_deployment_identity(config.deployment_identity)
     deployment_binding = evaluate_deployment_binding(
@@ -2551,12 +3112,16 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     )
 
     started_at = utc_now()
-    config.out_dir.mkdir(parents=True, exist_ok=True)
+    binding = run_binding(
+        run_id=run_id,
+        snapshot=config.snapshot,
+        evaluator_git_sha=candidate_sha,
+        deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
+    )
     identity = {
+        **binding,
         "generatedAt": started_at,
-        "evaluatorGitSha": candidate_sha,
         "phase": config.phase,
-        "snapshot": config.snapshot,
         "apiBaseUrl": config.api_base_url,
         "webBaseUrl": config.web_base_url,
         "localVersions": local_versions,
@@ -2587,6 +3152,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         response = _post_json(network, text_endpoint, request_body)
         evaluated = evaluate_text_case(case, response, deployed_versions)
         record = {
+            **binding,
             "case": case,
             "request": {
                 "url": text_endpoint,
@@ -2654,8 +3220,13 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         snapshot=config.snapshot,
     )
     cache_record = {
+        **binding,
         "query": cache_case["query"],
+        "firstRequest": _text_request_body(cache_case),
+        "repeatRequest": _text_request_body(cache_case),
         "changedRequest": _text_request_body(changed_cache_case),
+        "firstIdentity": canonical_text_identity(cache_case),
+        "changedIdentity": canonical_text_identity(changed_cache_case),
         "first": _safe_response(cache_first),
         "repeat": _safe_response(cache_repeat),
         "changed": _safe_response(cache_changed),
@@ -2693,6 +3264,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         )
         evaluated = evaluate_image_case(case, response)
         record = {
+            **binding,
             "case": case,
             "request": {
                 "url": image_endpoint,
@@ -2702,6 +3274,8 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
                 "byteLength": len(image_bytes),
                 "sha256": sha256_bytes(image_bytes),
                 "constraints": normalize_constraints(case.get("constraints")),
+                "topK": 30,
+                "minScore": 0,
                 "identity": canonical_image_identity(
                     image_bytes,
                     case["filename"],
@@ -2765,7 +3339,43 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             0,
         ),
     )
+    identity_inputs = {
+        "stable_first": stable_first,
+        "stable_repeat": stable_repeat,
+        "same_name_first": stable_first,
+        "same_name_changed": canonical_image_identity(
+            changed_bytes,
+            first_image_case["filename"],
+            first_image_case.get("constraints"),
+            30,
+            0,
+        ),
+        "constraint_first": stable_first,
+        "constraint_changed": canonical_image_identity(
+            first_bytes,
+            first_image_case["filename"],
+            changed_constraints,
+            30,
+            0,
+        ),
+    }
     image_probe_record = {
+        **binding,
+        "request": {
+            "url": image_endpoint,
+            "method": "POST",
+            "filename": first_image_case["filename"],
+            "mimeType": first_fixture["mimeType"],
+            "byteLength": len(first_bytes),
+            "sha256": sha256_bytes(first_bytes),
+            "constraints": normalize_constraints(first_image_case.get("constraints")),
+            "topK": 30,
+            "minScore": 0,
+            "identity": stable_first,
+        },
+        "identityInputs": identity_inputs,
+        "sameNameChangedSha256": sha256_bytes(changed_bytes),
+        "changedConstraints": changed_constraints,
         "stableIdentity": stable_first,
         "repeat": {
             "response": _safe_response(repeated_response),
@@ -2801,6 +3411,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             )
         negative_evaluation = evaluate_negative_image_probes(negative_responses)
         negative_record = {
+            **binding,
             "responses": {
                 name: _safe_response(response)
                 for name, response in negative_responses.items()
@@ -2817,7 +3428,16 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     ngs_probe = evaluate_ngs_probe(ngs_response)
     _write_json(
         config.out_dir / "raw/ngs-probe.json",
-        {"response": _safe_response(ngs_response), "evaluation": ngs_probe},
+        {
+            **binding,
+            "request": {
+                "url": f"{config.web_base_url}/api/public-search/ngs/text",
+                "method": "POST",
+                "body": {"query": "paintings", "topK": 30, "minScore": 0},
+            },
+            "response": _safe_response(ngs_response),
+            "evaluation": ngs_probe,
+        },
     )
     if config.relevance_labels is not None:
         labels_document = load_json_object(config.relevance_labels, "relevance labels")
@@ -2836,6 +3456,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     _write_json(
         config.out_dir / "manual-relevance.json",
         {
+            **binding,
             "summary": manual_relevance,
             "evaluation": manual_relevance_gate,
             "cases": manual_templates,
@@ -2886,6 +3507,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     )
 
     playwright_handoff = build_playwright_handoff(
+        run_id=run_id,
         phase=config.phase,
         snapshot=config.snapshot,
         evaluator_git_sha=candidate_sha,
@@ -2894,11 +3516,9 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     _write_json(config.out_dir / "playwright-handoff.json", playwright_handoff)
 
     summary = {
+        **binding,
         "generatedAt": utc_now(),
         "startedAt": started_at,
-        "evaluatorGitSha": candidate_sha,
-        "deploymentIdentityHash": deployment_binding["deploymentIdentityHash"],
-        "snapshot": config.snapshot,
         "phase": config.phase,
         "publicSearchRequestsPerMinute": config.requests_per_minute,
         "hosts": {

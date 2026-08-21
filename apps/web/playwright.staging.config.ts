@@ -20,6 +20,7 @@ const sourceDiscovery = process.argv.includes('--list');
 
 type NgaStagingRunBinding = {
   schemaVersion: 'nga-playwright-handoff-v1';
+  runId: string;
   phase: 'pilot' | 'full';
   snapshot: 'baseline' | 'candidate';
   evaluatorGitSha: string;
@@ -41,6 +42,7 @@ if (runBindingPath) {
   const notBefore = Date.parse(binding.playwrightNotBefore);
   const valid =
     binding.schemaVersion === 'nga-playwright-handoff-v1' &&
+    /^[a-f0-9]{32}$/.test(binding.runId) &&
     ['pilot', 'full'].includes(binding.phase) &&
     ['baseline', 'candidate'].includes(binding.snapshot) &&
     /^[a-f0-9]{40}$/.test(binding.evaluatorGitSha) &&
@@ -77,6 +79,7 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   metadata,
+  projects: [{ name: 'nga-staging-chrome' }],
   reporter: [
     ['list'],
     [

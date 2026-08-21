@@ -3,15 +3,25 @@ import {
   test,
   type APIRequestContext,
   type Page,
+  type Request,
 } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { NgaStagingRequestBudget } from './support/nga-staging-request-budget';
 
 const STAGING_ORIGIN = 'https://paillette-stg.berlayar.ai';
 const LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = 6;
-let livePublicSearchRequestCount = 0;
+const publicSearchBudget = new NgaStagingRequestBudget<Request>(
+  LIVE_PUBLIC_SEARCH_REQUEST_BUDGET
+);
+type RecordedPublicSearchRequest = {
+  url: string;
+  method: string;
+  postData: string | null;
+};
+const requestsByPage = new WeakMap<Page, RecordedPublicSearchRequest[]>();
 const configuredOrigin = process.env.NGA_STAGING_WEB_BASE_URL || STAGING_ORIGIN;
 
 if (configuredOrigin !== STAGING_ORIGIN) {
@@ -69,20 +79,8 @@ const downloadFixture = async (
 };
 
 const publicSearchRequests = (page: Page) => {
-  const requests: Array<{
-    url: string;
-    method: string;
-    postData: string | null;
-  }> = [];
-  page.on('request', (request) => {
-    if (!request.url().includes('/api/public-search/')) return;
-    livePublicSearchRequestCount += 1;
-    requests.push({
-      url: request.url(),
-      method: request.method(),
-      postData: request.postData(),
-    });
-  });
+  const requests = requestsByPage.get(page);
+  if (!requests) throw new Error('Public-search accounting was not installed.');
   return requests;
 };
 
@@ -143,12 +141,24 @@ const controlledImageResult = (id: string, title: string) => ({
 
 test.describe.serial('anonymous NGA staging browser gate', () => {
   test.afterAll(() => {
-    expect(livePublicSearchRequestCount).toBeLessThanOrEqual(
-      LIVE_PUBLIC_SEARCH_REQUEST_BUDGET
-    );
+    publicSearchBudget.assertLiveWithinBudget();
+    const summary = publicSearchBudget.summary();
+    expect(summary.mocked).toBe(2);
+    expect(summary.total).toBe(summary.live + summary.mocked);
   });
 
   test.beforeEach(async ({ page }) => {
+    const requests: RecordedPublicSearchRequest[] = [];
+    requestsByPage.set(page, requests);
+    page.on('request', (request) => {
+      if (!request.url().includes('/api/public-search/')) return;
+      publicSearchBudget.observe(request);
+      requests.push({
+        url: request.url(),
+        method: request.method(),
+        postData: request.postData(),
+      });
+    });
     await page.emulateMedia({ reducedMotion: 'reduce' });
   });
 
@@ -324,6 +334,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     });
 
     await page.route('**/api/public-search/nga/image', async (route) => {
+      publicSearchBudget.markMocked(route.request());
       requestCount += 1;
       if (requestCount === 1) {
         markFirstStarted();
