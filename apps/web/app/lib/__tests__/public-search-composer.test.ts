@@ -21,6 +21,7 @@ import {
   settleLatestSearchIntent,
   snapshotAcceptedConstraints,
   supersedeSearchIntent,
+  teardownImageSearch,
   transitionImagePreviewOwnership,
   updateImageObjectUrl,
   validateImageSelection,
@@ -573,6 +574,110 @@ describe('transactional image preview ownership', () => {
       file: acceptedFile,
       url: 'blob:accepted',
     });
+  });
+
+  it('invalidates a pending generation before teardown and makes its late resolve inert', async () => {
+    const gate = createSearchIntentGate();
+    const upload = beginSearchIntent(gate);
+    let resolve!: (value: string) => void;
+    const task = new Promise<string>((done) => {
+      resolve = done;
+    });
+    const stateMutations: string[] = [];
+    const searchParamMutations: string[] = [];
+    const errorMutations: string[] = [];
+    const settledMutations: string[] = [];
+    const urlMutations: string[] = [];
+    const settling = settleLatestSearchIntent({
+      gate,
+      token: upload,
+      task,
+      onSuccess: (digest) => {
+        stateMutations.push(`owner:${digest}`, `plan:${digest}`);
+        urlMutations.push('create:submitted-preview');
+        searchParamMutations.push('set:image');
+      },
+      onError: (error) => errorMutations.push(String(error)),
+      onSettled: () => settledMutations.push('settled'),
+    });
+
+    const cleared = teardownImageSearch({
+      gate,
+      ownership: {
+        accepted: { file: acceptedFile, url: 'blob:accepted' },
+        candidate: { file: candidateFile, url: 'blob:candidate' },
+      },
+      revokeObjectUrl: (url) => {
+        expect(gate.generation).toBe(upload + 1);
+        urlMutations.push(`revoke:${url}`);
+      },
+    });
+    const effectsAfterTeardown = [...urlMutations];
+    resolve('late-digest');
+
+    await expect(settling).resolves.toBe('stale');
+    expect(cleared).toEqual({ accepted: null, candidate: null });
+    expect(effectsAfterTeardown).toEqual([
+      'revoke:blob:accepted',
+      'revoke:blob:candidate',
+    ]);
+    expect(urlMutations).toEqual(effectsAfterTeardown);
+    expect(stateMutations).toEqual([]);
+    expect(searchParamMutations).toEqual([]);
+    expect(errorMutations).toEqual([]);
+    expect(settledMutations).toEqual([]);
+  });
+
+  it('invalidates a pending generation before teardown and makes its late reject inert', async () => {
+    const gate = createSearchIntentGate();
+    const upload = beginSearchIntent(gate);
+    let reject!: (error: Error) => void;
+    const task = new Promise<string>((_resolve, fail) => {
+      reject = fail;
+    });
+    const stateMutations: string[] = [];
+    const searchParamMutations: string[] = [];
+    const errorMutations: string[] = [];
+    const settledMutations: string[] = [];
+    const urlMutations: string[] = [];
+    const settling = settleLatestSearchIntent({
+      gate,
+      token: upload,
+      task,
+      onSuccess: (digest) => {
+        stateMutations.push(`owner:${digest}`, `plan:${digest}`);
+        urlMutations.push('create:submitted-preview');
+        searchParamMutations.push('set:image');
+      },
+      onError: (error) => errorMutations.push(String(error)),
+      onSettled: () => settledMutations.push('settled'),
+    });
+
+    const cleared = teardownImageSearch({
+      gate,
+      ownership: {
+        accepted: { file: acceptedFile, url: 'blob:accepted' },
+        candidate: { file: candidateFile, url: 'blob:candidate' },
+      },
+      revokeObjectUrl: (url) => {
+        expect(gate.generation).toBe(upload + 1);
+        urlMutations.push(`revoke:${url}`);
+      },
+    });
+    const effectsAfterTeardown = [...urlMutations];
+    reject(new Error('late read failure'));
+
+    await expect(settling).resolves.toBe('stale');
+    expect(cleared).toEqual({ accepted: null, candidate: null });
+    expect(effectsAfterTeardown).toEqual([
+      'revoke:blob:accepted',
+      'revoke:blob:candidate',
+    ]);
+    expect(urlMutations).toEqual(effectsAfterTeardown);
+    expect(stateMutations).toEqual([]);
+    expect(searchParamMutations).toEqual([]);
+    expect(errorMutations).toEqual([]);
+    expect(settledMutations).toEqual([]);
   });
 });
 

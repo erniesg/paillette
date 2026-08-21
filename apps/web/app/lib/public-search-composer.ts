@@ -179,6 +179,23 @@ export const supersedeSearchIntent = (gate: SearchIntentGate) => {
   return gate.generation;
 };
 
+export const teardownImageSearch = ({
+  gate,
+  ownership,
+  revokeObjectUrl,
+}: {
+  gate: SearchIntentGate;
+  ownership: ImagePreviewOwnership;
+  revokeObjectUrl: (url: string) => void;
+}): ImagePreviewOwnership => {
+  supersedeSearchIntent(gate);
+  const cleared = transitionImagePreviewOwnership(ownership, {
+    type: 'clear',
+  });
+  for (const url of cleared.revoke) revokeObjectUrl(url);
+  return cleared.state;
+};
+
 export const settleLatestSearchIntent = async <T>({
   gate,
   token,

@@ -108,6 +108,7 @@ import {
   settleLatestSearchIntent,
   snapshotAcceptedConstraints,
   supersedeSearchIntent,
+  teardownImageSearch,
   transitionImagePreviewOwnership,
   validateImageSelection,
   type EditorMode,
@@ -1294,9 +1295,13 @@ export default function SearchPage() {
 
   useEffect(
     () => () => {
-      applyImagePreviewTransition({ type: 'clear' }, false);
+      imagePreviewOwnershipRef.current = teardownImageSearch({
+        gate: searchIntentGateRef.current,
+        ownership: imagePreviewOwnershipRef.current,
+        revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+      });
     },
-    [applyImagePreviewTransition]
+    []
   );
 
   const textSearchQuery = useQuery({
