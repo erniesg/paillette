@@ -90,11 +90,22 @@ import {
   type PublicImageSearchPlan,
 } from '~/lib/public-image-search-plan';
 import {
+  DEFAULT_PUBLIC_SEARCH_MIN_SCORE,
+  beginSearchIntent,
+  buildImageQueryExecution,
+  createSearchIntentGate,
+  deriveImageDraftConstraints,
+  deriveRetryTarget,
+  getEditorModeUpdate,
   getConstraintChips,
+  getPublicSearchErrorCopy,
+  getSearchPresentation,
   getSubmittedConstraintChips,
   getSubmittedSearchSummary,
   removeConstraintChip,
+  settleLatestSearchIntent,
   snapshotAcceptedConstraints,
+  supersedeSearchIntent,
   updateImageObjectUrl,
   validateImageSelection,
   type EditorMode,
@@ -128,7 +139,6 @@ const BROWSE_PAGE_SIZE = 60;
 const MIN_BROWSE_PAGE_SIZE = 12;
 const MAX_BROWSE_PAGE_SIZE = 100;
 const MAX_SEARCH_RESULTS = 100;
-const DEFAULT_TEXT_MIN_SCORE = 0.2;
 const PUBLIC_SEARCH_QUERY_STALE_TIME = Infinity;
 const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
 const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
@@ -855,20 +865,6 @@ class PublicSearchRequestError extends Error {
   }
 }
 
-const getSearchErrorCopy = (error: unknown, mode: 'text' | 'image') => {
-  const fallback =
-    mode === 'image' ? 'Visual search failed.' : 'Search failed.';
-  if (!(error instanceof PublicSearchRequestError)) return fallback;
-  if (error.status === 400) return error.message;
-  if (error.status === 429) {
-    return `${mode === 'image' ? 'Visual search' : 'Search'} is busy right now. Wait a moment, then try again.`;
-  }
-  if (error.status === 502 || error.status === 503) {
-    return `${mode === 'image' ? 'Visual search' : 'Search'} is temporarily unavailable. Try again shortly.`;
-  }
-  return error.message || fallback;
-};
-
 const publicSearchText = async (
   orgId: string,
   request: SearchTextRequest,
@@ -1018,6 +1014,7 @@ export default function SearchPage() {
   >(undefined);
   const [submittedImagePlan, setSubmittedImagePlan] =
     useState<PublicImageSearchPlan | null>(null);
+  const [imageExecutionId, setImageExecutionId] = useState(0);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [searchColours, setSearchColours] = useState<string[]>(
@@ -1032,7 +1029,7 @@ export default function SearchPage() {
   );
   const [view, setView] = useState<ViewMode>('masonry');
   const [topK, setTopK] = useState(30);
-  const [minScore, setMinScore] = useState(DEFAULT_TEXT_MIN_SCORE);
+  const [minScore, setMinScore] = useState(DEFAULT_PUBLIC_SEARCH_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
   const [isBrowsingCollection, setIsBrowsingCollection] = useState(false);
   const [visibleCount, setVisibleCount] = useState(SEARCH_DISPLAY_INCREMENT);
@@ -1050,6 +1047,7 @@ export default function SearchPage() {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
+  const searchIntentGateRef = useRef(createSearchIntentGate());
   const previousUrlSearchStateRef = useRef(
     `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`
   );
@@ -1089,6 +1087,20 @@ export default function SearchPage() {
     editorMode === 'text' &&
     normalizedTextQuery.length > 0 &&
     normalizedCommittedTextQuery.length === 0;
+  const searchPresentation = getSearchPresentation({
+    editorMode,
+    submittedSearch,
+    isBrowsingCollection,
+    imageDraftConstraints,
+    ...(sortColours[0]
+      ? {
+          paletteOrder: {
+            colour: sortColours[0],
+            refinement: 'local-palette' as const,
+          },
+        }
+      : {}),
+  });
 
   const suggestionPool = useMemo(
     () =>
@@ -1112,7 +1124,7 @@ export default function SearchPage() {
     setDisplayIdleSuggestion(null);
   }, [suggestionPool.length]);
 
-  const hasActiveSearch = isBrowsingCollection || submittedSearch !== null;
+  const hasActiveSearch = searchPresentation.hasActiveSearch;
   const activeSearchSummary = useMemo<ActiveSearchSummary | null>(() => {
     if (isBrowsingCollection) {
       if (shouldSearch && normalizedCommittedTextQuery) {
@@ -1187,6 +1199,8 @@ export default function SearchPage() {
     const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
     if (previousUrlSearchStateRef.current === urlSearchState) return;
 
+    supersedeSearchIntent(searchIntentGateRef.current);
+    setIsPreparingImage(false);
     previousUrlSearchStateRef.current = urlSearchState;
     setSelectedArtwork(null);
     setTextQuery(normalizedUrlQuery);
@@ -1198,6 +1212,11 @@ export default function SearchPage() {
     setSortMode(urlSearchColour ? 'colour' : 'relevance');
     setShouldSearch(Boolean(normalizedUrlQuery || urlSearchColour));
     setIsBrowsingCollection(false);
+    setSubmittedImagePlan(null);
+    setImageFile(null);
+    updateImageObjectUrl(imagePreviewRef.current, null);
+    imagePreviewRef.current = null;
+    setImagePreview(null);
     setSubmittedSearch(
       urlSearchColour
         ? {
@@ -1238,6 +1257,11 @@ export default function SearchPage() {
     setImagePreview(nextPreview);
   }, []);
 
+  const supersedePendingSearchIntent = useCallback(() => {
+    supersedeSearchIntent(searchIntentGateRef.current);
+    setIsPreparingImage(false);
+  }, []);
+
   useEffect(
     () => () => {
       updateImageObjectUrl(imagePreviewRef.current, null);
@@ -1275,11 +1299,16 @@ export default function SearchPage() {
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
+  const imageQueryExecution = buildImageQueryExecution({
+    orgId: publicSearchOrgId,
+    canonicalQueryKey: submittedImagePlan?.queryKey,
+    executionId: imageExecutionId,
+    hasMounted,
+    canSearchOnPage,
+    submittedKind: submittedSearch?.kind || null,
+  });
   const imageSearchQuery = useQuery({
-    queryKey: canSearchOnPage
-      ? submittedImagePlan?.queryKey ||
-        (['search', 'image', 'disabled', publicSearchOrgId] as const)
-      : (['search', 'image', 'locked', publicSearchOrgId] as const),
+    queryKey: imageQueryExecution.queryKey,
     queryFn: async ({ signal }) => {
       if (!submittedImagePlan) return null;
       return publicSearchImage(
@@ -1288,14 +1317,13 @@ export default function SearchPage() {
         signal
       );
     },
-    enabled:
-      hasMounted &&
-      submittedSearch?.kind === 'image' &&
-      submittedImagePlan !== null &&
-      canSearchOnPage,
+    enabled: imageQueryExecution.enabled,
     retry: false,
-    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
-    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
+    staleTime: imageQueryExecution.staleTime,
+    gcTime: imageQueryExecution.gcTime,
+    refetchOnMount: imageQueryExecution.refetchOnMount,
+    refetchOnWindowFocus: imageQueryExecution.refetchOnWindowFocus,
+    refetchOnReconnect: imageQueryExecution.refetchOnReconnect,
   });
 
   const browseSort = useMemo(() => getBrowseSort(sortMode), [sortMode]);
@@ -1560,46 +1588,62 @@ export default function SearchPage() {
       }
 
       const file = validation.file;
+      const previousImageFile =
+        submittedSearch?.kind === 'image' ? submittedSearch.file : null;
+      const intentToken = beginSearchIntent(searchIntentGateRef.current);
       setImageUploadError(null);
       setIsPreparingImage(true);
       setImageFile(file);
-      replaceImagePreview(file);
       try {
-        const plan = await buildPublicImageSearchPlan({
+        replaceImagePreview(file);
+      } catch {
+        setImageFile(previousImageFile);
+        setIsPreparingImage(false);
+        rejectImageSelection(
+          'The image preview could not be prepared. Choose the file again or try another image.'
+        );
+        return;
+      }
+
+      await settleLatestSearchIntent({
+        gate: searchIntentGateRef.current,
+        token: intentToken,
+        task: buildPublicImageSearchPlan({
           orgId: publicSearchOrgId,
           image: file,
           topK,
           minScore,
           constraints: snapshotAcceptedConstraints(imageDraftConstraints),
-        });
-        setSelectedArtwork(null);
-        setSubmittedImagePlan(plan);
-        setSubmittedSearch({
-          kind: 'image',
-          file,
-          digest: plan.digest,
-          constraints: snapshotAcceptedConstraints(plan.request.constraints),
-          displayName: file.name || 'uploaded image',
-        });
-        setEditorMode('image');
-        setSearchColours([]);
-        setSortColours([]);
-        setSortMode('relevance');
-        setIsBrowsingCollection(false);
-        setShouldSearch(true);
-        previousUrlSearchStateRef.current = '::';
-        setSearchParams({}, { replace: true });
-      } catch {
-        if (submittedSearch?.kind === 'image') {
-          setImageFile(submittedSearch.file);
-          replaceImagePreview(submittedSearch.file);
-        }
-        rejectImageSelection(
-          'The image could not be read. Choose the file again or try another image.'
-        );
-      } finally {
-        setIsPreparingImage(false);
-      }
+        }),
+        onSuccess: (plan) => {
+          setSelectedArtwork(null);
+          setSubmittedImagePlan(plan);
+          setImageExecutionId(intentToken);
+          setSubmittedSearch({
+            kind: 'image',
+            file,
+            digest: plan.digest,
+            constraints: snapshotAcceptedConstraints(plan.request.constraints),
+            displayName: file.name || 'uploaded image',
+          });
+          setEditorMode('image');
+          setSearchColours([]);
+          setSortColours([]);
+          setSortMode('relevance');
+          setIsBrowsingCollection(false);
+          setShouldSearch(true);
+          previousUrlSearchStateRef.current = '::';
+          setSearchParams({}, { replace: true });
+        },
+        onError: () => {
+          setImageFile(previousImageFile);
+          replaceImagePreview(previousImageFile);
+          rejectImageSelection(
+            'The image could not be read. Choose the file again or try another image.'
+          );
+        },
+        onSettled: () => setIsPreparingImage(false),
+      });
     },
     [
       imageDraftConstraints,
@@ -1632,7 +1676,7 @@ export default function SearchPage() {
         rejectImageSelection('Image must be a JPEG, PNG, or WebP file.');
       }
     },
-    disabled: isNgsSearchLocked,
+    disabled: isNgsSearchLocked || isPreparingImage,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
@@ -1658,7 +1702,10 @@ export default function SearchPage() {
         : normalizeSearchQuery(trimmed);
     if (!normalized) return;
 
+    supersedePendingSearchIntent();
     setSelectedArtwork(null);
+    setImageFile(null);
+    replaceImagePreview(null);
     setIsBrowsingCollection(false);
     setEditorMode('text');
     setSearchColours([]);
@@ -1676,7 +1723,10 @@ export default function SearchPage() {
   };
 
   const clearSearch = () => {
+    supersedePendingSearchIntent();
     setSelectedArtwork(null);
+    setImageFile(null);
+    replaceImagePreview(null);
     setTextQuery('');
     setCommittedTextQuery('');
     setSearchFacet(null);
@@ -1692,6 +1742,7 @@ export default function SearchPage() {
   ) => {
     const interpretation = textSearchQuery.data?.interpretation;
     if (!interpretation) return;
+    supersedePendingSearchIntent();
     const nextConstraints = { ...interpretation.constraints };
     delete nextConstraints[key];
     const nextQuery = interpretation.semanticQuery || 'art';
@@ -1725,6 +1776,7 @@ export default function SearchPage() {
   };
 
   const clearImage = () => {
+    supersedePendingSearchIntent();
     setSelectedArtwork(null);
     setImageFile(null);
     replaceImagePreview(null);
@@ -1742,13 +1794,13 @@ export default function SearchPage() {
     if (isNgsSearchLocked) return;
     if (!getColourSearchText(selection)) return;
 
+    supersedePendingSearchIntent();
     setSelectedArtwork(null);
     setEditorMode('colour');
-    setIsBrowsingCollection(false);
     setSearchColours([selection]);
     setSortColours([selection]);
     setSortMode('colour');
-    if (submittedSearch) return;
+    if (submittedSearch || isBrowsingCollection) return;
 
     const query =
       normalizedCommittedTextQuery || getColourSearchText(selection);
@@ -1772,6 +1824,7 @@ export default function SearchPage() {
   };
 
   const clearColourSearch = () => {
+    supersedePendingSearchIntent();
     setSearchColours([]);
     setSortColours([]);
     setSortMode('relevance');
@@ -1793,6 +1846,7 @@ export default function SearchPage() {
   };
 
   const clearColourSort = () => {
+    supersedePendingSearchIntent();
     setSortColours([]);
     if (sortMode === 'colour') {
       setSortMode('relevance');
@@ -1800,7 +1854,13 @@ export default function SearchPage() {
   };
 
   const clearColourSortTarget = () => {
+    supersedePendingSearchIntent();
     setSortColours([]);
+  };
+
+  const changeSortMode = (nextSortMode: SortMode) => {
+    supersedePendingSearchIntent();
+    setSortMode(nextSortMode);
   };
 
   const runColourSearch = (selection: string) => {
@@ -1815,6 +1875,7 @@ export default function SearchPage() {
   };
 
   const runTargetColourSort = (selection: string) => {
+    supersedePendingSearchIntent();
     if (sortMode === 'colour' && sortColours.includes(selection)) {
       setSortColours([]);
       return;
@@ -1825,6 +1886,7 @@ export default function SearchPage() {
   };
 
   const updateSortCustomColour = (hex: string) => {
+    supersedePendingSearchIntent();
     setCustomColour(hex);
     setSortMode('colour');
     setSortColours([`custom:${hex}`]);
@@ -1879,6 +1941,7 @@ export default function SearchPage() {
       const normalized = normalizeSearchQuery(suggestion.query);
       if (!normalized || !getColourSearchText(suggestionColour)) return;
 
+      supersedePendingSearchIntent();
       setSelectedArtwork(null);
       setIsBrowsingCollection(false);
       setEditorMode('colour');
@@ -1910,24 +1973,31 @@ export default function SearchPage() {
     nextMinScore: number
   ) => {
     if (submittedSearch?.kind !== 'image' || isPreparingImage) return;
+    const intentToken = beginSearchIntent(searchIntentGateRef.current);
     setIsPreparingImage(true);
     setImageUploadError(null);
-    try {
-      const plan = await buildPublicImageSearchPlan({
+    await settleLatestSearchIntent({
+      gate: searchIntentGateRef.current,
+      token: intentToken,
+      task: buildPublicImageSearchPlan({
         orgId: publicSearchOrgId,
         image: submittedSearch.file,
         topK: nextTopK,
         minScore: nextMinScore,
         constraints: submittedSearch.constraints,
-      });
-      setSubmittedImagePlan(plan);
-    } catch {
-      setImageUploadError(
-        'The image could not be read. Choose the file again or try another image.'
-      );
-    } finally {
-      setIsPreparingImage(false);
-    }
+      }),
+      onSuccess: (plan) => {
+        setSubmittedImagePlan(plan);
+        setImageExecutionId(intentToken);
+        setTopK(nextTopK);
+        setMinScore(nextMinScore);
+      },
+      onError: () =>
+        setImageUploadError(
+          'The image could not be read. Choose the file again or try another image.'
+        ),
+      onSettled: () => setIsPreparingImage(false),
+    });
   };
 
   const updateTopK = (value: number) => {
@@ -1936,12 +2006,17 @@ export default function SearchPage() {
       MAX_SEARCH_RESULTS,
       Math.max(1, Math.round(value))
     );
+    if (submittedSearch?.kind === 'image') {
+      void rebuildSubmittedImagePlan(nextTopK, minScore);
+      return;
+    }
+    supersedePendingSearchIntent();
     setTopK(nextTopK);
-    void rebuildSubmittedImagePlan(nextTopK, minScore);
   };
 
   const updateBrowsePageSize = (value: number) => {
     if (!Number.isFinite(value)) return;
+    supersedePendingSearchIntent();
     setBrowsePageSize(
       Math.min(
         MAX_BROWSE_PAGE_SIZE,
@@ -1953,8 +2028,12 @@ export default function SearchPage() {
   const updateMinScorePercent = (value: number) => {
     if (!Number.isFinite(value)) return;
     const nextMinScore = Math.min(1, Math.max(0, value / 100));
+    if (submittedSearch?.kind === 'image') {
+      void rebuildSubmittedImagePlan(topK, nextMinScore);
+      return;
+    }
+    supersedePendingSearchIntent();
     setMinScore(nextMinScore);
-    void rebuildSubmittedImagePlan(topK, nextMinScore);
   };
 
   const getSearchInteractionMetadata = useCallback(
@@ -2042,32 +2121,33 @@ export default function SearchPage() {
     },
     [trackArtworkInteraction]
   );
-  const ownershipNotice =
-    editorMode === 'image' &&
-    submittedSearch !== null &&
-    submittedSearch.kind !== 'image'
-      ? `Showing ${submittedSearch.kind === 'text' ? 'Text' : 'Colour'} results until an image is uploaded.`
-      : null;
+  const ownershipNotice = searchPresentation.ownershipNotice;
   const imageDraftChips = getConstraintChips(imageDraftConstraints);
   const submittedConstraintChips = getSubmittedConstraintChips(submittedSearch);
   const selectedPalette = sortColours[0]
     ? getSelectedColour(sortColours[0])
     : null;
   const retryCurrentSearch = () => {
-    if (submittedSearch?.kind === 'image') {
+    const retryTarget = deriveRetryTarget({
+      isBrowsingCollection,
+      submittedKind: submittedSearch?.kind || null,
+    });
+    if (retryTarget === 'browse') {
+      void browseQuery.refetch();
+    } else if (retryTarget === 'image') {
       void imageSearchQuery.refetch();
-    } else {
+    } else if (retryTarget === 'text') {
       void textSearchQuery.refetch();
     }
   };
   const chooseReplacementImage = () => {
-    setEditorMode('image');
+    supersedePendingSearchIntent();
+    setEditorMode(getEditorModeUpdate('image').editorMode);
     window.requestAnimationFrame(openImagePicker);
   };
   const lowerImageThreshold = async () => {
     if (submittedSearch?.kind !== 'image' || isPreparingImage) return;
     const nextMinScore = Math.max(0, Math.round((minScore - 0.1) * 100) / 100);
-    setMinScore(nextMinScore);
     await rebuildSubmittedImagePlan(topK, nextMinScore);
   };
 
@@ -2161,8 +2241,8 @@ export default function SearchPage() {
                     label="Text"
                     disabled={isNgsSearchLocked}
                     onClick={() => {
-                      setIsBrowsingCollection(false);
-                      setEditorMode('text');
+                      supersedePendingSearchIntent();
+                      setEditorMode(getEditorModeUpdate('text').editorMode);
                     }}
                   />
                   <ModeButton
@@ -2171,19 +2251,18 @@ export default function SearchPage() {
                     label="Image"
                     disabled={isNgsSearchLocked}
                     onClick={() => {
-                      setIsBrowsingCollection(false);
-                      setEditorMode('image');
+                      supersedePendingSearchIntent();
+                      setEditorMode(getEditorModeUpdate('image').editorMode);
                       setImageUploadError(null);
-                      if (
-                        submittedSearch?.kind === 'text' &&
-                        textSearchQuery.data?.interpretation
-                      ) {
-                        setImageDraftConstraints(
-                          snapshotAcceptedConstraints(
-                            textSearchQuery.data.interpretation.constraints
-                          )
-                        );
-                      }
+                      setImageDraftConstraints(
+                        deriveImageDraftConstraints(
+                          submittedSearch,
+                          textSearchQuery.isSuccess &&
+                            !textSearchQuery.isFetching
+                            ? textSearchQuery.data?.interpretation
+                            : undefined
+                        )
+                      );
                     }}
                   />
                   <ModeButton
@@ -2192,15 +2271,8 @@ export default function SearchPage() {
                     label="Colour"
                     disabled={isNgsSearchLocked}
                     onClick={() => {
-                      if (editorMode === 'colour') {
-                        if (searchColours.length) clearColourSearch();
-                        else setEditorMode('text');
-                        return;
-                      }
-                      setIsBrowsingCollection(false);
-                      setEditorMode('colour');
-                      setSortMode('colour');
-                      setSortColours(searchColours);
+                      supersedePendingSearchIntent();
+                      setEditorMode(getEditorModeUpdate('colour').editorMode);
                       revealColourRail();
                     }}
                   />
@@ -2254,11 +2326,12 @@ export default function SearchPage() {
                             key={`${chip.key}-${chip.label}`}
                             type="button"
                             aria-label={chip.removeLabel}
-                            onClick={() =>
+                            onClick={() => {
+                              supersedePendingSearchIntent();
                               setImageDraftConstraints((constraints) =>
                                 removeConstraintChip(constraints, chip)
-                              )
-                            }
+                              );
+                            }}
                             className="rounded-full border border-sky-300/25 bg-sky-300/10 px-2.5 py-1 font-mono text-[10px] text-sky-100 transition-colors hover:bg-sky-300/20"
                           >
                             {chip.label} ×
@@ -2576,7 +2649,7 @@ export default function SearchPage() {
                               onClick={() => {
                                 if (isNgsSearchLocked) return;
                                 if (option.id === 'time') {
-                                  setSortMode(
+                                  changeSortMode(
                                     sortMode === 'time-desc'
                                       ? 'time-asc'
                                       : 'time-desc'
@@ -2590,7 +2663,7 @@ export default function SearchPage() {
                                     return;
                                   }
 
-                                  setSortMode('colour');
+                                  changeSortMode('colour');
                                   revealColourRail();
                                   return;
                                 }
@@ -2599,11 +2672,11 @@ export default function SearchPage() {
                                   sortMode === option.id ||
                                   SORT_ASC[sortMode] === option.id
                                 ) {
-                                  setSortMode('relevance');
+                                  changeSortMode('relevance');
                                   return;
                                 }
 
-                                setSortMode(option.id);
+                                changeSortMode(option.id);
                               }}
                               title={
                                 option.id === 'time'
@@ -2697,6 +2770,7 @@ export default function SearchPage() {
                         disabled={isNgsSearchLocked}
                         onClick={() => {
                           if (isNgsSearchLocked) return;
+                          supersedePendingSearchIntent();
                           setIsBrowsingCollection((value) => !value);
                         }}
                         className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
@@ -2852,7 +2926,7 @@ export default function SearchPage() {
             {error && (
               <div role="alert" className="py-16 text-center">
                 <p className="text-sm font-medium text-red-300">
-                  {getSearchErrorCopy(
+                  {getPublicSearchErrorCopy(
                     error,
                     submittedSearch?.kind === 'image' ? 'image' : 'text'
                   )}
@@ -2888,7 +2962,7 @@ export default function SearchPage() {
                       selectedColours={activeSortColours}
                       sortMode={sortMode}
                       showSimilarity
-                      onSortModeChange={setSortMode}
+                      onSortModeChange={changeSortMode}
                       onFacetSearch={runTextSearch}
                       onPaletteColourSelect={useArtworkPaletteColour}
                       onSelectArtwork={selectArtwork}
@@ -2923,7 +2997,7 @@ export default function SearchPage() {
                             ? loadMoreMasonryColumnResults
                             : undefined
                         }
-                        onSortModeChange={setSortMode}
+                        onSortModeChange={changeSortMode}
                         onFacetSearch={runTextSearch}
                         onPaletteColourSelect={useArtworkPaletteColour}
                         onSelectArtwork={selectArtwork}
@@ -2942,7 +3016,7 @@ export default function SearchPage() {
                         ? loadMoreMasonryColumnResults
                         : undefined
                     }
-                    onSortModeChange={setSortMode}
+                    onSortModeChange={changeSortMode}
                     onFacetSearch={runTextSearch}
                     onPaletteColourSelect={useArtworkPaletteColour}
                     onSelectArtwork={selectArtwork}

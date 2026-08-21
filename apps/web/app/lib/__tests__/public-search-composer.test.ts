@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_PUBLIC_SEARCH_MIN_SCORE,
   applyPaletteOrder,
+  beginSearchIntent,
+  buildImageQueryExecution,
   completeImageSubmission,
+  createSearchIntentGate,
   createSearchComposerState,
+  deriveImageDraftConstraints,
+  deriveRetryTarget,
+  getEditorModeUpdate,
+  getPublicSearchErrorCopy,
   getSearchPresentation,
   getSubmittedConstraintChips,
   getSubmittedSearchSummary,
   selectEditorMode,
+  settleLatestSearchIntent,
   snapshotAcceptedConstraints,
+  supersedeSearchIntent,
   updateImageObjectUrl,
   validateImageSelection,
   type SubmittedSearch,
@@ -58,6 +68,22 @@ describe('public search composer ownership', () => {
       showResultControls: true,
       ownershipNotice: 'Showing Text results until an image is uploaded.',
     });
+  });
+
+  it('keeps editor buttons editor-only while browse and palette order remain active', () => {
+    const state = {
+      ...applyPaletteOrder(
+        createSearchComposerState('text', completedText),
+        'navy'
+      ),
+      isBrowsingCollection: true,
+    };
+
+    expect(selectEditorMode(state, 'colour')).toEqual({
+      ...state,
+      editorMode: 'colour',
+    });
+    expect(getEditorModeUpdate('image')).toEqual({ editorMode: 'image' });
   });
 
   it('makes an image the owner only after its digest plan resolves', async () => {
@@ -177,6 +203,268 @@ describe('public search composer ownership', () => {
   });
 });
 
+describe('image draft constraint ownership', () => {
+  const acceptedA = {
+    parserVersion: 'nga-v5' as const,
+    originalQuery: 'oil paintings before 1800',
+    semanticQuery: 'oil paintings',
+    constraints: {
+      dateRange: { startYear: 1700, endYear: 1799 },
+      classifications: ['Painting'],
+    },
+    corrections: [],
+    unresolved: [],
+  };
+
+  it('clears old draft filters when the current Text owner has no completed interpretation', () => {
+    const textB: SubmittedSearch = {
+      kind: 'text',
+      query: 'drawings after 1900',
+      facet: null,
+    };
+
+    expect(deriveImageDraftConstraints(textB, undefined)).toBeUndefined();
+  });
+
+  it('rejects an accepted interpretation that belongs to an older Text owner', () => {
+    const textB: SubmittedSearch = {
+      kind: 'text',
+      query: 'drawings after 1900',
+      facet: null,
+    };
+
+    expect(deriveImageDraftConstraints(textB, acceptedA)).toBeUndefined();
+  });
+
+  it('snapshots only an interpretation matching the current submitted Text owner', () => {
+    expect(deriveImageDraftConstraints(completedText, acceptedA)).toEqual({
+      dateRange: { startYear: 1700, endYear: 1799 },
+      classifications: ['Painting'],
+    });
+  });
+});
+
+describe('uncached image execution', () => {
+  const canonicalQueryKey = [
+    'search',
+    'image',
+    '27',
+    'nga',
+    'digest-123',
+    30,
+    0.2,
+    'null',
+  ] as const;
+
+  it('releases inactive image results immediately and never treats them as fresh', () => {
+    expect(
+      buildImageQueryExecution({
+        orgId: 'nga',
+        canonicalQueryKey,
+        executionId: 1,
+        hasMounted: true,
+        canSearchOnPage: true,
+        submittedKind: 'image',
+      })
+    ).toMatchObject({
+      enabled: true,
+      staleTime: 0,
+      gcTime: 0,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    });
+  });
+
+  it('executes an explicit same-digest submission once under a new execution identity', () => {
+    const first = buildImageQueryExecution({
+      orgId: 'nga',
+      canonicalQueryKey,
+      executionId: 1,
+      hasMounted: true,
+      canSearchOnPage: true,
+      submittedKind: 'image',
+    });
+    const repeated = buildImageQueryExecution({
+      orgId: 'nga',
+      canonicalQueryKey,
+      executionId: 2,
+      hasMounted: true,
+      canSearchOnPage: true,
+      submittedKind: 'image',
+    });
+
+    expect(first.canonicalQueryKey).toBe(canonicalQueryKey);
+    expect(repeated.canonicalQueryKey).toBe(canonicalQueryKey);
+    expect(first.queryKey).not.toEqual(repeated.queryKey);
+    expect(first.queryKey).toEqual([...canonicalQueryKey, 'submission', 1]);
+    expect(repeated.queryKey).toEqual([...canonicalQueryKey, 'submission', 2]);
+  });
+
+  it('never enables a locked NGS image query', () => {
+    expect(
+      buildImageQueryExecution({
+        orgId: 'ngs',
+        canonicalQueryKey,
+        executionId: 1,
+        hasMounted: true,
+        canSearchOnPage: false,
+        submittedKind: 'image',
+      })
+    ).toEqual({
+      canonicalQueryKey,
+      queryKey: ['search', 'image', 'locked', 'ngs'],
+      enabled: false,
+      staleTime: 0,
+      gcTime: 0,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    });
+  });
+});
+
+describe('search intent generations', () => {
+  it('ignores a stale upload resolution after later Text intent', async () => {
+    const gate = createSearchIntentGate();
+    const upload = beginSearchIntent(gate);
+    let resolve!: (value: string) => void;
+    const task = new Promise<string>((done) => {
+      resolve = done;
+    });
+    const committed: string[] = [];
+    const settling = settleLatestSearchIntent({
+      gate,
+      token: upload,
+      task,
+      onSuccess: (value) => committed.push(value),
+    });
+
+    supersedeSearchIntent(gate);
+    resolve('image-owner');
+
+    await expect(settling).resolves.toBe('stale');
+    expect(committed).toEqual([]);
+  });
+
+  it('ignores stale upload rejection without replacing the current error', async () => {
+    const gate = createSearchIntentGate();
+    const upload = beginSearchIntent(gate);
+    let reject!: (error: Error) => void;
+    const task = new Promise<string>((_resolve, fail) => {
+      reject = fail;
+    });
+    const errors: string[] = [];
+    const settling = settleLatestSearchIntent({
+      gate,
+      token: upload,
+      task,
+      onSuccess: () => undefined,
+      onError: (error) => errors.push(String(error)),
+    });
+
+    supersedeSearchIntent(gate);
+    reject(new Error('read failed'));
+
+    await expect(settling).resolves.toBe('stale');
+    expect(errors).toEqual([]);
+  });
+
+  it('rolls back image controls when the current rebuild fails', async () => {
+    const gate = createSearchIntentGate();
+    const rebuild = beginSearchIntent(gate);
+    const controls = { topK: 30, minScore: 0.2 };
+    let committed = controls;
+    let error = '';
+
+    await expect(
+      settleLatestSearchIntent({
+        gate,
+        token: rebuild,
+        task: Promise.reject(new TypeError('Image bytes could not be read.')),
+        onSuccess: () => {
+          committed = { topK: 40, minScore: 0.1 };
+        },
+        onError: (reason) => {
+          error = reason instanceof Error ? reason.message : String(reason);
+        },
+      })
+    ).resolves.toBe('error');
+
+    expect(committed).toBe(controls);
+    expect(error).toBe('Image bytes could not be read.');
+  });
+
+  it('does not let an older rebuild overwrite newer committed settings', async () => {
+    const gate = createSearchIntentGate();
+    const older = beginSearchIntent(gate);
+    let resolveOlder!: (value: { topK: number; minScore: number }) => void;
+    const olderTask = new Promise<{ topK: number; minScore: number }>(
+      (resolve) => {
+        resolveOlder = resolve;
+      }
+    );
+    let controls = { topK: 30, minScore: 0.2 };
+    const olderSettling = settleLatestSearchIntent({
+      gate,
+      token: older,
+      task: olderTask,
+      onSuccess: (next) => {
+        controls = next;
+      },
+    });
+
+    const newer = beginSearchIntent(gate);
+    await settleLatestSearchIntent({
+      gate,
+      token: newer,
+      task: Promise.resolve({ topK: 40, minScore: 0.1 }),
+      onSuccess: (next) => {
+        controls = next;
+      },
+    });
+    resolveOlder({ topK: 20, minScore: 0.3 });
+
+    await expect(olderSettling).resolves.toBe('stale');
+    expect(controls).toEqual({ topK: 40, minScore: 0.1 });
+  });
+});
+
+describe('retry and failure copy', () => {
+  it.each([
+    [{ isBrowsingCollection: true, submittedKind: 'image' as const }, 'browse'],
+    [{ isBrowsingCollection: false, submittedKind: 'image' as const }, 'image'],
+    [{ isBrowsingCollection: false, submittedKind: 'text' as const }, 'text'],
+    [{ isBrowsingCollection: false, submittedKind: null }, null],
+  ])('derives the production retry target for %o', (input, target) => {
+    expect(deriveRetryTarget(input)).toBe(target);
+  });
+
+  it('distinguishes image validation, rate-limit, unavailable, and general errors', () => {
+    expect(
+      getPublicSearchErrorCopy(
+        { status: 400, message: 'Image must not be empty.' },
+        'image'
+      )
+    ).toBe('Image must not be empty.');
+    expect(getPublicSearchErrorCopy({ status: 429 }, 'image')).toMatch(
+      /Visual search is busy/
+    );
+    expect(getPublicSearchErrorCopy({ status: 503 }, 'image')).toMatch(
+      /temporarily unavailable/
+    );
+    expect(getPublicSearchErrorCopy(new Error('network failed'), 'image')).toBe(
+      'Visual search failed.'
+    );
+  });
+});
+
+describe('public search defaults', () => {
+  it('submits the UI default minimum score of 0.2', () => {
+    expect(DEFAULT_PUBLIC_SEARCH_MIN_SCORE).toBe(0.2);
+  });
+});
+
 describe('image selection validation', () => {
   it.each([
     [[], 'Choose one JPEG, PNG, or WebP image.'],
@@ -234,5 +522,22 @@ describe('image object URL lifecycle', () => {
     expect(updateImageObjectUrl(second, null, urlApi)).toBeNull();
     expect(revoked).toEqual(['blob:preview-1', 'blob:preview-2']);
     expect(created).toEqual([firstFile, secondFile]);
+  });
+
+  it('preserves the current preview when replacement URL creation throws', () => {
+    const revoked: string[] = [];
+    const urlApi = {
+      createObjectURL() {
+        throw new Error('blob allocation failed');
+      },
+      revokeObjectURL(url: string) {
+        revoked.push(url);
+      },
+    };
+
+    expect(() =>
+      updateImageObjectUrl('blob:current', image([2]), urlApi)
+    ).toThrow('blob allocation failed');
+    expect(revoked).toEqual([]);
   });
 });

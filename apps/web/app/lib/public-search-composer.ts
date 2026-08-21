@@ -1,6 +1,8 @@
 import {
+  normalizePublicSearchText,
   normalizePublicSearchConstraints,
   type PublicSearchConstraints,
+  type PublicSearchInterpretation,
 } from '@paillette/types/public-search-core';
 
 export type EditorMode = 'text' | 'image' | 'colour';
@@ -54,6 +56,8 @@ export type ConstraintChip = {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
+export const DEFAULT_PUBLIC_SEARCH_MIN_SCORE = 0.2;
+
 type ObjectUrlApi = {
   createObjectURL: (file: File) => string;
   revokeObjectURL: (url: string) => void;
@@ -64,8 +68,156 @@ export const updateImageObjectUrl = (
   file: File | null,
   urlApi: ObjectUrlApi = URL
 ) => {
+  if (!file) {
+    if (current) urlApi.revokeObjectURL(current);
+    return null;
+  }
+
+  const replacement = urlApi.createObjectURL(file);
   if (current) urlApi.revokeObjectURL(current);
-  return file ? urlApi.createObjectURL(file) : null;
+  return replacement;
+};
+
+export const getEditorModeUpdate = (editorMode: EditorMode) => ({
+  editorMode,
+});
+
+export const deriveImageDraftConstraints = (
+  submittedSearch: SubmittedSearch | null,
+  interpretation?: PublicSearchInterpretation
+) => {
+  if (
+    submittedSearch?.kind !== 'text' ||
+    !interpretation ||
+    normalizePublicSearchText(interpretation.originalQuery) !==
+      normalizePublicSearchText(submittedSearch.query)
+  ) {
+    return undefined;
+  }
+
+  return snapshotAcceptedConstraints(interpretation.constraints);
+};
+
+export type SearchIntentGate = { generation: number };
+
+export const createSearchIntentGate = (): SearchIntentGate => ({
+  generation: 0,
+});
+
+export const beginSearchIntent = (gate: SearchIntentGate) => {
+  gate.generation += 1;
+  return gate.generation;
+};
+
+export const supersedeSearchIntent = (gate: SearchIntentGate) => {
+  gate.generation += 1;
+  return gate.generation;
+};
+
+export const settleLatestSearchIntent = async <T>({
+  gate,
+  token,
+  task,
+  onSuccess,
+  onError,
+  onSettled,
+}: {
+  gate: SearchIntentGate;
+  token: number;
+  task: Promise<T>;
+  onSuccess: (value: T) => void;
+  onError?: (error: unknown) => void;
+  onSettled?: () => void;
+}): Promise<'success' | 'error' | 'stale'> => {
+  try {
+    const value = await task;
+    if (gate.generation !== token) return 'stale';
+    onSuccess(value);
+    onSettled?.();
+    return 'success';
+  } catch (error) {
+    if (gate.generation !== token) return 'stale';
+    onError?.(error);
+    onSettled?.();
+    return 'error';
+  }
+};
+
+export const buildImageQueryExecution = ({
+  orgId,
+  canonicalQueryKey,
+  executionId,
+  hasMounted,
+  canSearchOnPage,
+  submittedKind,
+}: {
+  orgId: string;
+  canonicalQueryKey: readonly unknown[] | null | undefined;
+  executionId: number;
+  hasMounted: boolean;
+  canSearchOnPage: boolean;
+  submittedKind: SubmittedSearch['kind'] | null;
+}) => ({
+  canonicalQueryKey,
+  queryKey: canSearchOnPage
+    ? canonicalQueryKey
+      ? [...canonicalQueryKey, 'submission', executionId]
+      : ['search', 'image', 'disabled', orgId]
+    : ['search', 'image', 'locked', orgId],
+  enabled:
+    hasMounted &&
+    canSearchOnPage &&
+    submittedKind === 'image' &&
+    canonicalQueryKey !== null &&
+    canonicalQueryKey !== undefined,
+  staleTime: 0,
+  gcTime: 0,
+  refetchOnMount: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+});
+
+export const deriveRetryTarget = ({
+  isBrowsingCollection,
+  submittedKind,
+}: {
+  isBrowsingCollection: boolean;
+  submittedKind: SubmittedSearch['kind'] | null;
+}) => {
+  if (isBrowsingCollection) return 'browse' as const;
+  if (submittedKind === 'image') return 'image' as const;
+  if (submittedKind === 'text' || submittedKind === 'colour') {
+    return 'text' as const;
+  }
+  return null;
+};
+
+export const getPublicSearchErrorCopy = (
+  error: unknown,
+  mode: 'text' | 'image'
+) => {
+  const fallback =
+    mode === 'image' ? 'Visual search failed.' : 'Search failed.';
+  if (
+    typeof error !== 'object' ||
+    error === null ||
+    !('status' in error) ||
+    typeof error.status !== 'number'
+  ) {
+    return fallback;
+  }
+  const message =
+    'message' in error && typeof error.message === 'string'
+      ? error.message
+      : '';
+  if (error.status === 400) return message || fallback;
+  if (error.status === 429) {
+    return `${mode === 'image' ? 'Visual search' : 'Search'} is busy right now. Wait a moment, then try again.`;
+  }
+  if (error.status === 502 || error.status === 503) {
+    return `${mode === 'image' ? 'Visual search' : 'Search'} is temporarily unavailable. Try again shortly.`;
+  }
+  return message || fallback;
 };
 
 export const snapshotAcceptedConstraints = (
@@ -107,7 +259,7 @@ export const selectEditorMode = (
 ): SearchComposerState => ({
   ...state,
   editorMode,
-  ...(editorMode === 'image' && acceptedConstraints !== undefined
+  ...(editorMode === 'image'
     ? {
         imageDraftConstraints: snapshotAcceptedConstraints(acceptedConstraints),
       }

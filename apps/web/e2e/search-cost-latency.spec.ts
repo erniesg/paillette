@@ -55,6 +55,7 @@ const installSearchHarness = async (
   results: ReturnType<typeof searchResult>[] = [],
   interpretation?: {
     constraints: Record<string, unknown>;
+    originalQuery?: string;
     semanticQuery: string;
   }
 ) => {
@@ -85,7 +86,9 @@ const installSearchHarness = async (
             ? {
                 interpretation: {
                   parserVersion: 'nga-v5',
-                  originalQuery: interpretation.semanticQuery,
+                  originalQuery:
+                    interpretation.originalQuery ||
+                    interpretation.semanticQuery,
                   semanticQuery: interpretation.semanticQuery,
                   constraints: interpretation.constraints,
                   corrections: [],
@@ -275,7 +278,8 @@ test('upload submits exactly one digest-owned image request without semantic tex
     page,
     [searchResult('visual', 'Visual match', ['#1a2f52'], 0.91)],
     {
-      semanticQuery: 'paintings',
+      originalQuery: 'oil paintings before 1800',
+      semanticQuery: 'oil paintings',
       constraints: {
         dateRange: { startYear: 1700, endYear: 1799 },
         classifications: ['Painting'],
@@ -302,6 +306,7 @@ test('upload submits exactly one digest-owned image request without semantic tex
     .poll(() => searches.filter(({ url }) => url.endsWith('/image')).length)
     .toBe(1);
   const imageSearch = searches.find(({ url }) => url.endsWith('/image'));
+  expect(imageSearch?.body).toMatch(/name="minScore"\r\n\r\n0\.2/);
   expect(imageSearch?.body).toContain(
     '{"dateRange":{"startYear":1700,"endYear":1799},"classifications":["Painting"],"mediumFamilies":["oil"]}'
   );
@@ -333,6 +338,30 @@ test('same filename with changed bytes submits a new image query', async ({
     name: 'same.png',
     mimeType: 'image/png',
     buffer: Buffer.from([137, 80, 78, 71, 2]),
+  });
+
+  await expect.poll(() => searches.length).toBe(2);
+});
+
+test('explicitly resubmitting the same image bytes performs one fresh request', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page);
+  await openNgaSearchPage(page);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  const input = page.getByLabel('Image for visual artwork search');
+  const bytes = Buffer.from([137, 80, 78, 71, 9]);
+
+  await input.setInputFiles({
+    name: 'first.png',
+    mimeType: 'image/png',
+    buffer: bytes,
+  });
+  await expect.poll(() => searches.length).toBe(1);
+  await input.setInputFiles({
+    name: 'renamed.png',
+    mimeType: 'image/png',
+    buffer: bytes,
   });
 
   await expect.poll(() => searches.length).toBe(2);
