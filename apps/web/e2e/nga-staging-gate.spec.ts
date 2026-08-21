@@ -20,8 +20,19 @@ const publicSearchBudget = new NgaStagingRequestBudget<Request>(
 type RecordedPublicSearchRequest = {
   url: string;
   method: string;
-  postData: string | null;
 };
+type RecordedFormDataRequest = {
+  url: string;
+  method: string;
+  fields: Record<string, string>;
+};
+
+declare global {
+  interface Window {
+    __ngaStagingFormDataRequests?: RecordedFormDataRequest[];
+  }
+}
+
 const requestsByPage = new WeakMap<Page, RecordedPublicSearchRequest[]>();
 const configuredOrigin = process.env.NGA_STAGING_WEB_BASE_URL || STAGING_ORIGIN;
 
@@ -91,6 +102,37 @@ const publicSearchRequests = (page: Page) => {
   if (!requests) throw new Error('Public-search accounting was not installed.');
   return requests;
 };
+
+const installFormDataRecorder = async (page: Page) => {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.__ngaStagingFormDataRequests = [];
+    window.fetch = async (input, init) => {
+      if (init?.body instanceof FormData) {
+        const fields: Record<string, string> = {};
+        for (const [name, value] of init.body.entries()) {
+          if (typeof value === 'string') fields[name] = value;
+        }
+        const inputUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const inputMethod = input instanceof Request ? input.method : 'GET';
+        window.__ngaStagingFormDataRequests?.push({
+          url: new URL(inputUrl, window.location.href).href,
+          method: (init.method || inputMethod).toUpperCase(),
+          fields,
+        });
+      }
+      return originalFetch(input, init);
+    };
+  });
+};
+
+const recordedFormDataRequests = (page: Page) =>
+  page.evaluate(() => window.__ngaStagingFormDataRequests || []);
 
 const openNga = async (page: Page) => {
   const response = await page.goto('/nga/search');
@@ -164,9 +206,9 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
       requests.push({
         url: request.url(),
         method: request.method(),
-        postData: request.postData(),
       });
     });
+    await installFormDataRecorder(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
   });
 
@@ -254,12 +296,18 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
       url.endsWith('/nga/image')
     );
     expect(imageRequests).toHaveLength(1);
-    expect(imageRequests[0]?.postData).toContain(
-      '"classifications":["Painting"]'
+    const imageFormRequests = (await recordedFormDataRequests(page)).filter(
+      ({ url, method }) => url.endsWith('/nga/image') && method === 'POST'
     );
-    expect(imageRequests[0]?.postData).toContain('"mediumFamilies":["oil"]');
-    expect(imageRequests[0]?.postData).toContain('"endYear":1799');
-    expect(imageRequests[0]?.postData).not.toContain(
+    expect(imageFormRequests).toHaveLength(1);
+    expect(JSON.parse(imageFormRequests[0]?.fields.constraints || '{}')).toEqual(
+      {
+        dateRange: { startYear: 1000, endYear: 1799 },
+        classifications: ['Painting'],
+        mediumFamilies: ['oil'],
+      }
+    );
+    expect(JSON.stringify(imageFormRequests[0]?.fields)).not.toContain(
       'oil paintings before 1800'
     );
 
