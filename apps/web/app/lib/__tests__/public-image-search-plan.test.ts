@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import * as publicSearchCore from '@paillette/types/public-search-core';
 
-import { buildPublicImageSearchPlan } from '../public-image-search-plan';
+import {
+  buildPublicImageSearchPlan,
+  normalizePublicImageSearchConstraints,
+} from '../public-image-search-plan';
 
 const file = (bytes: number[], name: string) =>
   new File([new Uint8Array(bytes)], name, { type: 'image/png' });
@@ -54,6 +58,32 @@ describe('buildPublicImageSearchPlan', () => {
       mediumFamilies: ['oil'],
       artistIds: ['artist-1'],
     });
+  });
+
+  it('gives reversed nested date keys the same canonical identity', async () => {
+    const first = await buildPublicImageSearchPlan(baseInput);
+    const reversedDateRange = Object.fromEntries([
+      ['endYear', 1799],
+      ['startYear', 1700],
+    ]) as { startYear: number; endYear: number };
+    const equivalent = await buildPublicImageSearchPlan({
+      ...baseInput,
+      constraints: {
+        ...baseInput.constraints,
+        dateRange: reversedDateRange,
+      },
+    });
+
+    expect(equivalent.queryKey).toEqual(first.queryKey);
+  });
+
+  it('uses the shared public constraint normalizer as its source of truth', () => {
+    const sharedNormalize = (
+      publicSearchCore as Record<string, unknown>
+    ).normalizePublicSearchConstraints;
+
+    expect(typeof sharedNormalize).toBe('function');
+    expect(normalizePublicImageSearchConstraints).toBe(sharedNormalize);
   });
 
   it.each([

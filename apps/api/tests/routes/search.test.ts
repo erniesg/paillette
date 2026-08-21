@@ -5,6 +5,7 @@ import {
   generateJinaQueryEmbedding,
   searchRoutes,
 } from '../../src/routes/search';
+import * as searchRouteExports from '../../src/routes/search';
 import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
 import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/public-search-cold-miss-rate-limit';
 import type { Env } from '../../src/index';
@@ -917,6 +918,23 @@ describe('Search API auth and quota behavior', () => {
     expect(body.error.code).toBe('UNAUTHORIZED');
     expect(db.daily.size).toBe(0);
     expect(db.usageEvents).toHaveLength(0);
+    expect(res.headers.get('Cache-Control')).toBeNull();
+  });
+
+  it('adds no-store before image authentication can return 401', async () => {
+    const response = await imageSearch(app, env, {});
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('adds no-store before image quota enforcement can return 429', async () => {
+    env = makeEnv(db, 0);
+
+    const response = await imageSearch(app, env);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 
   it('returns results, rate limit headers, and one usage record for a registered user', async () => {
@@ -2987,6 +3005,24 @@ describe('Search API auth and quota behavior', () => {
         return form;
       },
     ],
+    [
+      'duplicate topK controls',
+      () => {
+        const form = makeImageSearchForm();
+        form.append('topK', '10');
+        form.append('topK', '20');
+        return form;
+      },
+    ],
+    [
+      'duplicate minScore controls',
+      () => {
+        const form = makeImageSearchForm();
+        form.append('minScore', '0');
+        form.append('minScore', '0.5');
+        return form;
+      },
+    ],
   ])(
     'rejects %s before digest allowance, Jina, or Vectorize spend',
     async (_label, makeForm) => {
@@ -3055,6 +3091,79 @@ describe('Search API auth and quota behavior', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(imageVectorize.query).not.toHaveBeenCalled();
     expect(cache.get).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes and mutates every authoritative public image cold-miss identity dimension', () => {
+    const buildIdentity = (
+      searchRouteExports as Record<string, unknown>
+    ).buildPublicImageSearchIdentity as
+      | ((input: Record<string, unknown>) => string)
+      | undefined;
+
+    expect(typeof buildIdentity).toBe('function');
+    if (!buildIdentity) return;
+
+    const base = {
+      imageDigest: 'a'.repeat(64),
+      orgId: 'open-access-art',
+      provider: 'nga',
+      index: { version: 'v1', binding: 'VECTORIZE' },
+      embedding: {
+        provider: 'jina',
+        endpoint: 'https://embedding.example/v1/embeddings',
+        model: 'jina-clip-v2',
+        dimensions: 1024,
+      },
+      constraints: {
+        dateRange: Object.fromEntries([
+          ['endYear', 1799],
+          ['startYear', 1700],
+        ]),
+        classifications: ['Painting', 'Painting'],
+        mediumFamilies: ['oil'],
+        artistIds: ['artist-1'],
+      },
+      topK: 30,
+      minScore: 0,
+    };
+    const canonicalEquivalent = {
+      ...base,
+      constraints: {
+        artistIds: ['artist-1', 'artist-1'],
+        mediumFamilies: ['oil', 'oil'],
+        classifications: ['Painting'],
+        dateRange: { startYear: 1700, endYear: 1799 },
+      },
+    };
+    const identity = buildIdentity(base);
+
+    expect(buildIdentity(canonicalEquivalent)).toBe(identity);
+
+    const mutations = [
+      { ...base, imageDigest: 'b'.repeat(64) },
+      {
+        ...base,
+        constraints: { ...base.constraints, classifications: ['Drawing'] },
+      },
+      {
+        ...base,
+        embedding: { ...base.embedding, model: 'jina-clip-v3' },
+      },
+      {
+        ...base,
+        embedding: { ...base.embedding, dimensions: 768 },
+      },
+      { ...base, index: { version: 'v2', binding: 'VECTORIZE_V2' } },
+      { ...base, orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05' },
+      { ...base, provider: null },
+      { ...base, topK: 31 },
+      { ...base, minScore: 0.1 },
+    ];
+
+    expect(new Set(mutations.map(buildIdentity)).size).toBe(mutations.length);
+    for (const mutatedIdentity of mutations.map(buildIdentity)) {
+      expect(mutatedIdentity).not.toBe(identity);
+    }
   });
 
   it('rate limits repeated public image-search requests before Jina', async () => {

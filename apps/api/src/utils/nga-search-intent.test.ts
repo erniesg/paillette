@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import * as publicSearchCore from '@paillette/types/public-search-core';
 import {
   compileNgaSearchPlan,
   matchesNgaSearchConstraints,
@@ -671,6 +672,37 @@ describe('parseNgaSearchIntent', () => {
     });
     expect(intent.semanticQuery).toBe('landscape');
     expect(intent.constraints.classifications).toBeUndefined();
+  });
+
+  it('keeps parser vocabulary synchronized with shared public constraints', () => {
+    const shared = publicSearchCore as Record<string, unknown>;
+    const classifications = shared.NGA_SEARCH_CLASSIFICATIONS as
+      | readonly string[]
+      | undefined;
+    const mediumFamilies = shared.NGA_SEARCH_MEDIUM_FAMILIES as
+      | readonly string[]
+      | undefined;
+    const validate = shared.validatePublicSearchConstraints as
+      | ((constraints: Record<string, unknown>) => string | null)
+      | undefined;
+
+    expect(Array.isArray(classifications)).toBe(true);
+    expect(Array.isArray(mediumFamilies)).toBe(true);
+    expect(typeof validate).toBe('function');
+    if (!classifications || !mediumFamilies || !validate) return;
+
+    for (const classification of classifications) {
+      expect(
+        parseNgaSearchIntent(classification).constraints.classifications
+      ).toContain(classification);
+      expect(validate({ classifications: [classification] })).toBeNull();
+    }
+    for (const medium of mediumFamilies) {
+      expect(parseNgaSearchIntent(medium).constraints.mediumFamilies).toContain(
+        medium
+      );
+      expect(validate({ mediumFamilies: [medium] })).toBeNull();
+    }
   });
 });
 

@@ -1,65 +1,13 @@
-import { z } from 'zod';
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
+  normalizePublicSearchConstraints,
+  parsePublicSearchConstraints,
   type PublicSearchConstraints,
 } from '@paillette/types/public-search-core';
 
-const NGA_CLASSIFICATIONS = [
-  'Painting',
-  'Drawing',
-  'Print',
-  'Sculpture',
-  'Photograph',
-  'Decorative Art',
-] as const;
-
-const NGA_MEDIUM_FAMILIES = [
-  'oil',
-  'watercolor',
-  'ink',
-  'graphite',
-  'charcoal',
-  'etching',
-  'engraving',
-  'woodcut',
-  'bronze',
-  'marble',
-] as const;
-
-const constraintsSchema = z
-  .object({
-    dateRange: z
-      .object({
-        startYear: z.number().int().min(1000).max(2100),
-        endYear: z.number().int().min(1000).max(2100),
-      })
-      .strict()
-      .refine((range) => range.startYear <= range.endYear, {
-        message: 'Invalid date range',
-      })
-      .optional(),
-    classifications: z.array(z.enum(NGA_CLASSIFICATIONS)).optional(),
-    mediumFamilies: z.array(z.enum(NGA_MEDIUM_FAMILIES)).optional(),
-    artistIds: z.array(z.string().trim().min(1)).optional(),
-  })
-  .strict();
-
-const uniqueSorted = (values: string[]) => [...new Set(values)].sort();
-
-export const normalizePublicImageSearchConstraints = (
-  constraints: PublicSearchConstraints
-): PublicSearchConstraints => ({
-  ...(constraints.dateRange ? { dateRange: constraints.dateRange } : {}),
-  ...(constraints.classifications?.length
-    ? { classifications: uniqueSorted(constraints.classifications) }
-    : {}),
-  ...(constraints.mediumFamilies?.length
-    ? { mediumFamilies: uniqueSorted(constraints.mediumFamilies) }
-    : {}),
-  ...(constraints.artistIds?.length
-    ? { artistIds: uniqueSorted(constraints.artistIds) }
-    : {}),
-});
+export {
+  normalizePublicSearchConstraints as normalizePublicImageSearchConstraints,
+} from '@paillette/types/public-search-core';
 
 export const parsePublicImageSearchConstraints = (
   value: FormDataEntryValue | null
@@ -76,12 +24,7 @@ export const parsePublicImageSearchConstraints = (
     throw new TypeError('Constraints must contain valid JSON.');
   }
 
-  const parsed = constraintsSchema.safeParse(decoded);
-  if (!parsed.success) {
-    throw new TypeError('Constraints do not match the public search contract.');
-  }
-
-  return normalizePublicImageSearchConstraints(parsed.data);
+  return parsePublicSearchConstraints(decoded);
 };
 
 type PublicImageSearchPlanInput = {
@@ -130,7 +73,7 @@ export const buildPublicImageSearchPlan = async ({
   const canonicalConstraints =
     constraints === undefined
       ? undefined
-      : normalizePublicImageSearchConstraints(constraints);
+      : normalizePublicSearchConstraints(constraints);
   const request = {
     image,
     topK,

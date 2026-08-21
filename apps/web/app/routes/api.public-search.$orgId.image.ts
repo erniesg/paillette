@@ -153,6 +153,12 @@ export const action = async ({
     );
   }
 
+  for (const field of ['topK', 'minScore'] as const) {
+    if (incoming.getAll(field).length > 1) {
+      return invalidImageRequest(`${field} must be provided at most once.`);
+    }
+  }
+
   const outbound = new FormData();
   outbound.set('image', image);
   const topK = clamp(incoming.get('topK'), 1, 100, 30);
@@ -175,7 +181,16 @@ export const action = async ({
         signal: request.signal,
       }
     );
-  } catch {
+  } catch (error) {
+    if (
+      request.signal.aborted ||
+      (typeof error === 'object' &&
+        error !== null &&
+        'name' in error &&
+        error.name === 'AbortError')
+    ) {
+      throw error;
+    }
     return noStoreJson<ApiResponse>(
       {
         success: false,
@@ -188,10 +203,24 @@ export const action = async ({
     );
   }
 
+  const responseForNonJson = response.clone();
   let payload: ApiResponse<SearchResponse>;
   try {
     payload = (await response.json()) as ApiResponse<SearchResponse>;
   } catch {
+    if (!response.ok) {
+      const responseHeaders = new Headers();
+      const contentType = response.headers.get('Content-Type');
+      const retryAfter = response.headers.get('Retry-After');
+      if (contentType) responseHeaders.set('Content-Type', contentType);
+      if (retryAfter) responseHeaders.set('Retry-After', retryAfter);
+      responseHeaders.set('Cache-Control', NO_STORE);
+      return new Response(responseForNonJson.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
+    }
     return noStoreJson<ApiResponse>(
       {
         success: false,

@@ -23,14 +23,15 @@ import {
 import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
+  normalizePublicSearchConstraints,
   normalizePublicSearchText,
+  parsePublicSearchConstraints,
   type NgaSearchPlan,
   type PublicSearchConstraints,
 } from '@paillette/types/public-search';
 import {
   matchesNgaSearchConstraints,
   compileNgaSearchPlan,
-  normalizePublicSearchConstraints,
   parseNgaSearchIntent,
   validateNgaSearchConstraints,
 } from '../utils/nga-search-intent';
@@ -140,6 +141,45 @@ type RoutedSearchIntent =
   | 'medium_exact'
   | 'temporal'
   | 'formal_visual';
+
+type PublicImageSearchIdentityInput = {
+  imageDigest: string;
+  orgId: string | undefined;
+  provider: string | null;
+  index: {
+    version: EmbeddingIndexVersion;
+    binding: 'VECTORIZE' | 'VECTORIZE_V2';
+  };
+  embedding: {
+    provider: 'jina';
+    endpoint: string;
+    model: string;
+    dimensions: number;
+  };
+  constraints?: PublicSearchConstraints | null;
+  topK: number;
+  minScore: number;
+};
+
+export const buildPublicImageSearchIdentity = (
+  input: PublicImageSearchIdentityInput
+) =>
+  JSON.stringify({
+    version: 'public-image-search-v1',
+    contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
+    mode: 'image',
+    imageDigest: input.imageDigest,
+    orgId: input.orgId,
+    provider: input.provider,
+    index: input.index,
+    embedding: input.embedding,
+    constraints:
+      input.constraints == null
+        ? null
+        : normalizePublicSearchConstraints(input.constraints),
+    topK: input.topK,
+    minScore: input.minScore,
+  });
 
 type RoutedSearchWeights = {
   jinaImage: number;
@@ -2206,18 +2246,6 @@ const textSearchSchema = z.object({
     .optional(),
 });
 
-const imageSearchConstraintsSchema = z
-  .object({
-    dateRange: z
-      .object({ startYear: z.number().int(), endYear: z.number().int() })
-      .strict()
-      .optional(),
-    classifications: z.array(z.string().min(1)).optional(),
-    mediumFamilies: z.array(z.string().min(1)).optional(),
-    artistIds: z.array(z.string().trim().min(1)).optional(),
-  })
-  .strict();
-
 class InvalidImageSearchRequestError extends Error {
   constructor(message: string) {
     super(message);
@@ -2244,21 +2272,23 @@ const parseImageSearchConstraints = (
     );
   }
 
-  const parsed = imageSearchConstraintsSchema.safeParse(decoded);
-  if (!parsed.success) {
+  try {
+    return parsePublicSearchConstraints(decoded);
+  } catch (error) {
     throw new InvalidImageSearchRequestError(
-      'Constraints do not match the public search contract'
+      error instanceof Error
+        ? error.message
+        : 'Constraints do not match the public search contract'
     );
   }
-  const constraintError = validateNgaSearchConstraints(parsed.data);
-  if (constraintError) {
-    throw new InvalidImageSearchRequestError(constraintError);
-  }
-
-  return normalizePublicSearchConstraints(parsed.data);
 };
 
 export const searchRoutes = new Hono<{ Bindings: Env }>();
+
+searchRoutes.use('/search/image', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
 
 searchRoutes.use(
   '/search/*',
@@ -2605,7 +2635,6 @@ searchRoutes.post('/search/text', async (c) => {
  */
 searchRoutes.post('/search/image', async (c) => {
   const startTime = performance.now();
-  c.header('Cache-Control', 'no-store');
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
@@ -2677,6 +2706,14 @@ searchRoutes.post('/search/image', async (c) => {
       constraintEntries[0] ?? null
     );
 
+    for (const field of ['topK', 'minScore'] as const) {
+      if (formData.getAll(field).length > 1) {
+        throw new InvalidImageSearchRequestError(
+          `${field} must be provided at most once`
+        );
+      }
+    }
+
     // Get optional parameters from form data
     const requestedTopK = Number(formData.get('topK') || '10');
     const requestedMinScore = Number(formData.get('minScore') || '0.7');
@@ -2728,10 +2765,7 @@ searchRoutes.post('/search/image', async (c) => {
           c.req.header('CF-Connecting-IP'),
           c.req.header('X-Forwarded-For')
         ),
-        searchIdentity: JSON.stringify({
-          version: 'public-image-search-v1',
-          contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-          mode: 'image',
+        searchIdentity: buildPublicImageSearchIdentity({
           imageDigest,
           orgId,
           provider: provider || null,
@@ -2748,7 +2782,7 @@ searchRoutes.post('/search/image', async (c) => {
             model: jinaConfig.model,
             dimensions: jinaConfig.dimensions,
           },
-          constraints: constraints === undefined ? null : constraints,
+          constraints,
           topK,
           minScore,
         }),

@@ -1,9 +1,13 @@
-import type {
-  NgaSearchPlan,
-  PublicSearchConstraints,
-  PublicSearchInterpretation,
-  PublicSearchRelation,
-} from '@paillette/types/public-search';
+import {
+  NGA_SEARCH_CLASSIFICATIONS,
+  NGA_SEARCH_MEDIUM_FAMILIES,
+  normalizePublicSearchConstraints,
+  validatePublicSearchConstraints,
+  type NgaSearchPlan,
+  type PublicSearchConstraints,
+  type PublicSearchInterpretation,
+  type PublicSearchRelation,
+} from '@paillette/types/public-search-core';
 import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
 
 export const NGA_SEARCH_PARSER_VERSION = 'nga-v5' as const;
@@ -13,51 +17,47 @@ type VocabularyEntry = {
   aliases: string[];
 };
 
-const CLASSIFICATIONS: VocabularyEntry[] = [
-  {
-    canonical: 'Painting',
-    aliases: ['painting', 'paintings', 'paintng', 'paintngs'],
-  },
-  { canonical: 'Drawing', aliases: ['drawing', 'drawings'] },
-  { canonical: 'Print', aliases: ['print', 'prints'] },
-  {
-    canonical: 'Sculpture',
-    aliases: ['sculpture', 'sculptures', 'scultpure', 'scultpures'],
-  },
-  {
-    canonical: 'Photograph',
-    aliases: ['photograph', 'photographs', 'photo', 'photos', 'photography'],
-  },
-  {
-    canonical: 'Decorative Art',
-    aliases: ['decorative art', 'decorative arts'],
-  },
-];
+const CLASSIFICATION_ALIASES = [
+  ['painting', 'paintings', 'paintng', 'paintngs'],
+  ['drawing', 'drawings'],
+  ['print', 'prints'],
+  ['sculpture', 'sculptures', 'scultpure', 'scultpures'],
+  ['photograph', 'photographs', 'photo', 'photos', 'photography'],
+  ['decorative art', 'decorative arts'],
+] as const;
 
-const MEDIUMS: VocabularyEntry[] = [
-  { canonical: 'oil', aliases: ['oil', 'oils'] },
-  {
-    canonical: 'watercolor',
-    aliases: [
-      'watercolor',
-      'watercolors',
-      'watercolour',
-      'watercolours',
-      'watercolur',
-    ],
-  },
-  { canonical: 'ink', aliases: ['ink'] },
-  { canonical: 'graphite', aliases: ['graphite', 'pencil', 'pencils'] },
-  { canonical: 'charcoal', aliases: ['charcoal'] },
-  { canonical: 'etching', aliases: ['etching', 'etchings'] },
-  { canonical: 'engraving', aliases: ['engraving', 'engravings'] },
-  {
-    canonical: 'woodcut',
-    aliases: ['woodcut', 'woodcuts', 'woodblock', 'woodblocks'],
-  },
-  { canonical: 'bronze', aliases: ['bronze'] },
-  { canonical: 'marble', aliases: ['marble'] },
-];
+const CLASSIFICATIONS: VocabularyEntry[] = NGA_SEARCH_CLASSIFICATIONS.map(
+  (canonical, index) => ({
+    canonical,
+    aliases: [...CLASSIFICATION_ALIASES[index]!],
+  })
+);
+
+const MEDIUM_ALIASES = [
+  ['oil', 'oils'],
+  [
+    'watercolor',
+    'watercolors',
+    'watercolour',
+    'watercolours',
+    'watercolur',
+  ],
+  ['ink'],
+  ['graphite', 'pencil', 'pencils'],
+  ['charcoal'],
+  ['etching', 'etchings'],
+  ['engraving', 'engravings'],
+  ['woodcut', 'woodcuts', 'woodblock', 'woodblocks'],
+  ['bronze'],
+  ['marble'],
+] as const;
+
+const MEDIUMS: VocabularyEntry[] = NGA_SEARCH_MEDIUM_FAMILIES.map(
+  (canonical, index) => ({
+    canonical,
+    aliases: [...MEDIUM_ALIASES[index]!],
+  })
+);
 
 const SUBJECTS: VocabularyEntry[] = [
   { canonical: 'landscape', aliases: ['landscape'] },
@@ -576,50 +576,8 @@ const parseDateRange = (
 
 const uniqueSorted = (values: string[]) => [...new Set(values)].sort();
 
-export const validateNgaSearchConstraints = (
-  constraints: PublicSearchConstraints
-): string | null => {
-  if (
-    constraints.dateRange &&
-    (!Number.isInteger(constraints.dateRange.startYear) ||
-      !Number.isInteger(constraints.dateRange.endYear) ||
-      constraints.dateRange.startYear < 1000 ||
-      constraints.dateRange.endYear > 2100 ||
-      constraints.dateRange.startYear > constraints.dateRange.endYear)
-  ) {
-    return 'Invalid date range';
-  }
-  const allowedClassifications = new Set(
-    CLASSIFICATIONS.map((entry) => entry.canonical)
-  );
-  if (
-    constraints.classifications?.some(
-      (value) => !allowedClassifications.has(value)
-    )
-  ) {
-    return 'Unknown classification';
-  }
-  const allowedMediums = new Set(MEDIUMS.map((entry) => entry.canonical));
-  if (constraints.mediumFamilies?.some((value) => !allowedMediums.has(value))) {
-    return 'Unknown medium family';
-  }
-  return null;
-};
-
-export const normalizePublicSearchConstraints = (
-  constraints: PublicSearchConstraints
-): PublicSearchConstraints => ({
-  ...(constraints.dateRange ? { dateRange: constraints.dateRange } : {}),
-  ...(constraints.classifications?.length
-    ? { classifications: uniqueSorted(constraints.classifications) }
-    : {}),
-  ...(constraints.mediumFamilies?.length
-    ? { mediumFamilies: uniqueSorted(constraints.mediumFamilies) }
-    : {}),
-  ...(constraints.artistIds?.length
-    ? { artistIds: uniqueSorted(constraints.artistIds) }
-    : {}),
-});
+export { normalizePublicSearchConstraints };
+export const validateNgaSearchConstraints = validatePublicSearchConstraints;
 
 const parseNgaSearchIntentFlat = (
   originalQuery: string,

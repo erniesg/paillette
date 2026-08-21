@@ -18,13 +18,20 @@ const makeForm = (
   return form;
 };
 
-const makeRequest = (form: FormData, orgId = 'nga') => {
+const makeRequest = (
+  form: FormData,
+  orgId = 'nga',
+  signal?: AbortSignal
+) => {
   const request = new Request(
     `https://paillette.test/api/public-search/${orgId}/image`,
     {
       method: 'POST',
     }
   );
+  if (signal) {
+    Object.defineProperty(request, 'signal', { value: signal });
+  }
   Object.defineProperty(request, 'formData', {
     value: async () => form,
   });
@@ -182,6 +189,24 @@ describe('public image search proxy', () => {
         return form;
       },
     ],
+    [
+      'duplicate topK controls',
+      () => {
+        const form = makeForm();
+        form.append('topK', '10');
+        form.append('topK', '20');
+        return form;
+      },
+    ],
+    [
+      'duplicate minScore controls',
+      () => {
+        const form = makeForm();
+        form.append('minScore', '0');
+        form.append('minScore', '0.5');
+        return form;
+      },
+    ],
   ])('rejects %s locally with no-store before upstream spend', async (_label, makeInvalidForm) => {
     const fetcher = vi.fn<typeof globalThis.fetch>();
     vi.stubGlobal('fetch', fetcher);
@@ -266,5 +291,57 @@ describe('public image search proxy', () => {
     expect(response.status).toBe(status);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('Retry-After')).toBe(retryAfter);
+  });
+
+  it.each([
+    [429, '23'],
+    [501, '41'],
+  ])(
+    'preserves non-JSON upstream %i responses with Retry-After and no-store',
+    async (status, retryAfter) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof globalThis.fetch>(async () =>
+          new Response('upstream plain-text failure', {
+            status,
+            headers: {
+              'Content-Type': 'text/plain',
+              'Retry-After': retryAfter,
+            },
+          })
+        )
+      );
+
+      const response = await action({
+        context: {},
+        params: { orgId: 'nga' },
+        request: makeRequest(makeForm()),
+      } as any);
+
+      expect(response.status).toBe(status);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('Retry-After')).toBe(retryAfter);
+      await expect(response.text()).resolves.toBe(
+        'upstream plain-text failure'
+      );
+    }
+  );
+
+  it('rethrows a caller abort instead of converting it to upstream unavailability', async () => {
+    const abortError = new DOMException('caller cancelled', 'AbortError');
+    const controller = new AbortController();
+    controller.abort(abortError);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>().mockRejectedValue(abortError)
+    );
+
+    const pending = action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest(makeForm(), 'nga', controller.signal),
+    } as any);
+
+    await expect(pending).rejects.toBe(abortError);
   });
 });
