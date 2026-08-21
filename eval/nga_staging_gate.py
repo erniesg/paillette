@@ -38,6 +38,13 @@ EXPECTED_VERSIONS = {
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 VALID_REPEAT_CACHE_STATES = {"HIT", "KV-FRESH", "COALESCED"}
 VALID_FIRST_CACHE_STATES = {"MISS"}
+VALID_TEXT_CACHE_STATES = {
+    "MISS",
+    "HIT",
+    "KV-FRESH",
+    "KV-STALE",
+    "COALESCED",
+}
 NGA_CLASSIFICATIONS = {
     "Painting",
     "Drawing",
@@ -116,6 +123,120 @@ def _validate_origin(value: str, expected: str, label: str) -> None:
 def validate_staging_origins(api_base_url: str, web_base_url: str) -> None:
     _validate_origin(api_base_url, EXPECTED_API_ORIGIN, "API base URL")
     _validate_origin(web_base_url, EXPECTED_WEB_ORIGIN, "web base URL")
+
+
+def evaluate_deployment_binding(
+    identity: Mapping[str, Any], *, snapshot: str, evaluator_git_sha: str
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    api_value = identity.get("api")
+    web_value = identity.get("web")
+    api = api_value if isinstance(api_value, Mapping) else {}
+    web = web_value if isinstance(web_value, Mapping) else {}
+    required_top = {
+        "schemaVersion": "nga-deployment-identity-v1",
+        "snapshot": snapshot,
+    }
+    for field, expected in required_top.items():
+        if identity.get(field) != expected:
+            failures.append(
+                _failure(
+                    "deployment_identity_incomplete",
+                    field=field,
+                    expected=expected,
+                    actual=identity.get(field),
+                )
+            )
+    if not isinstance(identity.get("capturedAt"), str) or not identity.get(
+        "capturedAt"
+    ):
+        failures.append(
+            _failure("deployment_identity_incomplete", field="capturedAt")
+        )
+
+    required_components = {
+        "api": (
+            api,
+            {
+                "origin": EXPECTED_API_ORIGIN,
+                "deploymentId": None,
+                "versionId": None,
+                "gitSha": None,
+                "apiVersion": None,
+                "parserVersion": None,
+                "planVersion": None,
+                "resultCacheVersion": None,
+            },
+        ),
+        "web": (
+            web,
+            {
+                "origin": EXPECTED_WEB_ORIGIN,
+                "deploymentId": None,
+                "versionId": None,
+                "gitSha": None,
+                "contractVersion": None,
+            },
+        ),
+    }
+    for component, (record, fields) in required_components.items():
+        for field, expected in fields.items():
+            value = record.get(field)
+            valid = value == expected if expected is not None else (
+                isinstance(value, str) and bool(value.strip())
+            )
+            if not valid:
+                failures.append(
+                    _failure(
+                        "deployment_identity_incomplete",
+                        field=f"{component}.{field}",
+                        expected=expected,
+                        actual=value,
+                    )
+                )
+        git_sha = record.get("gitSha")
+        if isinstance(git_sha, str) and not re.fullmatch(r"[a-f0-9]{40}", git_sha):
+            failures.append(
+                _failure(
+                    "deployment_identity_incomplete",
+                    field=f"{component}.gitSha",
+                    actual=git_sha,
+                )
+            )
+
+    deployed_versions = {
+        "parser": api.get("parserVersion"),
+        "plan": api.get("planVersion"),
+        "contract": web.get("contractVersion"),
+        "apiResultCache": api.get("resultCacheVersion"),
+    }
+    if snapshot == "candidate":
+        for component, record in (("api", api), ("web", web)):
+            if record.get("gitSha") != evaluator_git_sha:
+                failures.append(
+                    _failure(
+                        "deployment_git_sha_mismatch",
+                        component=component,
+                        expected=evaluator_git_sha,
+                        actual=record.get("gitSha"),
+                    )
+                )
+        if deployed_versions != EXPECTED_VERSIONS:
+            failures.append(
+                _failure(
+                    "deployed_version_mismatch",
+                    expected=EXPECTED_VERSIONS,
+                    actual=deployed_versions,
+                )
+            )
+    return _result(
+        failures,
+        snapshot=snapshot,
+        evaluatorGitSha=evaluator_git_sha,
+        deploymentIdentityHash=sha256_json(identity),
+        deployedVersions=deployed_versions,
+        identity=identity,
+    )
 
 
 def fold(value: Any) -> str:
@@ -304,17 +425,17 @@ def inspect_row(
 
     artwork_id = str(row.get("id") or "")
     logical_org = artwork_id.split(":", 1)[0] if ":" in artwork_id else None
-    raw_org_values = [
-        value
-        for value in (row.get("orgId"), row.get("galleryId"))
-        if isinstance(value, str) and value
-    ]
+    raw_org_fields = {
+        field: row.get(field) for field in ("orgId", "galleryId")
+    }
+    raw_org_values = list(raw_org_fields.values())
     accepted_physical_orgs = {
         "open-access-art",
         "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
     }
     if logical_org != "open-access-art" or any(
-        value not in accepted_physical_orgs for value in raw_org_values
+        not isinstance(value, str) or value not in accepted_physical_orgs
+        for value in raw_org_values
     ):
         violations.append(
             {
@@ -322,7 +443,7 @@ def inspect_row(
                 "expected": "open-access-art",
                 "actual": {
                     "logical": logical_org,
-                    "physical": raw_org_values,
+                    "physical": raw_org_fields,
                 },
             }
         )
@@ -449,6 +570,32 @@ def _result(failures: list[dict[str, Any]], **details: Any) -> dict[str, Any]:
     }
 
 
+def _strict_success_rows(
+    payload: Mapping[str, Any], schema_code: str
+) -> tuple[Mapping[str, Any], list[Any], list[dict[str, Any]]]:
+    failures: list[dict[str, Any]] = []
+    data_value = payload.get("data")
+    if not isinstance(data_value, Mapping):
+        failures.append(_failure(schema_code, field="data", actual=type(data_value).__name__))
+        return {}, [], failures
+    results_value = data_value.get("results")
+    if not isinstance(results_value, list):
+        failures.append(
+            _failure(schema_code, field="data.results", actual=type(results_value).__name__)
+        )
+        rows: list[Any] = []
+    else:
+        rows = results_value
+    count = data_value.get("count")
+    if type(count) is not int or count != len(rows):
+        failures.append(
+            _failure(schema_code, field="data.count", actual=count, expected=len(rows))
+        )
+    if any(not isinstance(row, Mapping) for row in rows):
+        failures.append(_failure(schema_code, field="data.results[]"))
+    return data_value, rows, failures
+
+
 def evaluate_text_case(
     case: Mapping[str, Any],
     response: Mapping[str, Any],
@@ -462,35 +609,28 @@ def evaluate_text_case(
     if not 200 <= status < 300 or payload.get("success") is not True:
         failures.append(_failure("nga_request_failed", status=status))
 
-    data_value = payload.get("data")
-    data = data_value if isinstance(data_value, Mapping) else {}
+    data, rows, schema_failures = _strict_success_rows(
+        payload, "invalid_text_success_schema"
+    )
+    failures.extend(schema_failures)
     interpretation_value = data.get("interpretation")
     interpretation = (
         interpretation_value if isinstance(interpretation_value, Mapping) else {}
     )
     parser_version = interpretation.get("parserVersion")
-    if parser_version != EXPECTED_VERSIONS["parser"]:
+    expected_parser_version = (
+        observed_versions.get("parser")
+        if observed_versions is not None
+        else EXPECTED_VERSIONS["parser"]
+    )
+    if parser_version != expected_parser_version:
         failures.append(
             _failure(
                 "parser_version_mismatch",
-                expected=EXPECTED_VERSIONS["parser"],
+                expected=expected_parser_version,
                 actual=parser_version,
             )
         )
-
-    for field, code in (
-        ("plan", "plan_version_mismatch"),
-        ("contract", "contract_version_mismatch"),
-        ("apiResultCache", "cache_version_mismatch"),
-    ):
-        if observed_versions is not None and observed_versions.get(field) != EXPECTED_VERSIONS[field]:
-            failures.append(
-                _failure(
-                    code,
-                    expected=EXPECTED_VERSIONS[field],
-                    actual=observed_versions.get(field),
-                )
-            )
 
     expected_value = case.get("expected")
     expected = expected_value if isinstance(expected_value, Mapping) else {}
@@ -531,8 +671,6 @@ def evaluate_text_case(
         if not isinstance(unresolved, list) or not unresolved:
             failures.append(_failure("unresolved_ambiguity_missing"))
 
-    rows_value = data.get("results")
-    rows = rows_value if isinstance(rows_value, list) else []
     row_records = []
     for rank, row_value in enumerate(rows, 1):
         if not isinstance(row_value, Mapping):
@@ -565,7 +703,14 @@ def evaluate_text_case(
     search_value = meta.get("search")
     search = search_value if isinstance(search_value, Mapping) else {}
     degraded = search.get("degradedChannels")
-    if search.get("cacheable") is False or (isinstance(degraded, list) and degraded):
+    if (
+        not isinstance(meta_value, Mapping)
+        or not isinstance(search_value, Mapping)
+        or search.get("cacheable") is not True
+        or not isinstance(degraded, list)
+    ):
+        failures.append(_failure("invalid_text_success_schema", field="meta.search"))
+    if search.get("cacheable") is not True or degraded != []:
         failures.append(
             _failure(
                 "degraded_cacheable_text",
@@ -573,6 +718,24 @@ def evaluate_text_case(
                 degradedChannels=degraded,
             )
         )
+
+    cache_control = _header(response, "cache-control")
+    etag = _header(response, "etag")
+    cache_state = (_header(response, "x-paillette-search-cache") or "").upper()
+    cache_control_tokens = {
+        token.strip().lower() for token in (cache_control or "").split(",")
+    }
+    required_headers = {
+        "cache-control": bool(
+            "public" in cache_control_tokens
+            and any(token.startswith("s-maxage=") for token in cache_control_tokens)
+        ),
+        "etag": bool(etag),
+        "x-paillette-search-cache": cache_state in VALID_TEXT_CACHE_STATES,
+    }
+    for header, valid in required_headers.items():
+        if not valid:
+            failures.append(_failure("missing_text_cache_header", header=header))
 
     if case.get("expectedZeroResults") is True and rows:
         failures.append(_failure("expected_zero_results", actual=len(rows)))
@@ -585,9 +748,9 @@ def evaluate_text_case(
         interpretation=interpretation,
         constraints=actual_constraints,
         relation=interpretation.get("relation"),
-        cache=_header(response, "x-paillette-search-cache"),
-        cacheControl=_header(response, "cache-control"),
-        etag=_header(response, "etag"),
+        cache=cache_state or None,
+        cacheControl=cache_control,
+        etag=etag,
         cacheable=search.get("cacheable"),
         degradedChannels=degraded,
         rows=row_records,
@@ -661,11 +824,58 @@ def evaluate_text_cache_probe(
             failures.append(
                 _failure("cache_probe_request_failed", probe=label, status=status)
             )
-        meta = payload.get("meta") if isinstance(payload.get("meta"), Mapping) else {}
-        search = meta.get("search") if isinstance(meta.get("search"), Mapping) else {}
+        _data, _rows, schema_failures = _strict_success_rows(
+            payload, "invalid_text_success_schema"
+        )
+        failures.extend({**failure, "probe": label} for failure in schema_failures)
+        meta_value = payload.get("meta")
+        meta = meta_value if isinstance(meta_value, Mapping) else {}
+        search_value = meta.get("search")
+        search = search_value if isinstance(search_value, Mapping) else {}
         degraded = search.get("degradedChannels")
-        if search.get("cacheable") is False or (isinstance(degraded, list) and degraded):
-            failures.append(_failure("degraded_cacheable_text", probe=label))
+        if (
+            not isinstance(meta_value, Mapping)
+            or not isinstance(search_value, Mapping)
+            or search.get("cacheable") is not True
+            or not isinstance(degraded, list)
+        ):
+            failures.append(
+                _failure(
+                    "invalid_text_success_schema", field="meta.search", probe=label
+                )
+            )
+        if search.get("cacheable") is not True or degraded != []:
+            failures.append(
+                _failure(
+                    "degraded_cacheable_text",
+                    probe=label,
+                    cacheable=search.get("cacheable"),
+                    degradedChannels=degraded,
+                )
+            )
+        cache_control = _header(response, "cache-control")
+        cache_control_tokens = {
+            token.strip().lower() for token in (cache_control or "").split(",")
+        }
+        required_headers = {
+            "cache-control": bool(
+                "public" in cache_control_tokens
+                and any(
+                    token.startswith("s-maxage=")
+                    for token in cache_control_tokens
+                )
+            ),
+            "etag": bool(_header(response, "etag")),
+            "x-paillette-search-cache": (
+                (_header(response, "x-paillette-search-cache") or "").upper()
+                in VALID_TEXT_CACHE_STATES
+            ),
+        }
+        failures.extend(
+            _failure("missing_text_cache_header", header=header, probe=label)
+            for header, valid in required_headers.items()
+            if not valid
+        )
 
     return _result(
         failures,
@@ -739,10 +949,10 @@ def evaluate_image_response(
         failures.append(_failure("unexpected_auth", status=status))
     if not 200 <= status < 300 or payload.get("success") is not True:
         failures.append(_failure("nga_image_request_failed", status=status))
-    data_value = payload.get("data")
-    data = data_value if isinstance(data_value, Mapping) else {}
-    rows_value = data.get("results")
-    rows = rows_value if isinstance(rows_value, list) else []
+    _data, rows, schema_failures = _strict_success_rows(
+        payload, "invalid_image_success_schema"
+    )
+    failures.extend(schema_failures)
     row_records = []
     for rank, row_value in enumerate(rows, 1):
         if not isinstance(row_value, Mapping):
@@ -778,6 +988,28 @@ def evaluate_image_response(
     )
 
 
+def evaluate_image_case(
+    case: Mapping[str, Any], response: Mapping[str, Any]
+) -> dict[str, Any]:
+    evaluated = evaluate_image_response(response, case.get("constraints"))
+    failures = list(evaluated["failures"])
+    minimum_results = case.get("minimumResults")
+    if type(minimum_results) is int and len(evaluated["rows"]) < minimum_results:
+        failures.append(
+            _failure(
+                str(case.get("capabilityFailure") or "minimum_results_not_met"),
+                expectedMinimum=minimum_results,
+                actual=len(evaluated["rows"]),
+            )
+        )
+    return {
+        **evaluated,
+        "failures": failures,
+        "failureCodes": [failure["code"] for failure in failures],
+        "passed": not failures,
+    }
+
+
 def evaluate_negative_image_probes(
     probes: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, Any]:
@@ -786,7 +1018,13 @@ def evaluate_negative_image_probes(
         "invalid_mime": {400, 413, 415, 422},
         "zero_byte": {400, 413, 415, 422},
         "multiple_files": {400, 413, 415, 422},
-        "oversize": {413},
+        "oversize": {400, 413},
+    }
+    expected_messages = {
+        "invalid_mime": "Image must be a JPEG, PNG, or WebP file.",
+        "zero_byte": "Image must not be empty.",
+        "multiple_files": "Exactly one image file is required.",
+        "oversize": "Image must be 10 MB or smaller.",
     }
     for name, accepted_statuses in expected_status.items():
         response = probes.get(name) or {}
@@ -795,8 +1033,23 @@ def evaluate_negative_image_probes(
             failures.append(
                 _failure(f"invalid_image_accepted:{name}", status=status)
             )
+        payload = _response_json(response)
+        error_value = payload.get("error")
+        error = error_value if isinstance(error_value, Mapping) else {}
+        if (
+            payload.get("success") is not False
+            or error.get("code") != "INVALID_INPUT"
+            or error.get("message") != expected_messages[name]
+        ):
+            failures.append(
+                _failure(
+                    f"invalid_image_error_contract:{name}",
+                    status=status,
+                    error=error,
+                )
+            )
         cache_control = (_header(response, "cache-control") or "").lower()
-        if response.get("headers") is not None and "no-store" not in cache_control:
+        if "no-store" not in cache_control:
             failures.append(
                 _failure(f"invalid_image_error_cacheable:{name}", status=status)
             )
@@ -877,6 +1130,8 @@ def parse_legacy_cases(path: Path) -> list[dict[str, Any]]:
         expected: dict[str, Any] = {"constraints": constraints}
         if "semanticQuery" in fields:
             expected["semanticQuery"] = fields["semanticQuery"]
+        if fields.get("ambiguous") is True:
+            expected["unresolved"] = True
         if fields.get("relationKind") and fields.get("relationTarget"):
             work = fields.get("classification")
             if not work:
@@ -1014,7 +1269,176 @@ def make_manual_grading_template(
     }
 
 
+def summarize_manual_relevance(
+    templates: Sequence[Mapping[str, Any]], labels_document: Mapping[str, Any]
+) -> dict[str, Any]:
+    if not templates:
+        raise ValueError("no grading templates exist for relevance labels")
+    if labels_document.get("schemaVersion") != "nga-relevance-labels-v1":
+        raise ValueError("unexpected relevance label schema")
+    for field in ("gradedAt", "reviewer"):
+        if not isinstance(labels_document.get(field), str) or not labels_document.get(
+            field
+        ):
+            raise ValueError(f"relevance labels require {field}")
+    label_cases_value = labels_document.get("cases")
+    if not isinstance(label_cases_value, list):
+        raise ValueError("relevance labels require cases")
+    label_cases = {
+        case.get("caseId"): case
+        for case in label_cases_value
+        if isinstance(case, Mapping) and isinstance(case.get("caseId"), str)
+    }
+    template_ids = [str(template.get("caseId")) for template in templates]
+    if set(label_cases) != set(template_ids) or len(label_cases) != len(template_ids):
+        raise ValueError("relevance labels must cover every grading template exactly")
+
+    by_case: dict[str, Any] = {}
+    for template in templates:
+        case_id = str(template["caseId"])
+        expected_results = template.get("results")
+        supplied_results = label_cases[case_id].get("results")
+        if not isinstance(expected_results, list) or not isinstance(
+            supplied_results, list
+        ):
+            raise ValueError(f"invalid relevance rows for {case_id}")
+        expected_ids = [row.get("id") for row in expected_results]
+        supplied_ids = [
+            row.get("id") if isinstance(row, Mapping) else None
+            for row in supplied_results
+        ]
+        if supplied_ids != expected_ids:
+            raise ValueError(f"relevance row identity drift for {case_id}")
+        labels = [
+            row.get("relevance") if isinstance(row, Mapping) else None
+            for row in supplied_results
+        ]
+        by_case[case_id] = score_manual_relevance(labels)
+
+    metric_names = ("precisionAt5", "mrr", "ndcgAt10")
+    macro = {
+        metric: sum(metrics[metric] for metrics in by_case.values()) / len(by_case)
+        for metric in metric_names
+    }
+    return {
+        "status": "graded",
+        "caseCount": len(by_case),
+        "gradedAt": labels_document["gradedAt"],
+        "reviewer": labels_document["reviewer"],
+        "labelsSha256": sha256_json(labels_document),
+        "metrics": {"byCase": by_case, "macro": macro},
+    }
+
+
+def evaluate_manual_relevance_completion(
+    summary: Mapping[str, Any], snapshot: str
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    if (
+        snapshot == "candidate"
+        and int(summary.get("caseCount") or 0) > 0
+        and summary.get("status") != "graded"
+    ):
+        failures.append(
+            _failure(
+                "manual_relevance_incomplete", actual=summary.get("status")
+            )
+        )
+    return _result(failures, summary=summary)
+
+
+def evaluate_pilot_inspection(
+    inspection_path: Path,
+    *,
+    deployment_identity_hash: str,
+    evaluator_git_sha: str,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    try:
+        inspection_value = json.loads(inspection_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return _result(
+            [_failure("pilot_inspection_invalid", error=str(error))]
+        )
+    inspection = inspection_value if isinstance(inspection_value, Mapping) else {}
+    if inspection.get("schemaVersion") != "nga-pilot-inspection-v1":
+        failures.append(_failure("pilot_inspection_invalid", field="schemaVersion"))
+    if inspection.get("decision") != "proceed":
+        failures.append(
+            _failure(
+                "pilot_inspection_not_approved",
+                actual=inspection.get("decision"),
+            )
+        )
+    for field in ("reviewedAt", "reviewer", "pilotSummaryPath", "pilotSummarySha256"):
+        if not isinstance(inspection.get(field), str) or not inspection.get(field):
+            failures.append(_failure("pilot_inspection_invalid", field=field))
+
+    summary_path_value = inspection.get("pilotSummaryPath")
+    if not isinstance(summary_path_value, str) or not summary_path_value:
+        return _result(failures)
+    summary_path = Path(summary_path_value)
+    if not summary_path.is_absolute():
+        summary_path = inspection_path.parent / summary_path
+    try:
+        summary_bytes = summary_path.read_bytes()
+        summary_value = json.loads(summary_bytes)
+    except (OSError, json.JSONDecodeError) as error:
+        failures.append(_failure("pilot_summary_invalid", error=str(error)))
+        return _result(failures, pilotSummaryPath=str(summary_path))
+    summary = summary_value if isinstance(summary_value, Mapping) else {}
+    actual_summary_hash = sha256_bytes(summary_bytes)
+    if actual_summary_hash != inspection.get("pilotSummarySha256"):
+        failures.append(
+            _failure(
+                "pilot_summary_hash_mismatch",
+                expected=inspection.get("pilotSummarySha256"),
+                actual=actual_summary_hash,
+            )
+        )
+    expected_summary = {
+        "phase": "pilot",
+        "snapshot": "candidate",
+        "gatePassed": True,
+        "evaluatorGitSha": evaluator_git_sha,
+        "deploymentIdentityHash": deployment_identity_hash,
+    }
+    for field, expected in expected_summary.items():
+        if summary.get(field) != expected:
+            failures.append(
+                _failure(
+                    "pilot_summary_binding_mismatch",
+                    field=field,
+                    expected=expected,
+                    actual=summary.get(field),
+                )
+            )
+    manual_value = summary.get("manualRelevance")
+    manual = manual_value if isinstance(manual_value, Mapping) else {}
+    if manual.get("status") != "graded":
+        failures.append(
+            _failure(
+                "pilot_manual_review_incomplete",
+                actual=manual.get("status"),
+            )
+        )
+    return _result(
+        failures,
+        pilotSummaryPath=str(summary_path),
+        pilotSummarySha256=actual_summary_hash,
+        inspection=inspection,
+    )
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
 class UrllibTransport:
+    def __init__(self) -> None:
+        self.opener = urllib.request.build_opener(_RejectRedirects())
+
     def request(
         self,
         method: str,
@@ -1032,10 +1456,17 @@ class UrllibTransport:
         )
         started = time.monotonic()
         try:
-            response = urllib.request.urlopen(request, timeout=timeout)
+            response = self.opener.open(request, timeout=timeout)
         except urllib.error.HTTPError as error:
             response = error
         response_body = response.read()
+        status = int(response.status)
+        final_url = response.geturl()
+        if final_url != url or 300 <= status < 400:
+            raise GateStopped(
+                f"request endpoint relocated: expected {url}, "
+                f"received {status} at {final_url}"
+            )
         content_type = response.headers.get_content_type()
         decoded: Any = None
         if content_type == "application/json" or response_body.lstrip().startswith((b"{", b"[")):
@@ -1044,7 +1475,9 @@ class UrllibTransport:
             except (UnicodeDecodeError, json.JSONDecodeError):
                 decoded = None
         return {
-            "status": int(response.status),
+            "requestUrl": url,
+            "finalUrl": final_url,
+            "status": status,
             "headers": {key.lower(): value for key, value in response.headers.items()},
             "json": decoded,
             "body": response_body,
@@ -1099,6 +1532,8 @@ def verify_staging_health(transport: Any, api_base_url: str) -> dict[str, Any]:
             "API health did not prove status=healthy and environment=staging"
         )
     return {
+        "requestUrl": response.get("requestUrl"),
+        "finalUrl": response.get("finalUrl"),
         "status": response.get("status"),
         "headers": response.get("headers"),
         "body": payload,
@@ -1224,6 +1659,8 @@ def _post_image(
 
 def _safe_response(response: Mapping[str, Any]) -> dict[str, Any]:
     return {
+        "requestUrl": response.get("requestUrl"),
+        "finalUrl": response.get("finalUrl"),
         "status": response.get("status"),
         "elapsedMs": response.get("elapsedMs"),
         "headers": response.get("headers"),
@@ -1289,6 +1726,49 @@ def _git_sha(repo_root: Path) -> str:
     ).stdout.strip()
 
 
+def load_json_object(path: Path, label: str) -> Mapping[str, Any]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid {label} file: {path}") from error
+    if not isinstance(document, Mapping):
+        raise ValueError(f"{label} must be a JSON object")
+    return document
+
+
+def load_deployment_identity(path: Path) -> Mapping[str, Any]:
+    return load_json_object(path, "deployment identity")
+
+
+def rehash_evidence(out_dir: Path) -> dict[str, Any]:
+    """Create the final manifest after Python and Playwright evidence exist."""
+    artifacts: dict[str, Any] = {}
+    grouped_paths: dict[str, list[str]] = {"python": [], "playwright": []}
+    excluded = {"artifact-manifest.json", "hashes.json"}
+    for path in sorted(out_dir.rglob("*")):
+        if not path.is_file() or path.name in excluded:
+            continue
+        relative = path.relative_to(out_dir).as_posix()
+        group = "playwright" if relative.startswith("playwright/") else "python"
+        grouped_paths[group].append(relative)
+        artifacts[relative] = {
+            "group": group,
+            "sha256": sha256_bytes(path.read_bytes()),
+            "byteLength": path.stat().st_size,
+        }
+    groups = {
+        name: {"count": len(paths), "paths": paths}
+        for name, paths in grouped_paths.items()
+    }
+    manifest = {
+        "schemaVersion": "nga-staging-evidence-manifest-v1",
+        "groups": groups,
+        "artifacts": artifacts,
+    }
+    _write_json(out_dir / "artifact-manifest.json", manifest)
+    return manifest
+
+
 def extract_web_contract_versions(response: Mapping[str, Any]) -> list[str]:
     body = response.get("body") or b""
     text = body.decode("utf-8", errors="replace")
@@ -1304,23 +1784,37 @@ def extract_web_contract_versions(response: Mapping[str, Any]) -> list[str]:
     return versions
 
 
-def resolve_observed_versions(
-    local_versions: Mapping[str, str], live_contract_versions: Sequence[str]
-) -> dict[str, str]:
-    observed = dict(local_versions)
-    if len(live_contract_versions) == 1:
-        observed["contract"] = live_contract_versions[0]
-    elif not live_contract_versions:
-        observed["contract"] = "unobserved"
-    else:
-        observed["contract"] = "ambiguous:" + ",".join(live_contract_versions)
-    return observed
+def evaluate_live_contract_binding(
+    live_versions: Sequence[str], deployed_contract_version: str
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    if not live_versions:
+        failures.append(_failure("live_contract_unobserved"))
+    elif len(live_versions) != 1:
+        failures.append(
+            _failure("live_contract_ambiguous", actual=list(live_versions))
+        )
+    elif live_versions[0] != deployed_contract_version:
+        failures.append(
+            _failure(
+                "live_contract_mismatch",
+                expected=deployed_contract_version,
+                actual=live_versions[0],
+            )
+        )
+    return _result(
+        failures,
+        deployedContractVersion=deployed_contract_version,
+        liveContractVersions=list(live_versions),
+    )
 
 
 def _observe_web_contract(transport: Any, web_base_url: str) -> dict[str, Any]:
     response = transport.request("GET", f"{web_base_url}/nga/search")
     body = response.get("body") or b""
     return {
+        "requestUrl": response.get("requestUrl"),
+        "finalUrl": response.get("finalUrl"),
         "status": response.get("status"),
         "contractVersions": extract_web_contract_versions(response),
         "bodySha256": sha256_bytes(body),
@@ -1335,8 +1829,11 @@ class RunConfig:
     api_base_url: str
     web_base_url: str
     out_dir: Path
+    deployment_identity: Path
     fail_on_gates: bool
     repo_root: Path
+    relevance_labels: Path | None = None
+    pilot_inspection: Path | None = None
     requests_per_minute: int = 8
 
 
@@ -1344,6 +1841,26 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     # This is the first executable line by design. No files or clients are
     # created until both user-provided origins pass exact equality.
     validate_staging_origins(config.api_base_url, config.web_base_url)
+    candidate_sha = _git_sha(config.repo_root)
+    deployment_identity = load_deployment_identity(config.deployment_identity)
+    deployment_binding = evaluate_deployment_binding(
+        deployment_identity,
+        snapshot=config.snapshot,
+        evaluator_git_sha=candidate_sha,
+    )
+    if not deployment_binding["passed"]:
+        raise GateStopped("deployment identity does not bind the requested snapshot")
+    pilot_inspection: dict[str, Any] | None = None
+    if config.phase == "full" and config.snapshot == "candidate":
+        if config.pilot_inspection is None:
+            raise GateStopped("full candidate requires a reviewed pilot inspection")
+        pilot_inspection = evaluate_pilot_inspection(
+            config.pilot_inspection,
+            deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
+            evaluator_git_sha=candidate_sha,
+        )
+        if not pilot_inspection["passed"]:
+            raise GateStopped("pilot inspection does not authorize the full candidate")
     network = transport or UrllibTransport()
     pacer = RequestPacer(config.requests_per_minute)
     health = verify_staging_health(network, config.api_base_url)
@@ -1355,23 +1872,25 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     selected = select_cases(inventory, config.phase)
     local_versions = observe_local_versions(config.repo_root)
     web_contract = _observe_web_contract(network, config.web_base_url)
-    live_contract_versions = web_contract["contractVersions"]
-    observed_versions = resolve_observed_versions(
-        local_versions, live_contract_versions
+    deployed_versions = deployment_binding["deployedVersions"]
+    live_contract_binding = evaluate_live_contract_binding(
+        web_contract["contractVersions"], str(deployed_versions["contract"])
     )
 
     started_at = utc_now()
-    candidate_sha = _git_sha(config.repo_root)
     config.out_dir.mkdir(parents=True, exist_ok=True)
     identity = {
         "generatedAt": started_at,
-        "gitSha": candidate_sha,
+        "evaluatorGitSha": candidate_sha,
         "phase": config.phase,
         "snapshot": config.snapshot,
         "apiBaseUrl": config.api_base_url,
         "webBaseUrl": config.web_base_url,
-        "expectedVersions": EXPECTED_VERSIONS,
-        "observedVersions": observed_versions,
+        "localVersions": local_versions,
+        "deploymentIdentity": deployment_identity,
+        "deploymentBinding": deployment_binding,
+        "pilotInspection": pilot_inspection,
+        "liveContractBinding": live_contract_binding,
         "publicSearchRequestsPerMinute": config.requests_per_minute,
         "health": health,
         "webContract": web_contract,
@@ -1393,7 +1912,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         request_body = _text_request_body(case)
         pacer.wait()
         response = _post_json(network, text_endpoint, request_body)
-        evaluated = evaluate_text_case(case, response, observed_versions)
+        evaluated = evaluate_text_case(case, response, deployed_versions)
         record = {
             "case": case,
             "request": {
@@ -1499,13 +2018,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             files=[("image", case["filename"], fixture["mimeType"], image_bytes)],
             constraints=case.get("constraints"),
         )
-        evaluated = evaluate_image_response(response, case.get("constraints"))
-        if case.get("expectedZeroResults") and evaluated["rows"]:
-            evaluated["failures"].append(
-                _failure("expected_zero_results", actual=len(evaluated["rows"]))
-            )
-            evaluated["failureCodes"].append("expected_zero_results")
-            evaluated["passed"] = False
+        evaluated = evaluate_image_case(case, response)
         record = {
             "case": case,
             "request": {
@@ -1633,10 +2146,25 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         config.out_dir / "raw/ngs-probe.json",
         {"response": _safe_response(ngs_response), "evaluation": ngs_probe},
     )
+    if config.relevance_labels is not None:
+        labels_document = load_json_object(config.relevance_labels, "relevance labels")
+        manual_relevance = summarize_manual_relevance(
+            manual_templates, labels_document
+        )
+    else:
+        manual_relevance = {
+            "status": "manual_review_required" if manual_templates else "not_applicable",
+            "caseCount": len(manual_templates),
+            "metrics": None,
+        }
+    manual_relevance_gate = evaluate_manual_relevance_completion(
+        manual_relevance, config.snapshot
+    )
     _write_json(
         config.out_dir / "manual-relevance.json",
         {
-            "status": "manual_review_required" if manual_templates else "not_applicable",
+            "summary": manual_relevance,
+            "evaluation": manual_relevance_gate,
             "cases": manual_templates,
         },
     )
@@ -1671,24 +2199,24 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     all_failures.extend(
         {"scope": "ngs", **failure} for failure in ngs_probe["failures"]
     )
+    all_failures.extend(
+        {"scope": "manual-relevance", **failure}
+        for failure in manual_relevance_gate["failures"]
+    )
     if web_contract["status"] != 200:
         all_failures.append(
             {"scope": "web", "code": "nga_search_page_failed", "status": web_contract["status"]}
         )
-    if observed_versions != EXPECTED_VERSIONS:
-        all_failures.append(
-            {
-                "scope": "versions",
-                "code": "version_mismatch",
-                "expected": EXPECTED_VERSIONS,
-                "actual": observed_versions,
-            }
-        )
+    all_failures.extend(
+        {"scope": "web-contract", **failure}
+        for failure in live_contract_binding["failures"]
+    )
 
     summary = {
         "generatedAt": utc_now(),
         "startedAt": started_at,
-        "gitSha": candidate_sha,
+        "evaluatorGitSha": candidate_sha,
+        "deploymentIdentityHash": deployment_binding["deploymentIdentityHash"],
         "snapshot": config.snapshot,
         "phase": config.phase,
         "publicSearchRequestsPerMinute": config.requests_per_minute,
@@ -1697,8 +2225,10 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             "web": config.web_base_url,
         },
         "versions": {
-            "expected": EXPECTED_VERSIONS,
-            "observed": observed_versions,
+            "localEvaluator": local_versions,
+            "deployed": deployed_versions,
+            "deploymentBinding": deployment_binding,
+            "liveContractBinding": live_contract_binding,
         },
         "caseCounts": selected["counts"],
         "text": {
@@ -1712,19 +2242,16 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "cacheProbe": cache_probe,
         "imageIdentityProbe": identity_probe,
         "ngsProbe": ngs_probe,
-        "manualRelevance": {
-            "status": "manual_review_required" if manual_templates else "not_applicable",
-            "caseCount": len(manual_templates),
-            "metrics": None,
-        },
+        "manualRelevance": manual_relevance,
+        "pilotInspection": pilot_inspection,
         "gatePassed": not all_failures,
         "failureCount": len(all_failures),
         "gateFailures": all_failures,
         "limitations": [
             "Relation relevance requires independent 0-3 human labels; similarity is never used as truth.",
             "NGS non-upstream contact is inferred from the public proxy's scope-forbidden response and is also checked in the browser gate.",
-            "The positive image artist case uses a deliberately nonexistent canonical ID because the current public fixture metadata exposes no stable positive artist ID; any returned row still fails the exact-ID backstop.",
-            "Plan and API result-cache versions are observed from the exact local candidate and must be bound to the live deployment by Task 7 exact-deployment identity; parser and web contract versions are externally observed.",
+            "Official NGA objects_constituents identifies primary artists for the pinned works, but the shipped objects.csv ingestion does not join that relation and staged evidence has null primaryArtistId; the positive constrained artist case therefore remains an explicit launch-blocking unsupported capability until ingestion is repaired.",
+            "Local evaluator versions and deployed API/web identity are reported separately; candidate evaluation requires Task 7 to supply exact deployment IDs, version IDs, and Git SHAs.",
             "Semantic text-plus-image fusion is intentionally out of scope.",
         ],
     }
@@ -1733,7 +2260,9 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         f"# NGA staging gate — {config.snapshot} {config.phase}",
         "",
         f"- Generated: {summary['generatedAt']}",
-        f"- Git SHA: `{candidate_sha}`",
+        f"- Evaluator Git SHA: `{candidate_sha}`",
+        f"- Deployed API Git SHA: `{deployment_identity['api']['gitSha']}`",
+        f"- Deployed web Git SHA: `{deployment_identity['web']['gitSha']}`",
         f"- Hosts: `{config.api_base_url}`, `{config.web_base_url}`",
         f"- Cases: {selected['counts']}",
         f"- Hard gate: {'PASS' if summary['gatePassed'] else 'FAIL'}",
@@ -1755,14 +2284,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     markdown.extend(f"- {item}" for item in summary["limitations"])
     (config.out_dir / "summary.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
 
-    artifact_hashes = {}
-    for path in sorted(config.out_dir.rglob("*")):
-        if path.is_file() and path.name != "hashes.json":
-            artifact_hashes[str(path.relative_to(config.out_dir))] = {
-                "sha256": sha256_bytes(path.read_bytes()),
-                "byteLength": path.stat().st_size,
-            }
-    _write_json(config.out_dir / "hashes.json", artifact_hashes)
+    rehash_evidence(config.out_dir)
     return summary
 
 
@@ -1777,6 +2299,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-base-url", required=True)
     parser.add_argument("--web-base-url", required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--deployment-identity", type=Path, required=True)
+    parser.add_argument("--relevance-labels", type=Path)
+    parser.add_argument("--pilot-inspection", type=Path)
     parser.add_argument("--fail-on-gates", action="store_true")
     parser.add_argument(
         "--public-search-requests-per-minute",
@@ -1787,8 +2312,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_rehash_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Rehash a completed NGA Python + Playwright evidence directory."
+    )
+    parser.add_argument("--out-dir", type=Path, required=True)
+    return parser
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments[:1] == ["rehash"]:
+        args = build_rehash_parser().parse_args(arguments[1:])
+        manifest = rehash_evidence(args.out_dir.resolve())
+        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+        return 0
+    args = build_parser().parse_args(arguments)
     repo_root = Path(__file__).resolve().parents[1]
     try:
         summary = run_gate(
@@ -1798,8 +2337,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 api_base_url=args.api_base_url,
                 web_base_url=args.web_base_url,
                 out_dir=args.out_dir.resolve(),
+                deployment_identity=args.deployment_identity.resolve(),
                 fail_on_gates=args.fail_on_gates,
                 repo_root=repo_root,
+                relevance_labels=(
+                    args.relevance_labels.resolve() if args.relevance_labels else None
+                ),
+                pilot_inspection=(
+                    args.pilot_inspection.resolve() if args.pilot_inspection else None
+                ),
                 requests_per_minute=args.public_search_requests_per_minute,
             )
         )

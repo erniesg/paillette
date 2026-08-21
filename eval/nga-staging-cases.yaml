@@ -323,8 +323,9 @@
       "category": "image-artist",
       "fixtureId": "open-access-art:nga:131994",
       "filename": "nga-query.jpg",
-      "constraints": {"artistIds": ["nga:artist:nonexistent-gate-control"]},
-      "expectedZeroResults": true
+      "constraints": {"artistIds": ["1364"]},
+      "minimumResults": 1,
+      "capabilityFailure": "artist_constraint_capability_unproven"
     }
   ]
 }

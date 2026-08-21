@@ -116,6 +116,28 @@ const waitForImageResponse = (page: Page) =>
       response.request().method() === 'POST'
   );
 
+const controlledImageResult = (id: string, title: string) => ({
+  success: true,
+  data: {
+    results: [
+      {
+        id: `open-access-art:nga:${id}`,
+        orgId: 'open-access-art',
+        galleryId: 'open-access-art',
+        title,
+        artist: 'Controlled test artist',
+        imageUrl: `https://example.com/${id}.jpg`,
+        thumbnailUrl: `https://example.com/${id}-thumb.jpg`,
+        similarity: 0.95,
+        source: { provider: 'nga' },
+        metadata: { provider: 'nga', dominantColors: ['#1a2f52'] },
+      },
+    ],
+    count: 1,
+    queryTime: 1,
+  },
+});
+
 test.describe.serial('anonymous NGA staging browser gate', () => {
   test.beforeEach(async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -226,7 +248,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     await screenshot(page, '03-image-owner-local-palette');
   });
 
-  test('same filename different bytes executes distinctly and replacement wins', async ({
+  test('separate live same-filename image requests execute distinctly', async ({
     page,
     request,
   }) => {
@@ -266,28 +288,93 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     await expect(
       page.getByText('same-name.jpg', { exact: true })
     ).toBeVisible();
+    await screenshot(page, '04-live-same-name');
+  });
 
-    // A digest still in preparation is superseded by the next selection. The
-    // final preview and result owner must be the replacement, never stale work.
-    await input.setInputFiles({
-      name: 'candidate.jpg',
-      mimeType: first.fixture.mimeType,
-      buffer: first.bytes,
+  test('controlled out-of-order image responses keep replacement result ownership', async ({
+    page,
+  }) => {
+    const candidateResultTitle = 'candidate result title';
+    const replacementResultTitle = 'replacement result title';
+    let requestCount = 0;
+    let releaseFirstResponse = () => {};
+    let markFirstStarted = () => {};
+    let markFirstSettled = () => {};
+    let markSecondFulfilled = () => {};
+    const firstResponseRelease = new Promise<void>((resolvePromise) => {
+      releaseFirstResponse = resolvePromise;
     });
-    await input.setInputFiles({
-      name: 'replacement.jpg',
-      mimeType: second.fixture.mimeType,
-      buffer: second.bytes,
+    const firstStarted = new Promise<void>((resolvePromise) => {
+      markFirstStarted = resolvePromise;
     });
+    const firstSettled = new Promise<void>((resolvePromise) => {
+      markFirstSettled = resolvePromise;
+    });
+    const secondFulfilled = new Promise<void>((resolvePromise) => {
+      markSecondFulfilled = resolvePromise;
+    });
+
+    await page.route('**/api/public-search/nga/image', async (route) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        markFirstStarted();
+        await firstResponseRelease;
+        try {
+          await route.fulfill({
+            status: 200,
+            headers: { 'cache-control': 'no-store' },
+            json: controlledImageResult('candidate', candidateResultTitle),
+          });
+        } catch {
+          // Cancellation may detach the superseded route. Either outcome must
+          // leave the replacement as the sole visible result owner.
+        } finally {
+          markFirstSettled();
+        }
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        headers: { 'cache-control': 'no-store' },
+        json: controlledImageResult('replacement', replacementResultTitle),
+      });
+      markSecondFulfilled();
+    });
+
+    await openNga(page);
+    await page.getByRole('button', { name: 'Image search mode' }).click();
+    const input = page.getByLabel('Image for visual artwork search');
+
+    await input.setInputFiles({
+      name: 'candidate.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from([137, 80, 78, 71, 1]),
+    });
+    await firstStarted;
+    await input.setInputFiles({
+      name: 'replacement.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from([137, 80, 78, 71, 2]),
+    });
+    await secondFulfilled;
+    releaseFirstResponse();
+    await firstSettled;
+
+    expect(requestCount).toBe(2);
     await expect(
-      page.getByText('replacement.jpg', { exact: true })
-    ).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect(page.getByText('candidate.jpg', { exact: true })).toHaveCount(
+      page.getByText('replacement.png', { exact: true })
+    ).toBeVisible();
+    await expect(page.getByText('candidate.png', { exact: true })).toHaveCount(
       0
     );
-    await screenshot(page, '04-same-name-and-replacement');
+    await expect(
+      page.getByText(replacementResultTitle, { exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByText(candidateResultTitle, { exact: true })
+    ).toHaveCount(0);
+    await screenshot(page, '05-controlled-replacement-ownership');
   });
 
   test('invalid uploads preserve prior results and expose an alert', async ({
@@ -316,7 +403,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
       ).toBeVisible();
       expect(requests).toHaveLength(textRequestCount);
     }
-    await screenshot(page, '05-invalid-upload-preserves-results');
+    await screenshot(page, '06-invalid-upload-preserves-results');
   });
 
   test('NGS stays visibly locked and sends no public-search request', async ({
@@ -344,6 +431,6 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     ).toBeDisabled();
     await page.waitForTimeout(500);
     expect(requests).toEqual([]);
-    await screenshot(page, '06-ngs-locked');
+    await screenshot(page, '07-ngs-locked');
   });
 });

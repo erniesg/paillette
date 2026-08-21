@@ -7,7 +7,18 @@
       "url": "https://api.nga.gov/iiif/be97df51-1436-4d6c-a5e9-64c443a0e40b/full/843,/0/default.jpg",
       "mimeType": "image/jpeg",
       "byteLength": 234876,
-      "sha256": "916b13e076178f6c7860ce195d3ff3639ac3656bafb00b6b5fafe2e221105c06"
+      "sha256": "916b13e076178f6c7860ce195d3ff3639ac3656bafb00b6b5fafe2e221105c06",
+      "officialPrimaryArtist": {
+        "constituentId": "23812",
+        "role": "artist",
+        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects_constituents.csv",
+        "verifiedAt": "2026-08-22",
+        "ingestedPrimaryArtistId": null,
+        "ingestionEvidence": [
+          "scripts/lib/open-access-art-ingest.mjs",
+          "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"
+        ]
+      }
     },
     {
       "artworkId": "open-access-art:nga:131994",
@@ -15,7 +26,18 @@
       "url": "https://api.nga.gov/iiif/16f90d95-983b-4b93-ae7f-aa27eb8f150f/full/843,/0/default.jpg",
       "mimeType": "image/jpeg",
       "byteLength": 177661,
-      "sha256": "5a91692232e9689545379704439265d731638a023a8038fb742c55ddfda34405"
+      "sha256": "5a91692232e9689545379704439265d731638a023a8038fb742c55ddfda34405",
+      "officialPrimaryArtist": {
+        "constituentId": "1364",
+        "role": "painter",
+        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects_constituents.csv",
+        "verifiedAt": "2026-08-22",
+        "ingestedPrimaryArtistId": null,
+        "ingestionEvidence": [
+          "scripts/lib/open-access-art-ingest.mjs",
+          "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"
+        ]
+      }
     },
     {
       "artworkId": "open-access-art:nga:11236",
@@ -23,7 +45,18 @@
       "url": "https://api.nga.gov/iiif/34855e2a-740c-4d2f-914a-6dfb02c01bad/full/843,/0/default.jpg",
       "mimeType": "image/jpeg",
       "byteLength": 168683,
-      "sha256": "2b815daf7198d807f7f0243f41ef37c9ffc41d96207a5d77e6d65a5aa3979939"
+      "sha256": "2b815daf7198d807f7f0243f41ef37c9ffc41d96207a5d77e6d65a5aa3979939",
+      "officialPrimaryArtist": {
+        "constituentId": "1974",
+        "role": "artist",
+        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects_constituents.csv",
+        "verifiedAt": "2026-08-22",
+        "ingestedPrimaryArtistId": null,
+        "ingestionEvidence": [
+          "scripts/lib/open-access-art-ingest.mjs",
+          "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"
+        ]
+      }
     }
   ]
 }
