@@ -54,7 +54,7 @@ queries:
   - { id: academic-03, text: "works with provenance mentioning Paris" }
   - { id: academic-04, text: "objects with inscriptions" }
   - { id: academic-05, text: "accession 2003-03860" }
-  - { id: ambiguous-01, text: "painting of a sculpture", ambiguous: true }
+  - { id: ambiguous-01, text: "painting of a sculpture", classification: Painting, semanticQuery: "painting depicting sculpture", relationKind: depicts, relationTarget: Sculpture }
   - { id: ambiguous-02, text: "works after Rembrandt", ambiguous: true }
   - { id: ambiguous-03, text: "18th-century style", ambiguous: true }
   - { id: ambiguous-04, text: "orange paintings", classification: Painting }
@@ -85,7 +85,7 @@ queries:
   - { id: extra-20, text: "charcoal portraits from 1890", startYear: 1890, endYear: 1890, medium: charcoal }
   - { id: live-regression-01, text: "religious paintings from 15th century", startYear: 1400, endYear: 1499, classification: Painting }
   - { id: live-regression-02, text: "landscpae paintngs from 18th centry", startYear: 1700, endYear: 1799, classification: Painting, semanticQuery: landscape }
-  - { id: live-regression-03, text: "painting of a sculpture", ambiguous: true }
+  - { id: live-regression-03, text: "painting of a sculpture", classification: Painting, semanticQuery: "painting depicting sculpture", relationKind: depicts, relationTarget: Sculpture }
   - { id: live-regression-04, text: "works after Rembrandt", ambiguous: true }
   - { id: live-regression-05, text: "Italian Renaissance drawings", classification: Drawing }
   - { id: live-regression-06, text: "paintings from the second half of the 18th century before 1780", startYear: 1750, endYear: 1779, classification: Painting, semanticQuery: "" }

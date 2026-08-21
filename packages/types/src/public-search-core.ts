@@ -14,11 +14,32 @@ export type PublicSearchConstraints = {
   artistIds?: string[];
 };
 
+export type PublicSearchRelation =
+  | {
+      kind: 'depicts' | 'features';
+      workClassification: string;
+      subjectClassification: string;
+    }
+  | {
+      kind: 'derived_from';
+      workClassification: string;
+      sourceClassification: string;
+    };
+
+export type NgaSearchPlan = {
+  version: 'nga-plan-v1';
+  mode: 'structured' | 'semantic' | 'relational';
+  retrievalQuery: string;
+  constraints: PublicSearchConstraints;
+  relation?: PublicSearchRelation;
+};
+
 export type PublicSearchInterpretation = {
-  parserVersion: 'nga-v1' | 'nga-v2' | 'nga-v3' | 'nga-v4';
+  parserVersion: 'nga-v1' | 'nga-v2' | 'nga-v3' | 'nga-v4' | 'nga-v5';
   originalQuery: string;
   semanticQuery: string;
   constraints: PublicSearchConstraints;
+  relation?: PublicSearchRelation;
   corrections: Array<{ from: string; to: string }>;
   unresolved: string[];
 };

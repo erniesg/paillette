@@ -1,10 +1,12 @@
 import type {
+  NgaSearchPlan,
   PublicSearchConstraints,
   PublicSearchInterpretation,
+  PublicSearchRelation,
 } from '@paillette/types/public-search';
 import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
 
-export const NGA_SEARCH_PARSER_VERSION = 'nga-v4' as const;
+export const NGA_SEARCH_PARSER_VERSION = 'nga-v5' as const;
 
 type VocabularyEntry = {
   canonical: string;
@@ -194,6 +196,184 @@ const findExactPhraseMatches = (
   }
 
   return matches;
+};
+
+type ClassificationSpan = {
+  canonical: string;
+  matched: string;
+  start: number;
+  end: number;
+};
+
+const findClassificationSpans = (query: string): ClassificationSpan[] => {
+  const occupied: Array<{ start: number; end: number }> = [];
+  const matches: ClassificationSpan[] = [];
+  const aliases = CLASSIFICATIONS.flatMap((entry) =>
+    entry.aliases.map((alias) => ({ canonical: entry.canonical, alias }))
+  ).sort(
+    (left, right) =>
+      right.alias.length - left.alias.length ||
+      left.alias.localeCompare(right.alias)
+  );
+
+  for (const { canonical, alias } of aliases) {
+    const pattern = new RegExp(`\\b${escapeRegExp(alias)}\\b`, 'g');
+    for (const match of query.matchAll(pattern)) {
+      const start = match.index;
+      const end = start + match[0].length;
+      if (occupied.some((span) => start < span.end && end > span.start)) {
+        continue;
+      }
+      occupied.push({ start, end });
+      matches.push({ canonical, matched: match[0], start, end });
+    }
+  }
+
+  return matches.sort((left, right) => left.start - right.start);
+};
+
+type RelationConnector = {
+  kind: PublicSearchRelation['kind'];
+  pattern: RegExp;
+  workSide: 'left' | 'right';
+};
+
+const RELATION_CONNECTORS: RelationConnector[] = [
+  {
+    kind: 'derived_from',
+    pattern: /\bused\s+as\s+(?:the\s+)?basis\s+for\b/g,
+    workSide: 'right',
+  },
+  {
+    kind: 'depicts',
+    pattern: /\b(?:shown|depicted)\s+in\b/g,
+    workSide: 'right',
+  },
+  {
+    kind: 'derived_from',
+    pattern: /\b(?:based\s+on|after)\b/g,
+    workSide: 'left',
+  },
+  {
+    kind: 'depicts',
+    pattern: /\b(?:showing|depicting|of)\b/g,
+    workSide: 'left',
+  },
+  { kind: 'features', pattern: /\bwith\b/g, workSide: 'left' },
+];
+
+type CompiledRelation = {
+  relation: PublicSearchRelation;
+  workText: string;
+  targetText: string;
+  targetMatch: ClassificationSpan;
+};
+
+type RelationAnalysis = {
+  compiled?: CompiledRelation;
+  ambiguous: boolean;
+};
+
+const isClassificationList = (
+  query: string,
+  spans: ClassificationSpan[]
+): boolean =>
+  spans.length > 1 &&
+  spans.slice(1).every((span, index) => {
+    const previous = spans[index]!;
+    const connector = query.slice(previous.end, span.start).trim();
+    return /^(?:and|or)(?:\s+(?:a|an|the))?$/.test(connector);
+  });
+
+const isAfterRelationTargetPrefix = (value: string): boolean => {
+  const allowed = new Set([
+    'a',
+    'an',
+    'the',
+    ...MEDIUMS.flatMap((entry) => entry.aliases).filter(
+      (alias) => !alias.includes(' ')
+    ),
+  ]);
+  return value
+    .split(' ')
+    .filter(Boolean)
+    .every((token) => allowed.has(token));
+};
+
+const analyzeRelation = (query: string): RelationAnalysis => {
+  const spans = findClassificationSpans(query);
+  const candidates: CompiledRelation[] = [];
+  let incompleteRelation = false;
+
+  for (const connector of RELATION_CONNECTORS) {
+    for (const match of query.matchAll(connector.pattern)) {
+      const start = match.index;
+      const end = start + match[0].length;
+      const left = spans.filter((span) => span.end <= start);
+      const right = spans.filter((span) => span.start >= end);
+      if (!left.length || !right.length) continue;
+      if (
+        connector.kind === 'derived_from' &&
+        match[0] === 'after' &&
+        !isAfterRelationTargetPrefix(query.slice(end, right[0]!.start).trim())
+      ) {
+        continue;
+      }
+      if (left.length !== 1 || right.length !== 1) {
+        incompleteRelation = true;
+        continue;
+      }
+
+      const workMatch = connector.workSide === 'left' ? left[0]! : right[0]!;
+      const targetMatch = connector.workSide === 'left' ? right[0]! : left[0]!;
+      const workClassification = workMatch.canonical;
+      const relation: PublicSearchRelation =
+        connector.kind === 'derived_from'
+          ? {
+              kind: 'derived_from',
+              workClassification,
+              sourceClassification: targetMatch.canonical,
+            }
+          : {
+              kind: connector.kind,
+              workClassification,
+              subjectClassification: targetMatch.canonical,
+            };
+      candidates.push({
+        relation,
+        workText:
+          connector.workSide === 'left'
+            ? query.slice(0, start).trim()
+            : query.slice(end).trim(),
+        targetText:
+          connector.workSide === 'left'
+            ? query.slice(end).trim()
+            : query.slice(0, start).trim(),
+        targetMatch,
+      });
+    }
+  }
+
+  if (candidates.length === 1 && !incompleteRelation) {
+    return { compiled: candidates[0], ambiguous: false };
+  }
+
+  const ambiguousPicture = new RegExp(
+    `\\bpictures?\\s+of\\s+(?:(?:a|an|the)\\s+)?(?:${CLASSIFICATIONS.flatMap(
+      (entry) => entry.aliases
+    )
+      .sort((left, right) => right.length - left.length)
+      .map(escapeRegExp)
+      .join('|')})\\b`
+  ).test(query);
+
+  return {
+    ambiguous:
+      candidates.length > 1 ||
+      incompleteRelation ||
+      ambiguousPicture ||
+      (spans.length > 1 && !isClassificationList(query, spans)),
+  };
 };
 
 const findVocabularyMatch = (
@@ -424,7 +604,7 @@ export const normalizePublicSearchConstraints = (
     : {}),
 });
 
-export const parseNgaSearchIntent = (
+const parseNgaSearchIntentFlat = (
   originalQuery: string,
   explicitConstraints?: PublicSearchConstraints
 ): PublicSearchInterpretation => {
@@ -577,6 +757,123 @@ export const parseNgaSearchIntent = (
         ) === index
     ),
     unresolved: [],
+  };
+};
+
+const cleanRoleExtras = (value: string) =>
+  value
+    .replace(/\b(?:a|an|the)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildRelationRetrievalQuery = (
+  compiled: CompiledRelation,
+  workSemanticQuery: string
+): string => {
+  const workClassification = fold(compiled.relation.workClassification);
+  const targetClassification =
+    compiled.relation.kind === 'derived_from'
+      ? compiled.relation.sourceClassification
+      : compiled.relation.subjectClassification;
+  const targetExtras = cleanRoleExtras(
+    compiled.targetText.replace(
+      new RegExp(`\\b${escapeRegExp(compiled.targetMatch.matched)}\\b`),
+      ' '
+    )
+  );
+  const workPhrase = [cleanRoleExtras(workSemanticQuery), workClassification]
+    .filter(Boolean)
+    .join(' ');
+  const targetPhrase = [targetExtras, fold(targetClassification)]
+    .filter(Boolean)
+    .join(' ');
+  const connector =
+    compiled.relation.kind === 'depicts'
+      ? 'depicting'
+      : compiled.relation.kind === 'features'
+        ? 'featuring'
+        : 'based on';
+  return `${workPhrase} ${connector} ${targetPhrase}`;
+};
+
+export const parseNgaSearchIntent = (
+  originalQuery: string,
+  explicitConstraints?: PublicSearchConstraints
+): PublicSearchInterpretation => {
+  const normalized = fold(originalQuery);
+  const relationAnalysis = analyzeRelation(normalized);
+
+  if (relationAnalysis.compiled) {
+    const inferredWorkIntent = parseNgaSearchIntentFlat(
+      relationAnalysis.compiled.workText
+    );
+    return {
+      parserVersion: NGA_SEARCH_PARSER_VERSION,
+      originalQuery,
+      semanticQuery: buildRelationRetrievalQuery(
+        relationAnalysis.compiled,
+        inferredWorkIntent.semanticQuery
+      ),
+      constraints:
+        explicitConstraints === undefined
+          ? inferredWorkIntent.constraints
+          : normalizePublicSearchConstraints(explicitConstraints),
+      relation: relationAnalysis.compiled.relation,
+      corrections: inferredWorkIntent.corrections,
+      unresolved: [],
+    };
+  }
+
+  const interpretation = parseNgaSearchIntentFlat(
+    originalQuery,
+    explicitConstraints
+  );
+  if (!relationAnalysis.ambiguous) return interpretation;
+
+  return {
+    ...interpretation,
+    constraints:
+      explicitConstraints === undefined ? {} : interpretation.constraints,
+    unresolved: [normalized],
+  };
+};
+
+const buildPlanRetrievalFallback = (constraints: PublicSearchConstraints) => {
+  const terms = [
+    ...(constraints.classifications || []),
+    ...(constraints.mediumFamilies || []),
+  ].map(fold);
+  return uniqueSorted(terms).join(' ') || 'art';
+};
+
+export const compileNgaSearchPlan = (
+  query: string,
+  explicitConstraints?: PublicSearchConstraints
+): NgaSearchPlan => {
+  const interpretation = parseNgaSearchIntent(query, explicitConstraints);
+  if (interpretation.relation) {
+    return {
+      version: 'nga-plan-v1',
+      mode: 'relational',
+      retrievalQuery: interpretation.semanticQuery,
+      constraints: interpretation.constraints,
+      relation: interpretation.relation,
+    };
+  }
+
+  const structured = Object.keys(interpretation.constraints).length > 0;
+  const meaningfulSemanticQuery = /^(?!(?:and|or)(?:\s+(?:and|or))*$).+/.test(
+    interpretation.semanticQuery
+  )
+    ? interpretation.semanticQuery
+    : '';
+  return {
+    version: 'nga-plan-v1',
+    mode: structured ? 'structured' : 'semantic',
+    retrievalQuery:
+      meaningfulSemanticQuery ||
+      buildPlanRetrievalFallback(interpretation.constraints),
+    constraints: interpretation.constraints,
   };
 };
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  compileNgaSearchPlan,
   matchesNgaSearchConstraints,
   parseNgaSearchIntent,
 } from './nga-search-intent';
@@ -15,6 +16,8 @@ type CorpusQuery = {
   medium?: string;
   semanticQuery?: string;
   ambiguous?: boolean;
+  relationKind?: 'depicts' | 'features' | 'derived_from';
+  relationTarget?: string;
 };
 
 const constraintCorpusPath = resolve(
@@ -80,13 +83,21 @@ const loadConstraintCorpus = (): CorpusQuery[] =>
           ...(fields.ambiguous === undefined
             ? {}
             : { ambiguous: fields.ambiguous === 'true' }),
+          ...(fields.relationKind === undefined
+            ? {}
+            : {
+                relationKind: fields.relationKind as CorpusQuery['relationKind'],
+              }),
+          ...(fields.relationTarget === undefined
+            ? {}
+            : { relationTarget: fields.relationTarget }),
         },
       ];
     });
 
 describe('parseNgaSearchIntent', () => {
-  it('reports the nga-v4 parser contract', () => {
-    expect(parseNgaSearchIntent('paintings').parserVersion).toBe('nga-v4');
+  it('reports the nga-v5 parser contract', () => {
+    expect(parseNgaSearchIntent('paintings').parserVersion).toBe('nga-v5');
   });
 
   it('ships a versioned evaluation corpus with at least 80 representative queries', () => {
@@ -123,7 +134,219 @@ describe('parseNgaSearchIntent', () => {
       if (queryCase.ambiguous) {
         expect.soft(intent.constraints, queryCase.id).toEqual({});
       }
+      if (queryCase.relationKind && queryCase.relationTarget) {
+        expect.soft(intent.relation?.kind, queryCase.id).toBe(
+          queryCase.relationKind
+        );
+        expect
+          .soft(
+            intent.relation?.kind === 'derived_from'
+              ? intent.relation.sourceClassification
+              : intent.relation?.subjectClassification,
+            queryCase.id
+          )
+          .toBe(queryCase.relationTarget);
+      } else {
+        expect.soft(intent.relation, queryCase.id).toBeUndefined();
+      }
     }
+  });
+
+  it.each([
+    [
+      'painting showing a sculpture',
+      'Painting',
+      'depicts',
+      'Sculpture',
+      'painting depicting sculpture',
+    ],
+    [
+      'painting depicting sculpture',
+      'Painting',
+      'depicts',
+      'Sculpture',
+      'painting depicting sculpture',
+    ],
+    [
+      'sculpture shown in a painting',
+      'Painting',
+      'depicts',
+      'Sculpture',
+      'painting depicting sculpture',
+    ],
+    [
+      'sculpture depicted in painting',
+      'Painting',
+      'depicts',
+      'Sculpture',
+      'painting depicting sculpture',
+    ],
+    [
+      'sculpture depicting painting',
+      'Sculpture',
+      'depicts',
+      'Painting',
+      'sculpture depicting painting',
+    ],
+    [
+      'painting with sculpture',
+      'Painting',
+      'features',
+      'Sculpture',
+      'painting featuring sculpture',
+    ],
+    [
+      'drawing based on photograph',
+      'Drawing',
+      'derived_from',
+      'Photograph',
+      'drawing based on photograph',
+    ],
+    [
+      'photograph used as basis for drawing',
+      'Drawing',
+      'derived_from',
+      'Photograph',
+      'drawing based on photograph',
+    ],
+  ])(
+    'compiles directional relation plan for %s',
+    (query, workClassification, kind, targetClassification, retrievalQuery) => {
+      const plan = compileNgaSearchPlan(query);
+
+      expect(plan).toEqual({
+        version: 'nga-plan-v1',
+        mode: 'relational',
+        retrievalQuery,
+        constraints: { classifications: [workClassification] },
+        relation:
+          kind === 'derived_from'
+            ? {
+                kind: 'derived_from',
+                workClassification,
+                sourceClassification: targetClassification,
+              }
+            : {
+                kind,
+                workClassification,
+                subjectClassification: targetClassification,
+              },
+      });
+    }
+  );
+
+  it.each([
+    [
+      'oil painting showing a bronze sculpture',
+      ['Painting'],
+      ['oil'],
+      undefined,
+      'painting depicting bronze sculpture',
+    ],
+    [
+      'bronze sculpture shown in an oil painting',
+      ['Painting'],
+      ['oil'],
+      undefined,
+      'painting depicting bronze sculpture',
+    ],
+    [
+      '18th century painting showing a 20th century sculpture',
+      ['Painting'],
+      undefined,
+      { startYear: 1700, endYear: 1799 },
+      'painting depicting 20th century sculpture',
+    ],
+    [
+      '20th century sculpture shown in an 18th century painting',
+      ['Painting'],
+      undefined,
+      { startYear: 1700, endYear: 1799 },
+      'painting depicting 20th century sculpture',
+    ],
+    [
+      'painting after 1800 showing sculpture',
+      ['Painting'],
+      undefined,
+      { startYear: 1801, endYear: 2100 },
+      'painting depicting sculpture',
+    ],
+  ])(
+    'keeps role-attached hard constraints on the returned work for %s',
+    (query, classifications, mediumFamilies, dateRange, retrievalQuery) => {
+      expect(compileNgaSearchPlan(query)).toEqual({
+        version: 'nga-plan-v1',
+        mode: 'relational',
+        retrievalQuery,
+        constraints: {
+          ...(dateRange ? { dateRange } : {}),
+          classifications,
+          ...(mediumFamilies ? { mediumFamilies } : {}),
+        },
+        relation: {
+          kind: 'depicts',
+          workClassification: 'Painting',
+          subjectClassification: 'Sculpture',
+        },
+      });
+    }
+  );
+
+  it('keeps classification lists as returned-work constraints', () => {
+    expect(compileNgaSearchPlan('paintings and sculptures')).toEqual({
+      version: 'nga-plan-v1',
+      mode: 'structured',
+      retrievalQuery: 'painting sculpture',
+      constraints: { classifications: ['Painting', 'Sculpture'] },
+    });
+  });
+
+  it.each([
+    'picture of drawing',
+    'painting near sculpture',
+    'paintings and sculptures depicting drawings',
+  ])('fails closed for unsupported relation direction in %s', (query) => {
+    const intent = parseNgaSearchIntent(query);
+
+    expect(intent.relation).toBeUndefined();
+    expect(intent.constraints).toEqual({});
+    expect(intent.unresolved.length).toBeGreaterThan(0);
+  });
+
+  it('preserves attribution wording instead of inventing a source relation', () => {
+    const intent = parseNgaSearchIntent('painting after Rembrandt');
+
+    expect(intent.constraints).toEqual({ classifications: ['Painting'] });
+    expect(intent.relation).toBeUndefined();
+    expect(intent.semanticQuery).toBe('after rembrandt attribution');
+  });
+
+  it('treats after as derivation only between artwork classifications', () => {
+    expect(compileNgaSearchPlan('painting after photograph')).toEqual({
+      version: 'nga-plan-v1',
+      mode: 'relational',
+      retrievalQuery: 'painting based on photograph',
+      constraints: { classifications: ['Painting'] },
+      relation: {
+        kind: 'derived_from',
+        workClassification: 'Painting',
+        sourceClassification: 'Photograph',
+      },
+    });
+  });
+
+  it('lets explicit empty constraints remove inferred filters but retain relation metadata', () => {
+    expect(compileNgaSearchPlan('painting showing sculpture', {})).toEqual({
+      version: 'nga-plan-v1',
+      mode: 'relational',
+      retrievalQuery: 'painting depicting sculpture',
+      constraints: {},
+      relation: {
+        kind: 'depicts',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    });
   });
   it.each([
     ['PAINTINGS FROM THE 18TH CENTURY', 1700, 1799, ['Painting']],
@@ -241,7 +464,6 @@ describe('parseNgaSearchIntent', () => {
       'religious paintings from 15th century',
       'religious biblical sacred scene',
     ],
-    ['painting of a sculpture', 'painting depicting a sculpture'],
     ['works after Rembrandt', 'after rembrandt attribution'],
     ['Italian Renaissance drawings', 'italian renaissance 1400s 1500s'],
   ])(
@@ -249,9 +471,6 @@ describe('parseNgaSearchIntent', () => {
     (query, semanticQuery) => {
       const intent = parseNgaSearchIntent(query);
       expect(intent.semanticQuery).toBe(semanticQuery);
-      if (query === 'painting of a sculpture') {
-        expect(intent.constraints.classifications).toBeUndefined();
-      }
       if (query === 'works after Rembrandt') {
         expect(intent.constraints.dateRange).toBeUndefined();
       }
@@ -261,55 +480,86 @@ describe('parseNgaSearchIntent', () => {
     }
   );
 
-  it.each([
-    'painting of a sculpture',
-    'works after Rembrandt',
-    '18th-century style',
-  ])('does not invent a hard constraint for ambiguous query %s', (query) => {
-    const intent = parseNgaSearchIntent(query);
-    if (query.includes('sculpture'))
-      expect(intent.constraints.classifications).toBeUndefined();
-    if (query.includes('Rembrandt'))
-      expect(intent.constraints.dateRange).toBeUndefined();
-  });
-
-  it.each([
-    ['photograph of a painting', 'photograph a painting'],
-    ['drawing of a sculpture', 'drawing a sculpture'],
-    ['painting depicting a photograph', 'painting depicting a photograph'],
-    ['portrait photograph of a sculpture', 'portrait photograph a sculpture'],
-    ['sculpture in a painting', 'sculpture a painting'],
-    ['painting after a photograph', 'painting after a photograph'],
-  ])(
-    'keeps relational object types semantic for %s',
-    (query, semanticQuery) => {
+  it.each(['works after Rembrandt', '18th-century style'])(
+    'does not invent a hard constraint for ambiguous query %s',
+    (query) => {
       const intent = parseNgaSearchIntent(query);
-      expect(intent.constraints.classifications).toBeUndefined();
-      expect(intent.semanticQuery).toBe(semanticQuery);
+      if (query.includes('Rembrandt'))
+        expect(intent.constraints.dateRange).toBeUndefined();
+      if (query.includes('style'))
+        expect(intent.constraints.dateRange).toBeUndefined();
     }
   );
 
   it.each([
-    ['painting showing a sculpture', 'painting showing a sculpture'],
-    ['painting with a sculpture', 'painting with a sculpture'],
-    ['sculpture depicted in a painting', 'sculpture depicted a painting'],
-    ['drawing based on a photograph', 'drawing based on a photograph'],
-    ['painting of the sculpture', 'painting sculpture'],
-    ['sculpture depicted in the painting', 'sculpture depicted painting'],
+    ['photograph of a painting', 'Photograph', 'depicts', 'Painting'],
+    ['drawing of a sculpture', 'Drawing', 'depicts', 'Sculpture'],
+    ['painting depicting a photograph', 'Painting', 'depicts', 'Photograph'],
+    [
+      'portrait photograph of a sculpture',
+      'Photograph',
+      'depicts',
+      'Sculpture',
+    ],
+    [
+      'painting after a photograph',
+      'Painting',
+      'derived_from',
+      'Photograph',
+    ],
   ])(
-    'keeps adversarial relational types semantic for %s',
-    (query, semanticQuery) => {
+    'assigns relational object types to their grammatical roles for %s',
+    (query, workClassification, kind, targetClassification) => {
       const intent = parseNgaSearchIntent(query);
-      expect(intent.constraints.classifications).toBeUndefined();
-      expect(intent.semanticQuery).toBe(semanticQuery);
+
+      expect(intent.constraints.classifications).toEqual([
+        workClassification,
+      ]);
+      expect(intent.relation).toEqual(
+        kind === 'derived_from'
+          ? {
+              kind,
+              workClassification,
+              sourceClassification: targetClassification,
+            }
+          : {
+              kind,
+              workClassification,
+              subjectClassification: targetClassification,
+            }
+      );
     }
   );
 
-  it('preserves a multiword relational classification in the semantic query', () => {
-    const intent = parseNgaSearchIntent('painting showing decorative art');
-    expect(intent.constraints.classifications).toBeUndefined();
-    expect(intent.semanticQuery).toBe('painting showing decorative art');
-  });
+  it.each([
+    ['painting of the sculpture', 'Painting', 'depicts', 'Sculpture'],
+    [
+      'sculpture depicted in the painting',
+      'Painting',
+      'depicts',
+      'Sculpture',
+    ],
+    [
+      'painting showing decorative art',
+      'Painting',
+      'depicts',
+      'Decorative Art',
+    ],
+  ])(
+    'normalizes determiners and multiword relation classifications for %s',
+    (query, workClassification, kind, subjectClassification) => {
+      const intent = parseNgaSearchIntent(query);
+
+      expect(intent.constraints.classifications).toEqual([
+        workClassification,
+      ]);
+      expect(intent.relation).toEqual({
+        kind,
+        workClassification,
+        subjectClassification,
+      });
+    }
+  );
 
   it.each([
     ['after 1700 before 1800 paintings', 1701, 1799],
