@@ -674,6 +674,22 @@ describe('parseNgaSearchIntent', () => {
     expect(intent.constraints.classifications).toBeUndefined();
   });
 
+  it('strips stale structured words without restoring overridden constraints', () => {
+    const query =
+      'validation a6ee6dd2f870 oil paintings after 1700 before 1800';
+    const explicitConstraints = { classifications: ['Drawing'] };
+
+    expect(parseNgaSearchIntent(query, explicitConstraints)).toMatchObject({
+      semanticQuery: 'validation a6ee6dd2f870',
+      constraints: explicitConstraints,
+    });
+    expect(compileNgaSearchPlan(query, explicitConstraints)).toMatchObject({
+      mode: 'structured',
+      retrievalQuery: 'validation a6ee6dd2f870',
+      constraints: explicitConstraints,
+    });
+  });
+
   it('keeps parser vocabulary synchronized with shared public constraints', () => {
     const shared = publicSearchCore as Record<string, unknown>;
     const classifications = shared.NGA_SEARCH_CLASSIFICATIONS as

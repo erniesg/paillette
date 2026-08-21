@@ -594,13 +594,14 @@ const parseNgaSearchIntentFlat = (
   const normalized = fold(originalQuery);
   const corrections: Array<{ from: string; to: string }> = [];
   if (explicitConstraints) {
+    // Explicit constraints are authoritative, but callers can still send a
+    // stale query string that contains the words represented by old chips.
+    // Reuse the normal parser only to remove those structured phrases from
+    // retrieval text; never merge its inferred constraints back in.
+    const semanticInterpretation = parseNgaSearchIntentFlat(originalQuery);
     return {
-      parserVersion: NGA_SEARCH_PARSER_VERSION,
-      originalQuery,
-      semanticQuery: normalized,
+      ...semanticInterpretation,
       constraints: normalizePublicSearchConstraints(explicitConstraints),
-      corrections,
-      unresolved: [],
     };
   }
 

@@ -2405,7 +2405,11 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
     const structuredConstraints = ngaPlan?.constraints;
-    const retrievalQuery = ngaPlan?.retrievalQuery || query;
+    // A facet query is itself the selected facet value (for example,
+    // "Painting") and must not be replaced by the residual free-text plan.
+    // Non-facet searches use the compiled residual so stale structured chip
+    // words cannot leak back into semantic or metadata retrieval.
+    const retrievalQuery = facet ? query : ngaPlan?.retrievalQuery || query;
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
       try {

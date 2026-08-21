@@ -3795,6 +3795,46 @@ describe('Search API auth and quota behavior', () => {
     );
   });
 
+  it('keeps explicit constraints authoritative while removing stale structured retrieval words', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-explicit-drawing',
+        title: 'Validation Study',
+        year: 1900,
+        classification: 'Drawing',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query:
+          'validation a6ee6dd2f870 oil paintings after 1700 before 1800',
+        topK: 100,
+        minScore: 0,
+        constraints: { classifications: ['Drawing'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+    const metadataParams = JSON.stringify(db.metadataSearchParams[0]);
+
+    expect(response.status).toBe(200);
+    expect(payload.data.interpretation).toMatchObject({
+      semanticQuery: 'validation a6ee6dd2f870',
+      constraints: { classifications: ['Drawing'] },
+    });
+    expect(metadataParams).toContain('validation');
+    expect(metadataParams).not.toMatch(/oil|paintings|1700|1800/);
+    expect(db.metadataSearchParams[0]).toEqual(
+      expect.arrayContaining(['drawing'])
+    );
+  });
+
   it('uses a lightweight classification fallback for the exact structured-only live query and caches it', async () => {
     db = new FakeSearchDb([
       makeArtworkRow({
