@@ -40,12 +40,15 @@ describe('buildStructuredConstraintSql', () => {
     });
 
     expect(result.sql).toContain(
-      "lower(trim(coalesce(medium_family, ''))) IN (?) OR lower(coalesce(medium, '')) LIKE ? ESCAPE '\\'"
+      "lower(trim(coalesce(medium_family, ''))) IN (?) OR (' ' || lower(coalesce(medium, '')) || ' ') GLOB ?"
     );
     expect(result.sql).not.toContain(
       "trim(coalesce(medium_family, '')) = ''"
     );
-    expect(result.params).toEqual(['woodcut', '%woodcut%']);
+    expect(result.params).toEqual([
+      'woodcut',
+      '*[^a-z0-9]woodcut[^a-z0-9]*',
+    ]);
   });
 });
 
@@ -513,7 +516,14 @@ class FakeSearchDb {
         paramIndex += count;
         const mediumFallbacks = params
           .slice(paramIndex, paramIndex + count)
-          .map((value) => String(value).replaceAll('%', '').toLowerCase());
+          .map((value) => {
+            const pattern = String(value).toLowerCase();
+            return sql.includes(' GLOB ?')
+              ? pattern
+                  .replace('*[^a-z0-9]', '')
+                  .replace('[^a-z0-9]*', '')
+              : pattern.replaceAll('%', '');
+          });
         paramIndex += count;
         constrainedRows = constrainedRows.filter((row) => {
           const structured = row as typeof row & {
@@ -522,8 +532,13 @@ class FakeSearchDb {
           const mediumFamily = String(structured.medium_family || '')
             .trim()
             .toLowerCase();
+          const rawMedium = String(row.medium || '').toLowerCase();
           const rawMediumMatches = mediumFallbacks.some((value) =>
-            String(row.medium || '').toLowerCase().includes(value)
+            sql.includes(' GLOB ?')
+              ? new RegExp(
+                  `(^|[^a-z0-9])${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`
+                ).test(rawMedium)
+              : rawMedium.includes(value)
           );
           return (
             mediumFamilies.has(mediumFamily) ||
@@ -1715,6 +1730,46 @@ describe('Search API auth and quota behavior', () => {
     ]);
   });
 
+  it('does not satisfy an ink constraint from the substring in pink during classification-facet retrieval', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-classification-pink-substring-violation',
+        classification: 'Painting',
+        medium: 'Pink paper',
+        medium_family: null,
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-classification-ink-token-match',
+        classification: 'Painting',
+        medium: 'Pen and ink on paper',
+        medium_family: null,
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Painting',
+        topK: 1,
+        minScore: 0,
+        facet: 'classification',
+        constraints: { mediumFamilies: ['ink'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-classification-ink-token-match',
+    ]);
+  });
+
   it('fills canonical public classification facets from medium-constrained rows beyond a 100-row violating prefix', async () => {
     db = new FakeSearchDb([
       ...Array.from({ length: 101 }, (_, index) =>
@@ -2728,6 +2783,12 @@ describe('Search API auth and quota behavior', () => {
         id: 'wrong-medium',
         medium: 'Bronze',
         medium_family: 'bronze',
+      }),
+      makeArtworkRow({
+        ...compliant,
+        id: 'medium-substring-foil',
+        medium: 'Gold foil on paper',
+        medium_family: null,
       }),
       makeArtworkRow({
         ...compliant,

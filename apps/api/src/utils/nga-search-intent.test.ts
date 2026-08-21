@@ -773,6 +773,25 @@ describe('matchesNgaSearchConstraints', () => {
   });
 
   it.each([
+    ['oil', 'Gold foil on paper', false],
+    ['ink', 'Pink paper', false],
+    ['oil', 'Oil on canvas', true],
+    ['oil', 'Oil-based paint on panel', true],
+    ['ink', 'Pen and ink on paper', true],
+    ['ink', 'Ink/wash on paper', true],
+  ] as const)(
+    'matches the %s medium family against %s with token boundaries as %s',
+    (mediumFamily, medium, expected) => {
+      expect(
+        matchesNgaSearchConstraints(
+          { mediumFamily: 'watercolor', medium },
+          { mediumFamilies: [mediumFamily] }
+        )
+      ).toBe(expected);
+    }
+  );
+
+  it.each([
     ['first quarter 18th century', 1720, true],
     ['first quarter 18th century', 1750, false],
     ['fourth quarter 18th century', 1720, false],

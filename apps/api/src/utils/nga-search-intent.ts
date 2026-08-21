@@ -128,6 +128,14 @@ const fold = (value: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const includesFoldedToken = (value: string, candidate: string) => {
+  const foldedCandidate = fold(candidate);
+  return (
+    foldedCandidate.length > 0 &&
+    ` ${fold(value)} `.includes(` ${foldedCandidate} `)
+  );
+};
+
 const distance = (left: string, right: string): number => {
   const rows = left.length + 1;
   const columns = right.length + 1;
@@ -898,12 +906,12 @@ export const matchesNgaSearchConstraints = (
       return false;
   }
   if (constraints.mediumFamilies?.length) {
-    const haystack = fold(
-      `${artwork.mediumFamily || ''} ${artwork.medium || ''}`
-    );
     if (
       !constraints.mediumFamilies.some((candidate) =>
-        haystack.includes(fold(candidate))
+        includesFoldedToken(
+          `${artwork.mediumFamily || ''} ${artwork.medium || ''}`,
+          candidate
+        )
       )
     )
       return false;

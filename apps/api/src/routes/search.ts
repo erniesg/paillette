@@ -545,7 +545,7 @@ const buildStructuredConstraintSqlForDateMode = (
   if (constraints.mediumFamilies?.length) {
     const placeholders = constraints.mediumFamilies.map(() => '?').join(', ');
     const mediumFallbacks = constraints.mediumFamilies
-      .map(() => `lower(coalesce(medium, '')) LIKE ? ESCAPE '\\'`)
+      .map(() => `(' ' || lower(coalesce(medium, '')) || ' ') GLOB ?`)
       .join(' OR ');
     clauses.push(
       `(lower(trim(coalesce(medium_family, ''))) IN (${placeholders}) OR ${mediumFallbacks})`
@@ -553,7 +553,7 @@ const buildStructuredConstraintSqlForDateMode = (
     params.push(
       ...constraints.mediumFamilies.map((value) => value.toLowerCase()),
       ...constraints.mediumFamilies.map(
-        (value) => `%${escapeLike(value.toLowerCase())}%`
+        (value) => `*[^a-z0-9]${value.toLowerCase()}[^a-z0-9]*`
       )
     );
   }
