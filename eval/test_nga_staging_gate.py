@@ -179,6 +179,24 @@ PLAYWRIGHT_TITLES = [
     "invalid uploads preserve prior results and expose an alert",
     "NGS stays visibly locked and sends no public-search request",
 ]
+PLAYWRIGHT_IDS = [
+    "d1c3b58c6b8000469ec5-199dd5869c1d0ade8048",
+    "d1c3b58c6b8000469ec5-49ba2302c2b118fbe2f3",
+    "d1c3b58c6b8000469ec5-4350d3d8f1f78314881d",
+    "d1c3b58c6b8000469ec5-5aeb23a432ab4df1c50c",
+    "d1c3b58c6b8000469ec5-1788ccaa5c6cbf7ba7ef",
+    "d1c3b58c6b8000469ec5-b87deb1a9d50a0245a51",
+    "d1c3b58c6b8000469ec5-00841a90e29eb411d3b7",
+]
+PLAYWRIGHT_ARTIFACT_DIRECTORIES = [
+    "nga-staging-gate-anonymous-9984a-ssible-truthful-and-passive-nga-staging-chrome",
+    "nga-staging-gate-anonymous-356fc--Image-is-only-being-edited-nga-staging-chrome",
+    "nga-staging-gate-anonymous-5db73-d-Palette-order-stays-local-nga-staging-chrome",
+    "nga-staging-gate-anonymous-60fa1-requests-execute-distinctly-nga-staging-chrome",
+    "nga-staging-gate-anonymous-9934e-eplacement-result-ownership-nga-staging-chrome",
+    "nga-staging-gate-anonymous-f48c0-results-and-expose-an-alert-nga-staging-chrome",
+    "nga-staging-gate-anonymous-9b265-ds-no-public-search-request-nga-staging-chrome",
+]
 PLAYWRIGHT_PROJECT = "nga-staging-chrome"
 
 
@@ -313,10 +331,37 @@ def trace_evidence(index):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
-            "trace.trace",
-            json.dumps({"type": "context-options", "testIndex": index}) + "\n",
+            "test.trace",
+            json.dumps(
+                {
+                    "version": 8,
+                    "type": "context-options",
+                    "origin": "testRunner",
+                    "browserName": "chromium",
+                    "platform": "darwin",
+                    "sdkLanguage": "javascript",
+                    "testIndex": index,
+                }
+            )
+            + "\n",
         )
     return output.getvalue()
+
+
+def playwright_artifact_dir(root: Path, index: int) -> Path:
+    return (
+        root
+        / "playwright"
+        / "playwright-artifacts"
+        / PLAYWRIGHT_ARTIFACT_DIRECTORIES[index]
+    )
+
+
+def playwright_screenshot_path(root: Path, index: int) -> Path:
+    paths = list((playwright_artifact_dir(root, index) / "attachments").glob("*.png"))
+    if len(paths) != 1:
+        raise AssertionError(f"expected one screenshot for Playwright test {index}")
+    return paths[0]
 
 
 def make_complete_evidence_bundle(
@@ -352,21 +397,38 @@ def make_complete_evidence_bundle(
         "evaluatorGitSha": evaluator_sha,
         "deploymentIdentityHash": deployment_hash,
     }
-    manual_by_case = {
-        case_id: {"precisionAt5": 0.8, "mrr": 1.0, "ndcgAt10": 0.9}
+    manual_templates = [
+        {
+            "caseId": case_id,
+            "status": "manual_review_required",
+            "instructions": "Assign each relevance field an integer 0-3; do not infer it from similarity.",
+            "results": [
+                {
+                    "rank": 1,
+                    "id": "open-access-art:nga:32679",
+                    "title": "Allegory of Painting",
+                    "artist": "François Boucher",
+                    "relevance": None,
+                }
+            ],
+        }
         for case_id in manual_case_ids
-    }
-    manual = {
-        "status": "graded",
-        "caseCount": len(manual_case_ids),
+    ]
+    labels = {
+        "schemaVersion": "nga-relevance-labels-v1",
         "gradedAt": "2026-08-22T00:00:00Z",
         "reviewer": "release-reviewer",
-        "labelsSha256": "e" * 64,
-        "metrics": {
-            "byCase": manual_by_case,
-            "macro": {"precisionAt5": 0.8, "mrr": 1.0, "ndcgAt10": 0.9},
-        },
+        "cases": [
+            {
+                "caseId": case_id,
+                "results": [
+                    {"id": "open-access-art:nga:32679", "relevance": 3}
+                ],
+            }
+            for case_id in manual_case_ids
+        ],
     }
+    manual = gate.summarize_manual_relevance(manual_templates, labels)
     identity = {
         **binding,
         "generatedAt": "2026-08-22T00:00:00Z",
@@ -417,24 +479,13 @@ def make_complete_evidence_bundle(
             "evaluation": gate.evaluate_manual_relevance_completion(
                 manual, snapshot
             ),
-            "cases": [
-                {
-                    "caseId": case_id,
-                    "status": "manual_review_required",
-                    "instructions": "Assign each relevance field an integer 0-3; do not infer it from similarity.",
-                    "results": [
-                        {
-                            "rank": 1,
-                            "id": "open-access-art:nga:32679",
-                            "title": "Allegory of Painting",
-                            "artist": "François Boucher",
-                            "relevance": None,
-                        }
-                    ],
-                }
-                for case_id in manual_case_ids
-            ],
+            "cases": manual_templates,
         },
+        "relevance-labels.json": gate.retain_relevance_labels(
+            binding=binding,
+            templates=manual_templates,
+            labels_document=labels,
+        ),
         "playwright-handoff.json": handoff,
     }
 
@@ -652,6 +703,33 @@ def make_complete_evidence_bundle(
     artifacts = playwright / "playwright-artifacts"
     artifacts.mkdir(parents=True)
     handoff_bytes = (root / "playwright-handoff.json").read_bytes()
+    result_attachments = []
+    for index, screenshot_name in enumerate(PLAYWRIGHT_SCREENSHOTS):
+        artifact_dir = playwright_artifact_dir(root, index)
+        artifact_dir.mkdir()
+        attachment_dir = artifact_dir / "attachments"
+        attachment_dir.mkdir()
+        screenshot_path = (
+            attachment_dir
+            / f"{screenshot_name.replace('.', '-')}-{index:040x}.png"
+        )
+        trace_path = artifact_dir / "trace.zip"
+        screenshot_path.write_bytes(png_evidence())
+        trace_path.write_bytes(trace_evidence(index))
+        result_attachments.append(
+            [
+                {
+                    "name": screenshot_name,
+                    "contentType": "image/png",
+                    "path": str(screenshot_path.resolve()),
+                },
+                {
+                    "name": "trace",
+                    "contentType": "application/zip",
+                    "path": str(trace_path.resolve()),
+                },
+            ]
+        )
     report = {
         "config": {
             "metadata": {
@@ -666,6 +744,7 @@ def make_complete_evidence_bundle(
                 "file": "nga-staging-gate.spec.ts",
                 "specs": [
                     {
+                        "id": PLAYWRIGHT_IDS[index],
                         "title": title,
                         "ok": True,
                         "tests": [
@@ -673,11 +752,25 @@ def make_complete_evidence_bundle(
                                 "expectedStatus": "passed",
                                 "status": "expected",
                                 "projectName": PLAYWRIGHT_PROJECT,
-                                "results": [{"status": "passed"}],
+                                "results": [
+                                    {
+                                        "workerIndex": 0,
+                                        "parallelIndex": 0,
+                                        "status": "passed",
+                                        "duration": 100,
+                                        "errors": [],
+                                        "stdout": [],
+                                        "stderr": [],
+                                        "retry": 0,
+                                        "startTime": "2026-08-22T00:02:00.000Z",
+                                        "annotations": [],
+                                        "attachments": result_attachments[index],
+                                    }
+                                ],
                             }
                         ],
                     }
-                    for title in PLAYWRIGHT_TITLES
+                    for index, title in enumerate(PLAYWRIGHT_TITLES)
                 ],
             }
         ],
@@ -695,12 +788,6 @@ def make_complete_evidence_bundle(
         json.dumps({"status": "passed", "failedTests": []}) + "\n",
         encoding="utf-8",
     )
-    for screenshot in PLAYWRIGHT_SCREENSHOTS:
-        (playwright / screenshot).write_bytes(png_evidence())
-    for index in range(7):
-        trace_dir = artifacts / f"test-{index}"
-        trace_dir.mkdir()
-        (trace_dir / "trace.zip").write_bytes(trace_evidence(index))
     return gate.rehash_evidence(root)
 
 
@@ -2033,23 +2120,142 @@ class InventoryAndRelevanceTests(GateTestCase):
                 first["runId"], "0123456789abcdef0123456789abcdef"
             )
 
-            playwright = root / "playwright"
-            later_trace = (
-                playwright / "playwright-artifacts" / "test-0" / "trace.zip"
-            )
+            later_trace = playwright_artifact_dir(root, 0) / "trace.zip"
             changed_trace = trace_evidence(99)
             later_trace.write_bytes(changed_trace)
             second = self.call("rehash_evidence", root)
+            later_trace_relative = later_trace.relative_to(root).as_posix()
             self.assertEqual(
-                second["artifacts"][
-                    "playwright/playwright-artifacts/test-0/trace.zip"
-                ]["sha256"],
+                second["artifacts"][later_trace_relative]["sha256"],
                 hashlib.sha256(changed_trace).hexdigest(),
             )
             manifest = json.loads(
                 (root / "artifact-manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(second, manifest)
+
+    def test_rehash_manifest_retains_same_run_canonical_relevance_labels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = make_complete_evidence_bundle(self.gate, root)
+            relative = "relevance-labels.json"
+            self.assertIn(relative, manifest["artifacts"])
+            retained = json.loads((root / relative).read_text(encoding="utf-8"))
+            summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(retained["schemaVersion"], "nga-retained-relevance-labels-v1")
+            self.assertEqual(retained["runId"], summary["runId"])
+            self.assertEqual(retained["snapshot"], summary["snapshot"])
+            self.assertEqual(
+                self.call("sha256_json", retained["labels"]),
+                summary["manualRelevance"]["labelsSha256"],
+            )
+
+    def test_rehash_requires_retained_labels_and_recomputes_hash_and_metrics(self):
+        mutations = {
+            "synthetic labels hash": lambda summary: summary["manualRelevance"].__setitem__(
+                "labelsSha256", "f" * 64
+            ),
+            "synthetic metrics": lambda summary: summary["manualRelevance"].__setitem__(
+                "metrics",
+                {
+                    "byCase": {
+                        case_id: {
+                            "precisionAt5": 1.0,
+                            "mrr": 1.0,
+                            "ndcgAt10": 1.0,
+                        }
+                        for case_id in PILOT_RELATION_IDS
+                    },
+                    "macro": {
+                        "precisionAt5": 1.0,
+                        "mrr": 1.0,
+                        "ndcgAt10": 1.0,
+                    },
+                },
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                summary_path = root / "summary.json"
+                manual_path = root / "manual-relevance.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                manual = json.loads(manual_path.read_text(encoding="utf-8"))
+                mutate(summary)
+                manual["summary"] = summary["manualRelevance"]
+                manual["evaluation"] = self.call(
+                    "evaluate_manual_relevance_completion",
+                    manual["summary"],
+                    summary["snapshot"],
+                )
+                summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+                manual_path.write_text(json.dumps(manual) + "\n", encoding="utf-8")
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
+
+    def test_pilot_authorization_recomputes_labels_instead_of_trusting_summary(self):
+        evaluator_sha = "a" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "pilot"
+            make_complete_evidence_bundle(
+                self.gate, evidence, evaluator_sha=evaluator_sha
+            )
+            for relative in ("summary.json", "manual-relevance.json"):
+                json_mutate(
+                    evidence / relative,
+                    lambda document: (
+                        document["manualRelevance"]
+                        if relative == "summary.json"
+                        else document["summary"]
+                    ).__setitem__("labelsSha256", "f" * 64),
+                )
+            json_mutate(
+                evidence / "manual-relevance.json",
+                lambda document: document.__setitem__(
+                    "evaluation",
+                    self.call(
+                        "evaluate_manual_relevance_completion",
+                        document["summary"],
+                        "candidate",
+                    ),
+                ),
+            )
+            manifest_path = evidence / "artifact-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for relative in ("summary.json", "manual-relevance.json"):
+                path = evidence / relative
+                manifest["artifacts"][relative].update(
+                    sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                    byteLength=path.stat().st_size,
+                )
+            manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+            summary_path = evidence / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            inspection = {
+                "schemaVersion": "nga-pilot-inspection-v1",
+                "decision": "proceed",
+                "reviewedAt": "2026-08-22T00:00:00Z",
+                "reviewer": "release-reviewer",
+                "pilotSummaryPath": "pilot/summary.json",
+                "pilotSummarySha256": hashlib.sha256(
+                    summary_path.read_bytes()
+                ).hexdigest(),
+                "pilotArtifactManifestPath": "pilot/artifact-manifest.json",
+                "pilotArtifactManifestSha256": hashlib.sha256(
+                    manifest_path.read_bytes()
+                ).hexdigest(),
+            }
+            inspection_path = root / "inspection.json"
+            inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
+            result = self.call(
+                "evaluate_pilot_inspection",
+                inspection_path,
+                deployment_identity_hash=summary["deploymentIdentityHash"],
+                evaluator_git_sha=evaluator_sha,
+            )
+            self.assertFalse(result["passed"], result)
 
     def test_rehash_rejects_foreign_run_records_and_forged_deployment_binding(self):
         mutations = {
@@ -2174,15 +2380,12 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
 
         def fake_png(root):
-            (root / "playwright" / PLAYWRIGHT_SCREENSHOTS[0]).write_bytes(
-                b"not a png"
-            )
+            playwright_screenshot_path(root, 0).write_bytes(b"not a png")
 
         def fake_zip(root):
-            (
-                root
-                / "playwright/playwright-artifacts/test-0/trace.zip"
-            ).write_bytes(b"PK\x03\x04not-readable")
+            (playwright_artifact_dir(root, 0) / "trace.zip").write_bytes(
+                b"PK\x03\x04not-readable"
+            )
 
         for label, mutate in {
             "wrong title": wrong_title,
@@ -2197,6 +2400,72 @@ class InventoryAndRelevanceTests(GateTestCase):
                 mutate(root)
                 with self.assertRaises(self.gate.GateStopped):
                     self.call("rehash_evidence", root)
+
+    def test_rehash_binds_each_browser_result_to_its_exact_attachments(self):
+        mutations = {
+            "swapped attachment pair": lambda report: (
+                report["suites"][0]["specs"][0]["tests"][0]["results"][0].__setitem__(
+                    "attachments",
+                    report["suites"][0]["specs"][1]["tests"][0]["results"][0]["attachments"],
+                ),
+                report["suites"][0]["specs"][0]["tests"][0]["results"][0]["attachments"][0].__setitem__(
+                    "name", PLAYWRIGHT_SCREENSHOTS[0]
+                ),
+            ),
+            "swapped screenshot": lambda report: report["suites"][0]["specs"][0][
+                "tests"
+            ][0]["results"][0]["attachments"][0].__setitem__(
+                "path", report["suites"][0]["specs"][1]["tests"][0]["results"][0]["attachments"][0]["path"]
+            ),
+            "duplicate screenshot": lambda report: report["suites"][0]["specs"][1][
+                "tests"
+            ][0]["results"][0]["attachments"][0].__setitem__(
+                "path", report["suites"][0]["specs"][0]["tests"][0]["results"][0]["attachments"][0]["path"]
+            ),
+            "missing screenshot": lambda report: report["suites"][0]["specs"][0][
+                "tests"
+            ][0]["results"][0].__setitem__("attachments", report["suites"][0]["specs"][0]["tests"][0]["results"][0]["attachments"][1:]),
+            "extra attachment": lambda report: report["suites"][0]["specs"][0][
+                "tests"
+            ][0]["results"][0]["attachments"].append(
+                {
+                    "name": "extra",
+                    "contentType": "text/plain",
+                    "path": report["suites"][0]["specs"][0]["tests"][0]["results"][0]["attachments"][0]["path"],
+                }
+            ),
+            "wrong screenshot content type": lambda report: report["suites"][0]["specs"][0][
+                "tests"
+            ][0]["results"][0]["attachments"][0].__setitem__(
+                "contentType", "application/octet-stream"
+            ),
+            "foreign screenshot": lambda report: report["suites"][0]["specs"][0][
+                "tests"
+            ][0]["results"][0]["attachments"][0].__setitem__(
+                "path", "/tmp/foreign.png"
+            ),
+            "foreign test id": lambda report: report["suites"][0]["specs"][0].__setitem__(
+                "id", "foreign-id"
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                json_mutate(root / "playwright/playwright-report.json", mutate)
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
+
+    def test_rehash_rejects_readable_non_playwright_trace_zip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            arbitrary = io.BytesIO()
+            with zipfile.ZipFile(arbitrary, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("arbitrary.json", '{"not":"a playwright trace"}')
+            (playwright_artifact_dir(root, 0) / "trace.zip").write_bytes(arbitrary.getvalue())
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
 
     def test_pilot_inspection_rejects_self_consistent_failed_raw_case(self):
         with tempfile.TemporaryDirectory() as directory:

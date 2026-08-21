@@ -4,10 +4,11 @@ import {
   type APIRequestContext,
   type Page,
   type Request,
+  type TestInfo,
 } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { NgaStagingRequestBudget } from './support/nga-staging-request-budget';
 
@@ -30,9 +31,6 @@ if (configuredOrigin !== STAGING_ORIGIN) {
   );
 }
 
-const evidenceDirectory = resolve(
-  process.env.NGA_STAGING_EVIDENCE_DIR || 'test-results/nga-staging-gate'
-);
 const fixtureManifestPath = resolve(
   process.cwd(),
   '../../eval/nga-image-fixtures.json'
@@ -51,12 +49,22 @@ const fixtureManifest = JSON.parse(
   readFileSync(fixtureManifestPath, 'utf8')
 ) as { fixtures: PinnedFixture[] };
 
-const screenshot = async (page: Page, name: string) => {
-  await mkdir(evidenceDirectory, { recursive: true });
+const attachScreenshot = async (
+  page: Page,
+  testInfo: TestInfo,
+  name: string
+) => {
+  const attachmentName = `${name}.png`;
+  const screenshotPath = testInfo.outputPath(attachmentName);
   await page.screenshot({
-    path: resolve(evidenceDirectory, `${name}.png`),
+    path: screenshotPath,
     fullPage: true,
   });
+  await testInfo.attach(attachmentName, {
+    path: screenshotPath,
+    contentType: 'image/png',
+  });
+  await unlink(screenshotPath);
 };
 
 const downloadFixture = async (
@@ -164,7 +172,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
 
   test('pre-upload Image is compact, accessible, truthful, and passive', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const requests = publicSearchRequests(page);
     await openNga(page);
     await page.getByRole('button', { name: 'Image search mode' }).click();
@@ -189,12 +197,12 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     await expect(page.getByText(/No artworks found|No works/)).toHaveCount(0);
     await page.waitForTimeout(500);
     expect(requests).toEqual([]);
-    await screenshot(page, '01-image-pre-upload');
+    await attachScreenshot(page, testInfo, '01-image-pre-upload');
   });
 
   test('Text remains the truthful result owner while Image is only being edited', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const requests = publicSearchRequests(page);
     await openNga(page);
     await submitText(page, 'oil paintings before 1800');
@@ -210,13 +218,13 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     expect(
       requests.filter(({ url }) => url.endsWith('/nga/image'))
     ).toHaveLength(0);
-    await screenshot(page, '02-text-owned-image-editor');
+    await attachScreenshot(page, testInfo, '02-text-owned-image-editor');
   });
 
   test('constrained Image becomes owner and Palette order stays local', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const requests = publicSearchRequests(page);
     const { fixture, bytes } = await downloadFixture(
       request,
@@ -264,13 +272,13 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     expect(
       requests.filter(({ url }) => url.endsWith('/nga/text'))
     ).toHaveLength(1);
-    await screenshot(page, '03-image-owner-local-palette');
+    await attachScreenshot(page, testInfo, '03-image-owner-local-palette');
   });
 
   test('separate live same-filename image requests execute distinctly', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const requests = publicSearchRequests(page);
     const first = await downloadFixture(request, 'open-access-art:nga:131994');
     const second = await downloadFixture(request, 'open-access-art:nga:11236');
@@ -307,12 +315,12 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     await expect(
       page.getByText('same-name.jpg', { exact: true })
     ).toBeVisible();
-    await screenshot(page, '04-live-same-name');
+    await attachScreenshot(page, testInfo, '04-live-same-name');
   });
 
   test('controlled out-of-order image responses keep replacement result ownership', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const candidateResultTitle = 'candidate result title';
     const replacementResultTitle = 'replacement result title';
     let requestCount = 0;
@@ -394,12 +402,16 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     await expect(
       page.getByText(candidateResultTitle, { exact: true })
     ).toHaveCount(0);
-    await screenshot(page, '05-controlled-replacement-ownership');
+    await attachScreenshot(
+      page,
+      testInfo,
+      '05-controlled-replacement-ownership'
+    );
   });
 
   test('invalid uploads preserve prior results and expose an alert', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const requests = publicSearchRequests(page);
     await openNga(page);
     await submitText(page, 'paintings before 1800');
@@ -423,12 +435,16 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
       ).toBeVisible();
       expect(requests).toHaveLength(textRequestCount);
     }
-    await screenshot(page, '06-invalid-upload-preserves-results');
+    await attachScreenshot(
+      page,
+      testInfo,
+      '06-invalid-upload-preserves-results'
+    );
   });
 
   test('NGS stays visibly locked and sends no public-search request', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const requests = publicSearchRequests(page);
     const response = await page.goto('/ngs/search');
     expect(response?.url()).toBe(`${STAGING_ORIGIN}/ngs/search`);
@@ -451,6 +467,6 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     ).toBeDisabled();
     await page.waitForTimeout(500);
     expect(requests).toEqual([]);
-    await screenshot(page, '07-ngs-locked');
+    await attachScreenshot(page, testInfo, '07-ngs-locked');
   });
 });

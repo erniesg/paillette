@@ -71,8 +71,27 @@ PLAYWRIGHT_SPEC_TITLES = (
     "invalid uploads preserve prior results and expose an alert",
     "NGS stays visibly locked and sends no public-search request",
 )
+PLAYWRIGHT_SPEC_IDS = (
+    "d1c3b58c6b8000469ec5-199dd5869c1d0ade8048",
+    "d1c3b58c6b8000469ec5-49ba2302c2b118fbe2f3",
+    "d1c3b58c6b8000469ec5-4350d3d8f1f78314881d",
+    "d1c3b58c6b8000469ec5-5aeb23a432ab4df1c50c",
+    "d1c3b58c6b8000469ec5-1788ccaa5c6cbf7ba7ef",
+    "d1c3b58c6b8000469ec5-b87deb1a9d50a0245a51",
+    "d1c3b58c6b8000469ec5-00841a90e29eb411d3b7",
+)
+PLAYWRIGHT_ARTIFACT_DIRECTORIES = (
+    "nga-staging-gate-anonymous-9984a-ssible-truthful-and-passive-nga-staging-chrome",
+    "nga-staging-gate-anonymous-356fc--Image-is-only-being-edited-nga-staging-chrome",
+    "nga-staging-gate-anonymous-5db73-d-Palette-order-stays-local-nga-staging-chrome",
+    "nga-staging-gate-anonymous-60fa1-requests-execute-distinctly-nga-staging-chrome",
+    "nga-staging-gate-anonymous-9934e-eplacement-result-ownership-nga-staging-chrome",
+    "nga-staging-gate-anonymous-f48c0-results-and-expose-an-alert-nga-staging-chrome",
+    "nga-staging-gate-anonymous-9b265-ds-no-public-search-request-nga-staging-chrome",
+)
 PLAYWRIGHT_PROJECT_NAME = "nga-staging-chrome"
 RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
+RETAINED_RELEVANCE_SCHEMA = "nga-retained-relevance-labels-v1"
 MAX_EVIDENCE_JSON_BYTES = 2 * 1024 * 1024
 MAX_EVIDENCE_HEADERS_BYTES = 64 * 1024
 VALID_REPEAT_CACHE_STATES = {"HIT", "KV-FRESH", "COALESCED"}
@@ -1475,6 +1494,22 @@ def summarize_manual_relevance(
     }
 
 
+def retain_relevance_labels(
+    *,
+    binding: Mapping[str, str],
+    templates: Sequence[Mapping[str, Any]],
+    labels_document: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the canonical same-run record needed to replay human grading."""
+    summarize_manual_relevance(templates, labels_document)
+    return {
+        **binding,
+        "schemaVersion": RETAINED_RELEVANCE_SCHEMA,
+        "gradingTemplateSha256": sha256_json(templates),
+        "labels": labels_document,
+    }
+
+
 def evaluate_manual_relevance_completion(
     summary: Mapping[str, Any], snapshot: str
 ) -> dict[str, Any]:
@@ -2215,13 +2250,49 @@ def _valid_trace_zip(path: Path) -> bool:
             return False
         with zipfile.ZipFile(path) as archive:
             entries = [item for item in archive.infolist() if not item.is_dir()]
-            return (
-                bool(entries)
-                and archive.testzip() is None
-                and any(item.file_size > 0 for item in entries)
+            entry_by_name = {item.filename: item for item in entries}
+            test_trace = entry_by_name.get("test.trace")
+            if (
+                len(entry_by_name) != len(entries)
+                or test_trace is None
+                or not 0 < test_trace.file_size <= 64 * 1024 * 1024
+                or archive.testzip() is not None
+            ):
+                return False
+            trace_lines = archive.read(test_trace).splitlines()
+            if not trace_lines:
+                return False
+            events = [json.loads(line) for line in trace_lines if line.strip()]
+            return bool(events) and any(
+                isinstance(event, Mapping)
+                and event.get("type") == "context-options"
+                and event.get("origin") == "testRunner"
+                and type(event.get("version")) is int
+                and event["version"] >= 1
+                for event in events
             )
-    except (OSError, zipfile.BadZipFile):
+    except (OSError, UnicodeDecodeError, ValueError, zipfile.BadZipFile):
         return False
+
+
+def _playwright_attachment_path(
+    path_value: Any,
+    *,
+    artifact_root: Path,
+) -> tuple[Path, str] | None:
+    if not isinstance(path_value, str) or not path_value:
+        return None
+    path = Path(path_value)
+    if not path.is_absolute():
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+        relative = resolved.relative_to(artifact_root.resolve(strict=True))
+    except (OSError, ValueError):
+        return None
+    if len(relative.parts) not in {2, 3} or not resolved.is_file():
+        return None
+    return resolved, relative.as_posix()
 
 
 def evaluate_evidence_bundle(
@@ -2381,11 +2452,6 @@ def evaluate_evidence_bundle(
     )
     if manual_document.get("summary") != summary_manual:
         failures.append(_failure("evidence_manual_summary_mismatch"))
-    recomputed_manual_gate = evaluate_manual_relevance_completion(
-        summary_manual, str(snapshot)
-    )
-    if manual_document.get("evaluation") != recomputed_manual_gate:
-        failures.append(_failure("manual_relevance_evaluation_drift"))
 
     handoff_expectations = {
         "schemaVersion": "nga-playwright-handoff-v1",
@@ -2480,28 +2546,124 @@ def evaluate_evidence_bundle(
                 actual=titles,
             )
         )
-    for spec in specs:
+    artifact_root = out_dir / "playwright/playwright-artifacts"
+    attachment_paths: set[str] = set()
+    screenshot_paths: set[str] = set()
+    trace_paths: set[str] = set()
+    attachment_directories: set[str] = set()
+    for index, spec in enumerate(specs):
         tests_value = spec.get("tests")
         tests = tests_value if isinstance(tests_value, list) else []
         valid_test = len(tests) == 1 and isinstance(tests[0], Mapping)
         test_record = tests[0] if valid_test else {}
         results_value = test_record.get("results")
         results = results_value if isinstance(results_value, list) else []
+        result = results[0] if len(results) == 1 and isinstance(results[0], Mapping) else {}
         if (
             spec.get("ok") is not True
             or not valid_test
+            or index >= len(PLAYWRIGHT_SPEC_IDS)
+            or spec.get("id") != PLAYWRIGHT_SPEC_IDS[index]
             or test_record.get("expectedStatus") != "passed"
             or test_record.get("status") != "expected"
             or test_record.get("projectName") != PLAYWRIGHT_PROJECT_NAME
             or len(results) != 1
             or not isinstance(results[0], Mapping)
-            or results[0].get("status") != "passed"
+            or result.get("status") != "passed"
         ):
             failures.append(
                 _failure(
                     "playwright_spec_not_passed", title=spec.get("title")
                 )
             )
+        attachments_value = result.get("attachments")
+        attachments = attachments_value if isinstance(attachments_value, list) else []
+        expected_screenshot = (
+            PLAYWRIGHT_SCREENSHOTS[index]
+            if index < len(PLAYWRIGHT_SCREENSHOTS)
+            else "invalid.png"
+        )
+        attachment_by_name = {
+            attachment.get("name"): attachment
+            for attachment in attachments
+            if isinstance(attachment, Mapping)
+            and isinstance(attachment.get("name"), str)
+        }
+        if (
+            len(attachments) != 2
+            or len(attachment_by_name) != 2
+            or set(attachment_by_name) != {expected_screenshot, "trace"}
+        ):
+            failures.append(
+                _failure(
+                    "playwright_attachment_inventory_mismatch",
+                    title=spec.get("title"),
+                )
+            )
+            continue
+        screenshot_attachment = attachment_by_name[expected_screenshot]
+        trace_attachment = attachment_by_name["trace"]
+        if (
+            screenshot_attachment.get("contentType") != "image/png"
+            or trace_attachment.get("contentType") != "application/zip"
+            or screenshot_attachment.get("body") is not None
+            or trace_attachment.get("body") is not None
+        ):
+            failures.append(
+                _failure(
+                    "playwright_attachment_metadata_invalid",
+                    title=spec.get("title"),
+                )
+            )
+            continue
+        screenshot_path = _playwright_attachment_path(
+            screenshot_attachment.get("path"), artifact_root=artifact_root
+        )
+        trace_path = _playwright_attachment_path(
+            trace_attachment.get("path"), artifact_root=artifact_root
+        )
+        if (
+            screenshot_path is None
+            or trace_path is None
+            or len(screenshot_path[0].relative_to(artifact_root.resolve(strict=True)).parts)
+            != 3
+            or screenshot_path[0].parent.name != "attachments"
+            or screenshot_path[0].suffix.lower() != ".png"
+            or len(trace_path[0].relative_to(artifact_root.resolve(strict=True)).parts)
+            != 2
+            or trace_path[0].name != "trace.zip"
+            or screenshot_path[0].parent.parent != trace_path[0].parent
+        ):
+            failures.append(
+                _failure(
+                    "playwright_attachment_path_invalid",
+                    title=spec.get("title"),
+                )
+            )
+            continue
+        relative_directory = trace_path[0].parent.relative_to(
+            artifact_root.resolve(strict=True)
+        ).as_posix()
+        out_screenshot = f"playwright/playwright-artifacts/{screenshot_path[1]}"
+        out_trace = f"playwright/playwright-artifacts/{trace_path[1]}"
+        if (
+            out_screenshot in attachment_paths
+            or out_trace in attachment_paths
+            or relative_directory in attachment_directories
+            or index >= len(PLAYWRIGHT_ARTIFACT_DIRECTORIES)
+            or relative_directory != PLAYWRIGHT_ARTIFACT_DIRECTORIES[index]
+        ):
+            failures.append(
+                _failure(
+                    "playwright_attachment_not_unique",
+                    title=spec.get("title"),
+                )
+            )
+            continue
+        attachment_directories.add(relative_directory)
+        attachment_paths.update({out_screenshot, out_trace})
+        screenshot_paths.add(out_screenshot)
+        trace_paths.add(out_trace)
 
     required_python_paths = {
         "identity.json",
@@ -2520,33 +2682,33 @@ def evaluate_evidence_bundle(
         },
         *{f"raw/image/{case_id}.json" for case_id in expected_image_ids},
     }
+    if summary_manual.get("status") == "graded":
+        required_python_paths.add("relevance-labels.json")
     if phase == "full":
         required_python_paths.add("raw/image-negative-probes.json")
     required_playwright_paths = {
         "playwright/playwright-report.json",
         "playwright/playwright-artifacts/.last-run.json",
-        *{f"playwright/{name}" for name in PLAYWRIGHT_SCREENSHOTS},
+        *attachment_paths,
     }
-    trace_paths = {
-        path.relative_to(out_dir).as_posix()
-        for path in out_dir.glob("playwright/playwright-artifacts/**/trace.zip")
-        if path.is_file()
-    }
-    if len(trace_paths) != PLAYWRIGHT_TEST_COUNT:
+    if (
+        len(attachment_paths) != PLAYWRIGHT_TEST_COUNT * 2
+        or len(screenshot_paths) != PLAYWRIGHT_TEST_COUNT
+        or len(trace_paths) != PLAYWRIGHT_TEST_COUNT
+    ):
         failures.append(
             _failure(
-                "playwright_trace_count_mismatch",
-                expected=PLAYWRIGHT_TEST_COUNT,
-                actual=len(trace_paths),
+                "playwright_attachment_count_mismatch",
+                expected=PLAYWRIGHT_TEST_COUNT * 2,
+                actual=len(attachment_paths),
             )
         )
-    for screenshot_name in PLAYWRIGHT_SCREENSHOTS:
-        screenshot_path = out_dir / "playwright" / screenshot_name
-        if not _valid_png(screenshot_path):
+    for screenshot_path in sorted(screenshot_paths):
+        if not _valid_png(out_dir / screenshot_path):
             failures.append(
                 _failure(
                     "playwright_screenshot_invalid",
-                    path=f"playwright/{screenshot_name}",
+                    path=screenshot_path,
                 )
             )
     for trace_path in sorted(trace_paths):
@@ -2629,18 +2791,47 @@ def evaluate_evidence_bundle(
     if manual_document.get("cases") != expected_manual_cases:
         failures.append(_failure("manual_relevance_case_inventory_drift"))
     manual_case_ids = [case["caseId"] for case in expected_manual_cases]
-    metrics_value = summary_manual.get("metrics")
-    metrics = metrics_value if isinstance(metrics_value, Mapping) else {}
-    by_case_value = metrics.get("byCase")
-    by_case = by_case_value if isinstance(by_case_value, Mapping) else {}
-    if (
-        summary_manual.get("caseCount") != len(manual_case_ids)
-        or (
-            summary_manual.get("status") == "graded"
-            and set(by_case) != set(manual_case_ids)
-        )
-    ):
+    if summary_manual.get("caseCount") != len(manual_case_ids):
         failures.append(_failure("manual_relevance_case_inventory_drift"))
+
+    recomputed_manual = summary_manual
+    if summary_manual.get("status") == "graded":
+        labels_relative = "relevance-labels.json"
+        retained_labels = _read_evidence_json(out_dir, labels_relative, failures)
+        _validate_run_binding(
+            retained_labels, expected_binding, labels_relative, failures
+        )
+        labels_document_value = retained_labels.get("labels")
+        labels_document = (
+            labels_document_value
+            if isinstance(labels_document_value, Mapping)
+            else {}
+        )
+        if (
+            retained_labels.get("schemaVersion") != RETAINED_RELEVANCE_SCHEMA
+            or retained_labels.get("gradingTemplateSha256")
+            != sha256_json(expected_manual_cases)
+        ):
+            failures.append(_failure("retained_relevance_binding_mismatch"))
+        try:
+            recomputed_manual = summarize_manual_relevance(
+                expected_manual_cases, labels_document
+            )
+        except (TypeError, ValueError) as error:
+            failures.append(
+                _failure("retained_relevance_labels_invalid", error=str(error))
+            )
+            recomputed_manual = {}
+        if summary_manual != recomputed_manual:
+            failures.append(_failure("manual_relevance_summary_drift"))
+    elif (out_dir / "relevance-labels.json").exists():
+        failures.append(_failure("unexpected_relevance_labels"))
+
+    recomputed_manual_gate = evaluate_manual_relevance_completion(
+        recomputed_manual, str(snapshot)
+    )
+    if manual_document.get("evaluation") != recomputed_manual_gate:
+        failures.append(_failure("manual_relevance_evaluation_drift"))
 
     repo_root = Path(__file__).resolve().parents[1]
     committed_fixture_document = load_json_object(
@@ -3441,6 +3632,12 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     )
     if config.relevance_labels is not None:
         labels_document = load_json_object(config.relevance_labels, "relevance labels")
+        retained_labels = retain_relevance_labels(
+            binding=binding,
+            templates=manual_templates,
+            labels_document=labels_document,
+        )
+        _write_json(config.out_dir / "relevance-labels.json", retained_labels)
         manual_relevance = summarize_manual_relevance(
             manual_templates, labels_document
         )
