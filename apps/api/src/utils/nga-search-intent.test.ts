@@ -196,6 +196,20 @@ describe('parseNgaSearchIntent', () => {
       'painting featuring sculpture',
     ],
     [
+      'painting featuring sculpture',
+      'Painting',
+      'features',
+      'Sculpture',
+      'painting featuring sculpture',
+    ],
+    [
+      'sculpture featured in painting',
+      'Painting',
+      'features',
+      'Sculpture',
+      'painting featuring sculpture',
+    ],
+    [
       'drawing based on photograph',
       'Drawing',
       'derived_from',
@@ -234,6 +248,25 @@ describe('parseNgaSearchIntent', () => {
       });
     }
   );
+
+  it('reparses canonical features retrieval output without changing the plan', () => {
+    const canonicalRetrievalQuery = compileNgaSearchPlan(
+      'painting with sculpture'
+    ).retrievalQuery;
+
+    expect(canonicalRetrievalQuery).toBe('painting featuring sculpture');
+    expect(compileNgaSearchPlan(canonicalRetrievalQuery)).toEqual({
+      version: 'nga-plan-v1',
+      mode: 'relational',
+      retrievalQuery: 'painting featuring sculpture',
+      constraints: { classifications: ['Painting'] },
+      relation: {
+        kind: 'features',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    });
+  });
 
   it.each([
     [
@@ -298,6 +331,27 @@ describe('parseNgaSearchIntent', () => {
       mode: 'structured',
       retrievalQuery: 'painting sculpture',
       constraints: { classifications: ['Painting', 'Sculpture'] },
+    });
+  });
+
+  it.each([
+    'paintings, drawings, and sculptures',
+    'paintings, drawings, or sculptures',
+  ])('keeps punctuation-separated classification list %s', (query) => {
+    const intent = parseNgaSearchIntent(query);
+
+    expect(intent.constraints).toEqual({
+      classifications: ['Drawing', 'Painting', 'Sculpture'],
+    });
+    expect(intent.relation).toBeUndefined();
+    expect(intent.unresolved).toEqual([]);
+    expect(compileNgaSearchPlan(query)).toEqual({
+      version: 'nga-plan-v1',
+      mode: 'structured',
+      retrievalQuery: 'drawing painting sculpture',
+      constraints: {
+        classifications: ['Drawing', 'Painting', 'Sculpture'],
+      },
     });
   });
 

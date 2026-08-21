@@ -250,6 +250,11 @@ const RELATION_CONNECTORS: RelationConnector[] = [
     workSide: 'right',
   },
   {
+    kind: 'features',
+    pattern: /\bfeatured\s+in\b/g,
+    workSide: 'right',
+  },
+  {
     kind: 'derived_from',
     pattern: /\b(?:based\s+on|after)\b/g,
     workSide: 'left',
@@ -259,7 +264,11 @@ const RELATION_CONNECTORS: RelationConnector[] = [
     pattern: /\b(?:showing|depicting|of)\b/g,
     workSide: 'left',
   },
-  { kind: 'features', pattern: /\bwith\b/g, workSide: 'left' },
+  {
+    kind: 'features',
+    pattern: /\b(?:with|features?|featuring)\b/g,
+    workSide: 'left',
+  },
 ];
 
 type CompiledRelation = {
@@ -277,13 +286,21 @@ type RelationAnalysis = {
 const isClassificationList = (
   query: string,
   spans: ClassificationSpan[]
-): boolean =>
-  spans.length > 1 &&
-  spans.slice(1).every((span, index) => {
+): boolean => {
+  if (spans.length < 2) return false;
+  const connectors = spans.slice(1).map((span, index) => {
     const previous = spans[index]!;
-    const connector = query.slice(previous.end, span.start).trim();
-    return /^(?:and|or)(?:\s+(?:a|an|the))?$/.test(connector);
+    return query.slice(previous.end, span.start).trim();
   });
+  return (
+    connectors.some((connector) => /^(?:and|or)\b/.test(connector)) &&
+    connectors.every(
+      (connector) =>
+        connector === '' ||
+        /^(?:and|or)(?:\s+(?:a|an|the))?$/.test(connector)
+    )
+  );
+};
 
 const isAfterRelationTargetPrefix = (value: string): boolean => {
   const allowed = new Set([
