@@ -194,6 +194,7 @@ export interface SearchImageRequest {
   image: File;
   topK?: number;
   minScore?: number;
+  constraints?: import('@paillette/types/public-search-core').PublicSearchConstraints;
 }
 
 // Translation types

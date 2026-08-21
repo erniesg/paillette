@@ -87,9 +87,15 @@ const artworkRow = {
   title: 'Mangrove Tree',
   artist: 'Chen Chong Swee',
   year: null,
+  year_start: null,
+  year_end: null,
   date_text: 'undated',
   medium: 'Watercolour on paper',
+  medium_family: null,
   classification: 'Paintings',
+  subclassification: null,
+  visual_classification: null,
+  primary_artist_id: null,
   culture: 'Singapore',
   origin: 'Singapore',
   dimensions_height: 49,
@@ -729,15 +735,18 @@ const imageSearch = (
   app: Hono<{ Bindings: Env }>,
   env: Env,
   headers: HeadersInit = { 'X-User-Id': 'user-1' },
-  routeOrgId = ORG_ID
+  routeOrgId = ORG_ID,
+  formData?: FormData
 ) => {
-  const formData = new FormData();
-  formData.append(
-    'image',
-    new File([new Uint8Array([1, 2, 3, 4])], 'query.png', {
-      type: 'image/png',
-    })
-  );
+  const body = formData || new FormData();
+  if (!formData) {
+    body.append(
+      'image',
+      new File([new Uint8Array([1, 2, 3, 4])], 'query.png', {
+        type: 'image/png',
+      })
+    );
+  }
 
   return app.request(
     `/api/v1/orgs/${routeOrgId}/search/image`,
@@ -748,10 +757,20 @@ const imageSearch = (
         'CF-Connecting-IP': '203.0.113.42',
         ...headers,
       },
-      body: formData,
+      body,
     },
     env
   );
+};
+
+const makeImageSearchForm = (
+  file: File = new File([new Uint8Array([1, 2, 3, 4])], 'query.png', {
+    type: 'image/png',
+  })
+) => {
+  const formData = new FormData();
+  formData.append('image', file);
+  return formData;
 };
 
 describe('Search API auth and quota behavior', () => {
@@ -2650,6 +2669,391 @@ describe('Search API auth and quota behavior', () => {
 
     expect(response.status).toBe(403);
     expect(payload.error.code).toBe('PUBLIC_SEARCH_SCOPE_NOT_ALLOWED');
+    expect(cache.get).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes NGA image constraints, pushes every hard facet to Vectorize, and backstops hydrated rows', async () => {
+    const providerMetadata = JSON.stringify({
+      ...JSON.parse(artworkRow.custom_metadata),
+      provider: 'nga',
+    });
+    const compliant = makeArtworkRow({
+      id: 'compliant',
+      year: 1750,
+      year_start: 1750,
+      year_end: 1750,
+      date_text: '1750',
+      medium: 'Oil on canvas',
+      medium_family: 'oil',
+      classification: 'Painting',
+      visual_classification: 'Painting',
+      primary_artist_id: 'artist-1',
+      custom_metadata: providerMetadata,
+    });
+    const distractors = [
+      makeArtworkRow({
+        ...compliant,
+        id: 'wrong-date',
+        year: 1900,
+        year_start: 1900,
+        year_end: 1900,
+        date_text: '1900',
+      }),
+      makeArtworkRow({
+        ...compliant,
+        id: 'wrong-classification',
+        classification: 'Sculpture',
+        visual_classification: 'Sculpture',
+      }),
+      makeArtworkRow({
+        ...compliant,
+        id: 'wrong-medium',
+        medium: 'Bronze',
+        medium_family: 'bronze',
+      }),
+      makeArtworkRow({
+        ...compliant,
+        id: 'wrong-artist',
+        primary_artist_id: 'artist-2',
+      }),
+      makeArtworkRow({
+        ...compliant,
+        id: 'wrong-provider',
+        custom_metadata: JSON.stringify({
+          ...JSON.parse(artworkRow.custom_metadata),
+          provider: 'artic',
+        }),
+      }),
+    ];
+    db = new FakeSearchDb([compliant, ...distractors]);
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [compliant, ...distractors].map((row, index) => ({
+          id: row.id,
+          score: index === 0 ? 0 : 0.9 - index / 10,
+          metadata: {},
+        })),
+      }),
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.6, 0.8] }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+      QUERY_EMBEDDING_API_URL: 'https://embedding-vm.example/v1/embeddings',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      CACHE: makeEmbeddingCache(),
+    };
+    const formData = makeImageSearchForm();
+    formData.set('topK', '30');
+    formData.set('minScore', '0');
+    formData.set(
+      'constraints',
+      JSON.stringify({
+        artistIds: ['artist-1', 'artist-1'],
+        mediumFamilies: ['oil', 'oil'],
+        classifications: ['Painting', 'Painting'],
+        dateRange: { startYear: 1700, endYear: 1800 },
+      })
+    );
+
+    const response = await imageSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      'nga',
+      formData
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(imageVectorize.query).toHaveBeenCalledWith(
+      [0.6, 0.8],
+      expect.objectContaining({
+        topK: 30,
+        filter: {
+          galleryId: 'open-access-art',
+          provider: 'nga',
+          yearStart: { $lte: 1800 },
+          yearEnd: { $gte: 1700 },
+          classification: { $in: ['Painting'] },
+          mediumFamily: { $in: ['oil'] },
+          primaryArtistId: { $in: ['artist-1'] },
+        },
+      })
+    );
+    expect(payload.data.results.map((result: any) => result.id)).toEqual([
+      'compliant',
+    ]);
+    expect(payload.data.results[0].similarity).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves unconstrained NGA image-search filtering, ordering, and result shape', async () => {
+    const providerMetadata = JSON.stringify({
+      ...JSON.parse(artworkRow.custom_metadata),
+      provider: 'nga',
+    });
+    const first = makeArtworkRow({
+      id: 'first',
+      title: 'First result',
+      custom_metadata: providerMetadata,
+    });
+    const second = makeArtworkRow({
+      id: 'second',
+      title: 'Second result',
+      custom_metadata: providerMetadata,
+    });
+    db = new FakeSearchDb([first, second]);
+    const imageVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [
+          { id: second.id, score: 0.9, metadata: {} },
+          { id: first.id, score: 0.8, metadata: {} },
+        ],
+      }),
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({ data: [{ embedding: [0.6, 0.8] }] })
+      )
+    );
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+      QUERY_EMBEDDING_API_URL: 'https://embedding-vm.example/v1/embeddings',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      CACHE: makeEmbeddingCache(),
+    };
+
+    const response = await imageSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(imageVectorize.query).toHaveBeenCalledWith(
+      [0.6, 0.8],
+      expect.objectContaining({
+        filter: { galleryId: 'open-access-art', provider: 'nga' },
+      })
+    );
+    expect(payload.data.results.map((result: any) => result.id)).toEqual([
+      'second',
+      'first',
+    ]);
+    expect(payload.data.results[0]).toMatchObject({
+      id: 'second',
+      title: 'Second result',
+      similarity: 0.9,
+      metadata: expect.any(Object),
+    });
+  });
+
+  it.each([
+    ['missing image', () => new FormData()],
+    [
+      'multiple images',
+      () => {
+        const form = makeImageSearchForm();
+        form.append(
+          'image',
+          new File([new Uint8Array([5])], 'second.webp', {
+            type: 'image/webp',
+          })
+        );
+        return form;
+      },
+    ],
+    [
+      'zero-byte image',
+      () => makeImageSearchForm(new File([], 'empty.png', { type: 'image/png' })),
+    ],
+    [
+      'noncanonical MIME type',
+      () =>
+        makeImageSearchForm(
+          new File([new Uint8Array([1])], 'query.jpg', { type: 'image/jpg' })
+        ),
+    ],
+    [
+      'oversized image',
+      () =>
+        makeImageSearchForm(
+          new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'large.webp', {
+            type: 'image/webp',
+          })
+        ),
+    ],
+    [
+      'malformed constraints JSON',
+      () => {
+        const form = makeImageSearchForm();
+        form.set('constraints', '{');
+        return form;
+      },
+    ],
+    [
+      'array constraints',
+      () => {
+        const form = makeImageSearchForm();
+        form.set('constraints', '[]');
+        return form;
+      },
+    ],
+    [
+      'null constraints',
+      () => {
+        const form = makeImageSearchForm();
+        form.set('constraints', 'null');
+        return form;
+      },
+    ],
+    [
+      'unknown constraint field',
+      () => {
+        const form = makeImageSearchForm();
+        form.set('constraints', JSON.stringify({ subject: 'flowers' }));
+        return form;
+      },
+    ],
+    [
+      'invalid known constraint value',
+      () => {
+        const form = makeImageSearchForm();
+        form.set(
+          'constraints',
+          JSON.stringify({ classifications: ['Tapestry'] })
+        );
+        return form;
+      },
+    ],
+    [
+      'out-of-order date range',
+      () => {
+        const form = makeImageSearchForm();
+        form.set(
+          'constraints',
+          JSON.stringify({ dateRange: { startYear: 1900, endYear: 1800 } })
+        );
+        return form;
+      },
+    ],
+    [
+      'non-integer date range',
+      () => {
+        const form = makeImageSearchForm();
+        form.set(
+          'constraints',
+          JSON.stringify({ dateRange: { startYear: 1700.5, endYear: 1800 } })
+        );
+        return form;
+      },
+    ],
+    [
+      'unknown nested date field',
+      () => {
+        const form = makeImageSearchForm();
+        form.set(
+          'constraints',
+          JSON.stringify({
+            dateRange: { startYear: 1700, endYear: 1800, era: 'CE' },
+          })
+        );
+        return form;
+      },
+    ],
+    [
+      'blank artist ID',
+      () => {
+        const form = makeImageSearchForm();
+        form.set('constraints', JSON.stringify({ artistIds: ['  '] }));
+        return form;
+      },
+    ],
+  ])(
+    'rejects %s before digest allowance, Jina, or Vectorize spend',
+    async (_label, makeForm) => {
+      const imageVectorize = { query: vi.fn() };
+      const cache = makeEmbeddingCache();
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      env = {
+        ...makeEnv(db),
+        VECTORIZE: imageVectorize as unknown as Vectorize,
+        QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+        QUERY_EMBEDDING_API_URL: 'https://embedding-vm.example/v1/embeddings',
+        ENVIRONMENT: 'production',
+        PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+        CACHE: cache,
+      };
+
+      const response = await imageSearch(
+        app,
+        env,
+        { 'X-API-Key': 'public-search-secret' },
+        'nga',
+        makeForm()
+      );
+      const payload = (await response.json()) as any;
+
+      expect(response.status).toBe(400);
+      expect(payload.error.code).toBe('INVALID_INPUT');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(imageVectorize.query).not.toHaveBeenCalled();
+      expect(cache.get).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects malformed multipart before digest allowance or embedding spend', async () => {
+    const imageVectorize = { query: vi.fn() };
+    const cache = makeEmbeddingCache();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    env = {
+      ...makeEnv(db),
+      VECTORIZE: imageVectorize as unknown as Vectorize,
+      QUERY_EMBEDDING_API_TOKEN: 'vm-token',
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      CACHE: cache,
+    };
+
+    const response = await app.request(
+      '/api/v1/orgs/nga/search/image',
+      {
+        method: 'POST',
+        headers: {
+          'X-API-Key': 'public-search-secret',
+          'CF-Connecting-IP': '203.0.113.42',
+          'Content-Type': 'multipart/form-data; boundary=broken',
+        },
+        body: '--broken\r\nnot-a-valid-part',
+      },
+      env
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('INVALID_INPUT');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(imageVectorize.query).not.toHaveBeenCalled();
     expect(cache.get).not.toHaveBeenCalled();
   });
 

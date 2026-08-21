@@ -42,6 +42,7 @@ export interface SearchTextRequest {
 export interface SearchImageRequest {
   topK?: number;
   minScore?: number;
+  constraints?: import('@paillette/types/public-search').PublicSearchConstraints;
   // Image will come from multipart form data
 }
 

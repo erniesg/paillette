@@ -30,6 +30,7 @@ import {
 import {
   matchesNgaSearchConstraints,
   compileNgaSearchPlan,
+  normalizePublicSearchConstraints,
   parseNgaSearchIntent,
   validateNgaSearchConstraints,
 } from '../utils/nga-search-intent';
@@ -108,6 +109,12 @@ const JINA_EMBEDDINGS_ENDPOINT = 'https://api.jina.ai/v1/embeddings';
 const RRF_K = 60;
 const EXACT_METADATA_PRIORITY_BONUS = 0.03;
 const MAX_SEARCH_RESULTS = 100;
+const MAX_IMAGE_SEARCH_BYTES = 10 * 1024 * 1024;
+const IMAGE_SEARCH_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 const VECTORIZE_QUERY_METADATA = 'indexed' as const;
 const SEARCH_DEGRADED_CHANNEL_ORDER: SearchDegradedChannel[] = [
   'image_embedding',
@@ -1277,7 +1284,8 @@ async function searchJinaImageVectors(
   provider: string | undefined,
   imageBuffer: ArrayBuffer,
   topK: number,
-  minScore: number
+  minScore: number,
+  structuredConstraints?: PublicSearchConstraints
 ): Promise<CaptionVectorMatch[]> {
   if (!config.apiKey) {
     throw new Error('JINA_API_KEY is required for image search');
@@ -1295,7 +1303,7 @@ async function searchJinaImageVectors(
   );
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK, 1), MAX_SEARCH_RESULTS),
-    filter: getVectorFilter(orgId, provider),
+    filter: getVectorFilter(orgId, provider, structuredConstraints),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -2198,6 +2206,58 @@ const textSearchSchema = z.object({
     .optional(),
 });
 
+const imageSearchConstraintsSchema = z
+  .object({
+    dateRange: z
+      .object({ startYear: z.number().int(), endYear: z.number().int() })
+      .strict()
+      .optional(),
+    classifications: z.array(z.string().min(1)).optional(),
+    mediumFamilies: z.array(z.string().min(1)).optional(),
+    artistIds: z.array(z.string().trim().min(1)).optional(),
+  })
+  .strict();
+
+class InvalidImageSearchRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidImageSearchRequestError';
+  }
+}
+
+const parseImageSearchConstraints = (
+  value: File | string | null
+): PublicSearchConstraints | undefined => {
+  if (value === null) return undefined;
+  if (typeof value !== 'string') {
+    throw new InvalidImageSearchRequestError(
+      'Constraints must be a JSON object'
+    );
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(value);
+  } catch {
+    throw new InvalidImageSearchRequestError(
+      'Constraints must contain valid JSON'
+    );
+  }
+
+  const parsed = imageSearchConstraintsSchema.safeParse(decoded);
+  if (!parsed.success) {
+    throw new InvalidImageSearchRequestError(
+      'Constraints do not match the public search contract'
+    );
+  }
+  const constraintError = validateNgaSearchConstraints(parsed.data);
+  if (constraintError) {
+    throw new InvalidImageSearchRequestError(constraintError);
+  }
+
+  return normalizePublicSearchConstraints(parsed.data);
+};
+
 export const searchRoutes = new Hono<{ Bindings: Env }>();
 
 searchRoutes.use(
@@ -2545,6 +2605,7 @@ searchRoutes.post('/search/text', async (c) => {
  */
 searchRoutes.post('/search/image', async (c) => {
   const startTime = performance.now();
+  c.header('Cache-Control', 'no-store');
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
@@ -2570,37 +2631,51 @@ searchRoutes.post('/search/image', async (c) => {
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
 
-    // Parse multipart form data
-    const formData = await c.req.formData();
-    const imageFile = formData.get('image') as File | string | null;
+    let formData: FormData;
+    try {
+      formData = await c.req.formData();
+    } catch {
+      throw new InvalidImageSearchRequestError('Malformed multipart form data');
+    }
 
-    if (!imageFile || typeof imageFile === 'string') {
-      return c.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'INVALID_INPUT',
-            message: 'Image file is required',
-          },
-        },
-        400
+    const imageEntries = formData.getAll('image') as unknown as Array<
+      File | string
+    >;
+    const imageFile = imageEntries[0];
+    if (
+      imageEntries.length !== 1 ||
+      !imageFile ||
+      typeof imageFile === 'string'
+    ) {
+      throw new InvalidImageSearchRequestError(
+        'Exactly one image file is required'
+      );
+    }
+    if (imageFile.size === 0) {
+      throw new InvalidImageSearchRequestError('Image file must not be empty');
+    }
+    if (!IMAGE_SEARCH_MIME_TYPES.has(imageFile.type)) {
+      throw new InvalidImageSearchRequestError(
+        'Image must be a JPEG, PNG, or WebP file'
+      );
+    }
+    if (imageFile.size > MAX_IMAGE_SEARCH_BYTES) {
+      throw new InvalidImageSearchRequestError(
+        'Image must be 10 MB or smaller'
       );
     }
 
-    // Validate image format
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-    if (!allowedTypes.includes(imageFile.type)) {
-      return c.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'INVALID_INPUT',
-            message: `Invalid image format. Allowed: ${allowedTypes.join(', ')}`,
-          },
-        },
-        400
+    const constraintEntries = formData.getAll(
+      'constraints'
+    ) as unknown as Array<File | string>;
+    if (constraintEntries.length > 1) {
+      throw new InvalidImageSearchRequestError(
+        'Constraints must be provided at most once'
       );
     }
+    const constraints = parseImageSearchConstraints(
+      constraintEntries[0] ?? null
+    );
 
     // Get optional parameters from form data
     const requestedTopK = Number(formData.get('topK') || '10');
@@ -2654,11 +2729,26 @@ searchRoutes.post('/search/image', async (c) => {
           c.req.header('X-Forwarded-For')
         ),
         searchIdentity: JSON.stringify({
+          version: 'public-image-search-v1',
           contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
           mode: 'image',
           imageDigest,
           orgId,
           provider: provider || null,
+          index: {
+            version: getEmbeddingIndexVersion(c.env),
+            binding:
+              getEmbeddingIndexVersion(c.env) === 'v2'
+                ? 'VECTORIZE_V2'
+                : 'VECTORIZE',
+          },
+          embedding: {
+            provider: 'jina',
+            endpoint: jinaConfig.endpoint,
+            model: jinaConfig.model,
+            dimensions: jinaConfig.dimensions,
+          },
+          constraints: constraints === undefined ? null : constraints,
           topK,
           minScore,
         }),
@@ -2674,7 +2764,8 @@ searchRoutes.post('/search/image', async (c) => {
       provider,
       imageBuffer,
       topK,
-      minScore
+      minScore,
+      constraints
     );
 
     // If no results found, return empty response
@@ -2690,6 +2781,7 @@ searchRoutes.post('/search/image', async (c) => {
           },
           topK,
           minScore,
+          ...(constraints !== undefined ? { constraints } : {}),
           resultCount: 0,
           queryTime,
         },
@@ -2719,20 +2811,14 @@ searchRoutes.post('/search/image', async (c) => {
         const artwork = artworkById.get(vectorResult.id);
         if (!artwork) return [];
 
-        return [
-          {
-            id: artwork.id,
-            orgId: artwork.org_id,
-            galleryId: artwork.org_id,
-            title: artwork.title || undefined,
-            artist: artwork.artist || undefined,
-            year: artwork.year || undefined,
-            imageUrl: artwork.image_url,
-            thumbnailUrl: artwork.thumbnail_url,
-            similarity: vectorResult.score,
-            metadata: mapSearchRow(artwork, vectorResult.score).metadata,
-          },
-        ];
+        const result = mapSearchRow(artwork, vectorResult.score);
+        if (
+          constraints !== undefined &&
+          !searchResultMatchesStructuredConstraints(result, constraints)
+        ) {
+          return [];
+        }
+        return [result];
       }
     );
 
@@ -2748,6 +2834,7 @@ searchRoutes.post('/search/image', async (c) => {
         },
         topK,
         minScore,
+        ...(constraints !== undefined ? { constraints } : {}),
         resultCount: enrichedResults.length,
         queryTime,
       },
@@ -2775,6 +2862,15 @@ searchRoutes.post('/search/image', async (c) => {
       },
     });
   } catch (error) {
+    if (error instanceof InvalidImageSearchRequestError) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: error.message },
+        },
+        400
+      );
+    }
     if (error instanceof PublicSearchColdMissRateLimitError) {
       c.header('Retry-After', String(error.retryAfterSeconds));
       return c.json<ApiResponse>(
