@@ -59,7 +59,7 @@ queries:
   - { id: ambiguous-03, text: "18th-century style", ambiguous: true }
   - { id: ambiguous-04, text: "orange paintings", classification: Painting }
   - { id: ambiguous-05, text: "Washington paintings", classification: Painting }
-  - { id: ambiguity-06, text: "picture of a drawing" }
+  - { id: ambiguity-06, text: "picture of a drawing", unresolved: true }
   - { id: norm-01, text: "paintings   from   1750", startYear: 1750, endYear: 1750, classification: Painting }
   - { id: norm-02, text: "paintings-from-1750", startYear: 1750, endYear: 1750, classification: Painting }
   - { id: norm-03, text: "18th-century paintings", startYear: 1700, endYear: 1799, classification: Painting }

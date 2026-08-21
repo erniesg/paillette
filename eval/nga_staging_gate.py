@@ -36,6 +36,29 @@ EXPECTED_VERSIONS = {
     "apiResultCache": "v6",
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+PLAYWRIGHT_COOLDOWN_SECONDS = 60
+PLAYWRIGHT_TEST_COUNT = 7
+PLAYWRIGHT_PUBLIC_SEARCH_REQUEST_BUDGET = 6
+PILOT_TEXT_CASE_IDS = (
+    "relation-active-depicts",
+    "relation-passive-depicts",
+    "classification-list",
+    "combined-oil-ships-date",
+)
+PILOT_IMAGE_CASE_IDS = ("image-pilot-painting-date",)
+PILOT_RELATION_CASE_IDS = (
+    "relation-active-depicts",
+    "relation-passive-depicts",
+)
+PLAYWRIGHT_SCREENSHOTS = (
+    "01-image-pre-upload.png",
+    "02-text-owned-image-editor.png",
+    "03-image-owner-local-palette.png",
+    "04-live-same-name.png",
+    "05-controlled-replacement-ownership.png",
+    "06-invalid-upload-preserves-results.png",
+    "07-ngs-locked.png",
+)
 VALID_REPEAT_CACHE_STATES = {"HIT", "KV-FRESH", "COALESCED"}
 VALID_FIRST_CACHE_STATES = {"MISS"}
 VALID_TEXT_CACHE_STATES = {
@@ -83,6 +106,33 @@ class GateStopped(RuntimeError):
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def build_playwright_handoff(
+    *,
+    phase: str,
+    snapshot: str,
+    evaluator_git_sha: str,
+    deployment_identity_hash: str,
+    completed_at: dt.datetime | None = None,
+) -> dict[str, Any]:
+    completed = completed_at or dt.datetime.now(dt.timezone.utc)
+    if completed.tzinfo is None:
+        raise ValueError("Playwright handoff completion time must be timezone-aware")
+    completed = completed.astimezone(dt.timezone.utc)
+    not_before = completed + dt.timedelta(seconds=PLAYWRIGHT_COOLDOWN_SECONDS)
+    return {
+        "schemaVersion": "nga-playwright-handoff-v1",
+        "phase": phase,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_git_sha,
+        "deploymentIdentityHash": deployment_identity_hash,
+        "pythonCompletedAt": completed.isoformat().replace("+00:00", "Z"),
+        "playwrightNotBefore": not_before.isoformat().replace("+00:00", "Z"),
+        "cooldownSeconds": PLAYWRIGHT_COOLDOWN_SECONDS,
+        "browserPublicSearchRequestBudget": PLAYWRIGHT_PUBLIC_SEARCH_REQUEST_BUDGET,
+        "expectedTestCount": PLAYWRIGHT_TEST_COUNT,
+    }
 
 
 def canonical_json(value: Any) -> str:
@@ -596,33 +646,13 @@ def _strict_success_rows(
     return data_value, rows, failures
 
 
-def evaluate_text_case(
+def evaluate_declared_interpretation(
     case: Mapping[str, Any],
-    response: Mapping[str, Any],
-    observed_versions: Mapping[str, str] | None = None,
+    interpretation: Mapping[str, Any],
+    expected_parser_version: str,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
-    status = int(response.get("status") or 0)
-    payload = _response_json(response)
-    if status in {401, 403}:
-        failures.append(_failure("unexpected_auth", status=status))
-    if not 200 <= status < 300 or payload.get("success") is not True:
-        failures.append(_failure("nga_request_failed", status=status))
-
-    data, rows, schema_failures = _strict_success_rows(
-        payload, "invalid_text_success_schema"
-    )
-    failures.extend(schema_failures)
-    interpretation_value = data.get("interpretation")
-    interpretation = (
-        interpretation_value if isinstance(interpretation_value, Mapping) else {}
-    )
     parser_version = interpretation.get("parserVersion")
-    expected_parser_version = (
-        observed_versions.get("parser")
-        if observed_versions is not None
-        else EXPECTED_VERSIONS["parser"]
-    )
     if parser_version != expected_parser_version:
         failures.append(
             _failure(
@@ -645,7 +675,9 @@ def evaluate_text_case(
             )
         )
 
-    if "semanticQuery" in expected and interpretation.get("semanticQuery") != expected.get("semanticQuery"):
+    if "semanticQuery" in expected and interpretation.get(
+        "semanticQuery"
+    ) != expected.get("semanticQuery"):
         failures.append(
             _failure(
                 "semantic_query_mismatch",
@@ -654,22 +686,75 @@ def evaluate_text_case(
             )
         )
 
-    if "relation" in expected:
-        expected_relation = expected.get("relation")
-        actual_relation = interpretation.get("relation")
-        if actual_relation != expected_relation:
-            failures.append(
-                _failure(
-                    "relation_direction_mismatch",
-                    expected=expected_relation,
-                    actual=actual_relation,
-                )
+    expected_relation = expected.get("relation")
+    actual_relation = interpretation.get("relation")
+    if actual_relation != expected_relation:
+        failures.append(
+            _failure(
+                "relation_direction_mismatch",
+                expected=expected_relation,
+                actual=actual_relation,
             )
+        )
 
-    if expected.get("unresolved") is True:
-        unresolved = interpretation.get("unresolved")
+    unresolved = interpretation.get("unresolved")
+    expects_unresolved = expected.get("unresolved") is True
+    if expects_unresolved:
         if not isinstance(unresolved, list) or not unresolved:
             failures.append(_failure("unresolved_ambiguity_missing"))
+    elif isinstance(unresolved, list) and unresolved:
+        failures.append(
+            _failure("unexpected_unresolved", actual=unresolved)
+        )
+    elif not isinstance(unresolved, list):
+        failures.append(
+            _failure(
+                "invalid_text_success_schema",
+                field="data.interpretation.unresolved",
+            )
+        )
+
+    return _result(
+        failures,
+        parserVersion=parser_version,
+        constraints=actual_constraints,
+        relation=actual_relation,
+        unresolved=unresolved,
+    )
+
+
+def evaluate_text_case(
+    case: Mapping[str, Any],
+    response: Mapping[str, Any],
+    observed_versions: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    status = int(response.get("status") or 0)
+    payload = _response_json(response)
+    if status in {401, 403}:
+        failures.append(_failure("unexpected_auth", status=status))
+    if not 200 <= status < 300 or payload.get("success") is not True:
+        failures.append(_failure("nga_request_failed", status=status))
+
+    data, rows, schema_failures = _strict_success_rows(
+        payload, "invalid_text_success_schema"
+    )
+    failures.extend(schema_failures)
+    interpretation_value = data.get("interpretation")
+    interpretation = (
+        interpretation_value if isinstance(interpretation_value, Mapping) else {}
+    )
+    expected_parser_version = (
+        observed_versions.get("parser")
+        if observed_versions is not None
+        else EXPECTED_VERSIONS["parser"]
+    )
+    interpretation_evaluation = evaluate_declared_interpretation(
+        case, interpretation, expected_parser_version
+    )
+    failures.extend(interpretation_evaluation["failures"])
+    parser_version = interpretation_evaluation["parserVersion"]
+    actual_constraints = interpretation_evaluation["constraints"]
 
     row_records = []
     for rank, row_value in enumerate(rows, 1):
@@ -747,7 +832,7 @@ def evaluate_text_case(
         parserVersion=parser_version,
         interpretation=interpretation,
         constraints=actual_constraints,
-        relation=interpretation.get("relation"),
+        relation=interpretation_evaluation["relation"],
         cache=cache_state or None,
         cacheControl=cache_control,
         etag=etag,
@@ -1130,7 +1215,7 @@ def parse_legacy_cases(path: Path) -> list[dict[str, Any]]:
         expected: dict[str, Any] = {"constraints": constraints}
         if "semanticQuery" in fields:
             expected["semanticQuery"] = fields["semanticQuery"]
-        if fields.get("ambiguous") is True:
+        if fields.get("unresolved") is True:
             expected["unresolved"] = True
         if fields.get("relationKind") and fields.get("relationTarget"):
             work = fields.get("classification")
@@ -1155,6 +1240,7 @@ def parse_legacy_cases(path: Path) -> list[dict[str, Any]]:
                 "category": "legacy",
                 "query": fields["text"],
                 "expected": expected,
+                "legacyAmbiguous": fields.get("ambiguous") is True,
             }
         )
     if len(cases) != 92:
@@ -1370,9 +1456,19 @@ def evaluate_pilot_inspection(
                 actual=inspection.get("decision"),
             )
         )
-    for field in ("reviewedAt", "reviewer", "pilotSummaryPath", "pilotSummarySha256"):
+    for field in (
+        "reviewedAt",
+        "reviewer",
+        "pilotSummaryPath",
+        "pilotSummarySha256",
+        "pilotArtifactManifestPath",
+        "pilotArtifactManifestSha256",
+    ):
         if not isinstance(inspection.get(field), str) or not inspection.get(field):
             failures.append(_failure("pilot_inspection_invalid", field=field))
+    manifest_path_value = inspection.get("pilotArtifactManifestPath")
+    if not isinstance(manifest_path_value, str) or not manifest_path_value:
+        failures.append(_failure("pilot_artifact_manifest_missing"))
 
     summary_path_value = inspection.get("pilotSummaryPath")
     if not isinstance(summary_path_value, str) or not summary_path_value:
@@ -1422,10 +1518,133 @@ def evaluate_pilot_inspection(
                 actual=manual.get("status"),
             )
         )
+
+    expected_counts = {"legacy": 0, "newText": 4, "image": 1, "total": 5}
+    if summary.get("caseCounts") != expected_counts:
+        failures.append(
+            _failure(
+                "pilot_case_counts_mismatch",
+                expected=expected_counts,
+                actual=summary.get("caseCounts"),
+            )
+        )
+    expected_hard_results = {
+        "text": {"selected": 4, "passed": 4},
+        "image": {"selected": 1, "passed": 1},
+    }
+    for modality, expected in expected_hard_results.items():
+        if summary.get(modality) != expected:
+            failures.append(
+                _failure(
+                    "pilot_hard_gate_incomplete",
+                    modality=modality,
+                    expected=expected,
+                    actual=summary.get(modality),
+                )
+            )
+    if summary.get("failureCount") != 0 or summary.get("gateFailures") != []:
+        failures.append(_failure("pilot_hard_gate_incomplete", modality="all"))
+
+    metrics_value = manual.get("metrics")
+    metrics = metrics_value if isinstance(metrics_value, Mapping) else {}
+    by_case_value = metrics.get("byCase")
+    by_case = by_case_value if isinstance(by_case_value, Mapping) else {}
+    macro_value = metrics.get("macro")
+    macro = macro_value if isinstance(macro_value, Mapping) else {}
+    if manual.get("caseCount") != len(PILOT_RELATION_CASE_IDS) or set(
+        by_case
+    ) != set(PILOT_RELATION_CASE_IDS):
+        failures.append(
+            _failure(
+                "pilot_manual_review_cases_mismatch",
+                expected=list(PILOT_RELATION_CASE_IDS),
+                actual=sorted(by_case),
+            )
+        )
+    metric_names = ("precisionAt5", "mrr", "ndcgAt10")
+    metric_sets = [macro, *[value for value in by_case.values() if isinstance(value, Mapping)]]
+    if (
+        len(metric_sets) != len(PILOT_RELATION_CASE_IDS) + 1
+        or any(
+            type(metric_set.get(metric)) not in {int, float}
+            for metric_set in metric_sets
+            for metric in metric_names
+        )
+    ):
+        failures.append(_failure("pilot_manual_review_metrics_missing"))
+    labels_hash = manual.get("labelsSha256")
+    if not isinstance(labels_hash, str) or not re.fullmatch(
+        r"[a-f0-9]{64}", labels_hash
+    ):
+        failures.append(_failure("pilot_manual_review_labels_unbound"))
+
+    manifest_path: Path | None = None
+    manifest_hash: str | None = None
+    bundle_evaluation: dict[str, Any] | None = None
+    if isinstance(manifest_path_value, str) and manifest_path_value:
+        manifest_path = Path(manifest_path_value)
+        if not manifest_path.is_absolute():
+            manifest_path = inspection_path.parent / manifest_path
+        try:
+            manifest_bytes = manifest_path.read_bytes()
+            manifest_value = json.loads(manifest_bytes)
+        except (OSError, json.JSONDecodeError) as error:
+            failures.append(
+                _failure("pilot_artifact_manifest_invalid", error=str(error))
+            )
+        else:
+            manifest = manifest_value if isinstance(manifest_value, Mapping) else {}
+            manifest_hash = sha256_bytes(manifest_bytes)
+            if manifest_hash != inspection.get("pilotArtifactManifestSha256"):
+                failures.append(
+                    _failure(
+                        "pilot_artifact_manifest_hash_mismatch",
+                        expected=inspection.get("pilotArtifactManifestSha256"),
+                        actual=manifest_hash,
+                    )
+                )
+            evidence_root = manifest_path.parent
+            if manifest_path.resolve() != (
+                evidence_root / "artifact-manifest.json"
+            ).resolve():
+                failures.append(_failure("pilot_artifact_manifest_invalid"))
+            if summary_path.resolve() != (evidence_root / "summary.json").resolve():
+                failures.append(_failure("pilot_summary_manifest_path_mismatch"))
+            bundle_evaluation = evaluate_evidence_bundle(
+                evidence_root, manifest, require_hard_pass=True
+            )
+            failures.extend(
+                _failure(
+                    "pilot_artifact_manifest_invalid",
+                    reason=failure["code"],
+                    details=failure,
+                )
+                for failure in bundle_evaluation["failures"]
+            )
+
+    if bundle_evaluation is not None:
+        expected_inventory = {
+            "counts": expected_counts,
+            "textCaseIds": list(PILOT_TEXT_CASE_IDS),
+            "imageCaseIds": list(PILOT_IMAGE_CASE_IDS),
+        }
+        case_inventory = bundle_evaluation.get("caseInventory")
+        if case_inventory != expected_inventory:
+            failures.append(
+                _failure(
+                    "pilot_case_inventory_mismatch",
+                    expected=expected_inventory,
+                    actual=case_inventory,
+                )
+            )
     return _result(
         failures,
         pilotSummaryPath=str(summary_path),
         pilotSummarySha256=actual_summary_hash,
+        pilotArtifactManifestPath=(
+            str(manifest_path) if manifest_path is not None else None
+        ),
+        pilotArtifactManifestSha256=manifest_hash,
         inspection=inspection,
     )
 
@@ -1740,15 +1959,464 @@ def load_deployment_identity(path: Path) -> Mapping[str, Any]:
     return load_json_object(path, "deployment identity")
 
 
+def _read_evidence_json(
+    root: Path,
+    relative: str,
+    failures: list[dict[str, Any]],
+) -> Mapping[str, Any]:
+    path = root / relative
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        failures.append(
+            _failure("evidence_json_invalid", path=relative, error=str(error))
+        )
+        return {}
+    if not isinstance(value, Mapping):
+        failures.append(_failure("evidence_json_invalid", path=relative))
+        return {}
+    return value
+
+
+def _parse_utc_timestamp(value: Any) -> dt.datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def _expected_run_cases(phase: str) -> dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[1]
+    inventory = load_case_inventory(
+        repo_root / "eval/nga-staging-cases.yaml",
+        repo_root / "eval/nga-constraint-queries.yaml",
+    )
+    return select_cases(inventory, phase)
+
+
+def evaluate_evidence_bundle(
+    out_dir: Path,
+    manifest: Mapping[str, Any] | None = None,
+    *,
+    require_hard_pass: bool = False,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    if not out_dir.is_dir():
+        return _result([_failure("evidence_directory_missing", path=str(out_dir))])
+    existing_files = [path for path in out_dir.rglob("*") if path.is_file()]
+    if not existing_files:
+        return _result([_failure("evidence_directory_empty", path=str(out_dir))])
+
+    summary = _read_evidence_json(out_dir, "summary.json", failures)
+    identity = _read_evidence_json(out_dir, "identity.json", failures)
+    case_inventory = _read_evidence_json(
+        out_dir, "case-inventory.json", failures
+    )
+    manual_document = _read_evidence_json(
+        out_dir, "manual-relevance.json", failures
+    )
+    handoff = _read_evidence_json(out_dir, "playwright-handoff.json", failures)
+    report = _read_evidence_json(
+        out_dir, "playwright/playwright-report.json", failures
+    )
+
+    phase = summary.get("phase")
+    snapshot = summary.get("snapshot")
+    evaluator_git_sha = summary.get("evaluatorGitSha")
+    deployment_hash = summary.get("deploymentIdentityHash")
+    if phase not in {"pilot", "full"}:
+        failures.append(_failure("evidence_phase_invalid", actual=phase))
+        selected: dict[str, Any] = {
+            "text": [],
+            "image": [],
+            "counts": {},
+        }
+    else:
+        selected = _expected_run_cases(str(phase))
+    if snapshot not in {"baseline", "candidate"}:
+        failures.append(_failure("evidence_snapshot_invalid", actual=snapshot))
+    if not isinstance(evaluator_git_sha, str) or not re.fullmatch(
+        r"[a-f0-9]{40}", evaluator_git_sha
+    ):
+        failures.append(
+            _failure("evidence_evaluator_identity_invalid", actual=evaluator_git_sha)
+        )
+    if not isinstance(deployment_hash, str) or not re.fullmatch(
+        r"[a-f0-9]{64}", deployment_hash
+    ):
+        failures.append(
+            _failure("evidence_deployment_identity_invalid", actual=deployment_hash)
+        )
+
+    deployment_binding_value = identity.get("deploymentBinding")
+    deployment_binding = (
+        deployment_binding_value
+        if isinstance(deployment_binding_value, Mapping)
+        else {}
+    )
+    identity_expectations = {
+        "phase": phase,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_git_sha,
+    }
+    for field, expected in identity_expectations.items():
+        if identity.get(field) != expected:
+            failures.append(
+                _failure(
+                    "evidence_identity_mismatch",
+                    field=field,
+                    expected=expected,
+                    actual=identity.get(field),
+                )
+            )
+    if (
+        deployment_binding.get("passed") is not True
+        or deployment_binding.get("deploymentIdentityHash") != deployment_hash
+    ):
+        failures.append(_failure("evidence_deployment_binding_mismatch"))
+
+    expected_text_ids = [case["id"] for case in selected["text"]]
+    expected_image_ids = [case["id"] for case in selected["image"]]
+    expected_counts = selected["counts"]
+    expected_inventory = {
+        "counts": expected_counts,
+        "textCaseIds": expected_text_ids,
+        "imageCaseIds": expected_image_ids,
+    }
+    for field, expected in expected_inventory.items():
+        if case_inventory.get(field) != expected:
+            failures.append(
+                _failure(
+                    "evidence_case_inventory_mismatch",
+                    field=field,
+                    expected=expected,
+                    actual=case_inventory.get(field),
+                )
+            )
+    if summary.get("caseCounts") != expected_counts:
+        failures.append(_failure("evidence_summary_case_counts_mismatch"))
+    expected_selected = {
+        "text": len(expected_text_ids),
+        "image": len(expected_image_ids),
+    }
+    for modality, expected_count in expected_selected.items():
+        modality_value = summary.get(modality)
+        modality_summary = (
+            modality_value if isinstance(modality_value, Mapping) else {}
+        )
+        if modality_summary.get("selected") != expected_count:
+            failures.append(
+                _failure(
+                    "evidence_summary_selected_mismatch",
+                    modality=modality,
+                    expected=expected_count,
+                    actual=modality_summary.get("selected"),
+                )
+            )
+
+    summary_manual_value = summary.get("manualRelevance")
+    summary_manual = (
+        summary_manual_value if isinstance(summary_manual_value, Mapping) else {}
+    )
+    if manual_document.get("summary") != summary_manual:
+        failures.append(_failure("evidence_manual_summary_mismatch"))
+
+    handoff_expectations = {
+        "schemaVersion": "nga-playwright-handoff-v1",
+        "phase": phase,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_git_sha,
+        "deploymentIdentityHash": deployment_hash,
+        "cooldownSeconds": PLAYWRIGHT_COOLDOWN_SECONDS,
+        "browserPublicSearchRequestBudget": PLAYWRIGHT_PUBLIC_SEARCH_REQUEST_BUDGET,
+        "expectedTestCount": PLAYWRIGHT_TEST_COUNT,
+    }
+    for field, expected in handoff_expectations.items():
+        if handoff.get(field) != expected:
+            failures.append(
+                _failure(
+                    "playwright_handoff_mismatch",
+                    field=field,
+                    expected=expected,
+                    actual=handoff.get(field),
+                )
+            )
+    if summary.get("playwrightHandoff") != handoff:
+        failures.append(_failure("playwright_summary_handoff_mismatch"))
+    completed_at = _parse_utc_timestamp(handoff.get("pythonCompletedAt"))
+    not_before = _parse_utc_timestamp(handoff.get("playwrightNotBefore"))
+    if (
+        completed_at is None
+        or not_before is None
+        or (not_before - completed_at).total_seconds()
+        < PLAYWRIGHT_COOLDOWN_SECONDS
+    ):
+        failures.append(_failure("playwright_cooldown_invalid"))
+
+    report_config_value = report.get("config")
+    report_config = (
+        report_config_value if isinstance(report_config_value, Mapping) else {}
+    )
+    metadata_value = report_config.get("metadata")
+    metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
+    handoff_path = out_dir / "playwright-handoff.json"
+    handoff_hash = (
+        sha256_bytes(handoff_path.read_bytes()) if handoff_path.is_file() else None
+    )
+    if metadata.get("ngaStagingRun") != handoff:
+        failures.append(_failure("playwright_report_binding_mismatch"))
+    if metadata.get("bindingSha256") != handoff_hash:
+        failures.append(_failure("playwright_report_binding_hash_mismatch"))
+    stats_value = report.get("stats")
+    stats = stats_value if isinstance(stats_value, Mapping) else {}
+    expected_stats = {
+        "expected": PLAYWRIGHT_TEST_COUNT,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+    }
+    for field, expected in expected_stats.items():
+        if stats.get(field) != expected:
+            failures.append(
+                _failure(
+                    "playwright_report_incomplete",
+                    field=field,
+                    expected=expected,
+                    actual=stats.get(field),
+                )
+            )
+
+    required_python_paths = {
+        "identity.json",
+        "summary.json",
+        "summary.md",
+        "case-inventory.json",
+        "fixtures-manifest.json",
+        "manual-relevance.json",
+        "playwright-handoff.json",
+        "raw/cache-probe.json",
+        "raw/image-identity-probe.json",
+        "raw/ngs-probe.json",
+        *{
+            f"raw/text/{case_id.replace(':', '_')}.json"
+            for case_id in expected_text_ids
+        },
+        *{f"raw/image/{case_id}.json" for case_id in expected_image_ids},
+    }
+    if phase == "full":
+        required_python_paths.add("raw/image-negative-probes.json")
+    required_playwright_paths = {
+        "playwright/playwright-report.json",
+        "playwright/playwright-artifacts/.last-run.json",
+        *{f"playwright/{name}" for name in PLAYWRIGHT_SCREENSHOTS},
+    }
+    trace_paths = {
+        path.relative_to(out_dir).as_posix()
+        for path in out_dir.glob("playwright/playwright-artifacts/**/trace.zip")
+        if path.is_file()
+    }
+    if len(trace_paths) != PLAYWRIGHT_TEST_COUNT:
+        failures.append(
+            _failure(
+                "playwright_trace_count_mismatch",
+                expected=PLAYWRIGHT_TEST_COUNT,
+                actual=len(trace_paths),
+            )
+        )
+    required_paths = required_python_paths | required_playwright_paths | trace_paths
+    actual_paths = {
+        path.relative_to(out_dir).as_posix()
+        for path in existing_files
+        if path.name != "artifact-manifest.json"
+    }
+    missing_paths = sorted(required_paths - actual_paths)
+    unexpected_paths = sorted(actual_paths - required_paths)
+    if missing_paths:
+        failures.append(_failure("evidence_artifacts_missing", paths=missing_paths))
+    if unexpected_paths:
+        failures.append(
+            _failure("unexpected_evidence_artifacts", paths=unexpected_paths)
+        )
+    last_run = _read_evidence_json(
+        out_dir, "playwright/playwright-artifacts/.last-run.json", failures
+    )
+    if last_run.get("status") != "passed" or last_run.get("failedTests") != []:
+        failures.append(_failure("playwright_last_run_incomplete"))
+
+    for case_id in expected_text_ids:
+        relative = f"raw/text/{case_id.replace(':', '_')}.json"
+        record = _read_evidence_json(out_dir, relative, failures)
+        case_value = record.get("case")
+        case_record = case_value if isinstance(case_value, Mapping) else {}
+        evaluation_value = record.get("evaluation")
+        case_evaluation = (
+            evaluation_value if isinstance(evaluation_value, Mapping) else {}
+        )
+        if case_record.get("id") != case_id or (
+            require_hard_pass and case_evaluation.get("passed") is not True
+        ):
+            failures.append(
+                _failure("raw_case_evidence_failed", path=relative, caseId=case_id)
+            )
+    for case_id in expected_image_ids:
+        relative = f"raw/image/{case_id}.json"
+        record = _read_evidence_json(out_dir, relative, failures)
+        case_value = record.get("case")
+        case_record = case_value if isinstance(case_value, Mapping) else {}
+        evaluation_value = record.get("evaluation")
+        case_evaluation = (
+            evaluation_value if isinstance(evaluation_value, Mapping) else {}
+        )
+        if case_record.get("id") != case_id or (
+            require_hard_pass and case_evaluation.get("passed") is not True
+        ):
+            failures.append(
+                _failure("raw_case_evidence_failed", path=relative, caseId=case_id)
+            )
+    for relative in ("raw/cache-probe.json", "raw/ngs-probe.json"):
+        record = _read_evidence_json(out_dir, relative, failures)
+        evaluation_value = record.get("evaluation")
+        probe_evaluation = (
+            evaluation_value if isinstance(evaluation_value, Mapping) else {}
+        )
+        if require_hard_pass and probe_evaluation.get("passed") is not True:
+            failures.append(_failure("raw_probe_evidence_failed", path=relative))
+    identity_record = _read_evidence_json(
+        out_dir, "raw/image-identity-probe.json", failures
+    )
+    identity_value = identity_record.get("identityEvaluation")
+    identity_evaluation = (
+        identity_value if isinstance(identity_value, Mapping) else {}
+    )
+    repeat_value = identity_record.get("repeat")
+    repeat = repeat_value if isinstance(repeat_value, Mapping) else {}
+    repeat_evaluation_value = repeat.get("evaluation")
+    repeat_evaluation = (
+        repeat_evaluation_value
+        if isinstance(repeat_evaluation_value, Mapping)
+        else {}
+    )
+    if require_hard_pass and (
+        identity_evaluation.get("passed") is not True
+        or repeat_evaluation.get("passed") is not True
+    ):
+        failures.append(
+            _failure("raw_probe_evidence_failed", path="raw/image-identity-probe.json")
+        )
+    if phase == "full":
+        negative_record = _read_evidence_json(
+            out_dir, "raw/image-negative-probes.json", failures
+        )
+        negative_value = negative_record.get("evaluation")
+        negative_evaluation = (
+            negative_value if isinstance(negative_value, Mapping) else {}
+        )
+        if require_hard_pass and negative_evaluation.get("passed") is not True:
+            failures.append(
+                _failure(
+                    "raw_probe_evidence_failed",
+                    path="raw/image-negative-probes.json",
+                )
+            )
+    for relative in sorted(required_paths & actual_paths):
+        path = out_dir / relative
+        if path.is_symlink() or path.stat().st_size == 0:
+            failures.append(
+                _failure("evidence_artifact_invalid", path=relative)
+            )
+        if relative.endswith(".json") and relative not in {
+            "summary.json",
+            "identity.json",
+            "case-inventory.json",
+            "manual-relevance.json",
+            "playwright-handoff.json",
+            "playwright/playwright-report.json",
+        }:
+            _read_evidence_json(out_dir, relative, failures)
+
+    if manifest is not None:
+        manifest_expectations = {
+            "schemaVersion": "nga-staging-evidence-manifest-v2",
+            "phase": phase,
+            "snapshot": snapshot,
+            "evaluatorGitSha": evaluator_git_sha,
+            "deploymentIdentityHash": deployment_hash,
+            "playwrightBindingSha256": handoff_hash,
+        }
+        for field, expected in manifest_expectations.items():
+            if manifest.get(field) != expected:
+                failures.append(
+                    _failure(
+                        "evidence_manifest_binding_mismatch",
+                        field=field,
+                        expected=expected,
+                        actual=manifest.get(field),
+                    )
+                )
+        artifacts_value = manifest.get("artifacts")
+        artifacts = artifacts_value if isinstance(artifacts_value, Mapping) else {}
+        if set(artifacts) != actual_paths:
+            failures.append(_failure("evidence_manifest_incomplete"))
+        for relative in sorted(actual_paths & set(artifacts)):
+            record_value = artifacts.get(relative)
+            record = record_value if isinstance(record_value, Mapping) else {}
+            path = out_dir / relative
+            expected_record = {
+                "group": (
+                    "playwright" if relative.startswith("playwright/") else "python"
+                ),
+                "sha256": sha256_bytes(path.read_bytes()),
+                "byteLength": path.stat().st_size,
+            }
+            if record != expected_record:
+                failures.append(
+                    _failure("evidence_manifest_hash_mismatch", path=relative)
+                )
+        groups_value = manifest.get("groups")
+        groups = groups_value if isinstance(groups_value, Mapping) else {}
+        for group in ("python", "playwright"):
+            paths = sorted(
+                path
+                for path in actual_paths
+                if (path.startswith("playwright/")) == (group == "playwright")
+            )
+            if groups.get(group) != {"count": len(paths), "paths": paths}:
+                failures.append(
+                    _failure("evidence_manifest_group_mismatch", group=group)
+                )
+
+    return _result(
+        failures,
+        phase=phase,
+        snapshot=snapshot,
+        evaluatorGitSha=evaluator_git_sha,
+        deploymentIdentityHash=deployment_hash,
+        playwrightBindingSha256=handoff_hash,
+        requiredPaths=sorted(required_paths),
+        actualPaths=sorted(actual_paths),
+        summary=summary,
+        identity=identity,
+        caseInventory=case_inventory,
+        manualRelevance=summary_manual,
+    )
+
+
 def rehash_evidence(out_dir: Path) -> dict[str, Any]:
-    """Create the final manifest after Python and Playwright evidence exist."""
+    """Validate and hash one complete same-run Python + Playwright bundle."""
+    evaluation = evaluate_evidence_bundle(out_dir)
+    if not evaluation["passed"]:
+        codes = ", ".join(evaluation["failureCodes"])
+        raise GateStopped(f"evidence bundle is incomplete or mixed: {codes}")
+
     artifacts: dict[str, Any] = {}
     grouped_paths: dict[str, list[str]] = {"python": [], "playwright": []}
-    excluded = {"artifact-manifest.json", "hashes.json"}
-    for path in sorted(out_dir.rglob("*")):
-        if not path.is_file() or path.name in excluded:
-            continue
-        relative = path.relative_to(out_dir).as_posix()
+    for relative in evaluation["actualPaths"]:
+        path = out_dir / relative
         group = "playwright" if relative.startswith("playwright/") else "python"
         grouped_paths[group].append(relative)
         artifacts[relative] = {
@@ -1761,7 +2429,12 @@ def rehash_evidence(out_dir: Path) -> dict[str, Any]:
         for name, paths in grouped_paths.items()
     }
     manifest = {
-        "schemaVersion": "nga-staging-evidence-manifest-v1",
+        "schemaVersion": "nga-staging-evidence-manifest-v2",
+        "phase": evaluation["phase"],
+        "snapshot": evaluation["snapshot"],
+        "evaluatorGitSha": evaluation["evaluatorGitSha"],
+        "deploymentIdentityHash": evaluation["deploymentIdentityHash"],
+        "playwrightBindingSha256": evaluation["playwrightBindingSha256"],
         "groups": groups,
         "artifacts": artifacts,
     }
@@ -2212,6 +2885,14 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         for failure in live_contract_binding["failures"]
     )
 
+    playwright_handoff = build_playwright_handoff(
+        phase=config.phase,
+        snapshot=config.snapshot,
+        evaluator_git_sha=candidate_sha,
+        deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
+    )
+    _write_json(config.out_dir / "playwright-handoff.json", playwright_handoff)
+
     summary = {
         "generatedAt": utc_now(),
         "startedAt": started_at,
@@ -2244,6 +2925,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "ngsProbe": ngs_probe,
         "manualRelevance": manual_relevance,
         "pilotInspection": pilot_inspection,
+        "playwrightHandoff": playwright_handoff,
         "gatePassed": not all_failures,
         "failureCount": len(all_failures),
         "gateFailures": all_failures,
@@ -2284,7 +2966,6 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     markdown.extend(f"- {item}" for item in summary["limitations"])
     (config.out_dir / "summary.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
 
-    rehash_evidence(config.out_dir)
     return summary
 
 
@@ -2324,7 +3005,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
     if arguments[:1] == ["rehash"]:
         args = build_rehash_parser().parse_args(arguments[1:])
-        manifest = rehash_evidence(args.out_dir.resolve())
+        try:
+            manifest = rehash_evidence(args.out_dir.resolve())
+        except (GateStopped, ValueError) as error:
+            print(f"NGA staging evidence rehash stopped: {error}", file=sys.stderr)
+            return 2
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
         return 0
     args = build_parser().parse_args(arguments)

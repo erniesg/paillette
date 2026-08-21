@@ -5,10 +5,13 @@ import http.server
 import hashlib
 import json
 import math
+import os
+import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -115,6 +118,199 @@ def deployment_identity(snapshot="candidate", git_sha="a" * 40):
             "contractVersion": "27" if snapshot == "candidate" else "26",
         },
     }
+
+
+def parse_with_exact_local_v5(cases):
+    script = """
+import { readFileSync } from 'node:fs';
+import { parseNgaSearchIntent } from './apps/api/src/utils/nga-search-intent.ts';
+const cases = JSON.parse(readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(cases.map((item) => ({
+  id: item.id,
+  interpretation: parseNgaSearchIntent(item.query, item.request?.constraints),
+}))));
+"""
+    completed = subprocess.run(
+        [
+            "node",
+            "node_modules/.pnpm/tsx@4.23.1/node_modules/tsx/dist/cli.mjs",
+            "-e",
+            script,
+        ],
+        cwd=ROOT,
+        input=json.dumps(cases),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
+PILOT_TEXT_IDS = [
+    "relation-active-depicts",
+    "relation-passive-depicts",
+    "classification-list",
+    "combined-oil-ships-date",
+]
+PILOT_IMAGE_IDS = ["image-pilot-painting-date"]
+PILOT_RELATION_IDS = [
+    "relation-active-depicts",
+    "relation-passive-depicts",
+]
+PLAYWRIGHT_SCREENSHOTS = [
+    "01-image-pre-upload.png",
+    "02-text-owned-image-editor.png",
+    "03-image-owner-local-palette.png",
+    "04-live-same-name.png",
+    "05-controlled-replacement-ownership.png",
+    "06-invalid-upload-preserves-results.png",
+    "07-ngs-locked.png",
+]
+
+
+def make_complete_evidence_bundle(
+    gate,
+    root: Path,
+    *,
+    phase="pilot",
+    snapshot="candidate",
+    evaluator_sha="a" * 40,
+    deployment_hash="d" * 64,
+):
+    inventory = gate.load_case_inventory(
+        ROOT / "eval" / "nga-staging-cases.yaml",
+        ROOT / "eval" / "nga-constraint-queries.yaml",
+    )
+    selected = gate.select_cases(inventory, phase)
+    text_ids = [case["id"] for case in selected["text"]]
+    image_ids = [case["id"] for case in selected["image"]]
+    manual_by_case = {
+        case_id: {"precisionAt5": 0.8, "mrr": 1.0, "ndcgAt10": 0.9}
+        for case_id in PILOT_RELATION_IDS
+    }
+    manual = {
+        "status": "graded",
+        "caseCount": len(PILOT_RELATION_IDS),
+        "gradedAt": "2026-08-22T00:00:00Z",
+        "reviewer": "release-reviewer",
+        "labelsSha256": "e" * 64,
+        "metrics": {
+            "byCase": manual_by_case,
+            "macro": {"precisionAt5": 0.8, "mrr": 1.0, "ndcgAt10": 0.9},
+        },
+    }
+    identity = {
+        "generatedAt": "2026-08-22T00:00:00Z",
+        "evaluatorGitSha": evaluator_sha,
+        "phase": phase,
+        "snapshot": snapshot,
+        "deploymentBinding": {
+            "passed": True,
+            "deploymentIdentityHash": deployment_hash,
+        },
+    }
+    summary = {
+        "generatedAt": "2026-08-22T00:01:00Z",
+        "evaluatorGitSha": evaluator_sha,
+        "deploymentIdentityHash": deployment_hash,
+        "snapshot": snapshot,
+        "phase": phase,
+        "caseCounts": selected["counts"],
+        "text": {"selected": len(text_ids), "passed": len(text_ids)},
+        "image": {"selected": len(image_ids), "passed": len(image_ids)},
+        "manualRelevance": manual,
+        "gatePassed": True,
+        "failureCount": 0,
+        "gateFailures": [],
+    }
+    case_inventory = {
+        "counts": selected["counts"],
+        "textCaseIds": text_ids,
+        "imageCaseIds": image_ids,
+    }
+    completed = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    handoff = {
+        "schemaVersion": "nga-playwright-handoff-v1",
+        "phase": phase,
+        "snapshot": snapshot,
+        "evaluatorGitSha": evaluator_sha,
+        "deploymentIdentityHash": deployment_hash,
+        "pythonCompletedAt": completed.isoformat().replace("+00:00", "Z"),
+        "playwrightNotBefore": (completed + timedelta(seconds=60))
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "cooldownSeconds": 60,
+        "browserPublicSearchRequestBudget": 6,
+        "expectedTestCount": 7,
+    }
+    summary["playwrightHandoff"] = handoff
+    root.mkdir(parents=True, exist_ok=True)
+    documents = {
+        "identity.json": identity,
+        "summary.json": summary,
+        "case-inventory.json": case_inventory,
+        "fixtures-manifest.json": {"fixtures": []},
+        "manual-relevance.json": {"summary": manual, "cases": []},
+        "playwright-handoff.json": handoff,
+        "raw/cache-probe.json": {"evaluation": {"passed": True}},
+        "raw/image-identity-probe.json": {
+            "identityEvaluation": {"passed": True},
+            "repeat": {"evaluation": {"passed": True}},
+        },
+        "raw/ngs-probe.json": {"evaluation": {"passed": True}},
+    }
+    if phase == "full":
+        documents["raw/image-negative-probes.json"] = {
+            "evaluation": {"passed": True}
+        }
+    for case_id in text_ids:
+        documents[f"raw/text/{case_id.replace(':', '_')}.json"] = {
+            "case": {"id": case_id},
+            "evaluation": {"passed": True},
+        }
+    for case_id in image_ids:
+        documents[f"raw/image/{case_id}.json"] = {
+            "case": {"id": case_id},
+            "evaluation": {"passed": True},
+        }
+    for relative, document in documents.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document) + "\n", encoding="utf-8")
+    (root / "summary.md").write_text("# complete evidence\n", encoding="utf-8")
+
+    playwright = root / "playwright"
+    artifacts = playwright / "playwright-artifacts"
+    artifacts.mkdir(parents=True)
+    handoff_bytes = (root / "playwright-handoff.json").read_bytes()
+    report = {
+        "config": {
+            "metadata": {
+                "ngaStagingRun": handoff,
+                "bindingSha256": hashlib.sha256(handoff_bytes).hexdigest(),
+            }
+        },
+        "stats": {
+            "expected": 7,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0,
+        },
+    }
+    (playwright / "playwright-report.json").write_text(
+        json.dumps(report) + "\n", encoding="utf-8"
+    )
+    (artifacts / ".last-run.json").write_text(
+        json.dumps({"status": "passed", "failedTests": []}) + "\n",
+        encoding="utf-8",
+    )
+    for screenshot in PLAYWRIGHT_SCREENSHOTS:
+        (playwright / screenshot).write_bytes(b"png evidence")
+    for index in range(7):
+        trace_dir = artifacts / f"test-{index}"
+        trace_dir.mkdir()
+        (trace_dir / "trace.zip").write_bytes(b"trace evidence")
+    return gate.rehash_evidence(root)
 
 
 class GateTestCase(unittest.TestCase):
@@ -932,19 +1128,147 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(len(cases), 92)
         self.assertEqual(len({case["id"] for case in cases}), 92)
 
-    def test_legacy_ambiguous_cases_retain_unresolved_expectations(self):
+    def test_legacy_ambiguous_cases_require_safe_empty_constraints_not_unresolved(self):
         cases = self.call(
             "parse_legacy_cases", ROOT / "eval" / "nga-constraint-queries.yaml"
         )
-        unresolved_ids = {
-            case["legacyId"]
+        ambiguous = {
+            case["legacyId"]: case["expected"]
             for case in cases
-            if case["expected"].get("unresolved") is True
+            if case["legacyId"]
+            in {"ambiguous-02", "ambiguous-03", "live-regression-04"}
         }
         self.assertEqual(
-            unresolved_ids,
+            set(ambiguous),
             {"ambiguous-02", "ambiguous-03", "live-regression-04"},
         )
+        for expected in ambiguous.values():
+            self.assertEqual(expected["constraints"], {})
+            self.assertNotIn("unresolved", expected)
+
+    def test_all_92_legacy_declared_expectations_match_exact_local_v5(self):
+        cases = self.call(
+            "parse_legacy_cases", ROOT / "eval" / "nga-constraint-queries.yaml"
+        )
+        parsed = parse_with_exact_local_v5(cases)
+        self.assertEqual(len(parsed), 92)
+        failures = {}
+        for case, record in zip(cases, parsed, strict=True):
+            self.assertEqual(record["id"], case["id"])
+            result = self.call(
+                "evaluate_declared_interpretation",
+                case,
+                record["interpretation"],
+                "nga-v5",
+            )
+            if not result["passed"]:
+                failures[case["legacyId"]] = result["failures"]
+        self.assertEqual(failures, {})
+
+    def test_unexpected_relation_and_unresolved_fail_clean_legacy_and_new_cases(self):
+        legacy_cases = self.call(
+            "parse_legacy_cases", ROOT / "eval" / "nga-constraint-queries.yaml"
+        )
+        legacy_clean = next(
+            case for case in legacy_cases if case["legacyId"] == "subject-01"
+        )
+        inventory = self.call(
+            "load_case_inventory",
+            ROOT / "eval" / "nga-staging-cases.yaml",
+            ROOT / "eval" / "nga-constraint-queries.yaml",
+        )
+        new_clean = next(
+            case
+            for case in inventory["textCases"]
+            if case["id"] == "academic-user-phrasing"
+        )
+        explicit_null = next(
+            case
+            for case in inventory["textCases"]
+            if case["id"] == "classification-list"
+        )
+        unexpected_relation = {
+            "kind": "depicts",
+            "workClassification": "Painting",
+            "subjectClassification": "Sculpture",
+        }
+        for case in (legacy_clean, new_clean, explicit_null):
+            with self.subTest(case=case["id"], mutation="relation"):
+                interpretation = {
+                    "parserVersion": "nga-v5",
+                    "semanticQuery": case.get("expected", {}).get(
+                        "semanticQuery", ""
+                    ),
+                    "constraints": case["expected"]["constraints"],
+                    "relation": unexpected_relation,
+                    "unresolved": [],
+                }
+                result = self.call(
+                    "evaluate_declared_interpretation",
+                    case,
+                    interpretation,
+                    "nga-v5",
+                )
+                self.assertIn(
+                    "relation_direction_mismatch", result["failureCodes"]
+                )
+
+            with self.subTest(case=case["id"], mutation="unresolved"):
+                interpretation = {
+                    "parserVersion": "nga-v5",
+                    "semanticQuery": case.get("expected", {}).get(
+                        "semanticQuery", ""
+                    ),
+                    "constraints": case["expected"]["constraints"],
+                    "unresolved": ["invented ambiguity"],
+                }
+                result = self.call(
+                    "evaluate_declared_interpretation",
+                    case,
+                    interpretation,
+                    "nga-v5",
+                )
+                self.assertIn("unexpected_unresolved", result["failureCodes"])
+
+    def test_explicit_unresolved_cases_still_require_nonempty_unresolved(self):
+        legacy_cases = self.call(
+            "parse_legacy_cases", ROOT / "eval" / "nga-constraint-queries.yaml"
+        )
+        legacy_unresolved = [
+            case
+            for case in legacy_cases
+            if case["expected"].get("unresolved") is True
+        ]
+        self.assertEqual(
+            {case["legacyId"] for case in legacy_unresolved}, {"ambiguity-06"}
+        )
+        inventory = self.call(
+            "load_case_inventory",
+            ROOT / "eval" / "nga-staging-cases.yaml",
+            ROOT / "eval" / "nga-constraint-queries.yaml",
+        )
+        unresolved_cases = [
+            case
+            for case in inventory["textCases"]
+            if case["expected"].get("unresolved") is True
+        ]
+        self.assertEqual(
+            {case["id"] for case in unresolved_cases},
+            {"unsupported-relation-near", "unsupported-relation-compound"},
+        )
+        for case in [*legacy_unresolved, *unresolved_cases]:
+            result = self.call(
+                "evaluate_declared_interpretation",
+                case,
+                {
+                    "parserVersion": "nga-v5",
+                    "semanticQuery": case["query"],
+                    "constraints": {},
+                    "unresolved": [],
+                },
+                "nga-v5",
+            )
+            self.assertIn("unresolved_ambiguity_missing", result["failureCodes"])
 
     def test_case_inventory_has_exact_pilot_and_full_coverage(self):
         inventory = self.call(
@@ -1094,24 +1418,28 @@ class InventoryAndRelevanceTests(GateTestCase):
         evaluator_sha = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            pilot_summary = {
-                "phase": "pilot",
-                "snapshot": "candidate",
-                "gatePassed": True,
-                "evaluatorGitSha": evaluator_sha,
-                "deploymentIdentityHash": deployment_hash,
-                "manualRelevance": {"status": "graded"},
-            }
-            summary_path = root / "pilot-summary.json"
-            summary_bytes = (json.dumps(pilot_summary) + "\n").encode()
-            summary_path.write_bytes(summary_bytes)
+            evidence = root / "pilot"
+            make_complete_evidence_bundle(
+                self.gate,
+                evidence,
+                evaluator_sha=evaluator_sha,
+                deployment_hash=deployment_hash,
+            )
+            summary_path = evidence / "summary.json"
+            manifest_path = evidence / "artifact-manifest.json"
+            summary_bytes = summary_path.read_bytes()
+            manifest_bytes = manifest_path.read_bytes()
             inspection = {
                 "schemaVersion": "nga-pilot-inspection-v1",
                 "decision": "proceed",
                 "reviewedAt": "2026-08-22T00:00:00Z",
                 "reviewer": "release-reviewer",
-                "pilotSummaryPath": "pilot-summary.json",
+                "pilotSummaryPath": "pilot/summary.json",
                 "pilotSummarySha256": hashlib.sha256(summary_bytes).hexdigest(),
+                "pilotArtifactManifestPath": "pilot/artifact-manifest.json",
+                "pilotArtifactManifestSha256": hashlib.sha256(
+                    manifest_bytes
+                ).hexdigest(),
             }
             inspection_path = root / "inspection.json"
             inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
@@ -1122,6 +1450,10 @@ class InventoryAndRelevanceTests(GateTestCase):
                 evaluator_git_sha=evaluator_sha,
             )
             self.assertEqual(result["failureCodes"], [])
+            self.assertEqual(
+                result["pilotArtifactManifestSha256"],
+                inspection["pilotArtifactManifestSha256"],
+            )
 
             inspection["decision"] = "hold"
             inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
@@ -1133,31 +1465,357 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
             self.assertIn("pilot_inspection_not_approved", blocked["failureCodes"])
 
+    def test_pilot_inspection_rejects_synthetic_or_semantically_incomplete_evidence(self):
+        deployment_hash = "d" * 64
+        evaluator_sha = "a" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            summary = {
+                "phase": "pilot",
+                "snapshot": "candidate",
+                "gatePassed": True,
+                "evaluatorGitSha": evaluator_sha,
+                "deploymentIdentityHash": deployment_hash,
+                "manualRelevance": {"status": "graded"},
+            }
+            summary_path = root / "summary.json"
+            summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+            inspection = {
+                "schemaVersion": "nga-pilot-inspection-v1",
+                "decision": "proceed",
+                "reviewedAt": "2026-08-22T00:00:00Z",
+                "reviewer": "release-reviewer",
+                "pilotSummaryPath": "summary.json",
+                "pilotSummarySha256": hashlib.sha256(
+                    summary_path.read_bytes()
+                ).hexdigest(),
+            }
+            inspection_path = root / "inspection.json"
+            inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
+            result = self.call(
+                "evaluate_pilot_inspection",
+                inspection_path,
+                deployment_identity_hash=deployment_hash,
+                evaluator_git_sha=evaluator_sha,
+            )
+            self.assertIn("pilot_artifact_manifest_missing", result["failureCodes"])
+
+    def test_pilot_inspection_rejects_self_consistent_wrong_cases_and_metrics(self):
+        deployment_hash = "d" * 64
+        evaluator_sha = "a" * 40
+        mutations = {
+            "wrong case ids": lambda summary, inventory: inventory.__setitem__(
+                "textCaseIds", ["wrong", *PILOT_TEXT_IDS[1:]]
+            ),
+            "wrong hard pass count": lambda summary, _inventory: summary[
+                "text"
+            ].__setitem__("passed", 3),
+            "missing relevance metrics": lambda summary, _inventory: summary[
+                "manualRelevance"
+            ].__setitem__("metrics", None),
+            "wrong relation ids": lambda summary, _inventory: summary[
+                "manualRelevance"
+            ]["metrics"].__setitem__(
+                "byCase", {"wrong": {"precisionAt5": 1, "mrr": 1, "ndcgAt10": 1}}
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                evidence = root / "pilot"
+                make_complete_evidence_bundle(
+                    self.gate,
+                    evidence,
+                    evaluator_sha=evaluator_sha,
+                    deployment_hash=deployment_hash,
+                )
+                summary_path = evidence / "summary.json"
+                inventory_path = evidence / "case-inventory.json"
+                manifest_path = evidence / "artifact-manifest.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+                mutate(summary, inventory)
+                summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+                inventory_path.write_text(
+                    json.dumps(inventory) + "\n", encoding="utf-8"
+                )
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                for relative in ("summary.json", "case-inventory.json"):
+                    path = evidence / relative
+                    manifest["artifacts"][relative].update(
+                        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                        byteLength=path.stat().st_size,
+                    )
+                manifest_path.write_text(
+                    json.dumps(manifest) + "\n", encoding="utf-8"
+                )
+                inspection = {
+                    "schemaVersion": "nga-pilot-inspection-v1",
+                    "decision": "proceed",
+                    "reviewedAt": "2026-08-22T00:00:00Z",
+                    "reviewer": "release-reviewer",
+                    "pilotSummaryPath": "pilot/summary.json",
+                    "pilotSummarySha256": hashlib.sha256(
+                        summary_path.read_bytes()
+                    ).hexdigest(),
+                    "pilotArtifactManifestPath": "pilot/artifact-manifest.json",
+                    "pilotArtifactManifestSha256": hashlib.sha256(
+                        manifest_path.read_bytes()
+                    ).hexdigest(),
+                }
+                inspection_path = root / "inspection.json"
+                inspection_path.write_text(
+                    json.dumps(inspection), encoding="utf-8"
+                )
+                result = self.call(
+                    "evaluate_pilot_inspection",
+                    inspection_path,
+                    deployment_identity_hash=deployment_hash,
+                    evaluator_git_sha=evaluator_sha,
+                )
+                self.assertFalse(result["passed"], result)
+
     def test_rehash_manifest_includes_python_and_later_playwright_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "summary.json").write_text("{}\n", encoding="utf-8")
-            playwright = root / "playwright"
-            playwright.mkdir()
-            (playwright / "report.json").write_text("{}\n", encoding="utf-8")
-
-            first = self.call("rehash_evidence", root)
+            first = make_complete_evidence_bundle(self.gate, root)
             self.assertEqual(
                 set(first["groups"]), {"python", "playwright"}
             )
             self.assertIn("summary.json", first["artifacts"])
-            self.assertIn("playwright/report.json", first["artifacts"])
+            self.assertIn(
+                "playwright/playwright-report.json", first["artifacts"]
+            )
+            self.assertIn(
+                "playwright/playwright-artifacts/.last-run.json",
+                first["artifacts"],
+            )
+            self.assertEqual(first["phase"], "pilot")
+            self.assertEqual(first["snapshot"], "candidate")
+            self.assertEqual(first["evaluatorGitSha"], "a" * 40)
 
-            (playwright / "trace.zip").write_bytes(b"later trace")
+            playwright = root / "playwright"
+            later_trace = (
+                playwright / "playwright-artifacts" / "test-0" / "trace.zip"
+            )
+            later_trace.write_bytes(b"later changed trace")
             second = self.call("rehash_evidence", root)
-            self.assertIn("playwright/trace.zip", second["artifacts"])
+            self.assertEqual(
+                second["artifacts"][
+                    "playwright/playwright-artifacts/test-0/trace.zip"
+                ]["sha256"],
+                hashlib.sha256(b"later changed trace").hexdigest(),
+            )
             manifest = json.loads(
                 (root / "artifact-manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(second, manifest)
 
+    def test_pilot_inspection_rejects_self_consistent_failed_raw_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "pilot"
+            make_complete_evidence_bundle(self.gate, evidence)
+            raw_relative = "raw/text/relation-active-depicts.json"
+            raw_path = evidence / raw_relative
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+            raw["evaluation"] = {
+                "passed": False,
+                "failures": [{"code": "hard_constraint_violation"}],
+            }
+            raw_path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
+            manifest_path = evidence / "artifact-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["artifacts"][raw_relative].update(
+                sha256=hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+                byteLength=raw_path.stat().st_size,
+            )
+            manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+            summary_path = evidence / "summary.json"
+            inspection = {
+                "schemaVersion": "nga-pilot-inspection-v1",
+                "decision": "proceed",
+                "reviewedAt": "2026-08-22T00:00:00Z",
+                "reviewer": "release-reviewer",
+                "pilotSummaryPath": "pilot/summary.json",
+                "pilotSummarySha256": hashlib.sha256(
+                    summary_path.read_bytes()
+                ).hexdigest(),
+                "pilotArtifactManifestPath": "pilot/artifact-manifest.json",
+                "pilotArtifactManifestSha256": hashlib.sha256(
+                    manifest_path.read_bytes()
+                ).hexdigest(),
+            }
+            inspection_path = root / "inspection.json"
+            inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
+            result = self.call(
+                "evaluate_pilot_inspection",
+                inspection_path,
+                deployment_identity_hash="d" * 64,
+                evaluator_git_sha="a" * 40,
+            )
+            self.assertFalse(result["passed"], result)
+
+    def test_rehash_fails_closed_for_absent_empty_incomplete_or_mixed_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            absent = root / "absent"
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", absent)
+            self.assertFalse(absent.exists())
+
+            empty = root / "empty"
+            empty.mkdir()
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", empty)
+            self.assertFalse((empty / "artifact-manifest.json").exists())
+
+            incomplete = root / "incomplete"
+            incomplete.mkdir()
+            (incomplete / "summary.json").write_text("{}\n", encoding="utf-8")
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", incomplete)
+
+            mixed = root / "mixed"
+            make_complete_evidence_bundle(self.gate, mixed)
+            report_path = mixed / "playwright/playwright-report.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["config"]["metadata"]["ngaStagingRun"]["snapshot"] = "baseline"
+            report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", mixed)
+
+    def test_rehash_full_requires_full_only_negative_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root, phase="full")
+            (root / "raw/image-negative-probes.json").unlink()
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_rehash_baseline_can_capture_complete_failing_gate_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(
+                self.gate, root, snapshot="baseline"
+            )
+            raw_path = root / "raw/text/relation-active-depicts.json"
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+            raw["evaluation"] = {
+                "passed": False,
+                "failures": [{"code": "relation_direction_mismatch"}],
+            }
+            raw_path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
+            summary_path = root / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary["text"]["passed"] = 3
+            summary["gatePassed"] = False
+            summary["failureCount"] = 1
+            summary["gateFailures"] = [
+                {"scope": "text", "code": "relation_direction_mismatch"}
+            ]
+            summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+            manifest = self.call("rehash_evidence", root)
+            self.assertEqual(manifest["snapshot"], "baseline")
+
+    def test_rehash_cli_returns_nonzero_without_complete_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing"
+            self.assertEqual(
+                self.gate.main(["rehash", "--out-dir", str(missing)]), 2
+            )
+
+    def test_playwright_handoff_enforces_shared_sixty_second_cooldown(self):
+        completed = datetime(2026, 8, 22, tzinfo=timezone.utc)
+        handoff = self.call(
+            "build_playwright_handoff",
+            phase="pilot",
+            snapshot="candidate",
+            evaluator_git_sha="a" * 40,
+            deployment_identity_hash="d" * 64,
+            completed_at=completed,
+        )
+        self.assertEqual(handoff["cooldownSeconds"], 60)
+        self.assertEqual(handoff["browserPublicSearchRequestBudget"], 6)
+        completed_at = datetime.fromisoformat(
+            handoff["pythonCompletedAt"].replace("Z", "+00:00")
+        )
+        not_before = datetime.fromisoformat(
+            handoff["playwrightNotBefore"].replace("Z", "+00:00")
+        )
+        self.assertGreaterEqual((not_before - completed_at).total_seconds(), 60)
+
+    def test_playwright_config_rejects_future_handoff_even_during_discovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime.now(timezone.utc)
+            handoff = {
+                "schemaVersion": "nga-playwright-handoff-v1",
+                "phase": "pilot",
+                "snapshot": "candidate",
+                "evaluatorGitSha": "a" * 40,
+                "deploymentIdentityHash": "d" * 64,
+                "pythonCompletedAt": now.isoformat().replace("+00:00", "Z"),
+                "playwrightNotBefore": (now + timedelta(minutes=10))
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "cooldownSeconds": 60,
+                "browserPublicSearchRequestBudget": 6,
+                "expectedTestCount": 7,
+            }
+            binding = root / "playwright-handoff.json"
+            binding.write_text(json.dumps(handoff) + "\n", encoding="utf-8")
+            environment = {
+                **os.environ,
+                "NGA_STAGING_EVIDENCE_DIR": str(root / "playwright"),
+                "NGA_STAGING_RUN_BINDING": str(binding),
+            }
+            command = [
+                "pnpm",
+                "--filter",
+                "@paillette/web",
+                "exec",
+                "playwright",
+                "test",
+                "--config",
+                "playwright.staging.config.ts",
+                "--list",
+            ]
+            blocked = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("cooldown", f"{blocked.stdout}\n{blocked.stderr}".lower())
+
+            handoff["pythonCompletedAt"] = (now - timedelta(minutes=2))
+            handoff["playwrightNotBefore"] = (now - timedelta(minutes=1))
+            handoff = {
+                key: (
+                    value.isoformat().replace("+00:00", "Z")
+                    if isinstance(value, datetime)
+                    else value
+                )
+                for key, value in handoff.items()
+            }
+            binding.write_text(json.dumps(handoff) + "\n", encoding="utf-8")
+            allowed = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
     def test_browser_gate_has_deterministic_out_of_order_result_ownership(self):
         source = (ROOT / "apps/web/e2e/nga-staging-gate.spec.ts").read_text(
+            encoding="utf-8"
+        )
+        config = (ROOT / "apps/web/playwright.staging.config.ts").read_text(
             encoding="utf-8"
         )
         self.assertIn("controlled out-of-order image responses", source)
@@ -1165,6 +1823,10 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertIn("replacement result title", source)
         self.assertIn("candidate result title", source)
         self.assertIn("separate live same-filename image requests", source)
+        self.assertIn("LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = 6", source)
+        self.assertIn("livePublicSearchRequestCount", source)
+        self.assertIn("screenshot: 'off'", config)
+        self.assertNotIn("screenshot: 'on'", config)
 
 
 if __name__ == "__main__":

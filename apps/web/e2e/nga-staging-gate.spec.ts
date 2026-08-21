@@ -10,6 +10,8 @@ import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const STAGING_ORIGIN = 'https://paillette-stg.berlayar.ai';
+const LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = 6;
+let livePublicSearchRequestCount = 0;
 const configuredOrigin = process.env.NGA_STAGING_WEB_BASE_URL || STAGING_ORIGIN;
 
 if (configuredOrigin !== STAGING_ORIGIN) {
@@ -74,6 +76,7 @@ const publicSearchRequests = (page: Page) => {
   }> = [];
   page.on('request', (request) => {
     if (!request.url().includes('/api/public-search/')) return;
+    livePublicSearchRequestCount += 1;
     requests.push({
       url: request.url(),
       method: request.method(),
@@ -139,6 +142,12 @@ const controlledImageResult = (id: string, title: string) => ({
 });
 
 test.describe.serial('anonymous NGA staging browser gate', () => {
+  test.afterAll(() => {
+    expect(livePublicSearchRequestCount).toBeLessThanOrEqual(
+      LIVE_PUBLIC_SEARCH_REQUEST_BUDGET
+    );
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
   });
