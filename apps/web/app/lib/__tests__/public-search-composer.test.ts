@@ -8,9 +8,11 @@ import {
   completeImageSubmission,
   createSearchIntentGate,
   createSearchComposerState,
+  createImagePreviewOwnership,
+  deriveDisplayedSearchError,
   deriveImageDraftConstraints,
-  deriveRetryTarget,
   getEditorModeUpdate,
+  getVisibleImagePreview,
   getPublicSearchErrorCopy,
   getSearchPresentation,
   getSubmittedConstraintChips,
@@ -19,6 +21,7 @@ import {
   settleLatestSearchIntent,
   snapshotAcceptedConstraints,
   supersedeSearchIntent,
+  transitionImagePreviewOwnership,
   updateImageObjectUrl,
   validateImageSelection,
   type SubmittedSearch,
@@ -430,17 +433,230 @@ describe('search intent generations', () => {
   });
 });
 
-describe('retry and failure copy', () => {
-  it.each([
-    [{ isBrowsingCollection: true, submittedKind: 'image' as const }, 'browse'],
-    [{ isBrowsingCollection: false, submittedKind: 'image' as const }, 'image'],
-    [{ isBrowsingCollection: false, submittedKind: 'text' as const }, 'text'],
-    [{ isBrowsingCollection: false, submittedKind: null }, null],
-  ])('derives the production retry target for %o', (input, target) => {
-    expect(deriveRetryTarget(input)).toBe(target);
+describe('transactional image preview ownership', () => {
+  const acceptedFile = image([1], 'accepted.png');
+  const candidateFile = image([2], 'candidate.png');
+
+  it('clears and revokes a pending candidate over a prior Text owner', () => {
+    const staged = transitionImagePreviewOwnership(
+      createImagePreviewOwnership(),
+      {
+        type: 'stage',
+        preview: { file: candidateFile, url: 'blob:candidate' },
+      }
+    );
+    expect(getVisibleImagePreview(staged.state)).toEqual({
+      file: candidateFile,
+      url: 'blob:candidate',
+    });
+    expect(staged.revoke).toEqual([]);
+
+    const cancelled = transitionImagePreviewOwnership(staged.state, {
+      type: 'cancel-candidate',
+    });
+    expect(cancelled).toEqual({
+      state: { accepted: null, candidate: null },
+      revoke: ['blob:candidate'],
+    });
+    expect(getVisibleImagePreview(cancelled.state)).toBeNull();
   });
 
-  it('distinguishes image validation, rate-limit, unavailable, and general errors', () => {
+  it('restores the exact accepted preview when a candidate over an Image owner is superseded', async () => {
+    let state = createImagePreviewOwnership({
+      file: acceptedFile,
+      url: 'blob:accepted',
+    });
+    const staged = transitionImagePreviewOwnership(state, {
+      type: 'stage',
+      preview: { file: candidateFile, url: 'blob:candidate' },
+    });
+    state = staged.state;
+    expect(staged.revoke).toEqual([]);
+
+    const gate = createSearchIntentGate();
+    const upload = beginSearchIntent(gate);
+    let resolve!: (value: string) => void;
+    const task = new Promise<string>((done) => {
+      resolve = done;
+    });
+    const settling = settleLatestSearchIntent({
+      gate,
+      token: upload,
+      task,
+      onSuccess: () => {
+        state = transitionImagePreviewOwnership(state, {
+          type: 'promote-candidate',
+        }).state;
+      },
+    });
+
+    supersedeSearchIntent(gate);
+    const cancelled = transitionImagePreviewOwnership(state, {
+      type: 'cancel-candidate',
+    });
+    state = cancelled.state;
+    resolve('digest');
+
+    await expect(settling).resolves.toBe('stale');
+    expect(cancelled.revoke).toEqual(['blob:candidate']);
+    expect(getVisibleImagePreview(state)).toEqual({
+      file: acceptedFile,
+      url: 'blob:accepted',
+    });
+  });
+
+  it('promotes a successful candidate and revokes each owned URL exactly once', () => {
+    const staged = transitionImagePreviewOwnership(
+      createImagePreviewOwnership({
+        file: acceptedFile,
+        url: 'blob:accepted',
+      }),
+      {
+        type: 'stage',
+        preview: { file: candidateFile, url: 'blob:candidate' },
+      }
+    );
+    const promoted = transitionImagePreviewOwnership(staged.state, {
+      type: 'promote-candidate',
+    });
+    expect(promoted).toEqual({
+      state: {
+        accepted: { file: candidateFile, url: 'blob:candidate' },
+        candidate: null,
+      },
+      revoke: ['blob:accepted'],
+    });
+
+    const cleared = transitionImagePreviewOwnership(promoted.state, {
+      type: 'clear',
+    });
+    expect(cleared).toEqual({
+      state: { accepted: null, candidate: null },
+      revoke: ['blob:candidate'],
+    });
+    expect(
+      transitionImagePreviewOwnership(cleared.state, { type: 'clear' }).revoke
+    ).toEqual([]);
+  });
+
+  it('revokes a failed current candidate while preserving the accepted preview', async () => {
+    let state = transitionImagePreviewOwnership(
+      createImagePreviewOwnership({
+        file: acceptedFile,
+        url: 'blob:accepted',
+      }),
+      {
+        type: 'stage',
+        preview: { file: candidateFile, url: 'blob:candidate' },
+      }
+    ).state;
+    const gate = createSearchIntentGate();
+    const upload = beginSearchIntent(gate);
+    let revoked: string[] = [];
+
+    await settleLatestSearchIntent({
+      gate,
+      token: upload,
+      task: Promise.reject(new Error('read failed')),
+      onSuccess: () => undefined,
+      onError: () => {
+        const cancelled = transitionImagePreviewOwnership(state, {
+          type: 'cancel-candidate',
+        });
+        state = cancelled.state;
+        revoked = cancelled.revoke;
+      },
+    });
+
+    expect(revoked).toEqual(['blob:candidate']);
+    expect(getVisibleImagePreview(state)).toEqual({
+      file: acceptedFile,
+      url: 'blob:accepted',
+    });
+  });
+});
+
+describe('displayed error ownership and retry', () => {
+  const browseError = new Error('browse failed');
+  const rankedError = new Error('ranked failed');
+
+  it('owns and retries a displayed Browse failure', () => {
+    expect(
+      deriveDisplayedSearchError({
+        isBrowsingCollection: true,
+        shouldShowRankedSearch: true,
+        submittedKind: 'image',
+        browseError,
+        rankedError: null,
+      })
+    ).toEqual({
+      error: browseError,
+      source: 'browse',
+      retryTarget: 'browse',
+    });
+  });
+
+  it('owns and retries the ranked failure when Browse succeeds', () => {
+    expect(
+      deriveDisplayedSearchError({
+        isBrowsingCollection: true,
+        shouldShowRankedSearch: true,
+        submittedKind: 'image',
+        browseError: null,
+        rankedError,
+      })
+    ).toEqual({
+      error: rankedError,
+      source: 'ranked',
+      retryTarget: 'image',
+    });
+  });
+
+  it('gives Browse failure the same precedence for display and retry when both fail', () => {
+    expect(
+      deriveDisplayedSearchError({
+        isBrowsingCollection: true,
+        shouldShowRankedSearch: true,
+        submittedKind: 'text',
+        browseError,
+        rankedError,
+      })
+    ).toEqual({
+      error: browseError,
+      source: 'browse',
+      retryTarget: 'browse',
+    });
+  });
+
+  it('owns and retries an ordinary ranked Text failure', () => {
+    expect(
+      deriveDisplayedSearchError({
+        isBrowsingCollection: false,
+        shouldShowRankedSearch: true,
+        submittedKind: 'colour',
+        browseError,
+        rankedError,
+      })
+    ).toEqual({
+      error: rankedError,
+      source: 'ranked',
+      retryTarget: 'text',
+    });
+  });
+
+  it('does not display an unrelated ranked error during unranked Browse', () => {
+    expect(
+      deriveDisplayedSearchError({
+        isBrowsingCollection: true,
+        shouldShowRankedSearch: false,
+        submittedKind: 'text',
+        browseError: null,
+        rankedError,
+      })
+    ).toBeNull();
+  });
+
+  it('keeps status-aware failure copy', () => {
     expect(
       getPublicSearchErrorCopy(
         { status: 400, message: 'Image must not be empty.' },

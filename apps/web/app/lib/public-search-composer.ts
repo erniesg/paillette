@@ -78,6 +78,71 @@ export const updateImageObjectUrl = (
   return replacement;
 };
 
+export type OwnedImagePreview = {
+  file: File;
+  url: string;
+};
+
+export type ImagePreviewOwnership = {
+  accepted: OwnedImagePreview | null;
+  candidate: OwnedImagePreview | null;
+};
+
+type ImagePreviewEvent =
+  | { type: 'stage'; preview: OwnedImagePreview }
+  | { type: 'cancel-candidate' }
+  | { type: 'promote-candidate' }
+  | { type: 'clear' };
+
+export const createImagePreviewOwnership = (
+  accepted: OwnedImagePreview | null = null
+): ImagePreviewOwnership => ({ accepted, candidate: null });
+
+export const getVisibleImagePreview = (ownership: ImagePreviewOwnership) =>
+  ownership.candidate || ownership.accepted;
+
+const uniqueUrls = (urls: Array<string | null | undefined>) => [
+  ...new Set(urls.filter((url): url is string => Boolean(url))),
+];
+
+export const transitionImagePreviewOwnership = (
+  ownership: ImagePreviewOwnership,
+  event: ImagePreviewEvent
+): { state: ImagePreviewOwnership; revoke: string[] } => {
+  if (event.type === 'stage') {
+    return {
+      state: { accepted: ownership.accepted, candidate: event.preview },
+      revoke:
+        ownership.candidate?.url === event.preview.url
+          ? []
+          : uniqueUrls([ownership.candidate?.url]),
+    };
+  }
+
+  if (event.type === 'cancel-candidate') {
+    return {
+      state: { accepted: ownership.accepted, candidate: null },
+      revoke: uniqueUrls([ownership.candidate?.url]),
+    };
+  }
+
+  if (event.type === 'promote-candidate') {
+    if (!ownership.candidate) return { state: ownership, revoke: [] };
+    return {
+      state: { accepted: ownership.candidate, candidate: null },
+      revoke:
+        ownership.accepted?.url === ownership.candidate.url
+          ? []
+          : uniqueUrls([ownership.accepted?.url]),
+    };
+  }
+
+  return {
+    state: { accepted: null, candidate: null },
+    revoke: uniqueUrls([ownership.accepted?.url, ownership.candidate?.url]),
+  };
+};
+
 export const getEditorModeUpdate = (editorMode: EditorMode) => ({
   editorMode,
 });
@@ -177,18 +242,45 @@ export const buildImageQueryExecution = ({
   refetchOnReconnect: false,
 });
 
-export const deriveRetryTarget = ({
+export const deriveDisplayedSearchError = ({
   isBrowsingCollection,
+  shouldShowRankedSearch,
   submittedKind,
+  browseError,
+  rankedError,
 }: {
   isBrowsingCollection: boolean;
+  shouldShowRankedSearch: boolean;
   submittedKind: SubmittedSearch['kind'] | null;
+  browseError: unknown;
+  rankedError: unknown;
 }) => {
-  if (isBrowsingCollection) return 'browse' as const;
-  if (submittedKind === 'image') return 'image' as const;
-  if (submittedKind === 'text' || submittedKind === 'colour') {
-    return 'text' as const;
+  if (isBrowsingCollection && browseError) {
+    return {
+      error: browseError,
+      source: 'browse' as const,
+      retryTarget: 'browse' as const,
+    };
   }
+
+  const retryTarget =
+    submittedKind === 'image'
+      ? ('image' as const)
+      : submittedKind === 'text' || submittedKind === 'colour'
+        ? ('text' as const)
+        : null;
+  if (
+    rankedError &&
+    retryTarget &&
+    (!isBrowsingCollection || shouldShowRankedSearch)
+  ) {
+    return {
+      error: rankedError,
+      source: 'ranked' as const,
+      retryTarget,
+    };
+  }
+
   return null;
 };
 

@@ -93,20 +93,22 @@ import {
   DEFAULT_PUBLIC_SEARCH_MIN_SCORE,
   beginSearchIntent,
   buildImageQueryExecution,
+  createImagePreviewOwnership,
   createSearchIntentGate,
+  deriveDisplayedSearchError,
   deriveImageDraftConstraints,
-  deriveRetryTarget,
   getEditorModeUpdate,
   getConstraintChips,
   getPublicSearchErrorCopy,
   getSearchPresentation,
   getSubmittedConstraintChips,
   getSubmittedSearchSummary,
+  getVisibleImagePreview,
   removeConstraintChip,
   settleLatestSearchIntent,
   snapshotAcceptedConstraints,
   supersedeSearchIntent,
-  updateImageObjectUrl,
+  transitionImagePreviewOwnership,
   validateImageSelection,
   type EditorMode,
   type SearchFacet,
@@ -1007,8 +1009,9 @@ export default function SearchPage() {
         ? { kind: 'text', query: normalizedUrlQuery, facet: urlSearchFacet }
         : null;
     });
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imagePreviewOwnership, setImagePreviewOwnership] = useState(
+    createImagePreviewOwnership
+  );
   const [imageDraftConstraints, setImageDraftConstraints] = useState<
     PublicSearchConstraints | undefined
   >(undefined);
@@ -1043,7 +1046,7 @@ export default function SearchPage() {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const colourRailRef = useRef<HTMLDivElement | null>(null);
   const uploaderActionRef = useRef<HTMLButtonElement | null>(null);
-  const imagePreviewRef = useRef<string | null>(null);
+  const imagePreviewOwnershipRef = useRef(imagePreviewOwnership);
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
@@ -1060,6 +1063,9 @@ export default function SearchPage() {
     useState<EvalSuggestion | null>(null);
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
   const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
+  const visibleImagePreview = getVisibleImagePreview(imagePreviewOwnership);
+  const imageFile = visibleImagePreview?.file || null;
+  const imagePreview = visibleImagePreview?.url || null;
   const activeSearchColour =
     submittedSearch?.kind === 'colour' ? submittedSearch.colour : null;
   const activeColourQuery = activeSearchColour
@@ -1179,6 +1185,44 @@ export default function SearchPage() {
     });
   }, []);
 
+  const applyImagePreviewTransition = useCallback(
+    (
+      event: Parameters<typeof transitionImagePreviewOwnership>[1],
+      updateReactState = true
+    ) => {
+      const transition = transitionImagePreviewOwnership(
+        imagePreviewOwnershipRef.current,
+        event
+      );
+      imagePreviewOwnershipRef.current = transition.state;
+      if (updateReactState) setImagePreviewOwnership(transition.state);
+      for (const url of transition.revoke) URL.revokeObjectURL(url);
+      return transition.state;
+    },
+    []
+  );
+
+  const stageImagePreviewCandidate = useCallback(
+    (file: File) => {
+      const url = URL.createObjectURL(file);
+      applyImagePreviewTransition({
+        type: 'stage',
+        preview: { file, url },
+      });
+    },
+    [applyImagePreviewTransition]
+  );
+
+  const clearOwnedImagePreviews = useCallback(() => {
+    applyImagePreviewTransition({ type: 'clear' });
+  }, [applyImagePreviewTransition]);
+
+  const supersedePendingSearchIntent = useCallback(() => {
+    supersedeSearchIntent(searchIntentGateRef.current);
+    applyImagePreviewTransition({ type: 'cancel-candidate' });
+    setIsPreparingImage(false);
+  }, [applyImagePreviewTransition]);
+
   useEffect(() => {
     setHasMounted(true);
   }, []);
@@ -1199,8 +1243,7 @@ export default function SearchPage() {
     const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
     if (previousUrlSearchStateRef.current === urlSearchState) return;
 
-    supersedeSearchIntent(searchIntentGateRef.current);
-    setIsPreparingImage(false);
+    supersedePendingSearchIntent();
     previousUrlSearchStateRef.current = urlSearchState;
     setSelectedArtwork(null);
     setTextQuery(normalizedUrlQuery);
@@ -1213,10 +1256,7 @@ export default function SearchPage() {
     setShouldSearch(Boolean(normalizedUrlQuery || urlSearchColour));
     setIsBrowsingCollection(false);
     setSubmittedImagePlan(null);
-    setImageFile(null);
-    updateImageObjectUrl(imagePreviewRef.current, null);
-    imagePreviewRef.current = null;
-    setImagePreview(null);
+    clearOwnedImagePreviews();
     setSubmittedSearch(
       urlSearchColour
         ? {
@@ -1236,7 +1276,6 @@ export default function SearchPage() {
     );
 
     if (!normalizedUrlQuery && !urlSearchColour) {
-      setImageFile(null);
       setSearchColours([]);
       setSortColours([]);
       setEditorMode('text');
@@ -1245,29 +1284,19 @@ export default function SearchPage() {
     }
   }, [
     normalizedUrlQuery,
+    clearOwnedImagePreviews,
     setSearchParams,
+    supersedePendingSearchIntent,
     urlQuery,
     urlSearchColour,
     urlSearchFacet,
   ]);
 
-  const replaceImagePreview = useCallback((file: File | null) => {
-    const nextPreview = updateImageObjectUrl(imagePreviewRef.current, file);
-    imagePreviewRef.current = nextPreview;
-    setImagePreview(nextPreview);
-  }, []);
-
-  const supersedePendingSearchIntent = useCallback(() => {
-    supersedeSearchIntent(searchIntentGateRef.current);
-    setIsPreparingImage(false);
-  }, []);
-
   useEffect(
     () => () => {
-      updateImageObjectUrl(imagePreviewRef.current, null);
-      imagePreviewRef.current = null;
+      applyImagePreviewTransition({ type: 'clear' }, false);
     },
-    []
+    [applyImagePreviewTransition]
   );
 
   const textSearchQuery = useQuery({
@@ -1411,9 +1440,14 @@ export default function SearchPage() {
     (isBrowsingCollection
       ? browseQuery.isLoading && results.length === 0
       : currentQuery.isLoading || currentQuery.isFetching);
-  const error = isBrowsingCollection
-    ? browseQuery.error || (shouldSearch ? currentQuery.error : null)
-    : currentQuery.error;
+  const displayedSearchError = deriveDisplayedSearchError({
+    isBrowsingCollection,
+    shouldShowRankedSearch: shouldSearch,
+    submittedKind: submittedSearch?.kind || null,
+    browseError: browseQuery.error,
+    rankedError: currentQuery.error,
+  });
+  const error = displayedSearchError?.error || null;
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
@@ -1588,16 +1622,12 @@ export default function SearchPage() {
       }
 
       const file = validation.file;
-      const previousImageFile =
-        submittedSearch?.kind === 'image' ? submittedSearch.file : null;
       const intentToken = beginSearchIntent(searchIntentGateRef.current);
       setImageUploadError(null);
       setIsPreparingImage(true);
-      setImageFile(file);
       try {
-        replaceImagePreview(file);
+        stageImagePreviewCandidate(file);
       } catch {
-        setImageFile(previousImageFile);
         setIsPreparingImage(false);
         rejectImageSelection(
           'The image preview could not be prepared. Choose the file again or try another image.'
@@ -1616,6 +1646,7 @@ export default function SearchPage() {
           constraints: snapshotAcceptedConstraints(imageDraftConstraints),
         }),
         onSuccess: (plan) => {
+          applyImagePreviewTransition({ type: 'promote-candidate' });
           setSelectedArtwork(null);
           setSubmittedImagePlan(plan);
           setImageExecutionId(intentToken);
@@ -1636,8 +1667,7 @@ export default function SearchPage() {
           setSearchParams({}, { replace: true });
         },
         onError: () => {
-          setImageFile(previousImageFile);
-          replaceImagePreview(previousImageFile);
+          applyImagePreviewTransition({ type: 'cancel-candidate' });
           rejectImageSelection(
             'The image could not be read. Choose the file again or try another image.'
           );
@@ -1646,14 +1676,15 @@ export default function SearchPage() {
       });
     },
     [
+      applyImagePreviewTransition,
       imageDraftConstraints,
       isNgsSearchLocked,
       isPreparingImage,
       minScore,
       publicSearchOrgId,
       rejectImageSelection,
-      replaceImagePreview,
       setSearchParams,
+      stageImagePreviewCandidate,
       submittedSearch,
       topK,
     ]
@@ -1704,8 +1735,7 @@ export default function SearchPage() {
 
     supersedePendingSearchIntent();
     setSelectedArtwork(null);
-    setImageFile(null);
-    replaceImagePreview(null);
+    clearOwnedImagePreviews();
     setIsBrowsingCollection(false);
     setEditorMode('text');
     setSearchColours([]);
@@ -1725,8 +1755,7 @@ export default function SearchPage() {
   const clearSearch = () => {
     supersedePendingSearchIntent();
     setSelectedArtwork(null);
-    setImageFile(null);
-    replaceImagePreview(null);
+    clearOwnedImagePreviews();
     setTextQuery('');
     setCommittedTextQuery('');
     setSearchFacet(null);
@@ -1766,8 +1795,6 @@ export default function SearchPage() {
   const resetSearchHome = () => {
     clearSearch();
     setEditorMode('text');
-    setImageFile(null);
-    replaceImagePreview(null);
     setImageDraftConstraints(undefined);
     setImageUploadError(null);
     setSearchColours([]);
@@ -1778,8 +1805,7 @@ export default function SearchPage() {
   const clearImage = () => {
     supersedePendingSearchIntent();
     setSelectedArtwork(null);
-    setImageFile(null);
-    replaceImagePreview(null);
+    clearOwnedImagePreviews();
     setImageUploadError(null);
     setSearchFacet(null);
     setIsBrowsingCollection(false);
@@ -2128,10 +2154,7 @@ export default function SearchPage() {
     ? getSelectedColour(sortColours[0])
     : null;
   const retryCurrentSearch = () => {
-    const retryTarget = deriveRetryTarget({
-      isBrowsingCollection,
-      submittedKind: submittedSearch?.kind || null,
-    });
+    const retryTarget = displayedSearchError?.retryTarget || null;
     if (retryTarget === 'browse') {
       void browseQuery.refetch();
     } else if (retryTarget === 'image') {
@@ -2928,7 +2951,10 @@ export default function SearchPage() {
                 <p className="text-sm font-medium text-red-300">
                   {getPublicSearchErrorCopy(
                     error,
-                    submittedSearch?.kind === 'image' ? 'image' : 'text'
+                    displayedSearchError?.source === 'ranked' &&
+                      submittedSearch?.kind === 'image'
+                      ? 'image'
+                      : 'text'
                   )}
                 </p>
                 <div className="mt-3 flex flex-wrap justify-center gap-2">

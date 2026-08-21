@@ -30,7 +30,13 @@ const spotlightBundle = {
 
 type CapturedSearch = {
   url: string;
+  method: string;
   body: Record<string, unknown> | string;
+};
+
+type SearchHarnessFailures = {
+  browse?: string;
+  ranked?: string;
 };
 
 const searchResult = (
@@ -57,7 +63,8 @@ const installSearchHarness = async (
     constraints: Record<string, unknown>;
     originalQuery?: string;
     semanticQuery: string;
-  }
+  },
+  failures: SearchHarnessFailures = {}
 ) => {
   const searches: CapturedSearch[] = [];
   const spotlightRequests: string[] = [];
@@ -71,32 +78,55 @@ const installSearchHarness = async (
     const contentType = request.headers()['content-type'] || '';
     searches.push({
       url: request.url(),
+      method: request.method(),
       body: contentType.includes('application/json')
         ? (request.postDataJSON() as Record<string, unknown>)
         : request.postData() || '',
     });
+    const isBrowse = request.url().includes('/browse?');
+    const failureMessage = isBrowse ? failures.browse : failures.ranked;
+    if (failureMessage) {
+      await route.fulfill({
+        status: 503,
+        json: {
+          success: false,
+          error: { message: failureMessage },
+        },
+      });
+      return;
+    }
+
     await route.fulfill({
       json: {
         success: true,
-        data: {
-          results,
-          count: results.length,
-          queryTime: 1,
-          ...(request.url().endsWith('/text') && interpretation
-            ? {
-                interpretation: {
-                  parserVersion: 'nga-v5',
-                  originalQuery:
-                    interpretation.originalQuery ||
-                    interpretation.semanticQuery,
-                  semanticQuery: interpretation.semanticQuery,
-                  constraints: interpretation.constraints,
-                  corrections: [],
-                  unresolved: [],
-                },
-              }
-            : {}),
-        },
+        data: isBrowse
+          ? {
+              results,
+              count: results.length,
+              total: results.length,
+              limit: 60,
+              offset: 0,
+              hasMore: false,
+            }
+          : {
+              results,
+              count: results.length,
+              queryTime: 1,
+              ...(request.url().endsWith('/text') && interpretation
+                ? {
+                    interpretation: {
+                      parserVersion: 'nga-v5',
+                      originalQuery:
+                        interpretation.originalQuery ||
+                        interpretation.semanticQuery,
+                      semanticQuery: interpretation.semanticQuery,
+                      constraints: interpretation.constraints,
+                      corrections: [],
+                      unresolved: [],
+                    },
+                  }
+                : {}),
+            },
       },
     });
   });
@@ -114,6 +144,39 @@ const chooseSuggestion = async (page: Page, label: string) => {
   await page.getByRole('button', { name: 'Choose another suggestion' }).click();
   await page.getByRole('menuitem').filter({ hasText: label }).click();
 };
+
+const deferNextImageDigest = async (page: Page) => {
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      releaseImageDigest?: () => void;
+    };
+    const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    testWindow.releaseImageDigest = release;
+    let shouldWait = true;
+    Object.defineProperty(crypto.subtle, 'digest', {
+      configurable: true,
+      value: async (algorithm: AlgorithmIdentifier, data: BufferSource) => {
+        if (shouldWait) {
+          shouldWait = false;
+          await gate;
+        }
+        return originalDigest(algorithm, data);
+      },
+    });
+  });
+};
+
+const releaseImageDigest = (page: Page) =>
+  page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      releaseImageDigest?: () => void;
+    };
+    testWindow.releaseImageDigest?.();
+  });
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -365,6 +428,128 @@ test('explicitly resubmitting the same image bytes performs one fresh request', 
   });
 
   await expect.poll(() => searches.length).toBe(2);
+});
+
+test('superseding a pending image over Text clears the candidate and preserves Text ownership', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [
+    searchResult('painting', 'Preserved painting', ['#1a2f52'], 0.91),
+  ]);
+  await openNgaSearchPage(page);
+  await page
+    .getByPlaceholder('search by feeling, era, subject...')
+    .fill('paintings');
+  await page.getByRole('button', { name: 'Search text' }).click();
+  await expect.poll(() => searches.length).toBe(1);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  await deferNextImageDigest(page);
+
+  await page.getByLabel('Image for visual artwork search').setInputFiles({
+    name: 'candidate.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 4]),
+  });
+  await expect(page.getByText('candidate.png', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Text search mode' }).click();
+  await releaseImageDigest(page);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+
+  await expect(page.getByText('candidate.png', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Choose image', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Preserved painting', { exact: true })
+  ).toBeVisible();
+  expect(searches).toHaveLength(1);
+});
+
+test('superseding a replacement candidate restores the accepted Image preview', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [
+    searchResult('visual', 'Accepted visual match', ['#1a2f52'], 0.91),
+  ]);
+  await openNgaSearchPage(page);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  const input = page.getByLabel('Image for visual artwork search');
+  await input.setInputFiles({
+    name: 'accepted.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 1]),
+  });
+  await expect.poll(() => searches.length).toBe(1);
+  await deferNextImageDigest(page);
+  await input.setInputFiles({
+    name: 'candidate.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 2]),
+  });
+  await expect(page.getByText('candidate.png', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  await releaseImageDigest(page);
+
+  await expect(page.getByText('accepted.png', { exact: true })).toBeVisible();
+  await expect(page.getByText('candidate.png', { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('Accepted visual match', { exact: true })
+  ).toBeVisible();
+  expect(searches).toHaveLength(1);
+});
+
+test('Browse success retries the displayed ranked failure', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [], undefined, {
+    ranked: 'Ranked failed',
+  });
+  await openNgaSearchPage(page);
+  await page
+    .getByPlaceholder('search by feeling, era, subject...')
+    .fill('paintings');
+  await page.getByRole('button', { name: 'Search text' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Search settings' }).click();
+  await page.getByRole('button', { name: /Infinite browse/ }).click();
+  await expect
+    .poll(() => searches.filter(({ url }) => url.includes('/browse?')).length)
+    .toBe(1);
+
+  await page.getByRole('button', { name: 'Try again' }).click();
+
+  await expect
+    .poll(() => searches.filter(({ url }) => url.endsWith('/text')).length)
+    .toBe(2);
+  expect(searches.filter(({ url }) => url.includes('/browse?'))).toHaveLength(
+    1
+  );
+});
+
+test('Browse failure takes display and retry precedence when ranked also fails', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [], undefined, {
+    browse: 'Browse failed',
+    ranked: 'Ranked failed',
+  });
+  await openNgaSearchPage(page);
+  await page
+    .getByPlaceholder('search by feeling, era, subject...')
+    .fill('paintings');
+  await page.getByRole('button', { name: 'Search text' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Search settings' }).click();
+  await page.getByRole('button', { name: /Infinite browse/ }).click();
+  await expect
+    .poll(() => searches.filter(({ url }) => url.includes('/browse?')).length)
+    .toBe(1);
+
+  await page.getByRole('button', { name: 'Try again' }).click();
+
+  await expect
+    .poll(() => searches.filter(({ url }) => url.includes('/browse?')).length)
+    .toBe(2);
+  expect(searches.filter(({ url }) => url.endsWith('/text'))).toHaveLength(1);
 });
 
 test('image upload rejection preserves results and reports an accessible error', async ({
