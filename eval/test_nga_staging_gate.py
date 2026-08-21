@@ -1008,6 +1008,42 @@ class HostAndEnvironmentTests(GateTestCase):
             redirect.server_close()
             target.server_close()
 
+    def test_transport_identifies_live_evaluator_and_preserves_request_headers(self):
+        observed = {}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                observed.update(
+                    {key.lower(): value for key, value in self.headers.items()}
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+
+            def log_message(self, *_args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            response = self.gate.UrllibTransport().request(
+                "GET",
+                f"http://127.0.0.1:{server.server_port}/health",
+                headers={"X-Evaluation-Run": "bound"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(response["status"], 200)
+        self.assertEqual(
+            observed.get("user-agent"), "Paillette-NGA-Staging-Gate/1.0"
+        )
+        self.assertIn("application/json", observed.get("accept", ""))
+        self.assertEqual(observed.get("x-evaluation-run"), "bound")
+
     def test_live_contract_version_is_read_from_the_preload_link_header(self):
         versions = self.call(
             "extract_web_contract_versions",

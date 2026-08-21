@@ -32,6 +32,7 @@ from typing import Any, Mapping, Sequence
 
 EXPECTED_API_ORIGIN = "https://paillette-api-stg.berlayar.ai"
 EXPECTED_WEB_ORIGIN = "https://paillette-stg.berlayar.ai"
+EVALUATOR_USER_AGENT = "Paillette-NGA-Staging-Gate/1.0"
 EXPECTED_VERSIONS = {
     "parser": "nga-v5",
     "plan": "nga-plan-v1",
@@ -1761,10 +1762,15 @@ class UrllibTransport:
         body: bytes | None = None,
         timeout: int = 90,
     ) -> dict[str, Any]:
+        request_headers = {
+            "User-Agent": EVALUATOR_USER_AGENT,
+            "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+            **dict(headers or {}),
+        }
         request = urllib.request.Request(
             url,
             data=body,
-            headers=dict(headers or {}),
+            headers=request_headers,
             method=method,
         )
         started = time.monotonic()
