@@ -130,7 +130,7 @@ describe('generateNgaSpotlightBundle', () => {
     expect(generated.searchRequestCount).toBe(11);
     expect(generated.bundle).toMatchObject({
       schemaVersion: 1,
-      contractVersion: '24',
+      contractVersion: '26',
       provider: 'nga',
       corpusVersion: CORPUS_VERSION,
       generatedAt: GENERATED_AT,

@@ -88,3 +88,7 @@ queries:
   - { id: live-regression-03, text: "painting of a sculpture", ambiguous: true }
   - { id: live-regression-04, text: "works after Rembrandt", ambiguous: true }
   - { id: live-regression-05, text: "Italian Renaissance drawings", classification: Drawing }
+  - { id: live-regression-06, text: "paintings from the second half of the 18th century before 1780", startYear: 1750, endYear: 1779, classification: Painting, semanticQuery: "" }
+  - { id: live-regression-07, text: "drawings from third quarter 19th century", startYear: 1850, endYear: 1874, classification: Drawing, semanticQuery: "" }
+  - { id: live-regression-08, text: "prints from the first quarter of the eighteenth century", startYear: 1700, endYear: 1724, classification: Print, semanticQuery: "" }
+  - { id: live-regression-09, text: "drawings from fourth quarter of 18th century after 1900", classification: Drawing, semanticQuery: "fourth quarter 18th century after 1900" }

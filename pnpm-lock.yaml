@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@paillette/types':
+        specifier: workspace:*
+        version: link:packages/types
       '@types/papaparse':
         specifier: ^5.3.14
         version: 5.5.0

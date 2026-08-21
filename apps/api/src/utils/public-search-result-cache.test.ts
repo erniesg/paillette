@@ -91,12 +91,13 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v4:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v5:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
     const variants: PublicSearchResultCacheIdentity[] = [
-      { ...identity, constraints: { classifications: ['Painting'] }, parserVersion: 'nga-v1' },
+      { ...identity, parserVersion: 'nga-v1' },
+      { ...identity, constraints: { classifications: ['Painting'] } },
       { ...identity, orgId: 'org-2' },
       { ...identity, provider: undefined },
       { ...identity, facet: 'artist' },
@@ -118,6 +119,28 @@ describe('buildPublicSearchResultCacheKey', () => {
 });
 
 describe('getOrLoadPublicSearchResult', () => {
+  it('does not address a stale v4 entry for an nga-v4 exact-date search', async () => {
+    const cache = createCache({
+      get: vi.fn(async (key: string) =>
+        key.startsWith('public-search-result:v4:') ? cachedValue() : null
+      ) as unknown as KVNamespace['get'],
+    });
+    const load = vi.fn().mockResolvedValue({ response, cacheable: false });
+
+    await expect(
+      getOrLoadPublicSearchResult({
+        ...identity,
+        parserVersion: 'nga-v4',
+        constraints: { dateRange: { startYear: 1889, endYear: 1889 } },
+        cache,
+        load,
+        now: () => NOW,
+      })
+    ).resolves.toEqual({ response, disposition: 'miss' });
+
+    expect(load).toHaveBeenCalledOnce();
+  });
+
   it('returns a fresh validated KV value with zero query time', async () => {
     const cache = createCache({
       get: vi.fn().mockResolvedValue(cachedValue()),

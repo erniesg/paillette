@@ -36,22 +36,36 @@ describe('open access artwork normalization', () => {
     );
   });
 
-  it('preserves authoritative NGA date ranges and normalized facets', () => {
+  it('uses NGA display dates instead of broad search-aid ranges', () => {
     const normalized = normalizeNgaArtwork({
       object: {
-        objectid: '42', title: 'Landscape', attribution: 'Example Artist',
-        beginyear: '1740', endyear: '1760', displaydate: 'c. 1750',
-        medium: 'oil on panel', classification: 'Painting',
-        subclassification: 'Landscape', visualbrowserclassification: 'Painting',
-        primaryartistid: 'artist-1', artistalternativenames: ['E. Artist'],
+        objectid: '42',
+        title: 'Landscape',
+        attribution: 'Example Artist',
+        beginyear: '1740',
+        endyear: '1760',
+        displaydate: 'c. 1750',
+        medium: 'oil on panel',
+        classification: 'Painting',
+        subclassification: 'Landscape',
+        visualbrowserclassification: 'Painting',
+        primaryartistid: 'artist-1',
+        artistalternativenames: ['E. Artist'],
       },
-      image: { openaccess: '1', depictstmsobjectid: '42', iiifurl: 'https://example.com/iiif/42' },
+      image: {
+        openaccess: '1',
+        depictstmsobjectid: '42',
+        iiifurl: 'https://example.com/iiif/42',
+      },
     });
-    assert.equal(normalized?.year_start, 1740);
-    assert.equal(normalized?.year_end, 1760);
+    assert.equal(normalized?.year, 1750);
+    assert.equal(normalized?.year_start, 1750);
+    assert.equal(normalized?.year_end, 1750);
     assert.equal(normalized?.visual_classification, 'Painting');
     assert.equal(normalized?.primary_artist_id, 'artist-1');
-    assert.deepEqual(normalized?.custom_metadata.artistAlternativeNames, ['E. Artist']);
+    assert.deepEqual(normalized?.custom_metadata.artistAlternativeNames, [
+      'E. Artist',
+    ]);
   });
 
   it('normalizes eligible Met public-domain image records without inventing captions', () => {
@@ -76,20 +90,33 @@ describe('open access artwork normalization', () => {
 
     assert.equal(normalized?.id, 'open-access-art:met:12345');
     assert.equal(normalized?.collection_id, OPEN_ACCESS_ART_COLLECTION.slug);
-    assert.equal(normalized?.source_institution, 'The Metropolitan Museum of Art');
+    assert.equal(
+      normalized?.source_institution,
+      'The Metropolitan Museum of Art'
+    );
     assert.equal(normalized?.source_record_id, '12345');
     assert.equal(normalized?.image_url, 'https://images.metmuseum.org/foo.jpg');
-    assert.equal(normalized?.thumbnail_url, 'https://images.metmuseum.org/foo-small.jpg');
+    assert.equal(
+      normalized?.thumbnail_url,
+      'https://images.metmuseum.org/foo-small.jpg'
+    );
     assert.equal(normalized?.rights, 'Public Domain / CC0');
     assert.equal(normalized?.caption.hasInstitutionCaption, false);
   });
 
   it('rejects Met records without public-domain image eligibility', () => {
     assert.equal(
-      normalizeMetArtwork({ objectID: 1, isPublicDomain: false, primaryImage: 'x' }),
+      normalizeMetArtwork({
+        objectID: 1,
+        isPublicDomain: false,
+        primaryImage: 'x',
+      }),
       null
     );
-    assert.equal(normalizeMetArtwork({ objectID: 1, isPublicDomain: true }), null);
+    assert.equal(
+      normalizeMetArtwork({ objectID: 1, isPublicDomain: true }),
+      null
+    );
   });
 
   it('normalizes ArtIC public-domain image records and strips HTML descriptions', () => {
@@ -134,7 +161,9 @@ describe('open access artwork normalization', () => {
       creditline: 'Purchase',
       image_web: 'https://openaccess-cdn.clevelandart.org/web.jpg',
       images: {
-        web: { url: 'https://openaccess-cdn.clevelandart.org/web-from-images.jpg' },
+        web: {
+          url: 'https://openaccess-cdn.clevelandart.org/web-from-images.jpg',
+        },
         print: { url: 'https://openaccess-cdn.clevelandart.org/print.jpg' },
       },
       description: 'A descriptive museum text.',
@@ -180,12 +209,18 @@ describe('open access artwork normalization', () => {
     });
 
     assert.equal(normalized?.id, 'open-access-art:nga:17387');
-    assert.equal(normalized?.source_institution, 'National Gallery of Art, Washington');
+    assert.equal(
+      normalized?.source_institution,
+      'National Gallery of Art, Washington'
+    );
     assert.equal(
       normalized?.image_url,
       'https://api.nga.gov/iiif/00007f61-4922-417b-8f27-893ea328206c/full/843,/0/default.jpg'
     );
-    assert.equal(normalized?.description, 'The image shows two decorated ceramic jugs.');
+    assert.equal(
+      normalized?.description,
+      'The image shows two decorated ceramic jugs.'
+    );
     assert.equal(normalized?.caption.sourceField, 'assistivetext');
   });
 });
@@ -231,8 +266,14 @@ describe('open access captions and cost estimates', () => {
           provider: 'met',
           candidateCount: 2,
           normalizedSamples: [
-            { id: 'open-access-art:met:1', caption: { hasInstitutionCaption: false } },
-            { id: 'open-access-art:met:2', caption: { hasInstitutionCaption: false } },
+            {
+              id: 'open-access-art:met:1',
+              caption: { hasInstitutionCaption: false },
+            },
+            {
+              id: 'open-access-art:met:2',
+              caption: { hasInstitutionCaption: false },
+            },
           ],
           skipped: [{ reason: 'missing_image' }],
         },
@@ -240,7 +281,10 @@ describe('open access captions and cost estimates', () => {
           provider: 'artic',
           candidateCount: 1,
           normalizedSamples: [
-            { id: 'open-access-art:artic:1', caption: { hasInstitutionCaption: true } },
+            {
+              id: 'open-access-art:artic:1',
+              caption: { hasInstitutionCaption: true },
+            },
           ],
           skipped: [],
         },
@@ -249,8 +293,14 @@ describe('open access captions and cost estimates', () => {
 
     assert.equal(manifest.collection.slug, 'open-access-art');
     assert.equal(manifest.totals.candidateCount, 3);
-    assert.equal(manifest.totals.sampleCaptionCoverage.withInstitutionCaption, 1);
-    assert.equal(manifest.totals.sampleCaptionCoverage.missingInstitutionCaption, 2);
+    assert.equal(
+      manifest.totals.sampleCaptionCoverage.withInstitutionCaption,
+      1
+    );
+    assert.equal(
+      manifest.totals.sampleCaptionCoverage.missingInstitutionCaption,
+      2
+    );
     assert.equal(manifest.providers.met.skippedCount, 1);
     assert.equal(manifest.costs.jina.imageEmbeddingTokens, 12_000);
   });

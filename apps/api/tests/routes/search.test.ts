@@ -12,13 +12,37 @@ import type { Env } from '../../src/index';
 const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 
 describe('buildStructuredConstraintSql', () => {
-  it('uses raw medium text only when canonical medium family is blank', () => {
+  it('keeps numeric date overlap and bindings for ordinary metadata retrieval', () => {
+    const result = buildStructuredConstraintSql({
+      dateRange: { startYear: 1800, endYear: 1900 },
+    });
+
+    expect(result.sql).toContain('coalesce(year_end, year) >= ?');
+    expect(result.sql).toContain('coalesce(year_start, year) <= ?');
+    expect(result.params).toEqual([1800, 1900]);
+  });
+
+  it('falls back from a blank visual classification to catalogue classification', () => {
+    const result = buildStructuredConstraintSql({
+      classifications: ['Painting'],
+    });
+
+    expect(result.sql).toContain(
+      "coalesce(nullif(trim(visual_classification), ''), classification, '')"
+    );
+    expect(result.params).toEqual(['painting']);
+  });
+
+  it('allows raw medium text to match even when canonical medium family is populated', () => {
     const result = buildStructuredConstraintSql({
       mediumFamilies: ['woodcut'],
     });
 
     expect(result.sql).toContain(
-      "trim(coalesce(medium_family, '')) = '' AND (lower(coalesce(medium, '')) LIKE ? ESCAPE '\\')"
+      "lower(trim(coalesce(medium_family, ''))) IN (?) OR lower(coalesce(medium, '')) LIKE ? ESCAPE '\\'"
+    );
+    expect(result.sql).not.toContain(
+      "trim(coalesce(medium_family, '')) = ''"
     );
     expect(result.params).toEqual(['woodcut', '%woodcut%']);
   });
@@ -406,21 +430,158 @@ class FakeSearchDb {
       );
     };
 
+    const applyStructuredConstraintSql = (
+      rows: typeof this.rows,
+      initialParamIndex: number
+    ) => {
+      let constrainedRows = rows;
+      let paramIndex = initialParamIndex;
+
+      if (sql.includes("trim(coalesce(date_text, '')) <> ''")) {
+        constrainedRows = constrainedRows.filter((row) =>
+          Boolean(row.date_text?.trim())
+        );
+      } else if (sql.includes('coalesce(year_end, year) >= ?')) {
+        const requestedStart = Number(params[paramIndex]);
+        const requestedEnd = Number(params[paramIndex + 1]);
+        paramIndex += 2;
+        constrainedRows = constrainedRows.filter((row) => {
+          const structured = row as typeof row & {
+            year_start?: number | null;
+            year_end?: number | null;
+          };
+          const rowStart = structured.year_start ?? row.year;
+          const rowEnd = structured.year_end ?? row.year;
+          return (
+            rowStart !== null &&
+            rowEnd !== null &&
+            rowEnd >= requestedStart &&
+            rowStart <= requestedEnd
+          );
+        });
+      }
+
+      const classificationParams =
+        sql.match(
+          /lower\(trim\(coalesce\(visual_classification, classification, ''\)\)\) IN \(([^)]*)\)/
+        )?.[1] ||
+        sql.match(
+          /lower\(trim\(coalesce\(nullif\(trim\(visual_classification\), ''\), classification, ''\)\)\) IN \(([^)]*)\)/
+        )?.[1];
+      if (classificationParams) {
+        const count = classificationParams.match(/\?/g)?.length || 0;
+        const classifications = new Set(
+          params
+            .slice(paramIndex, paramIndex + count)
+            .map((value) => String(value).toLowerCase())
+        );
+        paramIndex += count;
+        constrainedRows = constrainedRows.filter((row) => {
+          const structured = row as typeof row & {
+            visual_classification?: string | null;
+          };
+          const visualClassification =
+            structured.visual_classification ?? null;
+          const classification = sql.includes(
+            "nullif(trim(visual_classification), '')"
+          )
+            ? visualClassification?.trim() || row.classification || ''
+            : visualClassification ?? row.classification ?? '';
+          return classifications.has(
+            String(classification).trim().toLowerCase()
+          );
+        });
+      }
+
+      const mediumParams = sql.match(
+        /lower\(trim\(coalesce\(medium_family, ''\)\)\) IN \(([^)]*)\)/
+      )?.[1];
+      if (mediumParams) {
+        const count = mediumParams.match(/\?/g)?.length || 0;
+        const mediumFamilies = new Set(
+          params
+            .slice(paramIndex, paramIndex + count)
+            .map((value) => String(value).toLowerCase())
+        );
+        paramIndex += count;
+        const mediumFallbacks = params
+          .slice(paramIndex, paramIndex + count)
+          .map((value) => String(value).replaceAll('%', '').toLowerCase());
+        paramIndex += count;
+        constrainedRows = constrainedRows.filter((row) => {
+          const structured = row as typeof row & {
+            medium_family?: string | null;
+          };
+          const mediumFamily = String(structured.medium_family || '')
+            .trim()
+            .toLowerCase();
+          const rawMediumMatches = mediumFallbacks.some((value) =>
+            String(row.medium || '').toLowerCase().includes(value)
+          );
+          return (
+            mediumFamilies.has(mediumFamily) ||
+            (!sql.includes(
+              "trim(coalesce(medium_family, '')) = '' AND"
+            ) || !mediumFamily) &&
+              rawMediumMatches
+          );
+        });
+      }
+
+      const artistParams = sql.match(
+        /primary_artist_id IN \(([^)]*)\)/
+      )?.[1];
+      if (artistParams) {
+        const count = artistParams.match(/\?/g)?.length || 0;
+        const artistIds = new Set(
+          params
+            .slice(paramIndex, paramIndex + count)
+            .map((value) => String(value))
+        );
+        constrainedRows = constrainedRows.filter((row) => {
+          const structured = row as typeof row & {
+            primary_artist_id?: string | null;
+          };
+          return Boolean(
+            structured.primary_artist_id &&
+              artistIds.has(structured.primary_artist_id)
+          );
+        });
+      }
+
+      return constrainedRows;
+    };
+
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
       this.metadataSearchSql.push(sql);
       this.metadataSearchParams.push(params);
       if (sql.includes('lower(trim(classification)) = ?')) {
+        const hasOffset = sql.includes('OFFSET ?');
         const normalizedQuery = String(
-          params[params.length - 2] || ''
+          params[params.length - (hasOffset ? 3 : 2)] || ''
         ).toLowerCase();
+        const limit = Number(params[params.length - (hasOffset ? 2 : 1)]);
+        const offset = hasOffset ? Number(params[params.length - 1]) : 0;
+        const structuredParamIndex =
+          Number(sql.includes('AND org_id = ?')) +
+          Number(
+            sql.includes(
+              "json_extract(custom_metadata, '$.provider') = ?"
+            )
+          );
         return {
           success: true,
-          results: applySearchVisibility(
-            this.rows.filter(
-              (row) =>
-                row.classification?.trim().toLowerCase() === normalizedQuery
-            )
-          ).map((row) => ({ ...row, match_score: 100 })),
+          results: applyStructuredConstraintSql(
+            applySearchVisibility(
+              this.rows.filter(
+                (row) =>
+                  row.classification?.trim().toLowerCase() === normalizedQuery
+              )
+            ),
+            structuredParamIndex
+          )
+            .slice(offset, offset + limit)
+            .map((row) => ({ ...row, match_score: 100 })),
         } as unknown as { success: boolean; results: T[] };
       }
 
@@ -428,8 +589,20 @@ class FakeSearchDb {
         sql.includes('AND artist IS NOT NULL') &&
         sql.includes('ORDER BY match_score DESC, artist')
       ) {
+        const hasOffset = sql.includes('OFFSET ?');
         const normalizedQuery = String(params[0] || '');
         const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+        const scoreParamCount =
+          sql.slice(0, sql.indexOf('AS match_score')).match(/\?/g)?.length ||
+          0;
+        const structuredParamIndex =
+          scoreParamCount +
+          Number(sql.includes('AND org_id = ?')) +
+          Number(
+            sql.includes(
+              "json_extract(custom_metadata, '$.provider') = ?"
+            )
+          );
         const matchingRows = this.rows.filter((row) => {
           const normalizedArtist = normalizeArtistForTest(row.artist);
           return (
@@ -442,13 +615,22 @@ class FakeSearchDb {
 
         return {
           success: true,
-          results: applySearchVisibility(matchingRows).map((row, index) => ({
-            ...row,
-            match_score:
-              normalizeArtistForTest(row.artist) === normalizedQuery
-                ? 120
-                : 100 - index,
-          })),
+          results: applyStructuredConstraintSql(
+            applySearchVisibility(matchingRows),
+            structuredParamIndex
+          )
+            .slice(
+              hasOffset ? Number(params[params.length - 1]) : 0,
+              (hasOffset ? Number(params[params.length - 1]) : 0) +
+                Number(params[params.length - (hasOffset ? 2 : 1)])
+            )
+            .map((row, index) => ({
+              ...row,
+              match_score:
+                normalizeArtistForTest(row.artist) === normalizedQuery
+                  ? 120
+                  : 100 - index,
+            })),
         } as unknown as { success: boolean; results: T[] };
       }
 
@@ -1180,6 +1362,197 @@ describe('Search API auth and quota behavior', () => {
     });
   });
 
+  it('hard-filters an explicit artist facet by an independent NGA date constraint before top-K', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-rembrandt-date-violation-1750',
+        artist: 'Rembrandt',
+        year: 1750,
+        date_text: '1750',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-rembrandt-date-match-1850',
+        artist: 'Rembrandt',
+        year: 1850,
+        date_text: '1850',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Rembrandt',
+        topK: 1,
+        minScore: 0,
+        facet: 'artist',
+        constraints: { dateRange: { startYear: 1800, endYear: 1900 } },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-rembrandt-date-match-1850',
+    ]);
+  });
+
+  it('falls back from blank visual classification in constrained artist facets', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-artist-blank-visual-classification',
+        artist: 'Fallback Artist',
+        classification: 'Painting',
+        visual_classification: '',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      } as any),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Fallback Artist',
+        topK: 1,
+        minScore: 0,
+        facet: 'artist',
+        constraints: { classifications: ['Painting'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-artist-blank-visual-classification',
+    ]);
+  });
+
+  it('fills canonical public artist facets from date-constrained rows beyond a 100-row violating prefix', async () => {
+    db = new FakeSearchDb([
+      ...Array.from({ length: 101 }, (_, index) =>
+        makeArtworkRow({
+          id: `nga-public-artist-date-violation-${index + 1}`,
+          artist: 'Boundary Artist',
+          year: 1700,
+          date_text: '1700',
+          custom_metadata: JSON.stringify({ provider: 'nga' }),
+        })
+      ),
+      makeArtworkRow({
+        id: 'nga-public-artist-date-match-1850',
+        artist: 'Boundary Artist',
+        year: 1850,
+        date_text: '1850',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-public-artist-date-match-1851',
+        artist: 'Boundary Artist',
+        year: 1851,
+        date_text: '1851',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      {
+        query: 'Boundary Artist',
+        topK: 100,
+        minScore: 0,
+        facet: 'artist',
+        constraints: { dateRange: { startYear: 1800, endYear: 1900 } },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-public-artist-date-match-1850',
+      'nga-public-artist-date-match-1851',
+    ]);
+  });
+
+  it('paginates canonical public artist facets past 100 unparseable displayed dates', async () => {
+    db = new FakeSearchDb([
+      ...Array.from({ length: 101 }, (_, index) =>
+        makeArtworkRow({
+          id: `nga-public-artist-unparseable-date-${index + 1}`,
+          artist: 'Displayed Date Artist',
+          year: 1800,
+          date_text: 'not dated',
+          custom_metadata: JSON.stringify({ provider: 'nga' }),
+        })
+      ),
+      makeArtworkRow({
+        id: 'nga-public-artist-displayed-date-match-1850',
+        artist: 'Displayed Date Artist',
+        year: 1950,
+        date_text: '1850',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-public-artist-displayed-date-match-1851',
+        artist: 'Displayed Date Artist',
+        year: 1951,
+        date_text: '1851',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      {
+        query: 'Displayed Date Artist',
+        topK: 100,
+        minScore: 0,
+        facet: 'artist',
+        constraints: { dateRange: { startYear: 1800, endYear: 1900 } },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-public-artist-displayed-date-match-1850',
+      'nga-public-artist-displayed-date-match-1851',
+    ]);
+    expect(db.metadataSearchSql[0]).toContain(
+      "trim(coalesce(date_text, '')) <> ''"
+    );
+    expect(db.metadataSearchSql[0]).not.toContain(
+      'coalesce(year_end, year) >= ?'
+    );
+  });
+
   it('routes classification facets through an exact catalogue field filter', async () => {
     db = new FakeSearchDb([
       makeArtworkRow({
@@ -1230,6 +1603,191 @@ describe('Search API auth and quota behavior', () => {
       facet: 'classification',
       resultCount: 1,
     });
+  });
+
+  it('hard-filters an explicit classification facet by an independent NGA medium constraint before top-K', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-painting-medium-violation-watercolor',
+        year: 1750,
+        classification: 'Painting',
+        medium: 'Watercolor on paper',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-painting-medium-match-oil',
+        year: 1850,
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Painting',
+        topK: 1,
+        minScore: 0,
+        facet: 'classification',
+        constraints: { mediumFamilies: ['oil'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-painting-medium-match-oil',
+    ]);
+  });
+
+  it('allows raw-medium matches when constrained classification facets have a populated medium family', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-classification-populated-family-raw-oil-match',
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        medium_family: 'watercolor',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      } as any),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'Painting',
+        topK: 1,
+        minScore: 0,
+        facet: 'classification',
+        constraints: { mediumFamilies: ['oil'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-classification-populated-family-raw-oil-match',
+    ]);
+  });
+
+  it('fills canonical public classification facets from medium-constrained rows beyond a 100-row violating prefix', async () => {
+    db = new FakeSearchDb([
+      ...Array.from({ length: 101 }, (_, index) =>
+        makeArtworkRow({
+          id: `nga-public-classification-medium-violation-${index + 1}`,
+          year: 1700,
+          classification: 'Painting',
+          medium: 'Watercolor on paper',
+          custom_metadata: JSON.stringify({ provider: 'nga' }),
+        })
+      ),
+      makeArtworkRow({
+        id: 'nga-public-classification-medium-match-oil-1850',
+        year: 1850,
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-public-classification-medium-match-oil-1851',
+        year: 1851,
+        classification: 'Painting',
+        medium: 'Oil on panel',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      {
+        query: 'Painting',
+        topK: 100,
+        minScore: 0,
+        facet: 'classification',
+        constraints: { mediumFamilies: ['oil'] },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-public-classification-medium-match-oil-1850',
+      'nga-public-classification-medium-match-oil-1851',
+    ]);
+  });
+
+  it('paginates canonical public classification facets past 100 unparseable displayed dates', async () => {
+    db = new FakeSearchDb([
+      ...Array.from({ length: 101 }, (_, index) =>
+        makeArtworkRow({
+          id: `nga-public-classification-unparseable-date-${index + 1}`,
+          year: 1800,
+          date_text: 'not dated',
+          classification: 'Painting',
+          custom_metadata: JSON.stringify({ provider: 'nga' }),
+        })
+      ),
+      makeArtworkRow({
+        id: 'nga-public-classification-displayed-date-match-1850',
+        year: 1950,
+        date_text: '1850',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-public-classification-displayed-date-match-1851',
+        year: 1951,
+        date_text: '1851',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      {
+        query: 'Painting',
+        topK: 100,
+        minScore: 0,
+        facet: 'classification',
+        constraints: { dateRange: { startYear: 1800, endYear: 1900 } },
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-public-classification-displayed-date-match-1850',
+      'nga-public-classification-displayed-date-match-1851',
+    ]);
   });
 
   it('applies visual refinement only within the original text candidates', async () => {
@@ -2438,18 +2996,21 @@ describe('Search API auth and quota behavior', () => {
       makeArtworkRow({
         id: 'nga-painting-1750',
         year: 1750,
+        date_text: '1750',
         classification: 'Painting',
         custom_metadata: JSON.stringify({ provider: 'nga' }),
       }),
       makeArtworkRow({
         id: 'nga-drawing-1750',
         year: 1750,
+        date_text: '1750',
         classification: 'Drawing',
         custom_metadata: JSON.stringify({ provider: 'nga' }),
       }),
       makeArtworkRow({
         id: 'nga-painting-1850',
         year: 1850,
+        date_text: '1850',
         classification: 'Painting',
         custom_metadata: JSON.stringify({ provider: 'nga' }),
       }),
@@ -2472,6 +3033,108 @@ describe('Search API auth and quota behavior', () => {
     });
     expect(payload.data.results.map((row: any) => row.id)).toEqual([
       'nga-painting-1750',
+    ]);
+  });
+
+  it('hard-filters combined NGA date, classification, and medium constraints', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-valid-oil-painting-1750',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-date-violation-oil-painting-1800',
+        year: 1800,
+        date_text: '1800',
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-classification-violation-oil-drawing-1750',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Drawing',
+        medium: 'Oil on paper',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-medium-violation-watercolor-painting-1750',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Painting',
+        medium: 'Watercolor on paper',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'oil paintings after 1700 before 1800',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.interpretation).toMatchObject({
+      parserVersion: 'nga-v4',
+      constraints: {
+        dateRange: { startYear: 1701, endYear: 1799 },
+        classifications: ['Painting'],
+        mediumFamilies: ['oil'],
+      },
+    });
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-valid-oil-painting-1750',
+    ]);
+  });
+
+  it('uses the displayed NGA date as the final temporal-filter backstop', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-broad-range-mismatch',
+        year: 1610,
+        date_text: 'c. 1630',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+        year_start: 1610,
+        year_end: 1690,
+      } as any),
+      makeArtworkRow({
+        id: 'nga-display-date-match',
+        year: 1650,
+        date_text: '1650',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+        year_start: 1650,
+        year_end: 1650,
+      } as any),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'paintings from 1650', topK: 100, minScore: 0 },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((row: any) => row.id)).toEqual([
+      'nga-display-date-match',
     ]);
   });
 
@@ -2502,8 +3165,132 @@ describe('Search API auth and quota behavior', () => {
     expect(response.status).toBe(200);
     expect(JSON.stringify(db.metadataSearchParams[0])).toContain('landscape');
     expect(JSON.stringify(db.metadataSearchParams[0])).not.toContain('18th');
-    expect(db.metadataSearchSql[0]).toContain('coalesce(year_start, year)');
-    expect(db.metadataSearchSql[0]).toContain('visual_classification');
+    expect(db.metadataSearchSql[0]).toContain('coalesce(year_end, year) >= ?');
+    expect(db.metadataSearchSql[0]).toContain(
+      'coalesce(year_start, year) <= ?'
+    );
+    expect(db.metadataSearchParams[0]).toEqual(
+      expect.arrayContaining([1700, 1799])
+    );
+    expect(db.metadataSearchSql[0]).toContain(
+      "nullif(trim(visual_classification), '')"
+    );
+  });
+
+  it('uses a lightweight classification fallback for the exact structured-only live query and caches it', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-live-second-half-painting',
+        year: 1760,
+        date_text: '1760',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const request = {
+      query:
+        'paintings from the second half of the 18th century before 1780',
+      topK: 100,
+      minScore: 0,
+    };
+
+    const first = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      request,
+      'nga'
+    );
+    const second = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      request,
+      'nga'
+    );
+    const payload = (await first.json()) as any;
+
+    expect(first.status).toBe(200);
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(payload.data.interpretation).toMatchObject({
+      semanticQuery: '',
+      constraints: {
+        dateRange: { startYear: 1750, endYear: 1779 },
+        classifications: ['Painting'],
+      },
+    });
+    expect(payload.meta.search).toEqual({
+      cacheable: true,
+      degradedChannels: [],
+    });
+    expect(db.metadataSearchParams).toHaveLength(1);
+    expect(db.metadataSearchParams[0]?.[0]).toBe('painting');
+    expect(JSON.stringify(db.metadataSearchParams[0])).not.toContain(
+      'second half'
+    );
+  });
+
+  it('uses art as the retrieval fallback for a date-only NGA query', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-date-only-fallback',
+        year: 1770,
+        date_text: '1770',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'before 1780', topK: 100, minScore: 0 },
+      'nga'
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.metadataSearchParams[0]?.[0]).toBe('art');
+  });
+
+  it('combines normalized classification and medium retrieval fallbacks without control words', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-marble-sculpture-fallback',
+        year: 1720,
+        date_text: '1720',
+        classification: 'Sculpture',
+        medium: 'Marble',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'marble sculptures from the first half of the 18th century',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.metadataSearchParams[0]?.[0]).toBe('sculpture marble');
+    expect(JSON.stringify(db.metadataSearchParams[0])).not.toContain(
+      'first half'
+    );
   });
 
   it('applies NGA hard constraints to vector retrieval before top-K', async () => {

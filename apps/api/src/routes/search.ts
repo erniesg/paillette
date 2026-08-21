@@ -407,6 +407,7 @@ const artworkMatchesStructuredConstraints = (
       year: artwork.year,
       yearStart: enriched.year_start,
       yearEnd: enriched.year_end,
+      dateText: artwork.date_text,
       classification: artwork.classification,
       visualClassification: enriched.visual_classification,
       medium: artwork.medium,
@@ -417,25 +418,85 @@ const artworkMatchesStructuredConstraints = (
   );
 };
 
-export const buildStructuredConstraintSql = (
-  constraints?: PublicSearchConstraints
+const searchResultMatchesStructuredConstraints = (
+  result: ArtworkSearchResult,
+  constraints: PublicSearchConstraints
+) =>
+  matchesNgaSearchConstraints(
+    {
+      year: result.year,
+      yearStart:
+        typeof result.metadata?.yearStart === 'number'
+          ? result.metadata.yearStart
+          : null,
+      yearEnd:
+        typeof result.metadata?.yearEnd === 'number'
+          ? result.metadata.yearEnd
+          : null,
+      dateText:
+        typeof result.metadata?.dateText === 'string'
+          ? result.metadata.dateText
+          : null,
+      classification:
+        typeof result.metadata?.classification === 'string'
+          ? result.metadata.classification
+          : null,
+      visualClassification:
+        typeof result.metadata?.visualClassification === 'string'
+          ? result.metadata.visualClassification
+          : null,
+      medium:
+        typeof result.metadata?.medium === 'string'
+          ? result.metadata.medium
+          : null,
+      mediumFamily:
+        typeof result.metadata?.mediumFamily === 'string'
+          ? result.metadata.mediumFamily
+          : null,
+      primaryArtistId:
+        typeof result.metadata?.primaryArtistId === 'string'
+          ? result.metadata.primaryArtistId
+          : null,
+    },
+    constraints
+  );
+
+const buildStructuredRetrievalFallback = (
+  constraints: PublicSearchConstraints
+): string => {
+  const terms = [
+    ...(constraints.classifications || []),
+    ...(constraints.mediumFamilies || []),
+  ].map((value) =>
+    normalizePublicSearchText(value).toLocaleLowerCase('en-US')
+  );
+  return [...new Set(terms)].join(' ') || 'art';
+};
+
+const buildStructuredConstraintSqlForDateMode = (
+  constraints: PublicSearchConstraints | undefined,
+  dateMode: 'stored-range' | 'displayed-date-candidate'
 ): { sql: string; params: Array<string | number> } => {
   if (!constraints) return { sql: '', params: [] };
 
   const clauses: string[] = [];
   const params: Array<string | number> = [];
   if (constraints.dateRange) {
-    clauses.push(
-      `(coalesce(year_end, year) >= ? AND coalesce(year_start, year) <= ?)`
-    );
-    params.push(
-      constraints.dateRange.startYear,
-      constraints.dateRange.endYear
-    );
+    if (dateMode === 'displayed-date-candidate') {
+      clauses.push(`(trim(coalesce(date_text, '')) <> '')`);
+    } else {
+      clauses.push(
+        `(coalesce(year_end, year) >= ? AND coalesce(year_start, year) <= ?)`
+      );
+      params.push(
+        constraints.dateRange.startYear,
+        constraints.dateRange.endYear
+      );
+    }
   }
   if (constraints.classifications?.length) {
     clauses.push(
-      `lower(trim(coalesce(visual_classification, classification, ''))) IN (${constraints.classifications.map(() => '?').join(', ')})`
+      `lower(trim(coalesce(nullif(trim(visual_classification), ''), classification, ''))) IN (${constraints.classifications.map(() => '?').join(', ')})`
     );
     params.push(
       ...constraints.classifications.map((value) => value.toLowerCase())
@@ -447,7 +508,7 @@ export const buildStructuredConstraintSql = (
       .map(() => `lower(coalesce(medium, '')) LIKE ? ESCAPE '\\'`)
       .join(' OR ');
     clauses.push(
-      `(lower(trim(coalesce(medium_family, ''))) IN (${placeholders}) OR (trim(coalesce(medium_family, '')) = '' AND (${mediumFallbacks})))`
+      `(lower(trim(coalesce(medium_family, ''))) IN (${placeholders}) OR ${mediumFallbacks})`
     );
     params.push(
       ...constraints.mediumFamilies.map((value) => value.toLowerCase()),
@@ -468,6 +529,18 @@ export const buildStructuredConstraintSql = (
     params,
   };
 };
+
+export const buildStructuredConstraintSql = (
+  constraints?: PublicSearchConstraints
+) => buildStructuredConstraintSqlForDateMode(constraints, 'stored-range');
+
+const buildFacetStructuredConstraintSql = (
+  constraints?: PublicSearchConstraints
+) =>
+  buildStructuredConstraintSqlForDateMode(
+    constraints,
+    'displayed-date-candidate'
+  );
 
 const SEARCH_PUNCTUATION_SQL = [
   "'-'",
@@ -1341,34 +1414,48 @@ async function searchArtworksHybrid(
       structuredConstraints
     );
     return structuredConstraints
-      ? metadataResults.filter((result) =>
-          matchesNgaSearchConstraints(
-            {
-              year: result.year,
-              classification:
-                typeof result.metadata?.classification === 'string'
-                  ? result.metadata.classification
-                  : null,
-              visualClassification:
-                typeof result.metadata?.visualClassification === 'string'
-                  ? result.metadata.visualClassification
-                  : null,
-              medium:
-                typeof result.metadata?.medium === 'string'
-                  ? result.metadata.medium
-                  : null,
-              mediumFamily:
-                typeof result.metadata?.mediumFamily === 'string'
-                  ? result.metadata.mediumFamily
-                  : null,
-              primaryArtistId:
-                typeof result.metadata?.primaryArtistId === 'string'
-                  ? result.metadata.primaryArtistId
-                  : null,
-            },
-            structuredConstraints
+      ? metadataResults
+          .filter((result) =>
+            matchesNgaSearchConstraints(
+              {
+                year: result.year,
+                yearStart:
+                  typeof result.metadata?.yearStart === 'number'
+                    ? result.metadata.yearStart
+                    : null,
+                yearEnd:
+                  typeof result.metadata?.yearEnd === 'number'
+                    ? result.metadata.yearEnd
+                    : null,
+                dateText:
+                  typeof result.metadata?.dateText === 'string'
+                    ? result.metadata.dateText
+                    : null,
+                classification:
+                  typeof result.metadata?.classification === 'string'
+                    ? result.metadata.classification
+                    : null,
+                visualClassification:
+                  typeof result.metadata?.visualClassification === 'string'
+                    ? result.metadata.visualClassification
+                    : null,
+                medium:
+                  typeof result.metadata?.medium === 'string'
+                    ? result.metadata.medium
+                    : null,
+                mediumFamily:
+                  typeof result.metadata?.mediumFamily === 'string'
+                    ? result.metadata.mediumFamily
+                    : null,
+                primaryArtistId:
+                  typeof result.metadata?.primaryArtistId === 'string'
+                    ? result.metadata.primaryArtistId
+                    : null,
+              },
+              structuredConstraints
+            )
           )
-        ).slice(0, topK)
+          .slice(0, topK)
       : metadataResults;
   }
 
@@ -1436,8 +1523,15 @@ async function searchArtworksHybrid(
         })
       : Promise.resolve([] as CaptionVectorMatch[]),
     initialRoute.weights.metadata > 0
-      ? (forcedIntent === 'artist_exact'
-          ? searchArtworksByArtistFacet(env.DB, orgId, provider, query, topK)
+        ? (forcedIntent === 'artist_exact'
+          ? searchArtworksByArtistFacet(
+              env.DB,
+              orgId,
+              provider,
+              query,
+              topK,
+              structuredConstraints
+            )
           : searchArtworksByMetadata(
               env.DB,
               orgId,
@@ -1591,9 +1685,10 @@ async function searchArtworksHybrid(
         (rankingScoreById.get(idB) || 0) - (rankingScoreById.get(idA) || 0)
     )
     .map(([id]) => id);
-  const rankedIds = temporalFilter || structuredConstraints
-    ? rankedCandidateIds
-    : rankedCandidateIds.slice(0, topK);
+  const rankedIds =
+    temporalFilter || structuredConstraints
+      ? rankedCandidateIds
+      : rankedCandidateIds.slice(0, topK);
 
   const artworkById = await getArtworksByIds(
     env.DB,
@@ -1791,7 +1886,8 @@ async function searchArtworksByArtistFacet(
   orgId: string | undefined,
   provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = normalizeArtistFacetQuery(query);
   const tokens = artistFacetTokens(query);
@@ -1810,30 +1906,41 @@ async function searchArtworksByArtistFacet(
     .join(' AND ');
   const orgFilter = orgId ? 'AND org_id = ?' : '';
   const providerFilter = providerSearchSql(provider);
+  const structuredFilter =
+    buildFacetStructuredConstraintSql(structuredConstraints);
   const whereSql = `AND (${artistText} LIKE ? ESCAPE '\\' OR (${tokenWhereSql}))`;
-  const params = [
+  const baseParams = [
     normalizedQuery,
     phraseQuery,
     ...tokenQueries,
     ...(orgId ? [orgId] : []),
     ...(provider ? [provider] : []),
+    ...structuredFilter.params,
     phraseQuery,
     ...tokenQueries,
-    topK,
   ];
+  const approvedResults: ArtworkSearchResult[] = [];
+  let offset = 0;
 
-  const { results } = await db
-    .prepare(
-      `
+  while (approvedResults.length < topK) {
+    const { results } = await db
+      .prepare(
+        `
     SELECT
       id,
       org_id,
       title,
       artist,
       year,
+      year_start,
+      year_end,
       date_text,
       medium,
+      medium_family,
       classification,
+      subclassification,
+      visual_classification,
+      primary_artist_id,
       culture,
       origin,
       dimensions_height,
@@ -1868,27 +1975,46 @@ async function searchArtworksByArtistFacet(
       ${orgFilter}
       ${providerFilter}
       ${backableSearchSql(orgId)}
+      ${structuredFilter.sql}
       ${whereSql}
-    ORDER BY match_score DESC, artist COLLATE NOCASE ASC, year ASC, title COLLATE NOCASE ASC
-    LIMIT ?
+    ORDER BY match_score DESC, artist COLLATE NOCASE ASC, year ASC, title COLLATE NOCASE ASC, id ASC
+    LIMIT ? OFFSET ?
     `
-    )
-    .bind(...params)
-    .all<ArtworkMetadataSearchRow>();
+      )
+      .bind(...baseParams, topK, offset)
+      .all<ArtworkMetadataSearchRow>();
 
-  return results.map((artwork, index) => {
-    const similarity = Math.min(Math.max(artwork.match_score / 120, 0.01), 1);
-    return mapSearchRow(artwork, similarity, [
-      {
-        channel: 'metadata',
-        label: 'Artist',
-        source: 'artworks.artist',
-        weight: 1,
-        rank: index + 1,
-        score: similarity,
-      },
-    ]);
-  });
+    if (!results.length) break;
+
+    for (const [index, artwork] of results.entries()) {
+      const similarity = Math.min(
+        Math.max(artwork.match_score / 120, 0.01),
+        1
+      );
+      const mapped = mapSearchRow(artwork, similarity, [
+        {
+          channel: 'metadata',
+          label: 'Artist',
+          source: 'artworks.artist',
+          weight: 1,
+          rank: offset + index + 1,
+          score: similarity,
+        },
+      ]);
+      if (
+        !structuredConstraints ||
+        searchResultMatchesStructuredConstraints(mapped, structuredConstraints)
+      ) {
+        approvedResults.push(mapped);
+        if (approvedResults.length === topK) break;
+      }
+    }
+
+    offset += results.length;
+    if (results.length < topK) break;
+  }
+
+  return approvedResults;
 }
 
 async function searchArtworksByClassificationFacet(
@@ -1896,7 +2022,8 @@ async function searchArtworksByClassificationFacet(
   orgId: string | undefined,
   provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -1905,24 +2032,36 @@ async function searchArtworksByClassificationFacet(
 
   const orgFilter = orgId ? 'AND org_id = ?' : '';
   const providerFilter = providerSearchSql(provider);
-  const params = [
+  const structuredFilter =
+    buildFacetStructuredConstraintSql(structuredConstraints);
+  const baseParams = [
     ...(orgId ? [orgId] : []),
     ...(provider ? [provider] : []),
+    ...structuredFilter.params,
     normalizedQuery,
-    topK,
   ];
-  const { results } = await db
-    .prepare(
-      `
+  const approvedResults: ArtworkSearchResult[] = [];
+  let offset = 0;
+
+  while (approvedResults.length < topK) {
+    const { results } = await db
+      .prepare(
+        `
     SELECT
       id,
       org_id,
       title,
       artist,
       year,
+      year_start,
+      year_end,
       date_text,
       medium,
+      medium_family,
       classification,
+      subclassification,
+      visual_classification,
+      primary_artist_id,
       culture,
       origin,
       dimensions_height,
@@ -1953,26 +2092,42 @@ async function searchArtworksByClassificationFacet(
       ${orgFilter}
       ${providerFilter}
       ${backableSearchSql(orgId)}
+      ${structuredFilter.sql}
       AND lower(trim(classification)) = ?
-    ORDER BY year ASC, title COLLATE NOCASE ASC
-    LIMIT ?
+    ORDER BY year ASC, title COLLATE NOCASE ASC, id ASC
+    LIMIT ? OFFSET ?
     `
-    )
-    .bind(...params)
-    .all<ArtworkMetadataSearchRow>();
+      )
+      .bind(...baseParams, topK, offset)
+      .all<ArtworkMetadataSearchRow>();
 
-  return results.map((artwork, index) =>
-    mapSearchRow(artwork, 1, [
-      {
-        channel: 'metadata',
-        label: 'Classification',
-        source: 'artworks.classification',
-        weight: 1,
-        rank: index + 1,
-        score: 1,
-      },
-    ])
-  );
+    if (!results.length) break;
+
+    for (const [index, artwork] of results.entries()) {
+      const mapped = mapSearchRow(artwork, 1, [
+        {
+          channel: 'metadata',
+          label: 'Classification',
+          source: 'artworks.classification',
+          weight: 1,
+          rank: offset + index + 1,
+          score: 1,
+        },
+      ]);
+      if (
+        !structuredConstraints ||
+        searchResultMatchesStructuredConstraints(mapped, structuredConstraints)
+      ) {
+        approvedResults.push(mapped);
+        if (approvedResults.length === topK) break;
+      }
+    }
+
+    offset += results.length;
+    if (results.length < topK) break;
+  }
+
+  return approvedResults;
 }
 
 async function hasExactArtistFacetMatch(
@@ -2097,7 +2252,8 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
 
-    const { query, topK, minScore, facet, visualRefinement, constraints } = validation.data;
+    const { query, topK, minScore, facet, visualRefinement, constraints } =
+      validation.data;
     if (
       isPublicSearchPrincipal &&
       (topK !== MAX_SEARCH_RESULTS ||
@@ -2142,7 +2298,11 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
     const structuredConstraints = interpretation?.constraints;
-    const retrievalQuery = interpretation?.semanticQuery.trim() || query;
+    const semanticQuery = interpretation?.semanticQuery.trim();
+    const retrievalQuery = interpretation
+      ? semanticQuery ||
+        buildStructuredRetrievalFallback(interpretation.constraints)
+      : query;
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
       try {
@@ -2171,7 +2331,8 @@ searchRoutes.post('/search/text', async (c) => {
               orgId,
               provider,
               retrievalQuery,
-              topK
+              topK,
+              structuredConstraints
             )
           : facet === 'classification'
             ? await searchArtworksByClassificationFacet(
@@ -2179,7 +2340,8 @@ searchRoutes.post('/search/text', async (c) => {
                 orgId,
                 provider,
                 retrievalQuery,
-                topK
+                topK,
+                structuredConstraints
               )
             : await searchArtworksHybrid(
                 c.env,
@@ -2192,15 +2354,25 @@ searchRoutes.post('/search/text', async (c) => {
                 degradedChannels,
                 structuredConstraints
               );
+      const constrainedResults = structuredConstraints
+        ? baseResults
+            .filter((result) =>
+              searchResultMatchesStructuredConstraints(
+                result,
+                structuredConstraints
+              )
+            )
+            .slice(0, topK)
+        : baseResults;
       const enrichedResults = visualRefinement
         ? await rerankByVisualRefinement(
             c.env,
-            baseResults,
+            constrainedResults,
             visualRefinement,
             scheduleBackgroundWork,
             degradedChannels
           )
-        : baseResults;
+        : constrainedResults;
 
       return {
         results: enrichedResults,

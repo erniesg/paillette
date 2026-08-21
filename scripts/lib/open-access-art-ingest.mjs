@@ -1,3 +1,5 @@
+import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
+
 export const OPEN_ACCESS_ART_COLLECTION = {
   slug: 'open-access-art',
   name: 'Open Access Art',
@@ -32,7 +34,10 @@ const MET_SOURCE_COLLECTION = 'The Met Open Access';
 const ARTIC_IMAGE_BASE = 'https://www.artic.edu/iiif/2';
 const NGA_OBJECT_URL_BASE = 'https://www.nga.gov/collection/art-object-page';
 
-const trimText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+const trimText = (value) =>
+  String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const optionalText = (value) => {
   const text = trimText(value);
@@ -172,7 +177,8 @@ function baseArtwork({
 export function normalizeMetArtwork(record) {
   if (!record?.isPublicDomain) return null;
 
-  const imageUrl = optionalText(record.primaryImage) || optionalText(record.primaryImageSmall);
+  const imageUrl =
+    optionalText(record.primaryImage) || optionalText(record.primaryImageSmall);
   if (!imageUrl || record.objectID === undefined || record.objectID === null) {
     return null;
   }
@@ -262,7 +268,8 @@ const clevelandCreatorText = (record) => {
 };
 
 const clevelandCultureText = (record) => {
-  if (Array.isArray(record.culture)) return record.culture.filter(Boolean).join('; ');
+  if (Array.isArray(record.culture))
+    return record.culture.filter(Boolean).join('; ');
   return record.culture;
 };
 
@@ -285,7 +292,10 @@ export function normalizeClevelandArtwork(record) {
   if (!imageUrl || (rights && rights.toLowerCase() !== 'cc0')) return null;
 
   const description = optionalText(record.description);
-  const caption = captionInfo(description || record.did_you_know, description ? 'description' : 'did_you_know');
+  const caption = captionInfo(
+    description || record.did_you_know,
+    description ? 'description' : 'did_you_know'
+  );
 
   return baseArtwork({
     provider: 'cleveland',
@@ -329,15 +339,16 @@ export function normalizeNgaArtwork({ object, image }) {
 
   const description = optionalText(image.assistivetext);
   const caption = captionInfo(description, 'assistivetext');
+  const dateRange = deriveNgaDisplayDateRange(object?.displaydate);
 
   return baseArtwork({
     provider: 'nga',
     sourceRecordId,
     title: object?.title,
     artist: object?.attribution,
-    year: object?.beginyear,
-    yearStart: object?.beginyear,
-    yearEnd: object?.endyear,
+    year: dateRange?.startYear,
+    yearStart: dateRange?.startYear,
+    yearEnd: dateRange?.endYear,
     dateText: object?.displaydate,
     medium: object?.medium,
     classification: object?.classification,
@@ -414,7 +425,8 @@ export function estimateOpenAccessCosts({
   const vectorQueryMonthlyUsd =
     (paidAfterFree(monthlyQueriedDimensions, 50_000_000) / 1_000_000) * 0.01;
   const r2StorageMonthlyUsd = paidAfterFree(totalGigabytes, 10) * 0.015;
-  const r2ClassAWriteUsd = (paidAfterFree(count * 2, 1_000_000) / 1_000_000) * 4.5;
+  const r2ClassAWriteUsd =
+    (paidAfterFree(count * 2, 1_000_000) / 1_000_000) * 4.5;
   const d1WriteUsd = (paidAfterFree(d1Writes, 50_000_000) / 1_000_000) * 1;
   const d1StorageGigabytes = (d1Rows * 2) / 1024 / 1024;
   const d1StorageMonthlyUsd = paidAfterFree(d1StorageGigabytes, 5) * 0.75;
@@ -434,8 +446,7 @@ export function estimateOpenAccessCosts({
       model: 'jina-clip-v2',
       tokensPerImage: jinaTokensPerImage,
       imageEmbeddingTokens: count * jinaTokensPerImage,
-      note:
-        'Local embeddings avoid this API token cost but still require local compute time.',
+      note: 'Local embeddings avoid this API token cost but still require local compute time.',
     },
     vectorize: {
       imageStoredDimensions,

@@ -1,3 +1,5 @@
+import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
+
 const CLASSIFICATION_ALIASES = new Map([
   ['painting', 'Painting'],
   ['paintings', 'Painting'],
@@ -49,21 +51,11 @@ export function mergeAuthoritativeRecords(freshRecords, fallbackRecords) {
   return merged;
 }
 
-const deriveYearRange = (record) => {
-  if (record.year_start != null || record.year_end != null) {
-    return {
-      startYear: record.year_start ?? record.year,
-      endYear: record.year_end ?? record.year_start ?? record.year,
-    };
-  }
-  const slashRange = clean(record.date_text).match(
-    /\b(1[0-9]{3}|20[0-9]{2})\s*\/\s*(1[0-9]{3}|20[0-9]{2})\b/
-  );
-  return {
-    startYear: slashRange ? Number(slashRange[1]) : record.year,
-    endYear: slashRange ? Number(slashRange[2]) : record.year,
+const deriveYearRange = (record) =>
+  deriveNgaDisplayDateRange(record.date_text) || {
+    startYear: null,
+    endYear: null,
   };
-};
 
 export function deriveMediumFamily(mediumFamily, medium) {
   const explicit = clean(mediumFamily).toLowerCase();
@@ -97,7 +89,12 @@ const sqlNullableString = (value) => {
   return normalized ? sqlString(normalized) : 'NULL';
 };
 const sqlNullableNumber = (value) =>
-  Number.isFinite(Number(value)) ? String(Number(value)) : 'NULL';
+  value !== null &&
+  value !== undefined &&
+  value !== '' &&
+  Number.isFinite(Number(value))
+    ? String(Number(value))
+    : 'NULL';
 
 export function buildStructuredMetadataUpdateSql(record) {
   const { startYear, endYear } = deriveYearRange(record);
