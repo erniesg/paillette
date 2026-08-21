@@ -856,11 +856,13 @@ export const parseNgaSearchIntent = (
 };
 
 const buildPlanRetrievalFallback = (constraints: PublicSearchConstraints) => {
-  const terms = [
-    ...(constraints.classifications || []),
-    ...(constraints.mediumFamilies || []),
-  ].map(fold);
-  return uniqueSorted(terms).join(' ') || 'art';
+  const classifications = uniqueSorted(
+    (constraints.classifications || []).map(fold)
+  );
+  const mediumFamilies = uniqueSorted(
+    (constraints.mediumFamilies || []).map(fold)
+  );
+  return [...classifications, ...mediumFamilies].join(' ') || 'art';
 };
 
 export const compileNgaSearchPlan = (

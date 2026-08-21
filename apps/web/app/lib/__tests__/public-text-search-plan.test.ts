@@ -81,4 +81,10 @@ describe('buildPublicTextSearchPlan', () => {
     expect(plan?.request).toMatchObject({ query: 'landscape', constraints });
     expect(plan?.queryKey.join(':')).toContain('Painting');
   });
+
+  it('versions browser text-search identity with public contract 27', () => {
+    const plan = buildPublicTextSearchPlan(baseInput);
+
+    expect(plan?.queryKey[2]).toBe('27');
+  });
 });

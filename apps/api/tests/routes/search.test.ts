@@ -3088,7 +3088,7 @@ describe('Search API auth and quota behavior', () => {
 
     expect(response.status).toBe(200);
     expect(payload.data.interpretation).toMatchObject({
-      parserVersion: 'nga-v4',
+      parserVersion: 'nga-v5',
       constraints: {
         dateRange: { startYear: 1701, endYear: 1799 },
         classifications: ['Painting'],
@@ -3343,6 +3343,364 @@ describe('Search API auth and quota behavior', () => {
         },
       })
     );
+  });
+
+  it.each([
+    {
+      label: 'active and passive depicts paraphrases',
+      queries: [
+        'painting showing a sculpture',
+        'painting depicting sculpture',
+        'sculpture shown in a painting',
+        'sculpture depicted in painting',
+      ],
+      expectedId: 'nga-relation-painting',
+      expectedConstraints: { classifications: ['Painting'] },
+      expectedRelation: {
+        kind: 'depicts',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    },
+    {
+      label: 'active and passive features paraphrases',
+      queries: [
+        'painting featuring sculpture',
+        'painting with sculpture',
+        'sculpture featured in painting',
+      ],
+      expectedId: 'nga-relation-painting',
+      expectedConstraints: { classifications: ['Painting'] },
+      expectedRelation: {
+        kind: 'features',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    },
+    {
+      label: 'active and passive derived-from paraphrases',
+      queries: ['drawing based on photograph', 'photograph used as basis for drawing'],
+      expectedId: 'nga-relation-drawing',
+      expectedConstraints: { classifications: ['Drawing'] },
+      expectedRelation: {
+        kind: 'derived_from',
+        workClassification: 'Drawing',
+        sourceClassification: 'Photograph',
+      },
+    },
+    {
+      label: 'opposite depicts direction',
+      queries: ['sculpture depicting painting'],
+      expectedId: 'nga-relation-sculpture',
+      expectedConstraints: { classifications: ['Sculpture'] },
+      expectedRelation: {
+        kind: 'depicts',
+        workClassification: 'Sculpture',
+        subjectClassification: 'Painting',
+      },
+    },
+  ])('routes $label through balanced relational retrieval', async (fixture) => {
+    const relationRows = [
+      makeArtworkRow({
+        id: 'nga-relation-painting',
+        title: 'Carrier Painting',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-relation-sculpture',
+        title: 'Sculpture Distractor',
+        classification: 'Sculpture',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-relation-drawing',
+        title: 'Carrier Drawing',
+        classification: 'Drawing',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-relation-photograph',
+        title: 'Photograph Distractor',
+        classification: 'Photograph',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ];
+    db = new FakeSearchDb(relationRows);
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: relationRows.map((row, index) => ({
+          id: row.id,
+          score: 0.99 - index * 0.01,
+          metadata: {},
+        })),
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      SEARCH_FUSION_MODE: 'hybrid',
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+    const payloads: any[] = [];
+
+    for (const query of fixture.queries) {
+      const response = await textSearch(
+        app,
+        env,
+        { 'X-User-Id': 'user-1' },
+        { query, topK: 100, minScore: 0 },
+        'nga'
+      );
+      const payload = (await response.json()) as any;
+      expect(response.status).toBe(200);
+      expect(payload.data.interpretation).toMatchObject({
+        parserVersion: 'nga-v5',
+        constraints: fixture.expectedConstraints,
+        relation: fixture.expectedRelation,
+      });
+      expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+        fixture.expectedId,
+      ]);
+      expect(payload.data.results[0].metadata.search_sources).toContainEqual(
+        expect.objectContaining({ channel: 'metadata', weight: 1 })
+      );
+      payloads.push(payload);
+    }
+
+    if (payloads.length > 1) {
+      const canonicalSemanticQuery =
+        payloads[0].data.interpretation.semanticQuery;
+      expect(
+        payloads.map((payload) => payload.data.interpretation.semanticQuery)
+      ).toEqual(new Array(payloads.length).fill(canonicalSemanticQuery));
+    }
+  });
+
+  it('keeps combined carrier constraints in every relation channel and after enrichment', async () => {
+    const rows = [
+      makeArtworkRow({
+        id: 'nga-valid-oil-painting-1750-relation',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-sculpture-subject-distractor',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Sculpture',
+        medium: 'Bronze',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-drawing-distractor',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Drawing',
+        medium: 'Oil on paper',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-photograph-distractor',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Photograph',
+        medium: 'Photograph',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-watercolor-painting-distractor',
+        year: 1750,
+        date_text: '1750',
+        classification: 'Painting',
+        medium: 'Watercolor on paper',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-late-oil-painting-distractor',
+        year: 1850,
+        date_text: '1850',
+        classification: 'Painting',
+        medium: 'Oil on canvas',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ];
+    db = new FakeSearchDb(rows);
+    const captionVectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: rows.map((row, index) => ({
+          id: row.id,
+          score: 0.99 - index * 0.01,
+          metadata: {},
+        })),
+      }),
+    };
+    env = {
+      ...makeEnv(db),
+      SEARCH_FUSION_MODE: 'hybrid',
+      CAPTION_VECTORIZE: captionVectorize as unknown as Vectorize,
+      AI: {
+        run: vi.fn().mockResolvedValue({
+          data: [new Array(1024).fill(0.01)],
+        }),
+      } as unknown as Ai,
+    };
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: '18th-century oil painting showing bronze sculpture',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.interpretation).toMatchObject({
+      constraints: {
+        dateRange: { startYear: 1700, endYear: 1799 },
+        classifications: ['Painting'],
+        mediumFamilies: ['oil'],
+      },
+      relation: {
+        kind: 'depicts',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    });
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-valid-oil-painting-1750-relation',
+    ]);
+    expect(captionVectorize.query).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        filter: {
+          galleryId: 'open-access-art',
+          provider: 'nga',
+          yearStart: { $lte: 1799 },
+          yearEnd: { $gte: 1700 },
+          classification: { $in: ['Painting'] },
+          mediumFamily: { $in: ['oil'] },
+        },
+      })
+    );
+  });
+
+  it('keeps relation metadata while explicit empty constraints remove inferred carrier filters', async () => {
+    const painting = makeArtworkRow({
+      id: 'nga-explicit-empty-painting',
+      classification: 'Painting',
+      custom_metadata: JSON.stringify({ provider: 'nga' }),
+    });
+    const sculpture = makeArtworkRow({
+      id: 'nga-explicit-empty-sculpture',
+      classification: 'Sculpture',
+      custom_metadata: JSON.stringify({ provider: 'nga' }),
+    });
+    db = new FakeSearchDb([painting, sculpture]);
+    env = makeEnv(db);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'painting showing a sculpture',
+        topK: 100,
+        minScore: 0,
+        constraints: {},
+      },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.interpretation).toMatchObject({
+      constraints: {},
+      relation: {
+        kind: 'depicts',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    });
+    expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      painting.id,
+      sculpture.id,
+    ]);
+  });
+
+  it('shares canonical relational rows while overlaying each request interpretation', async () => {
+    db = new FakeSearchDb([
+      makeArtworkRow({
+        id: 'nga-cached-relation-painting',
+        classification: 'Painting',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+      makeArtworkRow({
+        id: 'nga-cached-relation-sculpture',
+        classification: 'Sculpture',
+        custom_metadata: JSON.stringify({ provider: 'nga' }),
+      }),
+    ]);
+    env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const headers = { 'X-API-Key': 'public-search-secret' };
+
+    const active = await textSearch(
+      app,
+      env,
+      headers,
+      {
+        query: 'painting showing a sculpture',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const passive = await textSearch(
+      app,
+      env,
+      headers,
+      {
+        query: 'sculpture shown in a painting',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const passivePayload = (await passive.json()) as any;
+
+    expect(active.status).toBe(200);
+    expect(active.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(passive.status).toBe(200);
+    expect(passive.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(passivePayload.data.results.map((row: { id: string }) => row.id)).toEqual([
+      'nga-cached-relation-painting',
+    ]);
+    expect(passivePayload.data.interpretation).toMatchObject({
+      originalQuery: 'sculpture shown in a painting',
+      relation: {
+        kind: 'depicts',
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    });
+    expect(db.metadataSearchSql).toHaveLength(1);
   });
 
   it('rejects unknown explicit NGA constraints', async () => {

@@ -24,10 +24,12 @@ import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   normalizePublicSearchText,
+  type NgaSearchPlan,
   type PublicSearchConstraints,
 } from '@paillette/types/public-search';
 import {
   matchesNgaSearchConstraints,
+  compileNgaSearchPlan,
   parseNgaSearchIntent,
   validateNgaSearchConstraints,
 } from '../utils/nga-search-intent';
@@ -461,18 +463,6 @@ const searchResultMatchesStructuredConstraints = (
     constraints
   );
 
-const buildStructuredRetrievalFallback = (
-  constraints: PublicSearchConstraints
-): string => {
-  const terms = [
-    ...(constraints.classifications || []),
-    ...(constraints.mediumFamilies || []),
-  ].map((value) =>
-    normalizePublicSearchText(value).toLocaleLowerCase('en-US')
-  );
-  return [...new Set(terms)].join(' ') || 'art';
-};
-
 const buildStructuredConstraintSqlForDateMode = (
   constraints: PublicSearchConstraints | undefined,
   dateMode: 'stored-range' | 'displayed-date-candidate'
@@ -571,8 +561,15 @@ const normalizedTextSql = (expression: string) => {
 
 const buildRoutedSearchPlan = (
   query: string,
-  forcedIntent?: 'artist_exact'
+  forcedIntent?: 'artist_exact',
+  ngaPlanMode?: NgaSearchPlan['mode']
 ): RoutedSearchPlan => {
+  if (ngaPlanMode === 'relational') {
+    return {
+      intent: 'balanced',
+      weights: { jinaImage: 1, caption: 1, metadata: 1 },
+    };
+  }
   if (forcedIntent === 'artist_exact') {
     return {
       intent: 'artist_exact',
@@ -1401,7 +1398,8 @@ async function searchArtworksHybrid(
   forcedIntent?: 'artist_exact',
   schedule?: ScheduleBackgroundWork,
   degradedChannels?: Set<SearchDegradedChannel>,
-  structuredConstraints?: PublicSearchConstraints
+  structuredConstraints?: PublicSearchConstraints,
+  ngaPlanMode?: NgaSearchPlan['mode']
 ): Promise<ArtworkSearchResult[]> {
   const fusionMode = getSearchFusionMode(env, orgId);
   if (fusionMode === 'legacy' || fusionMode === 'metadata') {
@@ -1459,7 +1457,7 @@ async function searchArtworksHybrid(
       : metadataResults;
   }
 
-  const initialRoute = buildRoutedSearchPlan(query, forcedIntent);
+  const initialRoute = buildRoutedSearchPlan(query, forcedIntent, ngaPlanMode);
   const metadataQuery = initialRoute.metadataQuery || query;
   const temporalFilter = parseTemporalFilter(metadataQuery);
   const jinaConfig = getJinaConfig(env);
@@ -1550,7 +1548,10 @@ async function searchArtworksHybrid(
         })
       : Promise.resolve([] as ArtworkSearchResult[]),
   ]);
-  const route = refineRoutedSearchPlan(initialRoute, query, metadataMatches);
+  const route =
+    ngaPlanMode === 'relational'
+      ? initialRoute
+      : refineRoutedSearchPlan(initialRoute, query, metadataMatches);
   const artistCandidateIds =
     forcedIntent === 'artist_exact'
       ? new Set(metadataMatches.map((match) => match.id))
@@ -2279,9 +2280,22 @@ searchRoutes.post('/search/text', async (c) => {
       provider === 'nga' &&
       (c.env as Env & { NGA_STRUCTURED_SEARCH_ENABLED?: string })
         .NGA_STRUCTURED_SEARCH_ENABLED !== 'false';
-    const interpretation = structuredSearchEnabled
+    const ngaPlan = structuredSearchEnabled
+      ? compileNgaSearchPlan(query, constraints)
+      : undefined;
+    const parsedInterpretation = structuredSearchEnabled
       ? parseNgaSearchIntent(query, constraints)
       : undefined;
+    const interpretation =
+      parsedInterpretation && ngaPlan
+        ? {
+            ...parsedInterpretation,
+            constraints: ngaPlan.constraints,
+            ...(ngaPlan.relation
+              ? { relation: ngaPlan.relation }
+              : { relation: undefined }),
+          }
+        : undefined;
     const constraintError = interpretation
       ? validateNgaSearchConstraints(interpretation.constraints)
       : null;
@@ -2297,12 +2311,8 @@ searchRoutes.post('/search/text', async (c) => {
         400
       );
     }
-    const structuredConstraints = interpretation?.constraints;
-    const semanticQuery = interpretation?.semanticQuery.trim();
-    const retrievalQuery = interpretation
-      ? semanticQuery ||
-        buildStructuredRetrievalFallback(interpretation.constraints)
-      : query;
+    const structuredConstraints = ngaPlan?.constraints;
+    const retrievalQuery = ngaPlan?.retrievalQuery || query;
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
       try {
@@ -2315,6 +2325,7 @@ searchRoutes.post('/search/text', async (c) => {
     let resolvedFacet = facet;
     const executeSearch = async (): Promise<SearchResponse> => {
       const exactFreeTextArtist =
+        ngaPlan?.mode !== 'relational' &&
         !facet &&
         (await hasExactArtistFacetMatch(
           c.env.DB,
@@ -2352,7 +2363,8 @@ searchRoutes.post('/search/text', async (c) => {
                 exactFreeTextArtist ? 'artist_exact' : undefined,
                 scheduleBackgroundWork,
                 degradedChannels,
-                structuredConstraints
+                structuredConstraints,
+                ngaPlan?.mode
               );
       const constrainedResults = structuredConstraints
         ? baseResults
@@ -2373,10 +2385,20 @@ searchRoutes.post('/search/text', async (c) => {
             degradedChannels
           )
         : constrainedResults;
+      const finalResults = structuredConstraints
+        ? enrichedResults
+            .filter((result) =>
+              searchResultMatchesStructuredConstraints(
+                result,
+                structuredConstraints
+              )
+            )
+            .slice(0, topK)
+        : enrichedResults;
 
       return {
-        results: enrichedResults,
-        count: enrichedResults.length,
+        results: finalResults,
+        count: finalResults.length,
         queryTime: performance.now() - startTime,
         ...(interpretation ? { interpretation } : {}),
       };
@@ -2401,6 +2423,7 @@ searchRoutes.post('/search/text', async (c) => {
         modelIdentity: getSearchResultModelIdentity(c.env),
         parserVersion: interpretation?.parserVersion,
         constraints: structuredConstraints,
+        ngaPlan,
         schedule: scheduleBackgroundWork,
         load: async () => {
           await enforcePublicSearchColdMissRateLimit({
@@ -2417,6 +2440,13 @@ searchRoutes.post('/search/text', async (c) => {
               facet: facet || null,
               parserVersion: interpretation?.parserVersion || null,
               constraints: structuredConstraints || null,
+              ngaPlan: ngaPlan
+                ? {
+                    version: ngaPlan.version,
+                    mode: ngaPlan.mode,
+                    relation: ngaPlan.relation || null,
+                  }
+                : null,
             }),
             countRepeatedRequests: true,
             limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),

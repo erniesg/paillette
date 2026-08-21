@@ -3,9 +3,14 @@ import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   normalizePublicSearchText,
 } from '@paillette/types/public-search';
+import type {
+  NgaSearchPlan,
+  PublicSearchConstraints,
+  PublicSearchRelation,
+} from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '../types';
 
-const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 5;
+const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 6;
 
 export const PUBLIC_SEARCH_RESULT_CACHE_SCHEMA_VERSION = 2 as const;
 export const PUBLIC_SEARCH_RESULT_CACHE_READ_TIMEOUT_MS = 300;
@@ -19,6 +24,10 @@ export type PublicSearchResultCacheDisposition =
   | 'coalesced'
   | 'miss';
 
+type VersionedNgaSearchPlanIdentity = Omit<NgaSearchPlan, 'version'> & {
+  version: string;
+};
+
 export interface PublicSearchResultCacheIdentity {
   query: string;
   orgId?: string;
@@ -31,7 +40,8 @@ export interface PublicSearchResultCacheIdentity {
   fusionMode: string;
   modelIdentity: string;
   parserVersion?: string;
-  constraints?: import('@paillette/types/public-search').PublicSearchConstraints;
+  constraints?: PublicSearchConstraints;
+  ngaPlan?: VersionedNgaSearchPlanIdentity;
 }
 
 export interface PublicSearchResultCacheLoadResult {
@@ -114,6 +124,31 @@ const normalizeOptionalText = (value: string | undefined): string | null => {
   return normalized || null;
 };
 
+const canonicalConstraints = (constraints: PublicSearchConstraints) => ({
+  ...(constraints.dateRange ? { dateRange: constraints.dateRange } : {}),
+  classifications: [...(constraints.classifications || [])].sort(),
+  mediumFamilies: [...(constraints.mediumFamilies || [])].sort(),
+  artistIds: [...(constraints.artistIds || [])].sort(),
+});
+
+const canonicalRelation = (
+  relation: PublicSearchRelation | undefined
+): PublicSearchRelation | null => {
+  if (!relation) return null;
+  if (relation.kind === 'derived_from') {
+    return {
+      kind: relation.kind,
+      workClassification: relation.workClassification,
+      sourceClassification: relation.sourceClassification,
+    };
+  }
+  return {
+    kind: relation.kind,
+    workClassification: relation.workClassification,
+    subjectClassification: relation.subjectClassification,
+  };
+};
+
 const assertValidIdentity = (
   identity: PublicSearchResultCacheIdentity
 ): void => {
@@ -178,11 +213,17 @@ const serializePublicSearchResultCacheIdentity = (
     modelIdentity: identity.modelIdentity.trim(),
     parserVersion: identity.parserVersion?.trim() || null,
     constraints: identity.constraints
+      ? canonicalConstraints(identity.constraints)
+      : null,
+    ngaPlan: identity.ngaPlan
       ? {
-          ...(identity.constraints.dateRange ? { dateRange: identity.constraints.dateRange } : {}),
-          classifications: [...(identity.constraints.classifications || [])].sort(),
-          mediumFamilies: [...(identity.constraints.mediumFamilies || [])].sort(),
-          artistIds: [...(identity.constraints.artistIds || [])].sort(),
+          version: identity.ngaPlan.version,
+          mode: identity.ngaPlan.mode,
+          retrievalQuery: normalizePublicSearchText(
+            identity.ngaPlan.retrievalQuery
+          ).toLocaleLowerCase('en-US'),
+          constraints: canonicalConstraints(identity.ngaPlan.constraints),
+          relation: canonicalRelation(identity.ngaPlan.relation),
         }
       : null,
   });

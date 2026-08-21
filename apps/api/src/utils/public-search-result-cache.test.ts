@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '../types';
+import { compileNgaSearchPlan } from './nga-search-intent';
 import {
   PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS,
   PUBLIC_SEARCH_RESULT_CACHE_HARD_TTL_SECONDS,
@@ -91,7 +92,7 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v5:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v6:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
@@ -116,13 +117,81 @@ describe('buildPublicSearchResultCacheKey', () => {
       variantKeys.length + 1
     );
   });
+
+  it('shares canonical paraphrases while relation shape and direction affect identity', async () => {
+    const activePlan = compileNgaSearchPlan('painting showing a sculpture');
+    const passivePlan = compileNgaSearchPlan('sculpture shown in a painting');
+    const oppositeDirectionPlan = {
+      ...activePlan,
+      relation: {
+        kind: 'depicts' as const,
+        workClassification: 'Sculpture',
+        subjectClassification: 'Painting',
+      },
+    };
+    const differentShapePlan = {
+      ...activePlan,
+      relation: {
+        kind: 'features' as const,
+        workClassification: 'Painting',
+        subjectClassification: 'Sculpture',
+      },
+    };
+
+    const activeKey = await buildPublicSearchResultCacheKey({
+      ...identity,
+      query: activePlan.retrievalQuery,
+      constraints: activePlan.constraints,
+      ngaPlan: activePlan,
+    } as PublicSearchResultCacheIdentity);
+    const passiveKey = await buildPublicSearchResultCacheKey({
+      ...identity,
+      query: passivePlan.retrievalQuery,
+      constraints: passivePlan.constraints,
+      ngaPlan: passivePlan,
+    } as PublicSearchResultCacheIdentity);
+    const oppositeDirectionKey = await buildPublicSearchResultCacheKey({
+      ...identity,
+      query: activePlan.retrievalQuery,
+      constraints: activePlan.constraints,
+      ngaPlan: oppositeDirectionPlan,
+    });
+    const differentShapeKey = await buildPublicSearchResultCacheKey({
+      ...identity,
+      query: activePlan.retrievalQuery,
+      constraints: activePlan.constraints,
+      ngaPlan: differentShapePlan,
+    });
+
+    expect(activeKey).toBe(passiveKey);
+    expect(oppositeDirectionKey).not.toBe(activeKey);
+    expect(differentShapeKey).not.toBe(activeKey);
+  });
+
+  it('separates future NGA plan semantics even when retrieval text is unchanged', async () => {
+    const plan = compileNgaSearchPlan('drawing based on photograph');
+    const currentKey = await buildPublicSearchResultCacheKey({
+      ...identity,
+      query: plan.retrievalQuery,
+      constraints: plan.constraints,
+      ngaPlan: plan,
+    });
+    const futureKey = await buildPublicSearchResultCacheKey({
+      ...identity,
+      query: plan.retrievalQuery,
+      constraints: plan.constraints,
+      ngaPlan: { ...plan, version: 'nga-plan-v2' },
+    });
+
+    expect(futureKey).not.toBe(currentKey);
+  });
 });
 
 describe('getOrLoadPublicSearchResult', () => {
-  it('does not address a stale v4 entry for an nga-v4 exact-date search', async () => {
+  it('does not address a stale v5 entry for an nga-v5 exact-date search', async () => {
     const cache = createCache({
       get: vi.fn(async (key: string) =>
-        key.startsWith('public-search-result:v4:') ? cachedValue() : null
+        key.startsWith('public-search-result:v5:') ? cachedValue() : null
       ) as unknown as KVNamespace['get'],
     });
     const load = vi.fn().mockResolvedValue({ response, cacheable: false });
@@ -130,7 +199,7 @@ describe('getOrLoadPublicSearchResult', () => {
     await expect(
       getOrLoadPublicSearchResult({
         ...identity,
-        parserVersion: 'nga-v4',
+        parserVersion: 'nga-v5',
         constraints: { dateRange: { startYear: 1889, endYear: 1889 } },
         cache,
         load,

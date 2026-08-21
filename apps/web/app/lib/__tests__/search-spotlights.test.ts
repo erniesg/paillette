@@ -36,7 +36,7 @@ const artwork = (id: string) => ({
 
 const validBundle: PublicSearchSpotlightBundle = {
   schemaVersion: 1,
-  contractVersion: '26',
+  contractVersion: '27',
   corpusVersion: 'nga-fixture-v1',
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
@@ -67,7 +67,7 @@ describe('search spotlight loading', () => {
 
     const assetPath = getSearchSpotlightPath('nga');
     expect(assetPath).toMatch(
-      /^\/search-spotlights\/nga\/v26-[a-f0-9]{64}\.json$/
+      /^\/search-spotlights\/nga\/v27-[a-f0-9]{64}\.json$/
     );
     expect(loaded).toEqual(validBundle);
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -85,6 +85,40 @@ describe('search spotlight loading', () => {
     const digest = createHash('sha256').update(bytes).digest('hex');
 
     expect(assetPath.endsWith(`-${digest}.json`)).toBe(true);
+  });
+
+  it('preserves the v26 spotlight artwork order in the immutable v27 asset', async () => {
+    const assetPath = getSearchSpotlightPath('nga');
+    const previousPath = resolve(
+      process.cwd(),
+      'public/search-spotlights/nga/v26-5deef1c421c698dc8eb3ff8026bd410986c160f2ff3a826b5bafa32a5e5be79d.json'
+    );
+    const [previous, current] = await Promise.all([
+      readFile(previousPath, 'utf8').then((value) => JSON.parse(value)),
+      readFile(resolve(process.cwd(), 'public', assetPath.slice(1)), 'utf8').then(
+        (value) => JSON.parse(value)
+      ),
+    ]);
+
+    expect(current.contractVersion).toBe('27');
+    const { contractVersion: previousContractVersion, ...previousPayload } =
+      previous;
+    const { contractVersion: currentContractVersion, ...currentPayload } =
+      current;
+    expect(previousContractVersion).toBe('26');
+    expect(currentContractVersion).toBe('27');
+    expect(currentPayload).toEqual(previousPayload);
+    expect(
+      current.suggestions.map((suggestion: PublicSearchSpotlightBundle['suggestions'][number]) => ({
+        id: suggestion.id,
+        artworkIds: suggestion.artworks.map(({ id }) => id),
+      }))
+    ).toEqual(
+      previous.suggestions.map((suggestion: PublicSearchSpotlightBundle['suggestions'][number]) => ({
+        id: suggestion.id,
+        artworkIds: suggestion.artworks.map(({ id }) => id),
+      }))
+    );
   });
 
   it.each([
