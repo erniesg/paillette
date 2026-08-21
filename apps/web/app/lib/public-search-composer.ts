@@ -147,6 +147,12 @@ export const getEditorModeUpdate = (editorMode: EditorMode) => ({
   editorMode,
 });
 
+export const getSearchUrlStateKey = (
+  query: string,
+  facet: SearchFacet | null = null,
+  colour: string | null = null
+) => JSON.stringify([query, facet || '', colour || '']);
+
 export const deriveImageDraftConstraints = (
   submittedSearch: SubmittedSearch | null,
   interpretation?: PublicSearchInterpretation

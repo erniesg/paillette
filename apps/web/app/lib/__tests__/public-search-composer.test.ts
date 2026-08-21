@@ -12,6 +12,7 @@ import {
   deriveDisplayedSearchError,
   deriveImageDraftConstraints,
   getEditorModeUpdate,
+  getSearchUrlStateKey,
   getVisibleImagePreview,
   getPublicSearchErrorCopy,
   getSearchPresentation,
@@ -43,6 +44,26 @@ const completedText: SubmittedSearch = {
 };
 
 describe('public search composer ownership', () => {
+  it('gives programmatic URL targets the same stable identity as their arrival', () => {
+    const target = getSearchUrlStateKey(
+      'paintings before 1800',
+      'classification',
+      'navy'
+    );
+
+    expect(target).toBe(
+      getSearchUrlStateKey(
+        'paintings before 1800',
+        'classification',
+        'navy'
+      )
+    );
+    expect(target).not.toBe(
+      getSearchUrlStateKey('paintings before 1800', null, 'navy')
+    );
+    expect(getSearchUrlStateKey('', null, null)).toBe('["","",""]');
+  });
+
   it('keeps an image editor with no submission idle and non-querying', () => {
     const state = createSearchComposerState('image');
 

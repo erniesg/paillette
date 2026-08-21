@@ -98,6 +98,7 @@ import {
   deriveDisplayedSearchError,
   deriveImageDraftConstraints,
   getEditorModeUpdate,
+  getSearchUrlStateKey,
   getConstraintChips,
   getPublicSearchErrorCopy,
   getSearchPresentation,
@@ -1053,7 +1054,11 @@ export default function SearchPage() {
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const searchIntentGateRef = useRef(createSearchIntentGate());
   const previousUrlSearchStateRef = useRef(
-    `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`
+    getSearchUrlStateKey(
+      normalizedUrlQuery,
+      urlSearchFacet,
+      urlSearchColour
+    )
   );
   const searchReturnPath = `${location.pathname}${location.search}${location.hash}`;
   const searchRoutePath = `${publicRouteBasePath}/search`;
@@ -1224,6 +1229,23 @@ export default function SearchPage() {
     setIsPreparingImage(false);
   }, [applyImagePreviewTransition]);
 
+  const updateSearchUrl = useCallback(
+    (
+      query: string,
+      facet: SearchFacet | null = null,
+      colour: string | null = null,
+      options?: { replace?: boolean }
+    ) => {
+      previousUrlSearchStateRef.current = getSearchUrlStateKey(
+        query,
+        facet,
+        colour
+      );
+      setSearchParams(getSearchParamsForQuery(query, facet, colour), options);
+    },
+    [setSearchParams]
+  );
+
   useEffect(() => {
     setHasMounted(true);
   }, []);
@@ -1238,10 +1260,13 @@ export default function SearchPage() {
         ),
         { replace: true }
       );
-      return;
     }
 
-    const urlSearchState = `${normalizedUrlQuery}:${urlSearchFacet || ''}:${urlSearchColour || ''}`;
+    const urlSearchState = getSearchUrlStateKey(
+      normalizedUrlQuery,
+      urlSearchFacet,
+      urlSearchColour
+    );
     if (previousUrlSearchStateRef.current === urlSearchState) return;
 
     supersedePendingSearchIntent();
@@ -1668,8 +1693,7 @@ export default function SearchPage() {
           setSortMode('relevance');
           setIsBrowsingCollection(false);
           setShouldSearch(true);
-          previousUrlSearchStateRef.current = '::';
-          setSearchParams({}, { replace: true });
+          updateSearchUrl('', null, null, { replace: true });
         },
         onError: () => {
           applyImagePreviewTransition({ type: 'cancel-candidate' });
@@ -1688,10 +1712,10 @@ export default function SearchPage() {
       minScore,
       publicSearchOrgId,
       rejectImageSelection,
-      setSearchParams,
       stageImagePreviewCandidate,
       submittedSearch,
       topK,
+      updateSearchUrl,
     ]
   );
 
@@ -1754,7 +1778,7 @@ export default function SearchPage() {
     });
     setSubmittedImagePlan(null);
     setShouldSearch(true);
-    setSearchParams(getSearchParamsForQuery(normalized, facet));
+    updateSearchUrl(normalized, facet);
   };
 
   const clearSearch = () => {
@@ -1768,7 +1792,7 @@ export default function SearchPage() {
     setIsBrowsingCollection(false);
     setSubmittedSearch(null);
     setSubmittedImagePlan(null);
-    setSearchParams({}, { replace: true });
+    updateSearchUrl('', null, null, { replace: true });
   };
 
   const removeInterpretationConstraint = (
@@ -1789,7 +1813,7 @@ export default function SearchPage() {
       explicitConstraints: nextConstraints,
     });
     setShouldSearch(true);
-    setSearchParams(getSearchParamsForQuery(nextQuery, searchFacet));
+    updateSearchUrl(nextQuery, searchFacet);
   };
 
   const updateTextDraft = (value: string) => {
@@ -1845,13 +1869,7 @@ export default function SearchPage() {
       refinement: 'local-palette',
     });
     setShouldSearch(true);
-    setSearchParams(
-      getSearchParamsForQuery(
-        normalizedCommittedTextQuery,
-        searchFacet,
-        selection
-      )
-    );
+    updateSearchUrl(normalizedCommittedTextQuery, searchFacet, selection);
   };
 
   const clearColourSearch = () => {
@@ -1866,10 +1884,9 @@ export default function SearchPage() {
     if (normalizedCommittedTextQuery) {
       setSelectedArtwork(null);
       setShouldSearch(true);
-      setSearchParams(
-        getSearchParamsForQuery(normalizedCommittedTextQuery, searchFacet),
-        { replace: true }
-      );
+      updateSearchUrl(normalizedCommittedTextQuery, searchFacet, null, {
+        replace: true,
+      });
       return;
     }
 
@@ -1990,9 +2007,7 @@ export default function SearchPage() {
         refinement: 'local-palette',
       });
       setShouldSearch(true);
-      setSearchParams(
-        getSearchParamsForQuery(normalized, suggestionFacet, suggestionColour)
-      );
+      updateSearchUrl(normalized, suggestionFacet, suggestionColour);
       return;
     }
 
