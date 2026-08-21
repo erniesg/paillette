@@ -294,18 +294,23 @@ describe('public image search proxy', () => {
   });
 
   it.each([
-    [429, '23'],
-    [501, '41'],
+    [
+      429,
+      '23',
+      'text/html',
+      '<html><script>INTERNAL_HTML_SENTINEL</script></html>',
+    ],
+    [501, '41', 'text/plain', 'INTERNAL_TEXT_SENTINEL: provider stack'],
   ])(
-    'preserves non-JSON upstream %i responses with Retry-After and no-store',
-    async (status, retryAfter) => {
+    'synthesizes safe JSON for non-JSON upstream %i without disclosing its body',
+    async (status, retryAfter, contentType, upstreamBody) => {
       vi.stubGlobal(
         'fetch',
         vi.fn<typeof globalThis.fetch>(async () =>
-          new Response('upstream plain-text failure', {
+          new Response(upstreamBody, {
             status,
             headers: {
-              'Content-Type': 'text/plain',
+              'Content-Type': contentType,
               'Retry-After': retryAfter,
             },
           })
@@ -321,9 +326,18 @@ describe('public image search proxy', () => {
       expect(response.status).toBe(status);
       expect(response.headers.get('Cache-Control')).toBe('no-store');
       expect(response.headers.get('Retry-After')).toBe(retryAfter);
-      await expect(response.text()).resolves.toBe(
-        'upstream plain-text failure'
+      expect(response.headers.get('Content-Type')).toContain(
+        'application/json'
       );
+      const body = await response.text();
+      expect(body).not.toContain(upstreamBody);
+      expect(JSON.parse(body)).toEqual({
+        success: false,
+        error: {
+          code: 'PUBLIC_IMAGE_SEARCH_UPSTREAM_ERROR',
+          message: 'Public image search request failed.',
+        },
+      });
     }
   );
 

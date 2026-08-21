@@ -143,6 +143,9 @@ type RoutedSearchIntent =
   | 'formal_visual';
 
 type PublicImageSearchIdentityInput = {
+  version: 'public-image-search-v1';
+  contractVersion: typeof PUBLIC_SEARCH_CONTRACT_VERSION;
+  mode: 'image';
   imageDigest: string;
   orgId: string | undefined;
   provider: string | null;
@@ -165,9 +168,9 @@ export const buildPublicImageSearchIdentity = (
   input: PublicImageSearchIdentityInput
 ) =>
   JSON.stringify({
-    version: 'public-image-search-v1',
-    contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-    mode: 'image',
+    version: input.version,
+    contractVersion: input.contractVersion,
+    mode: input.mode,
     imageDigest: input.imageDigest,
     orgId: input.orgId,
     provider: input.provider,
@@ -2766,6 +2769,9 @@ searchRoutes.post('/search/image', async (c) => {
           c.req.header('X-Forwarded-For')
         ),
         searchIdentity: buildPublicImageSearchIdentity({
+          version: 'public-image-search-v1',
+          contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
+          mode: 'image',
           imageDigest,
           orgId,
           provider: provider || null,

@@ -3104,6 +3104,9 @@ describe('Search API auth and quota behavior', () => {
     if (!buildIdentity) return;
 
     const base = {
+      version: 'public-image-search-v1',
+      contractVersion: '27',
+      mode: 'image',
       imageDigest: 'a'.repeat(64),
       orgId: 'open-access-art',
       provider: 'nga',
@@ -3139,30 +3142,71 @@ describe('Search API auth and quota behavior', () => {
 
     expect(buildIdentity(canonicalEquivalent)).toBe(identity);
 
-    const mutations = [
-      { ...base, imageDigest: 'b'.repeat(64) },
-      {
-        ...base,
-        constraints: { ...base.constraints, classifications: ['Drawing'] },
-      },
-      {
-        ...base,
-        embedding: { ...base.embedding, model: 'jina-clip-v3' },
-      },
-      {
-        ...base,
-        embedding: { ...base.embedding, dimensions: 768 },
-      },
-      { ...base, index: { version: 'v2', binding: 'VECTORIZE_V2' } },
-      { ...base, orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05' },
-      { ...base, provider: null },
-      { ...base, topK: 31 },
-      { ...base, minScore: 0.1 },
+    const mutations: Array<[string, Record<string, unknown>]> = [
+      ['identity version', { ...base, version: 'public-image-search-v2' }],
+      ['contract version', { ...base, contractVersion: '28' }],
+      ['mode', { ...base, mode: 'image-alternate' }],
+      ['image bytes digest', { ...base, imageDigest: 'b'.repeat(64) }],
+      [
+        'canonical constraints',
+        {
+          ...base,
+          constraints: { ...base.constraints, classifications: ['Drawing'] },
+        },
+      ],
+      [
+        'embedding provider',
+        {
+          ...base,
+          embedding: { ...base.embedding, provider: 'alternate' },
+        },
+      ],
+      [
+        'embedding endpoint',
+        {
+          ...base,
+          embedding: {
+            ...base.embedding,
+            endpoint: 'https://embedding.example/v2/embeddings',
+          },
+        },
+      ],
+      [
+        'embedding model',
+        {
+          ...base,
+          embedding: { ...base.embedding, model: 'jina-clip-v3' },
+        },
+      ],
+      [
+        'embedding dimensions',
+        {
+          ...base,
+          embedding: { ...base.embedding, dimensions: 768 },
+        },
+      ],
+      [
+        'index version',
+        { ...base, index: { ...base.index, version: 'v2' } },
+      ],
+      [
+        'index binding',
+        { ...base, index: { ...base.index, binding: 'VECTORIZE_V2' } },
+      ],
+      [
+        'resolved org',
+        { ...base, orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05' },
+      ],
+      ['provider scope', { ...base, provider: null }],
+      ['topK', { ...base, topK: 31 }],
+      ['minScore', { ...base, minScore: 0.1 }],
     ];
 
-    expect(new Set(mutations.map(buildIdentity)).size).toBe(mutations.length);
-    for (const mutatedIdentity of mutations.map(buildIdentity)) {
-      expect(mutatedIdentity).not.toBe(identity);
+    expect(
+      new Set(mutations.map(([, mutation]) => buildIdentity(mutation))).size
+    ).toBe(mutations.length);
+    for (const [label, mutation] of mutations) {
+      expect.soft(buildIdentity(mutation), label).not.toBe(identity);
     }
   });
 

@@ -203,23 +203,25 @@ export const action = async ({
     );
   }
 
-  const responseForNonJson = response.clone();
   let payload: ApiResponse<SearchResponse>;
   try {
     payload = (await response.json()) as ApiResponse<SearchResponse>;
   } catch {
     if (!response.ok) {
       const responseHeaders = new Headers();
-      const contentType = response.headers.get('Content-Type');
       const retryAfter = response.headers.get('Retry-After');
-      if (contentType) responseHeaders.set('Content-Type', contentType);
       if (retryAfter) responseHeaders.set('Retry-After', retryAfter);
-      responseHeaders.set('Cache-Control', NO_STORE);
-      return new Response(responseForNonJson.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-      });
+      return noStoreJson<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_IMAGE_SEARCH_UPSTREAM_ERROR',
+            message: 'Public image search request failed.',
+          },
+        },
+        response.status,
+        responseHeaders
+      );
     }
     return noStoreJson<ApiResponse>(
       {
