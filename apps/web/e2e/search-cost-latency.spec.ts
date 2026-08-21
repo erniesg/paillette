@@ -24,15 +24,13 @@ const spotlightBundle = {
   requestDefaults: { topK: 30, minScore: 0.2 },
   suggestions: NGA_SPOTLIGHT_DEFINITIONS.map((definition) => ({
     ...definition,
-    artworks: [1, 2, 3, 4].map((index) =>
-      card(`${definition.id}-${index}`)
-    ),
+    artworks: [1, 2, 3, 4].map((index) => card(`${definition.id}-${index}`)),
   })),
 };
 
 type CapturedSearch = {
   url: string;
-  body: Record<string, unknown>;
+  body: Record<string, unknown> | string;
 };
 
 const searchResult = (
@@ -54,7 +52,11 @@ const searchResult = (
 
 const installSearchHarness = async (
   page: Page,
-  results: ReturnType<typeof searchResult>[] = []
+  results: ReturnType<typeof searchResult>[] = [],
+  interpretation?: {
+    constraints: Record<string, unknown>;
+    semanticQuery: string;
+  }
 ) => {
   const searches: CapturedSearch[] = [];
   const spotlightRequests: string[] = [];
@@ -65,14 +67,33 @@ const installSearchHarness = async (
   });
   await page.route('**/api/public-search/**', async (route) => {
     const request = route.request();
+    const contentType = request.headers()['content-type'] || '';
     searches.push({
       url: request.url(),
-      body: request.postDataJSON() as Record<string, unknown>,
+      body: contentType.includes('application/json')
+        ? (request.postDataJSON() as Record<string, unknown>)
+        : request.postData() || '',
     });
     await route.fulfill({
       json: {
         success: true,
-        data: { results, count: results.length, queryTime: 1 },
+        data: {
+          results,
+          count: results.length,
+          queryTime: 1,
+          ...(request.url().endsWith('/text') && interpretation
+            ? {
+                interpretation: {
+                  parserVersion: 'nga-v5',
+                  originalQuery: interpretation.semanticQuery,
+                  semanticQuery: interpretation.semanticQuery,
+                  constraints: interpretation.constraints,
+                  corrections: [],
+                  unresolved: [],
+                },
+              }
+            : {}),
+        },
       },
     });
   });
@@ -186,5 +207,181 @@ test('changing or clearing colour on an existing text query only reranks fetched
   expect(searches).toHaveLength(1);
 
   await page.getByRole('button', { name: 'Clear Rust colour target' }).click();
+  expect(searches).toHaveLength(1);
+});
+
+test('passive Image editor is accessible and performs no public search', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page);
+  await openNgaSearchPage(page);
+
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+
+  await expect(
+    page.getByRole('button', { name: 'Image search mode' })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    page.getByRole('button', { name: 'Choose image' })
+  ).toBeVisible();
+  await expect(page.getByText(/JPEG, PNG, or WebP/)).toBeVisible();
+  await expect(page.getByText(/10 MiB/)).toBeVisible();
+  await expect(
+    page.getByLabel('Image for visual artwork search')
+  ).toHaveAttribute('aria-describedby');
+  await expect(page.getByText(/No artworks found|No works|Ready/)).toHaveCount(
+    0
+  );
+  await expect(
+    page.getByRole('button', { name: 'Search settings' })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Choose another suggestion' })
+  ).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(searches).toHaveLength(0);
+});
+
+test('editing Image preserves completed Text results until upload', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [
+    searchResult('painting', 'Preserved painting', ['#1a2f52'], 0.91),
+  ]);
+  await openNgaSearchPage(page);
+  await page
+    .getByPlaceholder('search by feeling, era, subject...')
+    .fill('paintings before 1800');
+  await page.getByRole('button', { name: 'Search text' }).click();
+  await expect(
+    page.getByText('Preserved painting', { exact: true })
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+
+  await expect(
+    page.getByText('Preserved painting', { exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByText('Showing Text results until an image is uploaded.')
+  ).toBeVisible();
+  expect(searches).toHaveLength(1);
+});
+
+test('upload submits exactly one digest-owned image request without semantic text', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(
+    page,
+    [searchResult('visual', 'Visual match', ['#1a2f52'], 0.91)],
+    {
+      semanticQuery: 'paintings',
+      constraints: {
+        dateRange: { startYear: 1700, endYear: 1799 },
+        classifications: ['Painting'],
+        mediumFamilies: ['oil'],
+      },
+    }
+  );
+  await openNgaSearchPage(page);
+  await page
+    .getByPlaceholder('search by feeling, era, subject...')
+    .fill('oil paintings before 1800');
+  await page.getByRole('button', { name: 'Search text' }).click();
+  await expect.poll(() => searches.length).toBe(1);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  await expect(page.getByText('Filters kept for image search')).toBeVisible();
+
+  await page.getByLabel('Image for visual artwork search').setInputFiles({
+    name: 'query.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 1, 2, 3, 4]),
+  });
+
+  await expect
+    .poll(() => searches.filter(({ url }) => url.endsWith('/image')).length)
+    .toBe(1);
+  const imageSearch = searches.find(({ url }) => url.endsWith('/image'));
+  expect(imageSearch?.body).toContain(
+    '{"dateRange":{"startYear":1700,"endYear":1799},"classifications":["Painting"],"mediumFamilies":["oil"]}'
+  );
+  expect(imageSearch?.body).not.toContain('oil paintings before 1800');
+  await expect(page.getByText('Visual match', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Replace image' })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Remove image' })
+  ).toBeVisible();
+});
+
+test('same filename with changed bytes submits a new image query', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page);
+  await openNgaSearchPage(page);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  const input = page.getByLabel('Image for visual artwork search');
+
+  await input.setInputFiles({
+    name: 'same.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 1]),
+  });
+  await expect.poll(() => searches.length).toBe(1);
+  await input.setInputFiles({
+    name: 'same.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 2]),
+  });
+
+  await expect.poll(() => searches.length).toBe(2);
+});
+
+test('image upload rejection preserves results and reports an accessible error', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [
+    searchResult('painting', 'Preserved painting', ['#1a2f52'], 0.91),
+  ]);
+  await openNgaSearchPage(page);
+  await page
+    .getByPlaceholder('search by feeling, era, subject...')
+    .fill('paintings');
+  await page.getByRole('button', { name: 'Search text' }).click();
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+
+  await page.getByLabel('Image for visual artwork search').setInputFiles({
+    name: 'empty.png',
+    mimeType: 'image/png',
+    buffer: Buffer.alloc(0),
+  });
+
+  await expect(page.getByRole('alert')).toContainText('must not be empty');
+  await expect(
+    page.getByText('Preserved painting', { exact: true })
+  ).toBeVisible();
+  expect(searches).toHaveLength(1);
+});
+
+test('Colour over image results is visibly local and performs no request', async ({
+  page,
+}) => {
+  const { searches } = await installSearchHarness(page, [
+    searchResult('visual', 'Visual match', ['#1a2f52'], 0.91),
+  ]);
+  await openNgaSearchPage(page);
+  await page.getByRole('button', { name: 'Image search mode' }).click();
+  await page.getByLabel('Image for visual artwork search').setInputFiles({
+    name: 'query.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 1]),
+  });
+  await expect.poll(() => searches.length).toBe(1);
+
+  await page.getByRole('button', { name: 'Colour search mode' }).click();
+  await page.getByTitle('Navy').click();
+
+  await expect(page.getByText('Palette order: Navy')).toBeVisible();
   expect(searches).toHaveLength(1);
 });

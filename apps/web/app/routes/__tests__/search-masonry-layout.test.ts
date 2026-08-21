@@ -8,6 +8,12 @@ import {
   shouldObserveMasonryColumnEnds,
 } from '../galleries.$galleryId.search';
 import type { ArtworkSearchResult } from '~/types';
+import {
+  createSearchComposerState,
+  getSearchPresentation,
+  selectEditorMode,
+  type SubmittedSearch,
+} from '~/lib/public-search-composer';
 
 const artwork = (
   metadata: ArtworkSearchResult['metadata'] = {}
@@ -117,6 +123,38 @@ describe('composable colour refinement', () => {
       q: 'Painting',
       field: 'classification',
       colour: 'navy',
+    });
+  });
+});
+
+describe('progressive search layout state', () => {
+  const submittedText: SubmittedSearch = {
+    kind: 'text',
+    query: 'paintings',
+    facet: 'classification',
+  };
+
+  it('does not mount result controls or an empty state for a passive image editor', () => {
+    expect(
+      getSearchPresentation(createSearchComposerState('image'))
+    ).toMatchObject({
+      hasActiveSearch: false,
+      showResultControls: false,
+      showEmptyState: false,
+    });
+  });
+
+  it('keeps result controls mounted for the prior owner while image is only edited', () => {
+    const state = selectEditorMode(
+      createSearchComposerState('text', submittedText),
+      'image'
+    );
+
+    expect(getSearchPresentation(state)).toMatchObject({
+      hasActiveSearch: true,
+      owner: 'text',
+      showResultControls: true,
+      ownershipNotice: 'Showing Text results until an image is uploaded.',
     });
   });
 });

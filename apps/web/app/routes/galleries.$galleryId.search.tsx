@@ -85,6 +85,22 @@ import {
 } from '~/lib/zhongzheng-ascii';
 import { buildSearchResultSections } from '~/lib/search-result-sections';
 import { buildPublicTextSearchPlan } from '~/lib/public-text-search-plan';
+import {
+  buildPublicImageSearchPlan,
+  type PublicImageSearchPlan,
+} from '~/lib/public-image-search-plan';
+import {
+  getConstraintChips,
+  getSubmittedConstraintChips,
+  getSubmittedSearchSummary,
+  removeConstraintChip,
+  snapshotAcceptedConstraints,
+  updateImageObjectUrl,
+  validateImageSelection,
+  type EditorMode,
+  type SearchFacet,
+  type SubmittedSearch,
+} from '~/lib/public-search-composer';
 import type { PublicSearchConstraints } from '@paillette/types/public-search-core';
 import {
   getCachedCandidatePaletteColourDistance,
@@ -139,8 +155,6 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   });
 }
 
-type SearchMode = 'text' | 'image' | 'colour';
-type SearchFacet = 'artist' | 'classification';
 type PublicSearchUsageContext = {
   mode?: 'text' | 'colour';
   colours?: string[];
@@ -820,10 +834,39 @@ const sortResults = (
 const readSearchResponse = async (response: Response) => {
   const payload = (await response.json()) as ApiResponse<SearchResponse>;
   if (!payload.success || !payload.data) {
-    throw new Error(payload.error?.message || 'Search failed');
+    throw new PublicSearchRequestError(
+      payload.error?.message || 'Search failed',
+      response.status,
+      payload.error?.code
+    );
   }
 
   return payload.data;
+};
+
+class PublicSearchRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string
+  ) {
+    super(message);
+    this.name = 'PublicSearchRequestError';
+  }
+}
+
+const getSearchErrorCopy = (error: unknown, mode: 'text' | 'image') => {
+  const fallback =
+    mode === 'image' ? 'Visual search failed.' : 'Search failed.';
+  if (!(error instanceof PublicSearchRequestError)) return fallback;
+  if (error.status === 400) return error.message;
+  if (error.status === 429) {
+    return `${mode === 'image' ? 'Visual search' : 'Search'} is busy right now. Wait a moment, then try again.`;
+  }
+  if (error.status === 502 || error.status === 503) {
+    return `${mode === 'image' ? 'Visual search' : 'Search'} is temporarily unavailable. Try again shortly.`;
+  }
+  return error.message || fallback;
 };
 
 const publicSearchText = async (
@@ -857,8 +900,12 @@ const publicSearchImage = async (
 ): Promise<SearchResponse> => {
   const body = new FormData();
   body.set('image', request.image);
-  if (request.topK) body.set('topK', String(request.topK));
-  if (request.minScore) body.set('minScore', String(request.minScore));
+  if (request.topK !== undefined) body.set('topK', String(request.topK));
+  if (request.minScore !== undefined)
+    body.set('minScore', String(request.minScore));
+  if (request.constraints !== undefined) {
+    body.set('constraints', JSON.stringify(request.constraints));
+  }
 
   const response = await fetch(
     `/api/public-search/${encodeURIComponent(orgId)}/image`,
@@ -940,19 +987,39 @@ export default function SearchPage() {
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
   const urlSearchColour = getSearchColour(searchParams.get('colour'));
 
-  const [searchMode, setSearchMode] = useState<SearchMode>(
+  const [editorMode, setEditorMode] = useState<EditorMode>(
     urlSearchColour ? 'colour' : 'text'
   );
   const [textQuery, setTextQuery] = useState(normalizedUrlQuery);
   const [committedTextQuery, setCommittedTextQuery] =
     useState(normalizedUrlQuery);
-  const [explicitConstraints, setExplicitConstraints] =
-    useState<PublicSearchConstraints | undefined>(undefined);
   const [searchFacet, setSearchFacet] = useState<SearchFacet | null>(
     urlSearchFacet
   );
+  const [submittedSearch, setSubmittedSearch] =
+    useState<SubmittedSearch | null>(() => {
+      if (urlSearchColour) {
+        return {
+          kind: 'colour',
+          query: normalizedUrlQuery || getColourSearchText(urlSearchColour),
+          facet: urlSearchFacet,
+          colour: urlSearchColour,
+          refinement: 'local-palette',
+        };
+      }
+      return normalizedUrlQuery
+        ? { kind: 'text', query: normalizedUrlQuery, facet: urlSearchFacet }
+        : null;
+    });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageDraftConstraints, setImageDraftConstraints] = useState<
+    PublicSearchConstraints | undefined
+  >(undefined);
+  const [submittedImagePlan, setSubmittedImagePlan] =
+    useState<PublicImageSearchPlan | null>(null);
+  const [isPreparingImage, setIsPreparingImage] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [searchColours, setSearchColours] = useState<string[]>(
     urlSearchColour ? [urlSearchColour] : []
   );
@@ -978,6 +1045,8 @@ export default function SearchPage() {
   const [hasMounted, setHasMounted] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const colourRailRef = useRef<HTMLDivElement | null>(null);
+  const uploaderActionRef = useRef<HTMLButtonElement | null>(null);
+  const imagePreviewRef = useRef<string | null>(null);
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
@@ -994,39 +1063,30 @@ export default function SearchPage() {
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
   const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
   const activeSearchColour =
-    searchMode === 'colour' ? searchColours[0] || null : null;
+    submittedSearch?.kind === 'colour' ? submittedSearch.colour : null;
   const activeColourQuery = activeSearchColour
     ? getColourSearchText(activeSearchColour)
     : '';
+  const submittedTextOwner =
+    submittedSearch?.kind === 'text' || submittedSearch?.kind === 'colour'
+      ? submittedSearch
+      : null;
   const textSearchPlan = useMemo(
     () =>
       buildPublicTextSearchPlan({
         orgId: publicSearchOrgId,
-        facet: searchFacet,
-        committedTextQuery: normalizedCommittedTextQuery,
+        facet: submittedTextOwner?.facet || null,
+        committedTextQuery: submittedTextOwner?.query || '',
         colourQuery: activeColourQuery,
         topK,
         minScore,
-        constraints: explicitConstraints,
+        constraints: submittedTextOwner?.explicitConstraints,
       }),
-    [
-      activeColourQuery,
-      explicitConstraints,
-      minScore,
-      normalizedCommittedTextQuery,
-      publicSearchOrgId,
-      searchFacet,
-      topK,
-    ]
+    [activeColourQuery, minScore, publicSearchOrgId, submittedTextOwner, topK]
   );
-  const primaryTextSearchQuery = textSearchPlan?.request.query || '';
-  const hasCommittedTextSearch =
-    shouldSearch &&
-    primaryTextSearchQuery.length > 0 &&
-    (searchMode === 'text' || searchMode === 'colour');
   const canSubmitTextSearch = normalizedTextQuery.length > 0;
   const hasUncommittedInitialText =
-    searchMode === 'text' &&
+    editorMode === 'text' &&
     normalizedTextQuery.length > 0 &&
     normalizedCommittedTextQuery.length === 0;
 
@@ -1052,12 +1112,7 @@ export default function SearchPage() {
     setDisplayIdleSuggestion(null);
   }, [suggestionPool.length]);
 
-  const hasActiveSearch =
-    isBrowsingCollection ||
-    hasCommittedTextSearch ||
-    searchMode !== 'text' ||
-    imageFile !== null ||
-    searchColours.length > 0;
+  const hasActiveSearch = isBrowsingCollection || submittedSearch !== null;
   const activeSearchSummary = useMemo<ActiveSearchSummary | null>(() => {
     if (isBrowsingCollection) {
       if (shouldSearch && normalizedCommittedTextQuery) {
@@ -1077,53 +1132,28 @@ export default function SearchPage() {
       };
     }
 
-    if (searchMode === 'image' && imageFile) {
-      return {
-        type: 'image',
-        label: imageFile.name || 'uploaded image',
-        detail: 'visual search',
-        dot: '#7dd3fc',
-      };
-    }
-
-    if (searchMode === 'colour' && searchColours.length) {
-      const selectedColourId = searchColours[0];
-      if (!selectedColourId) return null;
-
-      const colour = getSelectedColour(selectedColourId);
-      const label = colour?.name || getColourSearchText(selectedColourId);
-      const baseLabel = committedTextQuery.trim();
-
-      return {
-        type: baseLabel ? `${searchFacet || 'text'} + colour` : 'colour',
-        label: baseLabel ? `${baseLabel} + ${label}` : label,
-        detail: baseLabel ? 'combined refinement' : undefined,
-        dot: colour?.hex || '#d946ef',
-      };
-    }
-
-    if (
-      (searchMode === 'text' || searchMode === 'colour') &&
-      shouldSearch &&
-      normalizedCommittedTextQuery
-    ) {
-      return {
-        type: searchFacet || 'text',
-        label: committedTextQuery,
-        dot: '#d946ef',
-      };
-    }
-
-    return null;
+    const summary = getSubmittedSearchSummary(submittedSearch);
+    if (!summary) return null;
+    const orderedColour = sortColours[0];
+    const palette = orderedColour ? getSelectedColour(orderedColour) : null;
+    return {
+      ...summary,
+      ...(orderedColour
+        ? { detail: `Palette order: ${palette?.name || orderedColour}` }
+        : {}),
+      dot:
+        submittedSearch?.kind === 'image'
+          ? '#7dd3fc'
+          : palette?.hex || '#d946ef',
+    };
   }, [
-    imageFile,
     isBrowsingCollection,
-    searchColours,
-    searchMode,
     shouldSearch,
     searchFacet,
     committedTextQuery,
     normalizedCommittedTextQuery,
+    sortColours,
+    submittedSearch,
   ]);
   const getCurrentReturnTo = () =>
     `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -1161,21 +1191,36 @@ export default function SearchPage() {
     setSelectedArtwork(null);
     setTextQuery(normalizedUrlQuery);
     setCommittedTextQuery(normalizedUrlQuery);
-    setExplicitConstraints(undefined);
     setSearchFacet(urlSearchFacet);
     setSearchColours(urlSearchColour ? [urlSearchColour] : []);
     setSortColours(urlSearchColour ? [urlSearchColour] : []);
-    setSearchMode(urlSearchColour ? 'colour' : 'text');
+    setEditorMode(urlSearchColour ? 'colour' : 'text');
     setSortMode(urlSearchColour ? 'colour' : 'relevance');
     setShouldSearch(Boolean(normalizedUrlQuery || urlSearchColour));
     setIsBrowsingCollection(false);
+    setSubmittedSearch(
+      urlSearchColour
+        ? {
+            kind: 'colour',
+            query: normalizedUrlQuery || getColourSearchText(urlSearchColour),
+            facet: urlSearchFacet,
+            colour: urlSearchColour,
+            refinement: 'local-palette',
+          }
+        : normalizedUrlQuery
+          ? {
+              kind: 'text',
+              query: normalizedUrlQuery,
+              facet: urlSearchFacet,
+            }
+          : null
+    );
 
     if (!normalizedUrlQuery && !urlSearchColour) {
       setImageFile(null);
-      setImagePreview(null);
       setSearchColours([]);
       setSortColours([]);
-      setSearchMode('text');
+      setEditorMode('text');
       setSortMode('relevance');
       setSearchFacet(null);
     }
@@ -1186,6 +1231,20 @@ export default function SearchPage() {
     urlSearchColour,
     urlSearchFacet,
   ]);
+
+  const replaceImagePreview = useCallback((file: File | null) => {
+    const nextPreview = updateImageObjectUrl(imagePreviewRef.current, file);
+    imagePreviewRef.current = nextPreview;
+    setImagePreview(nextPreview);
+  }, []);
+
+  useEffect(
+    () => () => {
+      updateImageObjectUrl(imagePreviewRef.current, null);
+      imagePreviewRef.current = null;
+    },
+    []
+  );
 
   const textSearchQuery = useQuery({
     queryKey: canSearchOnPage
@@ -1198,17 +1257,17 @@ export default function SearchPage() {
         publicSearchOrgId,
         textSearchPlan.request,
         {
-          mode: searchMode === 'colour' ? 'colour' : 'text',
+          mode: submittedSearch?.kind === 'colour' ? 'colour' : 'text',
           colours: searchColours,
-          facet: searchFacet || undefined,
+          facet: submittedTextOwner?.facet || undefined,
         },
         signal
       );
     },
     enabled:
       hasMounted &&
-      (searchMode === 'text' || searchMode === 'colour') &&
-      shouldSearch &&
+      (submittedSearch?.kind === 'text' ||
+        submittedSearch?.kind === 'colour') &&
       Boolean(textSearchPlan) &&
       canSearchOnPage,
     retry: false,
@@ -1218,33 +1277,25 @@ export default function SearchPage() {
 
   const imageSearchQuery = useQuery({
     queryKey: canSearchOnPage
-      ? [
-          'search',
-          'image',
-          publicSearchOrgId,
-          imageFile?.name,
-          topK,
-          minScore,
-        ]
+      ? submittedImagePlan?.queryKey ||
+        (['search', 'image', 'disabled', publicSearchOrgId] as const)
       : (['search', 'image', 'locked', publicSearchOrgId] as const),
     queryFn: async ({ signal }) => {
-      if (!imageFile) return null;
+      if (!submittedImagePlan) return null;
       return publicSearchImage(
         publicSearchOrgId,
-        {
-          image: imageFile,
-          topK,
-          minScore,
-        },
+        submittedImagePlan.request,
         signal
       );
     },
     enabled:
       hasMounted &&
-      searchMode === 'image' &&
-      shouldSearch &&
-      imageFile !== null &&
+      submittedSearch?.kind === 'image' &&
+      submittedImagePlan !== null &&
       canSearchOnPage,
+    retry: false,
+    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
   });
 
   const browseSort = useMemo(() => getBrowseSort(sortMode), [sortMode]);
@@ -1291,7 +1342,7 @@ export default function SearchPage() {
   });
 
   const currentQuery =
-    searchMode === 'image' ? imageSearchQuery : textSearchQuery;
+    submittedSearch?.kind === 'image' ? imageSearchQuery : textSearchQuery;
   const rankedRawResults = currentQuery.data?.results || [];
   const browseRawResults =
     browseQuery.data?.pages.flatMap((page) => page.results) || [];
@@ -1454,9 +1505,8 @@ export default function SearchPage() {
     setVisibleCount(SEARCH_DISPLAY_INCREMENT);
   }, [
     galleryId,
-    imageFile?.name,
+    submittedSearch?.kind === 'image' ? submittedSearch.digest : null,
     minScore,
-    searchMode,
     sortMode,
     sortColours,
     committedTextQuery,
@@ -1495,24 +1545,93 @@ export default function SearchPage() {
     loadMoreResults,
   ]);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (isNgsSearchLocked) return;
-
-    const file = acceptedFiles[0];
-    if (file) {
-      setSelectedArtwork(null);
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
-      setSearchMode('image');
-      setSearchColours([]);
-      setSearchFacet(null);
-      setIsBrowsingCollection(false);
-      setShouldSearch(true);
-    }
+  const rejectImageSelection = useCallback((message: string) => {
+    setImageUploadError(message);
+    window.requestAnimationFrame(() => uploaderActionRef.current?.focus());
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const onDrop = useCallback(
+    async (acceptedFiles: File[]) => {
+      if (isNgsSearchLocked || isPreparingImage) return;
+      const validation = validateImageSelection(acceptedFiles);
+      if (!validation.ok) {
+        rejectImageSelection(validation.message);
+        return;
+      }
+
+      const file = validation.file;
+      setImageUploadError(null);
+      setIsPreparingImage(true);
+      setImageFile(file);
+      replaceImagePreview(file);
+      try {
+        const plan = await buildPublicImageSearchPlan({
+          orgId: publicSearchOrgId,
+          image: file,
+          topK,
+          minScore,
+          constraints: snapshotAcceptedConstraints(imageDraftConstraints),
+        });
+        setSelectedArtwork(null);
+        setSubmittedImagePlan(plan);
+        setSubmittedSearch({
+          kind: 'image',
+          file,
+          digest: plan.digest,
+          constraints: snapshotAcceptedConstraints(plan.request.constraints),
+          displayName: file.name || 'uploaded image',
+        });
+        setEditorMode('image');
+        setSearchColours([]);
+        setSortColours([]);
+        setSortMode('relevance');
+        setIsBrowsingCollection(false);
+        setShouldSearch(true);
+        previousUrlSearchStateRef.current = '::';
+        setSearchParams({}, { replace: true });
+      } catch {
+        if (submittedSearch?.kind === 'image') {
+          setImageFile(submittedSearch.file);
+          replaceImagePreview(submittedSearch.file);
+        }
+        rejectImageSelection(
+          'The image could not be read. Choose the file again or try another image.'
+        );
+      } finally {
+        setIsPreparingImage(false);
+      }
+    },
+    [
+      imageDraftConstraints,
+      isNgsSearchLocked,
+      isPreparingImage,
+      minScore,
+      publicSearchOrgId,
+      rejectImageSelection,
+      replaceImagePreview,
+      setSearchParams,
+      submittedSearch,
+      topK,
+    ]
+  );
+
+  const {
+    getRootProps,
+    getInputProps,
+    isDragActive,
+    open: openImagePicker,
+  } = useDropzone({
     onDrop,
+    onDropRejected: (rejections) => {
+      const code = rejections[0]?.errors[0]?.code;
+      if (code === 'too-many-files') {
+        rejectImageSelection('Choose exactly one image.');
+      } else if (code === 'file-too-large') {
+        rejectImageSelection('Image must be 10 MiB or smaller.');
+      } else {
+        rejectImageSelection('Image must be a JPEG, PNG, or WebP file.');
+      }
+    },
     disabled: isNgsSearchLocked,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
@@ -1520,6 +1639,9 @@ export default function SearchPage() {
       'image/webp': ['.webp'],
     },
     maxFiles: 1,
+    maxSize: 10 * 1024 * 1024,
+    multiple: false,
+    noClick: true,
   });
 
   const runTextSearch = (
@@ -1538,12 +1660,17 @@ export default function SearchPage() {
 
     setSelectedArtwork(null);
     setIsBrowsingCollection(false);
-    setSearchMode('text');
+    setEditorMode('text');
     setSearchColours([]);
     setTextQuery(normalized);
     setCommittedTextQuery(normalized);
-    setExplicitConstraints(undefined);
     setSearchFacet(facet);
+    setSubmittedSearch({
+      kind: 'text',
+      query: normalized,
+      facet,
+    });
+    setSubmittedImagePlan(null);
     setShouldSearch(true);
     setSearchParams(getSearchParamsForQuery(normalized, facet));
   };
@@ -1552,10 +1679,11 @@ export default function SearchPage() {
     setSelectedArtwork(null);
     setTextQuery('');
     setCommittedTextQuery('');
-    setExplicitConstraints(undefined);
     setSearchFacet(null);
     setShouldSearch(false);
     setIsBrowsingCollection(false);
+    setSubmittedSearch(null);
+    setSubmittedImagePlan(null);
     setSearchParams({}, { replace: true });
   };
 
@@ -1567,9 +1695,14 @@ export default function SearchPage() {
     const nextConstraints = { ...interpretation.constraints };
     delete nextConstraints[key];
     const nextQuery = interpretation.semanticQuery || 'art';
-    setExplicitConstraints(nextConstraints);
     setTextQuery(nextQuery);
     setCommittedTextQuery(nextQuery);
+    setSubmittedSearch({
+      kind: 'text',
+      query: nextQuery,
+      facet: searchFacet,
+      explicitConstraints: nextConstraints,
+    });
     setShouldSearch(true);
     setSearchParams(getSearchParamsForQuery(nextQuery, searchFacet));
   };
@@ -1577,20 +1710,15 @@ export default function SearchPage() {
   const updateTextDraft = (value: string) => {
     setTextQuery(value);
     setSearchFacet(null);
-
-    if (value.trim()) return;
-
-    setCommittedTextQuery('');
-    setShouldSearch(false);
-    setIsBrowsingCollection(false);
-    setSearchParams({}, { replace: true });
   };
 
   const resetSearchHome = () => {
     clearSearch();
-    setSearchMode('text');
+    setEditorMode('text');
     setImageFile(null);
-    setImagePreview(null);
+    replaceImagePreview(null);
+    setImageDraftConstraints(undefined);
+    setImageUploadError(null);
     setSearchColours([]);
     setSortColours([]);
     setSortMode('relevance');
@@ -1599,10 +1727,15 @@ export default function SearchPage() {
   const clearImage = () => {
     setSelectedArtwork(null);
     setImageFile(null);
-    setImagePreview(null);
+    replaceImagePreview(null);
+    setImageUploadError(null);
     setSearchFacet(null);
-    setShouldSearch(false);
     setIsBrowsingCollection(false);
+    if (submittedSearch?.kind === 'image') {
+      setSubmittedSearch(null);
+      setSubmittedImagePlan(null);
+      setShouldSearch(false);
+    }
   };
 
   const selectColourSearch = (selection: string) => {
@@ -1610,11 +1743,24 @@ export default function SearchPage() {
     if (!getColourSearchText(selection)) return;
 
     setSelectedArtwork(null);
-    setSearchMode('colour');
+    setEditorMode('colour');
     setIsBrowsingCollection(false);
     setSearchColours([selection]);
     setSortColours([selection]);
     setSortMode('colour');
+    if (submittedSearch) return;
+
+    const query =
+      normalizedCommittedTextQuery || getColourSearchText(selection);
+    setTextQuery(query);
+    setCommittedTextQuery(query);
+    setSubmittedSearch({
+      kind: 'colour',
+      query,
+      facet: searchFacet,
+      colour: selection,
+      refinement: 'local-palette',
+    });
     setShouldSearch(true);
     setSearchParams(
       getSearchParamsForQuery(
@@ -1629,7 +1775,9 @@ export default function SearchPage() {
     setSearchColours([]);
     setSortColours([]);
     setSortMode('relevance');
-    setSearchMode('text');
+    setEditorMode(submittedSearch?.kind === 'image' ? 'image' : 'text');
+
+    if (submittedSearch && submittedSearch.kind !== 'colour') return;
 
     if (normalizedCommittedTextQuery) {
       setSelectedArtwork(null);
@@ -1657,7 +1805,7 @@ export default function SearchPage() {
 
   const runColourSearch = (selection: string) => {
     if (isNgsSearchLocked) return;
-    const active = searchMode === 'colour' && searchColours.includes(selection);
+    const active = editorMode === 'colour' && searchColours.includes(selection);
     if (active) {
       clearColourSearch();
       return;
@@ -1684,13 +1832,13 @@ export default function SearchPage() {
 
   const updateCustomColour = (hex: string) => {
     setCustomColour(hex);
-    if (searchMode === 'colour') {
+    if (editorMode === 'colour') {
       selectColourSearch(`custom:${hex}`);
     }
   };
 
   const useArtworkPaletteColour = (hex: string) => {
-    if (searchMode === 'colour') {
+    if (editorMode === 'colour') {
       updateCustomColour(hex);
       revealColourRail();
       return;
@@ -1700,8 +1848,8 @@ export default function SearchPage() {
     revealColourRail();
   };
 
-  const showColourRail = searchMode === 'colour' || sortMode === 'colour';
-  const colourRailIsSearch = searchMode === 'colour';
+  const showColourRail = editorMode === 'colour' || sortMode === 'colour';
+  const colourRailIsSearch = editorMode === 'colour';
 
   const runEvalSearch = (suggestion: EvalSuggestion) => {
     if (isNgsSearchLocked) return;
@@ -1716,7 +1864,7 @@ export default function SearchPage() {
         suggestion.query.toLowerCase() &&
       searchFacet === suggestionFacet &&
       (!suggestionColour ||
-        (searchMode === 'colour' && searchColours.includes(suggestionColour)));
+        (editorMode === 'colour' && searchColours.includes(suggestionColour)));
     if (active) {
       clearSearch();
       if (suggestion.type === 'colour') {
@@ -1733,13 +1881,20 @@ export default function SearchPage() {
 
       setSelectedArtwork(null);
       setIsBrowsingCollection(false);
-      setSearchMode('colour');
+      setEditorMode('colour');
       setSearchColours([suggestionColour]);
       setSortColours([suggestionColour]);
       setSortMode('colour');
       setTextQuery(normalized);
       setCommittedTextQuery(normalized);
       setSearchFacet(suggestionFacet);
+      setSubmittedSearch({
+        kind: 'colour',
+        query: normalized,
+        facet: suggestionFacet,
+        colour: suggestionColour,
+        refinement: 'local-palette',
+      });
       setShouldSearch(true);
       setSearchParams(
         getSearchParamsForQuery(normalized, suggestionFacet, suggestionColour)
@@ -1750,9 +1905,39 @@ export default function SearchPage() {
     runTextSearch(suggestion.query, suggestionFacet);
   };
 
+  const rebuildSubmittedImagePlan = async (
+    nextTopK: number,
+    nextMinScore: number
+  ) => {
+    if (submittedSearch?.kind !== 'image' || isPreparingImage) return;
+    setIsPreparingImage(true);
+    setImageUploadError(null);
+    try {
+      const plan = await buildPublicImageSearchPlan({
+        orgId: publicSearchOrgId,
+        image: submittedSearch.file,
+        topK: nextTopK,
+        minScore: nextMinScore,
+        constraints: submittedSearch.constraints,
+      });
+      setSubmittedImagePlan(plan);
+    } catch {
+      setImageUploadError(
+        'The image could not be read. Choose the file again or try another image.'
+      );
+    } finally {
+      setIsPreparingImage(false);
+    }
+  };
+
   const updateTopK = (value: number) => {
     if (!Number.isFinite(value)) return;
-    setTopK(Math.min(MAX_SEARCH_RESULTS, Math.max(1, Math.round(value))));
+    const nextTopK = Math.min(
+      MAX_SEARCH_RESULTS,
+      Math.max(1, Math.round(value))
+    );
+    setTopK(nextTopK);
+    void rebuildSubmittedImagePlan(nextTopK, minScore);
   };
 
   const updateBrowsePageSize = (value: number) => {
@@ -1767,15 +1952,23 @@ export default function SearchPage() {
 
   const updateMinScorePercent = (value: number) => {
     if (!Number.isFinite(value)) return;
-    setMinScore(Math.min(1, Math.max(0, value / 100)));
+    const nextMinScore = Math.min(1, Math.max(0, value / 100));
+    setMinScore(nextMinScore);
+    void rebuildSubmittedImagePlan(topK, nextMinScore);
   };
 
   const getSearchInteractionMetadata = useCallback(
     () => ({
-      mode: isBrowsingCollection ? 'browse' : searchMode,
-      query: normalizedCommittedTextQuery || null,
-      facet: searchFacet,
-      colours: searchMode === 'colour' ? searchColours : [],
+      mode: isBrowsingCollection ? 'browse' : submittedSearch?.kind || null,
+      query:
+        submittedSearch?.kind === 'text' || submittedSearch?.kind === 'colour'
+          ? submittedSearch.query
+          : null,
+      facet:
+        submittedSearch?.kind === 'text' || submittedSearch?.kind === 'colour'
+          ? submittedSearch.facet
+          : null,
+      colours: sortColours,
       sortMode,
       view,
       topK,
@@ -1788,11 +1981,9 @@ export default function SearchPage() {
       location.pathname,
       location.search,
       minScore,
-      normalizedCommittedTextQuery,
-      searchFacet,
-      searchColours,
-      searchMode,
       sortMode,
+      sortColours,
+      submittedSearch,
       topK,
       view,
     ]
@@ -1851,6 +2042,34 @@ export default function SearchPage() {
     },
     [trackArtworkInteraction]
   );
+  const ownershipNotice =
+    editorMode === 'image' &&
+    submittedSearch !== null &&
+    submittedSearch.kind !== 'image'
+      ? `Showing ${submittedSearch.kind === 'text' ? 'Text' : 'Colour'} results until an image is uploaded.`
+      : null;
+  const imageDraftChips = getConstraintChips(imageDraftConstraints);
+  const submittedConstraintChips = getSubmittedConstraintChips(submittedSearch);
+  const selectedPalette = sortColours[0]
+    ? getSelectedColour(sortColours[0])
+    : null;
+  const retryCurrentSearch = () => {
+    if (submittedSearch?.kind === 'image') {
+      void imageSearchQuery.refetch();
+    } else {
+      void textSearchQuery.refetch();
+    }
+  };
+  const chooseReplacementImage = () => {
+    setEditorMode('image');
+    window.requestAnimationFrame(openImagePicker);
+  };
+  const lowerImageThreshold = async () => {
+    if (submittedSearch?.kind !== 'image' || isPreparingImage) return;
+    const nextMinScore = Math.max(0, Math.round((minScore - 0.1) * 100) / 100);
+    setMinScore(nextMinScore);
+    await rebuildSubmittedImagePlan(topK, nextMinScore);
+  };
 
   return (
     <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
@@ -1924,7 +2143,9 @@ export default function SearchPage() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => void login({ returnTo: getCurrentReturnTo() })}
+                    onClick={() =>
+                      void login({ returnTo: getCurrentReturnTo() })
+                    }
                     className="mt-2 inline-flex h-8 items-center rounded-md border border-white/20 bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/20"
                   >
                     Log in to continue
@@ -1932,7 +2153,61 @@ export default function SearchPage() {
                 </div>
               ) : null}
 
-              {searchMode === 'text' && (
+              <div className="flex justify-center">
+                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
+                  <ModeButton
+                    active={editorMode === 'text'}
+                    icon={Search}
+                    label="Text"
+                    disabled={isNgsSearchLocked}
+                    onClick={() => {
+                      setIsBrowsingCollection(false);
+                      setEditorMode('text');
+                    }}
+                  />
+                  <ModeButton
+                    active={editorMode === 'image'}
+                    icon={ImageIcon}
+                    label="Image"
+                    disabled={isNgsSearchLocked}
+                    onClick={() => {
+                      setIsBrowsingCollection(false);
+                      setEditorMode('image');
+                      setImageUploadError(null);
+                      if (
+                        submittedSearch?.kind === 'text' &&
+                        textSearchQuery.data?.interpretation
+                      ) {
+                        setImageDraftConstraints(
+                          snapshotAcceptedConstraints(
+                            textSearchQuery.data.interpretation.constraints
+                          )
+                        );
+                      }
+                    }}
+                  />
+                  <ModeButton
+                    active={editorMode === 'colour'}
+                    icon={Palette}
+                    label="Colour"
+                    disabled={isNgsSearchLocked}
+                    onClick={() => {
+                      if (editorMode === 'colour') {
+                        if (searchColours.length) clearColourSearch();
+                        else setEditorMode('text');
+                        return;
+                      }
+                      setIsBrowsingCollection(false);
+                      setEditorMode('colour');
+                      setSortMode('colour');
+                      setSortColours(searchColours);
+                      revealColourRail();
+                    }}
+                  />
+                </div>
+              </div>
+
+              {editorMode === 'text' && (
                 <form
                   className="relative"
                   onSubmit={(event) => {
@@ -1961,117 +2236,181 @@ export default function SearchPage() {
                 </form>
               )}
 
-              {searchMode === 'image' && (
-                <div
-                  {...getRootProps()}
-                  className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
-                    isDragActive
-                      ? 'border-fuchsia-300 bg-fuchsia-300/10'
-                      : isNgsSearchLocked
-                        ? 'border-white/10 bg-white/[0.015] opacity-45'
-                        : 'border-white/15 bg-white/[0.025] hover:border-white/30'
-                  }`}
-                >
-                  <input {...getInputProps()} />
-                  {imagePreview ? (
-                    <div className="relative w-full max-w-lg">
-                      <img
-                        src={imagePreview}
-                        alt="Query preview"
-                        className="max-h-64 w-full object-contain"
-                      />
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          clearImage();
-                        }}
-                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-black/75 text-white transition-colors hover:bg-black"
-                        aria-label="Clear image"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-center">
-                      <Camera className="mx-auto h-8 w-8 text-white/45" />
-                      <p className="mt-3 text-sm text-white/65">
-                        Drop an image to search visually
-                      </p>
-                      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
-                        jpg / png / webp
-                      </p>
-                    </div>
+              {editorMode === 'image' && (
+                <div className="mx-auto max-w-3xl space-y-3">
+                  {ownershipNotice && (
+                    <p className="text-center text-xs text-sky-100/75">
+                      {ownershipNotice}
+                    </p>
+                  )}
+                  {imageDraftChips.length > 0 &&
+                    submittedSearch?.kind !== 'image' && (
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
+                          Filters kept for image search
+                        </span>
+                        {imageDraftChips.map((chip) => (
+                          <button
+                            key={`${chip.key}-${chip.label}`}
+                            type="button"
+                            aria-label={chip.removeLabel}
+                            onClick={() =>
+                              setImageDraftConstraints((constraints) =>
+                                removeConstraintChip(constraints, chip)
+                              )
+                            }
+                            className="rounded-full border border-sky-300/25 bg-sky-300/10 px-2.5 py-1 font-mono text-[10px] text-sky-100 transition-colors hover:bg-sky-300/20"
+                          >
+                            {chip.label} ×
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  <div
+                    {...getRootProps({
+                      role: 'region',
+                      'aria-label': 'Image search composer',
+                      'aria-describedby': 'image-upload-guidance',
+                    })}
+                    aria-busy={isPreparingImage}
+                    className={`rounded-lg border border-dashed px-5 py-5 transition-colors ${
+                      isDragActive
+                        ? 'border-fuchsia-300 bg-fuchsia-300/10'
+                        : isNgsSearchLocked
+                          ? 'border-white/10 bg-white/[0.015] opacity-45'
+                          : 'border-white/15 bg-white/[0.025] hover:border-white/30'
+                    }`}
+                  >
+                    <input
+                      {...getInputProps({
+                        'aria-label': 'Image for visual artwork search',
+                        'aria-describedby': 'image-upload-guidance',
+                      })}
+                    />
+                    {imagePreview ? (
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                        <img
+                          src={imagePreview}
+                          alt="Selected image preview"
+                          className="h-24 w-24 shrink-0 rounded-md bg-black/25 object-contain"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-medium text-white/80">
+                            {imageFile?.name || 'Selected image'}
+                          </p>
+                          <p className="mt-1 text-xs text-white/45">
+                            {isPreparingImage
+                              ? 'Preparing visual search…'
+                              : imageSearchQuery.isFetching
+                                ? 'Finding visually similar works…'
+                                : 'Ready for visual matching'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                          <button
+                            ref={uploaderActionRef}
+                            type="button"
+                            disabled={isPreparingImage || isNgsSearchLocked}
+                            onClick={openImagePicker}
+                            aria-label="Replace image"
+                            className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white disabled:cursor-wait disabled:opacity-45"
+                          >
+                            Replace
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isPreparingImage}
+                            onClick={clearImage}
+                            aria-label="Remove image"
+                            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-white/50 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-wait disabled:opacity-45"
+                          >
+                            <X className="h-3.5 w-3.5" /> Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <Camera className="mx-auto h-8 w-8 text-white/45" />
+                        <button
+                          ref={uploaderActionRef}
+                          type="button"
+                          disabled={isPreparingImage || isNgsSearchLocked}
+                          onClick={openImagePicker}
+                          className="mt-3 inline-flex h-10 items-center rounded-md border border-fuchsia-300/30 bg-fuchsia-300/10 px-4 text-sm font-medium text-fuchsia-100 transition-colors hover:bg-fuchsia-300/20 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          Choose image
+                        </button>
+                        <p className="mt-2 text-sm text-white/55">
+                          or drag and drop one image here
+                        </p>
+                      </div>
+                    )}
+                    <p
+                      id="image-upload-guidance"
+                      className={`${imagePreview ? 'mt-3 text-left sm:ml-28' : 'mt-1 text-center'} font-mono text-[10px] uppercase tracking-[0.18em] text-white/35`}
+                    >
+                      JPEG, PNG, or WebP · 10 MiB maximum
+                    </p>
+                  </div>
+                  {isPreparingImage && (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      className="text-center text-xs text-white/55"
+                    >
+                      Preparing image and building its private search digest…
+                    </p>
+                  )}
+                  {imageUploadError && (
+                    <p
+                      role="alert"
+                      className="text-center text-sm text-red-300"
+                    >
+                      {imageUploadError}
+                    </p>
                   )}
                 </div>
               )}
             </div>
 
-            <div
-              className={`mt-4 flex flex-wrap items-center gap-2 ${
-                hasActiveSearch ? 'justify-center' : 'justify-center'
-              }`}
-            >
-              {!hasUncommittedInitialText && (
-                <SuggestionPicker
-                  suggestions={suggestionPool}
-                  currentQuery={textQuery}
-                  activeSearch={activeSearchSummary}
-                  displaySuggestion={displayIdleSuggestion}
-                  onSelect={runEvalSearch}
-                  onPreviewChange={setIdleSuggestion}
-                  disabled={isNgsSearchLocked}
-                />
-              )}
-              <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
-                <ModeButton
-                  active={searchMode === 'text'}
-                  icon={Search}
-                  label="Text"
-                  disabled={isNgsSearchLocked}
-                  onClick={() => {
-                    setIsBrowsingCollection(false);
-                    setSearchMode('text');
-                  }}
-                />
-                <ModeButton
-                  active={searchMode === 'image'}
-                  icon={ImageIcon}
-                  label="Image"
-                  disabled={isNgsSearchLocked}
-                  onClick={() => {
-                    setIsBrowsingCollection(false);
-                    setSearchMode('image');
-                  }}
-                />
-                <ModeButton
-                  active={searchMode === 'colour'}
-                  icon={Palette}
-                  label="Colour"
-                  disabled={isNgsSearchLocked}
-                  onClick={() => {
-                    if (searchMode === 'colour') {
-                      if (searchColours.length) {
-                        clearColourSearch();
-                      }
-                      setSearchMode('text');
-                      return;
-                    }
-
-                    setIsBrowsingCollection(false);
-                    setSearchMode('colour');
-                    setSortMode('colour');
-                    setSortColours(searchColours);
-                    revealColourRail();
-                  }}
-                />
+            {editorMode !== 'image' && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {!hasUncommittedInitialText && editorMode === 'text' && (
+                  <SuggestionPicker
+                    suggestions={suggestionPool}
+                    currentQuery={textQuery}
+                    activeSearch={activeSearchSummary}
+                    displaySuggestion={displayIdleSuggestion}
+                    onSelect={runEvalSearch}
+                    onPreviewChange={setIdleSuggestion}
+                    disabled={isNgsSearchLocked}
+                  />
+                )}
+                {!hasActiveSearch && editorMode === 'colour' && (
+                  <div ref={colourRailRef} className="w-full">
+                    <ColourRail
+                      intent="search"
+                      selected={searchColours}
+                      activeSort={sortMode === 'colour'}
+                      customColour={customColour}
+                      disabled={isNgsSearchLocked}
+                      onSelect={runColourSearch}
+                      onCustomChange={updateCustomColour}
+                      onClear={clearColourSearch}
+                    />
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
         </section>
 
         {hasActiveSearch && (
-          <section ref={resultsAreaRef} className="mt-8">
+          <section
+            ref={resultsAreaRef}
+            className="mt-8"
+            aria-busy={isLoading || isPreparingImage}
+          >
             <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
               <div className="mx-auto max-w-7xl">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2089,9 +2428,10 @@ export default function SearchPage() {
                           : hasMounted && shouldSearch
                             ? 'No works'
                             : 'Ready'}
-                    {committedTextQuery && searchMode !== 'image' && (
+                    {(submittedSearch?.kind === 'text' ||
+                      submittedSearch?.kind === 'colour') && (
                       <span className="ml-2 normal-case tracking-normal text-white/70">
-                        "{committedTextQuery}"
+                        "{submittedSearch.query}"
                       </span>
                     )}
                     {isBrowsingCollection && (
@@ -2100,7 +2440,9 @@ export default function SearchPage() {
                       </span>
                     )}
                   </p>
-                  {textSearchQuery.data?.interpretation &&
+                  {(submittedSearch?.kind === 'text' ||
+                    submittedSearch?.kind === 'colour') &&
+                    textSearchQuery.data?.interpretation &&
                     (Object.keys(
                       textSearchQuery.data.interpretation.constraints
                     ).length > 0 ||
@@ -2111,6 +2453,7 @@ export default function SearchPage() {
                           .dateRange && (
                           <button
                             type="button"
+                            aria-label={`Remove date filter ${textSearchQuery.data.interpretation.constraints.dateRange.startYear} to ${textSearchQuery.data.interpretation.constraints.dateRange.endYear}`}
                             onClick={() =>
                               removeInterpretationConstraint('dateRange')
                             }
@@ -2131,6 +2474,7 @@ export default function SearchPage() {
                             <button
                               key={`classification-${classification}`}
                               type="button"
+                              aria-label={`Remove classification filter ${classification}`}
                               onClick={() =>
                                 removeInterpretationConstraint(
                                   'classifications'
@@ -2147,10 +2491,9 @@ export default function SearchPage() {
                             <button
                               key={`medium-${medium}`}
                               type="button"
+                              aria-label={`Remove medium filter ${medium}`}
                               onClick={() =>
-                                removeInterpretationConstraint(
-                                  'mediumFamilies'
-                                )
+                                removeInterpretationConstraint('mediumFamilies')
                               }
                               className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 font-mono text-[10px] text-emerald-100 transition hover:bg-emerald-300/20"
                             >
@@ -2158,19 +2501,53 @@ export default function SearchPage() {
                             </button>
                           )
                         )}
-                        {textSearchQuery.data.interpretation.corrections.length >
-                          0 && (
+                        {textSearchQuery.data.interpretation.constraints.artistIds?.map(
+                          (artist) => (
+                            <button
+                              key={`artist-${artist}`}
+                              type="button"
+                              aria-label={`Remove artist filter ${artist}`}
+                              onClick={() =>
+                                removeInterpretationConstraint('artistIds')
+                              }
+                              className="rounded-full border border-violet-300/25 bg-violet-300/10 px-2.5 py-1 font-mono text-[10px] text-violet-100 transition hover:bg-violet-300/20"
+                            >
+                              {artist} ×
+                            </button>
+                          )
+                        )}
+                        {textSearchQuery.data.interpretation.corrections
+                          .length > 0 && (
                           <span className="font-mono text-[9px] text-white/45">
                             Interpreted{' '}
                             {textSearchQuery.data.interpretation.corrections
-                              .map(
-                                ({ from, to }) => `${from} as ${to}`
-                              )
+                              .map(({ from, to }) => `${from} as ${to}`)
                               .join(', ')}
                           </span>
                         )}
                       </div>
                     )}
+                  {submittedSearch?.kind === 'image' &&
+                    submittedConstraintChips.length > 0 && (
+                      <div
+                        className="flex flex-1 flex-wrap items-center gap-1.5"
+                        aria-label="Image search filters"
+                      >
+                        {submittedConstraintChips.map((chip) => (
+                          <span
+                            key={`${chip.key}-${chip.label}`}
+                            className="rounded-full border border-sky-300/25 bg-sky-300/10 px-2.5 py-1 font-mono text-[10px] text-sky-100"
+                          >
+                            {chip.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  {sortColours[0] && (
+                    <span className="rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-2.5 py-1 font-mono text-[10px] text-fuchsia-100">
+                      Palette order: {selectedPalette?.name || sortColours[0]}
+                    </span>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
                       <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
@@ -2356,7 +2733,7 @@ export default function SearchPage() {
                               : MAX_SEARCH_RESULTS
                           }
                           value={isBrowsingCollection ? browsePageSize : topK}
-                          disabled={isNgsSearchLocked}
+                          disabled={isNgsSearchLocked || isPreparingImage}
                           onChange={(event) =>
                             isBrowsingCollection
                               ? updateBrowsePageSize(Number(event.target.value))
@@ -2383,7 +2760,7 @@ export default function SearchPage() {
                             ? updateBrowsePageSize(Number(event.target.value))
                             : updateTopK(Number(event.target.value))
                         }
-                        disabled={isNgsSearchLocked}
+                        disabled={isNgsSearchLocked || isPreparingImage}
                         className="w-full accent-fuchsia-300"
                       />
                     </label>
@@ -2398,7 +2775,11 @@ export default function SearchPage() {
                           max={100}
                           step={5}
                           value={Math.round(minScore * 100)}
-                          disabled={isNgsSearchLocked || isBrowsingCollection}
+                          disabled={
+                            isNgsSearchLocked ||
+                            isBrowsingCollection ||
+                            isPreparingImage
+                          }
                           onChange={(event) =>
                             updateMinScorePercent(Number(event.target.value))
                           }
@@ -2418,7 +2799,11 @@ export default function SearchPage() {
                         onChange={(event) =>
                           updateMinScorePercent(Number(event.target.value))
                         }
-                        disabled={isNgsSearchLocked || isBrowsingCollection}
+                        disabled={
+                          isNgsSearchLocked ||
+                          isBrowsingCollection ||
+                          isPreparingImage
+                        }
                         className="w-full accent-fuchsia-300"
                       />
                     </label>
@@ -2453,16 +2838,43 @@ export default function SearchPage() {
             )}
 
             {isLoading && (
-              <div className="py-16 text-center text-sm text-white/45">
-                Searching artworks...
+              <div
+                role="status"
+                aria-live="polite"
+                className="py-16 text-center text-sm text-white/45"
+              >
+                {submittedSearch?.kind === 'image'
+                  ? 'Finding visually similar works…'
+                  : 'Searching artworks…'}
               </div>
             )}
 
             {error && (
-              <div className="py-16 text-center">
+              <div role="alert" className="py-16 text-center">
                 <p className="text-sm font-medium text-red-300">
-                  {error instanceof Error ? error.message : 'Search failed'}
+                  {getSearchErrorCopy(
+                    error,
+                    submittedSearch?.kind === 'image' ? 'image' : 'text'
+                  )}
                 </p>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={retryCurrentSearch}
+                    className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
+                  >
+                    Try again
+                  </button>
+                  {submittedSearch?.kind === 'image' && (
+                    <button
+                      type="button"
+                      onClick={chooseReplacementImage}
+                      className="inline-flex h-9 items-center rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white"
+                    >
+                      Replace image
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -2538,7 +2950,7 @@ export default function SearchPage() {
                 )}
                 <div ref={loadMoreRef} className="flex justify-center py-8">
                   {hasMoreResults ? (
-                <button
+                    <button
                       type="button"
                       onClick={loadMoreResults}
                       disabled={
@@ -2572,10 +2984,41 @@ export default function SearchPage() {
                     </p>
                   ) : (
                     <>
-                      <p className="text-white/55">No artworks found.</p>
-                      <p className="mt-1 text-sm text-white/35">
-                        Try a broader query or lower the minimum score.
-                      </p>
+                      {submittedSearch?.kind === 'image' ? (
+                        <>
+                          <p className="text-white/55">
+                            No visual matches above {Math.round(minScore * 100)}
+                            %.
+                          </p>
+                          <p className="mt-1 text-sm text-white/35">
+                            Try another image or lower the similarity threshold.
+                          </p>
+                          <div className="mt-3 flex flex-wrap justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void lowerImageThreshold()}
+                              disabled={minScore === 0 || isPreparingImage}
+                              className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white disabled:opacity-40"
+                            >
+                              Lower threshold
+                            </button>
+                            <button
+                              type="button"
+                              onClick={chooseReplacementImage}
+                              className="inline-flex h-9 items-center rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white"
+                            >
+                              Replace image
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-white/55">No artworks found.</p>
+                          <p className="mt-1 text-sm text-white/35">
+                            Try a broader query or lower the minimum score.
+                          </p>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -2917,25 +3360,22 @@ const IdleShowcaseBackdrop = forwardRef<
   ref
 ) {
   const transitionRunRef = useRef(0);
-  const previewWorks = useMemo(
-    () => {
-      const imageableWorks = artworks.filter((artwork) =>
-        getShowcaseImageUrl(artwork)
-      );
+  const previewWorks = useMemo(() => {
+    const imageableWorks = artworks.filter((artwork) =>
+      getShowcaseImageUrl(artwork)
+    );
 
-      if (isChungChengFeatureSuggestion(suggestion)) {
-        return [
-          getChungChengFeaturedArtwork(artworks),
-          ...imageableWorks
-            .filter((artwork) => !isChungChengArtwork(artwork))
-            .slice(0, 3),
-        ];
-      }
+    if (isChungChengFeatureSuggestion(suggestion)) {
+      return [
+        getChungChengFeaturedArtwork(artworks),
+        ...imageableWorks
+          .filter((artwork) => !isChungChengArtwork(artwork))
+          .slice(0, 3),
+      ];
+    }
 
-      return imageableWorks.slice(0, 4);
-    },
-    [artworks, suggestion]
-  );
+    return imageableWorks.slice(0, 4);
+  }, [artworks, suggestion]);
   const previewSuggestionKey = suggestion ? getSuggestionKey(suggestion) : '';
   const previewKey = useMemo(() => {
     const artworkKey = previewWorks
@@ -3572,12 +4012,10 @@ function ZhongZhengAsciiFeature({
                 const isMorphed = influence > 0.57;
                 const isMatrix = influence > 0.22;
                 const wave =
-                  ((
-                    particle.phase +
+                  ((particle.phase +
                     particle.z * 2 +
                     pointer.x * 0.28 +
-                    pointer.y * 0.18
-                  ) *
+                    pointer.y * 0.18) *
                     Math.PI) /
                   180;
                 const waveX = Math.cos(wave) * influence * 7;
@@ -3614,7 +4052,9 @@ function ZhongZhengAsciiFeature({
                       transform: `translate3d(calc(-50% + ${(
                         waveX + pointerParallaxX
                       ).toFixed(2)}px), calc(-50% + ${(
-                        waveY + pointerParallaxY + entranceY
+                        waveY +
+                        pointerParallaxY +
+                        entranceY
                       ).toFixed(2)}px), ${(particle.z + influence * 28).toFixed(
                         2
                       )}px) scale(${scale.toFixed(3)})`,
@@ -3709,12 +4149,12 @@ function SearchArtworkDialog({
                 />
               </div>
               <div className="mt-3 shrink-0 space-y-3">
-                  {image.src && <ImageReuseNotice compact />}
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      to={`${routeBasePath}/artworks/${encodeURIComponent(
-                        artwork.id
-                      )}?from=${encodeURIComponent(returnTo)}`}
+                {image.src && <ImageReuseNotice compact />}
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to={`${routeBasePath}/artworks/${encodeURIComponent(
+                      artwork.id
+                    )}?from=${encodeURIComponent(returnTo)}`}
                     onClick={() =>
                       onTrackArtworkInteraction(
                         artwork,
@@ -4007,6 +4447,7 @@ function ModeButton({
       disabled={disabled}
       onClick={onClick}
       aria-label={`${label} search mode`}
+      aria-pressed={active}
       className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
         active
           ? 'bg-white/[0.14] text-white'
