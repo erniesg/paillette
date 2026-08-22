@@ -15,8 +15,12 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
   STAGING_IMAGE_VECTOR_INDEX,
+  inspectNgaArtistPostApplyState,
+  isSafeRelativeEvidencePath,
+  parseNgaD1ApplyFacts,
   parseNgaVectorUpsertFacts,
-  parseWranglerJsonOutput,
+  validateNgaApplyResumeLineageV1,
+  validateNgaVectorSettlementIncidentV1,
 } from './lib/nga-artist-backfill.mjs';
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -161,6 +165,45 @@ for (const descriptor of preflightManifests) {
   }
 }
 
+const readManifestFile = (relativePath) => {
+  const descriptor = manifest.files?.find((entry) => entry?.path === relativePath);
+  if (
+    !descriptor ||
+    !isSafeRelativeEvidencePath(relativePath) ||
+    !/^[a-f0-9]{64}$/.test(String(descriptor.sha256 || ''))
+  ) {
+    throw new Error(`manifest support artifact is invalid: ${relativePath}`);
+  }
+  const path = realpathSync(resolve(artifactRoot, relativePath));
+  if (!path.startsWith(`${artifactRoot}${sep}`)) {
+    throw new Error(`manifest support artifact escapes its root: ${relativePath}`);
+  }
+  const bytes = readFileSync(path);
+  if (sha256(bytes) !== descriptor.sha256) {
+    throw new Error(`manifest support artifact SHA-256 mismatch: ${relativePath}`);
+  }
+  return bytes;
+};
+const mapping = JSON.parse(readManifestFile('mapping.json').toString('utf8'));
+const rollbackD1Records = JSON.parse(
+  readManifestFile('rollback/d1-records.json').toString('utf8')
+);
+const rollbackVectors = (manifest.files || [])
+  .filter(
+    (entry) =>
+      typeof entry?.path === 'string' &&
+      entry.path.startsWith('rollback/') &&
+      entry.path.endsWith('.ndjson')
+  )
+  .sort((left, right) => left.path.localeCompare(right.path))
+  .flatMap((entry) =>
+    readManifestFile(entry.path)
+      .toString('utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+  );
+
 const parentPaths = values.get('parent-lineage') || [];
 const parentHashes = values.get('confirm-parent-lineage-sha256') || [];
 if (parentPaths.length !== parentHashes.length) {
@@ -174,12 +217,11 @@ const parentLineages = parentPaths.map((sourcePath, index) => {
     throw new Error('parent lineage SHA-256 confirmation mismatch');
   }
   const document = JSON.parse(bytes.toString('utf8'));
-  if (
-    document.schemaVersion !== 'nga-apply-resume-lineage-v1' ||
-    document.artifactManifest?.sha256 !== manifestSha256
-  ) {
-    throw new Error('parent lineage does not match the artifact manifest');
-  }
+  validateNgaApplyResumeLineageV1(document, {
+    phase,
+    artifactManifestSha256: manifestSha256,
+    preflightManifests,
+  });
   parentDocuments.push(document);
   const copiedPath = `provenance/parent-lineages/${String(index + 1).padStart(4, '0')}.json`;
   copyFileSync(source, join(outRoot, copiedPath), constants.COPYFILE_EXCL);
@@ -200,6 +242,8 @@ if (incidentPaths.length !== incidentHashes.length || incidentPaths.length > 1) 
 }
 let incident = null;
 let priorSettlementEvidence = null;
+const priorStateDocuments = [];
+const priorStateOutcomes = [];
 if (incidentPaths.length) {
   const sourcePath = incidentPaths[0];
   const source = resolveSource(sourcePath, 'settlement incident');
@@ -236,6 +280,7 @@ if (incidentPaths.length) {
       throw new Error(`${kind} state manifest SHA-256 mismatch`);
     }
     const state = JSON.parse(stateBytes.toString('utf8'));
+    priorStateDocuments.push(state);
     const attemptRoot = join(
       outRoot,
       'provenance',
@@ -243,12 +288,22 @@ if (incidentPaths.length) {
       String(index + 1).padStart(4, '0')
     );
     mkdirSync(attemptRoot);
-    for (const input of [
-      state.inputs?.ids,
-      state.inputs?.stagedRecords,
-      ...(state.inputs?.imageVectors || []),
+    const stateData = { ids: null, records: null, vectors: [] };
+    for (const [inputKind, input] of [
+      ['ids', state.inputs?.ids],
+      ['records', state.inputs?.stagedRecords],
+      ...(state.inputs?.imageVectors || []).map((input) => ['vector', input]),
     ]) {
       const relativeInput = String(input?.path || '');
+      if (
+        !relativeInput ||
+        isAbsolute(relativeInput) ||
+        /^[A-Za-z]:[\\/]/.test(relativeInput) ||
+        relativeInput.split(/[\\/]/).includes('..') ||
+        /(?:^|[\/_.-])production(?:[\/_.-]|$)/i.test(relativeInput)
+      ) {
+        throw new Error(`${kind} state input path is unsafe`);
+      }
       const inputSource = resolveSource(
         join(dirname(descriptor.path), relativeInput),
         `${kind} state input`
@@ -257,10 +312,35 @@ if (incidentPaths.length) {
       if (sha256(inputBytes) !== input.sha256) {
         throw new Error(`${kind} state input SHA-256 mismatch`);
       }
-      const inputTarget = join(attemptRoot, relativeInput);
+      if (inputKind === 'vector') {
+        stateData.vectors.push(
+          ...inputBytes
+            .toString('utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line))
+        );
+      } else {
+        stateData[inputKind] = JSON.parse(inputBytes.toString('utf8'));
+      }
+      const inputTarget = resolve(attemptRoot, relativeInput);
+      if (!inputTarget.startsWith(`${attemptRoot}${sep}`)) {
+        throw new Error(`${kind} state input escapes its copied attempt root`);
+      }
       mkdirSync(dirname(inputTarget), { recursive: true });
       copyFileSync(inputSource, inputTarget, constants.COPYFILE_EXCL);
     }
+    priorStateOutcomes.push(
+      inspectNgaArtistPostApplyState({
+        phase,
+        mapping,
+        originalRecords: rollbackD1Records,
+        originalVectors: rollbackVectors,
+        postIds: stateData.ids,
+        postRecords: stateData.records,
+        postVectors: stateData.vectors,
+      }).outcome
+    );
     copyFileSync(
       stateSource,
       join(attemptRoot, 'state-manifest.json'),
@@ -320,27 +400,10 @@ const responses = responsePaths.map((sourcePath, index) => {
     throw new Error('apply response does not match the ordered artifact');
   }
   if (step.kind === 'd1-sql') {
-    const payload = parseWranglerJsonOutput(response.stdout, 'D1 apply response');
-    const results = Array.isArray(payload) ? payload : [payload];
-    const queryCounts = [];
-    const collect = (value) => {
-      if (Array.isArray(value)) return value.forEach(collect);
-      if (!value || typeof value !== 'object') return;
-      for (const [key, child] of Object.entries(value)) {
-        if (key === 'Total queries executed') queryCounts.push(child);
-        else collect(child);
-      }
-    };
-    collect(results);
-    if (
-      !results.length ||
-      results.some((result) => result?.success !== true) ||
-      !queryCounts.length ||
-      queryCounts.some((count) => !Number.isInteger(count) || count < 0) ||
-      queryCounts.reduce((total, count) => total + count, 0) !== step.recordCount
-    ) {
-      throw new Error('D1 apply response query count is invalid');
-    }
+    parseNgaD1ApplyFacts(response.stdout, {
+      expectedQueryCount: step.recordCount,
+      label: 'D1 apply response',
+    });
   } else {
     parseNgaVectorUpsertFacts(response.stdout, {
       expectedIndex: STAGING_IMAGE_VECTOR_INDEX,
@@ -382,6 +445,29 @@ if (incident) {
       'settlement incident response does not match the supplied vector response provenance'
     );
   }
+  const incidentResponse = incidentResponses[0];
+  const responseEnvelope = JSON.parse(
+    readFileSync(resolveSource(incidentResponse.sourcePath, 'incident response'))
+  );
+  const vectorFacts = parseNgaVectorUpsertFacts(responseEnvelope.stdout, {
+    expectedIndex: STAGING_IMAGE_VECTOR_INDEX,
+    expectedCount:
+      manifest.orderedArtifacts[incidentResponse.sequence - 1].recordCount,
+  });
+  validateNgaVectorSettlementIncidentV1(incident, {
+    sourceGitSha,
+    expectedVectorCount:
+      manifest.orderedArtifacts[incidentResponse.sequence - 1].recordCount,
+    vectorResponse: {
+      path: incidentResponse.sourcePath,
+      sha256: incidentResponse.sha256,
+      mutationId: vectorFacts.mutationId,
+    },
+    immediateState: priorStateDocuments[0],
+    settledState: priorStateDocuments[1],
+    immediateOutcome: priorStateOutcomes[0],
+    settledOutcome: priorStateOutcomes[1],
+  });
 }
 
 for (const parent of parentLineages) {

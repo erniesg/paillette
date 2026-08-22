@@ -231,12 +231,14 @@ test('verifies exact post-apply D1 and vector state against rollback bytes', () 
       primaryArtistId: mapping[index].primaryArtistId,
     },
   }));
+  const postIds = mapping.map((row) => row.id);
 
   const result = verifyNgaArtistPostApplyState({
     phase: 'pilot',
     mapping,
     originalRecords,
     originalVectors,
+    postIds,
     postRecords,
     postVectors,
   });
@@ -251,6 +253,16 @@ test('verifies exact post-apply D1 and vector state against rollback bytes', () 
   assert.match(result.postVectorsSha256, /^[a-f0-9]{64}$/);
 
   const invalid = [
+    {
+      label: 'duplicate ID inventory',
+      change: { postIds: [postIds[0], ...postIds.slice(0, -1)] },
+      pattern: /ID inventory.*mapping/i,
+    },
+    {
+      label: 'unrelated ID inventory',
+      change: { postIds: ['open-access-art:nga:999', ...postIds.slice(1)] },
+      pattern: /ID inventory.*mapping/i,
+    },
     {
       label: 'zero rows',
       change: { postRecords: [] },
@@ -320,6 +332,7 @@ test('verifies exact post-apply D1 and vector state against rollback bytes', () 
           mapping,
           originalRecords,
           originalVectors,
+          postIds,
           postRecords,
           postVectors,
           ...fixture.change,

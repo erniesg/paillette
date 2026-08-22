@@ -812,7 +812,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         capture_paths["after"]: {
             "schemaVersion": "nga-production-identity-v1",
             "captureRole": "after",
-            "capturedAt": "2026-08-22T00:02:00Z",
+            "capturedAt": "2026-08-22T00:07:00Z",
             "resources": resources,
         },
     }
@@ -929,7 +929,10 @@ def prepend_pending_settlement_attempt(root: Path, binding):
     state_path.write_bytes(pending_state_payload)
 
     settled_state_path = settled_root / "state-manifest.json"
-    settled_state_payload = settled_state_path.read_bytes()
+    settled_state = json.loads(settled_state_path.read_text(encoding="utf-8"))
+    settled_state["capturedAt"] = "2026-08-22T00:05:30Z"
+    settled_state_payload = (json.dumps(settled_state, indent=2) + "\n").encode()
+    settled_state_path.write_bytes(settled_state_payload)
     pending_ids = sorted(
         (row["id"] for row in json.loads(
             (root / binding["artifactManifest"]["path"]).parent.joinpath(
@@ -975,6 +978,36 @@ def prepend_pending_settlement_attempt(root: Path, binding):
     ).hexdigest()
 
 
+def rewrite_settlement_chronology(
+    root: Path,
+    binding,
+    *,
+    verified_at: str | None = None,
+    captured_at: str | None = None,
+):
+    verification_path = root / binding["postApplyVerification"]["path"]
+    verification = json.loads(verification_path.read_text(encoding="utf-8"))
+    if verified_at is not None:
+        verification["verifiedAt"] = verified_at
+    if captured_at is not None:
+        state_descriptor = verification["stateManifest"]
+        state_path = verification_path.parent / state_descriptor["path"]
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["capturedAt"] = captured_at
+        state_payload = (json.dumps(state, indent=2) + "\n").encode()
+        state_path.write_bytes(state_payload)
+        state_sha = hashlib.sha256(state_payload).hexdigest()
+        state_descriptor["sha256"] = state_sha
+        verification["settlement"]["attempts"][-1]["stateManifest"][
+            "sha256"
+        ] = state_sha
+    verification_payload = (json.dumps(verification, indent=2) + "\n").encode()
+    verification_path.write_bytes(verification_payload)
+    binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+        verification_payload
+    ).hexdigest()
+
+
 def bind_mixed_resume_lineage(root: Path, binding):
     verification_path = root / binding["postApplyVerification"]["path"]
     verification = json.loads(verification_path.read_text(encoding="utf-8"))
@@ -1003,15 +1036,30 @@ def bind_mixed_resume_lineage(root: Path, binding):
         }
         response_payloads.append(response_payload)
 
+    parent_source_sha = "c5913a3193beff80f92bc5a90215f73869bc3cb6"
     parent = {
         "schemaVersion": "nga-apply-resume-lineage-v1",
+        "sourceGitSha": parent_source_sha,
+        "sourceEvidenceRoot": (
+            ".agent/evidence/nga-staging/"
+            f"{parent_source_sha}/20260822T134448Z"
+        ),
         "artifactManifest": {
             "sourcePath": "backfill/pilot/artifact-manifest.json",
             "sha256": binding["artifactManifest"]["sha256"],
         },
+        "preflightManifests": [
+            {
+                "phase": "pilot",
+                "sourcePath": "preflight/pilot/preflight-manifest.json",
+                "sha256": binding["preflightManifests"][0]["sha256"],
+            }
+        ],
         "responses": [
             {
                 "sequence": 1,
+                "sourcePath": source_paths[0],
+                "copiedPath": source_paths[0].removeprefix("backfill/pilot/"),
                 "sha256": hashlib.sha256(response_payloads[0]).hexdigest(),
             }
         ],
@@ -1033,7 +1081,22 @@ def bind_mixed_resume_lineage(root: Path, binding):
     ):
         attempt_root = recovery_root / "provenance/prior-attempts" / f"{index:04d}"
         shutil.copytree(settled_source, attempt_root)
-        state_payload = (attempt_root / "state-manifest.json").read_bytes()
+        state_path = attempt_root / "state-manifest.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if index == 1:
+            state["capturedAt"] = "2026-08-22T00:04:00Z"
+            vector_descriptor = state["inputs"]["imageVectors"][0]
+            rollback_vector_path = (
+                artifact_root / "rollback/image-vectors-0001-unit.ndjson"
+            )
+            rollback_payload = rollback_vector_path.read_bytes()
+            (attempt_root / vector_descriptor["path"]).write_bytes(rollback_payload)
+            vector_descriptor["sha256"] = hashlib.sha256(
+                rollback_payload
+            ).hexdigest()
+            state["vectorFiles"][0]["sha256"] = vector_descriptor["sha256"]
+        state_payload = (json.dumps(state, indent=2) + "\n").encode()
+        state_path.write_bytes(state_payload)
         attempts.append(
             {
                 "kind": kind,
@@ -1045,9 +1108,27 @@ def bind_mixed_resume_lineage(root: Path, binding):
                 "sha256": hashlib.sha256(state_payload).hexdigest(),
             }
         )
+    immediate_state = json.loads(
+        (
+            recovery_root
+            / "provenance/prior-attempts/0001/state-manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    settled_state = json.loads(
+        (
+            recovery_root
+            / "provenance/prior-attempts/0002/state-manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    immediate_vector_sha = immediate_state["inputs"]["imageVectors"][0][
+        "sha256"
+    ]
+    settled_vector_sha = settled_state["inputs"]["imageVectors"][0]["sha256"]
     incident = {
         "schemaVersion": "nga-vector-settlement-incident-v1",
+        "recordedAt": "2026-08-22T00:05:30Z",
         "gitSha": source_sha,
+        "status": "paused-after-single-vector-upsert-before-official-verification",
         "boundaries": {
             "fullBackfillStarted": False,
             "productionChanged": False,
@@ -1057,12 +1138,22 @@ def bind_mixed_resume_lineage(root: Path, binding):
         "immediateCapture": {
             "path": attempts[0]["sourcePath"],
             "sha256": attempts[0]["sha256"],
+            "vectorSha256": immediate_vector_sha,
+            "interpretation": "stale pre-upsert vector representation",
         },
         "settledDiagnostic": {
             "path": attempts[1]["sourcePath"],
             "sha256": attempts[1]["sha256"],
+            "d1Sha256": settled_state["inputs"]["stagedRecords"]["sha256"],
+            "vectorSha256": settled_vector_sha,
+            "expectedEnrichedVectorSha256": settled_vector_sha,
+            "recordCount": 5,
         },
         "stagingMutation": {
+            "d1CommandsExecutedThisResume": 0,
+            "vectorUpsertCommandsExecutedThisResume": 1,
+            "vectorCount": 5,
+            "mutationId": "283fa906-9e2a-4fbe-a6b1-34617719f705",
             "rawResponse": {
                 "path": source_paths[1],
                 "sha256": hashlib.sha256(response_payloads[1]).hexdigest(),
@@ -3090,14 +3181,14 @@ class InventoryAndRelevanceTests(GateTestCase):
                 evidence_root,
                 full_production["before"],
                 capture_role="before",
-                captured_at="2026-08-22T00:03:00Z",
+                captured_at="2026-08-22T00:08:00Z",
                 resources=pilot_after["resources"],
             )
             write_bound_production_capture(
                 evidence_root,
                 full_production["after"],
                 capture_role="after",
-                captured_at="2026-08-22T00:04:00Z",
+                captured_at="2026-08-22T00:09:00Z",
                 resources=pilot_after["resources"],
             )
 
@@ -3223,8 +3314,8 @@ class InventoryAndRelevanceTests(GateTestCase):
             full = full_deployment_identity(self.gate, pilot_identity)
             full_production = full["artistDataBinding"]["productionIdentity"]
             for role, captured_at in (
-                ("before", "2026-08-22T00:03:00Z"),
-                ("after", "2026-08-22T00:04:00Z"),
+                ("before", "2026-08-22T00:08:00Z"),
+                ("after", "2026-08-22T00:09:00Z"),
             ):
                 record = json.loads(json.dumps(pilot_after))
                 record["captureRole"] = role
@@ -4210,6 +4301,56 @@ class InventoryAndRelevanceTests(GateTestCase):
                 [11],
             )
 
+    def test_artist_evidence_rejects_misplaced_or_split_d1_query_facts(self):
+        shapes = {
+            "misplaced in telemetry": [
+                {
+                    "results": [],
+                    "success": True,
+                    "meta": {"Total queries executed": 5},
+                }
+            ],
+            "split child facts": [
+                {
+                    "results": [
+                        {"Total queries executed": 2},
+                        {"Total queries executed": 3},
+                    ],
+                    "success": True,
+                }
+            ],
+            "split top-level results": [
+                {
+                    "results": [{"Total queries executed": 2}],
+                    "success": True,
+                },
+                {
+                    "results": [{"Total queries executed": 3}],
+                    "success": True,
+                },
+            ],
+        }
+        for label, stdout_payload in shapes.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                self._rewrite_apply_response_stdout_shape(
+                    evidence_root, binding, stdout_payload
+                )
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(
+                    "artist_apply_response_query_count_mismatch",
+                    result["failureCodes"],
+                    result,
+                )
+
     def test_artist_evidence_rehashes_vector_response_facts(self):
         mutations = {
             "wrong index": lambda response: response.update(
@@ -4294,6 +4435,37 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
 
             self.assertTrue(result["passed"], result)
+
+    def test_artist_evidence_rejects_impossible_settlement_chronology(self):
+        mutations = {
+            "verification predates capture": {
+                "verified_at": "2000-01-01T00:00:00Z"
+            },
+            "verification equals capture": {
+                "verified_at": "2026-08-22T00:05:00Z"
+            },
+            "capture postdates verification": {
+                "captured_at": "2099-01-01T00:00:00Z"
+            },
+        }
+        for label, values in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                rewrite_settlement_chronology(evidence_root, binding, **values)
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(
+                    "artist_settlement_chronology_invalid",
+                    result["failureCodes"],
+                    result,
+                )
 
         mutations = {
             "settled declared before final": lambda verification, root: (
@@ -4668,6 +4840,153 @@ class InventoryAndRelevanceTests(GateTestCase):
                 tampered["failureCodes"],
                 tampered,
             )
+
+    def test_artist_evidence_rejects_truncated_v1_parent_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            lineage_path, _ = bind_mixed_resume_lineage(evidence_root, binding)
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
+            artifact_root = (
+                evidence_root / binding["artifactManifest"]["path"]
+            ).parent
+            parent_descriptor = lineage["parentLineages"][0]
+            parent_path = artifact_root / parent_descriptor["copiedPath"]
+            parent = json.loads(parent_path.read_text(encoding="utf-8"))
+            truncated = {
+                "schemaVersion": parent["schemaVersion"],
+                "artifactManifest": parent["artifactManifest"],
+                "responses": [
+                    {
+                        "sequence": 1,
+                        "sha256": parent["responses"][0]["sha256"],
+                    }
+                ],
+            }
+            parent_payload = (json.dumps(truncated, indent=2) + "\n").encode()
+            parent_path.write_bytes(parent_payload)
+            parent_descriptor["sha256"] = hashlib.sha256(
+                parent_payload
+            ).hexdigest()
+            lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
+            lineage_path.write_bytes(lineage_payload)
+            verification["resumeLineage"]["sha256"] = hashlib.sha256(
+                lineage_payload
+            ).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertIn(
+                "artist_apply_resume_lineage_invalid",
+                result["failureCodes"],
+                result,
+            )
+
+    def test_artist_evidence_rejects_settled_state_replayed_as_immediate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            lineage_path, incident_path = bind_mixed_resume_lineage(
+                evidence_root, binding
+            )
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
+            artifact_root = (
+                evidence_root / binding["artifactManifest"]["path"]
+            ).parent
+            attempts = lineage["priorSettlementEvidence"]["attempts"]
+            immediate_state_path = artifact_root / attempts[0]["copiedPath"]
+            settled_state_path = artifact_root / attempts[1]["copiedPath"]
+            shutil.rmtree(immediate_state_path.parent)
+            shutil.copytree(settled_state_path.parent, immediate_state_path.parent)
+            replayed_state_payload = immediate_state_path.read_bytes()
+            attempts[0]["sha256"] = hashlib.sha256(
+                replayed_state_payload
+            ).hexdigest()
+            replayed_state = json.loads(replayed_state_payload)
+            incident = json.loads(incident_path.read_text(encoding="utf-8"))
+            incident["immediateCapture"]["sha256"] = attempts[0]["sha256"]
+            incident["immediateCapture"]["vectorSha256"] = replayed_state[
+                "inputs"
+            ]["imageVectors"][0]["sha256"]
+            incident_payload = (json.dumps(incident, indent=2) + "\n").encode()
+            incident_path.write_bytes(incident_payload)
+            lineage["priorSettlementEvidence"]["incident"][
+                "sha256"
+            ] = hashlib.sha256(incident_payload).hexdigest()
+            lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
+            lineage_path.write_bytes(lineage_payload)
+            verification["resumeLineage"]["sha256"] = hashlib.sha256(
+                lineage_payload
+            ).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertIn(
+                "artist_apply_resume_lineage_invalid",
+                result["failureCodes"],
+                result,
+            )
+
+    @staticmethod
+    def _rewrite_apply_response_stdout_shape(
+        evidence_root, binding, stdout_payload
+    ):
+        verification_path = (
+            evidence_root / binding["postApplyVerification"]["path"]
+        )
+        verification = json.loads(
+            verification_path.read_text(encoding="utf-8")
+        )
+        descriptor = verification["applyResponses"][0]
+        response_path = verification_path.parent / descriptor["path"]
+        response = json.loads(response_path.read_text(encoding="utf-8"))
+        response["stdout"] = "├ Checking\n" + json.dumps(stdout_payload)
+        response_payload = (json.dumps(response, indent=2) + "\n").encode()
+        response_path.write_bytes(response_payload)
+        descriptor["sha256"] = hashlib.sha256(response_payload).hexdigest()
+        verification_payload = (
+            json.dumps(verification, indent=2) + "\n"
+        ).encode()
+        verification_path.write_bytes(verification_payload)
+        binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+            verification_payload
+        ).hexdigest()
 
     @staticmethod
     def _rewrite_apply_response_query_count(evidence_root, binding):
@@ -6187,14 +6506,14 @@ class InventoryAndRelevanceTests(GateTestCase):
                 root,
                 full_production["before"],
                 capture_role="before",
-                captured_at="2026-08-22T00:03:00Z",
+                captured_at="2026-08-22T00:08:00Z",
                 resources=pilot_after["resources"],
             )
             write_bound_production_capture(
                 root,
                 full_production["after"],
                 capture_role="after",
-                captured_at="2026-08-22T00:04:00Z",
+                captured_at="2026-08-22T00:09:00Z",
                 resources=pilot_after["resources"],
             )
             summary_path = evidence / "summary.json"

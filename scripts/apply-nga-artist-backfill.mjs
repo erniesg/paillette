@@ -23,8 +23,10 @@ import {
   STAGING_ORG_ID,
   canonicalJson,
   inspectNgaArtistPostApplyState,
+  parseNgaD1ApplyFacts,
   parseNgaVectorUpsertFacts,
-  parseWranglerJsonOutput,
+  validateNgaApplyResumeLineageV1,
+  validateNgaVectorSettlementIncidentV1,
 } from './lib/nga-artist-backfill.mjs';
 import { buildNgaArtistUpdateSql } from './lib/nga-structured-search-backfill.mjs';
 
@@ -676,55 +678,10 @@ const steps = resolvedArtifacts.map((artifact, index) => ({
 }));
 
 const d1FactsFromResponse = (stdout, path, expectedQueryCount) => {
-  const payload = parseWranglerJsonOutput(
-    stdout,
-    `D1 apply response for ${path}`
-  );
-  const results = Array.isArray(payload) ? payload : [payload];
-  if (
-    !results.length ||
-    results.some(
-      (result) =>
-        !result || typeof result !== 'object' || result.success !== true
-    )
-  ) {
-    throw new Error(`D1 apply response has no successful result for ${path}`);
-  }
-  const queryCounts = [];
-  const collectQueryCounts = (value) => {
-    if (Array.isArray(value)) {
-      value.forEach(collectQueryCounts);
-      return;
-    }
-    if (!value || typeof value !== 'object') return;
-    for (const [key, child] of Object.entries(value)) {
-      if (key === 'Total queries executed') {
-        if (!Number.isInteger(child) || child < 0) {
-          throw new Error(
-            `D1 apply response has invalid query count for ${path}`
-          );
-        }
-        queryCounts.push(child);
-      } else {
-        collectQueryCounts(child);
-      }
-    }
-  };
-  collectQueryCounts(results);
-  if (!queryCounts.length) {
-    throw new Error(
-      `D1 apply response has no executed query count for ${path}`
-    );
-  }
-  const actualQueryCount = queryCounts.reduce(
-    (total, count) => total + count,
-    0
-  );
-  if (actualQueryCount !== expectedQueryCount) {
-    throw new Error(
-      `D1 queries mismatch for ${path}: expected ${expectedQueryCount}, got ${actualQueryCount}`
-    );
-  }
+  const { results, actualQueryCount } = parseNgaD1ApplyFacts(stdout, {
+    expectedQueryCount,
+    label: `D1 apply response for ${path}`,
+  });
   const telemetry = {
     changes: [],
     rowsRead: [],
@@ -968,10 +925,11 @@ const loadResumePrefix = () => {
     } catch {
       throw new Error('resume parent lineage is malformed JSON');
     }
-    if (document?.schemaVersion !== 'nga-apply-resume-lineage-v1') {
-      throw new Error('resume parent lineage schema is invalid');
-    }
-    return document;
+    return validateNgaApplyResumeLineageV1(document, {
+      phase,
+      artifactManifestSha256: actualManifestSha256,
+      preflightManifests: lineagePreflight,
+    });
   });
   let priorSettlementEvidence = null;
   if (lineage.priorSettlementEvidence !== null) {
@@ -1014,7 +972,7 @@ const loadResumePrefix = () => {
       if (sha256(text) !== descriptor.sha256) {
         throw new Error(`${label} SHA-256 mismatch`);
       }
-      return { descriptor, text };
+      return { descriptor, text, path: copied };
     };
     if (
       Object.keys(prior.incident || {}).sort().join(',') !==
@@ -1045,6 +1003,8 @@ const loadResumePrefix = () => {
       ['immediate', incident.immediateCapture],
       ['settled-diagnostic', incident.settledDiagnostic],
     ];
+    const priorStates = [];
+    const priorOutcomes = [];
     for (const [index, [kind, source]] of expectedPrior.entries()) {
       const descriptor = prior.attempts[index];
       if (
@@ -1056,9 +1016,81 @@ const loadResumePrefix = () => {
       ) {
         throw new Error('prior settlement attempt provenance mismatch');
       }
-      loadPriorDescriptor(descriptor, 'prior settlement attempt');
+      const loaded = loadPriorDescriptor(
+        descriptor,
+        'prior settlement attempt'
+      );
+      try {
+        const state = JSON.parse(loaded.text);
+        priorStates.push(state);
+        const loadStateInput = (input, label, ndjson = false) => {
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            typeof input.path !== 'string' ||
+            !input.path ||
+            isAbsolute(input.path) ||
+            input.path.split(/[\\/]/).includes('..') ||
+            !/^[a-f0-9]{64}$/.test(String(input.sha256 || ''))
+          ) {
+            throw new Error(`${label} descriptor is invalid`);
+          }
+          const stateRoot = realpathSync(dirname(loaded.path));
+          const requestedPath = resolve(stateRoot, input.path);
+          let currentPath = stateRoot;
+          for (const component of relative(stateRoot, requestedPath).split(sep)) {
+            currentPath = join(currentPath, component);
+            if (lstatSync(currentPath).isSymbolicLink()) {
+              throw new Error(`${label} must not contain a symlink`);
+            }
+          }
+          const path = realpathSync(requestedPath);
+          if (!path.startsWith(`${stateRoot}${sep}`)) {
+            throw new Error(`${label} escapes its copied attempt root`);
+          }
+          const bytes = readFileSync(path);
+          if (sha256(bytes) !== input.sha256) {
+            throw new Error(`${label} SHA-256 mismatch`);
+          }
+          return ndjson
+            ? bytes
+                .toString('utf8')
+                .split(/\r?\n/)
+                .filter(Boolean)
+                .map((line) => JSON.parse(line))
+            : JSON.parse(bytes.toString('utf8'));
+        };
+        const ids = loadStateInput(
+          state.inputs?.ids,
+          'prior settlement ids'
+        );
+        const postRecords = loadStateInput(
+          state.inputs?.stagedRecords,
+          'prior settlement records'
+        );
+        const postVectors = (state.inputs?.imageVectors || []).flatMap(
+          (input) =>
+            loadStateInput(input, 'prior settlement vectors', true)
+        );
+        priorOutcomes.push(
+          inspectNgaArtistPostApplyState({
+            phase,
+            mapping,
+            originalRecords: rollbackD1Records,
+            originalVectors: [...rollbackById.values()],
+            postIds: ids,
+            postRecords,
+            postVectors,
+          }).outcome
+        );
+      } catch (error) {
+        throw new Error(
+          `prior settlement attempt is invalid: ${String(error?.message || error)}`
+        );
+      }
     }
-    priorSettlementEvidence = { prior, incident };
+    priorSettlementEvidence = { prior, incident, priorStates, priorOutcomes };
   }
   const evidence = names.map((name, index) => {
     const step = steps[index];
@@ -1151,6 +1183,32 @@ const loadResumePrefix = () => {
       },
     };
   });
+  if (priorSettlementEvidence) {
+    const incidentIndex = lineageResponses.findIndex(
+      (source) => source?.incident === 'vector-settlement'
+    );
+    const incidentEvidence = evidence[incidentIndex];
+    const incidentSource = lineageResponses[incidentIndex];
+    if (!incidentEvidence || incidentEvidence.step.kind !== 'image-vectors') {
+      throw new Error('vector settlement incident response is missing');
+    }
+    validateNgaVectorSettlementIncidentV1(
+      priorSettlementEvidence.incident,
+      {
+        sourceGitSha: priorSettlementEvidence.prior.sourceGitSha,
+        expectedVectorCount: incidentEvidence.step.recordCount,
+        vectorResponse: {
+          path: incidentSource.sourcePath,
+          sha256: incidentSource.sha256,
+          mutationId: incidentEvidence.facts.mutationId,
+        },
+        immediateState: priorSettlementEvidence.priorStates[0],
+        settledState: priorSettlementEvidence.priorStates[1],
+        immediateOutcome: priorSettlementEvidence.priorOutcomes[0],
+        settledOutcome: priorSettlementEvidence.priorOutcomes[1],
+      }
+    );
+  }
   return {
     evidence,
     lineage: {
@@ -1344,6 +1402,7 @@ if (!activeMode) {
   const settlementAttempts = [];
   const startedAt = Date.now();
   let settledState = null;
+  let previousSettlementCaptureMs = null;
   for (let attemptSequence = 1; ; attemptSequence += 1) {
     const attemptName = String(attemptSequence).padStart(4, '0');
     const attemptDirectory = join(attemptsRoot, attemptName);
@@ -1367,6 +1426,9 @@ if (!activeMode) {
     const stateManifestPath = join(attemptRoot, 'state-manifest.json');
     const stateManifestText = readFileSync(stateManifestPath);
     const stateManifest = JSON.parse(stateManifestText.toString('utf8'));
+    const settlementCaptureMs = Date.parse(
+      String(stateManifest.capturedAt || '')
+    );
     if (
       stateManifest.schemaVersion !== 2 ||
       stateManifest.captureKind !== 'post-apply' ||
@@ -1377,11 +1439,20 @@ if (!activeMode) {
         canonicalJson({ d1Database, imageVectorIndex }) ||
       stateManifest.counts?.ids !== expectedRecordCount ||
       stateManifest.counts?.stagedRecords !== expectedRecordCount ||
-      stateManifest.counts?.imageVectors !== expectedRecordCount
+      stateManifest.counts?.imageVectors !== expectedRecordCount ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+        String(stateManifest.capturedAt || '')
+      ) ||
+      !Number.isFinite(settlementCaptureMs) ||
+      (previousSettlementCaptureMs !== null &&
+        settlementCaptureMs <= previousSettlementCaptureMs)
     ) {
       throw new Error('post-apply state manifest identity or counts mismatch');
     }
-    resolveStateFile(attemptRoot, stateManifest.inputs?.ids);
+    previousSettlementCaptureMs = settlementCaptureMs;
+    const postIds = JSON.parse(
+      resolveStateFile(attemptRoot, stateManifest.inputs?.ids).toString('utf8')
+    );
     const postRecords = JSON.parse(
       resolveStateFile(attemptRoot, stateManifest.inputs?.stagedRecords).toString(
         'utf8'
@@ -1402,6 +1473,7 @@ if (!activeMode) {
         mapping,
         originalRecords: rollbackD1Records,
         originalVectors: [...rollbackById.values()],
+        postIds,
         postRecords,
         postVectors,
       });
@@ -1517,9 +1589,16 @@ if (!activeMode) {
         : FULL_STAGED_COUNT - PILOT_OBJECT_IDS.length,
     verifiedApplicationRecordChanges: summary.applicationRecordChanges,
   };
+  const verifiedAt = new Date().toISOString();
+  if (
+    previousSettlementCaptureMs === null ||
+    Date.parse(verifiedAt) <= previousSettlementCaptureMs
+  ) {
+    throw new Error('post-apply settlement chronology is invalid');
+  }
   const verification = {
     schemaVersion: 'nga-post-apply-verification-v4',
-    verifiedAt: new Date().toISOString(),
+    verifiedAt,
     environment,
     phase,
     artifactManifestSha256: actualManifestSha256,

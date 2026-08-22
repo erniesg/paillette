@@ -19,6 +19,10 @@ import { afterEach, test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 
 import { buildNgaArtistUpdateSql } from '../lib/nga-structured-search-backfill.mjs';
+import {
+  validateNgaApplyResumeLineageV1,
+  validateNgaVectorSettlementIncidentV1,
+} from '../lib/nga-artist-backfill.mjs';
 
 const scriptPath = resolve('scripts/apply-nga-artist-backfill.mjs');
 const prepareResumeScriptPath = resolve(
@@ -1160,6 +1164,44 @@ test('rejects absent, malformed, trailing, failed, or wrong-query-count D1 paylo
       stdout: liveD1Stdout({ queryCount: 4 }),
       pattern: /quer(?:y|ies).*expected 5|expected 5.*quer(?:y|ies)/i,
     },
+    {
+      label: 'misplaced query count',
+      stdout: JSON.stringify([
+        {
+          results: [],
+          success: true,
+          meta: { 'Total queries executed': 5 },
+        },
+      ]),
+      pattern: /exactly one direct query-count fact/i,
+    },
+    {
+      label: 'split query count facts',
+      stdout: JSON.stringify([
+        {
+          results: [
+            { 'Total queries executed': 2 },
+            { 'Total queries executed': 3 },
+          ],
+          success: true,
+        },
+      ]),
+      pattern: /exactly one direct query-count fact/i,
+    },
+    {
+      label: 'split top-level results',
+      stdout: JSON.stringify([
+        {
+          results: [{ 'Total queries executed': 2 }],
+          success: true,
+        },
+        {
+          results: [{ 'Total queries executed': 3 }],
+          success: true,
+        },
+      ]),
+      pattern: /exactly one successful result/i,
+    },
   ];
   for (const fixture of fixtures) {
     const artifact = createArtifacts();
@@ -1478,9 +1520,20 @@ test('prepares mixed parent and incident provenance with immutable prior attempt
   const immediateRelative = 'candidate/post-apply/pilot/state-manifest.json';
   const settledRelative =
     'candidate/diagnostic-after-vector-processed/state-manifest.json';
+  const immediateStateDocument = JSON.parse(
+    readFileSync(join(sourceRoot, immediateRelative), 'utf8')
+  );
+  const settledStateDocument = JSON.parse(
+    readFileSync(join(sourceRoot, settledRelative), 'utf8')
+  );
+  const immediateVectorSha =
+    immediateStateDocument.inputs.imageVectors[0].sha256;
+  const settledVectorSha = settledStateDocument.inputs.imageVectors[0].sha256;
   const incident = {
     schemaVersion: 'nga-vector-settlement-incident-v1',
-    recordedAt: '2026-08-22T15:12:55.928Z',
+    recordedAt: new Date(
+      Date.parse(settledStateDocument.capturedAt) + 1000
+    ).toISOString(),
     gitSha: sourceGitSha,
     status: 'paused-after-single-vector-upsert-before-official-verification',
     stagingMutation: {
@@ -1493,10 +1546,16 @@ test('prepares mixed parent and incident provenance with immutable prior attempt
     immediateCapture: {
       path: immediateRelative,
       sha256: sha256(readFileSync(join(sourceRoot, immediateRelative))),
+      vectorSha256: immediateVectorSha,
+      interpretation: 'stale pre-upsert vector representation',
     },
     settledDiagnostic: {
       path: settledRelative,
       sha256: sha256(readFileSync(join(sourceRoot, settledRelative))),
+      d1Sha256: settledStateDocument.inputs.stagedRecords.sha256,
+      vectorSha256: settledVectorSha,
+      expectedEnrichedVectorSha256: settledVectorSha,
+      recordCount: 5,
     },
     boundaries: {
       fullBackfillStarted: false,
@@ -1596,6 +1655,170 @@ test('prepares mixed parent and incident provenance with immutable prior attempt
   );
   assert.notEqual(mixed.status, 0);
   assert.match(mixed.stderr, /incident.*response|mixed.*provenance/i);
+
+  const immediatePath = join(sourceRoot, immediateRelative);
+  const immediateState = JSON.parse(readFileSync(immediatePath, 'utf8'));
+  const originalIdsPath = join(
+    dirname(immediatePath),
+    immediateState.inputs.ids.path
+  );
+  const escapedSource = join(sourceRoot, 'escaped-ids.json');
+  copyFileSync(originalIdsPath, escapedSource);
+  immediateState.inputs.ids.path = '../../../../escaped-ids.json';
+  immediateState.inputs.ids.sha256 = sha256(readFileSync(escapedSource));
+  immediateState.hashes.ids = immediateState.inputs.ids.sha256;
+  const unsafeStateText = `${JSON.stringify(immediateState, null, 2)}\n`;
+  writeFileSync(immediatePath, unsafeStateText);
+  incident.stagingMutation.rawResponse.sha256 = vectorSha;
+  incident.immediateCapture.sha256 = sha256(unsafeStateText);
+  const unsafeIncidentText = `${JSON.stringify(incident, null, 2)}\n`;
+  writeFileSync(
+    join(sourceRoot, 'VECTOR_SETTLEMENT_INCIDENT.json'),
+    unsafeIncidentText
+  );
+  const unsafeOut = join(artifact.root, 'unsafe-prior-path');
+  const escapedDestination = join(artifact.root, 'escaped-ids.json');
+  const unsafe = spawnSync(
+    process.execPath,
+    [
+      prepareResumeScriptPath,
+      '--phase=pilot',
+      `--manifest=${artifact.manifestPath}`,
+      `--confirm-manifest-sha256=${artifact.manifestSha256}`,
+      `--source-evidence-root=${sourceRoot}`,
+      `--response=${d1Relative}`,
+      `--confirm-response-sha256=${d1Sha}`,
+      `--response=${vectorRelative}`,
+      `--confirm-response-sha256=${vectorSha}`,
+      `--parent-lineage=${parentRelative}`,
+      `--confirm-parent-lineage-sha256=${sha256(parentText)}`,
+      '--incident=VECTOR_SETTLEMENT_INCIDENT.json',
+      `--confirm-incident-sha256=${sha256(unsafeIncidentText)}`,
+      `--out-dir=${unsafeOut}`,
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.notEqual(unsafe.status, 0);
+  assert.match(unsafe.stderr, /state input path.*unsafe|escapes/i);
+  assert.equal(existsSync(escapedDestination), false);
+});
+
+test('rejects truncated parent ancestry and a replayed settled incident state', () => {
+  const manifestSha256 = 'a'.repeat(64);
+  const preflightManifests = [
+    {
+      phase: 'pilot',
+      sourcePath: 'preflight/pilot/preflight-manifest.json',
+      sha256: 'b'.repeat(64),
+    },
+  ];
+  assert.throws(
+    () =>
+      validateNgaApplyResumeLineageV1(
+        {
+          schemaVersion: 'nga-apply-resume-lineage-v1',
+          artifactManifest: {
+            sourcePath: 'backfill/pilot/artifact-manifest.json',
+            sha256: manifestSha256,
+          },
+          responses: [{ sequence: 1, sha256: 'c'.repeat(64) }],
+        },
+        { phase: 'pilot', artifactManifestSha256: manifestSha256, preflightManifests }
+      ),
+    /parent lineage v1 contract/i
+  );
+
+  const completeParent = {
+    schemaVersion: 'nga-apply-resume-lineage-v1',
+    sourceGitSha: 'f'.repeat(40),
+    sourceEvidenceRoot: `.agent/evidence/nga-staging/${'f'.repeat(40)}/20260822T150634Z`,
+    artifactManifest: {
+      sourcePath: 'backfill/pilot/artifact-manifest.json',
+      sha256: manifestSha256,
+    },
+    preflightManifests,
+    responses: [
+      {
+        sequence: 1,
+        sourcePath:
+          'backfill/pilot/apply-responses/unexpected/nested/0001.json',
+        copiedPath: 'apply-responses/unexpected/nested/0001.json',
+        sha256: 'c'.repeat(64),
+      },
+    ],
+  };
+  assert.throws(
+    () =>
+      validateNgaApplyResumeLineageV1(completeParent, {
+        phase: 'pilot',
+        artifactManifestSha256: manifestSha256,
+        preflightManifests,
+      }),
+    /response contract/i
+  );
+
+  const vectorSha256 = 'd'.repeat(64);
+  const state = {
+    capturedAt: '2026-08-22T15:11:01.833Z',
+    counts: { imageVectors: 5 },
+    inputs: {
+      stagedRecords: { sha256: 'e'.repeat(64) },
+      imageVectors: [{ sha256: vectorSha256 }],
+    },
+  };
+  assert.throws(
+    () =>
+      validateNgaVectorSettlementIncidentV1(
+        {
+          schemaVersion: 'nga-vector-settlement-incident-v1',
+          recordedAt: '2026-08-22T15:12:55.928Z',
+          gitSha: 'f'.repeat(40),
+          status:
+            'paused-after-single-vector-upsert-before-official-verification',
+          stagingMutation: {
+            d1CommandsExecutedThisResume: 0,
+            vectorUpsertCommandsExecutedThisResume: 1,
+            vectorCount: 5,
+            mutationId: '283fa906-9e2a-4fbe-a6b1-34617719f705',
+            rawResponse: { path: 'response/0002.json', sha256: '1'.repeat(64) },
+          },
+          immediateCapture: {
+            path: 'immediate/state-manifest.json',
+            sha256: '2'.repeat(64),
+            vectorSha256,
+            interpretation: 'stale pre-upsert vector representation',
+          },
+          settledDiagnostic: {
+            path: 'settled/state-manifest.json',
+            sha256: '3'.repeat(64),
+            d1Sha256: 'e'.repeat(64),
+            vectorSha256,
+            expectedEnrichedVectorSha256: vectorSha256,
+            recordCount: 5,
+          },
+          boundaries: {
+            fullBackfillStarted: false,
+            productionChanged: false,
+            cachePurged: false,
+            nextExternalMutationAllowed: false,
+          },
+        },
+        {
+          sourceGitSha: 'f'.repeat(40),
+          expectedVectorCount: 5,
+          vectorResponse: {
+            path: 'response/0002.json',
+            sha256: '1'.repeat(64),
+            mutationId: '283fa906-9e2a-4fbe-a6b1-34617719f705',
+          },
+          immediateState: state,
+          settledState: state,
+          immediateOutcome: 'settled',
+          settledOutcome: 'settled',
+        }
+      ),
+    /incident lifecycle/i
+  );
 });
 
 test('resume requires current complete D1 state before it can verify success', () => {

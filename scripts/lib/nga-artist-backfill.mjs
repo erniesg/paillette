@@ -103,6 +103,67 @@ export function parseWranglerJsonOutput(output, label = 'Wrangler') {
   return payload;
 }
 
+export function parseNgaD1ApplyFacts(
+  output,
+  { expectedQueryCount, label = 'D1 apply response' }
+) {
+  const payload = parseWranglerJsonOutput(output, label);
+  const results = Array.isArray(payload) ? payload : [payload];
+  if (
+    results.length !== 1 ||
+    results.some(
+      (result) =>
+        !result || typeof result !== 'object' || result.success !== true
+    )
+  ) {
+    throw new Error(`${label} must contain exactly one successful result`);
+  }
+  const countOccurrences = (value) => {
+    if (Array.isArray(value)) {
+      return value.reduce(
+        (total, entry) => total + countOccurrences(entry),
+        0
+      );
+    }
+    if (!value || typeof value !== 'object') return 0;
+    return Object.entries(value).reduce(
+      (total, [key, child]) =>
+        total +
+        (key === 'Total queries executed' ? 1 : countOccurrences(child)),
+      0
+    );
+  };
+  const queryCounts = results.map((result) => {
+    if (
+      !Array.isArray(result.results) ||
+      result.results.length !== 1 ||
+      !result.results[0] ||
+      typeof result.results[0] !== 'object' ||
+      !Object.hasOwn(result.results[0], 'Total queries executed') ||
+      countOccurrences(result) !== 1
+    ) {
+      throw new Error(
+        `${label} must contain exactly one direct query-count fact per successful result`
+      );
+    }
+    const count = result.results[0]['Total queries executed'];
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(`${label} has an invalid query count`);
+    }
+    return count;
+  });
+  const actualQueryCount = queryCounts.reduce(
+    (total, count) => total + count,
+    0
+  );
+  if (actualQueryCount !== expectedQueryCount) {
+    throw new Error(
+      `${label}: D1 queries mismatch: expected ${expectedQueryCount}, got ${actualQueryCount}`
+    );
+  }
+  return { results, actualQueryCount };
+}
+
 export function parseNgaVectorUpsertFacts(
   output,
   { expectedIndex, expectedCount }
@@ -140,6 +201,153 @@ export function parseNgaVectorUpsertFacts(
     count: expectedCount,
     mutationId: mutationMatches[0][1].toLowerCase(),
   };
+}
+
+export const isSafeRelativeEvidencePath = (value) =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  !isAbsolute(value) &&
+  !/^[A-Za-z]:[\\/]/.test(value) &&
+  !value.split(/[\\/]/).includes('..') &&
+  !/(?:^|[\/_.-])production(?:[\/_.-]|$)/i.test(value);
+
+const isUtcTimestamp = (value) =>
+  typeof value === 'string' &&
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) &&
+  Number.isFinite(Date.parse(value));
+
+export function validateNgaApplyResumeLineageV1(
+  document,
+  { phase, artifactManifestSha256, preflightManifests }
+) {
+  if (
+    !document ||
+    typeof document !== 'object' ||
+    Array.isArray(document) ||
+    Object.keys(document).sort().join(',') !==
+      'artifactManifest,preflightManifests,responses,schemaVersion,sourceEvidenceRoot,sourceGitSha' ||
+    document.schemaVersion !== 'nga-apply-resume-lineage-v1' ||
+    !/^[a-f0-9]{40}$/.test(String(document.sourceGitSha || '')) ||
+    !new RegExp(
+      `^\\.agent/evidence/nga-staging/${document.sourceGitSha}/\\d{8}T\\d{6}Z$`
+    ).test(String(document.sourceEvidenceRoot || '')) ||
+    canonicalJson(document.artifactManifest) !==
+      canonicalJson({
+        sourcePath: `backfill/${phase}/artifact-manifest.json`,
+        sha256: artifactManifestSha256,
+      }) ||
+    canonicalJson(document.preflightManifests) !==
+      canonicalJson(preflightManifests) ||
+    !Array.isArray(document.responses) ||
+    !document.responses.length
+  ) {
+    throw new Error('resume parent lineage v1 contract is invalid');
+  }
+  for (const [index, response] of document.responses.entries()) {
+    const sequence = index + 1;
+    const expectedName = `${String(sequence).padStart(4, '0')}.json`;
+    const sourceParts = String(response?.sourcePath || '').split('/');
+    if (
+      !response ||
+      typeof response !== 'object' ||
+      Array.isArray(response) ||
+      Object.keys(response).sort().join(',') !==
+        'copiedPath,sequence,sha256,sourcePath' ||
+      response.sequence !== sequence ||
+      !/^[a-f0-9]{64}$/.test(String(response.sha256 || '')) ||
+      !isSafeRelativeEvidencePath(response.sourcePath) ||
+      !isSafeRelativeEvidencePath(response.copiedPath) ||
+      sourceParts.length !== 5 ||
+      sourceParts[0] !== 'backfill' ||
+      sourceParts[1] !== phase ||
+      sourceParts[2] !== 'apply-responses' ||
+      !sourceParts[3] ||
+      sourceParts[3] === '.' ||
+      sourceParts[4] !== expectedName ||
+      response.copiedPath !==
+        response.sourcePath.slice(`backfill/${phase}/`.length)
+    ) {
+      throw new Error('resume parent lineage v1 response contract is invalid');
+    }
+  }
+  return document;
+}
+
+export function validateNgaVectorSettlementIncidentV1(
+  incident,
+  {
+    sourceGitSha,
+    expectedVectorCount,
+    vectorResponse,
+    immediateState,
+    settledState,
+    immediateOutcome,
+    settledOutcome,
+  }
+) {
+  const mutation = incident?.stagingMutation;
+  const immediate = incident?.immediateCapture;
+  const settled = incident?.settledDiagnostic;
+  const boundaries = incident?.boundaries;
+  const stateVector = (state) =>
+    Array.isArray(state?.inputs?.imageVectors) &&
+    state.inputs.imageVectors.length === 1
+      ? state.inputs.imageVectors[0]
+      : null;
+  const immediateVector = stateVector(immediateState);
+  const settledVector = stateVector(settledState);
+  const immediateTime = Date.parse(String(immediateState?.capturedAt || ''));
+  const settledTime = Date.parse(String(settledState?.capturedAt || ''));
+  const recordedTime = Date.parse(String(incident?.recordedAt || ''));
+  if (
+    !incident ||
+    typeof incident !== 'object' ||
+    Array.isArray(incident) ||
+    Object.keys(incident).sort().join(',') !==
+      'boundaries,gitSha,immediateCapture,recordedAt,schemaVersion,settledDiagnostic,stagingMutation,status' ||
+    incident.schemaVersion !== 'nga-vector-settlement-incident-v1' ||
+    incident.gitSha !== sourceGitSha ||
+    incident.status !==
+      'paused-after-single-vector-upsert-before-official-verification' ||
+    !isUtcTimestamp(incident.recordedAt) ||
+    Object.keys(mutation || {}).sort().join(',') !==
+      'd1CommandsExecutedThisResume,mutationId,rawResponse,vectorCount,vectorUpsertCommandsExecutedThisResume' ||
+    mutation.d1CommandsExecutedThisResume !== 0 ||
+    mutation.vectorUpsertCommandsExecutedThisResume !== 1 ||
+    mutation.vectorCount !== expectedVectorCount ||
+    mutation.mutationId !== vectorResponse?.mutationId ||
+    canonicalJson(mutation.rawResponse) !==
+      canonicalJson({
+        path: vectorResponse?.path,
+        sha256: vectorResponse?.sha256,
+      }) ||
+    Object.keys(immediate || {}).sort().join(',') !==
+      'interpretation,path,sha256,vectorSha256' ||
+    immediate.interpretation !== 'stale pre-upsert vector representation' ||
+    Object.keys(settled || {}).sort().join(',') !==
+      'd1Sha256,expectedEnrichedVectorSha256,path,recordCount,sha256,vectorSha256' ||
+    settled.recordCount !== expectedVectorCount ||
+    settled.vectorSha256 !== settled.expectedEnrichedVectorSha256 ||
+    Object.keys(boundaries || {}).sort().join(',') !==
+      'cachePurged,fullBackfillStarted,nextExternalMutationAllowed,productionChanged' ||
+    Object.values(boundaries).some((value) => value !== false) ||
+    !immediateState ||
+    !settledState ||
+    immediateState.counts?.imageVectors !== expectedVectorCount ||
+    settledState.counts?.imageVectors !== expectedVectorCount ||
+    immediateVector?.sha256 !== immediate.vectorSha256 ||
+    settledVector?.sha256 !== settled.vectorSha256 ||
+    settledState.inputs?.stagedRecords?.sha256 !== settled.d1Sha256 ||
+    immediate.vectorSha256 === settled.expectedEnrichedVectorSha256 ||
+    immediateOutcome !== 'pending' ||
+    settledOutcome !== 'settled' ||
+    !isUtcTimestamp(immediateState.capturedAt) ||
+    !isUtcTimestamp(settledState.capturedAt) ||
+    !(immediateTime < settledTime && settledTime <= recordedTime)
+  ) {
+    throw new Error('vector settlement incident lifecycle is invalid');
+  }
+  return incident;
 }
 
 const containsExactRecoveryValue = (value, field, expected) => {
@@ -767,6 +975,7 @@ export function inspectNgaArtistPostApplyState({
   mapping,
   originalRecords,
   originalVectors,
+  postIds,
   postRecords,
   postVectors,
 }) {
@@ -808,6 +1017,16 @@ export function inspectNgaArtistPostApplyState({
     );
   }
   const expectedIds = new Set(mappingById.keys());
+  if (
+    !Array.isArray(postIds) ||
+    postIds.length !== expectedIds.size ||
+    new Set(postIds).size !== expectedIds.size ||
+    postIds.some(
+      (id) => typeof id !== 'string' || !expectedIds.has(id)
+    )
+  ) {
+    throw new Error('post-apply ID inventory does not exactly match mapping');
+  }
   for (const [label, rows] of [
     ['rollback D1', originalById],
     ['rollback vector', originalVectorsById],
