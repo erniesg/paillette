@@ -494,7 +494,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     );
   });
 
-  test('direct artist attribution returns the pinned primary-artist fixture', async ({
+  test('direct artist attribution returns the matching primary-artist fixture', async ({
     page,
   }, testInfo) => {
     const requests = publicSearchRequests(page);
@@ -503,9 +503,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
 
     await expect(page.getByText('By · Lavinia Fontana')).toBeVisible();
     await expect(
-      page.getByText('Self-Portrait before a Painting of "Amor Fedele"', {
-        exact: true,
-      })
+      page.getByText('Lucia Bonasoni Garzoni', { exact: true })
     ).toBeVisible({ timeout: 30_000 });
     expect(
       requests.filter(({ url }) => url.endsWith('/nga/text'))
