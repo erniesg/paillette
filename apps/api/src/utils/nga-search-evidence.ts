@@ -27,16 +27,51 @@ type ClassifiedRelationEvidence =
   | Extract<ArtworkRelationEvidence, { verified: true }>
   | { verified: false; source: null };
 
-const fold = (value: unknown) =>
-  String(value ?? '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
+export const NGA_LATIN_FOLD_GROUPS = [
+  ['a', 'ÀÁÂÃÄÅĀĂĄǍǞǠǺȀȂȦàáâãäåāăąǎǟǡǻȁȃȧ'],
+  ['ae', 'ÆǢǼæǣǽ'],
+  ['c', 'ÇĆĈĊČçćĉċč'],
+  ['d', 'ÐĎĐðďđ'],
+  ['e', 'ÈÉÊËĒĔĖĘĚȄȆèéêëēĕėęěȅȇ'],
+  ['g', 'ĜĞĠĢǦĝğġģǧ'],
+  ['h', 'ĤĦĥħ'],
+  ['i', 'ÌÍÎÏĨĪĬĮİǏȈȊìíîïĩīĭįıǐȉȋ'],
+  ['j', 'Ĵĵ'],
+  ['k', 'ĶǨķĸǩ'],
+  ['l', 'ĹĻĽĿŁĺļľŀł'],
+  ['n', 'ÑŃŅŇŊǸñńņňŋǹ'],
+  ['o', 'ÒÓÔÕÖØŌŎŐǑǪǬǾȌȎȪȬȮȰòóôõöøōŏőǒǫǭǿȍȏȫȭȯȱ'],
+  ['oe', 'Œœ'],
+  ['r', 'ŔŖŘȐȒŕŗřȑȓ'],
+  ['s', 'ŚŜŞŠȘśŝşšș'],
+  ['ss', 'ß'],
+  ['t', 'ŢŤŦȚţťŧț'],
+  ['th', 'Þþ'],
+  ['u', 'ÙÚÛÜŨŪŬŮŰŲǓǕǗǙǛȔȖùúûüũūŭůűųǔǖǘǚǜȕȗ'],
+  ['w', 'ŴẀẂẄŵẁẃẅ'],
+  ['y', 'ÝŶŸȲýÿŷȳ'],
+  ['z', 'ŹŻŽźżž'],
+] as const;
+
+const NGA_LATIN_FOLD_BY_CHARACTER = new Map(
+  NGA_LATIN_FOLD_GROUPS.flatMap(([replacement, characters]) =>
+    [...characters].map((character) => [character, replacement] as const)
+  )
+);
+
+export const foldNgaEvidenceText = (value: unknown) =>
+  [...String(value ?? '').normalize('NFC')]
+    .map((character) => NGA_LATIN_FOLD_BY_CHARACTER.get(character) || character)
+    .join('')
     .toLocaleLowerCase('en-US')
     .replace(/[^a-z0-9]+/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
 
-const tokens = (value: unknown) => fold(value).split(' ').filter(Boolean);
+const fold = foldNgaEvidenceText;
+
+const tokens = (value: unknown) =>
+  foldNgaEvidenceText(value).split(' ').filter(Boolean);
 
 const containsPhrase = (value: unknown, phrase: string) =>
   Boolean(phrase && ` ${fold(value)} `.includes(` ${phrase} `));
@@ -171,12 +206,27 @@ const relationshipMatches = (
   );
 };
 
-const flatArtistSegments = (value: string) =>
-  value
-    .normalize('NFC')
-    .split(/\s+(?:and|with)\s+|[;&|]+/giu)
-    .map(fold)
-    .filter(Boolean);
+const flatArtistSegments = (value: string) => {
+  const parts = value.normalize('NFC').split(/(\s+(?:and|with)\s+|[,;&|]+)/giu);
+  const segments = parts.flatMap((part, index) => {
+    if (index % 2 !== 0) return [];
+    const text = fold(part);
+    if (!text) return [];
+    return [
+      {
+        text,
+        precedingDelimiter: index > 0 ? parts[index - 1] || '' : '',
+      },
+    ];
+  });
+
+  return segments.map((segment, index) => ({
+    text: segment.text,
+    hasLaterComma: segments
+      .slice(index + 1)
+      .some((candidate) => candidate.precedingDelimiter.includes(',')),
+  }));
+};
 
 const matchesQualifiedFlatSegment = (
   segment: string,
@@ -222,14 +272,16 @@ const matchesLegacyFlatArtist = (
     return Boolean(
       primarySegment &&
         !QUALIFIED_ROLE_MARKERS.some((marker) =>
-          containsPhrase(primarySegment, marker)
+          containsPhrase(primarySegment.text, marker)
         ) &&
-        containsAllTargetTokens(primarySegment, intent.targetText)
+        containsAllTargetTokens(primarySegment.text, intent.targetText)
     );
   }
 
-  return segments.some((segment) =>
-    matchesQualifiedFlatSegment(segment, intent)
+  return segments.some(
+    (segment) =>
+      !segment.hasLaterComma &&
+      matchesQualifiedFlatSegment(segment.text, intent)
   );
 };
 

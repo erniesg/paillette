@@ -38,7 +38,9 @@ import {
 } from '../utils/nga-search-intent';
 import {
   filterNgaRelationEvidence,
+  foldNgaEvidenceText,
   matchesNgaAttributionEvidence,
+  NGA_LATIN_FOLD_GROUPS,
 } from '../utils/nga-search-evidence';
 import {
   isAllowedPublicSearchRouteScope,
@@ -304,22 +306,14 @@ const unicodeSearchQueryTokens = (query: string) =>
   (query.normalize('NFC').match(/[\p{L}\p{N}]+/gu) || [])
     .map((token) => token.trim())
     .filter((token) => {
-      const foldedToken = token
-        .normalize('NFKD')
-        .replace(/[\u0300-\u036f]/gu, '')
-        .toLocaleLowerCase('en-US');
+      const foldedToken = foldNgaEvidenceText(token);
       return (
         [...foldedToken].length > 1 && !SEARCH_CONTROL_WORDS.has(foldedToken)
       );
     });
 
-const sqliteAsciiLower = (value: string) =>
-  value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
-
-const unicodeSqlCandidatePatterns = (token: string) =>
-  [token.toLocaleLowerCase('en-US'), token.toLocaleUpperCase('en-US')].map(
-    (variant) => `% ${escapeLike(sqliteAsciiLower(variant))} %`
-  );
+const unicodeSqlCandidatePattern = (token: string) =>
+  `% ${escapeLike(foldNgaEvidenceText(token))} %`;
 
 const normalizeArtistFacetQuery = (query: string) =>
   normalizeSearchWords(
@@ -634,6 +628,17 @@ const normalizedTextSql = (expression: string) => {
 
   return `(' ' || lower(${normalized}) || ' ')`;
 };
+
+const normalizedNgaEvidenceSql = (expression: string) =>
+  NGA_LATIN_FOLD_GROUPS.reduce(
+    (sql, [replacement, characters]) =>
+      [...characters].reduce(
+        (foldedSql, character) =>
+          `replace(${foldedSql}, '${character}', '${replacement}')`,
+        sql
+      ),
+    normalizedTextSql(expression)
+  );
 
 const buildRoutedSearchPlan = (
   query: string,
@@ -1481,8 +1486,8 @@ export async function searchNgaAttributionMatches(
   const targetTokens = unicodeSearchQueryTokens(intent.targetText).slice(0, 8);
   if (!targetTokens.length) return [];
 
-  const artistText = normalizedTextSql('artist');
-  const relationshipsText = normalizedTextSql(
+  const artistText = normalizedNgaEvidenceSql('artist');
+  const relationshipsText = normalizedNgaEvidenceSql(
     `CASE
       WHEN json_valid(custom_metadata)
         THEN coalesce(json_extract(custom_metadata, '$.ngaArtists.relationships'), '')
@@ -1490,14 +1495,11 @@ export async function searchNgaAttributionMatches(
     END`
   );
   const evidenceText = `(${artistText} || ${relationshipsText})`;
-  const targetQueries = targetTokens.map(unicodeSqlCandidatePatterns);
-  const buildTokenCandidateSql = (queries: string[]) =>
-    `(${queries.map(() => `${evidenceText} LIKE ? ESCAPE '\\'`).join(' OR ')})`;
+  const targetQueries = targetTokens.map(unicodeSqlCandidatePattern);
+  const buildTokenCandidateSql = () =>
+    `${evidenceText} LIKE ? ESCAPE '\\'`;
   const tokenScoreSql = targetQueries
-    .map(
-      (queries) =>
-        `CASE WHEN ${buildTokenCandidateSql(queries)} THEN 10 ELSE 0 END`
-    )
+    .map(() => `CASE WHEN ${buildTokenCandidateSql()} THEN 10 ELSE 0 END`)
     .join(' + ');
   const tokenWhereSql = targetQueries.map(buildTokenCandidateSql).join(' AND ');
   const orgFilter = scope.orgId ? 'AND org_id = ?' : '';
@@ -1561,11 +1563,11 @@ export async function searchNgaAttributionMatches(
       `
       )
       .bind(
-        ...targetQueries.flat(),
+        ...targetQueries,
         ...(scope.orgId ? [scope.orgId] : []),
         ...(scope.provider ? [scope.provider] : []),
         ...structuredFilter.params,
-        ...targetQueries.flat(),
+        ...targetQueries,
         pageSize,
         offset
       )

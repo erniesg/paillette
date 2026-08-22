@@ -202,6 +202,60 @@ describe('NGA catalogue attribution evidence', () => {
     }
   });
 
+  it('treats legacy commas as ambiguous contributor boundaries', () => {
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'Charles Nègre, André Jammes' },
+        attribution('direct', 'André Jammes')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'Charles Nègre, André Jammes' },
+        attribution('direct', 'Charles Nègre')
+      )
+    ).toBe(true);
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'follower of Frans Hals, Rembrandt van Rijn' },
+        attribution('follower_of', 'Rembrandt van Rijn')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'follower of Frans Hals, Rembrandt van Rijn' },
+        attribution('follower_of', 'Frans Hals')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'Rembrandt van Rijn, follower of Frans Hals' },
+        attribution('follower_of', 'Frans Hals')
+      )
+    ).toBe(true);
+  });
+
+  it('fails closed for comma-delimited surname-order ambiguity', () => {
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'Nègre, Charles' },
+        attribution('direct', 'Charles Nègre')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'follower of Hals, Frans' },
+        attribution('follower_of', 'Frans Hals')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        { artist: 'Hals, Frans, follower of Rembrandt van Rijn' },
+        attribution('follower_of', 'Frans Hals')
+      )
+    ).toBe(false);
+  });
+
   it('uses valid structured relationships exclusively for qualified roles', () => {
     const metadata = attributionMetadata({
       artist: 'Rembrandt van Rijn and follower of Frans Hals',

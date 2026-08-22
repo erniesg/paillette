@@ -165,7 +165,9 @@ const normalizeArtistForTest = (value: string | null) =>
 
 const normalizeNgaCandidateForTest = (value: string) =>
   ` ${value
-    .replace(/[A-Z]/g, (character) => character.toLowerCase())
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('en-US')
     .replace(/[-,./()[\]_:;"'‘’]/gu, ' ')} `;
 
 const ngaCandidatePatternMatches = (value: string, pattern: unknown) => {
@@ -597,10 +599,6 @@ class FakeSearchDb {
           sql.slice(0, sql.indexOf('AS match_score')).match(/\?/g)?.length ||
           0;
         const scorePatterns = params.slice(0, scoreParamCount);
-        const scorePatternGroups = Array.from(
-          { length: scorePatterns.length / 2 },
-          (_, index) => scorePatterns.slice(index * 2, index * 2 + 2)
-        );
         const structuredParamIndex =
           scoreParamCount +
           Number(sql.includes('AND org_id = ?')) +
@@ -622,10 +620,8 @@ class FakeSearchDb {
           const evidence = normalizeNgaCandidateForTest(
             `${row.artist || ''} ${relationships}`
           );
-          return scorePatternGroups.every((patterns) =>
-            patterns.some((pattern) =>
-              ngaCandidatePatternMatches(evidence, pattern)
-            )
+          return scorePatterns.every((pattern) =>
+            ngaCandidatePatternMatches(evidence, pattern)
           );
         });
         const limit = Number(params[params.length - 2]);
@@ -640,7 +636,7 @@ class FakeSearchDb {
             .slice(offset, offset + limit)
             .map((row) => ({
               ...row,
-              match_score: scorePatternGroups.length * 10,
+              match_score: scorePatterns.length * 10,
             })),
         } as unknown as { success: boolean; results: T[] };
       }
@@ -4631,6 +4627,142 @@ describe('Search API auth and quota behavior', () => {
     expect(
       leBrunPayload.data.results.map((row: { id: string }) => row.id)
     ).toEqual([leBrun.id]);
+  });
+
+  it('uses the proof accent fold for bounded SQL candidates in both directions', async () => {
+    const lowerAccented = makeArtworkRow({
+      id: 'nga-lower-accented-official',
+      title: 'After José de Ribera',
+      artist: 'After josé de ribera',
+      classification: 'Painting',
+      primary_artist_id: '1364',
+      custom_metadata: JSON.stringify({
+        provider: 'nga',
+        ngaArtists: {
+          relationships: [
+            {
+              constituentId: '1364',
+              displayOrder: 1,
+              roleType: 'artist',
+              role: 'artist after',
+              prefix: 'after',
+              suffix: null,
+              preferredDisplayName: 'josé de ribera',
+              forwardDisplayName: 'josé de ribera',
+              alternativeNames: [],
+            },
+          ],
+        },
+      }),
+    });
+    const upperAccented = makeArtworkRow({
+      id: 'nga-upper-accented-multiword',
+      title: 'A: Accented official form',
+      artist: 'After ÉLISABETH LOUISE VIGÉE LE BRUN',
+      classification: 'Painting',
+      primary_artist_id: '2402',
+      custom_metadata: JSON.stringify({
+        provider: 'nga',
+        ngaArtists: {
+          relationships: [
+            {
+              constituentId: '2402',
+              displayOrder: 1,
+              roleType: 'artist',
+              role: 'artist after',
+              prefix: 'after',
+              suffix: null,
+              preferredDisplayName: 'ÉLISABETH LOUISE VIGÉE LE BRUN',
+              forwardDisplayName: 'ÉLISABETH LOUISE VIGÉE LE BRUN',
+              alternativeNames: [],
+            },
+          ],
+        },
+      }),
+    });
+    const accentlessAlternative = makeArtworkRow({
+      id: 'nga-accentless-official-alternative',
+      title: 'B: Accentless official alternative',
+      artist: 'After Louise Le Brun',
+      classification: 'Painting',
+      primary_artist_id: '579',
+      custom_metadata: JSON.stringify({
+        provider: 'nga',
+        ngaArtists: {
+          relationships: [
+            {
+              constituentId: '579',
+              displayOrder: 1,
+              roleType: 'artist',
+              role: 'artist after',
+              prefix: 'after',
+              suffix: null,
+              preferredDisplayName: 'Louise Le Brun',
+              forwardDisplayName: 'Louise Le Brun',
+              alternativeNames: ['Elisabeth Louise Vigee Le Brun'],
+            },
+          ],
+        },
+      }),
+    });
+    db = new FakeSearchDb([
+      lowerAccented,
+      upperAccented,
+      accentlessAlternative,
+    ]);
+    env = { ...makeEnv(db), SEARCH_FUSION_MODE: 'hybrid' };
+
+    const partial = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'painting after Jos', topK: 100, minScore: 0 },
+      'nga'
+    );
+    const accentlessJose = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'painting after Jose de Ribera', topK: 100, minScore: 0 },
+      'nga'
+    );
+    const accentlessMultiword = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'painting after Elisabeth Louise Vigee Le Brun',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const accentedAlternative = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'painting after Élisabeth Louise Vigée Le Brun',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const partialPayload = (await partial.json()) as any;
+    const josePayload = (await accentlessJose.json()) as any;
+    const multiwordPayload = (await accentlessMultiword.json()) as any;
+    const alternativePayload = (await accentedAlternative.json()) as any;
+
+    expect(partialPayload.data.results).toEqual([]);
+    expect(josePayload.data.results.map((row: { id: string }) => row.id)).toEqual(
+      [lowerAccented.id]
+    );
+    expect(
+      multiwordPayload.data.results.map((row: { id: string }) => row.id)
+    ).toEqual([upperAccented.id, accentlessAlternative.id]);
+    expect(
+      alternativePayload.data.results.map((row: { id: string }) => row.id)
+    ).toEqual([upperAccented.id, accentlessAlternative.id]);
   });
 
   it('keeps explicit NGA artist IDs primary-only and skips caption retrieval', async () => {
