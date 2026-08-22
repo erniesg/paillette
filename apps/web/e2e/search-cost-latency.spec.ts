@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
+import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search';
 import { NGA_SPOTLIGHT_DEFINITIONS } from '../app/lib/nga-spotlight-definitions';
+import { NGA_SEARCH_SPOTLIGHT_ASSET_PATH } from '../app/lib/generated-search-spotlight-assets';
+
+const PREVIOUS_PUBLIC_SEARCH_CONTRACT_VERSION = String(
+  Number(PUBLIC_SEARCH_CONTRACT_VERSION) - 1
+);
+const PREVIOUS_NGA_SPOTLIGHT_PATH_PREFIX =
+  `/search-spotlights/nga/v${PREVIOUS_PUBLIC_SEARCH_CONTRACT_VERSION}-`;
 
 const card = (id: string) => ({
   id,
@@ -17,7 +25,7 @@ const card = (id: string) => ({
 
 const spotlightBundle = {
   schemaVersion: 1,
-  contractVersion: '28',
+  contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
   corpusVersion: 'e2e-fixture',
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
@@ -69,7 +77,7 @@ const installSearchHarness = async (
   const searches: CapturedSearch[] = [];
   const spotlightRequests: string[] = [];
 
-  await page.route('**/search-spotlights/nga/v28-*.json', async (route) => {
+  await page.route(`**${NGA_SEARCH_SPOTLIGHT_ASSET_PATH}`, async (route) => {
     spotlightRequests.push(route.request().url());
     await route.fulfill({ json: spotlightBundle });
   });
@@ -185,19 +193,11 @@ test.beforeEach(async ({ page }) => {
 test('idle NGA landing preloads one spotlight asset and issues no live searches', async ({
   page,
 }) => {
-  const searches: string[] = [];
-  const spotlightRequests: string[] = [];
-  page.on('request', (request) => {
-    const url = request.url();
-    if (url.includes('/api/public-search/')) searches.push(url);
-    if (url.includes('/search-spotlights/nga/v28-')) {
-      spotlightRequests.push(url);
-    }
-  });
+  const { searches, spotlightRequests } = await installSearchHarness(page);
 
   const documentResponse = await openNgaSearchPage(page);
-  expect(documentResponse?.headers()['link']).toMatch(
-    /<\/search-spotlights\/nga\/v28-[a-f0-9]{64}\.json>; rel=preload; as=fetch; crossorigin/
+  expect(documentResponse?.headers()['link']).toContain(
+    `<${NGA_SEARCH_SPOTLIGHT_ASSET_PATH}>; rel=preload; as=fetch; crossorigin`
   );
   await expect(
     page.locator('[data-suggestion-query="a stormy sea with ships"]')
@@ -210,10 +210,14 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   await page.waitForTimeout(3_000);
 
   expect(searches).toEqual([]);
-  expect(spotlightRequests).toHaveLength(1);
-  expect(spotlightRequests[0]).toMatch(
-    /\/search-spotlights\/nga\/v28-[a-f0-9]{64}\.json$/
-  );
+  expect(spotlightRequests).toEqual([
+    new URL(NGA_SEARCH_SPOTLIGHT_ASSET_PATH, page.url()).toString(),
+  ]);
+  expect(
+    spotlightRequests.some((url) =>
+      url.includes(PREVIOUS_NGA_SPOTLIGHT_PATH_PREFIX)
+    )
+  ).toBe(false);
 });
 
 test('colour suggestion issues one base request with refinement kept client-side', async ({
