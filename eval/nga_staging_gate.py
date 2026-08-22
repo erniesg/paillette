@@ -3789,8 +3789,10 @@ def load_case_inventory(new_path: Path, legacy_path: Path) -> dict[str, Any]:
         raise ValueError("every staging case requires an id")
     if len(set(all_ids)) != len(all_ids):
         raise ValueError("duplicate staging case id")
+    normalized_new_text = []
     request_contracts: dict[str, tuple[str, Mapping[str, Any]]] = {}
-    for case in new_text:
+    for raw_case in new_text:
+        case = dict(raw_case)
         expected_value = case.get("expected")
         expected = expected_value if isinstance(expected_value, Mapping) else {}
         relation_value = expected.get("relation")
@@ -3798,8 +3800,17 @@ def load_case_inventory(new_path: Path, legacy_path: Path) -> dict[str, Any]:
         manual = bool(case.get("manualGradeTop"))
         verified_empty = case.get("expectedVerifiedEmpty") is True
         expected_zero = case.get("expectedZeroResults") is True
-        if manual and (verified_empty or expected_zero):
+        if (manual or "minimumResults" in case) and (
+            verified_empty or expected_zero
+        ):
             raise ValueError("contradictory request gates")
+        if (
+            "minimumResults" not in case
+            and not verified_empty
+            and not expected_zero
+            and expected.get("unresolved") is not True
+        ):
+            case["minimumResults"] = 1
         if relation.get("kind") == "derived_from" and (
             not verified_empty or manual
         ):
@@ -3821,11 +3832,13 @@ def load_case_inventory(new_path: Path, legacy_path: Path) -> dict[str, Any]:
                 f"{previous[0]} and {case.get('id')}"
             )
         request_contracts[request_key] = (str(case.get("id")), contract)
+        normalized_new_text.append(case)
     expected_versions = document.get("expectedVersions")
     if expected_versions != EXPECTED_VERSIONS:
         raise ValueError("staging case versions do not match evaluator versions")
     return {
         **document,
+        "textCases": normalized_new_text,
         "legacyCases": parse_legacy_cases(legacy_path),
     }
 

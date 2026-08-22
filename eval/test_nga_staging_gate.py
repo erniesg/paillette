@@ -3364,12 +3364,16 @@ class InventoryAndRelevanceTests(GateTestCase):
                     encoding="utf-8"
                 )
             )
-            original = document["textCases"][0]
+            original = next(
+                case
+                for case in document["textCases"]
+                if case["id"] == "classification-list"
+            )
             document["textCases"].append(
                 {
                     **json.loads(json.dumps(original)),
                     "id": "conflicting-request-contract",
-                    "minimumResults": 1,
+                    "expectedZeroResults": True,
                 }
             )
             inventory_path = root / "cases.json"
@@ -4640,6 +4644,71 @@ class InventoryAndRelevanceTests(GateTestCase):
         )
         self.assertIn("minimum_results_not_met", result["failureCodes"])
         self.assertEqual(len({case["id"] for case in cases}), 92)
+
+    def test_every_valid_positive_new_text_case_defaults_to_nonempty_results(self):
+        inventory = self.call(
+            "load_case_inventory",
+            ROOT / "eval/nga-staging-cases.yaml",
+            ROOT / "eval/nga-constraint-queries.yaml",
+        )
+        positives = [
+            case
+            for case in inventory["textCases"]
+            if case.get("expectedZeroResults") is not True
+            and case.get("expectedVerifiedEmpty") is not True
+            and case.get("expected", {}).get("unresolved") is not True
+        ]
+        self.assertGreaterEqual(len(positives), 20)
+        self.assertTrue(
+            all(case.get("minimumResults") == 1 for case in positives)
+        )
+        pilot = self.call("select_cases", inventory, "pilot")
+        self.assertTrue(
+            all(case.get("minimumResults") == 1 for case in pilot["text"])
+        )
+
+        case = next(
+            case for case in positives if case["id"] == "classification-list"
+        )
+        response = text_evidence_response(
+            case,
+            "nga-v7",
+            "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+        )
+        response["json"]["data"]["results"] = []
+        response["json"]["data"]["count"] = 0
+        result = self.call(
+            "evaluate_text_case",
+            case,
+            response,
+            {"parser": "nga-v7"},
+        )
+        self.assertIn("minimum_results_not_met", result["failureCodes"])
+
+        verified_empty = next(
+            case
+            for case in inventory["textCases"]
+            if case.get("expectedVerifiedEmpty") is True
+        )
+        self.assertNotIn("minimumResults", verified_empty)
+        expected_zero = next(
+            case
+            for case in inventory["textCases"]
+            if case.get("expectedZeroResults") is True
+        )
+        self.assertNotIn("minimumResults", expected_zero)
+        empty_response = text_evidence_response(
+            verified_empty,
+            "nga-v7",
+            "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+        )
+        empty_result = self.call(
+            "evaluate_text_case",
+            verified_empty,
+            empty_response,
+            {"parser": "nga-v7"},
+        )
+        self.assertNotIn("minimum_results_not_met", empty_result["failureCodes"])
 
     def test_legacy_ambiguous_cases_require_safe_empty_constraints_not_unresolved(self):
         cases = self.call(
