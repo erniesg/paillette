@@ -191,7 +191,7 @@ Use `mkdtemp` for intermediate downloads, SHA-256 each response before parsing, 
 
 `enrichNgaArtistVector` must deep-clone the source vector, change only `metadata.primaryArtistId`, and hash both full `values` arrays. `buildNgaArtistUpdateSql` must use a tested `sqlJsonLiteral(value)` escaper and emit `json_patch(coalesce(custom_metadata, '{}'), json(${sqlJsonLiteral(customMetadataPatch)}))` plus the equivalent `field_sources` expression; it updates only `primary_artist_id`, `custom_metadata`, `field_sources`, and `updated_at`, and contains all four scope guards.
 
-`capture-nga-artist-backfill-preflight.mjs` accepts only `--environment=staging`, the exact staging D1/index names from `apps/api/wrangler.toml`, `--phase=pilot|full`, `--capture-kind=preflight|post-apply`, optional `--exclude-ids-file`, and an empty `--out-dir`; a preflight capture persists and hash-binds a usable D1 Time Travel recovery point before fetching the D1 rows and image vectors by explicit manifest IDs. `apply-nga-artist-backfill.mjs` accepts the same environment/resource allowlist plus `--manifest`, `--confirm-manifest-sha256`, optional `--execute`, and the required execute-only `--post-apply-out-dir`. Without `--execute`, it prints the exact serial command plan and writes nothing remotely. With `--execute`, it uses the manifest's ordered file list rather than a glob, requires each D1 chunk's exact changed-row count, records every Wrangler JSON response, re-exports the applied D1/vector state, and succeeds only after recursive hash and semantic verification.
+`capture-nga-artist-backfill-preflight.mjs` accepts only `--environment=staging`, the exact staging D1/index names from `apps/api/wrangler.toml`, `--phase=pilot|full`, `--capture-kind=preflight|post-apply`, optional `--exclude-ids-file`, and an empty `--out-dir`; a preflight capture persists and hash-binds a usable D1 Time Travel recovery point before fetching the D1 rows and image vectors by explicit manifest IDs. `apply-nga-artist-backfill.mjs` accepts the same environment/resource allowlist plus `--manifest`, `--confirm-manifest-sha256`, optional `--execute`, and the required execute-only `--post-apply-out-dir`. Without `--execute`, it prints the exact serial command plan and writes nothing remotely. With `--execute`, it uses the manifest's ordered file list rather than a glob, strictly parses any leading Wrangler status text before one JSON payload, requires each successful D1 result's `Total queries executed` to equal the hash-validated SQL statement count, records `meta.changes` and row counters as telemetry only, re-exports the applied D1/vector state, and succeeds only after recursive hash and semantic verification. An execute-only `--resume-response-dir` is permitted only with a hash-confirmed `--resume-lineage`; it may supply a validated contiguous successful response prefix and cannot skip or reorder the remaining steps.
 
 - [ ] **Step 4: Run focused tests and verify deterministic artifacts**
 
@@ -641,7 +641,105 @@ node scripts/apply-nga-artist-backfill.mjs \
   --execute
 ```
 
-The apply script itself requires exactly five changed D1 rows, immediately re-exports the five rows/vectors, recursively rehashes that post-apply state, and writes `nga-post-apply-verification-v2` evidence. It copies every executed Wrangler response into deterministic paths `candidate/post-apply/pilot/apply-responses/0001.json` onward and binds those files in exact manifest order with their SHA-256 digests, SQL artifact paths, per-chunk expected/actual `meta.changes`, and exact expected/actual total of five. The evaluator rehashes each raw response, reparses `stdout`, and recomputes the per-chunk and total change counts; a missing, tampered, reordered, duplicated, or inconsistent response is a stop condition even when final state is correct. The script also requires exact primary IDs, relation metadata, idempotent SQL row state, unchanged vector value hashes, unchanged counts, and zero unrelated field changes before exiting zero. Separately prove direct Vectorize filter success. On any failure, stop and request rollback authorization using the hash-bound D1 Time Travel recovery point, complete original D1 rows, and rollback vector NDJSON; do not continue to the full backfill.
+The apply script requires exactly five successful D1 queries for the five hash-validated SQL statements, immediately re-exports the five rows/vectors, recursively rehashes that post-apply state, and writes `nga-post-apply-verification-v3` evidence. It copies every executed Wrangler response into deterministic paths `candidate/post-apply/pilot/apply-responses/0001.json` onward and binds those files in exact manifest order with their SHA-256 digests, SQL artifact paths, per-chunk expected/actual query counts, and non-authoritative D1 telemetry. The evaluator rehashes each raw response, strictly reparses the optional status prefix plus JSON `stdout`, and independently derives exactly five application-record changes from the immutable rollback rows versus verified post-state. `meta.changes`, `rows_written`, and related SQLite counters are telemetry, not exact application-row counts. A missing, tampered, reordered, duplicated, failed, or inconsistent response is a stop condition even when final state is correct. The script also requires exact primary IDs, relation metadata, idempotent D1 state, unchanged vector value hashes, unchanged counts, and zero unrelated field changes before exiting zero. Separately prove direct Vectorize filter success. On any failure, stop; rollback requires separate authorization using the hash-bound D1 Time Travel recovery point, complete original D1 rows, and rollback vector NDJSON, and full backfill remains prohibited until the pilot recovery and gate receive independent approval.
+
+#### Reviewed forward recovery for the preserved partial pilot
+
+The preserved run at candidate `c5913a3193beff80f92bc5a90215f73869bc3cb6` stopped after its first ordered step. Its raw D1 response is
+`backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json`
+with SHA-256
+`eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5`.
+It reports status zero, success, `Total queries executed: 5`, and telemetry
+`meta.changes: 11`; the preserved diagnostic capture proves the five D1 rows
+match the prepared mapping while image vectors remain byte-identical to
+preflight. Do not recapture or replace the original pre-mutation pilot rows.
+
+Only after independent review of the exact repaired HEAD may the coordinator
+create a new exact-head evidence root and locally copy the immutable evidence:
+
+```bash
+NGA_ARTIST_PARTIAL_ROOT="$(pwd)/.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z"
+NGA_ARTIST_EVIDENCE_ROOT="$(pwd)/.agent/evidence/nga-staging/$(git rev-parse HEAD)/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p \
+  "$NGA_ARTIST_EVIDENCE_ROOT/preflight" \
+  "$NGA_ARTIST_EVIDENCE_ROOT/backfill" \
+  "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot"
+cp -pR "$NGA_ARTIST_PARTIAL_ROOT/preflight/pilot" "$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot"
+cp -p "$NGA_ARTIST_PARTIAL_ROOT/preflight/production-identity.json" "$NGA_ARTIST_EVIDENCE_ROOT/preflight/production-identity.json"
+cp -pR "$NGA_ARTIST_PARTIAL_ROOT/backfill/pilot" "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot"
+cp -p "$NGA_ARTIST_PARTIAL_ROOT/candidate/production-identity/pilot/before.json" "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot/before.json"
+realpath "$NGA_ARTIST_EVIDENCE_ROOT" > "$NGA_ARTIST_EVIDENCE_ROOT/preflight/evidence-root.txt"
+
+NGA_ARTIST_PILOT_MANIFEST="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/artifact-manifest.json"
+NGA_ARTIST_PILOT_SHA="$(shasum -a 256 "$NGA_ARTIST_PILOT_MANIFEST" | awk '{print $1}')"
+NGA_ARTIST_PILOT_PREFLIGHT_SHA="$(shasum -a 256 "$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot/preflight-manifest.json" | awk '{print $1}')"
+NGA_ARTIST_RESUME_DIR="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855"
+NGA_ARTIST_RESUME_RESPONSE_SHA="$(shasum -a 256 "$NGA_ARTIST_RESUME_DIR/0001.json" | awk '{print $1}')"
+test "$NGA_ARTIST_RESUME_RESPONSE_SHA" = "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5"
+test "$(shasum -a 256 "$NGA_ARTIST_PARTIAL_ROOT/backfill/pilot/artifact-manifest.json" | awk '{print $1}')" = "$NGA_ARTIST_PILOT_SHA"
+test "$(shasum -a 256 "$NGA_ARTIST_PARTIAL_ROOT/preflight/pilot/preflight-manifest.json" | awk '{print $1}')" = "$NGA_ARTIST_PILOT_PREFLIGHT_SHA"
+```
+
+Create the explicit lineage document using only those verified local bytes:
+
+```bash
+node --input-type=module - \
+  "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/resume-lineage.json" \
+  "$NGA_ARTIST_PILOT_SHA" \
+  "$NGA_ARTIST_PILOT_PREFLIGHT_SHA" \
+  "$NGA_ARTIST_RESUME_RESPONSE_SHA" <<'NODE'
+import { writeFileSync } from 'node:fs';
+const [out, manifestSha256, preflightSha256, responseSha256] = process.argv.slice(2);
+const value = {
+  schemaVersion: 'nga-apply-resume-lineage-v1',
+  sourceGitSha: 'c5913a3193beff80f92bc5a90215f73869bc3cb6',
+  sourceEvidenceRoot: '.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z',
+  artifactManifest: {
+    sourcePath: 'backfill/pilot/artifact-manifest.json',
+    sha256: manifestSha256,
+  },
+  preflightManifests: [{
+    phase: 'pilot',
+    sourcePath: 'preflight/pilot/preflight-manifest.json',
+    sha256: preflightSha256,
+  }],
+  responses: [{
+    sequence: 1,
+    sourcePath: 'backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json',
+    copiedPath: 'apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json',
+    sha256: responseSha256,
+  }],
+};
+writeFileSync(out, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
+NODE
+
+NGA_ARTIST_RESUME_LINEAGE="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/resume-lineage.json"
+NGA_ARTIST_RESUME_LINEAGE_SHA="$(shasum -a 256 "$NGA_ARTIST_RESUME_LINEAGE" | awk '{print $1}')"
+```
+
+The following is the only forward mutation command described by this recovery
+section. It must validate and skip response step 0001, execute the image-vector
+step exactly once, capture current D1/vector state, bind both resumed and new
+raw responses plus the lineage file, and require the combined five-record state
+before exit zero:
+
+```bash
+node scripts/apply-nga-artist-backfill.mjs \
+  --environment=staging \
+  --phase=pilot \
+  --manifest="$NGA_ARTIST_PILOT_MANIFEST" \
+  --confirm-manifest-sha256="$NGA_ARTIST_PILOT_SHA" \
+  --resume-response-dir="$NGA_ARTIST_RESUME_DIR" \
+  --resume-lineage="$NGA_ARTIST_RESUME_LINEAGE" \
+  --confirm-resume-lineage-sha256="$NGA_ARTIST_RESUME_LINEAGE_SHA" \
+  --post-apply-out-dir="$NGA_ARTIST_EVIDENCE_ROOT/candidate/post-apply/pilot" \
+  --execute
+```
+
+Stop after the recovered pilot verification and fresh pilot `after` production
+identity are captured. This repair does not authorize rollback, the full
+backfill, any production action, or any additional live call; each requires the
+coordinator's separate decision after exact-head review.
 
 Immediately after those pilot verification checks succeed, require
 `candidate/production-identity/pilot/after.json` not to exist and create it
@@ -790,7 +888,7 @@ node scripts/apply-nga-artist-backfill.mjs \
   --execute
 ```
 
-The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. It requires exactly 63,248 D1 changes because the five pilot rows are already idempotent, then re-exports and verifies the full 63,253-row D1/vector state before exiting zero. Its `nga-post-apply-verification-v2` file binds every deterministic `candidate/post-apply/full/apply-responses/NNNN.json` response in execution order and records per-chunk and total expected/actual D1 changes. The evaluator rehashes and reparses every response and independently requires the exact 63,248 total; final state without that historical change-count evidence is insufficient. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
+The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. It requires exactly 63,253 D1 queries for the 63,253 guarded SQL statements, then re-exports and verifies the full 63,253-row D1/vector state before exiting zero. Its `nga-post-apply-verification-v3` file binds every deterministic `candidate/post-apply/full/apply-responses/NNNN.json` response in execution order and records per-chunk and total expected/actual query counts plus non-authoritative telemetry. The evaluator rehashes and strictly reparses every response, derives exactly 63,248 application-record changes by comparing the immutable full-remaining rollback rows with verified post-state while excluding the five separately proved pilot IDs, and requires the complete 63,253 final state. Final state without the response history and state-derived application-record count is insufficient. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
 
 Immediately after the full apply and those verification checks succeed—and
 before Step 7, full discovery, or any official gate—write a fresh
