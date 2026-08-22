@@ -13,7 +13,11 @@
       "classification-list",
       "combined-oil-ships-date"
     ],
-    "imageCaseIds": ["image-pilot-painting-date"]
+    "imageCaseIds": [
+      "image-artist",
+      "image-artist-wrong-primary",
+      "image-artist-secondary-control"
+    ]
   },
   "textCases": [
     {
@@ -594,6 +598,15 @@
       "fixtureId": "open-access-art:nga:131994",
       "filename": "nga-query.jpg",
       "constraints": {"artistIds": ["1974"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "excluded"}
+    },
+    {
+      "id": "image-artist-secondary-control",
+      "category": "image-artist-secondary-control",
+      "fixtureId": "open-access-art:nga:110821",
+      "filename": "nga-query.jpg",
+      "constraints": {"artistIds": ["2402"]},
       "minimumResults": 1,
       "targetExpectation": {"policy": "excluded"}
     }

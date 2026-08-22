@@ -807,7 +807,11 @@ PILOT_TEXT_IDS = [
     "classification-list",
     "combined-oil-ships-date",
 ]
-PILOT_IMAGE_IDS = ["image-pilot-painting-date"]
+PILOT_IMAGE_IDS = [
+    "image-artist",
+    "image-artist-wrong-primary",
+    "image-artist-secondary-control",
+]
 PILOT_RELATION_IDS = [
     "relation-active-depicts",
     "relation-passive-depicts",
@@ -1129,10 +1133,12 @@ def make_complete_evidence_bundle(
         {
             "caseId": case_id,
             "status": "manual_review_required",
+            "minimumReturnedRelevance": 1,
             "instructions": (
                 "Assign each relevance field an integer 0-3; do not infer it from "
                 "similarity. Grades 2-3 are strong; grade 1 is weak and cannot "
-                "satisfy the strong-result gate."
+                "satisfy the strong-result gate; grade 0 in any evaluated returned "
+                "row stops the release."
             ),
             "results": [
                 {
@@ -3256,6 +3262,7 @@ class InventoryAndRelevanceTests(GateTestCase):
         )
         self.assertIn("nga-artist-data-binding-v3", plan)
         self.assertIn("exactly 63,248 D1 changes", plan)
+        self.assertIn("exactly 12 Python public requests", plan)
         for relative in (
             "preflight/pilot/preflight-manifest.json",
             "preflight/full-remaining",
@@ -3915,6 +3922,58 @@ class InventoryAndRelevanceTests(GateTestCase):
             )["passed"]
         )
 
+    def test_visible_relation_rejects_grade_zero_tail_but_allows_short_strong_list(self):
+        rows = [passing_row(), passing_row(id="open-access-art:nga:2")]
+        template = self.call(
+            "make_manual_grading_template", "visible-relation", rows
+        )
+        self.assertEqual(template["minimumReturnedRelevance"], 1)
+
+        def summarize(grades):
+            labels = {
+                "schemaVersion": "nga-relevance-labels-v1",
+                "gradedAt": "2026-08-22T00:00:00Z",
+                "reviewer": "release-reviewer",
+                "cases": [
+                    {
+                        "caseId": "visible-relation",
+                        "results": [
+                            {"id": row["id"], "relevance": grade}
+                            for row, grade in zip(rows, grades, strict=True)
+                        ],
+                    }
+                ],
+            }
+            return self.call("summarize_manual_relevance", [template], labels)
+
+        weak_tail = self.call(
+            "evaluate_manual_relevance_completion", summarize([2, 0]), "candidate"
+        )
+        self.assertIn("irrelevant_manual_result_returned", weak_tail["failureCodes"])
+
+        short_template = self.call(
+            "make_manual_grading_template", "visible-relation", rows[:1]
+        )
+        short_labels = {
+            "schemaVersion": "nga-relevance-labels-v1",
+            "gradedAt": "2026-08-22T00:00:00Z",
+            "reviewer": "release-reviewer",
+            "cases": [
+                {
+                    "caseId": "visible-relation",
+                    "results": [{"id": rows[0]["id"], "relevance": 2}],
+                }
+            ],
+        }
+        short_summary = self.call(
+            "summarize_manual_relevance", [short_template], short_labels
+        )
+        self.assertTrue(
+            self.call(
+                "evaluate_manual_relevance_completion", short_summary, "candidate"
+            )["passed"]
+        )
+
     def test_derived_verified_empty_requires_unverified_catalogue_evidence(self):
         relation = {
             "kind": "derived_from",
@@ -4300,6 +4359,37 @@ class InventoryAndRelevanceTests(GateTestCase):
             "parse_legacy_cases", ROOT / "eval" / "nga-constraint-queries.yaml"
         )
         self.assertEqual(len(cases), 92)
+
+    def test_valid_positive_legacy_cases_require_nonempty_results(self):
+        cases = self.call(
+            "parse_legacy_cases", ROOT / "eval/nga-constraint-queries.yaml"
+        )
+        positives = [
+            case
+            for case in cases
+            if not case["legacyAmbiguous"]
+            and case["expected"].get("unresolved") is not True
+        ]
+        self.assertGreaterEqual(len(positives), 80)
+        self.assertTrue(
+            all(case.get("minimumResults") == 1 for case in positives)
+        )
+
+        case = positives[0]
+        response = text_evidence_response(
+            case,
+            "nga-v7",
+            "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+        )
+        response["json"]["data"]["results"] = []
+        response["json"]["data"]["count"] = 0
+        result = self.call(
+            "evaluate_text_case",
+            case,
+            response,
+            {"parser": "nga-v7"},
+        )
+        self.assertIn("minimum_results_not_met", result["failureCodes"])
         self.assertEqual(len({case["id"] for case in cases}), 92)
 
     def test_legacy_ambiguous_cases_require_safe_empty_constraints_not_unresolved(self):
@@ -4485,9 +4575,71 @@ class InventoryAndRelevanceTests(GateTestCase):
             "paintings and sculptures",
             "oil paintings of ships before 1800",
         ])
-        self.assertEqual(len(pilot["text"]) + len(pilot["image"]), 5)
+        self.assertEqual(
+            [case["id"] for case in pilot["image"]], PILOT_IMAGE_IDS
+        )
+        self.assertEqual(len(pilot["text"]) + len(pilot["image"]), 7)
+        self.assertEqual(
+            self.call("expected_public_request_labels", pilot, "pilot"),
+            [
+                *[f"text:{case_id}" for case_id in PILOT_TEXT_IDS],
+                "cache:first",
+                "cache:repeat",
+                "cache:changed",
+                *[f"image:{case_id}" for case_id in PILOT_IMAGE_IDS],
+                "image:repeat",
+                "ngs:text",
+            ],
+        )
+        self.assertEqual(
+            len(self.call("expected_public_request_labels", pilot, "pilot")),
+            12,
+        )
+        self.assertEqual(
+            tuple(self.gate.NGA_PILOT_OBJECT_IDS),
+            ("131994", "110821", "11236", "38", "579"),
+        )
         self.assertEqual(full["counts"]["legacy"], 92)
         self.assertGreaterEqual(full["counts"]["newText"], 24)
+
+    def test_pilot_request_inventory_uses_exact_nine_per_minute_pacing_and_cooldown(self):
+        inventory = self.call(
+            "load_case_inventory",
+            ROOT / "eval/nga-staging-cases.yaml",
+            ROOT / "eval/nga-constraint-queries.yaml",
+        )
+        pilot = self.call("select_cases", inventory, "pilot")
+        labels = self.call("expected_public_request_labels", pilot, "pilot")
+        monotonic = [0.0]
+        wall = [datetime(2026, 8, 22, tzinfo=timezone.utc)]
+
+        def sleep(seconds):
+            monotonic[0] += seconds
+            wall[0] += timedelta(seconds=seconds)
+
+        pacer = self.gate.RequestPacer(
+            requests_per_minute=9,
+            clock=lambda: monotonic[0],
+            sleep=sleep,
+            wall_clock=lambda: wall[0],
+        )
+        for label in labels:
+            pacer.wait(label)
+        self.assertEqual(len(pacer.evidence), 12)
+        self.assertEqual(pacer.evidence[9]["startedAt"], "2026-08-22T00:01:00Z")
+        cooldown = self.call(
+            "build_request_cooldown_handoff",
+            binding={
+                "runId": "0" * 32,
+                "snapshot": "candidate",
+                "evaluatorGitSha": "a" * 40,
+                "deploymentIdentityHash": "b" * 64,
+            },
+            phase="pilot",
+            request_timing_sha256="c" * 64,
+            last_public_request_at=pacer.evidence[-1]["startedAt"],
+        )
+        self.assertEqual(cooldown["nextRunNotBefore"], "2026-08-22T00:02:00Z")
 
     def test_artist_case_and_fixtures_bind_applied_primary_ids(self):
         inventory = json.loads(
@@ -4503,6 +4655,24 @@ class InventoryAndRelevanceTests(GateTestCase):
             {"policy": "required", "maxRank": 3},
         )
         self.assertNotIn("expectedZeroResults", artist_case)
+
+        secondary_case = next(
+            case
+            for case in inventory["imageCases"]
+            if case["id"] == "image-artist-secondary-control"
+        )
+        self.assertEqual(
+            secondary_case,
+            {
+                "id": "image-artist-secondary-control",
+                "category": "image-artist-secondary-control",
+                "fixtureId": "open-access-art:nga:110821",
+                "filename": "nga-query.jpg",
+                "constraints": {"artistIds": ["2402"]},
+                "minimumResults": 1,
+                "targetExpectation": {"policy": "excluded"},
+            },
+        )
 
         fixtures = json.loads(
             (ROOT / "eval" / "nga-image-fixtures.json").read_text(encoding="utf-8")
@@ -4520,6 +4690,22 @@ class InventoryAndRelevanceTests(GateTestCase):
                 for fixture in fixtures
             },
             expected_ids,
+        )
+        secondary_fixture = next(
+            fixture
+            for fixture in fixtures
+            if fixture["artworkId"] == "open-access-art:nga:110821"
+        )
+        self.assertEqual(
+            secondary_fixture["officialSecondaryArtists"],
+            [
+                {
+                    "constituentId": "2402",
+                    "displayOrder": 2,
+                    "role": "artist after",
+                    "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+                }
+            ],
         )
         self.assertEqual(
             {
@@ -4629,6 +4815,8 @@ class InventoryAndRelevanceTests(GateTestCase):
                             "strongMrr": 1.0,
                             "mrr": 1.0,
                             "ndcgAt10": 0.9,
+                            "minimumReturnedRelevance": 1,
+                            "irrelevantResultCount": 0,
                         }
                     }
                 },

@@ -56,7 +56,11 @@ PILOT_TEXT_CASE_IDS = (
     "classification-list",
     "combined-oil-ships-date",
 )
-PILOT_IMAGE_CASE_IDS = ("image-pilot-painting-date",)
+PILOT_IMAGE_CASE_IDS = (
+    "image-artist",
+    "image-artist-wrong-primary",
+    "image-artist-secondary-control",
+)
 PILOT_RELATION_CASE_IDS = (
     "relation-active-depicts",
     "relation-passive-depicts",
@@ -3530,6 +3534,12 @@ def parse_legacy_cases(path: Path) -> list[dict[str, Any]]:
                 "query": fields["text"],
                 "expected": expected,
                 "legacyAmbiguous": fields.get("ambiguous") is True,
+                **(
+                    {"minimumResults": 1}
+                    if fields.get("ambiguous") is not True
+                    and expected.get("unresolved") is not True
+                    else {}
+                ),
             }
         )
     if len(cases) != 92:
@@ -3606,12 +3616,22 @@ def select_cases(inventory: Mapping[str, Any], phase: str) -> dict[str, Any]:
         selected_images = [
             image_by_id[case_id] for case_id in pilot["imageCaseIds"]
         ]
-        if len(selected_text) != 4 or len(selected_images) != 1:
-            raise ValueError("pilot must contain exactly four text and one image case")
+        if (
+            tuple(pilot.get("textCaseIds", [])) != PILOT_TEXT_CASE_IDS
+            or tuple(pilot.get("imageCaseIds", [])) != PILOT_IMAGE_CASE_IDS
+            or any(
+                str(case.get("fixtureId", "")).removeprefix(
+                    "open-access-art:nga:"
+                )
+                not in NGA_PILOT_OBJECT_IDS
+                for case in selected_images
+            )
+        ):
+            raise ValueError("pilot case inventory differs from the approved scope")
         return {
             "text": selected_text,
             "image": selected_images,
-            "counts": {"legacy": 0, "newText": 4, "image": 1, "total": 5},
+            "counts": {"legacy": 0, "newText": 4, "image": 3, "total": 7},
         }
     if phase != "full":
         raise ValueError("phase must be pilot or full")
@@ -3710,10 +3730,12 @@ def make_manual_grading_template(
     return {
         "caseId": case_id,
         "status": "manual_review_required",
+        "minimumReturnedRelevance": 1,
         "instructions": (
             "Assign each relevance field an integer 0-3; do not infer it from "
             "similarity. Grades 2-3 are strong; grade 1 is weak and cannot "
-            "satisfy the strong-result gate."
+            "satisfy the strong-result gate; grade 0 in any evaluated returned "
+            "row stops the release."
         ),
         "results": [
             {
@@ -3772,7 +3794,18 @@ def summarize_manual_relevance(
             row.get("relevance") if isinstance(row, Mapping) else None
             for row in supplied_results
         ]
-        by_case[case_id] = score_manual_relevance(labels)
+        minimum_returned = template.get("minimumReturnedRelevance")
+        if minimum_returned != 1:
+            raise ValueError(
+                f"invalid minimum returned relevance for {case_id}"
+            )
+        by_case[case_id] = {
+            **score_manual_relevance(labels),
+            "minimumReturnedRelevance": minimum_returned,
+            "irrelevantResultCount": sum(
+                label < minimum_returned for label in labels
+            ),
+        }
 
     metric_names = (
         "precisionAt5",
@@ -3782,6 +3815,8 @@ def summarize_manual_relevance(
         "mrr",
         "strongMrr",
         "ndcgAt10",
+        "minimumReturnedRelevance",
+        "irrelevantResultCount",
     )
     macro = {
         metric: sum(metrics[metric] for metrics in by_case.values()) / len(by_case)
@@ -3876,6 +3911,25 @@ def evaluate_manual_relevance_completion(
             {**failure, "caseId": case_id}
             for failure in strong_gate["failures"]
         )
+        minimum_returned = case_metrics.get("minimumReturnedRelevance")
+        irrelevant_count = case_metrics.get("irrelevantResultCount")
+        if minimum_returned != 1 or type(irrelevant_count) is not int:
+            failures.append(
+                _failure(
+                    "manual_relevance_metrics_incomplete",
+                    caseId=case_id,
+                    metric="irrelevantResultCount",
+                )
+            )
+        elif irrelevant_count > 0:
+            failures.append(
+                _failure(
+                    "irrelevant_manual_result_returned",
+                    caseId=case_id,
+                    minimumReturnedRelevance=minimum_returned,
+                    actual=irrelevant_count,
+                )
+            )
     return _result(failures, summary=summary)
 
 
@@ -3974,7 +4028,7 @@ def evaluate_pilot_inspection(
             )
         )
 
-    expected_counts = {"legacy": 0, "newText": 4, "image": 1, "total": 5}
+    expected_counts = {"legacy": 0, "newText": 4, "image": 3, "total": 7}
     if summary.get("caseCounts") != expected_counts:
         failures.append(
             _failure(
@@ -3985,7 +4039,7 @@ def evaluate_pilot_inspection(
         )
     expected_hard_results = {
         "text": {"selected": 4, "passed": 4},
-        "image": {"selected": 1, "passed": 1},
+        "image": {"selected": 3, "passed": 3},
     }
     for modality, expected in expected_hard_results.items():
         if summary.get(modality) != expected:
@@ -4024,6 +4078,8 @@ def evaluate_pilot_inspection(
         "mrr",
         "strongMrr",
         "ndcgAt10",
+        "minimumReturnedRelevance",
+        "irrelevantResultCount",
     )
     metric_sets = [macro, *[value for value in by_case.values() if isinstance(value, Mapping)]]
     if (

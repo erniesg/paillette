@@ -19,7 +19,15 @@
           "scripts/lib/open-access-art-ingest.mjs",
           "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"
         ]
-      }
+      },
+      "officialSecondaryArtists": [
+        {
+          "constituentId": "2402",
+          "displayOrder": 2,
+          "role": "artist after",
+          "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495"
+        }
+      ]
     },
     {
       "artworkId": "open-access-art:nga:131994",

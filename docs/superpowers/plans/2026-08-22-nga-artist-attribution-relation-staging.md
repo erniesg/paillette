@@ -455,7 +455,7 @@ Expected: FAIL on absent strong metrics, evidence status checks, and artist-data
 
 - [ ] **Step 3: Implement gate semantics and cases**
 
-Set expected versions to `nga-v7`, `nga-plan-v2`, contract `29`, cache `v8`. Add live cases for direct `by`, every supported attribution role family, multiword artists, case/punctuation/dash variants, combined constraints, ambiguous controls, primary-vs-secondary ID controls, visible-relation weak-tail exclusion, and derived-from verified-empty behavior. Keep request pacing at no more than nine anonymous requests per minute and update the declared browser request budget with its exact test count.
+Set expected versions to `nga-v7`, `nga-plan-v2`, contract `29`, cache `v8`. Add live cases for direct `by`, every supported attribution role family, multiword artists, case/punctuation/dash variants, combined constraints, ambiguous controls, primary-vs-secondary ID controls, visible-relation weak-tail exclusion, and derived-from verified-empty behavior. Every valid positive legacy case requires at least one result; explicit verified-empty relation cases remain exempt. A visible-relation grade-0 result anywhere in the evaluated returned list is a stop condition even when its head contains a strong result. The pilot live inventory is exactly four text cases plus positive, wrong-primary, and secondary-only artist-ID image controls, for exactly 12 Python public requests including cache, repeat, and NGS probes. Keep request pacing at no more than nine anonymous requests per minute and update the declared browser request budget with its exact test count.
 
 - [ ] **Step 4: Run evaluator tests and capture GREEN**
 
@@ -679,8 +679,11 @@ python3 eval/nga_staging_gate.py \
 Write the exact-ID labels to `candidate/pilot-relevance-labels.json`, then run a
 fresh official pilot. Candidate evidence is never rehashed permissively, so the
 official run must include strong manual labels and every recomputed hard gate
-must pass. Before starting it, wait until the discovery bundle's exact
-`nextRunNotBefore` timestamp; this executable handoff is derived from the last
+must pass. The pilot executes exactly 12 Python public requests—four text,
+three cache, three artist-ID images, one stable image repeat, and one NGS
+probe—through the rolling nine-per-minute pacer. Before starting it, wait until
+the discovery bundle's exact `nextRunNotBefore` timestamp; this executable
+handoff is derived from the last
 raw public-search request timestamp and covers every text, image, cache-repeat,
 negative, and NGS probe made by that discovery process:
 
