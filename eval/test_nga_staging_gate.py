@@ -175,14 +175,14 @@ def deployment_identity(
             "apiVersion": "v1",
             "parserVersion": "nga-v7" if snapshot == "candidate" else "nga-v4",
             "planVersion": "nga-plan-v2" if snapshot == "candidate" else "unversioned",
-            "resultCacheVersion": "v10" if snapshot == "candidate" else "v5",
+            "resultCacheVersion": "v11" if snapshot == "candidate" else "v5",
         },
         "web": {
             "origin": "https://paillette-stg.berlayar.ai",
             "deploymentId": "web-deployment",
             "versionId": "web-version",
             "gitSha": git_sha,
-            "contractVersion": "31" if snapshot == "candidate" else "26",
+            "contractVersion": "32" if snapshot == "candidate" else "26",
         },
     }
     if snapshot == "candidate":
@@ -3300,7 +3300,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "deploymentId", "unexpected"
             ),
             "version": lambda value: value["web"].__setitem__(
-                "contractVersion", "32"
+                "contractVersion", "33"
             ),
             "trusted preflight": lambda value: value["artistDataBinding"][
                 "productionIdentity"
@@ -5634,8 +5634,8 @@ class InventoryAndRelevanceTests(GateTestCase):
         observed = {
             "parser": "nga-v7",
             "plan": "nga-plan-v2",
-            "contract": "31",
-            "apiResultCache": "v10",
+            "contract": "32",
+            "apiResultCache": "v11",
         }
 
         self.assertEqual(
@@ -5809,9 +5809,9 @@ class InventoryAndRelevanceTests(GateTestCase):
         identity["api"].update(
             parserVersion="nga-v7",
             planVersion="nga-plan-v2",
-            resultCacheVersion="v10",
+            resultCacheVersion="v11",
         )
-        identity["web"]["contractVersion"] = "31"
+        identity["web"]["contractVersion"] = "32"
         identity.pop("artistDataBinding")
 
         result = self.call(
@@ -5927,8 +5927,8 @@ class InventoryAndRelevanceTests(GateTestCase):
             {
                 "parser": "nga-v7",
                 "plan": "nga-plan-v2",
-                "contract": "31",
-                "apiResultCache": "v10",
+                "contract": "32",
+                "apiResultCache": "v11",
             },
         )
         attribution_roles = {
@@ -5980,8 +5980,8 @@ class InventoryAndRelevanceTests(GateTestCase):
             {
                 "parser": "nga-v7",
                 "plan": "nga-plan-v2",
-                "contract": "31",
-                "apiResultCache": "v10",
+                "contract": "32",
+                "apiResultCache": "v11",
             },
         )
 

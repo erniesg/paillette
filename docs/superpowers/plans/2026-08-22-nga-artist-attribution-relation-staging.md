@@ -22,7 +22,7 @@
 - Never use image similarity, generated captions, ownership provenance, or ingest lineage to prove attribution or historical derivation.
 - Use TDD for every production behavior: capture a focused RED result before implementation and a focused GREEN result after it.
 - Keep NGA behavior behind the existing provider gate; NGS and non-NGA routing must remain unchanged.
-- Bump parser to `nga-v7`, plan to `nga-plan-v2`, public contract to `31`, and API result-cache key to `v10` together. Contract 31/cache v10 supersede the earlier versioned pairs so neither pre-repair results nor the discovery-only anatomical-`bust` false positive can replay.
+- Bump parser to `nga-v7`, plan to `nga-plan-v2`, public contract to `32`, and API result-cache key to `v11` together. Contract 32/cache v11 supersede the earlier versioned pairs so neither pre-repair results, the discovery-only anatomical-`bust` false positive, nor pre-bounded attribution candidate results can replay.
 - Do not purge caches; the cache namespace bump makes old entries unreachable and recoverable.
 - Preserve the pre-existing untracked `.impeccable/` directory and all unrelated user changes.
 - Stop on a source mismatch, hard-constraint violation, unsupported claim, partial D1/vector state, vector-value change, NGS exposure, non-NGA mutation, or production identity change.
@@ -221,7 +221,7 @@ git commit -m "feat(search): prepare guarded NGA artist backfill"
 - Modify: `apps/web/app/lib/__tests__/public-text-search-plan.test.ts`
 
 **Interfaces:**
-- Produces: `NgaAttributionIntent`, `PublicSearchRelationEvidence`, plan `nga-plan-v2`, parser `nga-v7`, contract `31`, cache key `v10`.
+- Produces: `NgaAttributionIntent`, `PublicSearchRelationEvidence`, plan `nga-plan-v2`, parser `nga-v7`, contract `32`, cache key `v11`.
 - Produces: `parseNgaAttributionIntent(query, occupiedSpans) -> NgaAttributionIntent | null` and `canonicalNgaAttribution(intent) -> NgaAttributionIntent`.
 
 - [ ] **Step 1: Write failing contract/parser/cache tests**
@@ -340,7 +340,7 @@ export function classifyNgaRelationEvidence(result, relation):
 export function filterNgaRelationEvidence(results, plan): ArtworkSearchResult[];
 ```
 
-Attribution mode executes a D1 metadata lane over official `artist` plus `custom_metadata.ngaArtists.relationships`; it does not execute image/caption lanes. Any NGA search with explicit `artistIds` also sets caption-channel weight to zero, because the v1 caption index has no `primaryArtistId` filter contract. `direct` restricts the matching relation to `primary_artist_id`; qualified roles may inspect all stored relationships. Use normalized token-boundary matching, never substring-only name matching.
+Attribution mode executes a D1 metadata lane over official `artist` plus `custom_metadata.ngaArtists.relationships`; it does not execute image/caption lanes. D1 candidate GLOBs are byte-bounded below the platform limit, probe only legacy artist text or extracted preferred/forward/alternative catalogue names (never serialized JSON keys), and split otherwise-over-limit accent groups into bounded alternatives without dropping a token. Hydrated normalized token-boundary catalogue evidence remains authoritative. Any NGA search with explicit `artistIds` also sets caption-channel weight to zero, because the v1 caption index has no `primaryArtistId` filter contract. `direct` restricts the matching relation to `primary_artist_id`; qualified roles may inspect all stored relationships. Use normalized token-boundary matching, never substring-only name matching.
 
 For visible relations, retain rows with explicit institution title/description subject evidence or contributions from both `jina_image` and `caption`; sort institution evidence first, then existing stable fused order. For derived-from, retain only explicit institution metadata containing a recognized derivation connector and source classification. If none remain, return zero rows and set interpretation evidence status to `unverified`.
 
@@ -360,7 +360,7 @@ git add apps/api/src/utils/nga-search-evidence.ts apps/api/src/utils/nga-search-
 git commit -m "fix(search): require NGA catalogue evidence for claims"
 ```
 
-### Task 5: Truthful web interpretation, empty state, and v31 spotlight
+### Task 5: Truthful web interpretation, empty state, and v32 spotlight
 
 **Files:**
 - Modify: `apps/web/app/routes/galleries.$galleryId.search.tsx:1380-1460,3060-3160`
@@ -368,12 +368,12 @@ git commit -m "fix(search): require NGA catalogue evidence for claims"
 - Modify: `apps/web/app/lib/public-search-composer.ts`
 - Modify: `apps/web/app/lib/__tests__/public-search-composer.test.ts`
 - Modify: `apps/web/app/lib/search-spotlights.ts`
-- Create: the content-addressed `v31-${sha256}.json` asset under `apps/web/public/search-spotlights/nga/`
+- Create: the content-addressed `v32-${sha256}.json` asset under `apps/web/public/search-spotlights/nga/`
 - Modify: `apps/web/app/lib/__tests__/search-spotlights.test.ts`
 - Modify: `apps/web/app/lib/__tests__/public-search-contract.test.ts`
 
 **Interfaces:**
-- Consumes: v31 interpretation attribution and relation-evidence status.
+- Consumes: v32 interpretation attribution and relation-evidence status.
 - Produces: truthful chips/summary and the exact empty copy `No catalogue-verified matches.` / `The indexed NGA catalogue does not verify this historical relationship.`.
 
 - [ ] **Step 1: Add failing presentation and contract tests**
@@ -389,7 +389,7 @@ expect(getSearchEmptyState({
 });
 ```
 
-Assert attribution chips show `After · Rembrandt` or `Attributed to · Rembrandt`, unsupported derivation never shows “lower minimum score,” existing image empty state still offers replace/lower controls, Image editor layout remains compact after result ownership, and v31 spotlight content is byte-equivalent to v30 except contract metadata and content-addressed filename.
+Assert attribution chips show `After · Rembrandt` or `Attributed to · Rembrandt`, unsupported derivation never shows “lower minimum score,” existing image empty state still offers replace/lower controls, Image editor layout remains compact after result ownership, and v32 spotlight content is byte-equivalent to v31 except contract metadata and content-addressed filename.
 
 - [ ] **Step 2: Run focused web tests and capture RED**
 
@@ -401,7 +401,7 @@ Expected: FAIL on old generic empty copy and absent attribution presentation.
 
 - [ ] **Step 3: Implement pure presentation helpers and wire the page**
 
-Add pure `getSearchEmptyState` and `getInterpretationChips` helpers to `public-search-composer.ts`; keep JSX declarative. Generate the v31 spotlight through the existing `pnpm --filter @paillette/web spotlights:nga` path, verify the filename digest, and delete no previous immutable spotlight assets.
+Add pure `getSearchEmptyState` and `getInterpretationChips` helpers to `public-search-composer.ts`; keep JSX declarative. Generate the v32 spotlight through the existing `pnpm --filter @paillette/web spotlights:nga` path, verify the filename digest, and delete no previous immutable spotlight assets.
 
 - [ ] **Step 4: Run focused web tests and capture GREEN**
 
@@ -431,7 +431,7 @@ git commit -m "fix(search): explain NGA relation evidence truthfully"
 
 **Interfaces:**
 - Produces: strong relevance where grades `>= 2`, verified-empty derived-relation assertions, artist backfill identity checks, and browser evidence for attribution/empty-state behavior.
-- Consumes: parser `nga-v7`, plan `nga-plan-v2`, contract `31`, cache `v10`, and the Task 2 backfill manifest.
+- Consumes: parser `nga-v7`, plan `nga-plan-v2`, contract `32`, cache `v11`, and the Task 2 backfill manifest.
 
 - [ ] **Step 1: Add failing evaluator tests**
 
@@ -455,7 +455,7 @@ Expected: FAIL on absent strong metrics, evidence status checks, and artist-data
 
 - [ ] **Step 3: Implement gate semantics and cases**
 
-Set expected versions to `nga-v7`, `nga-plan-v2`, contract `31`, cache `v10`. Add live cases for direct `by`, every supported attribution role family, multiword artists, case/punctuation/dash variants, combined constraints, ambiguous controls, primary-vs-secondary ID controls, visible-relation weak-tail exclusion, and derived-from verified-empty behavior. Every valid positive legacy or new text case defaults to at least one result, including every positive pilot text case; only explicitly unresolved, `expectedZeroResults`, or verified-empty cases may omit that requirement. A visible-relation grade-0 result anywhere in the evaluated returned list is a stop condition even when its head contains a strong result. The pilot live inventory is exactly four text cases plus positive, wrong-primary, and secondary-only artist-ID image controls, for exactly 12 Python public requests including cache, repeat, and NGS probes. Keep request pacing at no more than nine anonymous requests per minute and update the declared browser request budget with its exact test count.
+Set expected versions to `nga-v7`, `nga-plan-v2`, contract `32`, cache `v11`. Add live cases for direct `by`, every supported attribution role family, multiword artists, case/punctuation/dash variants, combined constraints, ambiguous controls, primary-vs-secondary ID controls, visible-relation weak-tail exclusion, and derived-from verified-empty behavior. Every valid positive legacy or new text case defaults to at least one result, including every positive pilot text case; only explicitly unresolved, `expectedZeroResults`, or verified-empty cases may omit that requirement. A visible-relation grade-0 result anywhere in the evaluated returned list is a stop condition even when its head contains a strong result. The pilot live inventory is exactly four text cases plus positive, wrong-primary, and secondary-only artist-ID image controls, for exactly 12 Python public requests including cache, repeat, and NGS probes. Keep request pacing at no more than nine anonymous requests per minute and update the declared browser request budget with its exact test count.
 
 - [ ] **Step 4: Run evaluator tests and capture GREEN**
 
@@ -618,7 +618,7 @@ pnpm --filter @paillette/web deploy:staging
 
 Verify `https://paillette-api-stg.berlayar.ai/health` reports staging and the new
 parser/plan/cache/contract versions, and verify the anonymous staging web loads
-contract 31. The web must be present before the strict pilot rehash because the
+contract 32. The web must be present before the strict pilot rehash because the
 pilot manifest requires all nine bound Playwright artifacts. Confirm production
 version identity is unchanged before continuing.
 
@@ -917,7 +917,7 @@ remain canonically equal.
 - [ ] **Step 7: Reconfirm the exact reviewed web on staging**
 
 Do not redeploy if the exact reviewed web from Step 3 is still active. Verify
-the live web contract is `29`, the staged route loads anonymously, and API/web
+the live web contract is `32`, the staged route loads anonymously, and API/web
 deployment identities still bind to the same candidate SHA. If staging web
 identity drifted, stop and repeat the reviewed deployment/identity checks before
 running the full gate.

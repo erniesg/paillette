@@ -21,7 +21,7 @@ const artwork = (id: string) => ({
 
 const bundle = {
   schemaVersion: 1 as const,
-  contractVersion: '31' as const,
+  contractVersion: '32' as const,
   corpusVersion: 'nga-2026-07-17',
   provider: 'nga' as const,
   generatedAt: '2026-07-17T08:00:00.000Z',
@@ -46,7 +46,7 @@ describe('public search contract', () => {
     expect(normalizePublicSearchText('Stormy Sea')).not.toBe(
       normalizePublicSearchText('stormy sea')
     );
-    expect(PUBLIC_SEARCH_CONTRACT_VERSION).toBe('31');
+    expect(PUBLIC_SEARCH_CONTRACT_VERSION).toBe('32');
   });
 
   it('accepts a strict four-card NGA spotlight bundle', () => {

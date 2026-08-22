@@ -97,9 +97,25 @@ const makeArtwork = (
   deleted_at: null,
 });
 
-const createRealSqliteD1 = (rows: SqliteArtwork[]) => {
+const extractBoundGlobPatterns = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.flatMap(extractBoundGlobPatterns);
+  if (typeof value !== 'string') return [];
+  if (value.startsWith('*[')) return [value];
+  if (!value.trimStart().startsWith('[')) return [];
+  try {
+    return extractBoundGlobPatterns(JSON.parse(value));
+  } catch {
+    return [];
+  }
+};
+
+const createRealSqliteD1 = (
+  rows: SqliteArtwork[],
+  options: { maxGlobPatternBytes?: number } = {}
+) => {
   const sqlite = new DatabaseSync(':memory:');
   const preparedSql: string[] = [];
+  const boundValues: unknown[][] = [];
   sqlite.exec(`
     CREATE TABLE artworks (
       id TEXT PRIMARY KEY,
@@ -155,6 +171,17 @@ const createRealSqliteD1 = (rows: SqliteArtwork[]) => {
       let params: unknown[] = [];
       return {
         bind(...values: unknown[]) {
+          for (const value of values) {
+            for (const pattern of extractBoundGlobPatterns(value)) {
+              if (
+                options.maxGlobPatternBytes !== undefined &&
+                Buffer.byteLength(pattern, 'utf8') > options.maxGlobPatternBytes
+              ) {
+                throw new Error('LIKE or GLOB pattern too complex');
+              }
+            }
+          }
+          boundValues.push(values);
           params = values;
           return this;
         },
@@ -168,7 +195,7 @@ const createRealSqliteD1 = (rows: SqliteArtwork[]) => {
     },
   } as unknown as D1Database;
 
-  return { d1, preparedSql, close: () => sqlite.close() };
+  return { d1, preparedSql, boundValues, close: () => sqlite.close() };
 };
 
 const searchAfter = (db: D1Database, targetText: string) =>
@@ -182,25 +209,41 @@ const searchAfter = (db: D1Database, targetText: string) =>
 
 describe('NGA attribution candidate SQL on SQLite', () => {
   it('prepares and executes the generated SQL with accented official names in both directions', async () => {
-    const { d1, preparedSql, close } = createRealSqliteD1([
-      makeArtwork('jose', 'A: lowercase accented', 'josé de ribera'),
-      makeArtwork(
-        'le-brun-accented',
-        'B: uppercase accented',
-        'ÉLISABETH LOUISE VIGÉE LE BRUN'
-      ),
-      makeArtwork(
-        'le-brun-alternative',
-        'C: accentless alternative',
-        'Louise Le Brun',
-        ['Elisabeth Louise Vigee Le Brun']
-      ),
-      makeArtwork(
-        'eight-token-name',
-        'D: bounded eight-token name',
-        'Albrecht Johann Friedrich Maria Georg Ludwig Peter Hans'
-      ),
-    ]);
+    const { d1, preparedSql, boundValues, close } = createRealSqliteD1(
+      [
+        makeArtwork('jose', 'A: lowercase accented', 'josé de ribera'),
+        makeArtwork(
+          'le-brun-accented',
+          'B: uppercase accented',
+          'ÉLISABETH LOUISE VIGÉE LE BRUN'
+        ),
+        makeArtwork(
+          'le-brun-alternative',
+          'C: accentless alternative',
+          'Louise Le Brun',
+          ['Elisabeth Louise Vigee Le Brun']
+        ),
+        makeArtwork(
+          'eight-token-name',
+          'D: bounded eight-token name',
+          'Albrecht Johann Friedrich Maria Georg Ludwig Peter Hans'
+        ),
+        makeArtwork('lavinia', 'E: live browser fixture', 'Lavinia Fontana'),
+        makeArtwork('vowel-accented', 'F: vowel fallback accented', 'ÉÉÉ'),
+        makeArtwork('vowel-plain', 'G: vowel fallback plain', 'EEE'),
+        makeArtwork(
+          'expansion-accented',
+          'H: expansion fallback accented',
+          'Æ'
+        ),
+        makeArtwork('expansion-plain', 'I: expansion fallback plain', 'AE'),
+        {
+          ...makeArtwork('legacy', 'J: legacy flat artist', 'Legacy Person'),
+          custom_metadata: JSON.stringify({ provider: 'nga' }),
+        },
+      ],
+      { maxGlobPatternBytes: 48 }
+    );
 
     try {
       await expect(searchAfter(d1, 'Jose de Ribera')).resolves.toMatchObject([
@@ -224,6 +267,37 @@ describe('NGA attribution candidate SQL on SQLite', () => {
           'Albrecht Johann Friedrich Maria Georg Ludwig Peter Hans'
         )
       ).resolves.toMatchObject([{ id: 'eight-token-name' }]);
+      await expect(searchAfter(d1, 'Lavinia Fontana')).resolves.toMatchObject([
+        { id: 'lavinia' },
+      ]);
+      await expect(searchAfter(d1, 'EEE')).resolves.toMatchObject([
+        { id: 'vowel-accented' },
+        { id: 'vowel-plain' },
+      ]);
+      await expect(searchAfter(d1, 'ÉÉÉ')).resolves.toMatchObject([
+        { id: 'vowel-accented' },
+        { id: 'vowel-plain' },
+      ]);
+      await expect(searchAfter(d1, 'AE')).resolves.toMatchObject([
+        { id: 'expansion-accented' },
+        { id: 'expansion-plain' },
+      ]);
+      await expect(searchAfter(d1, 'Æ')).resolves.toMatchObject([
+        { id: 'expansion-accented' },
+        { id: 'expansion-plain' },
+      ]);
+      await expect(searchAfter(d1, 'Legacy Person')).resolves.toMatchObject([
+        { id: 'legacy' },
+      ]);
+      const globPatterns = boundValues.flatMap((values) =>
+        values.flatMap(extractBoundGlobPatterns)
+      );
+      expect(globPatterns.length).toBeGreaterThan(0);
+      expect(
+        Math.max(
+          ...globPatterns.map((value) => Buffer.byteLength(value, 'utf8'))
+        )
+      ).toBeLessThanOrEqual(48);
       expect(Math.max(...preparedSql.map((sql) => sql.length))).toBeLessThan(
         20_000
       );
@@ -252,6 +326,42 @@ describe('NGA attribution candidate SQL on SQLite', () => {
       ]);
       expect(partial).toEqual([]);
       expect(missing).toEqual([]);
+    } finally {
+      close();
+    }
+  });
+
+  it('probes only catalogue name values and finds a late-sorting target in one page', async () => {
+    const distractors = Array.from({ length: 250 }, (_, index) =>
+      makeArtwork(
+        `distractor-${index}`,
+        `A: distractor ${String(index).padStart(3, '0')}`,
+        `Marcus Brown ${index}`
+      )
+    );
+    const { d1, preparedSql, close } = createRealSqliteD1(
+      [
+        ...distractors,
+        makeArtwork(
+          'lavinia-late',
+          'Z: live browser fixture',
+          'Lavinia Fontana'
+        ),
+      ],
+      { maxGlobPatternBytes: 48 }
+    );
+
+    try {
+      await expect(
+        searchNgaAttributionMatches(
+          d1,
+          { provider: 'nga' },
+          { relationship: 'after', targetText: 'Lavinia Fontana' },
+          undefined,
+          1
+        )
+      ).resolves.toMatchObject([{ id: 'lavinia-late' }]);
+      expect(preparedSql).toHaveLength(1);
     } finally {
       close();
     }

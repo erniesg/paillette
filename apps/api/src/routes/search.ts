@@ -318,6 +318,8 @@ const NGA_LATIN_GLOB_EQUIVALENTS = new Map<string, string>(
 const NGA_LATIN_GLOB_EXPANSIONS = NGA_LATIN_FOLD_GROUPS.filter(
   ([replacement]) => replacement.length > 1
 );
+const NGA_ATTRIBUTION_GLOB_PATTERN_MAX_BYTES = 48;
+const NGA_ATTRIBUTION_GLOB_PROBE_CHARACTERS = 3;
 
 const sqliteGlobCharacterClass = (
   character: string,
@@ -327,19 +329,90 @@ const sqliteGlobCharacterClass = (
   return `[${character}${character.toLocaleUpperCase('en-US')}${equivalents}${expansionEquivalents}]`;
 };
 
-const unicodeSqlCandidatePattern = (token: string) => {
+const boundedSqliteGlobCharacterPatterns = (
+  character: string,
+  expansionEquivalents = ''
+) => {
+  const variants = [
+    ...new Set([
+      character,
+      character.toLocaleUpperCase('en-US'),
+      ...(NGA_LATIN_GLOB_EQUIVALENTS.get(character) || ''),
+      ...expansionEquivalents,
+    ]),
+  ];
+  const patterns: string[] = [];
+  let chunk: string[] = [];
+
+  for (const variant of variants) {
+    const nextPattern = `*[${[...chunk, variant].join('')}]*`;
+    if (
+      chunk.length &&
+      new TextEncoder().encode(nextPattern).length >
+        NGA_ATTRIBUTION_GLOB_PATTERN_MAX_BYTES
+    ) {
+      patterns.push(`*[${chunk.join('')}]*`);
+      chunk = [variant];
+    } else {
+      chunk.push(variant);
+    }
+  }
+  if (chunk.length) patterns.push(`*[${chunk.join('')}]*`);
+
+  return patterns;
+};
+
+const unicodeSqlCandidatePatterns = (token: string) => {
   const folded = foldNgaEvidenceText(token);
-  const characterClasses: string[] = [];
+  const characterClasses: Array<{
+    expansionEquivalents: string;
+    index: number;
+    sourceCharacter: string;
+    value: string;
+  }> = [];
   for (let index = 0; index < folded.length; index += 1) {
     const expansion = NGA_LATIN_GLOB_EXPANSIONS.find(([replacement]) =>
       folded.startsWith(replacement, index)
     );
-    characterClasses.push(
-      sqliteGlobCharacterClass(folded[index]!, expansion?.[1])
-    );
+    characterClasses.push({
+      expansionEquivalents: expansion?.[1] || '',
+      index,
+      sourceCharacter: folded[index]!,
+      value: sqliteGlobCharacterClass(folded[index]!, expansion?.[1]),
+    });
     if (expansion) index += expansion[0].length - 1;
   }
-  return `*${characterClasses.join('*')}*`;
+
+  const selected: Array<{ index: number; value: string }> = [];
+  for (const candidate of [...characterClasses].sort(
+    (left, right) =>
+      new TextEncoder().encode(left.value).length -
+        new TextEncoder().encode(right.value).length || left.index - right.index
+  )) {
+    const next = [...selected, candidate]
+      .sort((left, right) => left.index - right.index)
+      .slice(0, NGA_ATTRIBUTION_GLOB_PROBE_CHARACTERS);
+    const pattern = `*${next.map(({ value }) => value).join('*')}*`;
+    if (
+      new TextEncoder().encode(pattern).length <=
+      NGA_ATTRIBUTION_GLOB_PATTERN_MAX_BYTES
+    ) {
+      selected.splice(0, selected.length, ...next);
+    }
+    if (selected.length === NGA_ATTRIBUTION_GLOB_PROBE_CHARACTERS) break;
+  }
+
+  if (selected.length) {
+    return [`*${selected.map(({ value }) => value).join('*')}*`];
+  }
+
+  const fallback = characterClasses[0];
+  return fallback
+    ? boundedSqliteGlobCharacterPatterns(
+        fallback.sourceCharacter,
+        fallback.expansionEquivalents
+      )
+    : [];
 };
 
 const normalizeArtistFacetQuery = (query: string) =>
@@ -1503,18 +1576,55 @@ export async function searchNgaAttributionMatches(
   if (!targetTokens.length) return [];
 
   const artistText = `coalesce(artist, '')`;
-  const relationshipsText = `(CASE
+  const relationshipsJson = `(CASE
       WHEN json_valid(custom_metadata)
-        THEN coalesce(json_extract(custom_metadata, '$.ngaArtists.relationships'), '')
+        AND json_type(custom_metadata, '$.ngaArtists.relationships') = 'array'
+        THEN json_extract(custom_metadata, '$.ngaArtists.relationships')
+      ELSE '[]'
+    END)`;
+  const relationshipNameSql = (path: string) => `(CASE
+      WHEN json_valid(nga_relationship.value)
+        THEN coalesce(json_extract(nga_relationship.value, '${path}'), '')
       ELSE ''
     END)`;
-  const evidenceText = `(${artistText} || ' ' || ${relationshipsText})`;
-  const targetQueries = targetTokens.map(unicodeSqlCandidatePattern);
-  const buildTokenCandidateSql = () => `${evidenceText} GLOB ?`;
-  const tokenScoreSql = targetQueries
-    .map(() => `CASE WHEN ${buildTokenCandidateSql()} THEN 10 ELSE 0 END`)
-    .join(' + ');
-  const tokenWhereSql = targetQueries.map(buildTokenCandidateSql).join(' AND ');
+  const alternativeNamesJson = `(CASE
+      WHEN json_valid(nga_relationship.value)
+        AND json_type(nga_relationship.value, '$.alternativeNames') = 'array'
+        THEN json_extract(nga_relationship.value, '$.alternativeNames')
+      ELSE '[]'
+    END)`;
+  // D1 caps LIKE/GLOB pattern bytes. Candidate probes therefore use the most
+  // selective accent-aware character classes that fit below that bound, then
+  // hydrated catalogue evidence performs the authoritative full-name proof.
+  const targetQueries = targetTokens.map(unicodeSqlCandidatePatterns);
+  if (targetQueries.some((queries) => !queries.length)) return [];
+  const buildTokenCandidateSql = (tokenIndex: number) => `EXISTS (
+      SELECT 1
+      FROM attribution_probes AS nga_probe
+      WHERE nga_probe.token_index = ${tokenIndex}
+        AND (
+          (
+            json_array_length(${relationshipsJson}) = 0
+            AND ${artistText} GLOB nga_probe.pattern
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM json_each(${relationshipsJson}) AS nga_relationship
+            WHERE ${relationshipNameSql('$.preferredDisplayName')} GLOB nga_probe.pattern
+              OR ${relationshipNameSql('$.forwardDisplayName')} GLOB nga_probe.pattern
+              OR EXISTS (
+                SELECT 1
+                FROM json_each(${alternativeNamesJson}) AS nga_alternative
+                WHERE cast(nga_alternative.value AS TEXT) GLOB nga_probe.pattern
+              )
+          )
+        )
+    )`;
+  const tokenWhereSql = targetQueries
+    .map((_, index) => buildTokenCandidateSql(index))
+    .join(' AND ');
+  const tokenScore = targetQueries.length * 10;
+  const attributionProbesJson = JSON.stringify(targetQueries);
   const orgFilter = scope.orgId ? 'AND org_id = ?' : '';
   const providerFilter = providerSearchSql(scope.provider);
   const structuredFilter = buildStructuredConstraintSql(constraints);
@@ -1526,6 +1636,13 @@ export async function searchNgaAttributionMatches(
     const { results } = await db
       .prepare(
         `
+      WITH attribution_probes AS (
+        SELECT
+          cast(nga_token.key AS INTEGER) AS token_index,
+          nga_pattern.value AS pattern
+        FROM json_each(?) AS nga_token
+        JOIN json_each(nga_token.value) AS nga_pattern
+      )
       SELECT
         id,
         org_id,
@@ -1563,7 +1680,7 @@ export async function searchNgaAttributionMatches(
         image_url,
         thumbnail_url,
         custom_metadata,
-        (${tokenScoreSql}) AS match_score
+        ${tokenScore} AS match_score
       FROM artworks
       WHERE deleted_at IS NULL
         ${orgFilter}
@@ -1576,11 +1693,10 @@ export async function searchNgaAttributionMatches(
       `
       )
       .bind(
-        ...targetQueries,
+        attributionProbesJson,
         ...(scope.orgId ? [scope.orgId] : []),
         ...(scope.provider ? [scope.provider] : []),
         ...structuredFilter.params,
-        ...targetQueries,
         pageSize,
         offset
       )
@@ -1590,7 +1706,7 @@ export async function searchNgaAttributionMatches(
 
     for (const [index, artwork] of results.entries()) {
       const similarity = Math.min(
-        Math.max(artwork.match_score / (targetTokens.length * 10), 0.01),
+        Math.max(artwork.match_score / tokenScore, 0.01),
         1
       );
       const mapped = mapSearchRow(artwork, similarity, [
@@ -1780,7 +1896,7 @@ async function searchArtworksHybrid(
         })
       : Promise.resolve([] as CaptionVectorMatch[]),
     initialRoute.weights.metadata > 0
-        ? (forcedIntent === 'artist_exact'
+      ? (forcedIntent === 'artist_exact'
           ? searchArtworksByArtistFacet(
               env.DB,
               orgId,
@@ -2166,8 +2282,9 @@ async function searchArtworksByArtistFacet(
     .join(' AND ');
   const orgFilter = orgId ? 'AND org_id = ?' : '';
   const providerFilter = providerSearchSql(provider);
-  const structuredFilter =
-    buildFacetStructuredConstraintSql(structuredConstraints);
+  const structuredFilter = buildFacetStructuredConstraintSql(
+    structuredConstraints
+  );
   const whereSql = `AND (${artistText} LIKE ? ESCAPE '\\' OR (${tokenWhereSql}))`;
   const baseParams = [
     normalizedQuery,
@@ -2247,10 +2364,7 @@ async function searchArtworksByArtistFacet(
     if (!results.length) break;
 
     for (const [index, artwork] of results.entries()) {
-      const similarity = Math.min(
-        Math.max(artwork.match_score / 120, 0.01),
-        1
-      );
+      const similarity = Math.min(Math.max(artwork.match_score / 120, 0.01), 1);
       const mapped = mapSearchRow(artwork, similarity, [
         {
           channel: 'metadata',
@@ -2292,8 +2406,9 @@ async function searchArtworksByClassificationFacet(
 
   const orgFilter = orgId ? 'AND org_id = ?' : '';
   const providerFilter = providerSearchSql(provider);
-  const structuredFilter =
-    buildFacetStructuredConstraintSql(structuredConstraints);
+  const structuredFilter = buildFacetStructuredConstraintSql(
+    structuredConstraints
+  );
   const baseParams = [
     ...(orgId ? [orgId] : []),
     ...(provider ? [provider] : []),

@@ -36,7 +36,7 @@ const artwork = (id: string) => ({
 
 const validBundle: PublicSearchSpotlightBundle = {
   schemaVersion: 1,
-  contractVersion: '31',
+  contractVersion: '32',
   corpusVersion: 'nga-fixture-v1',
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
@@ -67,7 +67,7 @@ describe('search spotlight loading', () => {
 
     const assetPath = getSearchSpotlightPath('nga');
     expect(assetPath).toMatch(
-      /^\/search-spotlights\/nga\/v31-[a-f0-9]{64}\.json$/
+      /^\/search-spotlights\/nga\/v32-[a-f0-9]{64}\.json$/
     );
     expect(loaded).toEqual(validBundle);
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -87,11 +87,11 @@ describe('search spotlight loading', () => {
     expect(assetPath.endsWith(`-${digest}.json`)).toBe(true);
   });
 
-  it('preserves the immutable v30 spotlight payload in the v31 asset', async () => {
+  it('preserves the immutable v31 spotlight payload in the v32 asset', async () => {
     const assetPath = getSearchSpotlightPath('nga');
     const previousPath = resolve(
       process.cwd(),
-      'public/search-spotlights/nga/v30-47f84d69eb887417f1039f59dfec37313877e89944efabbdabc961b6c3a19f2b.json'
+      'public/search-spotlights/nga/v31-3e30f6b05e228bfd7de9534827d3328daf0a85cf8cd18e9a8269d1a7ff87b2e4.json'
     );
     const [previous, current] = await Promise.all([
       readFile(previousPath, 'utf8').then((value) => JSON.parse(value)),
@@ -100,13 +100,13 @@ describe('search spotlight loading', () => {
       ),
     ]);
 
-    expect(current.contractVersion).toBe('31');
+    expect(current.contractVersion).toBe('32');
     const { contractVersion: previousContractVersion, ...previousPayload } =
       previous;
     const { contractVersion: currentContractVersion, ...currentPayload } =
       current;
-    expect(previousContractVersion).toBe('30');
-    expect(currentContractVersion).toBe('31');
+    expect(previousContractVersion).toBe('31');
+    expect(currentContractVersion).toBe('32');
     expect(currentPayload).toEqual(previousPayload);
     expect(
       current.suggestions.map((suggestion: PublicSearchSpotlightBundle['suggestions'][number]) => ({

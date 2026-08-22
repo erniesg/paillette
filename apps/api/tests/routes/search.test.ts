@@ -42,13 +42,8 @@ describe('buildStructuredConstraintSql', () => {
     expect(result.sql).toContain(
       "lower(trim(coalesce(medium_family, ''))) IN (?) OR (' ' || lower(coalesce(medium, '')) || ' ') GLOB ?"
     );
-    expect(result.sql).not.toContain(
-      "trim(coalesce(medium_family, '')) = ''"
-    );
-    expect(result.params).toEqual([
-      'woodcut',
-      '*[^a-z0-9]woodcut[^a-z0-9]*',
-    ]);
+    expect(result.sql).not.toContain("trim(coalesce(medium_family, '')) = ''");
+    expect(result.params).toEqual(['woodcut', '*[^a-z0-9]woodcut[^a-z0-9]*']);
   });
 });
 
@@ -516,13 +511,12 @@ class FakeSearchDb {
           const structured = row as typeof row & {
             visual_classification?: string | null;
           };
-          const visualClassification =
-            structured.visual_classification ?? null;
+          const visualClassification = structured.visual_classification ?? null;
           const classification = sql.includes(
             "nullif(trim(visual_classification), '')"
           )
             ? visualClassification?.trim() || row.classification || ''
-            : visualClassification ?? row.classification ?? '';
+            : (visualClassification ?? row.classification ?? '');
           return classifications.has(
             String(classification).trim().toLowerCase()
           );
@@ -545,9 +539,7 @@ class FakeSearchDb {
           .map((value) => {
             const pattern = String(value).toLowerCase();
             return sql.includes(' GLOB ?')
-              ? pattern
-                  .replace('*[^a-z0-9]', '')
-                  .replace('[^a-z0-9]*', '')
+              ? pattern.replace('*[^a-z0-9]', '').replace('[^a-z0-9]*', '')
               : pattern.replaceAll('%', '');
           });
         paramIndex += count;
@@ -568,17 +560,14 @@ class FakeSearchDb {
           );
           return (
             mediumFamilies.has(mediumFamily) ||
-            (!sql.includes(
-              "trim(coalesce(medium_family, '')) = '' AND"
-            ) || !mediumFamily) &&
-              rawMediumMatches
+            ((!sql.includes("trim(coalesce(medium_family, '')) = '' AND") ||
+              !mediumFamily) &&
+              rawMediumMatches)
           );
         });
       }
 
-      const artistParams = sql.match(
-        /primary_artist_id IN \(([^)]*)\)/
-      )?.[1];
+      const artistParams = sql.match(/primary_artist_id IN \(([^)]*)\)/)?.[1];
       if (artistParams) {
         const count = artistParams.match(/\?/g)?.length || 0;
         const artistIds = new Set(
@@ -607,31 +596,39 @@ class FakeSearchDb {
         sql.includes("'$.ngaArtists.relationships'") &&
         sql.includes('ORDER BY match_score DESC, title COLLATE NOCASE ASC')
       ) {
-        const scoreParamCount =
-          sql.slice(0, sql.indexOf('AS match_score')).match(/\?/g)?.length ||
-          0;
-        const scorePatterns = params.slice(0, scoreParamCount);
+        const probeGroups = JSON.parse(String(params[0] || '[]')) as string[][];
         const structuredParamIndex =
-          scoreParamCount +
+          1 +
           Number(sql.includes('AND org_id = ?')) +
           Number(
-            sql.includes(
-              "json_extract(custom_metadata, '$.provider') = ?"
-            )
+            sql.includes("json_extract(custom_metadata, '$.provider') = ?")
           );
         const matchingRows = this.rows.filter((row) => {
-          let relationships = '';
+          let names: string[] = [];
           try {
-            relationships = JSON.stringify(
-              JSON.parse(row.custom_metadata || '{}').ngaArtists
-                ?.relationships || []
-            );
+            const relationships = JSON.parse(row.custom_metadata || '{}')
+              .ngaArtists?.relationships as
+              | Array<{
+                  alternativeNames?: unknown[];
+                  forwardDisplayName?: unknown;
+                  preferredDisplayName?: unknown;
+                }>
+              | undefined;
+            if (relationships?.length) {
+              names = relationships.flatMap((relationship) => [
+                String(relationship.preferredDisplayName || ''),
+                String(relationship.forwardDisplayName || ''),
+                ...(relationship.alternativeNames || []).map(String),
+              ]);
+            }
           } catch {
-            relationships = '';
+            names = [];
           }
-          const evidence = `${row.artist || ''} ${relationships}`;
-          return scorePatterns.every((pattern) =>
-            ngaGlobPatternMatches(evidence, pattern)
+          if (!names.length) names = [String(row.artist || '')];
+          return probeGroups.every((patterns) =>
+            patterns.some((pattern) =>
+              names.some((name) => ngaGlobPatternMatches(name, pattern))
+            )
           );
         });
         const limit = Number(params[params.length - 2]);
@@ -646,7 +643,7 @@ class FakeSearchDb {
             .slice(offset, offset + limit)
             .map((row) => ({
               ...row,
-              match_score: scorePatterns.length * 10,
+              match_score: probeGroups.length * 10,
             })),
         } as unknown as { success: boolean; results: T[] };
       }
@@ -661,9 +658,7 @@ class FakeSearchDb {
         const structuredParamIndex =
           Number(sql.includes('AND org_id = ?')) +
           Number(
-            sql.includes(
-              "json_extract(custom_metadata, '$.provider') = ?"
-            )
+            sql.includes("json_extract(custom_metadata, '$.provider') = ?")
           );
         return {
           success: true,
@@ -689,15 +684,12 @@ class FakeSearchDb {
         const normalizedQuery = String(params[0] || '');
         const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
         const scoreParamCount =
-          sql.slice(0, sql.indexOf('AS match_score')).match(/\?/g)?.length ||
-          0;
+          sql.slice(0, sql.indexOf('AS match_score')).match(/\?/g)?.length || 0;
         const structuredParamIndex =
           scoreParamCount +
           Number(sql.includes('AND org_id = ?')) +
           Number(
-            sql.includes(
-              "json_extract(custom_metadata, '$.provider') = ?"
-            )
+            sql.includes("json_extract(custom_metadata, '$.provider') = ?")
           );
         const matchingRows = this.rows.filter((row) => {
           const normalizedArtist = normalizeArtistForTest(row.artist);
@@ -2977,9 +2969,9 @@ describe('Search API auth and quota behavior', () => {
     };
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        Response.json({ data: [{ embedding: [0.6, 0.8] }] })
-      )
+      vi
+        .fn()
+        .mockResolvedValue(Response.json({ data: [{ embedding: [0.6, 0.8] }] }))
     );
     env = {
       ...makeEnv(db),
@@ -3036,7 +3028,8 @@ describe('Search API auth and quota behavior', () => {
     ],
     [
       'zero-byte image',
-      () => makeImageSearchForm(new File([], 'empty.png', { type: 'image/png' })),
+      () =>
+        makeImageSearchForm(new File([], 'empty.png', { type: 'image/png' })),
     ],
     [
       'noncanonical MIME type',
@@ -3229,9 +3222,8 @@ describe('Search API auth and quota behavior', () => {
   });
 
   it('canonicalizes and mutates every authoritative public image cold-miss identity dimension', () => {
-    const buildIdentity = (
-      searchRouteExports as Record<string, unknown>
-    ).buildPublicImageSearchIdentity as
+    const buildIdentity = (searchRouteExports as Record<string, unknown>)
+      .buildPublicImageSearchIdentity as
       | ((input: Record<string, unknown>) => string)
       | undefined;
 
@@ -3320,10 +3312,7 @@ describe('Search API auth and quota behavior', () => {
           embedding: { ...base.embedding, dimensions: 768 },
         },
       ],
-      [
-        'index version',
-        { ...base, index: { ...base.index, version: 'v2' } },
-      ],
+      ['index version', { ...base, index: { ...base.index, version: 'v2' } }],
       [
         'index binding',
         { ...base, index: { ...base.index, binding: 'VECTORIZE_V2' } },
@@ -3886,8 +3875,7 @@ describe('Search API auth and quota behavior', () => {
       env,
       { 'X-User-Id': 'user-1' },
       {
-        query:
-          'validation a6ee6dd2f870 oil paintings after 1700 before 1800',
+        query: 'validation a6ee6dd2f870 oil paintings after 1700 before 1800',
         topK: 100,
         minScore: 0,
         constraints: { classifications: ['Drawing'] },
@@ -3926,8 +3914,7 @@ describe('Search API auth and quota behavior', () => {
       PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
     };
     const request = {
-      query:
-        'paintings from the second half of the 18th century before 1780',
+      query: 'paintings from the second half of the 18th century before 1780',
       topK: 100,
       minScore: 0,
     };
@@ -4111,7 +4098,10 @@ describe('Search API auth and quota behavior', () => {
     },
     {
       label: 'active and passive derived-from paraphrases',
-      queries: ['drawing based on photograph', 'photograph used as basis for drawing'],
+      queries: [
+        'drawing based on photograph',
+        'photograph used as basis for drawing',
+      ],
       expectedId: 'nga-relation-drawing',
       expectedConstraints: { classifications: ['Drawing'] },
       expectedRelation: {
@@ -4195,9 +4185,9 @@ describe('Search API auth and quota behavior', () => {
         constraints: fixture.expectedConstraints,
         relation: fixture.expectedRelation,
       });
-      expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual([
-        fixture.expectedId,
-      ]);
+      expect(payload.data.results.map((row: { id: string }) => row.id)).toEqual(
+        [fixture.expectedId]
+      );
       expect(payload.data.results[0].metadata.search_sources).toContainEqual(
         expect.objectContaining({ channel: 'metadata', weight: 1 })
       );
@@ -4764,9 +4754,9 @@ describe('Search API auth and quota behavior', () => {
     const alternativePayload = (await accentedAlternative.json()) as any;
 
     expect(partialPayload.data.results).toEqual([]);
-    expect(josePayload.data.results.map((row: { id: string }) => row.id)).toEqual(
-      [lowerAccented.id]
-    );
+    expect(
+      josePayload.data.results.map((row: { id: string }) => row.id)
+    ).toEqual([lowerAccented.id]);
     expect(
       multiwordPayload.data.results.map((row: { id: string }) => row.id)
     ).toEqual([upperAccented.id, accentlessAlternative.id]);
