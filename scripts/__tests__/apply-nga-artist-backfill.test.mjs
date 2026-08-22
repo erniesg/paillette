@@ -613,10 +613,55 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
   const verification = JSON.parse(
     readFileSync(join(passingOut, 'verification.json'), 'utf8')
   );
-  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v1');
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v2');
   assert.equal(verification.phase, 'pilot');
   assert.equal(verification.summary.recordCount, 5);
   assert.equal(verification.summary.vectorCount, 5);
+  assert.deepEqual(verification.applySummary, {
+    responseCount: 2,
+    d1ChunkCount: 1,
+    expectedD1Changes: 5,
+    actualD1Changes: 5,
+  });
+  assert.deepEqual(
+    verification.applyResponses.map((response) => ({
+      sequence: response.sequence,
+      kind: response.kind,
+      path: response.path,
+      artifactPath: response.artifactPath,
+      expectedChanges: response.expectedChanges,
+      actualChanges: response.actualChanges,
+    })),
+    [
+      {
+        sequence: 1,
+        kind: 'd1-sql',
+        path: 'apply-responses/0001.json',
+        artifactPath: 'sql/artist-0001.sql',
+        expectedChanges: 5,
+        actualChanges: 5,
+      },
+      {
+        sequence: 2,
+        kind: 'image-vectors',
+        path: 'apply-responses/0002.json',
+        artifactPath: 'vectors/artist-0001.ndjson',
+        expectedChanges: undefined,
+        actualChanges: undefined,
+      },
+    ]
+  );
+  for (const response of verification.applyResponses) {
+    assert.match(response.sha256, /^[a-f0-9]{64}$/);
+    const responsePath = join(passingOut, response.path);
+    assert.equal(existsSync(responsePath), true);
+    assert.equal(sha256(readFileSync(responsePath)), response.sha256);
+    const captured = JSON.parse(readFileSync(responsePath, 'utf8'));
+    assert.equal(captured.sequence, response.sequence);
+    assert.equal(captured.kind, response.kind);
+    assert.equal(captured.path, response.artifactPath);
+    assert.equal(captured.status, 0);
+  }
 
   const failures = [
     {

@@ -1048,6 +1048,26 @@ def _load_ndjson(payload: bytes) -> list[Mapping[str, Any]] | None:
     return rows
 
 
+def _d1_changes_from_apply_stdout(value: Any) -> int | None:
+    changes: list[int] = []
+
+    def visit(item: Any) -> bool:
+        if isinstance(item, list):
+            return all(visit(child) for child in item)
+        if not isinstance(item, Mapping):
+            return True
+        if "meta" in item:
+            meta = item.get("meta")
+            count = meta.get("changes") if isinstance(meta, Mapping) else None
+            if type(count) is not int or count < 0:
+                return False
+            changes.append(count)
+            return True
+        return all(visit(child) for child in item.values())
+
+    return sum(changes) if visit(value) and changes else None
+
+
 def _valid_production_capture(
     value: Any, *, expected_role: str
 ) -> Mapping[str, Any] | None:
@@ -1863,9 +1883,11 @@ def evaluate_artist_data_evidence(
                 "artifactManifestSha256",
                 "stateManifest",
                 "preflightInputs",
+                "applyResponses",
+                "applySummary",
                 "summary",
             }
-            or post.get("schemaVersion") != "nga-post-apply-verification-v1"
+            or post.get("schemaVersion") != "nga-post-apply-verification-v2"
             or _parse_utc_timestamp(post.get("verifiedAt")) is None
             or post.get("environment") != "staging"
             or post.get("phase") != phase
@@ -1874,6 +1896,150 @@ def evaluate_artist_data_evidence(
             or state_descriptor.get("path") != "state-manifest.json"
         ):
             failures.append(_failure("artist_post_apply_verification_invalid"))
+
+        apply_responses_value = post.get("applyResponses")
+        apply_responses = (
+            apply_responses_value
+            if isinstance(apply_responses_value, list)
+            else []
+        )
+        apply_summary_value = post.get("applySummary")
+        apply_summary = (
+            apply_summary_value
+            if isinstance(apply_summary_value, Mapping)
+            else {}
+        )
+        ordered_apply_value = manifest.get("orderedArtifacts") if manifest else None
+        ordered_apply = (
+            ordered_apply_value if isinstance(ordered_apply_value, list) else []
+        )
+        apply_inventory_valid = len(apply_responses) == len(ordered_apply)
+        apply_counts_valid = True
+        expected_d1_changes = 0
+        actual_d1_changes = 0
+        d1_chunk_count = 0
+        seen_response_paths: set[str] = set()
+        for index, artifact_value in enumerate(ordered_apply):
+            artifact = artifact_value if isinstance(artifact_value, Mapping) else {}
+            descriptor_value = (
+                apply_responses[index] if index < len(apply_responses) else {}
+            )
+            descriptor = (
+                descriptor_value
+                if isinstance(descriptor_value, Mapping)
+                else {}
+            )
+            sequence = index + 1
+            kind = artifact.get("kind")
+            artifact_path = str(artifact.get("path") or "")
+            response_path = f"apply-responses/{sequence:04d}.json"
+            expected_descriptor_keys = {
+                "sequence",
+                "kind",
+                "path",
+                "artifactPath",
+                "sha256",
+                *(
+                    ("expectedChanges", "actualChanges")
+                    if kind == "d1-sql"
+                    else ()
+                ),
+            }
+            if (
+                set(descriptor) != expected_descriptor_keys
+                or descriptor.get("sequence") != sequence
+                or descriptor.get("kind") != kind
+                or descriptor.get("artifactPath") != artifact_path
+                or descriptor.get("path") != response_path
+                or response_path in seen_response_paths
+            ):
+                apply_inventory_valid = False
+            seen_response_paths.add(response_path)
+            response_resolved = _resolve_bound_file(post_path.parent, descriptor)
+            if response_resolved is None or not response_resolved[1]:
+                failures.append(
+                    _failure("artist_apply_response_artifact_hash_mismatch")
+                )
+                continue
+            response_file, response_payload = response_resolved
+            bound_paths.append(str(response_file.resolve()))
+            response_value = _load_bound_json(response_payload)
+            response = (
+                response_value if isinstance(response_value, Mapping) else {}
+            )
+            if (
+                set(response)
+                != {"sequence", "kind", "path", "status", "stdout", "stderr"}
+                or response.get("sequence") != sequence
+                or response.get("kind") != kind
+                or response.get("path") != artifact_path
+                or response.get("status") != 0
+                or not isinstance(response.get("stdout"), str)
+                or not isinstance(response.get("stderr"), str)
+            ):
+                apply_inventory_valid = False
+                continue
+            if kind != "d1-sql":
+                continue
+            d1_chunk_count += 1
+            sql_record = declared_files.get(artifact_path)
+            sql_payload = sql_record[2] if sql_record is not None else b""
+            try:
+                sql_text = sql_payload.decode("utf-8")
+            except UnicodeDecodeError:
+                sql_text = ""
+            sql_ids = re.findall(
+                r"^\s*AND id = '([^']+)'\s*;?\s*$", sql_text, flags=re.MULTILINE
+            )
+            expected_chunk_changes = sum(
+                1
+                for artwork_id in sql_ids
+                if phase == "pilot"
+                or artwork_id.removeprefix("open-access-art:nga:")
+                not in NGA_PILOT_OBJECT_IDS
+            )
+            if (
+                len(sql_ids) != artifact.get("recordCount")
+                or len(set(sql_ids)) != len(sql_ids)
+                or any(artwork_id not in mapping_by_id for artwork_id in sql_ids)
+            ):
+                apply_inventory_valid = False
+            try:
+                stdout_value = json.loads(str(response.get("stdout")))
+            except json.JSONDecodeError:
+                stdout_value = None
+            actual_chunk_changes = _d1_changes_from_apply_stdout(stdout_value)
+            if (
+                descriptor.get("expectedChanges") != expected_chunk_changes
+                or descriptor.get("actualChanges") != actual_chunk_changes
+                or actual_chunk_changes != expected_chunk_changes
+            ):
+                apply_counts_valid = False
+            expected_d1_changes += expected_chunk_changes
+            actual_d1_changes += (
+                actual_chunk_changes if actual_chunk_changes is not None else 0
+            )
+        if not apply_inventory_valid:
+            failures.append(_failure("artist_apply_response_inventory_invalid"))
+        expected_apply_summary = {
+            "responseCount": len(ordered_apply),
+            "d1ChunkCount": d1_chunk_count,
+            "expectedD1Changes": expected_d1_changes,
+            "actualD1Changes": actual_d1_changes,
+        }
+        expected_total_changes = (
+            expected_count if phase == "pilot" else expected_count - 5
+        )
+        if (
+            not apply_counts_valid
+            or expected_d1_changes != expected_total_changes
+            or actual_d1_changes != expected_total_changes
+            or canonical_json(apply_summary)
+            != canonical_json(expected_apply_summary)
+        ):
+            failures.append(
+                _failure("artist_apply_response_change_count_mismatch")
+            )
         state_resolved = _resolve_bound_file(post_path.parent, state_descriptor)
         if state_resolved is None or not state_resolved[1]:
             failures.append(_failure("artist_post_apply_artifact_hash_mismatch"))

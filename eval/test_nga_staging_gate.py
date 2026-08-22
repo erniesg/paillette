@@ -472,8 +472,10 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         "rollback": preflight_manifest["rollback"],
     }
     sql_text = "".join(
-        f"UPDATE artworks SET primary_artist_id = '{row['primaryArtistId']}' "
-        f"WHERE id = '{row['id']}';\n"
+        "UPDATE artworks SET "
+        f"primary_artist_id = '{row['primaryArtistId']}'\n"
+        "WHERE org_id = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac'\n"
+        f"  AND id = '{row['id']}';\n"
         for row in mapping
     )
     file_payloads = {
@@ -641,8 +643,43 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             [enriched_by_id[artwork_id] for artwork_id in ordered_ids]
         ),
     }
+    response_payloads = []
+    for sequence, ordered_artifact in enumerate(manifest["orderedArtifacts"], 1):
+        is_d1 = ordered_artifact["kind"] == "d1-sql"
+        stdout = (
+            json.dumps([{"success": True, "meta": {"changes": 5}}])
+            if is_d1
+            else json.dumps({"count": 5})
+        )
+        response = {
+            "sequence": sequence,
+            "kind": ordered_artifact["kind"],
+            "path": ordered_artifact["path"],
+            "status": 0,
+            "stdout": stdout,
+            "stderr": "",
+        }
+        payload = (json.dumps(response, indent=2) + "\n").encode()
+        relative = f"apply-responses/{sequence:04d}.json"
+        response_path = post_apply / relative
+        response_path.parent.mkdir(parents=True, exist_ok=True)
+        response_path.write_bytes(payload)
+        response_payloads.append(
+            {
+                "sequence": sequence,
+                "kind": ordered_artifact["kind"],
+                "path": relative,
+                "artifactPath": ordered_artifact["path"],
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                **(
+                    {"expectedChanges": 5, "actualChanges": 5}
+                    if is_d1
+                    else {}
+                ),
+            }
+        )
     verification = {
-        "schemaVersion": "nga-post-apply-verification-v1",
+        "schemaVersion": "nga-post-apply-verification-v2",
         "verifiedAt": "2026-08-22T00:06:00Z",
         "environment": "staging",
         "phase": phase,
@@ -652,6 +689,13 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "sha256": hashlib.sha256(state_manifest_bytes).hexdigest(),
         },
         "preflightInputs": [preflight_binding],
+        "applyResponses": response_payloads,
+        "applySummary": {
+            "responseCount": 2,
+            "d1ChunkCount": 1,
+            "expectedD1Changes": 5,
+            "actualD1Changes": 5,
+        },
         "summary": post_summary,
     }
     verification_bytes = (json.dumps(verification, indent=2) + "\n").encode()
@@ -767,6 +811,17 @@ def rewrite_bound_artist_json(root: Path, binding, relative: str, mutate):
     manifest_path.write_bytes(manifest_bytes)
     binding["artifactManifest"]["sha256"] = hashlib.sha256(
         manifest_bytes
+    ).hexdigest()
+
+
+def rewrite_bound_post_apply_verification(root: Path, binding, mutate):
+    path = root / binding["postApplyVerification"]["path"]
+    value = json.loads(path.read_text(encoding="utf-8"))
+    mutate(value)
+    payload = (json.dumps(value, indent=2) + "\n").encode()
+    path.write_bytes(payload)
+    binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+        payload
     ).hexdigest()
 
 
@@ -3276,6 +3331,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             "wrangler d1 time-travel info paillette-db-stg", plan
         )
         self.assertIn("nga-artist-data-binding-v3", plan)
+        self.assertIn("nga-post-apply-verification-v2", plan)
+        self.assertIn("candidate/post-apply/pilot/apply-responses/0001.json", plan)
+        self.assertIn("candidate/post-apply/full/apply-responses/NNNN.json", plan)
         self.assertIn("exactly 63,248 D1 changes", plan)
         self.assertIn("exactly 12 Python public requests", plan)
         for relative in (
@@ -3553,6 +3611,110 @@ class InventoryAndRelevanceTests(GateTestCase):
                 )
 
                 self.assertIn(expected_code, result["failureCodes"], result)
+
+    def test_artist_evidence_rehashes_exact_ordered_apply_responses_and_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            baseline = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertTrue(baseline["passed"], baseline)
+
+        mutations = {
+            "missing response file": (
+                lambda root, binding: (
+                    root
+                    / binding["postApplyVerification"]["path"]
+                ).parent.joinpath("apply-responses/0001.json").unlink(),
+                "artist_apply_response_artifact_hash_mismatch",
+            ),
+            "tampered response bytes": (
+                lambda root, binding: (
+                    root
+                    / binding["postApplyVerification"]["path"]
+                ).parent.joinpath("apply-responses/0001.json").write_text(
+                    '{}\n', encoding="utf-8"
+                ),
+                "artist_apply_response_artifact_hash_mismatch",
+            ),
+            "reordered response descriptors": (
+                lambda root, binding: rewrite_bound_post_apply_verification(
+                    root,
+                    binding,
+                    lambda verification: verification["applyResponses"].reverse(),
+                ),
+                "artist_apply_response_inventory_invalid",
+            ),
+            "duplicated response descriptor": (
+                lambda root, binding: rewrite_bound_post_apply_verification(
+                    root,
+                    binding,
+                    lambda verification: verification["applyResponses"].__setitem__(
+                        1, json.loads(json.dumps(verification["applyResponses"][0]))
+                    ),
+                ),
+                "artist_apply_response_inventory_invalid",
+            ),
+            "wrong self-consistent D1 changes": (
+                self._rewrite_apply_response_change_count,
+                "artist_apply_response_change_count_mismatch",
+            ),
+            "wrong declared total changes": (
+                lambda root, binding: rewrite_bound_post_apply_verification(
+                    root,
+                    binding,
+                    lambda verification: verification["applySummary"].update(
+                        actualD1Changes=4
+                    ),
+                ),
+                "artist_apply_response_change_count_mismatch",
+            ),
+        }
+        for label, (mutate, expected_code) in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                mutate(evidence_root, binding)
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(expected_code, result["failureCodes"], result)
+
+    @staticmethod
+    def _rewrite_apply_response_change_count(evidence_root, binding):
+        verification_path = (
+            evidence_root / binding["postApplyVerification"]["path"]
+        )
+        verification = json.loads(
+            verification_path.read_text(encoding="utf-8")
+        )
+        descriptor = verification["applyResponses"][0]
+        response_path = verification_path.parent / descriptor["path"]
+        response = json.loads(response_path.read_text(encoding="utf-8"))
+        response["stdout"] = json.dumps(
+            [{"success": True, "meta": {"changes": 4}}]
+        )
+        response_payload = (json.dumps(response, indent=2) + "\n").encode()
+        response_path.write_bytes(response_payload)
+        descriptor["sha256"] = hashlib.sha256(response_payload).hexdigest()
+        descriptor["actualChanges"] = 4
+        verification["applySummary"]["actualD1Changes"] = 4
+        verification_payload = (
+            json.dumps(verification, indent=2) + "\n"
+        ).encode()
+        verification_path.write_bytes(verification_payload)
+        binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+            verification_payload
+        ).hexdigest()
 
     def test_capture_prepare_evaluator_lifecycle_accepts_normalized_d1_json_columns(self):
         with tempfile.TemporaryDirectory() as directory:

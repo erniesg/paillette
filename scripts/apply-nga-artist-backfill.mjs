@@ -679,6 +679,7 @@ if (!args.has('execute')) {
   );
   mkdirSync(responseDirectory, { recursive: true });
   const responses = [];
+  const responseEvidence = [];
   for (const step of steps) {
     const currentDigest = sha256(
       readFileSync(resolve(artifactRoot, step.path))
@@ -702,7 +703,8 @@ if (!args.has('execute')) {
       responseDirectory,
       `${String(step.sequence).padStart(4, '0')}.json`
     );
-    writeFileSync(responsePath, `${JSON.stringify(response, null, 2)}\n`, {
+    const responseText = `${JSON.stringify(response, null, 2)}\n`;
+    writeFileSync(responsePath, responseText, {
       flag: 'wx',
     });
     responses.push(response);
@@ -711,14 +713,18 @@ if (!args.has('execute')) {
         `serial apply failed at ${step.path}; see ${responsePath}`
       );
     }
+    const actualChanges =
+      step.kind === 'd1-sql'
+        ? d1ChangesFromResponse(result.stdout, step.path)
+        : undefined;
     if (step.kind === 'd1-sql') {
-      const actualChanges = d1ChangesFromResponse(result.stdout, step.path);
       if (actualChanges !== step.expectedChanges) {
         throw new Error(
           `D1 changes mismatch for ${step.path}: expected ${step.expectedChanges}, got ${actualChanges}; see ${responsePath}`
         );
       }
     }
+    responseEvidence.push({ step, responseText, actualChanges });
   }
 
   const postApplyOutDirectory = resolve(String(postApplyOutDirectoryValue));
@@ -801,8 +807,44 @@ if (!args.has('execute')) {
     postRecords,
     postVectors,
   });
+  const boundResponseDirectory = join(postApplyRoot, 'apply-responses');
+  mkdirSync(boundResponseDirectory, { recursive: false });
+  const applyResponses = responseEvidence.map(
+    ({ step, responseText, actualChanges }) => {
+      const path = `apply-responses/${String(step.sequence).padStart(4, '0')}.json`;
+      writeFileSync(join(postApplyRoot, path), responseText, { flag: 'wx' });
+      return {
+        sequence: step.sequence,
+        kind: step.kind,
+        path,
+        artifactPath: step.path,
+        sha256: sha256(responseText),
+        ...(step.kind === 'd1-sql'
+          ? {
+              expectedChanges: step.expectedChanges,
+              actualChanges,
+            }
+          : {}),
+      };
+    }
+  );
+  const d1Responses = applyResponses.filter(
+    (response) => response.kind === 'd1-sql'
+  );
+  const applySummary = {
+    responseCount: applyResponses.length,
+    d1ChunkCount: d1Responses.length,
+    expectedD1Changes: d1Responses.reduce(
+      (total, response) => total + response.expectedChanges,
+      0
+    ),
+    actualD1Changes: d1Responses.reduce(
+      (total, response) => total + response.actualChanges,
+      0
+    ),
+  };
   const verification = {
-    schemaVersion: 'nga-post-apply-verification-v1',
+    schemaVersion: 'nga-post-apply-verification-v2',
     verifiedAt: new Date().toISOString(),
     environment,
     phase,
@@ -812,6 +854,8 @@ if (!args.has('execute')) {
       sha256: sha256(stateManifestText),
     },
     preflightInputs,
+    applyResponses,
+    applySummary,
     summary,
   };
   const verificationText = `${JSON.stringify(verification, null, 2)}\n`;
