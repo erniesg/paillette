@@ -215,6 +215,7 @@ const manifest = {
   capturedAt: new Date().toISOString(),
   environment,
   phase,
+  expectedOrgId: STAGING_ORG_ID,
   resources: { d1Database, imageVectorIndex },
   counts: {
     ids: objectIds.length,
@@ -223,6 +224,15 @@ const manifest = {
   },
   hashes: { ids: sha256(idsText), stagedRecords: sha256(recordsText) },
   vectorFiles,
+  inputs: {
+    ids: { path: 'ids.json', sha256: sha256(idsText), count: objectIds.length },
+    stagedRecords: {
+      path: 'staged-nga-records.json',
+      sha256: sha256(recordsText),
+      count: stagedRecords.length,
+    },
+    imageVectors: vectorFiles,
+  },
 };
 writeFileSync(
   join(outputDirectory, 'preflight-manifest.json'),

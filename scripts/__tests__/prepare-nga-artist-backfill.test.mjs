@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
@@ -12,7 +19,10 @@ import {
   assertStagingBackfillIdentity,
   buildNgaBackfillArtifacts,
   enrichNgaArtistVector,
+  publishPreparedArtifacts,
+  sha256,
   validateNgaSourceFiles,
+  validatePreflightBindings,
   validateStagedNgaScope,
 } from '../lib/nga-artist-backfill.mjs';
 import {
@@ -45,6 +55,67 @@ const artistRecord = (objectId, primaryArtistId = '1364') => ({
   },
   fieldSources: { primary_artist_id: 'nga.objects_constituents' },
 });
+
+const createPreflight = ({ phase = 'pilot', suffix = '' } = {}) => {
+  const root = mkdtempSync(join(tmpdir(), `nga-preflight-${suffix}`));
+  temporaryDirectories.push(root);
+  const vectorDirectory = join(root, 'image-vectors');
+  mkdirSync(vectorDirectory);
+  const ids = PILOT_OBJECT_IDS.map((id) => `open-access-art:nga:${id}`);
+  const idsText = `${JSON.stringify(ids)}\n`;
+  const stagedText = `${JSON.stringify(ids.map((id) => stagedRecord(id.split(':').at(-1))))}\n`;
+  const vectorText = `${ids
+    .map((id) =>
+      JSON.stringify({
+        id,
+        values: [0.1, 0.2],
+        metadata: { artworkId: id, provider: 'nga' },
+      })
+    )
+    .join('\n')}\n`;
+  const idsPath = join(root, 'ids.json');
+  const stagedPath = join(root, 'staged-nga-records.json');
+  const vectorPath = join(vectorDirectory, 'original-0001.ndjson');
+  writeFileSync(idsPath, idsText);
+  writeFileSync(stagedPath, stagedText);
+  writeFileSync(vectorPath, vectorText);
+  const manifest = {
+    schemaVersion: 1,
+    environment: 'staging',
+    phase,
+    expectedOrgId: ORG_ID,
+    resources: {
+      d1Database: 'paillette-db-stg',
+      imageVectorIndex: 'paillette-embeddings-v2-stg',
+    },
+    counts: { ids: 5, stagedRecords: 5, imageVectors: 5 },
+    inputs: {
+      ids: { path: 'ids.json', sha256: sha256(idsText), count: 5 },
+      stagedRecords: {
+        path: 'staged-nga-records.json',
+        sha256: sha256(stagedText),
+        count: 5,
+      },
+      imageVectors: [
+        {
+          path: 'image-vectors/original-0001.ndjson',
+          sha256: sha256(vectorText),
+          count: 5,
+        },
+      ],
+    },
+  };
+  const manifestPath = join(root, 'preflight-manifest.json');
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return {
+    root,
+    idsPath,
+    stagedPath,
+    vectorDirectory,
+    vectorPath,
+    manifestPath,
+  };
+};
 
 test('guards every artist update by org, provider, prefix, and exact id', () => {
   const sql = buildNgaArtistUpdateSql(artistRecord('131994'), ORG_ID);
@@ -171,6 +242,111 @@ test('preparation rejects every non-staging organization identity', () => {
   assert.throws(
     () => assertStagingBackfillIdentity('704e8ccf-eebb-4433-96a4-5196b2862ad7'),
     /staging organization/i
+  );
+});
+
+test('binds every preparation input to its hashed preflight manifest', async () => {
+  const preflight = createPreflight();
+  const bindings = await validatePreflightBindings({
+    phase: 'pilot',
+    expectedOrgId: ORG_ID,
+    preflightManifestPaths: [preflight.manifestPath],
+    stagedRecordPaths: [preflight.stagedPath],
+    imageVectorPaths: [preflight.vectorDirectory],
+  });
+
+  assert.equal(bindings.length, 1);
+  assert.match(bindings[0].manifestSha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    bindings[0].stagedRecords.sha256,
+    sha256(readFileSync(preflight.stagedPath))
+  );
+  assert.equal(
+    bindings[0].imageVectors[0].sha256,
+    sha256(readFileSync(preflight.vectorPath))
+  );
+
+  writeFileSync(preflight.stagedPath, '[]\n');
+  await assert.rejects(
+    validatePreflightBindings({
+      phase: 'pilot',
+      expectedOrgId: ORG_ID,
+      preflightManifestPaths: [preflight.manifestPath],
+      stagedRecordPaths: [preflight.stagedPath],
+      imageVectorPaths: [preflight.vectorDirectory],
+    }),
+    /preflight.*SHA-256|digest mismatch/i
+  );
+});
+
+test('rejects unmanifested or mixed repeatable preparation inputs', async () => {
+  const first = createPreflight({ suffix: 'first-' });
+  const second = createPreflight({ suffix: 'second-' });
+  await assert.rejects(
+    validatePreflightBindings({
+      phase: 'pilot',
+      expectedOrgId: ORG_ID,
+      preflightManifestPaths: [first.manifestPath],
+      stagedRecordPaths: [first.stagedPath, second.stagedPath],
+      imageVectorPaths: [first.vectorDirectory],
+    }),
+    /unmanifested staged-records|input set/i
+  );
+});
+
+test('rejects a hash-confirmed preflight whose staged IDs differ from ids.json', async () => {
+  const preflight = createPreflight();
+  const staged = JSON.parse(readFileSync(preflight.stagedPath, 'utf8'));
+  staged[0].id = 'open-access-art:nga:999';
+  const stagedText = `${JSON.stringify(staged)}\n`;
+  writeFileSync(preflight.stagedPath, stagedText);
+  const manifest = JSON.parse(readFileSync(preflight.manifestPath, 'utf8'));
+  manifest.inputs.stagedRecords.sha256 = sha256(stagedText);
+  writeFileSync(
+    preflight.manifestPath,
+    `${JSON.stringify(manifest, null, 2)}\n`
+  );
+
+  await assert.rejects(
+    validatePreflightBindings({
+      phase: 'pilot',
+      expectedOrgId: ORG_ID,
+      preflightManifestPaths: [preflight.manifestPath],
+      stagedRecordPaths: [preflight.stagedPath],
+      imageVectorPaths: [preflight.vectorDirectory],
+    }),
+    /preflight.*ID.*(?:gap|mismatch|differ)/i
+  );
+});
+
+test('publishes atomically and leaves no partial final directory after failure', async () => {
+  const parent = mkdtempSync(join(tmpdir(), 'nga-atomic-publication-'));
+  temporaryDirectories.push(parent);
+  const output = join(parent, 'artifacts');
+  const valid = 'complete\n';
+  const invalid = 'will-fail-verification\n';
+
+  await assert.rejects(
+    publishPreparedArtifacts(output, [
+      { path: 'mapping.json', content: valid, sha256: sha256(valid) },
+      {
+        path: 'vectors/chunk.ndjson',
+        content: invalid,
+        sha256: '0'.repeat(64),
+      },
+    ]),
+    /generated artifact SHA-256 mismatch/i
+  );
+  assert.equal(existsSync(output), false);
+
+  await publishPreparedArtifacts(output, [
+    { path: 'mapping.json', content: valid, sha256: sha256(valid) },
+    { path: 'vectors/chunk.ndjson', content: invalid, sha256: sha256(invalid) },
+  ]);
+  assert.equal(readFileSync(join(output, 'mapping.json'), 'utf8'), valid);
+  assert.equal(
+    readFileSync(join(output, 'vectors', 'chunk.ndjson'), 'utf8'),
+    invalid
   );
 });
 

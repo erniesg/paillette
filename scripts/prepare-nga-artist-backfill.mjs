@@ -2,7 +2,6 @@
 
 import {
   mkdtemp,
-  mkdir,
   readFile,
   readdir,
   rm,
@@ -10,7 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import Papa from 'papaparse';
 
 import { buildNgaArtistMetadata } from './lib/nga-artist-metadata.mjs';
@@ -23,11 +22,17 @@ import {
   assertStagingBackfillIdentity,
   buildNgaBackfillArtifacts,
   canonicalJson,
+  publishPreparedArtifacts,
   sha256,
   validateNgaSourceFiles,
+  validatePreflightBindings,
 } from './lib/nga-artist-backfill.mjs';
 
-const repeatable = new Set(['staged-records', 'image-vectors']);
+const repeatable = new Set([
+  'preflight-manifest',
+  'staged-records',
+  'image-vectors',
+]);
 const parsedArgs = new Map();
 for (const argument of process.argv.slice(2)) {
   if (!argument.startsWith('--'))
@@ -46,6 +51,7 @@ for (const argument of process.argv.slice(2)) {
 
 const allowed = new Set([
   'source-commit',
+  'preflight-manifest',
   'staged-records',
   'image-vectors',
   'expected-org-id',
@@ -55,7 +61,7 @@ const allowed = new Set([
 for (const key of parsedArgs.keys()) {
   if (!allowed.has(key)) throw new Error(`unsupported option --${key}`);
 }
-for (const key of allowed) {
+for (const key of [...allowed].filter((key) => key !== 'preflight-manifest')) {
   if (!parsedArgs.has(key)) throw new Error(`--${key} is required`);
 }
 
@@ -173,6 +179,17 @@ const assertEmptyOutput = async () => {
 };
 
 await assertEmptyOutput();
+const preflightBindings = await validatePreflightBindings({
+  phase,
+  expectedOrgId,
+  preflightManifestPaths:
+    parsedArgs.get('preflight-manifest') ||
+    parsedArgs
+      .get('staged-records')
+      .map((path) => join(dirname(resolve(path)), 'preflight-manifest.json')),
+  stagedRecordPaths: parsedArgs.get('staged-records'),
+  imageVectorPaths: parsedArgs.get('image-vectors'),
+});
 const downloadDirectory = await mkdtemp(join(tmpdir(), 'nga-artist-source-'));
 try {
   const sourceFiles = {};
@@ -236,6 +253,7 @@ try {
   });
 
   const fileContents = new Map();
+  const fileRecordCounts = new Map();
   const addJson = (path, value) =>
     fileContents.set(path, `${JSON.stringify(value, null, 2)}\n`);
   const sourceManifest = {
@@ -255,12 +273,14 @@ try {
   };
   addJson('source-manifest.json', sourceManifest);
   addJson('mapping.json', artifacts.mapping);
+  fileRecordCounts.set('mapping.json', artifacts.mapping.length);
 
   const mutationArtifacts = [];
   for (const [index, rows] of chunk(artifacts.sql, 500).entries()) {
     const content = `${rows.join('\n')}\n`;
     const path = `sql/artist-${String(index + 1).padStart(4, '0')}-${sha256(content).slice(0, 16)}.sql`;
     fileContents.set(path, content);
+    fileRecordCounts.set(path, rows.length);
     mutationArtifacts.push({
       kind: 'd1-sql',
       path,
@@ -272,6 +292,7 @@ try {
     const content = `${rows.map((row) => canonicalJson(row)).join('\n')}\n`;
     const path = `vectors/enriched-${String(index + 1).padStart(4, '0')}-${sha256(content).slice(0, 16)}.ndjson`;
     fileContents.set(path, content);
+    fileRecordCounts.set(path, rows.length);
     mutationArtifacts.push({
       kind: 'image-vectors',
       path,
@@ -283,13 +304,21 @@ try {
     const content = `${rows.map((row) => canonicalJson(row)).join('\n')}\n`;
     const path = `rollback/image-vectors-${String(index + 1).padStart(4, '0')}-${sha256(content).slice(0, 16)}.ndjson`;
     fileContents.set(path, content);
+    fileRecordCounts.set(path, rows.length);
   }
   addJson('vector-value-hashes.json', artifacts.vectorValueHashes);
+  fileRecordCounts.set(
+    'vector-value-hashes.json',
+    artifacts.vectorValueHashes.length
+  );
 
   const files = [...fileContents.entries()].map(([path, content]) => ({
     path,
     sha256: sha256(content),
     bytes: Buffer.byteLength(content),
+    ...(fileRecordCounts.has(path)
+      ? { recordCount: fileRecordCounts.get(path) }
+      : {}),
   }));
   const artifactManifest = {
     schemaVersion: 1,
@@ -305,6 +334,7 @@ try {
       commit: sourceCommit,
       manifestSha256: sha256(fileContents.get('source-manifest.json')),
     },
+    preflightInputs: preflightBindings,
     invariants: {
       stagedRecordCount: artifacts.mapping.length,
       mappingCount: artifacts.mapping.length,
@@ -320,12 +350,14 @@ try {
   };
   addJson('artifact-manifest.json', artifactManifest);
 
-  await mkdir(outputDirectory, { recursive: true });
-  for (const [path, content] of fileContents) {
-    const destination = join(outputDirectory, path);
-    await mkdir(resolve(destination, '..'), { recursive: true });
-    await writeFile(destination, content, { flag: 'wx' });
-  }
+  await publishPreparedArtifacts(
+    outputDirectory,
+    [...fileContents].map(([path, content]) => ({
+      path,
+      content,
+      sha256: sha256(content),
+    }))
+  );
   process.stdout.write(
     `${JSON.stringify(
       {

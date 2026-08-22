@@ -1,4 +1,17 @@
 import { createHash } from 'node:crypto';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 import { buildNgaArtistUpdateSql } from './nga-structured-search-backfill.mjs';
 
@@ -91,6 +104,265 @@ export function validateNgaSourceFiles(entries, sourceCommit) {
     }
   }
   return entries;
+}
+
+const resolveBoundPreflightFile = async (root, entry) => {
+  if (
+    typeof entry?.path !== 'string' ||
+    !entry.path ||
+    isAbsolute(entry.path) ||
+    entry.path.split(/[\\/]/).includes('..')
+  ) {
+    throw new Error('preflight input path escapes its manifest root');
+  }
+  const path = await realpath(resolve(root, entry.path));
+  if (path !== root && !path.startsWith(`${root}${sep}`)) {
+    throw new Error('preflight input path escapes its manifest root');
+  }
+  const content = await readFile(path);
+  const digest = sha256(content);
+  if (digest !== entry.sha256) {
+    throw new Error(`preflight SHA-256 digest mismatch for ${entry.path}`);
+  }
+  return { ...entry, resolvedPath: path, content };
+};
+
+const expandNdjsonInputs = async (paths) => {
+  const files = [];
+  for (const input of paths || []) {
+    const path = await realpath(resolve(input));
+    const info = await stat(path);
+    if (!info.isDirectory()) {
+      files.push(path);
+      continue;
+    }
+    const entries = await readdir(path, { withFileTypes: true });
+    files.push(
+      ...entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.ndjson'))
+        .map((entry) => resolve(path, entry.name))
+        .sort()
+    );
+  }
+  return files;
+};
+
+export async function validatePreflightBindings({
+  phase,
+  expectedOrgId,
+  preflightManifestPaths,
+  stagedRecordPaths,
+  imageVectorPaths,
+}) {
+  assertStagingBackfillIdentity(expectedOrgId);
+  if (!['pilot', 'full'].includes(phase)) {
+    throw new Error('--phase must be pilot or full');
+  }
+  if (!preflightManifestPaths?.length) {
+    throw new Error('at least one --preflight-manifest is required');
+  }
+
+  const suppliedStagedPaths = new Set(
+    await Promise.all(
+      (stagedRecordPaths || []).map((path) => realpath(resolve(path)))
+    )
+  );
+  const suppliedVectorPaths = new Set(
+    await expandNdjsonInputs(imageVectorPaths)
+  );
+  const boundStagedPaths = new Set();
+  const boundVectorPaths = new Set();
+  const bindings = [];
+
+  for (const inputPath of preflightManifestPaths) {
+    const manifestPath = await realpath(resolve(inputPath));
+    const manifestContent = await readFile(manifestPath);
+    const manifest = JSON.parse(manifestContent.toString('utf8'));
+    if (
+      manifest.environment !== 'staging' ||
+      !['pilot', 'full'].includes(manifest.phase) ||
+      manifest.expectedOrgId !== STAGING_ORG_ID ||
+      manifest.resources?.d1Database !== STAGING_D1_DATABASE ||
+      manifest.resources?.imageVectorIndex !== STAGING_IMAGE_VECTOR_INDEX
+    ) {
+      throw new Error(
+        'preflight manifest identity is outside the staging allowlist'
+      );
+    }
+    const root = await realpath(dirname(manifestPath));
+    const ids = await resolveBoundPreflightFile(root, manifest.inputs?.ids);
+    const staged = await resolveBoundPreflightFile(
+      root,
+      manifest.inputs?.stagedRecords
+    );
+    const vectors = [];
+    for (const entry of manifest.inputs?.imageVectors || []) {
+      vectors.push(await resolveBoundPreflightFile(root, entry));
+    }
+
+    let parsedIds;
+    let parsedStaged;
+    let parsedVectors;
+    try {
+      parsedIds = JSON.parse(ids.content.toString('utf8'));
+      parsedStaged = JSON.parse(staged.content.toString('utf8'));
+      parsedVectors = vectors.flatMap((entry) =>
+        entry.content
+          .toString('utf8')
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+      );
+    } catch {
+      throw new Error(
+        'malformed JSON/NDJSON in hash-confirmed preflight input'
+      );
+    }
+    const vectorCount = parsedVectors.length;
+    if (
+      !Array.isArray(parsedIds) ||
+      !Array.isArray(parsedStaged) ||
+      parsedIds.length !== manifest.counts?.ids ||
+      parsedStaged.length !== manifest.counts?.stagedRecords ||
+      vectorCount !== manifest.counts?.imageVectors ||
+      ids.count !== manifest.counts?.ids ||
+      staged.count !== manifest.counts?.stagedRecords ||
+      vectors.reduce((total, entry) => total + entry.count, 0) !==
+        manifest.counts?.imageVectors
+    ) {
+      throw new Error('preflight input counts do not match its manifest');
+    }
+    const expectedIds = new Set(parsedIds);
+    const stagedIds = parsedStaged.map((row) => String(row?.id || ''));
+    const vectorIds = parsedVectors.map((row) =>
+      String(row?.metadata?.artworkId || row?.id || '')
+    );
+    if (
+      expectedIds.size !== parsedIds.length ||
+      stagedIds.some((id) => !/^open-access-art:nga:\d+$/.test(id)) ||
+      vectorIds.some((id) => !/^open-access-art:nga:\d+$/.test(id)) ||
+      new Set(stagedIds).size !== stagedIds.length ||
+      new Set(vectorIds).size !== vectorIds.length ||
+      stagedIds.some((id) => !expectedIds.has(id)) ||
+      vectorIds.some((id) => !expectedIds.has(id))
+    ) {
+      throw new Error('preflight ID mismatch, duplicate, or gap');
+    }
+    if (boundStagedPaths.has(staged.resolvedPath)) {
+      throw new Error('duplicate preflight staged-records binding');
+    }
+    boundStagedPaths.add(staged.resolvedPath);
+    for (const vector of vectors) {
+      if (boundVectorPaths.has(vector.resolvedPath)) {
+        throw new Error('duplicate preflight image-vector binding');
+      }
+      boundVectorPaths.add(vector.resolvedPath);
+    }
+    bindings.push({
+      manifestSha256: sha256(manifestContent),
+      phase: manifest.phase,
+      expectedOrgId: manifest.expectedOrgId,
+      resources: manifest.resources,
+      counts: manifest.counts,
+      ids: { path: ids.path, sha256: ids.sha256, count: ids.count },
+      stagedRecords: {
+        path: staged.path,
+        sha256: staged.sha256,
+        count: staged.count,
+      },
+      imageVectors: vectors.map((entry) => ({
+        path: entry.path,
+        sha256: entry.sha256,
+        count: entry.count,
+      })),
+    });
+  }
+
+  if (
+    suppliedStagedPaths.size !== boundStagedPaths.size ||
+    [...suppliedStagedPaths].some((path) => !boundStagedPaths.has(path))
+  ) {
+    throw new Error('unmanifested staged-records input set');
+  }
+  if (
+    suppliedVectorPaths.size !== boundVectorPaths.size ||
+    [...suppliedVectorPaths].some((path) => !boundVectorPaths.has(path))
+  ) {
+    throw new Error('unmanifested image-vectors input set');
+  }
+  const phases = bindings
+    .map((binding) => binding.phase)
+    .sort()
+    .join(',');
+  const totalCount = bindings.reduce(
+    (total, binding) => total + binding.counts.stagedRecords,
+    0
+  );
+  if (
+    (phase === 'pilot' && (phases !== 'pilot' || totalCount !== 5)) ||
+    (phase === 'full' &&
+      (phases !== 'full,pilot' || totalCount !== FULL_STAGED_COUNT))
+  ) {
+    throw new Error(`preflight manifests do not form the exact ${phase} scope`);
+  }
+  return bindings.sort((left, right) => left.phase.localeCompare(right.phase));
+}
+
+export async function publishPreparedArtifacts(outputDirectory, files) {
+  const finalDirectory = resolve(outputDirectory);
+  const parent = dirname(finalDirectory);
+  await mkdir(parent, { recursive: true });
+  let finalDirectoryExists = false;
+  try {
+    const info = await stat(finalDirectory);
+    if (!info.isDirectory() || (await readdir(finalDirectory)).length) {
+      throw new Error('artifact output directory must be empty or not exist');
+    }
+    finalDirectoryExists = true;
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+
+  const temporaryDirectory = await mkdtemp(
+    join(parent, `.${basename(finalDirectory)}.tmp-`)
+  );
+  let published = false;
+  try {
+    const seen = new Set();
+    for (const file of files || []) {
+      if (
+        typeof file?.path !== 'string' ||
+        !file.path ||
+        isAbsolute(file.path) ||
+        file.path.split(/[\\/]/).includes('..') ||
+        seen.has(file.path)
+      ) {
+        throw new Error(`invalid generated artifact path ${file?.path}`);
+      }
+      seen.add(file.path);
+      const destination = resolve(temporaryDirectory, file.path);
+      if (!destination.startsWith(`${temporaryDirectory}${sep}`)) {
+        throw new Error(`generated artifact path escapes output ${file.path}`);
+      }
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, file.content, { flag: 'wx' });
+    }
+    for (const file of files || []) {
+      const digest = sha256(
+        await readFile(resolve(temporaryDirectory, file.path))
+      );
+      if (digest !== file.sha256) {
+        throw new Error(`generated artifact SHA-256 mismatch for ${file.path}`);
+      }
+    }
+    if (finalDirectoryExists) await rmdir(finalDirectory);
+    await rename(temporaryDirectory, finalDirectory);
+    published = true;
+  } finally {
+    if (!published) {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  }
 }
 
 const objectIdFromArtworkId = (id) => {
