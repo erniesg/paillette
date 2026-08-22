@@ -494,7 +494,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     );
   });
 
-  test('direct artist attribution returns the matching primary-artist fixture', async ({
+  test('direct artist attribution returns the pinned primary-artist fixture', async ({
     page,
   }, testInfo) => {
     const requests = publicSearchRequests(page);

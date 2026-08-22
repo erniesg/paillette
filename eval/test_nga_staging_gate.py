@@ -2888,21 +2888,46 @@ class ScopeAndCacheTests(GateTestCase):
 
     def test_public_search_pacer_leaves_headroom_below_the_cold_miss_limit(self):
         now = [0.0]
+        wall = [datetime(2026, 8, 22, tzinfo=timezone.utc)]
         sleeps = []
 
         def sleep(seconds):
             sleeps.append(seconds)
             now[0] += seconds
+            # Simulate wall-clock sampling lagging the monotonic clock.
+            wall[0] += timedelta(seconds=seconds - 0.001)
 
         pacer = self.gate.RequestPacer(
             requests_per_minute=2,
             clock=lambda: now[0],
             sleep=sleep,
+            wall_clock=lambda: wall[0],
         )
-        pacer.wait()
-        pacer.wait()
-        pacer.wait()
-        self.assertEqual(sleeps, [60.0])
+        for label in ("first", "second", "third"):
+            pacer.wait(label)
+        self.assertEqual(sleeps, [60.25])
+
+        binding = {
+            "runId": "0" * 32,
+            "snapshot": "candidate",
+            "evaluatorGitSha": "a" * 40,
+            "deploymentIdentityHash": "b" * 64,
+        }
+        timing = {
+            **binding,
+            "schemaVersion": "nga-request-timing-evidence-v1",
+            "configuredRequestsPerMinute": 2,
+            "requests": pacer.evidence,
+            "lastPublicRequestAt": pacer.evidence[-1]["startedAt"],
+        }
+        self.assertTrue(
+            self.call(
+                "evaluate_request_timing_evidence",
+                timing,
+                expected_binding=binding,
+                expected_labels=("first", "second", "third"),
+            )["passed"]
+        )
 
         self.gate.RequestPacer(requests_per_minute=9)
         with self.assertRaisesRegex(ValueError, "between 1 and 9"):
@@ -3652,7 +3677,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             [event["label"] for event in pacer.evidence],
             ["cache:first", "cache:repeat", "cache:changed"],
         )
-        self.assertEqual(pacer.evidence[-1]["startedAt"], "2026-08-22T00:01:00Z")
+        self.assertEqual(
+            pacer.evidence[-1]["startedAt"], "2026-08-22T00:01:00.250000Z"
+        )
 
     def test_request_timing_rejects_an_unpaced_cache_repeat(self):
         binding = {
@@ -6322,7 +6349,9 @@ class InventoryAndRelevanceTests(GateTestCase):
         for label in labels:
             pacer.wait(label)
         self.assertEqual(len(pacer.evidence), 12)
-        self.assertEqual(pacer.evidence[9]["startedAt"], "2026-08-22T00:01:00Z")
+        self.assertEqual(
+            pacer.evidence[9]["startedAt"], "2026-08-22T00:01:00.250000Z"
+        )
         cooldown = self.call(
             "build_request_cooldown_handoff",
             binding={
@@ -6335,7 +6364,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             request_timing_sha256="c" * 64,
             last_public_request_at=pacer.evidence[-1]["startedAt"],
         )
-        self.assertEqual(cooldown["nextRunNotBefore"], "2026-08-22T00:02:00Z")
+        self.assertEqual(
+            cooldown["nextRunNotBefore"], "2026-08-22T00:02:00.250000Z"
+        )
 
     def test_artist_case_and_fixtures_bind_applied_primary_ids(self):
         inventory = json.loads(

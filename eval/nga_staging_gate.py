@@ -43,6 +43,7 @@ EXPECTED_VERSIONS = {
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PLAYWRIGHT_COOLDOWN_SECONDS = 60
 REQUEST_COOLDOWN_SECONDS = 60
+REQUEST_PACING_SAFETY_SECONDS = 0.25
 MANUAL_RELEVANCE_MINIMUMS = {
     "precisionAt5": 0.2,
     "mrr": 0.2,
@@ -5929,7 +5930,10 @@ class RequestPacer:
         if len(self.timestamps) >= self.requests_per_minute:
             delay = max(0.0, 60.0 - (now - self.timestamps[0]))
             if delay:
-                self.sleep(delay)
+                # Monotonic pacing and serialized wall-clock evidence are read
+                # separately. Leave a small margin so clock sampling jitter
+                # cannot make a compliant 60-second wait appear sub-minute.
+                self.sleep(delay + REQUEST_PACING_SAFETY_SECONDS)
             now = float(self.clock())
             self.timestamps = [
                 timestamp
