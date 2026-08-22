@@ -572,6 +572,15 @@ capture's canonical resource identity to equal the trusted preflight
 field-for-field, and rejects cross-phase paths, path escapes, caller-supplied
 equal hashes, and unknown schema fields.
 
+Obtain fresh production version/deployment responses for every `before` and
+`after` capture and construct a new canonical record; never copy bytes from an
+earlier phase. Before each exclusive create, parse the prior capture timestamp
+and wait for the UTC clock to advance when necessary. The required global
+chronology is `trustedPreflight <= pilot before < pilot after < full before <
+full after`. The four pilot/full `before`/`after` byte digests must all be
+distinct, including full `before` versus full `after`; an equal or reversed
+timestamp or reused digest is a stop condition.
+
 The canonical resource object has exactly `api` and `web`; each entry has
 exactly `environment`, `service`, `origin`, `deploymentId`, and `versionId`.
 Use the deployment-list output for `deploymentId` and the version-list output

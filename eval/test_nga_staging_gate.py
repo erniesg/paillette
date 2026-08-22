@@ -206,11 +206,11 @@ def full_deployment_identity(gate, pilot):
     full_paths = production_identity_paths("full")
     full["artistDataBinding"]["productionIdentity"]["before"] = {
         "path": full_paths["before"],
-        "sha256": "3" * 64,
+        "sha256": "6" * 64,
     }
     full["artistDataBinding"]["productionIdentity"]["after"] = {
         "path": full_paths["after"],
-        "sha256": "6" * 64,
+        "sha256": "7" * 64,
     }
     return full
 
@@ -457,6 +457,28 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "after": production_bindings["after"],
         },
     }
+
+
+def write_bound_production_capture(
+    root: Path,
+    descriptor,
+    *,
+    capture_role: str,
+    captured_at: str,
+    resources,
+):
+    record = {
+        "schemaVersion": "nga-production-identity-v1",
+        "captureRole": capture_role,
+        "capturedAt": captured_at,
+        "resources": json.loads(json.dumps(resources)),
+    }
+    payload = (json.dumps(record, indent=2) + "\n").encode()
+    path = root / descriptor["path"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    descriptor["sha256"] = hashlib.sha256(payload).hexdigest()
+    return record
 
 
 def rewrite_bound_artist_json(root: Path, binding, relative: str, mutate):
@@ -2406,14 +2428,41 @@ class ImageProbeTests(GateTestCase):
 
 class InventoryAndRelevanceTests(GateTestCase):
     def test_pilot_to_full_identity_continuity_allows_only_expected_rebinding(self):
-        pilot = deployment_identity()
-        full = full_deployment_identity(self.gate, pilot)
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            pilot_binding = write_artist_data_evidence(self.gate, evidence_root)
+            pilot = deployment_identity(artist_binding=pilot_binding)
+            full = full_deployment_identity(self.gate, pilot)
+            pilot_after = json.loads(
+                (
+                    evidence_root
+                    / pilot_binding["productionIdentity"]["after"]["path"]
+                ).read_text(encoding="utf-8")
+            )
+            full_production = full["artistDataBinding"]["productionIdentity"]
+            write_bound_production_capture(
+                evidence_root,
+                full_production["before"],
+                capture_role="before",
+                captured_at="2026-08-22T00:03:00Z",
+                resources=pilot_after["resources"],
+            )
+            write_bound_production_capture(
+                evidence_root,
+                full_production["after"],
+                capture_role="after",
+                captured_at="2026-08-22T00:04:00Z",
+                resources=pilot_after["resources"],
+            )
 
-        result = self.call(
-            "evaluate_pilot_full_identity_continuity", pilot, full
-        )
+            result = self.call(
+                "evaluate_pilot_full_identity_continuity",
+                pilot,
+                full,
+                evidence_root=evidence_root,
+            )
 
-        self.assertEqual(result["failureCodes"], [], result)
+            self.assertEqual(result["failureCodes"], [], result)
 
     def test_pilot_to_full_identity_continuity_rejects_wrong_pilot_hash(self):
         pilot = deployment_identity()
@@ -2531,7 +2580,10 @@ class InventoryAndRelevanceTests(GateTestCase):
 
             pilot_manifest = self.call("rehash_evidence", pilot_bundle)
             continuity = self.call(
-                "evaluate_pilot_full_identity_continuity", pilot_identity, full
+                "evaluate_pilot_full_identity_continuity",
+                pilot_identity,
+                full,
+                evidence_root=evidence_root,
             )
 
             self.assertEqual(pilot_manifest["phase"], "pilot")
@@ -2540,6 +2592,138 @@ class InventoryAndRelevanceTests(GateTestCase):
                 pilot_after_descriptor["path"], full_production["after"]["path"]
             )
             self.assertEqual(continuity["failureCodes"], [], continuity)
+
+    def test_identity_continuity_rejects_copied_pilot_before_at_full_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            pilot_binding = write_artist_data_evidence(self.gate, evidence_root)
+            pilot = deployment_identity(artist_binding=pilot_binding)
+            full = full_deployment_identity(self.gate, pilot)
+            pilot_production = pilot["artistDataBinding"]["productionIdentity"]
+            full_production = full["artistDataBinding"]["productionIdentity"]
+            pilot_before_path = evidence_root / pilot_production["before"]["path"]
+            full_before_path = evidence_root / full_production["before"]["path"]
+            full_before_path.parent.mkdir(parents=True, exist_ok=True)
+            full_before_path.write_bytes(pilot_before_path.read_bytes())
+            full_production["before"]["sha256"] = pilot_production["before"][
+                "sha256"
+            ]
+            pilot_after = json.loads(
+                (
+                    evidence_root / pilot_production["after"]["path"]
+                ).read_text(encoding="utf-8")
+            )
+            write_bound_production_capture(
+                evidence_root,
+                full_production["after"],
+                capture_role="after",
+                captured_at="2026-08-22T00:04:00Z",
+                resources=pilot_after["resources"],
+            )
+
+            result = self.call(
+                "evaluate_pilot_full_identity_continuity",
+                pilot,
+                full,
+                evidence_root=evidence_root,
+            )
+
+            self.assertIn(
+                "production_identity_capture_digest_reused",
+                result["failureCodes"],
+            )
+
+    def test_identity_continuity_rejects_full_before_after_digest_reuse(self):
+        pilot = deployment_identity()
+        full = full_deployment_identity(self.gate, pilot)
+        full_production = full["artistDataBinding"]["productionIdentity"]
+        full_production["after"]["sha256"] = full_production["before"]["sha256"]
+
+        result = self.call(
+            "evaluate_pilot_full_identity_continuity", pilot, full
+        )
+
+        self.assertIn(
+            "production_identity_capture_digest_reused", result["failureCodes"]
+        )
+
+    def test_artist_evidence_rejects_equal_and_reversed_phase_capture_times(self):
+        for label, after_time in {
+            "equal": "2026-08-22T00:01:00Z",
+            "reversed": "2026-08-22T00:00:30Z",
+        }.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                production = binding["productionIdentity"]
+                before = json.loads(
+                    (
+                        evidence_root / production["before"]["path"]
+                    ).read_text(encoding="utf-8")
+                )
+                write_bound_production_capture(
+                    evidence_root,
+                    production["after"],
+                    capture_role="after",
+                    captured_at=after_time,
+                    resources=before["resources"],
+                )
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(
+                    "production_identity_capture_order_invalid",
+                    result["failureCodes"],
+                )
+
+    def test_identity_continuity_rejects_equal_and_reversed_cross_phase_times(self):
+        for label, full_before_time in {
+            "equal": "2026-08-22T00:02:00Z",
+            "reversed": "2026-08-22T00:01:30Z",
+        }.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                pilot_binding = write_artist_data_evidence(self.gate, evidence_root)
+                pilot = deployment_identity(artist_binding=pilot_binding)
+                full = full_deployment_identity(self.gate, pilot)
+                pilot_after = json.loads(
+                    (
+                        evidence_root
+                        / pilot_binding["productionIdentity"]["after"]["path"]
+                    ).read_text(encoding="utf-8")
+                )
+                full_production = full["artistDataBinding"]["productionIdentity"]
+                write_bound_production_capture(
+                    evidence_root,
+                    full_production["before"],
+                    capture_role="before",
+                    captured_at=full_before_time,
+                    resources=pilot_after["resources"],
+                )
+                write_bound_production_capture(
+                    evidence_root,
+                    full_production["after"],
+                    capture_role="after",
+                    captured_at="2026-08-22T00:04:00Z",
+                    resources=pilot_after["resources"],
+                )
+
+                result = self.call(
+                    "evaluate_pilot_full_identity_continuity",
+                    pilot,
+                    full,
+                    evidence_root=evidence_root,
+                )
+
+                self.assertIn(
+                    "production_identity_capture_order_invalid",
+                    result["failureCodes"],
+                )
 
     def test_identity_continuity_rejects_cross_phase_capture_paths_and_escapes(self):
         pilot = deployment_identity()
@@ -4146,6 +4330,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                 self.gate,
                 evidence,
                 evaluator_sha=evaluator_sha,
+                artist_evidence_root=root,
             )
             summary_document = json.loads(
                 (evidence / "summary.json").read_text(encoding="utf-8")
@@ -4155,6 +4340,31 @@ class InventoryAndRelevanceTests(GateTestCase):
                 (evidence / "identity.json").read_text(encoding="utf-8")
             )["deploymentIdentity"]
             full_identity = full_deployment_identity(self.gate, pilot_identity)
+            pilot_production = pilot_identity["artistDataBinding"][
+                "productionIdentity"
+            ]
+            pilot_after = json.loads(
+                (root / pilot_production["after"]["path"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            full_production = full_identity["artistDataBinding"][
+                "productionIdentity"
+            ]
+            write_bound_production_capture(
+                root,
+                full_production["before"],
+                capture_role="before",
+                captured_at="2026-08-22T00:03:00Z",
+                resources=pilot_after["resources"],
+            )
+            write_bound_production_capture(
+                root,
+                full_production["after"],
+                capture_role="after",
+                captured_at="2026-08-22T00:04:00Z",
+                resources=pilot_after["resources"],
+            )
             summary_path = evidence / "summary.json"
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             manifest_path = evidence / "artifact-manifest.json"

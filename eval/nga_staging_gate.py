@@ -350,6 +350,8 @@ def sha256_json(value: Any) -> str:
 def evaluate_pilot_full_identity_continuity(
     pilot_identity: Mapping[str, Any],
     full_identity: Mapping[str, Any],
+    *,
+    evidence_root: Path | None = None,
 ) -> dict[str, Any]:
     """Allow only the documented pilot-to-full evidence rebinding."""
     failures: list[dict[str, Any]] = []
@@ -436,10 +438,35 @@ def evaluate_pilot_full_identity_continuity(
             _failure("pilot_full_identity_drift", field="capturedAt")
         )
 
-    pilot_after_value = pilot_production.get("after")
-    full_after_value = full_production.get("after")
-    pilot_after = pilot_after_value if isinstance(pilot_after_value, Mapping) else {}
-    full_after = full_after_value if isinstance(full_after_value, Mapping) else {}
+    capture_descriptors: dict[str, Mapping[str, Any]] = {}
+    for phase, production in (
+        ("pilot", pilot_production),
+        ("full", full_production),
+    ):
+        for role in ("before", "after"):
+            descriptor_value = production.get(role)
+            descriptor = (
+                descriptor_value
+                if isinstance(descriptor_value, Mapping)
+                else {}
+            )
+            capture_descriptors[f"{phase}.{role}"] = descriptor
+    capture_names_by_digest: dict[str, list[str]] = {}
+    for name, descriptor in capture_descriptors.items():
+        digest = descriptor.get("sha256")
+        if isinstance(digest, str) and re.fullmatch(r"[a-f0-9]{64}", digest):
+            capture_names_by_digest.setdefault(digest, []).append(name)
+    for names in capture_names_by_digest.values():
+        if len(names) > 1:
+            failures.append(
+                _failure(
+                    "production_identity_capture_digest_reused",
+                    captures=sorted(names),
+                )
+            )
+
+    pilot_after = capture_descriptors["pilot.after"]
+    full_after = capture_descriptors["full.after"]
     if (
         not isinstance(full_after.get("sha256"), str)
         or re.fullmatch(r"[a-f0-9]{64}", str(full_after.get("sha256"))) is None
@@ -457,6 +484,106 @@ def evaluate_pilot_full_identity_continuity(
         or re.fullmatch(r"[a-f0-9]{64}", str(full_manifest.get("sha256"))) is None
     ):
         failures.append(_failure("full_artist_manifest_binding_invalid"))
+
+    if evidence_root is None:
+        failures.append(
+            _failure(
+                "production_identity_capture_continuity_invalid",
+                capture="evidenceRoot",
+            )
+        )
+    else:
+        root = evidence_root.resolve()
+        raw_capture_specs = (
+            (
+                "trustedPreflight",
+                pilot_production.get("trustedPreflight"),
+                "pilot",
+                "trustedPreflight",
+            ),
+            ("pilot.before", pilot_production.get("before"), "pilot", "before"),
+            ("pilot.after", pilot_production.get("after"), "pilot", "after"),
+            ("full.before", full_production.get("before"), "full", "before"),
+            ("full.after", full_production.get("after"), "full", "after"),
+        )
+        raw_captures: dict[str, Mapping[str, Any]] = {}
+        for name, descriptor_value, phase, role in raw_capture_specs:
+            descriptor = (
+                descriptor_value
+                if isinstance(descriptor_value, Mapping)
+                else {}
+            )
+            expected_path = PRODUCTION_IDENTITY_PATHS[phase][
+                "trustedPreflight" if name == "trustedPreflight" else role
+            ]
+            resolved = _resolve_bound_file(
+                root,
+                descriptor,
+                expected_path=expected_path,
+            )
+            if resolved is None or not resolved[1]:
+                failures.append(
+                    _failure(
+                        "production_identity_capture_continuity_invalid",
+                        capture=name,
+                    )
+                )
+                continue
+            value = _load_bound_json(resolved[1])
+            capture = _valid_production_capture(
+                value,
+                expected_role=PRODUCTION_IDENTITY_ROLES[
+                    "trustedPreflight" if name == "trustedPreflight" else role
+                ],
+            )
+            if capture is None:
+                failures.append(
+                    _failure(
+                        "production_identity_capture_continuity_invalid",
+                        capture=name,
+                    )
+                )
+                continue
+            raw_captures[name] = capture
+        if set(raw_captures) == {
+            "trustedPreflight",
+            "pilot.before",
+            "pilot.after",
+            "full.before",
+            "full.after",
+        }:
+            trusted_resources = raw_captures["trustedPreflight"].get("resources")
+            if any(
+                raw_captures[name].get("resources") != trusted_resources
+                for name in (
+                    "pilot.before",
+                    "pilot.after",
+                    "full.before",
+                    "full.after",
+                )
+            ):
+                failures.append(_failure("production_artist_data_identity_changed"))
+            capture_times = {
+                name: _parse_utc_timestamp(capture.get("capturedAt"))
+                for name, capture in raw_captures.items()
+            }
+            trusted_time = capture_times["trustedPreflight"]
+            pilot_before_time = capture_times["pilot.before"]
+            pilot_after_time = capture_times["pilot.after"]
+            full_before_time = capture_times["full.before"]
+            full_after_time = capture_times["full.after"]
+            if (
+                any(value is None for value in capture_times.values())
+                or not (
+                    trusted_time <= pilot_before_time
+                    < pilot_after_time
+                    < full_before_time
+                    < full_after_time
+                )
+            ):
+                failures.append(
+                    _failure("production_identity_capture_order_invalid")
+                )
 
     return _result(
         failures,
@@ -1363,13 +1490,14 @@ def evaluate_artist_data_evidence(
     ):
         failures.append(_failure("production_artist_data_identity_changed"))
     if set(captures) == set(expected_production_paths):
-        capture_times = [
-            _parse_utc_timestamp(captures[name].get("capturedAt"))
-            for name in ("trustedPreflight", "before", "after")
-        ]
+        trusted_time = _parse_utc_timestamp(
+            captures["trustedPreflight"].get("capturedAt")
+        )
+        before_time = _parse_utc_timestamp(captures["before"].get("capturedAt"))
+        after_time = _parse_utc_timestamp(captures["after"].get("capturedAt"))
         if (
-            any(value is None for value in capture_times)
-            or capture_times != sorted(capture_times)
+            any(value is None for value in (trusted_time, before_time, after_time))
+            or not trusted_time <= before_time < after_time
         ):
             failures.append(_failure("production_identity_capture_order_invalid"))
 
@@ -3384,8 +3512,11 @@ def evaluate_pilot_inspection(
             if isinstance(pilot_identity_value, Mapping)
             else {}
         )
+        artist_evidence_root = _find_artist_evidence_root(evidence_root)
         continuity = evaluate_pilot_full_identity_continuity(
-            pilot_identity, deployment_identity
+            pilot_identity,
+            deployment_identity,
+            evidence_root=artist_evidence_root,
         )
         failures.extend(continuity["failures"])
         if sha256_json(pilot_identity) != pilot_deployment_hash:
@@ -3465,8 +3596,11 @@ def evaluate_recorded_pilot_inspection(
     pilot_identity = (
         pilot_identity_value if isinstance(pilot_identity_value, Mapping) else {}
     )
+    artist_evidence_root = _find_artist_evidence_root(manifest_path.parent)
     continuity = evaluate_pilot_full_identity_continuity(
-        pilot_identity, deployment_identity
+        pilot_identity,
+        deployment_identity,
+        evidence_root=artist_evidence_root,
     )
     failures.extend(continuity["failures"])
     if (
