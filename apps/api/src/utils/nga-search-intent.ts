@@ -3,6 +3,7 @@ import {
   NGA_SEARCH_MEDIUM_FAMILIES,
   normalizePublicSearchConstraints,
   validatePublicSearchConstraints,
+  type NgaAttributionIntent,
   type NgaSearchPlan,
   type PublicSearchConstraints,
   type PublicSearchInterpretation,
@@ -10,7 +11,7 @@ import {
 } from '@paillette/types/public-search-core';
 import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
 
-export const NGA_SEARCH_PARSER_VERSION = 'nga-v6' as const;
+export const NGA_SEARCH_PARSER_VERSION = 'nga-v7' as const;
 
 type VocabularyEntry = {
   canonical: string;
@@ -242,6 +243,201 @@ const findClassificationSpans = (query: string): ClassificationSpan[] => {
   }
 
   return matches.sort((left, right) => left.start - right.start);
+};
+
+export type NgaSearchIntentSpan = { start: number; end: number };
+
+const normalizeAttributionText = (value: string) =>
+  value
+    .normalize('NFC')
+    .replace(/[\p{P}\p{S}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+const ATTRIBUTION_CARRIERS = [
+  ...CLASSIFICATIONS.flatMap((entry) => entry.aliases),
+  'work',
+  'works',
+  'artwork',
+  'artworks',
+  'picture',
+  'pictures',
+  'piece',
+  'pieces',
+].sort((left, right) => right.length - left.length);
+
+const ATTRIBUTION_CARRIER_PATTERN = new RegExp(
+  `\\b(?:${ATTRIBUTION_CARRIERS.map(escapeRegExp).join('|')})\\b`,
+  'iu'
+);
+
+const ATTRIBUTION_CONTROL_TOKENS = new Set([
+  'a',
+  'an',
+  'art',
+  'artist',
+  'artists',
+  'artwork',
+  'artworks',
+  'attributed',
+  'by',
+  'example',
+  'examples',
+  'from',
+  'made',
+  'me',
+  'of',
+  'piece',
+  'pieces',
+  'please',
+  'show',
+  'the',
+  'to',
+  'work',
+  'works',
+]);
+
+const ATTRIBUTION_PATTERNS: ReadonlyArray<{
+  relationship: NgaAttributionIntent['relationship'];
+  marker: RegExp;
+}> = [
+  {
+    relationship: 'attributed_to',
+    marker: /\b(?:attributed|ascribed)\s+to\b/iu,
+  },
+  {
+    relationship: 'workshop_of',
+    marker: /\b(?:from\s+(?:the\s+)?)?workshop\s+of\b/iu,
+  },
+  {
+    relationship: 'studio_of',
+    marker: /\b(?:from\s+(?:the\s+)?)?studio\s+of\b/iu,
+  },
+  {
+    relationship: 'circle_of',
+    marker: /\b(?:from\s+(?:the\s+)?)?circle\s+of\b/iu,
+  },
+  {
+    relationship: 'school_of',
+    marker: /\b(?:from\s+(?:the\s+)?)?school\s+of\b/iu,
+  },
+  {
+    relationship: 'follower_of',
+    marker: /\b(?:(?:by|from)\s+)?(?:a\s+|the\s+)?follower\s+of\b/iu,
+  },
+  { relationship: 'after', marker: /\bafter\b/iu },
+  {
+    relationship: 'direct',
+    marker: /\b(?:(?:created|made|painted|drawn|sculpted|executed)\s+)?by\b/iu,
+  },
+];
+
+const targetIsControlOnly = (targetText: string): boolean => {
+  const normalized = fold(targetText);
+  if (!normalized || /^(?:1[0-9]{3}|20[0-9]{2})$/.test(normalized)) {
+    return true;
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const vocabularyTokens = new Set([
+    ...ATTRIBUTION_CONTROL_TOKENS,
+    ...CLASSIFICATIONS.flatMap((entry) => entry.aliases.map(fold)),
+    ...MEDIUMS.flatMap((entry) => entry.aliases.map(fold)),
+  ]);
+  return tokens.every(
+    (token) =>
+      ATTRIBUTION_CONTROL_TOKENS.has(token) ||
+      vocabularyTokens.has(token) ||
+      /^\d+(?:st|nd|rd|th)?$/.test(token) ||
+      /^(?:century|centry|centryy|before|after|around|circa)$/.test(token)
+  );
+};
+
+const overlapsOccupiedSpan = (
+  start: number,
+  end: number,
+  occupiedSpans: readonly NgaSearchIntentSpan[]
+) =>
+  occupiedSpans.some((span) => start < span.end && end > span.start);
+
+const stripTrailingAttributionControls = (value: string) =>
+  value
+    .replace(/\s+please$/iu, '')
+    .replace(
+      /\s+(?:(?:from|before|after|around|circa)\s+)?(?:1[0-9]{3}|20[0-9]{2}|(?:early|mid|late\s+)?\d{1,2}(?:st|nd|rd|th)?\s+cent(?:ury|ry|ryy))$/iu,
+      ''
+    )
+    .trim();
+
+export const parseNgaAttributionIntent = (
+  query: string,
+  occupiedSpans: readonly NgaSearchIntentSpan[] = []
+): NgaAttributionIntent | null => {
+  const normalized = normalizeAttributionText(query);
+
+  for (const pattern of ATTRIBUTION_PATTERNS) {
+    const marker = pattern.marker.exec(normalized);
+    if (!marker || marker.index === undefined) continue;
+    if (!ATTRIBUTION_CARRIER_PATTERN.test(normalized.slice(0, marker.index))) {
+      continue;
+    }
+
+    const targetText = stripTrailingAttributionControls(
+      normalized.slice(marker.index + marker[0].length)
+    );
+    if (
+      !targetText ||
+      targetIsControlOnly(targetText) ||
+      overlapsOccupiedSpan(marker.index, normalized.length, occupiedSpans)
+    ) {
+      continue;
+    }
+
+    return { relationship: pattern.relationship, targetText };
+  }
+
+  return null;
+};
+
+export const canonicalNgaAttribution = (
+  intent: NgaAttributionIntent
+): NgaAttributionIntent => ({
+  relationship: intent.relationship,
+  targetText: normalizeAttributionText(intent.targetText)
+    .toLocaleLowerCase('en-US')
+    .replace(/(^|\s)(\p{L})/gu, (_, prefix: string, letter: string) =>
+      `${prefix}${letter.toLocaleUpperCase('en-US')}`
+    ),
+});
+
+const attributionNegationSpans = (query: string): NgaSearchIntentSpan[] => {
+  const normalized = normalizeAttributionText(query);
+  const marker =
+    '(?:after|(?:attributed|ascribed)\\s+to|(?:from\\s+(?:the\\s+)?)?(?:workshop|studio|circle|school)\\s+of|(?:(?:by|from)\\s+)?(?:a\\s+|the\\s+)?follower\\s+of|(?:(?:created|made|painted|drawn|sculpted|executed)\\s+)?by)';
+  const carrier = `(?:${ATTRIBUTION_CARRIERS.map(escapeRegExp).join('|')})`;
+  const workModifier = `(?:(?:a|an|the|early|mid|late|first|second|third|fourth|\\d+(?:st|nd|rd|th)?|century|centry|centryy|${MEDIUMS.flatMap(
+    (entry) => entry.aliases
+  )
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegExp)
+    .join('|')})\\s+)*`;
+  const patterns = [
+    new RegExp(
+      `\\b(?:not|never)\\s+(?:really\\s+|actually\\s+|directly\\s+)?${marker}\\b[\\s\\S]*$`,
+      'giu'
+    ),
+    new RegExp(
+      `\\b(?:no|not)\\s+${workModifier}${carrier}\\b[\\s\\S]*?${marker}\\b[\\s\\S]*$`,
+      'giu'
+    ),
+  ];
+
+  return patterns.flatMap((pattern) =>
+    [...normalized.matchAll(pattern)].map((match) => ({
+      start: match.index,
+      end: match.index + match[0].length,
+    }))
+  );
 };
 
 type RelationConnector = {
@@ -1115,6 +1311,17 @@ export const parseNgaSearchIntent = (
     };
   }
 
+  const attribution = parseNgaAttributionIntent(
+    originalQuery,
+    attributionNegationSpans(originalQuery)
+  );
+  if (attribution) {
+    return {
+      ...parseNgaSearchIntentFlat(originalQuery, explicitConstraints),
+      attribution,
+    };
+  }
+
   const interpretation = parseNgaSearchIntentFlat(
     originalQuery,
     explicitConstraints
@@ -1146,11 +1353,21 @@ export const compileNgaSearchPlan = (
   const interpretation = parseNgaSearchIntent(query, explicitConstraints);
   if (interpretation.relation) {
     return {
-      version: 'nga-plan-v1',
+      version: 'nga-plan-v2',
       mode: 'relational',
       retrievalQuery: interpretation.semanticQuery,
       constraints: interpretation.constraints,
       relation: interpretation.relation,
+    };
+  }
+  if (interpretation.attribution) {
+    const attribution = canonicalNgaAttribution(interpretation.attribution);
+    return {
+      version: 'nga-plan-v2',
+      mode: 'attribution',
+      retrievalQuery: fold(attribution.targetText),
+      constraints: interpretation.constraints,
+      attribution,
     };
   }
 
@@ -1161,7 +1378,7 @@ export const compileNgaSearchPlan = (
     ? interpretation.semanticQuery
     : '';
   return {
-    version: 'nga-plan-v1',
+    version: 'nga-plan-v2',
     mode: structured ? 'structured' : 'semantic',
     retrievalQuery:
       meaningfulSemanticQuery ||

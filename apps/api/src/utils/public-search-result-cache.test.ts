@@ -92,7 +92,7 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v7:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v8:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
@@ -168,7 +168,7 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(differentShapeKey).not.toBe(activeKey);
   });
 
-  it('separates future NGA plan semantics even when retrieval text is unchanged', async () => {
+  it('does not address the obsolete nga-plan-v1 identity', async () => {
     const plan = compileNgaSearchPlan('drawing based on photograph');
     const currentKey = await buildPublicSearchResultCacheKey({
       ...identity,
@@ -176,22 +176,68 @@ describe('buildPublicSearchResultCacheKey', () => {
       constraints: plan.constraints,
       ngaPlan: plan,
     });
-    const futureKey = await buildPublicSearchResultCacheKey({
+    const obsoleteKey = await buildPublicSearchResultCacheKey({
       ...identity,
       query: plan.retrievalQuery,
       constraints: plan.constraints,
-      ngaPlan: { ...plan, version: 'nga-plan-v2' },
+      ngaPlan: { ...plan, version: 'nga-plan-v1' },
     });
 
-    expect(futureKey).not.toBe(currentKey);
+    expect(obsoleteKey).not.toBe(currentKey);
+  });
+
+  it('canonicalizes attribution while separating role, target, and evidence policy', async () => {
+    const displayPlan = compileNgaSearchPlan('PAINTING — after Rembrandt');
+    const canonicalPlan = compileNgaSearchPlan('painting after rembrandt');
+    const cacheIdentity = (ngaPlan: typeof displayPlan) => ({
+      ...identity,
+      query: ngaPlan.retrievalQuery,
+      constraints: ngaPlan.constraints,
+      ngaPlan,
+    });
+    const baseKey = await buildPublicSearchResultCacheKey(
+      cacheIdentity(displayPlan)
+    );
+    const canonicalKey = await buildPublicSearchResultCacheKey(
+      cacheIdentity(canonicalPlan)
+    );
+    const roleKey = await buildPublicSearchResultCacheKey(
+      cacheIdentity({
+        ...displayPlan,
+        attribution: {
+          relationship: 'attributed_to',
+          targetText: 'Rembrandt',
+        },
+      })
+    );
+    const targetKey = await buildPublicSearchResultCacheKey(
+      cacheIdentity({
+        ...displayPlan,
+        attribution: { relationship: 'after', targetText: 'Rubens' },
+      })
+    );
+    const evidenceKey = await buildPublicSearchResultCacheKey(
+      cacheIdentity({
+        ...displayPlan,
+        relationEvidence: {
+          policy: 'catalogue_derivation',
+          status: 'candidate',
+        },
+      })
+    );
+
+    expect(canonicalKey).toBe(baseKey);
+    expect(roleKey).not.toBe(baseKey);
+    expect(targetKey).not.toBe(baseKey);
+    expect(evidenceKey).not.toBe(baseKey);
   });
 });
 
 describe('getOrLoadPublicSearchResult', () => {
-  it('does not address a stale v6 entry for an nga-v6 exact-date search', async () => {
+  it('does not address a stale v7 entry for an nga-v7 exact-date search', async () => {
     const cache = createCache({
       get: vi.fn(async (key: string) =>
-        key.startsWith('public-search-result:v6:') ? cachedValue() : null
+        key.startsWith('public-search-result:v7:') ? cachedValue() : null
       ) as unknown as KVNamespace['get'],
     });
     const load = vi.fn().mockResolvedValue({ response, cacheable: false });
@@ -199,7 +245,7 @@ describe('getOrLoadPublicSearchResult', () => {
     await expect(
       getOrLoadPublicSearchResult({
         ...identity,
-        parserVersion: 'nga-v6',
+        parserVersion: 'nga-v7',
         constraints: { dateRange: { startYear: 1889, endYear: 1889 } },
         cache,
         load,
@@ -365,6 +411,54 @@ describe('getOrLoadPublicSearchResult', () => {
       response,
       disposition: 'coalesced',
     });
+  });
+
+  it('keeps different attribution intents separate during concurrent cold misses', async () => {
+    const cache = createCache();
+    const afterPlan = compileNgaSearchPlan('painting after Rembrandt');
+    let releaseLoads!: () => void;
+    const loadGate = new Promise<void>((resolve) => {
+      releaseLoads = resolve;
+    });
+    const afterLoad = vi.fn(async () => {
+      await loadGate;
+      return { response, cacheable: false };
+    });
+    const directLoad = vi.fn(async () => {
+      await loadGate;
+      return { response, cacheable: false };
+    });
+
+    const after = getOrLoadPublicSearchResult({
+      ...identity,
+      query: afterPlan.retrievalQuery,
+      constraints: afterPlan.constraints,
+      ngaPlan: afterPlan,
+      cache,
+      load: afterLoad,
+      now: () => NOW,
+    });
+    const direct = getOrLoadPublicSearchResult({
+      ...identity,
+      query: afterPlan.retrievalQuery,
+      constraints: afterPlan.constraints,
+      ngaPlan: {
+        ...afterPlan,
+        attribution: { relationship: 'direct', targetText: 'Rembrandt' },
+      },
+      cache,
+      load: directLoad,
+      now: () => NOW,
+    });
+
+    await vi.waitFor(() => {
+      expect(afterLoad).toHaveBeenCalledOnce();
+      expect(directLoad).toHaveBeenCalledOnce();
+    });
+    releaseLoads();
+
+    await expect(after).resolves.toMatchObject({ disposition: 'miss' });
+    await expect(direct).resolves.toMatchObject({ disposition: 'miss' });
   });
 
   it('does not persist a loader response unless it is explicitly cacheable', async () => {

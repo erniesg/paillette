@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PUBLIC_SEARCH_CONTRACT_VERSION = '28' as const;
+export const PUBLIC_SEARCH_CONTRACT_VERSION = '29' as const;
 export const PUBLIC_SEARCH_SPOTLIGHT_SCHEMA_VERSION = 1 as const;
 export const PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES = 256 * 1024;
 export const PUBLIC_SEARCH_CANONICAL_TOP_K = 100 as const;
@@ -133,12 +133,32 @@ export type PublicSearchRelation =
       sourceClassification: string;
     };
 
+export type NgaAttributionIntent = {
+  relationship:
+    | 'direct'
+    | 'after'
+    | 'attributed_to'
+    | 'workshop_of'
+    | 'studio_of'
+    | 'circle_of'
+    | 'school_of'
+    | 'follower_of';
+  targetText: string;
+};
+
+export type PublicSearchRelationEvidence = {
+  policy: 'visible_subject' | 'catalogue_derivation';
+  status: 'candidate' | 'verified' | 'unverified';
+};
+
 export type NgaSearchPlan = {
-  version: 'nga-plan-v1';
-  mode: 'structured' | 'semantic' | 'relational';
+  version: 'nga-plan-v2';
+  mode: 'structured' | 'semantic' | 'relational' | 'attribution';
   retrievalQuery: string;
   constraints: PublicSearchConstraints;
   relation?: PublicSearchRelation;
+  attribution?: NgaAttributionIntent;
+  relationEvidence?: PublicSearchRelationEvidence;
 };
 
 export type PublicSearchInterpretation = {
@@ -148,11 +168,14 @@ export type PublicSearchInterpretation = {
     | 'nga-v3'
     | 'nga-v4'
     | 'nga-v5'
-    | 'nga-v6';
+    | 'nga-v6'
+    | 'nga-v7';
   originalQuery: string;
   semanticQuery: string;
   constraints: PublicSearchConstraints;
   relation?: PublicSearchRelation;
+  attribution?: NgaAttributionIntent;
+  relationEvidence?: PublicSearchRelationEvidence;
   corrections: Array<{ from: string; to: string }>;
   unresolved: string[];
 };

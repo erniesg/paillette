@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as publicSearchCore from '@paillette/types/public-search-core';
 import {
+  canonicalNgaAttribution,
   compileNgaSearchPlan,
   matchesNgaSearchConstraints,
+  parseNgaAttributionIntent,
   parseNgaSearchIntent,
 } from './nga-search-intent';
 
@@ -97,8 +99,101 @@ const loadConstraintCorpus = (): CorpusQuery[] =>
     });
 
 describe('parseNgaSearchIntent', () => {
-  it('reports the nga-v6 parser contract', () => {
-    expect(parseNgaSearchIntent('paintings').parserVersion).toBe('nga-v6');
+  it('reports the nga-v7 parser contract', () => {
+    expect(parseNgaSearchIntent('paintings').parserVersion).toBe('nga-v7');
+  });
+
+  it.each([
+    ['paintings by Guercino', 'direct', 'Guercino'],
+    ['painting after Rembrandt', 'after', 'Rembrandt'],
+    ['drawings attributed to Rembrandt', 'attributed_to', 'Rembrandt'],
+    ['paintings from the workshop of Rubens', 'workshop_of', 'Rubens'],
+    ['works from the studio of Diego Velazquez', 'studio_of', 'Diego Velazquez'],
+    ['drawings from the circle of Raphael', 'circle_of', 'Raphael'],
+    ['paintings from the school of Caravaggio', 'school_of', 'Caravaggio'],
+    ['prints by a follower of Durer', 'follower_of', 'Durer'],
+  ] as const)(
+    'compiles the declarative attribution role in %s',
+    (query, relationship, targetText) => {
+      expect(compileNgaSearchPlan(query)).toMatchObject({
+        version: 'nga-plan-v2',
+        mode: 'attribution',
+        attribution: { relationship, targetText },
+      });
+    }
+  );
+
+  it('preserves display casing in the interpretation while canonicalizing plan identity', () => {
+    const display = parseNgaSearchIntent('PAINTING — after Rembrandt');
+
+    expect(display.attribution).toEqual({
+      relationship: 'after',
+      targetText: 'Rembrandt',
+    });
+    expect(compileNgaSearchPlan('PAINTING — after Rembrandt')).toEqual(
+      compileNgaSearchPlan('painting after rembrandt')
+    );
+    expect(
+      canonicalNgaAttribution({
+        relationship: 'after',
+        targetText: '  REMBRANDT!!! ',
+      })
+    ).toEqual({ relationship: 'after', targetText: 'Rembrandt' });
+  });
+
+  it('keeps date, classification, medium, and safe non-name corrections with attribution', () => {
+    expect(
+      parseNgaSearchIntent(
+        'late 18th centry oil paintngs — studio of Diego Velázquez'
+      )
+    ).toMatchObject({
+      constraints: {
+        dateRange: { startYear: 1767, endYear: 1799 },
+        classifications: ['Painting'],
+        mediumFamilies: ['oil'],
+      },
+      attribution: {
+        relationship: 'studio_of',
+        targetText: 'Diego Velázquez',
+      },
+      corrections: expect.arrayContaining([
+        { from: 'centry', to: 'century' },
+        { from: 'paintngs', to: 'painting' },
+      ]),
+    });
+  });
+
+  it.each([
+    'paintings by',
+    'paintings by artists',
+    'paintings after 1800',
+    'drawings attributed to photographs',
+  ])('does not force attribution for targetless or control-only phrase %s', (query) => {
+    expect(parseNgaAttributionIntent(query, [])).toBeNull();
+    expect(compileNgaSearchPlan(query).mode).not.toBe('attribution');
+  });
+
+  it.each([
+    'painting not after Rembrandt',
+    'painting never attributed to Rembrandt',
+    'no paintings by Guercino',
+    'no oil paintings after Rembrandt',
+  ])('does not compile negated attribution in %s', (query) => {
+    expect(parseNgaSearchIntent(query).attribution).toBeUndefined();
+    expect(compileNgaSearchPlan(query).attribution).toBeUndefined();
+  });
+
+  it('rejects attribution matches that overlap an occupied relation or negation span', () => {
+    expect(
+      parseNgaAttributionIntent('painting after Rembrandt', [
+        { start: 9, end: 24 },
+      ])
+    ).toBeNull();
+  });
+
+  it('leaves a bare ambiguous name outside forced attribution mode', () => {
+    expect(parseNgaSearchIntent('Rembrandt').attribution).toBeUndefined();
+    expect(compileNgaSearchPlan('Rembrandt').mode).toBe('semantic');
   });
 
   it('ships a versioned evaluation corpus with at least 80 representative queries', () => {
@@ -230,7 +325,7 @@ describe('parseNgaSearchIntent', () => {
       const plan = compileNgaSearchPlan(query);
 
       expect(plan).toEqual({
-        version: 'nga-plan-v1',
+        version: 'nga-plan-v2',
         mode: 'relational',
         retrievalQuery,
         constraints: { classifications: [workClassification] },
@@ -257,7 +352,7 @@ describe('parseNgaSearchIntent', () => {
 
     expect(canonicalRetrievalQuery).toBe('painting featuring sculpture');
     expect(compileNgaSearchPlan(canonicalRetrievalQuery)).toEqual({
-      version: 'nga-plan-v1',
+      version: 'nga-plan-v2',
       mode: 'relational',
       retrievalQuery: 'painting featuring sculpture',
       constraints: { classifications: ['Painting'] },
@@ -309,7 +404,7 @@ describe('parseNgaSearchIntent', () => {
     'keeps role-attached hard constraints on the returned work for %s',
     (query, classifications, mediumFamilies, dateRange, retrievalQuery) => {
       expect(compileNgaSearchPlan(query)).toEqual({
-        version: 'nga-plan-v1',
+        version: 'nga-plan-v2',
         mode: 'relational',
         retrievalQuery,
         constraints: {
@@ -328,7 +423,7 @@ describe('parseNgaSearchIntent', () => {
 
   it('keeps classification lists as returned-work constraints', () => {
     expect(compileNgaSearchPlan('paintings and sculptures')).toEqual({
-      version: 'nga-plan-v1',
+      version: 'nga-plan-v2',
       mode: 'structured',
       retrievalQuery: 'painting sculpture',
       constraints: { classifications: ['Painting', 'Sculpture'] },
@@ -347,7 +442,7 @@ describe('parseNgaSearchIntent', () => {
     expect(intent.relation).toBeUndefined();
     expect(intent.unresolved).toEqual([]);
     expect(compileNgaSearchPlan(query)).toEqual({
-      version: 'nga-plan-v1',
+      version: 'nga-plan-v2',
       mode: 'structured',
       retrievalQuery: 'drawing painting sculpture',
       constraints: {
@@ -526,7 +621,7 @@ describe('parseNgaSearchIntent', () => {
       expect(intent.semanticQuery).toBe(semanticQuery);
       expect(intent.unresolved).toEqual([query.replace("doesn't", 'does not')]);
       expect(compileNgaSearchPlan(query)).toEqual({
-        version: 'nga-plan-v1',
+        version: 'nga-plan-v2',
         mode: 'structured',
         retrievalQuery: semanticQuery,
         constraints: { classifications: [workClassification] },
@@ -583,17 +678,27 @@ describe('parseNgaSearchIntent', () => {
     expect(intent.unresolved).toEqual([query]);
   });
 
-  it('preserves attribution wording instead of inventing a source relation', () => {
+  it('compiles person-after language as attribution instead of a source relation', () => {
     const intent = parseNgaSearchIntent('painting after Rembrandt');
 
     expect(intent.constraints).toEqual({ classifications: ['Painting'] });
     expect(intent.relation).toBeUndefined();
+    expect(intent.attribution).toEqual({
+      relationship: 'after',
+      targetText: 'Rembrandt',
+    });
     expect(intent.semanticQuery).toBe('after rembrandt attribution');
+    expect(compileNgaSearchPlan('painting after Rembrandt')).toMatchObject({
+      version: 'nga-plan-v2',
+      mode: 'attribution',
+      constraints: { classifications: ['Painting'] },
+      attribution: { relationship: 'after', targetText: 'Rembrandt' },
+    });
   });
 
   it('treats after as derivation only between artwork classifications', () => {
     expect(compileNgaSearchPlan('painting after photograph')).toEqual({
-      version: 'nga-plan-v1',
+      version: 'nga-plan-v2',
       mode: 'relational',
       retrievalQuery: 'painting based on photograph',
       constraints: { classifications: ['Painting'] },
@@ -607,7 +712,7 @@ describe('parseNgaSearchIntent', () => {
 
   it('lets explicit empty constraints remove inferred filters but retain relation metadata', () => {
     expect(compileNgaSearchPlan('painting showing sculpture', {})).toEqual({
-      version: 'nga-plan-v1',
+      version: 'nga-plan-v2',
       mode: 'relational',
       retrievalQuery: 'painting depicting sculpture',
       constraints: {},

@@ -4,13 +4,15 @@ import {
   normalizePublicSearchText,
 } from '@paillette/types/public-search';
 import type {
+  NgaAttributionIntent,
   NgaSearchPlan,
   PublicSearchConstraints,
   PublicSearchRelation,
 } from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '../types';
+import { canonicalNgaAttribution } from './nga-search-intent';
 
-const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 7;
+const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 8;
 
 export const PUBLIC_SEARCH_RESULT_CACHE_SCHEMA_VERSION = 2 as const;
 export const PUBLIC_SEARCH_RESULT_CACHE_READ_TIMEOUT_MS = 300;
@@ -149,6 +151,11 @@ const canonicalRelation = (
   };
 };
 
+const canonicalAttribution = (
+  attribution: NgaAttributionIntent | undefined
+): NgaAttributionIntent | null =>
+  attribution ? canonicalNgaAttribution(attribution) : null;
+
 const assertValidIdentity = (
   identity: PublicSearchResultCacheIdentity
 ): void => {
@@ -224,6 +231,9 @@ const serializePublicSearchResultCacheIdentity = (
           ).toLocaleLowerCase('en-US'),
           constraints: canonicalConstraints(identity.ngaPlan.constraints),
           relation: canonicalRelation(identity.ngaPlan.relation),
+          attribution: canonicalAttribution(identity.ngaPlan.attribution),
+          relationEvidencePolicy:
+            identity.ngaPlan.relationEvidence?.policy || null,
         }
       : null,
   });
