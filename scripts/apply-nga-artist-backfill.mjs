@@ -12,7 +12,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 
 import {
   FULL_STAGED_COUNT,
@@ -31,6 +39,9 @@ import {
 import { buildNgaArtistUpdateSql } from './lib/nga-structured-search-backfill.mjs';
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const repositoryRoot = realpathSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '..')
+);
 
 const args = new Map();
 for (const argument of process.argv.slice(2)) {
@@ -1220,23 +1231,45 @@ const loadResumePrefix = () => {
 
 const createExclusivePostApplyRoot = () => {
   const requestedPath = resolve(String(postApplyOutDirectoryValue));
+  const artifactBackfillRoot = dirname(artifactRequestRoot);
+  const evidenceBase = join(
+    repositoryRoot,
+    '.agent',
+    'evidence',
+    'nga-staging'
+  );
+  const evidenceParts = relative(evidenceBase, artifactRoot).split(sep);
+  const usesEvidenceLayout =
+    evidenceParts.length === 4 &&
+    /^[a-f0-9]{40}$/.test(evidenceParts[0]) &&
+    /^\d{8}T\d{6}Z$/.test(evidenceParts[1]) &&
+    evidenceParts[2] === 'backfill' &&
+    evidenceParts[3] === phase &&
+    basename(artifactRequestRoot) === phase &&
+    basename(artifactBackfillRoot) === 'backfill';
+  const outputRequestRoot = usesEvidenceLayout
+    ? dirname(artifactBackfillRoot)
+    : artifactRequestRoot;
+  const outputRoot = usesEvidenceLayout
+    ? dirname(dirname(artifactRoot))
+    : artifactRoot;
   if (
-    requestedPath === artifactRequestRoot ||
-    !requestedPath.startsWith(`${artifactRequestRoot}${sep}`)
+    requestedPath === outputRequestRoot ||
+    !requestedPath.startsWith(`${outputRequestRoot}${sep}`)
   ) {
-    throw new Error('post-apply output escapes the manifest artifact root');
+    throw new Error('post-apply output escapes the manifest evidence root');
   }
-  const requestRootInfo = lstatSync(artifactRequestRoot);
+  const requestRootInfo = lstatSync(outputRequestRoot);
   if (
     requestRootInfo.isSymbolicLink() ||
     !requestRootInfo.isDirectory() ||
-    realpathSync(artifactRequestRoot) !== artifactRoot
+    realpathSync(outputRequestRoot) !== outputRoot
   ) {
-    throw new Error('post-apply artifact root must be a real directory');
+    throw new Error('post-apply evidence root must be a real directory');
   }
   const parentPath = dirname(requestedPath);
-  let currentPath = artifactRequestRoot;
-  for (const component of relative(artifactRequestRoot, parentPath)
+  let currentPath = outputRequestRoot;
+  for (const component of relative(outputRequestRoot, parentPath)
     .split(sep)
     .filter(Boolean)) {
     currentPath = join(currentPath, component);
@@ -1251,10 +1284,10 @@ const createExclusivePostApplyRoot = () => {
   }
   const realParent = realpathSync(parentPath);
   if (
-    realParent !== artifactRoot &&
-    !realParent.startsWith(`${artifactRoot}${sep}`)
+    realParent !== outputRoot &&
+    !realParent.startsWith(`${outputRoot}${sep}`)
   ) {
-    throw new Error('post-apply output parent escapes the artifact root');
+    throw new Error('post-apply output parent escapes the evidence root');
   }
   const targetInfo = lstatSync(requestedPath, { throwIfNoEntry: false });
   if (targetInfo?.isSymbolicLink()) {

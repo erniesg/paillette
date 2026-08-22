@@ -40,9 +40,33 @@ afterEach(() => {
   }
 });
 
-const createArtifacts = (overrides = {}) => {
-  const root = mkdtempSync(join(tmpdir(), 'nga-apply-'));
-  temporaryDirectories.push(root);
+let evidenceFixtureSequence = 0;
+const createArtifacts = (
+  overrides = {},
+  { evidenceLayout = false, lookalikeEvidenceLayout = false } = {}
+) => {
+  let evidenceRoot;
+  if (evidenceLayout) {
+    const evidenceSha = sha256(
+      `${process.pid}:${Date.now()}:${evidenceFixtureSequence++}`
+    ).slice(0, 40);
+    const shaRoot = resolve(
+      '.agent',
+      'evidence',
+      'nga-staging',
+      evidenceSha
+    );
+    evidenceRoot = join(shaRoot, '20990101T000000Z');
+    temporaryDirectories.push(shaRoot);
+  } else {
+    evidenceRoot = mkdtempSync(join(tmpdir(), 'nga-apply-'));
+    temporaryDirectories.push(evidenceRoot);
+  }
+  const root =
+    evidenceLayout || lookalikeEvidenceLayout
+      ? join(evidenceRoot, 'backfill', 'pilot')
+      : evidenceRoot;
+  if (root !== evidenceRoot) mkdirSync(root, { recursive: true });
   mkdirSync(join(root, 'sql'));
   mkdirSync(join(root, 'vectors'));
   mkdirSync(join(root, 'rollback'));
@@ -203,7 +227,12 @@ const createArtifacts = (overrides = {}) => {
   const manifestPath = join(root, 'artifact-manifest.json');
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   writeFileSync(manifestPath, manifestText);
-  return { root, manifestPath, manifestSha256: sha256(manifestText) };
+  return {
+    evidenceRoot,
+    root,
+    manifestPath,
+    manifestSha256: sha256(manifestText),
+  };
 };
 
 const replaceArtifact = (artifact, path, content) => {
@@ -796,6 +825,49 @@ test('active settlement safely creates a missing stable output parent', () => {
   assert.equal(existsSync(join(outDir, 'verification.json')), true);
 });
 
+test('active settlement allows the documented candidate sibling under its evidence root', () => {
+  const artifact = createArtifacts({}, { evidenceLayout: true });
+  const outDir = join(
+    artifact.evidenceRoot,
+    'candidate',
+    'post-apply',
+    'pilot'
+  );
+
+  const result = runApply({
+    ...artifact,
+    extra: ['--execute', `--post-apply-out-dir=${outDir}`],
+    env: createMockPnpm(artifact),
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(outDir, 'verification.json')), true);
+});
+
+test('active settlement does not widen a lookalike backfill path to an evidence root', () => {
+  const artifact = createArtifacts({}, { lookalikeEvidenceLayout: true });
+  const outDir = join(
+    artifact.evidenceRoot,
+    'candidate',
+    'post-apply',
+    'pilot'
+  );
+  const mutationMarker = join(artifact.root, 'mutation-marker');
+  const result = runApply({
+    ...artifact,
+    extra: ['--execute', `--post-apply-out-dir=${outDir}`],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: mutationMarker,
+      NGA_APPLY_TEST_VECTOR_MARKER: mutationMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /post-apply output escapes.*root/i);
+  assert.equal(existsSync(mutationMarker), false);
+});
+
 test('active settlement rejects an output outside the artifact root before mutation', () => {
   const artifact = createArtifacts();
   const outsideRoot = `${artifact.root}-outside`;
@@ -846,6 +918,42 @@ test('active settlement rejects a symlinked output parent before mutation', () =
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /post-apply.*symlink/i);
+  assert.equal(existsSync(mutationMarker), false);
+});
+
+test('active settlement rejects a symlinked evidence root before mutation', () => {
+  const artifact = createArtifacts({}, { evidenceLayout: true });
+  const aliasHolder = mkdtempSync(join(tmpdir(), 'nga-apply-alias-'));
+  temporaryDirectories.push(aliasHolder);
+  const evidenceAlias = join(aliasHolder, 'evidence');
+  symlinkSync(artifact.evidenceRoot, evidenceAlias);
+  const mutationMarker = join(artifact.root, 'mutation-marker');
+  const result = runApply({
+    ...artifact,
+    manifestPath: join(
+      evidenceAlias,
+      'backfill',
+      'pilot',
+      'artifact-manifest.json'
+    ),
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(
+        evidenceAlias,
+        'candidate',
+        'post-apply',
+        'pilot'
+      )}`,
+    ],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: mutationMarker,
+      NGA_APPLY_TEST_VECTOR_MARKER: mutationMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /post-apply evidence root.*real directory/i);
   assert.equal(existsSync(mutationMarker), false);
 });
 
