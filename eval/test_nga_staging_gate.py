@@ -136,8 +136,16 @@ def passing_response(row=None, *, relation=None, constraints=None):
     }
 
 
+def production_identity_paths(phase):
+    return {
+        "trustedPreflight": "preflight/production-identity.json",
+        "before": f"candidate/production-identity/{phase}/before.json",
+        "after": f"candidate/production-identity/{phase}/after.json",
+    }
+
+
 def deployment_identity(
-    snapshot="candidate", git_sha="a" * 40, artist_binding=None
+    snapshot="candidate", git_sha="a" * 40, artist_binding=None, phase="pilot"
 ):
     identity = {
         "schemaVersion": "nga-deployment-identity-v1",
@@ -162,28 +170,49 @@ def deployment_identity(
         },
     }
     if snapshot == "candidate":
+        capture_paths = production_identity_paths(phase)
         identity["artistDataBinding"] = artist_binding or {
             "schemaVersion": "nga-artist-data-binding-v2",
             "artifactManifest": {
-                "path": "backfill/pilot/artifact-manifest.json",
+                "path": f"backfill/{phase}/artifact-manifest.json",
                 "sha256": "1" * 64,
             },
             "productionIdentity": {
                 "trustedPreflight": {
-                    "path": "preflight/production-identity.json",
+                    "path": capture_paths["trustedPreflight"],
                     "sha256": "2" * 64,
                 },
                 "before": {
-                    "path": "candidate/production-before.json",
+                    "path": capture_paths["before"],
                     "sha256": "3" * 64,
                 },
                 "after": {
-                    "path": "candidate/production-after.json",
+                    "path": capture_paths["after"],
                     "sha256": "4" * 64,
                 },
             },
         }
     return identity
+
+
+def full_deployment_identity(gate, pilot):
+    full = json.loads(json.dumps(pilot))
+    full["capturedAt"] = "2026-08-22T01:00:00Z"
+    full["pilotDeploymentIdentityHash"] = gate.sha256_json(pilot)
+    full["artistDataBinding"]["artifactManifest"] = {
+        "path": "backfill/full/artifact-manifest.json",
+        "sha256": "5" * 64,
+    }
+    full_paths = production_identity_paths("full")
+    full["artistDataBinding"]["productionIdentity"]["before"] = {
+        "path": full_paths["before"],
+        "sha256": "3" * 64,
+    }
+    full["artistDataBinding"]["productionIdentity"]["after"] = {
+        "path": full_paths["after"],
+        "sha256": "6" * 64,
+    }
+    return full
 
 
 def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
@@ -385,6 +414,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "versionId": "prod-web-version",
         },
     }
+    capture_paths = production_identity_paths(phase)
     production_records = {
         "preflight/production-identity.json": {
             "schemaVersion": "nga-production-identity-v1",
@@ -392,13 +422,13 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "capturedAt": "2026-08-22T00:00:00Z",
             "resources": resources,
         },
-        "candidate/production-before.json": {
+        capture_paths["before"]: {
             "schemaVersion": "nga-production-identity-v1",
             "captureRole": "before",
             "capturedAt": "2026-08-22T00:01:00Z",
             "resources": resources,
         },
-        "candidate/production-after.json": {
+        capture_paths["after"]: {
             "schemaVersion": "nga-production-identity-v1",
             "captureRole": "after",
             "capturedAt": "2026-08-22T00:02:00Z",
@@ -408,6 +438,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
     production_bindings = {}
     for relative, record in production_records.items():
         path = evidence_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
         payload = (json.dumps(record, indent=2) + "\n").encode()
         path.write_bytes(payload)
         production_bindings[record["captureRole"]] = {
@@ -772,8 +803,10 @@ def make_complete_evidence_bundle(
     snapshot="candidate",
     evaluator_sha="a" * 40,
     run_id="0123456789abcdef0123456789abcdef",
+    artist_evidence_root=None,
 ):
     root.mkdir(parents=True, exist_ok=True)
+    artist_root = artist_evidence_root or root
     inventory = gate.load_case_inventory(
         ROOT / "eval" / "nga-staging-cases.yaml",
         ROOT / "eval" / "nga-constraint-queries.yaml",
@@ -785,7 +818,7 @@ def make_complete_evidence_bundle(
         case["id"] for case in selected["text"] if case.get("manualGradeTop")
     ]
     artist_binding = (
-        write_artist_data_evidence(gate, root, phase=phase)
+        write_artist_data_evidence(gate, artist_root, phase=phase)
         if snapshot == "candidate" and phase == "pilot"
         else None
     )
@@ -933,7 +966,7 @@ def make_complete_evidence_bundle(
     }
     if snapshot == "candidate":
         artist_evaluation = gate.evaluate_artist_data_evidence(
-            root,
+            artist_root,
             deployed_identity["artistDataBinding"],
             phase=phase,
         )
@@ -2374,16 +2407,7 @@ class ImageProbeTests(GateTestCase):
 class InventoryAndRelevanceTests(GateTestCase):
     def test_pilot_to_full_identity_continuity_allows_only_expected_rebinding(self):
         pilot = deployment_identity()
-        full = json.loads(json.dumps(pilot))
-        full["capturedAt"] = "2026-08-22T01:00:00Z"
-        full["pilotDeploymentIdentityHash"] = self.gate.sha256_json(pilot)
-        full["artistDataBinding"]["artifactManifest"] = {
-            "path": "backfill/full/artifact-manifest.json",
-            "sha256": "5" * 64,
-        }
-        full["artistDataBinding"]["productionIdentity"]["after"]["sha256"] = (
-            "6" * 64
-        )
+        full = full_deployment_identity(self.gate, pilot)
 
         result = self.call(
             "evaluate_pilot_full_identity_continuity", pilot, full
@@ -2393,11 +2417,8 @@ class InventoryAndRelevanceTests(GateTestCase):
 
     def test_pilot_to_full_identity_continuity_rejects_wrong_pilot_hash(self):
         pilot = deployment_identity()
-        full = json.loads(json.dumps(pilot))
+        full = full_deployment_identity(self.gate, pilot)
         full["pilotDeploymentIdentityHash"] = "f" * 64
-        full["artistDataBinding"]["artifactManifest"]["path"] = (
-            "backfill/full/artifact-manifest.json"
-        )
 
         result = self.call(
             "evaluate_pilot_full_identity_continuity", pilot, full
@@ -2413,23 +2434,131 @@ class InventoryAndRelevanceTests(GateTestCase):
             "version": lambda value: value["web"].__setitem__(
                 "contractVersion", "30"
             ),
-            "before": lambda value: value["artistDataBinding"][
+            "trusted preflight": lambda value: value["artistDataBinding"][
                 "productionIdentity"
-            ]["before"].__setitem__("sha256", "7" * 64),
+            ]["trustedPreflight"].__setitem__("sha256", "7" * 64),
         }.items():
             with self.subTest(label=label):
                 pilot = deployment_identity()
-                full = json.loads(json.dumps(pilot))
-                full["pilotDeploymentIdentityHash"] = self.gate.sha256_json(pilot)
-                full["artistDataBinding"]["artifactManifest"] = {
-                    "path": "backfill/full/artifact-manifest.json",
-                    "sha256": "5" * 64,
-                }
+                full = full_deployment_identity(self.gate, pilot)
                 mutate(full)
                 result = self.call(
                     "evaluate_pilot_full_identity_continuity", pilot, full
                 )
                 self.assertIn("pilot_full_identity_drift", result["failureCodes"])
+
+    def test_pilot_to_full_identity_continuity_rejects_unknown_keys_recursively(self):
+        mutations = {
+            "top level": lambda pilot, full: (
+                pilot.__setitem__("unexpected", True),
+                full.__setitem__("unexpected", True),
+            ),
+            "artist binding": lambda pilot, full: (
+                pilot["artistDataBinding"].__setitem__("unexpected", True),
+                full["artistDataBinding"].__setitem__("unexpected", True),
+            ),
+            "production identity": lambda pilot, full: (
+                pilot["artistDataBinding"]["productionIdentity"].__setitem__(
+                    "unexpected", True
+                ),
+                full["artistDataBinding"]["productionIdentity"].__setitem__(
+                    "unexpected", True
+                ),
+            ),
+            "artifact descriptor": lambda pilot, full: (
+                pilot["artistDataBinding"]["artifactManifest"].__setitem__(
+                    "unexpected", True
+                ),
+                full["artistDataBinding"]["artifactManifest"].__setitem__(
+                    "unexpected", True
+                ),
+            ),
+            "capture descriptor": lambda pilot, full: (
+                pilot["artistDataBinding"]["productionIdentity"]["after"].__setitem__(
+                    "unexpected", True
+                ),
+                full["artistDataBinding"]["productionIdentity"]["after"].__setitem__(
+                    "unexpected", True
+                ),
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                pilot = deployment_identity()
+                full = full_deployment_identity(self.gate, pilot)
+                mutate(pilot, full)
+                full["pilotDeploymentIdentityHash"] = self.gate.sha256_json(pilot)
+
+                result = self.call(
+                    "evaluate_pilot_full_identity_continuity", pilot, full
+                )
+
+                self.assertFalse(result["passed"], result)
+
+    def test_phase_specific_full_capture_preserves_real_pilot_rehash_and_continuity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            pilot_bundle = evidence_root / "candidate/pilot"
+            make_complete_evidence_bundle(
+                self.gate,
+                pilot_bundle,
+                artist_evidence_root=evidence_root,
+            )
+            pilot_identity = json.loads(
+                (pilot_bundle / "identity.json").read_text(encoding="utf-8")
+            )["deploymentIdentity"]
+            pilot_after_descriptor = pilot_identity["artistDataBinding"][
+                "productionIdentity"
+            ]["after"]
+            pilot_after_path = evidence_root / pilot_after_descriptor["path"]
+            pilot_after_bytes = pilot_after_path.read_bytes()
+            pilot_after = json.loads(pilot_after_bytes)
+
+            full = full_deployment_identity(self.gate, pilot_identity)
+            full_production = full["artistDataBinding"]["productionIdentity"]
+            for role, captured_at in (
+                ("before", "2026-08-22T00:03:00Z"),
+                ("after", "2026-08-22T00:04:00Z"),
+            ):
+                record = json.loads(json.dumps(pilot_after))
+                record["captureRole"] = role
+                record["capturedAt"] = captured_at
+                path = evidence_root / full_production[role]["path"]
+                path.parent.mkdir(parents=True, exist_ok=True)
+                payload = (json.dumps(record, indent=2) + "\n").encode()
+                path.write_bytes(payload)
+                full_production[role]["sha256"] = hashlib.sha256(payload).hexdigest()
+
+            pilot_manifest = self.call("rehash_evidence", pilot_bundle)
+            continuity = self.call(
+                "evaluate_pilot_full_identity_continuity", pilot_identity, full
+            )
+
+            self.assertEqual(pilot_manifest["phase"], "pilot")
+            self.assertEqual(pilot_after_path.read_bytes(), pilot_after_bytes)
+            self.assertNotEqual(
+                pilot_after_descriptor["path"], full_production["after"]["path"]
+            )
+            self.assertEqual(continuity["failureCodes"], [], continuity)
+
+    def test_identity_continuity_rejects_cross_phase_capture_paths_and_escapes(self):
+        pilot = deployment_identity()
+        for label, path in {
+            "pilot path reused": production_identity_paths("pilot")["after"],
+            "parent escape": "../full-after.json",
+            "absolute escape": "/tmp/full-after.json",
+        }.items():
+            with self.subTest(label=label):
+                full = full_deployment_identity(self.gate, pilot)
+                full["artistDataBinding"]["productionIdentity"]["after"][
+                    "path"
+                ] = path
+
+                result = self.call(
+                    "evaluate_pilot_full_identity_continuity", pilot, full
+                )
+
+                self.assertFalse(result["passed"], result)
 
     def test_request_timing_rejects_ten_calls_in_a_rolling_minute(self):
         binding = {
@@ -2671,6 +2800,21 @@ class InventoryAndRelevanceTests(GateTestCase):
             plan,
         )
         self.assertIn('handoff["nextRunNotBefore"]', plan)
+        for relative in (
+            "candidate/production-identity/pilot/before.json",
+            "candidate/production-identity/pilot/after.json",
+            "candidate/production-identity/full/before.json",
+            "candidate/production-identity/full/after.json",
+            "candidate/pilot-deployment-identity.json",
+            "candidate/full-deployment-identity.json",
+        ):
+            self.assertIn(relative, plan)
+        self.assertNotIn("candidate/production-before.json", plan)
+        self.assertNotIn("candidate/production-after.json", plan)
+        self.assertNotIn(
+            '--deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json"',
+            plan,
+        )
 
     def test_inventory_rejects_duplicate_request_bodies_with_conflicting_gates(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -3503,6 +3647,65 @@ class InventoryAndRelevanceTests(GateTestCase):
                 )
                 self.assertIn("artist_data_identity_invalid", result["failureCodes"])
 
+    def test_deployment_identity_rejects_unknown_keys_at_every_identity_layer(self):
+        mutations = {
+            "top level": lambda value: value.__setitem__("unexpected", True),
+            "api": lambda value: value["api"].__setitem__("unexpected", True),
+            "web": lambda value: value["web"].__setitem__("unexpected", True),
+            "artist binding": lambda value: value["artistDataBinding"].__setitem__(
+                "unexpected", True
+            ),
+            "production identity": lambda value: value["artistDataBinding"][
+                "productionIdentity"
+            ].__setitem__("unexpected", True),
+            "manifest descriptor": lambda value: value["artistDataBinding"][
+                "artifactManifest"
+            ].__setitem__("unexpected", True),
+            "capture descriptor": lambda value: value["artistDataBinding"][
+                "productionIdentity"
+            ]["before"].__setitem__("unexpected", True),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                identity = deployment_identity()
+                mutate(identity)
+
+                result = self.call(
+                    "evaluate_deployment_binding",
+                    identity,
+                    snapshot="candidate",
+                    evaluator_git_sha="a" * 40,
+                )
+
+                self.assertFalse(result["passed"], result)
+
+    def test_raw_production_identity_rejects_unknown_capture_and_resource_keys(self):
+        mutations = {
+            "capture": lambda value: value.__setitem__("unexpected", True),
+            "resource": lambda value: value["resources"]["api"].__setitem__(
+                "unexpected", True
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, root)
+                descriptor = binding["productionIdentity"]["after"]
+                path = root / descriptor["path"]
+                capture = json.loads(path.read_text(encoding="utf-8"))
+                mutate(capture)
+                payload = (json.dumps(capture, indent=2) + "\n").encode()
+                path.write_bytes(payload)
+                descriptor["sha256"] = hashlib.sha256(payload).hexdigest()
+
+                result = self.call(
+                    "evaluate_artist_data_evidence", root, binding, phase="pilot"
+                )
+
+                self.assertIn(
+                    "production_identity_capture_invalid", result["failureCodes"]
+                )
+
     def test_new_case_inventory_covers_every_attribution_role_and_control(self):
         document = json.loads(
             (ROOT / "eval" / "nga-staging-cases.yaml").read_text(encoding="utf-8")
@@ -3951,16 +4154,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             pilot_identity = json.loads(
                 (evidence / "identity.json").read_text(encoding="utf-8")
             )["deploymentIdentity"]
-            full_identity = json.loads(json.dumps(pilot_identity))
-            full_identity["capturedAt"] = "2026-08-22T01:00:00Z"
-            full_identity["pilotDeploymentIdentityHash"] = deployment_hash
-            full_identity["artistDataBinding"]["artifactManifest"] = {
-                "path": "backfill/full/artifact-manifest.json",
-                "sha256": "5" * 64,
-            }
-            full_identity["artistDataBinding"]["productionIdentity"]["after"][
-                "sha256"
-            ] = "6" * 64
+            full_identity = full_deployment_identity(self.gate, pilot_identity)
             summary_path = evidence / "summary.json"
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             manifest_path = evidence / "artifact-manifest.json"

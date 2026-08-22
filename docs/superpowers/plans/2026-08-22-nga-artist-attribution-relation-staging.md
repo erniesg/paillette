@@ -536,7 +536,11 @@ Use a new evidence root whose path contains `git rev-parse HEAD` and UTC timesta
 
 ```bash
 NGA_ARTIST_EVIDENCE_ROOT="$(pwd)/.agent/evidence/nga-staging/$(git rev-parse HEAD)/$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -p "$NGA_ARTIST_EVIDENCE_ROOT/preflight" "$NGA_ARTIST_EVIDENCE_ROOT/backfill" "$NGA_ARTIST_EVIDENCE_ROOT/candidate"
+mkdir -p \
+  "$NGA_ARTIST_EVIDENCE_ROOT/preflight" \
+  "$NGA_ARTIST_EVIDENCE_ROOT/backfill" \
+  "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot" \
+  "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/full"
 test "$(realpath "$NGA_ARTIST_EVIDENCE_ROOT")" != "$(git rev-parse --show-toplevel)"
 pnpm --dir apps/api exec wrangler versions list --env staging --json
 pnpm --dir apps/web exec wrangler versions list --env staging --json
@@ -556,15 +560,18 @@ Echo and retain the resolved absolute `NGA_ARTIST_EVIDENCE_ROOT` in `preflight/e
 Canonicalize the production API/web `versions list` results into
 `preflight/production-identity.json` using schema
 `nga-production-identity-v1`, capture role `trusted_preflight`, and exact
-production service/origin/deployment/version fields. Immediately before the
-first candidate gate, write an independently captured canonical
-`candidate/production-before.json` with capture role `before`. After the pilot
-staging mutations and again after the full staging mutation, recapture
-`candidate/production-after.json` with capture role `after` and refresh its
-digest in the deployment identity before starting the corresponding read-only
-official gate. The evaluator rehashes all three files from these fixed paths, requires
-their complete resource identities to match field-for-field, and rejects
-caller-supplied equal hashes without the fixed trusted-preflight artifact.
+production service/origin/deployment/version fields. Before each staging
+mutation, write the corresponding independently captured canonical `before`
+record to `candidate/production-identity/pilot/before.json` or
+`candidate/production-identity/full/before.json`. After each mutation and its
+verification, write a fresh canonical `after` record to the same phase's
+`after.json`. Create every capture with exclusive-create semantics; never
+replace a pilot capture while preparing the full phase. The evaluator resolves
+the phase-specific fixed paths, rehashes the original bytes, requires every
+capture's canonical resource identity to equal the trusted preflight
+field-for-field, and rejects cross-phase paths, path escapes, caller-supplied
+equal hashes, and unknown schema fields.
+
 The canonical resource object has exactly `api` and `web`; each entry has
 exactly `environment`, `service`, `origin`, `deploymentId`, and `versionId`.
 Use the deployment-list output for `deploymentId` and the version-list output
@@ -599,6 +606,11 @@ version identity is unchanged before continuing.
 
 - [ ] **Step 4: Apply the pilot D1 and image-vector patches**
 
+Immediately before the pilot apply, require
+`candidate/production-identity/pilot/before.json` not to exist and create it
+with role `before` using the exact canonical production resource schema from
+Step 1. A pre-existing file is a stop condition; do not overwrite it.
+
 ```bash
 NGA_ARTIST_PILOT_MANIFEST="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/artifact-manifest.json"
 NGA_ARTIST_PILOT_SHA="$(shasum -a 256 "$NGA_ARTIST_PILOT_MANIFEST" | awk '{print $1}')"
@@ -607,17 +619,24 @@ node scripts/apply-nga-artist-backfill.mjs --environment=staging --phase=pilot -
 
 Immediately export the five rows/vectors again. Require exact primary IDs, relation metadata, idempotent SQL row state, unchanged vector value hashes, unchanged counts, direct Vectorize filter success, and zero unrelated field changes. On any failure, stop and request rollback authorization using the captured D1 bookmark and rollback NDJSON; do not continue to the full backfill.
 
+Immediately after those pilot verification checks succeed, require
+`candidate/production-identity/pilot/after.json` not to exist and create it
+with role `after` using that same exact schema. A pre-existing file is a stop
+condition; do not overwrite it.
+
 - [ ] **Step 5: Run and inspect the pilot live gate**
 
 Create a deployment identity JSON binding the exact reviewed API/web staging
 versions, candidate git SHA, and an `nga-artist-data-binding-v2` object. That
 object references `backfill/pilot/artifact-manifest.json` by relative path and
-SHA-256, plus the three fixed production identity paths and their actual
-SHA-256 digests. Do not copy counts or aggregate vector hashes into the
-deployment identity: the evaluator reads the Task 2 manifest bytes, recursively
-rehashes its declared mapping/vector/rollback files, and recomputes their
-semantic counts and preserved values. First run discovery without
-`--fail-on-gates`, inspect the exact returned IDs, and grade the two declared
+SHA-256, plus `preflight/production-identity.json` and the pilot-specific
+`before.json`/`after.json` paths and their actual SHA-256 digests. Write this
+exact object once to `candidate/pilot-deployment-identity.json`; the full phase
+uses a different file and must not replace it. Do not copy counts or aggregate
+vector hashes into the deployment identity: the evaluator reads the Task 2
+manifest bytes, recursively rehashes its declared mapping/vector/rollback
+files, and recomputes their semantic counts and preserved values. First run
+discovery without `--fail-on-gates`, inspect the exact returned IDs, and grade the two declared
 visible-relation cases on the 0–3 rubric:
 
 ```bash
@@ -627,7 +646,7 @@ python3 eval/nga_staging_gate.py \
   --api-base-url https://paillette-api-stg.berlayar.ai \
   --web-base-url https://paillette-stg.berlayar.ai \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-discovery" \
-  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
+  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-deployment-identity.json" \
   --public-search-requests-per-minute 9
 ```
 
@@ -664,7 +683,7 @@ python3 eval/nga_staging_gate.py \
   --api-base-url https://paillette-api-stg.berlayar.ai \
   --web-base-url https://paillette-stg.berlayar.ai \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot" \
-  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
+  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-deployment-identity.json" \
   --relevance-labels "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-relevance-labels.json" \
   --previous-request-handoff "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-discovery/request-cooldown-handoff.json" \
   --fail-on-gates \
@@ -724,6 +743,14 @@ node scripts/prepare-nga-artist-backfill.mjs \
 
 NGA_ARTIST_FULL_MANIFEST="$NGA_ARTIST_EVIDENCE_ROOT/backfill/full/artifact-manifest.json"
 NGA_ARTIST_FULL_SHA="$(shasum -a 256 "$NGA_ARTIST_FULL_MANIFEST" | awk '{print $1}')"
+```
+
+Immediately before the full apply, require
+`candidate/production-identity/full/before.json` not to exist and create it
+with role `before`. This is a new phase-specific capture, not a reference to or
+replacement of either pilot capture.
+
+```bash
 node scripts/apply-nga-artist-backfill.mjs --environment=staging --phase=full --manifest="$NGA_ARTIST_FULL_MANIFEST" --confirm-manifest-sha256="$NGA_ARTIST_FULL_SHA" --execute
 ```
 
@@ -731,16 +758,20 @@ The apply script resolves each chunk to an explicit real path under the hashed a
 
 Immediately after the full apply and those verification checks succeed—and
 before Step 7, full discovery, or any official gate—write a fresh
-`candidate/production-after.json` capture with role `after`, recompute its
-content digest, and create the full-phase deployment identity. Bind the actual
+`candidate/production-identity/full/after.json` capture with role `after`,
+requiring the path not to exist before the exclusive write. Recompute its
+content digest, and create the full-phase deployment identity once at
+`candidate/full-deployment-identity.json`. Bind the actual
 `backfill/full/artifact-manifest.json` path and digest and the fresh
-production-after digest. Keep the trusted preflight and candidate-before bytes
-and digests fixed. The full identity must retain the reviewed API/web
+full-after digest. Keep the trusted preflight and every pilot capture byte and
+digest fixed. The full identity must retain the reviewed API/web
 deployment and version identities, parser/plan/contract/cache versions, source
 commit, production resource identities, and `pilotDeploymentIdentityHash`.
-Only the explicitly full-phase artist manifest binding and the byte digest of
-the fresh but canonically equal production-after capture may differ from the
-pilot identity.
+The evaluator compares all immutable identity values canonically. Only the
+explicitly phase-specific artist-manifest descriptor, production before/after
+descriptor paths and byte digests, the later `capturedAt`, and the added pilot
+identity hash may differ. The raw production resources in every capture must
+remain canonically equal.
 
 - [ ] **Step 7: Reconfirm the exact reviewed web on staging**
 
@@ -759,7 +790,7 @@ python3 eval/nga_staging_gate.py \
   --api-base-url https://paillette-api-stg.berlayar.ai \
   --web-base-url https://paillette-stg.berlayar.ai \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-discovery" \
-  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
+  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-deployment-identity.json" \
   --pilot-inspection "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-inspection.json" \
   --public-search-requests-per-minute 9
 ```
@@ -795,7 +826,7 @@ python3 eval/nga_staging_gate.py \
   --api-base-url https://paillette-api-stg.berlayar.ai \
   --web-base-url https://paillette-stg.berlayar.ai \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-official" \
-  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
+  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-deployment-identity.json" \
   --relevance-labels "$NGA_ARTIST_EVIDENCE_ROOT/candidate/relevance-labels.json" \
   --pilot-inspection "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-inspection.json" \
   --previous-request-handoff "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-discovery/request-cooldown-handoff.json" \

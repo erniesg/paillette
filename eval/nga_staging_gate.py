@@ -136,15 +136,42 @@ NGA_STAGING_ORG_ID = "eabbf000-708e-4d4c-8ac8-966b59d4fcac"
 NGA_STAGING_D1_DATABASE = "paillette-db-stg"
 NGA_STAGING_IMAGE_VECTOR_INDEX = "paillette-embeddings-v2-stg"
 PRODUCTION_IDENTITY_PATHS = {
-    "trustedPreflight": "preflight/production-identity.json",
-    "before": "candidate/production-before.json",
-    "after": "candidate/production-after.json",
+    phase: {
+        "trustedPreflight": "preflight/production-identity.json",
+        "before": f"candidate/production-identity/{phase}/before.json",
+        "after": f"candidate/production-identity/{phase}/after.json",
+    }
+    for phase in ("pilot", "full")
 }
 PRODUCTION_IDENTITY_ROLES = {
     "trustedPreflight": "trusted_preflight",
     "before": "before",
     "after": "after",
 }
+DEPLOYMENT_IDENTITY_API_FIELDS = {
+    "origin",
+    "deploymentId",
+    "versionId",
+    "gitSha",
+    "apiVersion",
+    "parserVersion",
+    "planVersion",
+    "resultCacheVersion",
+}
+DEPLOYMENT_IDENTITY_WEB_FIELDS = {
+    "origin",
+    "deploymentId",
+    "versionId",
+    "gitSha",
+    "contractVersion",
+}
+ARTIST_DATA_BINDING_FIELDS = {
+    "schemaVersion",
+    "artifactManifest",
+    "productionIdentity",
+}
+PRODUCTION_IDENTITY_FIELDS = set(PRODUCTION_IDENTITY_ROLES)
+BOUND_ARTIFACT_DESCRIPTOR_FIELDS = {"path", "sha256"}
 LOCAL_VERSION_SOURCE_PATHS = (
     "packages/types/src/public-search-core.ts",
     "apps/api/src/utils/public-search-result-cache.ts",
@@ -326,6 +353,30 @@ def evaluate_pilot_full_identity_continuity(
 ) -> dict[str, Any]:
     """Allow only the documented pilot-to-full evidence rebinding."""
     failures: list[dict[str, Any]] = []
+    for phase, identity in (("pilot", pilot_identity), ("full", full_identity)):
+        api_value = identity.get("api")
+        api = api_value if isinstance(api_value, Mapping) else {}
+        evaluator_git_sha = api.get("gitSha")
+        schema_evaluation = evaluate_deployment_binding(
+            identity,
+            snapshot="candidate",
+            evaluator_git_sha=(
+                evaluator_git_sha if isinstance(evaluator_git_sha, str) else ""
+            ),
+        )
+        artist_value = identity.get("artistDataBinding")
+        artist = artist_value if isinstance(artist_value, Mapping) else {}
+        if (
+            schema_evaluation.get("passed") is not True
+            or _artist_binding_phase(artist) != phase
+        ):
+            failures.append(
+                _failure(
+                    "pilot_full_identity_schema_invalid",
+                    phase=phase,
+                    reasons=schema_evaluation.get("failureCodes"),
+                )
+            )
     pilot_hash = sha256_json(pilot_identity)
     if full_identity.get("pilotDeploymentIdentityHash") != pilot_hash:
         failures.append(
@@ -336,9 +387,44 @@ def evaluate_pilot_full_identity_continuity(
             )
         )
 
-    for field in ("schemaVersion", "snapshot", "api", "web"):
-        if full_identity.get(field) != pilot_identity.get(field):
-            failures.append(_failure("pilot_full_identity_drift", field=field))
+    pilot_artist_value = pilot_identity.get("artistDataBinding")
+    full_artist_value = full_identity.get("artistDataBinding")
+    pilot_artist = (
+        pilot_artist_value if isinstance(pilot_artist_value, Mapping) else {}
+    )
+    full_artist = full_artist_value if isinstance(full_artist_value, Mapping) else {}
+    pilot_production_value = pilot_artist.get("productionIdentity")
+    full_production_value = full_artist.get("productionIdentity")
+    pilot_production = (
+        pilot_production_value
+        if isinstance(pilot_production_value, Mapping)
+        else {}
+    )
+    full_production = (
+        full_production_value if isinstance(full_production_value, Mapping) else {}
+    )
+    pilot_immutable = {
+        "schemaVersion": pilot_identity.get("schemaVersion"),
+        "snapshot": pilot_identity.get("snapshot"),
+        "api": pilot_identity.get("api"),
+        "web": pilot_identity.get("web"),
+        "artistDataBinding": {
+            "schemaVersion": pilot_artist.get("schemaVersion"),
+            "trustedPreflight": pilot_production.get("trustedPreflight"),
+        },
+    }
+    full_immutable = {
+        "schemaVersion": full_identity.get("schemaVersion"),
+        "snapshot": full_identity.get("snapshot"),
+        "api": full_identity.get("api"),
+        "web": full_identity.get("web"),
+        "artistDataBinding": {
+            "schemaVersion": full_artist.get("schemaVersion"),
+            "trustedPreflight": full_production.get("trustedPreflight"),
+        },
+    }
+    if canonical_json(full_immutable) != canonical_json(pilot_immutable):
+        failures.append(_failure("pilot_full_identity_drift", field="immutable"))
     pilot_captured_at = _parse_utc_timestamp(pilot_identity.get("capturedAt"))
     full_captured_at = _parse_utc_timestamp(full_identity.get("capturedAt"))
     if (
@@ -350,50 +436,10 @@ def evaluate_pilot_full_identity_continuity(
             _failure("pilot_full_identity_drift", field="capturedAt")
         )
 
-    pilot_artist_value = pilot_identity.get("artistDataBinding")
-    full_artist_value = full_identity.get("artistDataBinding")
-    pilot_artist = (
-        pilot_artist_value if isinstance(pilot_artist_value, Mapping) else {}
-    )
-    full_artist = full_artist_value if isinstance(full_artist_value, Mapping) else {}
-    if full_artist.get("schemaVersion") != pilot_artist.get("schemaVersion"):
-        failures.append(
-            _failure(
-                "pilot_full_identity_drift",
-                field="artistDataBinding.schemaVersion",
-            )
-        )
-
-    pilot_production_value = pilot_artist.get("productionIdentity")
-    full_production_value = full_artist.get("productionIdentity")
-    pilot_production = (
-        pilot_production_value
-        if isinstance(pilot_production_value, Mapping)
-        else {}
-    )
-    full_production = (
-        full_production_value if isinstance(full_production_value, Mapping) else {}
-    )
-    for role in ("trustedPreflight", "before"):
-        if full_production.get(role) != pilot_production.get(role):
-            failures.append(
-                _failure(
-                    "pilot_full_identity_drift",
-                    field=f"artistDataBinding.productionIdentity.{role}",
-                )
-            )
-
     pilot_after_value = pilot_production.get("after")
     full_after_value = full_production.get("after")
     pilot_after = pilot_after_value if isinstance(pilot_after_value, Mapping) else {}
     full_after = full_after_value if isinstance(full_after_value, Mapping) else {}
-    if full_after.get("path") != pilot_after.get("path"):
-        failures.append(
-            _failure(
-                "pilot_full_identity_drift",
-                field="artistDataBinding.productionIdentity.after.path",
-            )
-        )
     if (
         not isinstance(full_after.get("sha256"), str)
         or re.fullmatch(r"[a-f0-9]{64}", str(full_after.get("sha256"))) is None
@@ -412,9 +458,6 @@ def evaluate_pilot_full_identity_continuity(
     ):
         failures.append(_failure("full_artist_manifest_binding_invalid"))
 
-    allowed_top = set(pilot_identity) | {"pilotDeploymentIdentityHash"}
-    if set(full_identity) != allowed_top:
-        failures.append(_failure("pilot_full_identity_drift", field="topLevelFields"))
     return _result(
         failures,
         pilotDeploymentIdentityHash=pilot_hash,
@@ -665,7 +708,18 @@ def validate_staging_origins(api_base_url: str, web_base_url: str) -> None:
     _validate_origin(web_base_url, EXPECTED_WEB_ORIGIN, "web base URL")
 
 
-def _evaluate_artist_data_binding(identity: Mapping[str, Any]) -> dict[str, Any]:
+def _artist_binding_phase(value: Mapping[str, Any]) -> str | None:
+    manifest_value = value.get("artifactManifest")
+    manifest = manifest_value if isinstance(manifest_value, Mapping) else {}
+    for phase in PRODUCTION_IDENTITY_PATHS:
+        if manifest.get("path") == f"backfill/{phase}/artifact-manifest.json":
+            return phase
+    return None
+
+
+def _evaluate_artist_data_binding(
+    identity: Mapping[str, Any], *, expected_phase: str | None = None
+) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     value = identity.get("artistDataBinding")
     if not isinstance(value, Mapping):
@@ -677,20 +731,37 @@ def _evaluate_artist_data_binding(identity: Mapping[str, Any]) -> dict[str, Any]
     production = (
         production_value if isinstance(production_value, Mapping) else {}
     )
-    descriptors = [manifest]
-    descriptors.extend(
-        production.get(name) if isinstance(production.get(name), Mapping) else {}
-        for name in PRODUCTION_IDENTITY_PATHS
-    )
+    phase = _artist_binding_phase(value)
+    expected_paths = PRODUCTION_IDENTITY_PATHS.get(phase or "", {})
+    descriptors = {
+        "artifactManifest": manifest,
+        **{
+            name: (
+                production.get(name)
+                if isinstance(production.get(name), Mapping)
+                else {}
+            )
+            for name in PRODUCTION_IDENTITY_FIELDS
+        },
+    }
     valid = (
-        value.get("schemaVersion") == "nga-artist-data-binding-v2"
+        set(value) == ARTIST_DATA_BINDING_FIELDS
+        and value.get("schemaVersion") == "nga-artist-data-binding-v2"
+        and set(production) == PRODUCTION_IDENTITY_FIELDS
+        and phase is not None
+        and (expected_phase is None or phase == expected_phase)
         and all(
-            isinstance(descriptor.get("path"), str)
+            set(descriptor) == BOUND_ARTIFACT_DESCRIPTOR_FIELDS
+            and isinstance(descriptor.get("path"), str)
             and bool(descriptor.get("path"))
             and isinstance(descriptor.get("sha256"), str)
             and re.fullmatch(r"[a-f0-9]{64}", descriptor["sha256"])
             is not None
-            for descriptor in descriptors
+            for descriptor in descriptors.values()
+        )
+        and all(
+            descriptors[name].get("path") == expected_path
+            for name, expected_path in expected_paths.items()
         )
     )
     if not valid:
@@ -809,6 +880,10 @@ def evaluate_artist_data_evidence(
     phase: str,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
+    binding_schema = _evaluate_artist_data_binding(
+        {"artistDataBinding": binding}, expected_phase=phase
+    )
+    failures.extend(binding_schema["failures"])
     if not evidence_root.is_dir():
         return _result(
             [
@@ -1247,7 +1322,8 @@ def evaluate_artist_data_evidence(
     if manifest_path is not None:
         bound_paths.append(str(manifest_path.resolve()))
     bound_paths.extend(str(value[1].resolve()) for value in declared_files.values())
-    for name, expected_path in PRODUCTION_IDENTITY_PATHS.items():
+    expected_production_paths = PRODUCTION_IDENTITY_PATHS.get(phase, {})
+    for name, expected_path in expected_production_paths.items():
         descriptor_value = production.get(name)
         descriptor = descriptor_value if isinstance(descriptor_value, Mapping) else {}
         resolved = _resolve_bound_file(
@@ -1286,7 +1362,7 @@ def evaluate_artist_data_evidence(
         for name in ("before", "after")
     ):
         failures.append(_failure("production_artist_data_identity_changed"))
-    if set(captures) == set(PRODUCTION_IDENTITY_PATHS):
+    if set(captures) == set(expected_production_paths):
         capture_times = [
             _parse_utc_timestamp(captures[name].get("capturedAt"))
             for name in ("trustedPreflight", "before", "after")
@@ -1323,6 +1399,48 @@ def evaluate_deployment_binding(
     web_value = identity.get("web")
     api = api_value if isinstance(api_value, Mapping) else {}
     web = web_value if isinstance(web_value, Mapping) else {}
+    expected_top_fields = {
+        "schemaVersion",
+        "snapshot",
+        "capturedAt",
+        "api",
+        "web",
+    }
+    artist_phase: str | None = None
+    if snapshot == "candidate":
+        expected_top_fields.add("artistDataBinding")
+        artist_value = identity.get("artistDataBinding")
+        if isinstance(artist_value, Mapping):
+            artist_phase = _artist_binding_phase(artist_value)
+        if artist_phase == "full":
+            expected_top_fields.add("pilotDeploymentIdentityHash")
+    if set(identity) != expected_top_fields:
+        failures.append(
+            _failure(
+                "deployment_identity_incomplete",
+                field="topLevelFields",
+                expected=sorted(expected_top_fields),
+                actual=sorted(identity),
+            )
+        )
+    if set(api) != DEPLOYMENT_IDENTITY_API_FIELDS:
+        failures.append(
+            _failure(
+                "deployment_identity_incomplete",
+                field="api.fields",
+                expected=sorted(DEPLOYMENT_IDENTITY_API_FIELDS),
+                actual=sorted(api),
+            )
+        )
+    if set(web) != DEPLOYMENT_IDENTITY_WEB_FIELDS:
+        failures.append(
+            _failure(
+                "deployment_identity_incomplete",
+                field="web.fields",
+                expected=sorted(DEPLOYMENT_IDENTITY_WEB_FIELDS),
+                actual=sorted(web),
+            )
+        )
     required_top = {
         "schemaVersion": "nga-deployment-identity-v1",
         "snapshot": snapshot,
@@ -1337,9 +1455,7 @@ def evaluate_deployment_binding(
                     actual=identity.get(field),
                 )
             )
-    if not isinstance(identity.get("capturedAt"), str) or not identity.get(
-        "capturedAt"
-    ):
+    if _parse_utc_timestamp(identity.get("capturedAt")) is None:
         failures.append(
             _failure("deployment_identity_incomplete", field="capturedAt")
         )
@@ -1401,6 +1517,19 @@ def evaluate_deployment_binding(
         "apiResultCache": api.get("resultCacheVersion"),
     }
     if snapshot == "candidate":
+        if artist_phase == "full" and (
+            not isinstance(identity.get("pilotDeploymentIdentityHash"), str)
+            or re.fullmatch(
+                r"[a-f0-9]{64}", str(identity.get("pilotDeploymentIdentityHash"))
+            )
+            is None
+        ):
+            failures.append(
+                _failure(
+                    "deployment_identity_incomplete",
+                    field="pilotDeploymentIdentityHash",
+                )
+            )
         for component, record in (("api", api), ("web", web)):
             if record.get("gitSha") != evaluator_git_sha:
                 failures.append(
