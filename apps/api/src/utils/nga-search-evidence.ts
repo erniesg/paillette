@@ -327,9 +327,29 @@ export const matchesNgaAttributionEvidence = (
 
 const CLASSIFICATION_PHRASES: Record<string, readonly string[]> = {
   painting: ['painting', 'paintings'],
-  drawing: ['drawing', 'drawings'],
-  print: ['print', 'prints'],
-  sculpture: ['sculpture', 'sculptures'],
+  drawing: ['drawing', 'drawings', 'sketch', 'sketches'],
+  print: [
+    'print',
+    'prints',
+    'engraving',
+    'engravings',
+    'etching',
+    'etchings',
+    'lithograph',
+    'lithographs',
+    'woodcut',
+    'woodcuts',
+  ],
+  sculpture: [
+    'sculpture',
+    'sculptures',
+    'statue',
+    'statues',
+    'bust',
+    'busts',
+    'figurine',
+    'figurines',
+  ],
   photograph: ['photograph', 'photographs', 'photo', 'photos', 'photography'],
   'decorative art': ['decorative art', 'decorative arts'],
 };
@@ -345,6 +365,11 @@ const institutionTextFields = (result: ArtworkSearchResult) => [
   result.title,
   result.metadata?.description,
 ];
+
+const generatedCaptionText = (result: ArtworkSearchResult) => {
+  const generated = result.metadata?.generated_caption;
+  return isRecord(generated) ? generated.text : undefined;
+};
 
 const searchSourceChannels = (result: ArtworkSearchResult) => {
   const rawSources =
@@ -403,7 +428,18 @@ export const classifyNgaRelationEvidence = (
     channels.has('generated_caption_embedding') ||
     channels.has('caption_embedding') ||
     channels.has('caption');
-  return hasImage && hasCaption
+  const generatedCaption = generatedCaptionText(result);
+  const captionNamesSubject =
+    (channels.has('generated_caption_embedding') &&
+      containsClassification(
+        generatedCaption,
+        relation.subjectClassification
+      )) ||
+    ((channels.has('caption_embedding') || channels.has('caption')) &&
+      [result.metadata?.description, generatedCaption].some((value) =>
+        containsClassification(value, relation.subjectClassification)
+      ));
+  return hasImage && hasCaption && captionNamesSubject
     ? { verified: true, source: 'image_caption_agreement' }
     : { verified: false, source: null };
 };

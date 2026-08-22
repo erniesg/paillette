@@ -92,7 +92,7 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v8:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v9:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
@@ -262,10 +262,10 @@ describe('buildPublicSearchResultCacheKey', () => {
 });
 
 describe('getOrLoadPublicSearchResult', () => {
-  it('does not address a stale v7 entry for an nga-v7 exact-date search', async () => {
+  it('does not address a stale v8 entry for an nga-v7 exact-date search', async () => {
     const cache = createCache({
       get: vi.fn(async (key: string) =>
-        key.startsWith('public-search-result:v7:') ? cachedValue() : null
+        key.startsWith('public-search-result:v8:') ? cachedValue() : null
       ) as unknown as KVNamespace['get'],
     });
     const load = vi.fn().mockResolvedValue({ response, cacheable: false });

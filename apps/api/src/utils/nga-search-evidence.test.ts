@@ -397,29 +397,59 @@ describe('NGA relation evidence', () => {
     ).toEqual({ verified: true, source: 'institution_metadata' });
   });
 
-  it('accepts image and caption agreement but rejects either weak tail alone', () => {
-    const withChannels = (...channels: string[]) =>
+  it('requires caption subject evidence alongside image and caption channels', () => {
+    const withChannels = (caption: string | null, ...channels: string[]) =>
       result(channels.join('-'), {
         metadata: {
           searchSources: channels.map((channel) => ({ channel })),
+          ...(caption
+            ? { generated_caption: { text: caption } }
+            : {}),
         },
       });
 
     expect(
       classifyNgaRelationEvidence(
-        withChannels('image_embedding', 'generated_caption_embedding'),
+        withChannels(
+          'A marble statue stands behind the sitter.',
+          'image_embedding',
+          'generated_caption_embedding'
+        ),
         visibleRelation
       )
     ).toEqual({ verified: true, source: 'image_caption_agreement' });
     expect(
       classifyNgaRelationEvidence(
-        withChannels('image_embedding'),
+        withChannels(
+          'A crowd gathers in a landscape.',
+          'image_embedding',
+          'generated_caption_embedding'
+        ),
         visibleRelation
       )
     ).toEqual({ verified: false, source: null });
     expect(
       classifyNgaRelationEvidence(
-        withChannels('generated_caption_embedding'),
+        withChannels(
+          'A bronze sculpture fills the foreground.',
+          'image_embedding',
+          'institution_caption_embedding'
+        ),
+        visibleRelation
+      )
+    ).toEqual({ verified: false, source: null });
+    expect(
+      classifyNgaRelationEvidence(
+        withChannels(null, 'image_embedding'),
+        visibleRelation
+      )
+    ).toEqual({ verified: false, source: null });
+    expect(
+      classifyNgaRelationEvidence(
+        withChannels(
+          'A bronze sculpture fills the foreground.',
+          'generated_caption_embedding'
+        ),
         visibleRelation
       )
     ).toEqual({ verified: false, source: null });
@@ -462,9 +492,12 @@ describe('NGA relation evidence', () => {
   it('orders institution proof first and preserves fused order within each tier', () => {
     const agreement = result('agreement', {
       metadata: {
+        generated_caption: {
+          text: 'A bronze sculpture fills the foreground.',
+        },
         search_sources: [
           { channel: 'image_embedding' },
-          { channel: 'institution_caption_embedding' },
+          { channel: 'generated_caption_embedding' },
         ],
       },
     });

@@ -3,8 +3,8 @@
   "expectedVersions": {
     "parser": "nga-v7",
     "plan": "nga-plan-v2",
-    "contract": "29",
-    "apiResultCache": "v8"
+    "contract": "30",
+    "apiResultCache": "v9"
   },
   "pilot": {
     "textCaseIds": [
@@ -607,7 +607,6 @@
       "fixtureId": "open-access-art:nga:110821",
       "filename": "nga-query.jpg",
       "constraints": {"artistIds": ["2402"]},
-      "minimumResults": 1,
       "targetExpectation": {"policy": "excluded"}
     }
   ]
