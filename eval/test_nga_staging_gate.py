@@ -227,9 +227,13 @@ def full_deployment_identity(gate, pilot):
         "sha256": "5" * 64,
     }
     full_state_paths = artist_state_paths("full")
+    pilot_preflight = full["artistDataBinding"]["preflightManifests"][0]
     full["artistDataBinding"]["preflightManifests"] = [
-        {"path": path, "sha256": str(index + 8) * 64}
-        for index, path in enumerate(full_state_paths["preflightManifests"])
+        pilot_preflight,
+        {
+            "path": full_state_paths["preflightManifests"][1],
+            "sha256": "9" * 64,
+        },
     ]
     full["artistDataBinding"]["postApplyVerification"] = {
         "path": full_state_paths["postApplyVerification"],
@@ -2745,6 +2749,17 @@ class InventoryAndRelevanceTests(GateTestCase):
         )
 
         self.assertIn("pilot_deployment_identity_hash_mismatch", result["failureCodes"])
+
+    def test_pilot_to_full_identity_continuity_preserves_pilot_preflight_capture(self):
+        pilot = deployment_identity()
+        full = full_deployment_identity(self.gate, pilot)
+        full["artistDataBinding"]["preflightManifests"][0]["sha256"] = "c" * 64
+
+        result = self.call(
+            "evaluate_pilot_full_identity_continuity", pilot, full
+        )
+
+        self.assertIn("pilot_preflight_capture_drift", result["failureCodes"])
 
     def test_pilot_to_full_identity_continuity_rejects_unexpected_identity_drift(self):
         for label, mutate in {

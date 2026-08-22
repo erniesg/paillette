@@ -446,6 +446,21 @@ def evaluate_pilot_full_identity_continuity(
     }
     if canonical_json(full_immutable) != canonical_json(pilot_immutable):
         failures.append(_failure("pilot_full_identity_drift", field="immutable"))
+    pilot_preflight_value = pilot_artist.get("preflightManifests")
+    full_preflight_value = full_artist.get("preflightManifests")
+    pilot_preflight = (
+        pilot_preflight_value if isinstance(pilot_preflight_value, list) else []
+    )
+    full_preflight = (
+        full_preflight_value if isinstance(full_preflight_value, list) else []
+    )
+    if (
+        len(pilot_preflight) != 1
+        or len(full_preflight) != 2
+        or canonical_json(full_preflight[0])
+        != canonical_json(pilot_preflight[0])
+    ):
+        failures.append(_failure("pilot_preflight_capture_drift"))
     pilot_captured_at = _parse_utc_timestamp(pilot_identity.get("capturedAt"))
     full_captured_at = _parse_utc_timestamp(full_identity.get("capturedAt"))
     if (
@@ -1755,12 +1770,20 @@ def evaluate_artist_data_evidence(
                 if isinstance(recovery_point_value, Mapping)
                 else {}
             )
-            usable_recovery = any(
-                _nonblank_string(recovery_point.get(field))
-                and contains_recovery_value(
-                    recovery_document, field, recovery_point.get(field)
-                )
+            recovery_fields = [
+                field
                 for field in ("bookmark", "timestamp")
+                if _nonblank_string(recovery_point.get(field))
+            ]
+            usable_recovery = (
+                set(recovery_point) == {"bookmark", "timestamp"}
+                and bool(recovery_fields)
+                and all(
+                    contains_recovery_value(
+                        recovery_document, field, recovery_point.get(field)
+                    )
+                    for field in recovery_fields
+                )
             )
             if not usable_recovery:
                 failures.append(_failure("artist_preflight_recovery_point_invalid"))
@@ -1925,7 +1948,8 @@ def evaluate_artist_data_evidence(
                 and set(post_vectors_by_id) == post_id_set
             )
             ordered_ids = sorted(
-                post_id_set, key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1])
+                mapping_by_id,
+                key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1]),
             )
             for artwork_id in ordered_ids:
                 desired = mapping_by_id.get(artwork_id, {})
