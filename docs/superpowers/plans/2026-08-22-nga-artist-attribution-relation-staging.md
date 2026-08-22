@@ -664,7 +664,11 @@ succeeds:
 set -euo pipefail
 
 NGA_ARTIST_PARTIAL_ROOT="$(pwd)/.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z"
-NGA_ARTIST_EVIDENCE_ROOT="$(pwd)/.agent/evidence/nga-staging/$(git rev-parse HEAD)/$(date -u +%Y%m%dT%H%M%SZ)"
+NGA_ARTIST_EVIDENCE_HEAD_ROOT="$(pwd)/.agent/evidence/nga-staging/$(git rev-parse HEAD)"
+NGA_ARTIST_EVIDENCE_ROOT="$NGA_ARTIST_EVIDENCE_HEAD_ROOT/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$NGA_ARTIST_EVIDENCE_HEAD_ROOT"
+test -d "$NGA_ARTIST_EVIDENCE_HEAD_ROOT"
+test ! -L "$NGA_ARTIST_EVIDENCE_HEAD_ROOT"
 test ! -e "$NGA_ARTIST_EVIDENCE_ROOT"
 mkdir "$NGA_ARTIST_EVIDENCE_ROOT"
 mkdir -p \

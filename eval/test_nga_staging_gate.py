@@ -3481,6 +3481,101 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "lineage creation must not be reached after a bad pinned response",
             )
 
+    def test_task8_recovery_bootstrap_creates_missing_head_parent_and_lineage(self):
+        plan = (
+            ROOT
+            / "docs/superpowers/plans/2026-08-22-nga-artist-attribution-relation-staging.md"
+        ).read_text(encoding="utf-8")
+        recovery = plan.split(
+            "#### Reviewed forward recovery for the preserved partial pilot", 1
+        )[1].split(
+            "The following is the only forward mutation command described", 1
+        )[0]
+        bootstrap = re.findall(
+            r"```bash\n(.*?)```", recovery, flags=re.DOTALL
+        )[0]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            head_root = root / "nga-staging" / "fixture-head"
+            destination = head_root / "20260822T134448Z"
+            response_payload = b'{"valid":"pinned-response"}\n'
+            response_sha256 = hashlib.sha256(response_payload).hexdigest()
+            files = {
+                "preflight/pilot/preflight-manifest.json": b'{"pilot":true}\n',
+                "preflight/production-identity.json": b'{"production":true}\n',
+                "backfill/pilot/artifact-manifest.json": b'{"artifact":true}\n',
+                (
+                    "backfill/pilot/apply-responses/"
+                    "2026-08-22T13-49-24-534Z-1855/0001.json"
+                ): response_payload,
+                (
+                    "candidate/production-identity/pilot/before.json"
+                ): b'{"before":true}\n',
+            }
+            for relative, payload in files.items():
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+
+            bootstrap = re.sub(
+                r'^NGA_ARTIST_PARTIAL_ROOT=.*$',
+                'NGA_ARTIST_PARTIAL_ROOT="$SOURCE_ROOT"',
+                bootstrap,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            bootstrap = re.sub(
+                r'^NGA_ARTIST_EVIDENCE_HEAD_ROOT=.*$',
+                'NGA_ARTIST_EVIDENCE_HEAD_ROOT="$DESTINATION_HEAD_ROOT"',
+                bootstrap,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            bootstrap = re.sub(
+                r'^NGA_ARTIST_EVIDENCE_ROOT=.*$',
+                'NGA_ARTIST_EVIDENCE_ROOT="$DESTINATION_ROOT"',
+                bootstrap,
+                count=1,
+                flags=re.MULTILINE,
+            ).replace(
+                "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5",
+                response_sha256,
+            )
+            self.assertFalse(head_root.exists())
+
+            result = subprocess.run(
+                ["bash", "-c", bootstrap],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "SOURCE_ROOT": str(source),
+                    "DESTINATION_HEAD_ROOT": str(head_root),
+                    "DESTINATION_ROOT": str(destination),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            lineage_path = destination / "backfill/pilot/resume-lineage.json"
+            lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
+            self.assertEqual(lineage["responses"][0]["sha256"], response_sha256)
+            self.assertEqual(
+                lineage["artifactManifest"]["sha256"],
+                hashlib.sha256(
+                    files["backfill/pilot/artifact-manifest.json"]
+                ).hexdigest(),
+            )
+            self.assertEqual(
+                lineage["preflightManifests"][0]["sha256"],
+                hashlib.sha256(
+                    files["preflight/pilot/preflight-manifest.json"]
+                ).hexdigest(),
+            )
+
     def test_inventory_rejects_duplicate_request_bodies_with_conflicting_gates(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
