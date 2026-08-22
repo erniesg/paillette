@@ -88,6 +88,17 @@ const extractD1Rows = (payload) => {
   throw new Error('unexpected Wrangler D1 JSON response');
 };
 
+const parseVectorizePayload = (output) => {
+  const jsonOffset = output.search(/^[\t ]*[\[{]/m);
+  if (jsonOffset === -1)
+    throw new Error('unexpected Wrangler Vectorize JSON response');
+  try {
+    return JSON.parse(output.slice(jsonOffset));
+  } catch {
+    throw new Error('unexpected Wrangler Vectorize JSON response');
+  }
+};
+
 const d1Query = (sql) =>
   extractD1Rows(
     runWrangler([
@@ -215,7 +226,7 @@ ORDER BY id;`);
     '--ids',
     ...artworkIds,
   ]);
-  const payload = JSON.parse(output);
+  const payload = parseVectorizePayload(output);
   const fetched = Array.isArray(payload) ? payload : payload.vectors;
   if (!Array.isArray(fetched))
     throw new Error('unexpected Wrangler Vectorize JSON response');

@@ -46,6 +46,9 @@ if (args.includes('d1 time-travel info')) {
 } else if (args.includes('d1 execute')) {
   process.stdout.write(JSON.stringify([{ results: JSON.parse(process.env.NGA_CAPTURE_TEST_ROWS) }]));
 } else if (args.includes('vectorize get-vectors')) {
+  if (process.env.NGA_CAPTURE_TEST_VECTOR_PREFIX) {
+    process.stdout.write(process.env.NGA_CAPTURE_TEST_VECTOR_PREFIX + '\\n');
+  }
   process.stdout.write(JSON.stringify({ vectors: JSON.parse(process.env.NGA_CAPTURE_TEST_VECTORS) }));
 } else {
   process.stderr.write('unexpected mock command: ' + args);
@@ -57,6 +60,36 @@ if (args.includes('d1 time-travel info')) {
   chmodSync(command, 0o755);
   return { root, bin, rows, vectors };
 };
+
+test('accepts Wrangler Vectorize status text before the JSON payload', () => {
+  const fixture = createMockWrangler();
+  const outDir = join(fixture.root, 'prefixed-vector-output');
+  const result = spawnSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--environment=staging',
+      '--phase=pilot',
+      `--out-dir=${outDir}`,
+    ],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${fixture.bin}:${process.env.PATH}`,
+        NGA_CAPTURE_TEST_ROWS: JSON.stringify(fixture.rows),
+        NGA_CAPTURE_TEST_VECTORS: JSON.stringify(fixture.vectors),
+        NGA_CAPTURE_TEST_VECTOR_PREFIX: '📋 Fetching vectors...',
+      },
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const manifest = JSON.parse(
+    readFileSync(join(outDir, 'preflight-manifest.json'), 'utf8')
+  );
+  assert.equal(manifest.counts.imageVectors, PILOT_OBJECT_IDS.length);
+});
 
 test('captures and hash-binds a usable D1 recovery point before staged rows', async () => {
   const fixture = createMockWrangler();
