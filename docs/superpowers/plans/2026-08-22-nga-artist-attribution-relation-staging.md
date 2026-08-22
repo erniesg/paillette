@@ -542,6 +542,8 @@ pnpm --dir apps/api exec wrangler versions list --env staging --json
 pnpm --dir apps/web exec wrangler versions list --env staging --json
 pnpm --dir apps/api exec wrangler versions list --env production --json
 pnpm --dir apps/web exec wrangler versions list --env production --json
+pnpm --dir apps/api exec wrangler deployments list --env production --json
+pnpm --dir apps/web exec wrangler deployments list --env production --json
 pnpm --dir apps/api exec wrangler d1 time-travel info paillette-db-stg --env staging --json
 pnpm --dir apps/api exec wrangler vectorize info paillette-embeddings-v2-stg --env staging
 pnpm --dir apps/api exec wrangler vectorize list-metadata-index paillette-embeddings-v2-stg --env staging
@@ -550,6 +552,23 @@ pnpm --dir apps/api exec wrangler vectorize list-metadata-index paillette-captio
 ```
 
 Echo and retain the resolved absolute `NGA_ARTIST_EVIDENCE_ROOT` in `preflight/evidence-root.txt`. Then run `capture-nga-artist-backfill-preflight.mjs --environment=staging --phase=pilot --out-dir="$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot"`. Hash complete JSON/NDJSON values; do not reuse artifacts whose filename says production or whose index/deployment identity is unproven. The pilot capture remains the authoritative rollback source for those five IDs after they are patched.
+
+Canonicalize the production API/web `versions list` results into
+`preflight/production-identity.json` using schema
+`nga-production-identity-v1`, capture role `trusted_preflight`, and exact
+production service/origin/deployment/version fields. Immediately before the
+first candidate gate, write an independently captured canonical
+`candidate/production-before.json` with capture role `before`. After the pilot
+staging mutations and again after the full staging mutation, recapture
+`candidate/production-after.json` with capture role `after` and refresh its
+digest in the deployment identity before starting the corresponding read-only
+official gate. The evaluator rehashes all three files from these fixed paths, requires
+their complete resource identities to match field-for-field, and rejects
+caller-supplied equal hashes without the fixed trusted-preflight artifact.
+The canonical resource object has exactly `api` and `web`; each entry has
+exactly `environment`, `service`, `origin`, `deploymentId`, and `versionId`.
+Use the deployment-list output for `deploymentId` and the version-list output
+for `versionId`; do not reuse one identifier for both fields.
 
 - [ ] **Step 2: Prepare and inspect five-row artifacts without applying**
 
@@ -565,13 +584,18 @@ node scripts/prepare-nga-artist-backfill.mjs \
 
 Verify the variable still equals the absolute path recorded in `preflight/evidence-root.txt` before any later command. Verify five mappings, five guarded SQL updates, five enriched vectors, five rollback vectors, source hashes, value hashes, and the final artifact-manifest hash.
 
-- [ ] **Step 3: Deploy the exact reviewed API to staging**
+- [ ] **Step 3: Deploy the exact reviewed API and web to staging**
 
 ```bash
 pnpm --filter @paillette/api deploy:staging
+pnpm --filter @paillette/web deploy:staging
 ```
 
-Verify `https://paillette-api-stg.berlayar.ai/health` reports staging and the new parser/plan/cache/contract versions. Confirm production version identity is unchanged before continuing.
+Verify `https://paillette-api-stg.berlayar.ai/health` reports staging and the new
+parser/plan/cache/contract versions, and verify the anonymous staging web loads
+contract 29. The web must be present before the strict pilot rehash because the
+pilot manifest requires all nine bound Playwright artifacts. Confirm production
+version identity is unchanged before continuing.
 
 - [ ] **Step 4: Apply the pilot D1 and image-vector patches**
 
@@ -585,7 +609,32 @@ Immediately export the five rows/vectors again. Require exact primary IDs, relat
 
 - [ ] **Step 5: Run and inspect the pilot live gate**
 
-Create a deployment identity JSON binding exact API version, old web staging version, candidate git SHA, source/artifact manifest hashes, and unchanged production identities. Then run:
+Create a deployment identity JSON binding the exact reviewed API/web staging
+versions, candidate git SHA, and an `nga-artist-data-binding-v2` object. That
+object references `backfill/pilot/artifact-manifest.json` by relative path and
+SHA-256, plus the three fixed production identity paths and their actual
+SHA-256 digests. Do not copy counts or aggregate vector hashes into the
+deployment identity: the evaluator reads the Task 2 manifest bytes, recursively
+rehashes its declared mapping/vector/rollback files, and recomputes their
+semantic counts and preserved values. First run discovery without
+`--fail-on-gates`, inspect the exact returned IDs, and grade the two declared
+visible-relation cases on the 0–3 rubric:
+
+```bash
+python3 eval/nga_staging_gate.py \
+  --phase pilot \
+  --snapshot candidate \
+  --api-base-url https://paillette-api-stg.berlayar.ai \
+  --web-base-url https://paillette-stg.berlayar.ai \
+  --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-discovery" \
+  --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
+  --public-search-requests-per-minute 9
+```
+
+Write the exact-ID labels to `candidate/pilot-relevance-labels.json`, then run a
+fresh official pilot. Candidate evidence is never rehashed permissively, so the
+official run must include strong manual labels and every recomputed hard gate
+must pass:
 
 ```bash
 python3 eval/nga_staging_gate.py \
@@ -595,11 +644,21 @@ python3 eval/nga_staging_gate.py \
   --web-base-url https://paillette-stg.berlayar.ai \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot" \
   --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
+  --relevance-labels "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-relevance-labels.json" \
   --fail-on-gates \
   --public-search-requests-per-minute 9
+
+NGA_STAGING_EVIDENCE_DIR="$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot" \
+pnpm --dir apps/web exec playwright test --config playwright.staging.config.ts
+
+python3 eval/nga_staging_gate.py rehash \
+  --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot"
 ```
 
-Manually inspect raw artist, attribution, visible-relation, derived-empty, cache, and NGS cases. Write a hashed pilot inspection decision. Continue only if every hard/evidence gate passes.
+Manually inspect raw artist, attribution, visible-relation, derived-empty,
+cache, NGS, and both new browser artifacts. Write the hashed pilot inspection
+decision against this official pilot manifest. Continue only if every
+hard/evidence/manual/browser/identity gate passes.
 
 - [ ] **Step 6: Prepare and apply the full staging backfill**
 
@@ -629,13 +688,13 @@ node scripts/apply-nga-artist-backfill.mjs --environment=staging --phase=full --
 
 The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. After each chunk, record output and post-chunk counts. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
 
-- [ ] **Step 7: Deploy the exact reviewed web to staging**
+- [ ] **Step 7: Reconfirm the exact reviewed web on staging**
 
-```bash
-pnpm --filter @paillette/web deploy:staging
-```
-
-Verify the live web contract is `29`, the staged route loads anonymously, and API/web deployment identities bind to the same candidate SHA.
+Do not redeploy if the exact reviewed web from Step 3 is still active. Verify
+the live web contract is `29`, the staged route loads anonymously, and API/web
+deployment identities still bind to the same candidate SHA. If staging web
+identity drifted, stop and repeat the reviewed deployment/identity checks before
+running the full gate.
 
 - [ ] **Step 8: Run full discovery, grade exact IDs, then run the official Python and browser gates**
 
@@ -673,6 +732,15 @@ python3 eval/nga_staging_gate.py rehash --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/can
 ```
 
 The full gate requires 100% parser/hard/image/NGS/browser compliance, strong visible-relation positives, catalogue-backed attribution, verified-empty derivation where no official positive exists, correct MISS/repeat HIT behavior, and a passing rehash.
+
+For the full official identity, change only the artist manifest reference to
+`backfill/full/artifact-manifest.json` and its actual digest. The fixed evidence
+root marker, manifest phase, Task 2 preflight phases, mapping/vector/rollback
+record counts, and value-hash count must all resolve to exactly 63,253; the
+pilot identity must resolve to exactly the five approved IDs. Candidate rehash
+is never permissive: raw hard gates, strong manual relevance, aggregate summary,
+identity evidence, and all nine browser tests must pass. Only an explicitly
+identified `baseline` snapshot may retain failed recomputed RED evidence.
 
 - [ ] **Step 9: Confirm the production boundary and report**
 

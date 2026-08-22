@@ -113,7 +113,9 @@ def passing_response(row=None, *, relation=None, constraints=None):
     }
 
 
-def deployment_identity(snapshot="candidate", git_sha="a" * 40):
+def deployment_identity(
+    snapshot="candidate", git_sha="a" * 40, artist_binding=None
+):
     identity = {
         "schemaVersion": "nga-deployment-identity-v1",
         "snapshot": snapshot,
@@ -137,23 +139,235 @@ def deployment_identity(snapshot="candidate", git_sha="a" * 40):
         },
     }
     if snapshot == "candidate":
-        identity["artistDataBinding"] = {
-            "schemaVersion": "nga-artist-data-binding-v1",
-            "backfillManifestSha256": "1" * 64,
-            "mapping": {"count": 63253, "sha256": "2" * 64},
-            "vectorValues": {
-                "count": 63253,
-                "hashesSha256": "3" * 64,
-                "originalSha256": "4" * 64,
-                "enrichedSha256": "4" * 64,
-                "preserved": True,
+        identity["artistDataBinding"] = artist_binding or {
+            "schemaVersion": "nga-artist-data-binding-v2",
+            "artifactManifest": {
+                "path": "backfill/pilot/artifact-manifest.json",
+                "sha256": "1" * 64,
             },
             "productionIdentity": {
-                "beforeSha256": "5" * 64,
-                "afterSha256": "5" * 64,
+                "trustedPreflight": {
+                    "path": "preflight/production-identity.json",
+                    "sha256": "2" * 64,
+                },
+                "before": {
+                    "path": "candidate/production-before.json",
+                    "sha256": "3" * 64,
+                },
+                "after": {
+                    "path": "candidate/production-after.json",
+                    "sha256": "4" * 64,
+                },
             },
         }
     return identity
+
+
+def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
+    if phase != "pilot":
+        raise ValueError("unit artist fixture only supports the exact pilot scope")
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    preflight = evidence_root / "preflight"
+    backfill = evidence_root / "backfill" / phase
+    candidate = evidence_root / "candidate"
+    preflight.mkdir(parents=True, exist_ok=True)
+    backfill.mkdir(parents=True, exist_ok=True)
+    candidate.mkdir(parents=True, exist_ok=True)
+    (preflight / "evidence-root.txt").write_text(
+        f"{evidence_root.resolve()}\n", encoding="utf-8"
+    )
+
+    object_ids = ["131994", "110821", "11236", "38", "579"]
+    mapping = []
+    rollback = []
+    enriched = []
+    value_hashes = []
+    for index, object_id in enumerate(object_ids, 1):
+        artwork_id = f"open-access-art:nga:{object_id}"
+        primary_artist_id = str(1000 + index)
+        mapping.append(
+            {"id": artwork_id, "primaryArtistId": primary_artist_id}
+        )
+        original = {
+            "id": artwork_id,
+            "values": [float(index), float(index) / 10],
+            "metadata": {"artworkId": artwork_id, "provider": "nga"},
+        }
+        changed = json.loads(json.dumps(original))
+        changed["metadata"]["primaryArtistId"] = primary_artist_id
+        rollback.append(original)
+        enriched.append(changed)
+        digest = gate.sha256_json(original["values"])
+        value_hashes.append(
+            {
+                "id": artwork_id,
+                "originalSha256": digest,
+                "enrichedSha256": digest,
+            }
+        )
+
+    source_manifest = {
+        "schemaVersion": 1,
+        "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+    }
+    sql_text = "".join(
+        f"UPDATE artworks SET primary_artist_id = '{row['primaryArtistId']}' "
+        f"WHERE id = '{row['id']}';\n"
+        for row in mapping
+    )
+    file_payloads = {
+        "source-manifest.json": json.dumps(source_manifest, indent=2) + "\n",
+        "mapping.json": json.dumps(mapping, indent=2) + "\n",
+        "vector-value-hashes.json": json.dumps(value_hashes, indent=2) + "\n",
+        "sql/artist-0001-unit.sql": sql_text,
+        "vectors/enriched-0001-unit.ndjson": "".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            for row in enriched
+        ),
+        "rollback/image-vectors-0001-unit.ndjson": "".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            for row in rollback
+        ),
+    }
+    counted = {
+        "mapping.json",
+        "vector-value-hashes.json",
+        "sql/artist-0001-unit.sql",
+        "vectors/enriched-0001-unit.ndjson",
+        "rollback/image-vectors-0001-unit.ndjson",
+    }
+    files = []
+    for relative, text_value in file_payloads.items():
+        path = backfill / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = text_value.encode()
+        path.write_bytes(payload)
+        files.append(
+            {
+                "path": relative,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "bytes": len(payload),
+                **({"recordCount": 5} if relative in counted else {}),
+            }
+        )
+    file_by_path = {record["path"]: record for record in files}
+    manifest = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-08-22T00:00:00Z",
+        "environment": "staging",
+        "phase": phase,
+        "expectedOrgId": "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
+        "resources": {
+            "d1Database": "paillette-db-stg",
+            "imageVectorIndex": "paillette-embeddings-v2-stg",
+        },
+        "source": {
+            "commit": "79d114c2186ca38af27a9478717f1e509d799495",
+            "manifestSha256": file_by_path["source-manifest.json"]["sha256"],
+        },
+        "preflightInputs": [
+            {
+                "manifestSha256": "a" * 64,
+                "phase": "pilot",
+                "expectedOrgId": "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
+                "resources": {
+                    "d1Database": "paillette-db-stg",
+                    "imageVectorIndex": "paillette-embeddings-v2-stg",
+                },
+                "counts": {"ids": 5, "stagedRecords": 5, "imageVectors": 5},
+                "ids": {"path": "ids.json", "sha256": "b" * 64, "count": 5},
+                "stagedRecords": {
+                    "path": "staged-nga-records.json",
+                    "sha256": "c" * 64,
+                    "count": 5,
+                },
+                "imageVectors": [
+                    {
+                        "path": "image-vectors/0001.ndjson",
+                        "sha256": "d" * 64,
+                        "count": 5,
+                    }
+                ],
+            }
+        ],
+        "invariants": {
+            "stagedRecordCount": 5,
+            "mappingCount": 5,
+            "imageVectorCount": 5,
+            "rollbackVectorCount": 5,
+            "vectorValuesUnchanged": True,
+            "captionVectorsChanged": 0,
+        },
+        "files": files,
+        "orderedArtifacts": [
+            {"kind": "d1-sql", **file_by_path["sql/artist-0001-unit.sql"]},
+            {
+                "kind": "image-vectors",
+                **file_by_path["vectors/enriched-0001-unit.ndjson"],
+            },
+        ],
+    }
+    manifest_path = backfill / "artifact-manifest.json"
+    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+    manifest_path.write_bytes(manifest_bytes)
+
+    resources = {
+        "api": {
+            "environment": "production",
+            "service": "paillette-api",
+            "origin": "https://paillette-api.berlayar.ai",
+            "deploymentId": "prod-api-deployment",
+            "versionId": "prod-api-version",
+        },
+        "web": {
+            "environment": "production",
+            "service": "paillette",
+            "origin": "https://paillette.berlayar.ai",
+            "deploymentId": "prod-web-deployment",
+            "versionId": "prod-web-version",
+        },
+    }
+    production_records = {
+        "preflight/production-identity.json": {
+            "schemaVersion": "nga-production-identity-v1",
+            "captureRole": "trusted_preflight",
+            "capturedAt": "2026-08-22T00:00:00Z",
+            "resources": resources,
+        },
+        "candidate/production-before.json": {
+            "schemaVersion": "nga-production-identity-v1",
+            "captureRole": "before",
+            "capturedAt": "2026-08-22T00:01:00Z",
+            "resources": resources,
+        },
+        "candidate/production-after.json": {
+            "schemaVersion": "nga-production-identity-v1",
+            "captureRole": "after",
+            "capturedAt": "2026-08-22T00:02:00Z",
+            "resources": resources,
+        },
+    }
+    production_bindings = {}
+    for relative, record in production_records.items():
+        path = evidence_root / relative
+        payload = (json.dumps(record, indent=2) + "\n").encode()
+        path.write_bytes(payload)
+        production_bindings[record["captureRole"]] = {
+            "path": relative,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+    return {
+        "schemaVersion": "nga-artist-data-binding-v2",
+        "artifactManifest": {
+            "path": f"backfill/{phase}/artifact-manifest.json",
+            "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        },
+        "productionIdentity": {
+            "trustedPreflight": production_bindings["trusted_preflight"],
+            "before": production_bindings["before"],
+            "after": production_bindings["after"],
+        },
+    }
 
 
 def parse_with_exact_local_v5(cases):
@@ -472,6 +686,7 @@ def make_complete_evidence_bundle(
     evaluator_sha="a" * 40,
     run_id="0123456789abcdef0123456789abcdef",
 ):
+    root.mkdir(parents=True, exist_ok=True)
     inventory = gate.load_case_inventory(
         ROOT / "eval" / "nga-staging-cases.yaml",
         ROOT / "eval" / "nga-constraint-queries.yaml",
@@ -482,7 +697,14 @@ def make_complete_evidence_bundle(
     manual_case_ids = [
         case["id"] for case in selected["text"] if case.get("manualGradeTop")
     ]
-    deployed_identity = deployment_identity(snapshot, evaluator_sha)
+    artist_binding = (
+        write_artist_data_evidence(gate, root, phase=phase)
+        if snapshot == "candidate" and phase == "pilot"
+        else None
+    )
+    deployed_identity = deployment_identity(
+        snapshot, evaluator_sha, artist_binding=artist_binding
+    )
     deployment_hash = gate.sha256_json(deployed_identity)
     deployment_binding = gate.evaluate_deployment_binding(
         deployed_identity,
@@ -539,6 +761,15 @@ def make_complete_evidence_bundle(
         "deploymentIdentity": deployed_identity,
         "deploymentBinding": deployment_binding,
     }
+    if snapshot == "candidate":
+        artist_evaluation = gate.evaluate_artist_data_evidence(
+            root,
+            deployed_identity["artistDataBinding"],
+            phase=phase,
+        )
+        identity["artistDataEvidence"] = gate._artist_evidence_record(
+            artist_evaluation
+        )
     summary = {
         **binding,
         "generatedAt": "2026-08-22T00:01:00Z",
@@ -570,7 +801,6 @@ def make_complete_evidence_bundle(
         "expectedTestCount": 9,
     }
     summary["playwrightHandoff"] = handoff
-    root.mkdir(parents=True, exist_ok=True)
     documents = {
         "identity.json": identity,
         "summary.json": summary,
@@ -1878,6 +2108,405 @@ class ImageProbeTests(GateTestCase):
 
 
 class InventoryAndRelevanceTests(GateTestCase):
+    def test_inventory_rejects_duplicate_request_bodies_with_conflicting_gates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            document = json.loads(
+                (ROOT / "eval" / "nga-staging-cases.yaml").read_text(
+                    encoding="utf-8"
+                )
+            )
+            original = document["textCases"][0]
+            document["textCases"].append(
+                {
+                    **json.loads(json.dumps(original)),
+                    "id": "conflicting-request-contract",
+                    "minimumResults": 1,
+                }
+            )
+            inventory_path = root / "cases.json"
+            inventory_path.write_text(json.dumps(document), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "contradictory request gates"):
+                self.call(
+                    "load_case_inventory",
+                    inventory_path,
+                    ROOT / "eval" / "nga-constraint-queries.yaml",
+                )
+
+    def test_committed_duplicate_requests_have_one_consistent_truth_contract(self):
+        inventory = self.call(
+            "load_case_inventory",
+            ROOT / "eval" / "nga-staging-cases.yaml",
+            ROOT / "eval" / "nga-constraint-queries.yaml",
+        )
+        by_body = {}
+        for case in inventory["textCases"]:
+            body = json.dumps(
+                self.call("_text_request_body", case),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            by_body.setdefault(body, []).append(case)
+        for body, cases in by_body.items():
+            contracts = {
+                json.dumps(
+                    {
+                        "expected": case.get("expected"),
+                        "manualGradeTop": case.get("manualGradeTop"),
+                        "minimumResults": case.get("minimumResults"),
+                        "expectedZeroResults": case.get("expectedZeroResults")
+                        is True,
+                        "expectedVerifiedEmpty": case.get("expectedVerifiedEmpty")
+                        is True,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                for case in cases
+            }
+            self.assertEqual(len(contracts), 1, body)
+        passive_body = json.dumps(
+            {
+                "query": "photograph used as basis for drawing",
+                "topK": 30,
+                "minScore": 0.0,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self.assertEqual(
+            [case["id"] for case in by_body[passive_body]],
+            ["relation-passive-derived"],
+        )
+
+    def test_malformed_direct_relationship_is_ignored_but_valid_sibling_proves(self):
+        malformed = {
+            "constituentId": "1364",
+            "displayOrder": 1,
+            "roleType": "artist",
+            "role": None,
+            "prefix": None,
+            "suffix": None,
+            "preferredDisplayName": "Rembrandt van Rijn",
+            "forwardDisplayName": "Rembrandt van Rijn",
+            "alternativeNames": [],
+        }
+        valid = {
+            **malformed,
+            "displayOrder": 2,
+            "role": "artist",
+            "preferredDisplayName": "Frans Hals",
+            "forwardDisplayName": "Frans Hals",
+        }
+        row = passing_row()
+        row["metadata"] = {
+            **row["metadata"],
+            "primaryArtistId": "1364",
+            "ngaArtists": {"relationships": [malformed, valid]},
+        }
+
+        self.assertFalse(
+            self.call(
+                "_row_proves_attribution",
+                row,
+                {"relationship": "direct", "targetText": "Rembrandt van Rijn"},
+            )
+        )
+        self.assertTrue(
+            self.call(
+                "_row_proves_attribution",
+                row,
+                {"relationship": "direct", "targetText": "Frans Hals"},
+            )
+        )
+
+    def test_relationship_schema_rejects_every_malformed_runtime_field_type(self):
+        valid = {
+            "constituentId": "1364",
+            "displayOrder": 1,
+            "roleType": "artist",
+            "role": "artist",
+            "prefix": None,
+            "suffix": None,
+            "preferredDisplayName": "Lavinia Fontana",
+            "forwardDisplayName": "Lavinia Fontana",
+            "alternativeNames": [],
+        }
+        malformed = [
+            None,
+            [],
+            {"value": valid},
+            {**valid, "constituentId": 1364},
+            {**valid, "constituentId": "nga:1364"},
+            {**valid, "displayOrder": "1"},
+            {**valid, "displayOrder": True},
+            {**valid, "displayOrder": 2**53},
+            {**valid, "roleType": ["artist"]},
+            {**valid, "role": None},
+            {**valid, "role": "  "},
+            {**valid, "prefix": []},
+            {**valid, "prefix": ""},
+            {**valid, "suffix": {}},
+            {**valid, "preferredDisplayName": None},
+            {**valid, "forwardDisplayName": ["Lavinia Fontana"]},
+            {**valid, "alternativeNames": None},
+            {**valid, "alternativeNames": [["Lavinia Fontana"]]},
+            {key: value for key, value in valid.items() if key != "role"},
+        ]
+        for index, relationship in enumerate(malformed):
+            with self.subTest(index=index, relationship=relationship):
+                self.assertIsNone(
+                    self.call("_parse_artist_relationship", relationship)
+                )
+        self.assertEqual(self.call("_parse_artist_relationship", valid), valid)
+        safe_json_number = {**valid, "displayOrder": 1.0}
+        self.assertEqual(
+            self.call("_parse_artist_relationship", safe_json_number),
+            safe_json_number,
+        )
+
+    def test_direct_relationship_requires_exact_unqualified_artist_role(self):
+        base = {
+            "constituentId": "1364",
+            "displayOrder": 1,
+            "roleType": "artist",
+            "role": "artist",
+            "prefix": None,
+            "suffix": None,
+            "preferredDisplayName": "Lavinia Fontana",
+            "forwardDisplayName": "Lavinia Fontana",
+            "alternativeNames": [],
+        }
+        for mutation in (
+            {"role": "painter"},
+            {"role": "artist after"},
+            {"prefix": "after"},
+            {"suffix": "workshop of"},
+        ):
+            with self.subTest(mutation=mutation):
+                row = passing_row()
+                row["metadata"] = {
+                    **row["metadata"],
+                    "primaryArtistId": "1364",
+                    "ngaArtists": {"relationships": [{**base, **mutation}]},
+                }
+                self.assertFalse(
+                    self.call(
+                        "_row_proves_attribution",
+                        row,
+                        {
+                            "relationship": "direct",
+                            "targetText": "Lavinia Fontana",
+                        },
+                    )
+                )
+
+    def test_artist_evidence_rejects_an_invented_manifest_digest(self):
+        binding = deployment_identity()["artistDataBinding"]
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                Path(directory),
+                binding,
+                phase="pilot",
+            )
+        self.assertIn("artist_artifact_manifest_missing", result["failureCodes"])
+
+    def test_equal_production_hashes_without_trusted_preflight_are_rejected(self):
+        binding = deployment_identity()["artistDataBinding"]
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                Path(directory),
+                binding,
+                phase="pilot",
+            )
+        self.assertIn(
+            "production_identity_preflight_untrusted", result["failureCodes"]
+        )
+
+    def test_artist_evidence_rehashes_task2_manifest_and_bound_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+        self.assertEqual(result["failureCodes"], [])
+        self.assertEqual(result["mappingCount"], 5)
+        self.assertEqual(result["vectorRecordCount"], 5)
+        self.assertEqual(result["vectorValueHashCount"], 5)
+
+    def test_artist_evidence_rejects_escape_missing_digest_and_phase_mismatch(self):
+        mutations = {
+            "escape": (
+                lambda binding: binding["artifactManifest"].update(
+                    path="../artifact-manifest.json"
+                ),
+                "artist_evidence_path_invalid",
+                "pilot",
+            ),
+            "windows escape": (
+                lambda binding: binding["artifactManifest"].update(
+                    path="..\\artifact-manifest.json"
+                ),
+                "artist_evidence_path_invalid",
+                "pilot",
+            ),
+            "invented digest": (
+                lambda binding: binding["artifactManifest"].update(
+                    sha256="f" * 64
+                ),
+                "artist_artifact_manifest_hash_mismatch",
+                "pilot",
+            ),
+            "phase mismatch": (
+                lambda _binding: None,
+                "artist_artifact_phase_mismatch",
+                "full",
+            ),
+        }
+        for label, (mutate, code, phase) in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, root)
+                mutate(binding)
+                result = self.call(
+                    "evaluate_artist_data_evidence", root, binding, phase=phase
+                )
+                self.assertIn(code, result["failureCodes"])
+
+    def test_artist_evidence_rejects_invented_declared_file_and_full_shortfall(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            manifest_path = root / binding["artifactManifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["files"].append(
+                {
+                    "path": "vectors/invented.ndjson",
+                    "sha256": "f" * 64,
+                    "bytes": 1,
+                    "recordCount": 1,
+                }
+            )
+            manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+            manifest_path.write_bytes(manifest_bytes)
+            binding["artifactManifest"]["sha256"] = hashlib.sha256(
+                manifest_bytes
+            ).hexdigest()
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+            self.assertIn("artist_artifact_file_invalid", result["failureCodes"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            manifest_path = root / binding["artifactManifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["phase"] = "full"
+            full_path = root / "backfill/full/artifact-manifest.json"
+            full_path.parent.mkdir(parents=True)
+            manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+            full_path.write_bytes(manifest_bytes)
+            binding["artifactManifest"] = {
+                "path": "backfill/full/artifact-manifest.json",
+                "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            }
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="full"
+            )
+            self.assertIn("artist_artifact_count_mismatch", result["failureCodes"])
+
+    def test_artist_evidence_rejects_rehashed_count_and_vector_value_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            manifest_path = root / binding["artifactManifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["invariants"]["mappingCount"] = 4
+            manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+            manifest_path.write_bytes(manifest_bytes)
+            binding["artifactManifest"]["sha256"] = hashlib.sha256(
+                manifest_bytes
+            ).hexdigest()
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+            self.assertIn("artist_artifact_count_mismatch", result["failureCodes"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            manifest_path = root / binding["artifactManifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            vector_record = next(
+                record
+                for record in manifest["files"]
+                if record["path"].startswith("vectors/enriched-")
+            )
+            vector_path = manifest_path.parent / vector_record["path"]
+            rows = [
+                json.loads(line)
+                for line in vector_path.read_text(encoding="utf-8").splitlines()
+            ]
+            rows[0]["values"][0] += 1
+            vector_bytes = "".join(
+                json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+                for row in rows
+            ).encode()
+            vector_path.write_bytes(vector_bytes)
+            vector_record["sha256"] = hashlib.sha256(vector_bytes).hexdigest()
+            vector_record["bytes"] = len(vector_bytes)
+            ordered = next(
+                record
+                for record in manifest["orderedArtifacts"]
+                if record["kind"] == "image-vectors"
+            )
+            ordered["sha256"] = vector_record["sha256"]
+            ordered["bytes"] = vector_record["bytes"]
+            manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+            manifest_path.write_bytes(manifest_bytes)
+            binding["artifactManifest"]["sha256"] = hashlib.sha256(
+                manifest_bytes
+            ).hexdigest()
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+            self.assertIn("artist_vector_values_changed", result["failureCodes"])
+
+    def test_production_identity_uses_fixed_trusted_preflight_and_field_comparison(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            before = binding["productionIdentity"]["before"]
+            binding["productionIdentity"]["trustedPreflight"] = dict(before)
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+            self.assertIn(
+                "production_identity_preflight_untrusted", result["failureCodes"]
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            after_binding = binding["productionIdentity"]["after"]
+            after_path = root / after_binding["path"]
+            after = json.loads(after_path.read_text(encoding="utf-8"))
+            after["resources"]["api"]["versionId"] = "changed-production-version"
+            after_bytes = (json.dumps(after, indent=2) + "\n").encode()
+            after_path.write_bytes(after_bytes)
+            after_binding["sha256"] = hashlib.sha256(after_bytes).hexdigest()
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+            self.assertIn(
+                "production_artist_data_identity_changed", result["failureCodes"]
+            )
+
     def test_weak_only_labels_fail_strong_relevance(self):
         metrics = self.call(
             "compute_relevance_metrics", [1, 1, 1, 1, 1], strong_threshold=2
@@ -2026,7 +2655,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                     "constituentId": "1364",
                     "displayOrder": 1,
                     "roleType": "artist",
-                    "role": "painter",
+                    "role": "artist",
                     "prefix": None,
                     "suffix": None,
                     "preferredDisplayName": "Lavinia Fontana",
@@ -2108,7 +2737,7 @@ class InventoryAndRelevanceTests(GateTestCase):
         )
         self.assertIn("artist_data_identity_incomplete", result["failureCodes"])
 
-    def test_artist_data_identity_binds_counts_hashes_vectors_and_production(self):
+    def test_artist_data_identity_requires_hash_bound_artifact_references(self):
         evaluator_sha = "a" * 40
         exact = deployment_identity(git_sha=evaluator_sha)
         self.assertEqual(
@@ -2122,17 +2751,15 @@ class InventoryAndRelevanceTests(GateTestCase):
         )
 
         mutations = {
-            "mapping count": lambda value: value["mapping"].__setitem__(
-                "count", 63252
+            "schema": lambda value: value.__setitem__("schemaVersion", "v1"),
+            "manifest path": lambda value: value["artifactManifest"].__setitem__(
+                "path", None
             ),
-            "mapping hash": lambda value: value["mapping"].__setitem__(
+            "manifest hash": lambda value: value["artifactManifest"].__setitem__(
                 "sha256", "bad"
             ),
-            "vector hashes": lambda value: value["vectorValues"].__setitem__(
-                "hashesSha256", "bad"
-            ),
-            "vector values changed": lambda value: value["vectorValues"].update(
-                enrichedSha256="6" * 64, preserved=False
+            "production capture": lambda value: value["productionIdentity"].pop(
+                "after"
             ),
         }
         for label, mutate in mutations.items():
@@ -2146,18 +2773,6 @@ class InventoryAndRelevanceTests(GateTestCase):
                     evaluator_git_sha=evaluator_sha,
                 )
                 self.assertIn("artist_data_identity_invalid", result["failureCodes"])
-
-        production_changed = json.loads(json.dumps(exact))
-        production_changed["artistDataBinding"]["productionIdentity"][
-            "afterSha256"
-        ] = "6" * 64
-        result = self.call(
-            "evaluate_deployment_binding",
-            production_changed,
-            snapshot="candidate",
-            evaluator_git_sha=evaluator_sha,
-        )
-        self.assertIn("production_artist_data_identity_changed", result["failureCodes"])
 
     def test_new_case_inventory_covers_every_attribution_role_and_control(self):
         document = json.loads(
@@ -2198,8 +2813,21 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "artist-combined-constraints",
                 "artist-ambiguity-control",
                 "visible-relation-weak-tail",
-                "derived-verified-empty",
             }.issubset(categories)
+        )
+        derived = [
+            case
+            for case in document["textCases"]
+            if isinstance(case.get("expected", {}).get("relation"), dict)
+            and case["expected"]["relation"].get("kind") == "derived_from"
+        ]
+        self.assertTrue(derived)
+        self.assertTrue(
+            all(
+                case.get("expectedVerifiedEmpty") is True
+                and "manualGradeTop" not in case
+                for case in derived
+            )
         )
 
     def test_local_version_observation_reads_the_deployed_contract_literals(self):
@@ -2777,6 +3405,102 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
             self.assertEqual(second, manifest)
 
+    def test_candidate_rehash_rejects_recomputed_raw_hard_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            raw_path = root / "raw/text/relation-active-depicts.json"
+            record = json.loads(raw_path.read_text(encoding="utf-8"))
+            response = record["response"]
+            response["json"]["data"]["results"][0]["metadata"][
+                "visualClassification"
+            ] = "Drawing"
+            refresh_response_digest(response)
+            record["evaluation"] = self.call(
+                "evaluate_text_case",
+                record["case"],
+                response,
+                {"parser": "nga-v7"},
+            )
+            raw_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                self.gate.GateStopped, "raw_case_evidence_failed"
+            ):
+                self.call("rehash_evidence", root)
+
+            evaluation = self.call(
+                "evaluate_evidence_bundle", root, require_hard_pass=False
+            )
+            self.assertIn("raw_case_evidence_failed", evaluation["failureCodes"])
+
+    def test_candidate_rehash_rejects_weak_only_manual_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            retained_path = root / "relevance-labels.json"
+            retained = json.loads(retained_path.read_text(encoding="utf-8"))
+            for case in retained["labels"]["cases"]:
+                for row in case["results"]:
+                    row["relevance"] = 1
+            retained_path.write_text(json.dumps(retained) + "\n", encoding="utf-8")
+
+            manual_path = root / "manual-relevance.json"
+            summary_path = root / "summary.json"
+            manual = json.loads(manual_path.read_text(encoding="utf-8"))
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            weak_summary = self.call(
+                "summarize_manual_relevance",
+                manual["cases"],
+                retained["labels"],
+            )
+            manual["summary"] = weak_summary
+            manual["evaluation"] = self.call(
+                "evaluate_manual_relevance_completion",
+                weak_summary,
+                "candidate",
+            )
+            summary["manualRelevance"] = weak_summary
+            manual_path.write_text(json.dumps(manual) + "\n", encoding="utf-8")
+            summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                self.gate.GateStopped, "manual_relevance_evidence_failed"
+            ):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_rejects_false_or_stale_aggregate_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            json_mutate(
+                root / "summary.json",
+                lambda summary: summary.update(
+                    gatePassed=False,
+                    failureCount=1,
+                    gateFailures=[{"code": "stale_failure"}],
+                ),
+            )
+            with self.assertRaisesRegex(
+                self.gate.GateStopped, "candidate_summary_aggregate_failed"
+            ):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_identity_cannot_be_rehashed_as_permissive_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            json_mutate(
+                root / "identity.json",
+                lambda identity: identity["deploymentIdentity"].__setitem__(
+                    "snapshot", "baseline"
+                ),
+            )
+            with self.assertRaisesRegex(
+                self.gate.GateStopped, "evidence_deployment_binding_mismatch"
+            ):
+                self.call("rehash_evidence", root)
+
     def test_rehash_manifest_retains_same_run_canonical_relevance_labels(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2924,7 +3648,9 @@ class InventoryAndRelevanceTests(GateTestCase):
     def test_rehash_binds_every_required_record_to_one_run_id(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            make_complete_evidence_bundle(self.gate, root, phase="full")
+            make_complete_evidence_bundle(
+                self.gate, root, phase="full", snapshot="baseline"
+            )
             paths = [
                 "identity.json",
                 "summary.json",
@@ -3210,7 +3936,9 @@ class InventoryAndRelevanceTests(GateTestCase):
     def test_rehash_full_requires_full_only_negative_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            make_complete_evidence_bundle(self.gate, root, phase="full")
+            make_complete_evidence_bundle(
+                self.gate, root, phase="full", snapshot="baseline"
+            )
             (root / "raw/image-negative-probes.json").unlink()
             with self.assertRaises(self.gate.GateStopped):
                 self.call("rehash_evidence", root)

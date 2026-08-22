@@ -106,6 +106,34 @@ PLAYWRIGHT_ARTIFACT_DIRECTORIES = (
 PLAYWRIGHT_PROJECT_NAME = "nga-staging-chrome"
 RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 RETAINED_RELEVANCE_SCHEMA = "nga-retained-relevance-labels-v1"
+NGA_SOURCE_COMMIT = "79d114c2186ca38af27a9478717f1e509d799495"
+NGA_FULL_STAGED_COUNT = 63_253
+NGA_PILOT_OBJECT_IDS = ("131994", "110821", "11236", "38", "579")
+NGA_STAGING_ORG_ID = "eabbf000-708e-4d4c-8ac8-966b59d4fcac"
+NGA_STAGING_D1_DATABASE = "paillette-db-stg"
+NGA_STAGING_IMAGE_VECTOR_INDEX = "paillette-embeddings-v2-stg"
+PRODUCTION_IDENTITY_PATHS = {
+    "trustedPreflight": "preflight/production-identity.json",
+    "before": "candidate/production-before.json",
+    "after": "candidate/production-after.json",
+}
+PRODUCTION_IDENTITY_ROLES = {
+    "trustedPreflight": "trusted_preflight",
+    "before": "before",
+    "after": "after",
+}
+EXPECTED_PRODUCTION_RESOURCES = {
+    "api": {
+        "environment": "production",
+        "service": "paillette-api",
+        "origin": "https://paillette-api.berlayar.ai",
+    },
+    "web": {
+        "environment": "production",
+        "service": "paillette",
+        "origin": "https://paillette.berlayar.ai",
+    },
+}
 MAX_EVIDENCE_JSON_BYTES = 2 * 1024 * 1024
 MAX_EVIDENCE_HEADERS_BYTES = 64 * 1024
 VALID_REPEAT_CACHE_STATES = {"HIT", "KV-FRESH", "COALESCED"}
@@ -262,45 +290,556 @@ def _evaluate_artist_data_binding(identity: Mapping[str, Any]) -> dict[str, Any]
     if not isinstance(value, Mapping):
         return _result([_failure("artist_data_identity_incomplete")])
 
-    mapping_value = value.get("mapping")
-    mapping = mapping_value if isinstance(mapping_value, Mapping) else {}
-    vectors_value = value.get("vectorValues")
-    vectors = vectors_value if isinstance(vectors_value, Mapping) else {}
+    manifest_value = value.get("artifactManifest")
+    manifest = manifest_value if isinstance(manifest_value, Mapping) else {}
     production_value = value.get("productionIdentity")
     production = (
         production_value if isinstance(production_value, Mapping) else {}
     )
-    hash_fields = (
-        value.get("backfillManifestSha256"),
-        mapping.get("sha256"),
-        vectors.get("hashesSha256"),
-        vectors.get("originalSha256"),
-        vectors.get("enrichedSha256"),
-        production.get("beforeSha256"),
-        production.get("afterSha256"),
-    )
-    valid_hashes = all(
-        isinstance(item, str) and re.fullmatch(r"[a-f0-9]{64}", item)
-        for item in hash_fields
+    descriptors = [manifest]
+    descriptors.extend(
+        production.get(name) if isinstance(production.get(name), Mapping) else {}
+        for name in PRODUCTION_IDENTITY_PATHS
     )
     valid = (
-        value.get("schemaVersion") == "nga-artist-data-binding-v1"
-        and type(mapping.get("count")) is int
-        and mapping.get("count") > 0
-        and vectors.get("count") == mapping.get("count")
-        and valid_hashes
-        and vectors.get("preserved") is True
-        and vectors.get("originalSha256") == vectors.get("enrichedSha256")
+        value.get("schemaVersion") == "nga-artist-data-binding-v2"
+        and all(
+            isinstance(descriptor.get("path"), str)
+            and bool(descriptor.get("path"))
+            and isinstance(descriptor.get("sha256"), str)
+            and re.fullmatch(r"[a-f0-9]{64}", descriptor["sha256"])
+            is not None
+            for descriptor in descriptors
+        )
     )
     if not valid:
         failures.append(_failure("artist_data_identity_invalid"))
+    return _result(failures, binding=value)
+
+
+def _resolve_bound_file(
+    evidence_root: Path,
+    descriptor: Mapping[str, Any],
+    *,
+    expected_path: str | None = None,
+) -> tuple[Path, bytes] | None:
+    relative_value = descriptor.get("path")
+    digest = descriptor.get("sha256")
     if (
-        isinstance(production.get("beforeSha256"), str)
-        and isinstance(production.get("afterSha256"), str)
-        and production.get("beforeSha256") != production.get("afterSha256")
+        not isinstance(relative_value, str)
+        or not relative_value
+        or Path(relative_value).is_absolute()
+        or relative_value.startswith(("/", "\\"))
+        or ".." in re.split(r"[\\/]", relative_value)
+        or re.match(r"^[A-Za-z]:[\\/]", relative_value) is not None
+        or (expected_path is not None and relative_value != expected_path)
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+    ):
+        return None
+    root = evidence_root.resolve(strict=True)
+    unresolved = root / relative_value
+    try:
+        resolved = unresolved.resolve(strict=True)
+        resolved.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    current = root
+    for part in Path(relative_value).parts:
+        current /= part
+        if current.is_symlink():
+            return None
+    if not resolved.is_file():
+        return None
+    payload = resolved.read_bytes()
+    if sha256_bytes(payload) != digest:
+        return resolved, b""
+    return resolved, payload
+
+
+def _load_bound_json(payload: bytes) -> Mapping[str, Any] | list[Any] | None:
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, (Mapping, list)) else None
+
+
+def _load_ndjson(payload: bytes) -> list[Mapping[str, Any]] | None:
+    rows: list[Mapping[str, Any]] = []
+    try:
+        for line in payload.decode("utf-8").splitlines():
+            if not line:
+                continue
+            value = json.loads(line)
+            if not isinstance(value, Mapping):
+                return None
+            rows.append(value)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return rows
+
+
+def _valid_production_capture(
+    value: Any, *, expected_role: str
+) -> Mapping[str, Any] | None:
+    if not isinstance(value, Mapping) or set(value) != {
+        "schemaVersion",
+        "captureRole",
+        "capturedAt",
+        "resources",
+    }:
+        return None
+    if (
+        value.get("schemaVersion") != "nga-production-identity-v1"
+        or value.get("captureRole") != expected_role
+        or _parse_utc_timestamp(value.get("capturedAt")) is None
+    ):
+        return None
+    resources_value = value.get("resources")
+    resources = resources_value if isinstance(resources_value, Mapping) else {}
+    if set(resources) != set(EXPECTED_PRODUCTION_RESOURCES):
+        return None
+    for name, expected in EXPECTED_PRODUCTION_RESOURCES.items():
+        resource_value = resources.get(name)
+        resource = resource_value if isinstance(resource_value, Mapping) else {}
+        if set(resource) != {
+            "environment",
+            "service",
+            "origin",
+            "deploymentId",
+            "versionId",
+        } or any(
+            resource.get(field) != expected_value
+            for field, expected_value in expected.items()
+        ):
+            return None
+        if not _nonblank_string(resource.get("deploymentId")) or not _nonblank_string(
+            resource.get("versionId")
+        ):
+            return None
+    return value
+
+
+def evaluate_artist_data_evidence(
+    evidence_root: Path,
+    binding: Mapping[str, Any],
+    *,
+    phase: str,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    if not evidence_root.is_dir():
+        return _result(
+            [
+                _failure("artist_evidence_root_invalid"),
+                _failure("artist_artifact_manifest_missing"),
+                _failure("production_identity_preflight_untrusted"),
+            ]
+        )
+    marker = evidence_root / "preflight/evidence-root.txt"
+    try:
+        marker_value = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        marker_value = ""
+    if marker.is_symlink() or marker_value != str(evidence_root.resolve()):
+        failures.append(_failure("artist_evidence_root_invalid"))
+
+    manifest_descriptor_value = binding.get("artifactManifest")
+    manifest_descriptor = (
+        manifest_descriptor_value
+        if isinstance(manifest_descriptor_value, Mapping)
+        else {}
+    )
+    resolved_manifest = _resolve_bound_file(evidence_root, manifest_descriptor)
+    if resolved_manifest is None:
+        failures.append(_failure("artist_evidence_path_invalid"))
+        failures.append(_failure("artist_artifact_manifest_missing"))
+        manifest_path = None
+        manifest_bytes = b""
+        manifest: Mapping[str, Any] = {}
+    else:
+        manifest_path, manifest_bytes = resolved_manifest
+        if not manifest_bytes:
+            failures.append(_failure("artist_artifact_manifest_hash_mismatch"))
+            manifest = {}
+        else:
+            manifest_value = _load_bound_json(manifest_bytes)
+            manifest = manifest_value if isinstance(manifest_value, Mapping) else {}
+            if not manifest:
+                failures.append(_failure("artist_artifact_manifest_invalid"))
+
+    expected_count = 5 if phase == "pilot" else NGA_FULL_STAGED_COUNT
+    if manifest and manifest_descriptor.get("path") != (
+        f"backfill/{manifest.get('phase')}/artifact-manifest.json"
+    ):
+        failures.append(_failure("artist_evidence_path_invalid"))
+    if manifest and manifest.get("phase") != phase:
+        failures.append(_failure("artist_artifact_phase_mismatch"))
+    expected_identity = {
+        "schemaVersion": 1,
+        "environment": "staging",
+        "expectedOrgId": NGA_STAGING_ORG_ID,
+        "resources": {
+            "d1Database": NGA_STAGING_D1_DATABASE,
+            "imageVectorIndex": NGA_STAGING_IMAGE_VECTOR_INDEX,
+        },
+    }
+    if manifest and any(
+        manifest.get(field) != expected for field, expected in expected_identity.items()
+    ):
+        failures.append(_failure("artist_artifact_identity_mismatch"))
+    source_value = manifest.get("source") if manifest else None
+    source = source_value if isinstance(source_value, Mapping) else {}
+    if manifest and source.get("commit") != NGA_SOURCE_COMMIT:
+        failures.append(_failure("artist_artifact_source_commit_mismatch"))
+
+    artifact_root = manifest_path.parent if manifest_path is not None else evidence_root
+    files_value = manifest.get("files") if manifest else None
+    files = files_value if isinstance(files_value, list) else []
+    declared_files: dict[str, tuple[Mapping[str, Any], Path, bytes]] = {}
+    for record_value in files:
+        record = record_value if isinstance(record_value, Mapping) else {}
+        relative = record.get("path")
+        resolved = _resolve_bound_file(artifact_root, record)
+        if (
+            not isinstance(relative, str)
+            or relative in declared_files
+            or resolved is None
+        ):
+            failures.append(_failure("artist_artifact_file_invalid", path=relative))
+            continue
+        path, payload = resolved
+        if not payload:
+            failures.append(
+                _failure("artist_artifact_file_hash_mismatch", path=relative)
+            )
+            continue
+        if record.get("bytes") != len(payload):
+            failures.append(
+                _failure("artist_artifact_file_size_mismatch", path=relative)
+            )
+        declared_files[relative] = (record, path, payload)
+
+    required_json = {
+        "source-manifest.json",
+        "mapping.json",
+        "vector-value-hashes.json",
+    }
+    if not required_json.issubset(declared_files):
+        failures.append(_failure("artist_artifact_manifest_incomplete"))
+    source_manifest_record = declared_files.get("source-manifest.json")
+    if source_manifest_record and source.get(
+        "manifestSha256"
+    ) != source_manifest_record[0].get("sha256"):
+        failures.append(_failure("artist_source_manifest_hash_mismatch"))
+    if source_manifest_record:
+        source_manifest_value = _load_bound_json(source_manifest_record[2])
+        source_manifest = (
+            source_manifest_value
+            if isinstance(source_manifest_value, Mapping)
+            else {}
+        )
+        if source_manifest.get("sourceCommit") != NGA_SOURCE_COMMIT:
+            failures.append(_failure("artist_artifact_source_commit_mismatch"))
+
+    mapping_record = declared_files.get("mapping.json")
+    mapping_value = _load_bound_json(mapping_record[2]) if mapping_record else None
+    mapping = mapping_value if isinstance(mapping_value, list) else []
+    mapping_by_id: dict[str, Mapping[str, Any]] = {}
+    for row_value in mapping:
+        row = row_value if isinstance(row_value, Mapping) else {}
+        artwork_id = row.get("id")
+        primary_id = row.get("primaryArtistId")
+        if (
+            not isinstance(artwork_id, str)
+            or re.fullmatch(r"open-access-art:nga:\d+", artwork_id) is None
+            or artwork_id in mapping_by_id
+            or not isinstance(primary_id, str)
+            or re.fullmatch(r"\d+", primary_id) is None
+        ):
+            failures.append(_failure("artist_mapping_invalid"))
+            continue
+        mapping_by_id[artwork_id] = row
+    if len(mapping) != expected_count or len(mapping_by_id) != expected_count:
+        failures.append(_failure("artist_artifact_count_mismatch"))
+    if mapping_record and mapping_record[0].get("recordCount") != len(mapping):
+        failures.append(_failure("artist_artifact_count_mismatch"))
+    if phase == "pilot" and set(mapping_by_id) != {
+        f"open-access-art:nga:{object_id}" for object_id in NGA_PILOT_OBJECT_IDS
+    }:
+        failures.append(_failure("artist_pilot_id_scope_mismatch"))
+
+    enriched_rows: list[Mapping[str, Any]] = []
+    rollback_rows: list[Mapping[str, Any]] = []
+    for relative, (record, _path, payload) in declared_files.items():
+        target = None
+        if relative.startswith("vectors/") and relative.endswith(".ndjson"):
+            target = enriched_rows
+        elif relative.startswith("rollback/") and relative.endswith(".ndjson"):
+            target = rollback_rows
+        if target is None:
+            continue
+        rows = _load_ndjson(payload)
+        if rows is None:
+            failures.append(_failure("artist_vector_artifact_invalid", path=relative))
+            continue
+        if record.get("recordCount") != len(rows):
+            failures.append(_failure("artist_artifact_count_mismatch", path=relative))
+        target.extend(rows)
+    enriched_by_id = {str(row.get("id") or ""): row for row in enriched_rows}
+    rollback_by_id = {str(row.get("id") or ""): row for row in rollback_rows}
+    if (
+        len(enriched_rows) != expected_count
+        or len(rollback_rows) != expected_count
+        or set(enriched_by_id) != set(mapping_by_id)
+        or set(rollback_by_id) != set(mapping_by_id)
+    ):
+        failures.append(_failure("artist_artifact_count_mismatch"))
+    for artwork_id, row in enriched_by_id.items():
+        metadata_value = row.get("metadata")
+        metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
+        if (
+            metadata.get("artworkId") != artwork_id
+            or metadata.get("primaryArtistId")
+            != mapping_by_id.get(artwork_id, {}).get("primaryArtistId")
+        ):
+            failures.append(
+                _failure("artist_vector_identity_mismatch", artworkId=artwork_id)
+            )
+    for artwork_id, row in rollback_by_id.items():
+        metadata_value = row.get("metadata")
+        metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
+        if metadata.get("artworkId") != artwork_id:
+            failures.append(
+                _failure("artist_vector_identity_mismatch", artworkId=artwork_id)
+            )
+
+    hashes_record = declared_files.get("vector-value-hashes.json")
+    hashes_value = _load_bound_json(hashes_record[2]) if hashes_record else None
+    value_hashes = hashes_value if isinstance(hashes_value, list) else []
+    hashes_by_id = {
+        str(row.get("id") or ""): row
+        for row in value_hashes
+        if isinstance(row, Mapping)
+    }
+    if len(value_hashes) != expected_count or set(hashes_by_id) != set(
+        mapping_by_id
+    ):
+        failures.append(_failure("artist_artifact_count_mismatch"))
+    if hashes_record and hashes_record[0].get("recordCount") != len(value_hashes):
+        failures.append(_failure("artist_artifact_count_mismatch"))
+    for artwork_id, mapping_row in mapping_by_id.items():
+        original = rollback_by_id.get(artwork_id)
+        enriched = enriched_by_id.get(artwork_id)
+        declared = hashes_by_id.get(artwork_id)
+        if not all(
+            isinstance(value, Mapping)
+            for value in (original, enriched, declared)
+        ):
+            continue
+        original_digest = sha256_json(original.get("values"))
+        enriched_digest = sha256_json(enriched.get("values"))
+        expected_enriched = json.loads(json.dumps(original))
+        metadata_value = expected_enriched.get("metadata")
+        metadata = metadata_value if isinstance(metadata_value, dict) else {}
+        metadata["primaryArtistId"] = mapping_row.get("primaryArtistId")
+        expected_enriched["metadata"] = metadata
+        if (
+            declared.get("originalSha256") != original_digest
+            or declared.get("enrichedSha256") != enriched_digest
+            or original_digest != enriched_digest
+            or sha256_json(enriched) != sha256_json(expected_enriched)
+        ):
+            failures.append(
+                _failure("artist_vector_values_changed", artworkId=artwork_id)
+            )
+
+    invariants_value = manifest.get("invariants") if manifest else None
+    invariants = invariants_value if isinstance(invariants_value, Mapping) else {}
+    expected_invariants = {
+        "stagedRecordCount": expected_count,
+        "mappingCount": expected_count,
+        "imageVectorCount": expected_count,
+        "rollbackVectorCount": expected_count,
+        "vectorValuesUnchanged": True,
+        "captionVectorsChanged": 0,
+    }
+    if manifest and any(
+        invariants.get(field) != expected for field, expected in expected_invariants.items()
+    ):
+        failures.append(_failure("artist_artifact_count_mismatch"))
+
+    preflight_value = manifest.get("preflightInputs") if manifest else None
+    preflight = preflight_value if isinstance(preflight_value, list) else []
+    preflight_phases = sorted(
+        str(item.get("phase")) for item in preflight if isinstance(item, Mapping)
+    )
+    preflight_counts = [
+        item.get("counts", {}).get("stagedRecords")
+        for item in preflight
+        if isinstance(item, Mapping) and isinstance(item.get("counts"), Mapping)
+    ]
+    preflight_count = (
+        sum(preflight_counts)
+        if all(type(count) is int and count >= 0 for count in preflight_counts)
+        else -1
+    )
+    expected_phases = ["pilot"] if phase == "pilot" else ["full", "pilot"]
+    if preflight_phases != expected_phases or preflight_count != expected_count:
+        failures.append(_failure("artist_preflight_scope_mismatch"))
+    for item_value in preflight:
+        item = item_value if isinstance(item_value, Mapping) else {}
+        counts_value = item.get("counts")
+        counts = counts_value if isinstance(counts_value, Mapping) else {}
+        image_vectors_value = item.get("imageVectors")
+        image_vectors = (
+            image_vectors_value if isinstance(image_vectors_value, list) else []
+        )
+        resources_value = item.get("resources")
+        resources = resources_value if isinstance(resources_value, Mapping) else {}
+        ids_value = item.get("ids")
+        ids = ids_value if isinstance(ids_value, Mapping) else {}
+        staged_value = item.get("stagedRecords")
+        staged = staged_value if isinstance(staged_value, Mapping) else {}
+        digest_values = [
+            item.get("manifestSha256"),
+            ids.get("sha256"),
+            staged.get("sha256"),
+            *[
+                vector.get("sha256") if isinstance(vector, Mapping) else None
+                for vector in image_vectors
+            ],
+        ]
+        vector_counts = [
+            vector.get("count")
+            for vector in image_vectors
+            if isinstance(vector, Mapping)
+        ]
+        image_count = (
+            sum(vector_counts)
+            if len(vector_counts) == len(image_vectors)
+            and all(type(count) is int and count >= 0 for count in vector_counts)
+            else -1
+        )
+        expected_binding_count = (
+            5
+            if item.get("phase") == "pilot"
+            else NGA_FULL_STAGED_COUNT - 5
+            if phase == "full" and item.get("phase") == "full"
+            else -1
+        )
+        if (
+            item.get("expectedOrgId") != NGA_STAGING_ORG_ID
+            or resources
+            != {
+                "d1Database": NGA_STAGING_D1_DATABASE,
+                "imageVectorIndex": NGA_STAGING_IMAGE_VECTOR_INDEX,
+            }
+            or counts.get("ids") != ids.get("count")
+            or counts.get("stagedRecords") != staged.get("count")
+            or counts.get("imageVectors") != image_count
+            or counts.get("ids") != counts.get("stagedRecords")
+            or counts.get("ids") != counts.get("imageVectors")
+            or counts.get("stagedRecords") != expected_binding_count
+            or any(
+                not isinstance(digest, str)
+                or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                for digest in digest_values
+            )
+        ):
+            failures.append(_failure("artist_preflight_scope_mismatch"))
+
+    ordered_value = manifest.get("orderedArtifacts") if manifest else None
+    ordered = ordered_value if isinstance(ordered_value, list) else []
+    ordered_counts = {"d1-sql": 0, "image-vectors": 0}
+    for item_value in ordered:
+        item = item_value if isinstance(item_value, Mapping) else {}
+        declared = declared_files.get(str(item.get("path") or ""))
+        if (
+            item.get("kind") not in {"d1-sql", "image-vectors"}
+            or declared is None
+            or item.get("sha256") != declared[0].get("sha256")
+            or item.get("recordCount") != declared[0].get("recordCount")
+        ):
+            failures.append(_failure("artist_ordered_artifact_invalid"))
+        elif type(item.get("recordCount")) is int:
+            ordered_counts[str(item.get("kind"))] += int(item["recordCount"])
+    if ordered_counts != {"d1-sql": expected_count, "image-vectors": expected_count}:
+        failures.append(_failure("artist_artifact_count_mismatch"))
+
+    production_value = binding.get("productionIdentity")
+    production = production_value if isinstance(production_value, Mapping) else {}
+    captures: dict[str, Mapping[str, Any]] = {}
+    bound_paths = [str(marker.resolve())] if marker.is_file() else []
+    if manifest_path is not None:
+        bound_paths.append(str(manifest_path.resolve()))
+    bound_paths.extend(str(value[1].resolve()) for value in declared_files.values())
+    for name, expected_path in PRODUCTION_IDENTITY_PATHS.items():
+        descriptor_value = production.get(name)
+        descriptor = descriptor_value if isinstance(descriptor_value, Mapping) else {}
+        resolved = _resolve_bound_file(
+            evidence_root, descriptor, expected_path=expected_path
+        )
+        if resolved is None:
+            if name == "trustedPreflight":
+                failures.append(_failure("production_identity_preflight_untrusted"))
+            else:
+                failures.append(
+                    _failure("production_identity_capture_invalid", capture=name)
+                )
+            continue
+        path, payload = resolved
+        if not payload:
+            failures.append(
+                _failure("production_identity_hash_mismatch", capture=name)
+            )
+            continue
+        value = _load_bound_json(payload)
+        capture = _valid_production_capture(
+            value, expected_role=PRODUCTION_IDENTITY_ROLES[name]
+        )
+        if capture is None:
+            failures.append(
+                _failure("production_identity_capture_invalid", capture=name)
+            )
+            continue
+        captures[name] = capture
+        bound_paths.append(str(path.resolve()))
+    if "trustedPreflight" not in captures:
+        failures.append(_failure("production_identity_preflight_untrusted"))
+    elif any(
+        captures.get(name, {}).get("resources")
+        != captures["trustedPreflight"].get("resources")
+        for name in ("before", "after")
     ):
         failures.append(_failure("production_artist_data_identity_changed"))
-    return _result(failures, binding=value)
+    if set(captures) == set(PRODUCTION_IDENTITY_PATHS):
+        capture_times = [
+            _parse_utc_timestamp(captures[name].get("capturedAt"))
+            for name in ("trustedPreflight", "before", "after")
+        ]
+        if (
+            any(value is None for value in capture_times)
+            or capture_times != sorted(capture_times)
+        ):
+            failures.append(_failure("production_identity_capture_order_invalid"))
+
+    artifact_hashes = {
+        str(path.relative_to(evidence_root.resolve())): sha256_bytes(
+            path.read_bytes()
+        )
+        for path in sorted({Path(value) for value in bound_paths})
+    }
+    return _result(
+        failures,
+        binding=binding,
+        mappingCount=len(mapping),
+        vectorRecordCount=len(enriched_rows),
+        vectorValueHashCount=len(value_hashes),
+        artifactHashes=artifact_hashes,
+        evidenceSha256=sha256_json(artifact_hashes),
+        boundPaths=bound_paths,
+    )
 
 
 def evaluate_deployment_binding(
@@ -738,6 +1277,39 @@ ATTRIBUTION_ROLE_MARKERS = {
 }
 
 
+def _nonblank_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _parse_artist_relationship(value: Any) -> Mapping[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    constituent_id = value.get("constituentId")
+    display_order = value.get("displayOrder")
+    prefix = value.get("prefix")
+    suffix = value.get("suffix")
+    alternatives = value.get("alternativeNames")
+    if (
+        not isinstance(constituent_id, str)
+        or re.fullmatch(r"\d+", constituent_id) is None
+        or isinstance(display_order, bool)
+        or not isinstance(display_order, (int, float))
+        or not math.isfinite(display_order)
+        or not float(display_order).is_integer()
+        or abs(display_order) > 2**53 - 1
+        or value.get("roleType") != "artist"
+        or not _nonblank_string(value.get("role"))
+        or not (prefix is None or _nonblank_string(prefix))
+        or not (suffix is None or _nonblank_string(suffix))
+        or not _nonblank_string(value.get("preferredDisplayName"))
+        or not _nonblank_string(value.get("forwardDisplayName"))
+        or not isinstance(alternatives, list)
+        or any(not _nonblank_string(name) for name in alternatives)
+    ):
+        return None
+    return value
+
+
 def _row_proves_attribution(
     row: Mapping[str, Any], attribution: Mapping[str, Any]
 ) -> bool:
@@ -756,7 +1328,10 @@ def _row_proves_attribution(
         return False
 
     for value in relationships:
-        relationship = value if isinstance(value, Mapping) else {}
+        parsed = _parse_artist_relationship(value)
+        if parsed is None:
+            continue
+        relationship = parsed
         constituent_id = relationship.get("constituentId")
         names = [
             relationship.get("preferredDisplayName"),
@@ -771,10 +1346,7 @@ def _row_proves_attribution(
             for name in names
         )
         if (
-            relationship.get("roleType") != "artist"
-            or not isinstance(constituent_id, str)
-            or re.fullmatch(r"\d+", constituent_id) is None
-            or not names_match
+            not names_match
         ):
             continue
         role_text = fold(
@@ -784,13 +1356,10 @@ def _row_proves_attribution(
             )
         )
         if relationship_kind == "direct":
-            has_qualified_marker = any(
-                f" {marker} " in f" {role_text} "
-                for markers in ATTRIBUTION_ROLE_MARKERS.values()
-                for marker in markers
-            )
             if (
-                not has_qualified_marker
+                fold(relationship.get("role")) == "artist"
+                and relationship.get("prefix") is None
+                and relationship.get("suffix") is None
                 and metadata.get("primaryArtistId") == constituent_id
             ):
                 return True
@@ -1659,6 +2228,38 @@ def load_case_inventory(new_path: Path, legacy_path: Path) -> dict[str, Any]:
         raise ValueError("every staging case requires an id")
     if len(set(all_ids)) != len(all_ids):
         raise ValueError("duplicate staging case id")
+    request_contracts: dict[str, tuple[str, Mapping[str, Any]]] = {}
+    for case in new_text:
+        expected_value = case.get("expected")
+        expected = expected_value if isinstance(expected_value, Mapping) else {}
+        relation_value = expected.get("relation")
+        relation = relation_value if isinstance(relation_value, Mapping) else {}
+        manual = bool(case.get("manualGradeTop"))
+        verified_empty = case.get("expectedVerifiedEmpty") is True
+        expected_zero = case.get("expectedZeroResults") is True
+        if manual and (verified_empty or expected_zero):
+            raise ValueError("contradictory request gates")
+        if relation.get("kind") == "derived_from" and (
+            not verified_empty or manual
+        ):
+            raise ValueError(
+                "historical derived requests require verified-empty evidence"
+            )
+        request_key = sha256_json(_text_request_body(case))
+        contract = {
+            "expected": expected,
+            "manualGradeTop": case.get("manualGradeTop"),
+            "minimumResults": case.get("minimumResults"),
+            "expectedZeroResults": expected_zero,
+            "expectedVerifiedEmpty": verified_empty,
+        }
+        previous = request_contracts.get(request_key)
+        if previous is not None and previous[1] != contract:
+            raise ValueError(
+                "contradictory request gates: "
+                f"{previous[0]} and {case.get('id')}"
+            )
+        request_contracts[request_key] = (str(case.get("id")), contract)
     expected_versions = document.get("expectedVersions")
     if expected_versions != EXPECTED_VERSIONS:
         raise ValueError("staging case versions do not match evaluator versions")
@@ -2733,6 +3334,30 @@ def _playwright_attachment_path(
     return resolved, relative.as_posix()
 
 
+def _find_artist_evidence_root(start: Path) -> Path | None:
+    resolved = start.resolve()
+    for candidate in (resolved, *resolved.parents):
+        marker = candidate / "preflight/evidence-root.txt"
+        try:
+            if marker.read_text(encoding="utf-8").strip() == str(candidate):
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _artist_evidence_record(evaluation: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "passed": evaluation.get("passed") is True,
+        "failureCodes": evaluation.get("failureCodes"),
+        "mappingCount": evaluation.get("mappingCount"),
+        "vectorRecordCount": evaluation.get("vectorRecordCount"),
+        "vectorValueHashCount": evaluation.get("vectorValueHashCount"),
+        "artifactHashes": evaluation.get("artifactHashes"),
+        "evidenceSha256": evaluation.get("evidenceSha256"),
+    }
+
+
 def evaluate_evidence_bundle(
     out_dir: Path,
     manifest: Mapping[str, Any] | None = None,
@@ -2780,6 +3405,7 @@ def evaluate_evidence_bundle(
         return _result(failures, phase=phase, snapshot=snapshot)
     if snapshot not in {"baseline", "candidate"}:
         failures.append(_failure("evidence_snapshot_invalid", actual=snapshot))
+    require_hard_pass = require_hard_pass or snapshot == "candidate"
     if not isinstance(run_id, str) or RUN_ID_PATTERN.fullmatch(run_id) is None:
         failures.append(_failure("evidence_run_id_invalid", actual=run_id))
     if not isinstance(evaluator_git_sha, str) or not re.fullmatch(
@@ -2841,6 +3467,33 @@ def evaluate_evidence_bundle(
         or deployment_binding != recomputed_deployment_binding
     ):
         failures.append(_failure("evidence_deployment_binding_mismatch"))
+    artist_data_evidence: dict[str, Any] | None = None
+    artist_bound_paths: set[Path] = set()
+    if snapshot == "candidate":
+        artist_root = _find_artist_evidence_root(out_dir)
+        binding_value = deployment_identity.get("artistDataBinding")
+        binding = binding_value if isinstance(binding_value, Mapping) else {}
+        if artist_root is None:
+            artist_data_evaluation = _result(
+                [_failure("artist_evidence_root_invalid")]
+            )
+        else:
+            artist_data_evaluation = evaluate_artist_data_evidence(
+                artist_root, binding, phase=str(phase)
+            )
+        artist_data_evidence = _artist_evidence_record(artist_data_evaluation)
+        if artist_data_evaluation.get("passed") is not True:
+            failures.extend(artist_data_evaluation.get("failures") or [])
+            failures.append(_failure("evidence_artist_data_binding_failed"))
+        if identity.get("artistDataEvidence") != artist_data_evidence:
+            failures.append(_failure("evidence_artist_data_binding_drift"))
+        artist_bound_paths = {
+            Path(path).resolve()
+            for path in artist_data_evaluation.get("boundPaths") or []
+            if isinstance(path, str)
+        }
+    elif identity.get("artistDataEvidence") is not None:
+        failures.append(_failure("unexpected_artist_data_evidence"))
 
     expected_text_ids = [case["id"] for case in selected["text"]]
     expected_image_ids = [case["id"] for case in selected["image"]]
@@ -3158,7 +3811,8 @@ def evaluate_evidence_bundle(
     actual_paths = {
         path.relative_to(out_dir).as_posix()
         for path in existing_files
-        if path.name != "artifact-manifest.json"
+        if path.resolve() != (out_dir / "artifact-manifest.json").resolve()
+        and path.resolve() not in artist_bound_paths
     }
     missing_paths = sorted(required_paths - actual_paths)
     unexpected_paths = sorted(actual_paths - required_paths)
@@ -3270,6 +3924,8 @@ def evaluate_evidence_bundle(
     )
     if manual_document.get("evaluation") != recomputed_manual_gate:
         failures.append(_failure("manual_relevance_evaluation_drift"))
+    if require_hard_pass and recomputed_manual_gate.get("passed") is not True:
+        failures.append(_failure("manual_relevance_evidence_failed"))
 
     repo_root = Path(__file__).resolve().parents[1]
     committed_fixture_document = load_json_object(
@@ -3323,6 +3979,17 @@ def evaluate_evidence_bundle(
             failures.append(
                 _failure("raw_case_evidence_failed", path=relative, caseId=case_id)
             )
+
+    if require_hard_pass and (
+        summary.get("text")
+        != {"selected": len(expected_text_ids), "passed": len(expected_text_ids)}
+        or summary.get("image")
+        != {"selected": len(expected_image_ids), "passed": len(expected_image_ids)}
+        or summary.get("gatePassed") is not True
+        or summary.get("failureCount") != 0
+        or summary.get("gateFailures") != []
+    ):
+        failures.append(_failure("candidate_summary_aggregate_failed"))
 
     cache_relative = "raw/cache-probe.json"
     cache_record = _read_evidence_json(out_dir, cache_relative, failures)
@@ -3534,6 +4201,11 @@ def evaluate_evidence_bundle(
             "evaluatorGitSha": evaluator_git_sha,
             "deploymentIdentityHash": deployment_hash,
             "playwrightBindingSha256": handoff_hash,
+            "artistDataEvidenceSha256": (
+                artist_data_evidence.get("evidenceSha256")
+                if artist_data_evidence is not None
+                else None
+            ),
         }
         for field, expected in manifest_expectations.items():
             if manifest.get(field) != expected:
@@ -3591,6 +4263,7 @@ def evaluate_evidence_bundle(
         identity=identity,
         caseInventory=case_inventory,
         manualRelevance=summary_manual,
+        artistDataEvidence=artist_data_evidence,
     )
 
 
@@ -3624,6 +4297,11 @@ def rehash_evidence(out_dir: Path) -> dict[str, Any]:
         "evaluatorGitSha": evaluation["evaluatorGitSha"],
         "deploymentIdentityHash": evaluation["deploymentIdentityHash"],
         "playwrightBindingSha256": evaluation["playwrightBindingSha256"],
+        "artistDataEvidenceSha256": (
+            evaluation["artistDataEvidence"].get("evidenceSha256")
+            if isinstance(evaluation.get("artistDataEvidence"), Mapping)
+            else None
+        ),
         "groups": groups,
         "artifacts": artifacts,
     }
@@ -3713,6 +4391,23 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     )
     if not deployment_binding["passed"]:
         raise GateStopped("deployment identity does not bind the requested snapshot")
+    artist_data_evidence: dict[str, Any] | None = None
+    if config.snapshot == "candidate":
+        artist_root = _find_artist_evidence_root(config.out_dir)
+        binding_value = deployment_identity.get("artistDataBinding")
+        artist_binding = (
+            binding_value if isinstance(binding_value, Mapping) else {}
+        )
+        artist_evaluation = (
+            evaluate_artist_data_evidence(
+                artist_root, artist_binding, phase=config.phase
+            )
+            if artist_root is not None
+            else _result([_failure("artist_evidence_root_invalid")])
+        )
+        if artist_evaluation.get("passed") is not True:
+            raise GateStopped("artist data evidence does not bind the candidate")
+        artist_data_evidence = _artist_evidence_record(artist_evaluation)
     pilot_inspection: dict[str, Any] | None = None
     if config.phase == "full" and config.snapshot == "candidate":
         if config.pilot_inspection is None:
@@ -3756,6 +4451,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "localVersions": local_versions,
         "deploymentIdentity": deployment_identity,
         "deploymentBinding": deployment_binding,
+        "artistDataEvidence": artist_data_evidence,
         "pilotInspection": pilot_inspection,
         "liveContractBinding": live_contract_binding,
         "publicSearchRequestsPerMinute": config.requests_per_minute,

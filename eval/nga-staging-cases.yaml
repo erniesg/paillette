@@ -87,7 +87,7 @@
         "semanticQuery": "drawing based on photograph",
         "relation": {"kind": "derived_from", "workClassification": "Drawing", "sourceClassification": "Photograph"}
       },
-      "manualGradeTop": 10
+      "expectedVerifiedEmpty": true
     },
     {
       "id": "relation-passive-derived",
@@ -98,7 +98,7 @@
         "semanticQuery": "drawing based on photograph",
         "relation": {"kind": "derived_from", "workClassification": "Drawing", "sourceClassification": "Photograph"}
       },
-      "manualGradeTop": 10
+      "expectedVerifiedEmpty": true
     },
     {
       "id": "relation-after-classification",
@@ -109,7 +109,7 @@
         "semanticQuery": "painting based on photograph",
         "relation": {"kind": "derived_from", "workClassification": "Painting", "sourceClassification": "Photograph"}
       },
-      "manualGradeTop": 10
+      "expectedVerifiedEmpty": true
     },
     {
       "id": "relation-work-medium",
@@ -451,17 +451,6 @@
         "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
       },
       "manualGradeTop": 10
-    },
-    {
-      "id": "derived-photograph-drawing-verified-empty",
-      "category": "derived-verified-empty",
-      "query": "photograph used as basis for drawing",
-      "expected": {
-        "constraints": {"classifications": ["Drawing"]},
-        "semanticQuery": "drawing based on photograph",
-        "relation": {"kind": "derived_from", "workClassification": "Drawing", "sourceClassification": "Photograph"}
-      },
-      "expectedVerifiedEmpty": true
     },
     {
       "id": "academic-user-phrasing",
