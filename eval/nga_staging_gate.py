@@ -113,6 +113,7 @@ PLAYWRIGHT_PROJECT_NAME = "nga-staging-chrome"
 RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 RETAINED_RELEVANCE_SCHEMA = "nga-retained-relevance-labels-v1"
 NGA_SOURCE_COMMIT = "79d114c2186ca38af27a9478717f1e509d799495"
+NGA_SOURCE_CANDIDATE_COUNT = 63_419
 NGA_FULL_STAGED_COUNT = 63_253
 NGA_PILOT_OBJECT_IDS = ("131994", "110821", "11236", "38", "579")
 NGA_PILOT_PRIMARY_ARTISTS = {
@@ -358,6 +359,88 @@ def canonical_json(value: Any) -> str:
     )
 
 
+def _javascript_number(value: float) -> str:
+    """Render a finite float the way JSON.stringify renders an ECMAScript Number."""
+    if not math.isfinite(value):
+        raise ValueError("canonical JavaScript JSON requires finite numbers")
+    if value == 0:
+        return "0"
+
+    rendered = repr(value).lower()
+    sign = ""
+    if rendered.startswith("-"):
+        sign = "-"
+        rendered = rendered[1:]
+    if "e" not in rendered:
+        if rendered.endswith(".0"):
+            rendered = rendered[:-2]
+        return f"{sign}{rendered}"
+
+    coefficient, exponent_text = rendered.split("e", 1)
+    exponent = int(exponent_text)
+    digits = coefficient.replace(".", "")
+    decimal_position = 1 + exponent
+    absolute = abs(value)
+    if 1e-6 <= absolute < 1e21:
+        if decimal_position <= 0:
+            rendered = f"0.{('0' * -decimal_position)}{digits}"
+        elif decimal_position >= len(digits):
+            rendered = f"{digits}{'0' * (decimal_position - len(digits))}"
+        else:
+            rendered = f"{digits[:decimal_position]}.{digits[decimal_position:]}"
+        return f"{sign}{rendered}"
+
+    coefficient = digits[0]
+    if len(digits) > 1:
+        coefficient = f"{coefficient}.{digits[1:]}"
+    exponent_sign = "+" if exponent >= 0 else ""
+    return f"{sign}{coefficient}e{exponent_sign}{exponent}"
+
+
+def _javascript_string(value: str) -> str:
+    rendered = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return "".join(
+        f"\\u{ord(character):04x}"
+        if 0xD800 <= ord(character) <= 0xDFFF
+        else character
+        for character in rendered
+    )
+
+
+def canonical_javascript_json(value: Any) -> str:
+    """Match the sorted-key canonicalJson helper used by the Node evidence tools."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _javascript_number(value)
+    if isinstance(value, str):
+        return _javascript_string(value)
+    if isinstance(value, (list, tuple)):
+        return (
+            "["
+            + ",".join(canonical_javascript_json(item) for item in value)
+            + "]"
+        )
+    if isinstance(value, Mapping):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("canonical JavaScript JSON object keys must be strings")
+        ordered_keys = sorted(
+            value,
+            key=lambda key: key.encode("utf-16-be", errors="surrogatepass"),
+        )
+        return "{" + ",".join(
+            f"{canonical_javascript_json(key)}:{canonical_javascript_json(value[key])}"
+            for key in ordered_keys
+        ) + "}"
+    raise TypeError(
+        f"unsupported canonical JavaScript JSON value: {type(value).__name__}"
+    )
+
+
 def _semantic_d1_snapshot(row_value: Any) -> dict[str, Any] | None:
     if not isinstance(row_value, Mapping):
         return None
@@ -397,6 +480,10 @@ def sha256_bytes(value: bytes) -> str:
 
 def sha256_json(value: Any) -> str:
     return sha256_bytes(canonical_json(value).encode("utf-8"))
+
+
+def sha256_javascript_json(value: Any) -> str:
+    return sha256_bytes(canonical_javascript_json(value).encode("utf-8"))
 
 
 def evaluate_pilot_full_identity_continuity(
@@ -1613,7 +1700,7 @@ def evaluate_artist_data_evidence(
         )
         trusted_source_inventory = (
             source_manifest.get("schemaVersion") == 1
-            and source_manifest.get("candidateCount") == NGA_FULL_STAGED_COUNT
+            and source_manifest.get("candidateCount") == NGA_SOURCE_CANDIDATE_COUNT
             and set(source_files) == set(NGA_SOURCE_SHA256)
         )
         if trusted_source_inventory:
@@ -1841,8 +1928,8 @@ def evaluate_artist_data_evidence(
             for value in (original, enriched, declared)
         ):
             continue
-        original_digest = sha256_json(original.get("values"))
-        enriched_digest = sha256_json(enriched.get("values"))
+        original_digest = sha256_javascript_json(original.get("values"))
+        enriched_digest = sha256_javascript_json(enriched.get("values"))
         expected_enriched = json.loads(json.dumps(original))
         metadata_value = expected_enriched.get("metadata")
         metadata = metadata_value if isinstance(metadata_value, dict) else {}
@@ -1852,7 +1939,8 @@ def evaluate_artist_data_evidence(
             declared.get("originalSha256") != original_digest
             or declared.get("enrichedSha256") != enriched_digest
             or original_digest != enriched_digest
-            or sha256_json(enriched) != sha256_json(expected_enriched)
+            or sha256_javascript_json(enriched)
+            != sha256_javascript_json(expected_enriched)
         ):
             failures.append(
                 _failure("artist_vector_values_changed", artworkId=artwork_id)
@@ -3475,10 +3563,10 @@ def evaluate_artist_data_evidence(
                 "unrelatedFieldsUnchanged": True,
                 "vectorValuesUnchanged": True,
                 "idempotentD1State": True,
-                "postRecordsSha256": sha256_json(
+                "postRecordsSha256": sha256_javascript_json(
                     [post_d1_by_id.get(artwork_id) for artwork_id in ordered_ids]
                 ),
-                "postVectorsSha256": sha256_json(
+                "postVectorsSha256": sha256_javascript_json(
                     [post_vectors_by_id.get(artwork_id) for artwork_id in ordered_ids]
                 ),
             }

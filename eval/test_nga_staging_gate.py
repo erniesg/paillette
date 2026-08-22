@@ -346,7 +346,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         changed["metadata"]["primaryArtistId"] = primary_artist_id
         rollback.append(original)
         enriched.append(changed)
-        digest = gate.sha256_json(original["values"])
+        digest = gate.sha256_javascript_json(original["values"])
         value_hashes.append(
             {
                 "id": artwork_id,
@@ -368,7 +368,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
                 TRUSTED_NGA_SOURCE_SHA256.items()
             )
         },
-        "candidateCount": 63_253,
+        "candidateCount": 63_419,
     }
     preflight_phase = preflight / phase
     preflight_phase.mkdir(parents=True, exist_ok=True)
@@ -641,10 +641,10 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         "unrelatedFieldsUnchanged": True,
         "vectorValuesUnchanged": True,
         "idempotentD1State": True,
-        "postRecordsSha256": gate.sha256_json(
+        "postRecordsSha256": gate.sha256_javascript_json(
             [post_by_id[artwork_id] for artwork_id in ordered_ids]
         ),
-        "postVectorsSha256": gate.sha256_json(
+        "postVectorsSha256": gate.sha256_javascript_json(
             [enriched_by_id[artwork_id] for artwork_id in ordered_ids]
         ),
     }
@@ -2206,6 +2206,77 @@ class GateTestCase(unittest.TestCase):
 
 
 class HostAndEnvironmentTests(GateTestCase):
+    def test_javascript_canonical_json_matches_node_for_numbers_and_strings(self):
+        values = [
+            0.0,
+            -0.0,
+            1.0,
+            1e-7,
+            1e-6,
+            1e-5,
+            7.701877e-05,
+            7.2194766e-06,
+            -1.1970122e-05,
+            1e15,
+            1e16,
+            1e20,
+            1e21,
+            1e22,
+            1.234e20,
+            1.234e21,
+            333333333.33333329,
+            5e-324,
+            "\ud800 lone high surrogate",
+            "\udc00 lone low surrogate",
+            {
+                "\U00010000": "astral",
+                "\ue000": "bmp",
+                "nested": [1e-5, -0.0],
+            },
+        ]
+        state = 0x4D595DF4D0F33173
+        while len(values) < 2_067:
+            state = (state * 6364136223846793005 + 1442695040888963407) & (
+                (1 << 64) - 1
+            )
+            value = struct.unpack(">d", state.to_bytes(8, "big"))[0]
+            if math.isfinite(value):
+                values.append(value)
+
+        node_script = """
+const fs = require('node:fs');
+const normalize = (value) => {
+  if (Array.isArray(value)) return value.map(normalize);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, normalize(value[key])])
+    );
+  }
+  return value;
+};
+const values = JSON.parse(fs.readFileSync(0, 'utf8'));
+process.stdout.write(
+  JSON.stringify(values.map((value) => JSON.stringify(normalize(value))))
+);
+"""
+        completed = subprocess.run(
+            ["node", "-e", node_script],
+            input=json.dumps(values, ensure_ascii=True),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        expected = json.loads(completed.stdout)
+        actual = [
+            self.call("canonical_javascript_json", value) for value in values
+        ]
+        self.assertEqual(actual, expected)
+
+    def test_javascript_canonical_json_rejects_nonfinite_numbers(self):
+        for value in (math.nan, math.inf, -math.inf):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.call("canonical_javascript_json", value)
+
     def test_run_start_rejects_preexisting_output_and_generates_random_nonce(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -5219,8 +5290,8 @@ class InventoryAndRelevanceTests(GateTestCase):
             "wrong pinned digest": lambda source: source["files"][
                 "objects.csv"
             ].__setitem__("sha256", "f" * 64),
-            "wrong candidate count": lambda source: source.__setitem__(
-                "candidateCount", 63_252
+            "staged count is not source count": lambda source: source.__setitem__(
+                "candidateCount", 63_253
             ),
         }
         for label, mutate in mutations.items():
