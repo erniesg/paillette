@@ -14,6 +14,31 @@ import {
   summarizeCaptionCoverage,
 } from '../lib/open-access-art-ingest.mjs';
 
+const ngaArtistMetadata = (objectId, overrides = {}) =>
+  new Map([
+    [
+      objectId,
+      {
+        sourceCommit: '79d114c',
+        primaryArtistId: '23812',
+        relationships: [
+          {
+            constituentId: '23812',
+            displayOrder: 1,
+            roleType: 'artist',
+            role: 'artist',
+            prefix: null,
+            suffix: null,
+            preferredDisplayName: 'Sadeler, Justus',
+            forwardDisplayName: 'Justus Sadeler',
+            alternativeNames: [],
+          },
+        ],
+        ...overrides,
+      },
+    ],
+  ]);
+
 describe('open access artwork normalization', () => {
   it('keeps the pilot source set focused on ArtIC and NGA', () => {
     assert.deepEqual(OPEN_ACCESS_PROVIDER_PRESETS.pilot, ['artic', 'nga']);
@@ -49,23 +74,27 @@ describe('open access artwork normalization', () => {
         classification: 'Painting',
         subclassification: 'Landscape',
         visualbrowserclassification: 'Painting',
-        primaryartistid: 'artist-1',
-        artistalternativenames: ['E. Artist'],
       },
       image: {
         openaccess: '1',
         depictstmsobjectid: '42',
         iiifurl: 'https://example.com/iiif/42',
       },
+      artistMetadata: ngaArtistMetadata('42'),
     });
     assert.equal(normalized?.year, 1750);
     assert.equal(normalized?.year_start, 1750);
     assert.equal(normalized?.year_end, 1750);
     assert.equal(normalized?.visual_classification, 'Painting');
-    assert.equal(normalized?.primary_artist_id, 'artist-1');
-    assert.deepEqual(normalized?.custom_metadata.artistAlternativeNames, [
-      'E. Artist',
-    ]);
+    assert.equal(normalized?.primary_artist_id, '23812');
+    assert.equal(
+      normalized?.field_sources.primary_artist_id,
+      'nga.objects_constituents'
+    );
+    assert.deepEqual(normalized?.custom_metadata.ngaArtists, {
+      sourceCommit: '79d114c',
+      relationships: ngaArtistMetadata('42').get('42').relationships,
+    });
   });
 
   it('normalizes eligible Met public-domain image records without inventing captions', () => {
@@ -206,6 +235,7 @@ describe('open access artwork normalization', () => {
         depictstmsobjectid: '17387',
         assistivetext: 'The image shows two decorated ceramic jugs.',
       },
+      artistMetadata: ngaArtistMetadata('17387'),
     });
 
     assert.equal(normalized?.id, 'open-access-art:nga:17387');

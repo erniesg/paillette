@@ -1,4 +1,5 @@
 import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
+import { mergeNgaArtistCustomMetadata } from './nga-artist-metadata.mjs';
 
 export const OPEN_ACCESS_ART_COLLECTION = {
   slug: 'open-access-art',
@@ -103,7 +104,6 @@ function baseArtwork({
   visualClassification,
   mediumFamily,
   primaryArtistId,
-  artistAlternativeNames,
   culture,
   origin,
   dimensions,
@@ -116,6 +116,7 @@ function baseArtwork({
   thumbnailUrl,
   caption,
   providerMetadata,
+  fieldSources,
 }) {
   const providerConfig = OPEN_ACCESS_PROVIDERS[provider];
   if (!providerConfig) {
@@ -160,6 +161,7 @@ function baseArtwork({
       description: caption?.sourceField ? provider : undefined,
       rights: provider,
       image_url: provider,
+      ...fieldSources,
     },
     custom_metadata: compactObject({
       provider,
@@ -168,7 +170,6 @@ function baseArtwork({
       rightsStatus: providerConfig.rights,
       imageUse: 'public_domain_or_cc0_source',
       ...providerMetadata,
-      artistAlternativeNames,
     }),
     caption: caption || captionInfo(description, 'description'),
   };
@@ -329,13 +330,18 @@ export function normalizeClevelandArtwork(record) {
   });
 }
 
-export function normalizeNgaArtwork({ object, image }) {
+export function normalizeNgaArtwork({ object, image, artistMetadata }) {
   if (String(image?.openaccess ?? '').trim() !== '1') return null;
 
   const sourceRecordId =
     optionalText(image?.depictstmsobjectid) || optionalText(object?.objectid);
   const iiifUrl = optionalText(image?.iiifurl);
   if (!sourceRecordId || !iiifUrl) return null;
+
+  const joinedArtistMetadata = artistMetadata?.get(sourceRecordId);
+  if (!joinedArtistMetadata) {
+    throw new Error(`missing NGA artist metadata for ${sourceRecordId}`);
+  }
 
   const description = optionalText(image.assistivetext);
   const caption = captionInfo(description, 'assistivetext');
@@ -355,8 +361,7 @@ export function normalizeNgaArtwork({ object, image }) {
     subClassification: object?.subclassification,
     visualClassification: object?.visualbrowserclassification,
     mediumFamily: object?.mediumfamily,
-    primaryArtistId: object?.primaryartistid,
-    artistAlternativeNames: object?.artistalternativenames,
+    primaryArtistId: joinedArtistMetadata.primaryArtistId,
     culture: null,
     origin: null,
     dimensions: object?.dimensions,
@@ -373,7 +378,15 @@ export function normalizeNgaArtwork({ object, image }) {
       iiifUrl,
       viewType: image.viewtype,
       openAccess: true,
+      ...mergeNgaArtistCustomMetadata(
+        {},
+        joinedArtistMetadata,
+        joinedArtistMetadata.sourceCommit
+      ),
     }),
+    fieldSources: {
+      primary_artist_id: 'nga.objects_constituents',
+    },
   });
 }
 
