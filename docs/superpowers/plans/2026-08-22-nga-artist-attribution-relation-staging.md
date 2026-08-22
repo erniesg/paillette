@@ -634,7 +634,25 @@ python3 eval/nga_staging_gate.py \
 Write the exact-ID labels to `candidate/pilot-relevance-labels.json`, then run a
 fresh official pilot. Candidate evidence is never rehashed permissively, so the
 official run must include strong manual labels and every recomputed hard gate
-must pass. After Python completes, wait until the exact `playwrightNotBefore`
+must pass. Before starting it, wait until the discovery bundle's exact
+`nextRunNotBefore` timestamp; this executable handoff is derived from the last
+raw public-search request timestamp and covers every text, image, cache-repeat,
+negative, and NGS probe made by that discovery process:
+
+```bash
+python3 - "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-discovery/request-cooldown-handoff.json" <<'PY'
+import datetime, json, pathlib, sys, time
+handoff = json.loads(pathlib.Path(sys.argv[1]).read_text())
+not_before = datetime.datetime.fromisoformat(
+    handoff["nextRunNotBefore"].replace("Z", "+00:00")
+)
+delay = (not_before - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+if delay > 0:
+    time.sleep(delay)
+PY
+```
+
+After Python completes, wait until the exact `playwrightNotBefore`
 timestamp in the official pilot `playwright-handoff.json`; do not rerun or
 replace the Python bundle during the 60-second cooldown. Then run Playwright
 with both paths resolving inside that same official pilot bundle:
@@ -648,6 +666,7 @@ python3 eval/nga_staging_gate.py \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot" \
   --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
   --relevance-labels "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-relevance-labels.json" \
+  --previous-request-handoff "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-discovery/request-cooldown-handoff.json" \
   --fail-on-gates \
   --public-search-requests-per-minute 9
 
@@ -669,6 +688,13 @@ pnpm --dir apps/web exec playwright test --config playwright.staging.config.ts
 python3 eval/nga_staging_gate.py rehash \
   --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot"
 ```
+
+Preserve the pilot deployment identity bytes before preparing the full
+identity. Record its canonical JSON SHA-256 as
+`pilotDeploymentIdentityHash` in both the reviewed pilot inspection and the
+later full deployment identity. The pilot inspection must match that exact
+hash to the pilot summary and raw deployment-identity artifact; it never uses
+the later full deployment identity hash.
 
 Manually inspect raw artist, attribution, visible-relation, derived-empty,
 cache, NGS, and both new browser artifacts. Write the hashed pilot inspection
@@ -703,6 +729,19 @@ node scripts/apply-nga-artist-backfill.mjs --environment=staging --phase=full --
 
 The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. After each chunk, record output and post-chunk counts. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
 
+Immediately after the full apply and those verification checks succeed—and
+before Step 7, full discovery, or any official gate—write a fresh
+`candidate/production-after.json` capture with role `after`, recompute its
+content digest, and create the full-phase deployment identity. Bind the actual
+`backfill/full/artifact-manifest.json` path and digest and the fresh
+production-after digest. Keep the trusted preflight and candidate-before bytes
+and digests fixed. The full identity must retain the reviewed API/web
+deployment and version identities, parser/plan/contract/cache versions, source
+commit, production resource identities, and `pilotDeploymentIdentityHash`.
+Only the explicitly full-phase artist manifest binding and the byte digest of
+the fresh but canonically equal production-after capture may differ from the
+pilot identity.
+
 - [ ] **Step 7: Reconfirm the exact reviewed web on staging**
 
 Do not redeploy if the exact reviewed web from Step 3 is still active. Verify
@@ -726,7 +765,24 @@ python3 eval/nga_staging_gate.py \
 ```
 
 Grade the declared top results by exact artwork ID on the 0-3 rubric and
-write/hash `candidate/relevance-labels.json`. Run the official Python gate,
+write/hash `candidate/relevance-labels.json`. Wait on the full discovery
+process's exact raw-timestamp handoff before starting the separate official
+process:
+
+```bash
+python3 - "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-discovery/request-cooldown-handoff.json" <<'PY'
+import datetime, json, pathlib, sys, time
+handoff = json.loads(pathlib.Path(sys.argv[1]).read_text())
+not_before = datetime.datetime.fromisoformat(
+    handoff["nextRunNotBefore"].replace("Z", "+00:00")
+)
+delay = (not_before - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+if delay > 0:
+    time.sleep(delay)
+PY
+```
+
+Run the official Python gate,
 then wait until the full official bundle's exact `playwrightNotBefore`
 timestamp. Keep the Python bundle unchanged during the 60-second cooldown;
 write the Playwright report/artifacts only below its `playwright/` subdirectory,
@@ -742,6 +798,7 @@ python3 eval/nga_staging_gate.py \
   --deployment-identity "$NGA_ARTIST_EVIDENCE_ROOT/candidate/deployment-identity.json" \
   --relevance-labels "$NGA_ARTIST_EVIDENCE_ROOT/candidate/relevance-labels.json" \
   --pilot-inspection "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-inspection.json" \
+  --previous-request-handoff "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-discovery/request-cooldown-handoff.json" \
   --fail-on-gates \
   --public-search-requests-per-minute 9
 
@@ -765,15 +822,7 @@ python3 eval/nga_staging_gate.py rehash --out-dir "$NGA_ARTIST_EVIDENCE_ROOT/can
 
 The full gate requires 100% parser/hard/image/NGS/browser compliance, strong visible-relation positives, catalogue-backed attribution, verified-empty derivation where no official positive exists, correct MISS/repeat HIT behavior, and a passing rehash.
 
-Immediately after the full mutation, write a fresh
-`candidate/production-after.json` capture with role `after`, recompute its
-SHA-256, and update the full deployment identity's bound `after` digest. Keep
-the trusted `preflight/production-identity.json` bytes and digest fixed, and
-keep `candidate/production-before.json` byte-bound. Both candidate captures
-must remain canonically equal to trusted preflight even though the fresh after
-capture has a later timestamp. Also update the full artist manifest reference
-to `backfill/full/artifact-manifest.json` and bind its actual digest. The fixed
-evidence root marker, manifest phase, Task 2 preflight phases,
+The fixed evidence root marker, manifest phase, Task 2 preflight phases,
 mapping/vector/rollback record counts, and value-hash count must all resolve to
 exactly 63,253; the pilot identity must resolve to exactly the five approved
 IDs. Candidate rehash is never permissive: raw hard gates, strong manual

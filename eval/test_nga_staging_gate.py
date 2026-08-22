@@ -982,6 +982,77 @@ def make_complete_evidence_bundle(
         "browserPublicSearchRequestBudget": 8,
         "expectedTestCount": 9,
     }
+    request_labels = gate.expected_public_request_labels(selected, phase)
+    request_events = [
+        {
+            "sequence": index + 1,
+            "label": label,
+            "startedAt": (completed + timedelta(seconds=index * 8))
+            .isoformat()
+            .replace("+00:00", "Z"),
+        }
+        for index, label in enumerate(request_labels)
+    ]
+    python_completed = datetime.fromisoformat(
+        request_events[-1]["startedAt"].replace("Z", "+00:00")
+    ) + timedelta(seconds=1)
+    handoff["pythonCompletedAt"] = python_completed.isoformat().replace(
+        "+00:00", "Z"
+    )
+    handoff["playwrightNotBefore"] = (
+        python_completed + timedelta(seconds=60)
+    ).isoformat().replace("+00:00", "Z")
+    request_timing = {
+        **binding,
+        "schemaVersion": "nga-request-timing-evidence-v1",
+        "configuredRequestsPerMinute": 8,
+        "requests": request_events,
+        "lastPublicRequestAt": request_events[-1]["startedAt"],
+    }
+    request_timing_bytes = (json.dumps(request_timing) + "\n").encode()
+    request_cooldown = gate.build_request_cooldown_handoff(
+        binding=binding,
+        phase=phase,
+        request_timing_sha256=hashlib.sha256(request_timing_bytes).hexdigest(),
+        last_public_request_at=request_timing["lastPublicRequestAt"],
+    )
+    request_timing_evaluation = gate.evaluate_request_timing_evidence(
+        request_timing,
+        expected_binding=binding,
+        expected_labels=request_labels,
+    )
+    previous_document = None
+    if snapshot == "candidate":
+        previous_binding = {**binding, "runId": "f" * 32}
+        previous_timing = {
+            **request_timing,
+            **previous_binding,
+        }
+        previous_timing_bytes = (json.dumps(previous_timing) + "\n").encode()
+        previous_handoff = gate.build_request_cooldown_handoff(
+            binding=previous_binding,
+            phase=phase,
+            request_timing_sha256=hashlib.sha256(previous_timing_bytes).hexdigest(),
+            last_public_request_at=previous_timing["lastPublicRequestAt"],
+        )
+        previous_handoff_bytes = (json.dumps(previous_handoff) + "\n").encode()
+        previous_document = {
+            **binding,
+            "schemaVersion": "nga-previous-request-cooldown-evidence-v1",
+            "phase": phase,
+            "handoffContent": gate.capture_bound_json_bytes(
+                previous_handoff_bytes
+            ),
+            "requestTimingContent": gate.capture_bound_json_bytes(
+                previous_timing_bytes
+            ),
+        }
+    identity["requestTiming"] = request_timing_evaluation
+    identity["requestCooldownHandoff"] = request_cooldown
+    identity["previousRequestCooldown"] = previous_document
+    summary["requestTiming"] = request_timing_evaluation
+    summary["requestCooldownHandoff"] = request_cooldown
+    summary["previousRequestCooldown"] = previous_document
     summary["playwrightHandoff"] = handoff
     documents = {
         "identity.json": identity,
@@ -1002,6 +1073,13 @@ def make_complete_evidence_bundle(
             labels_document=labels,
         ),
         "playwright-handoff.json": handoff,
+        "request-cooldown-handoff.json": request_cooldown,
+        "raw/request-timing.json": request_timing,
+        **(
+            {"raw/previous-request-cooldown.json": previous_document}
+            if previous_document is not None
+            else {}
+        ),
         **{
             gate.IDENTITY_EVIDENCE_PATHS[name]: document
             for name, document in identity_documents.items()
@@ -2294,6 +2372,306 @@ class ImageProbeTests(GateTestCase):
 
 
 class InventoryAndRelevanceTests(GateTestCase):
+    def test_pilot_to_full_identity_continuity_allows_only_expected_rebinding(self):
+        pilot = deployment_identity()
+        full = json.loads(json.dumps(pilot))
+        full["capturedAt"] = "2026-08-22T01:00:00Z"
+        full["pilotDeploymentIdentityHash"] = self.gate.sha256_json(pilot)
+        full["artistDataBinding"]["artifactManifest"] = {
+            "path": "backfill/full/artifact-manifest.json",
+            "sha256": "5" * 64,
+        }
+        full["artistDataBinding"]["productionIdentity"]["after"]["sha256"] = (
+            "6" * 64
+        )
+
+        result = self.call(
+            "evaluate_pilot_full_identity_continuity", pilot, full
+        )
+
+        self.assertEqual(result["failureCodes"], [], result)
+
+    def test_pilot_to_full_identity_continuity_rejects_wrong_pilot_hash(self):
+        pilot = deployment_identity()
+        full = json.loads(json.dumps(pilot))
+        full["pilotDeploymentIdentityHash"] = "f" * 64
+        full["artistDataBinding"]["artifactManifest"]["path"] = (
+            "backfill/full/artifact-manifest.json"
+        )
+
+        result = self.call(
+            "evaluate_pilot_full_identity_continuity", pilot, full
+        )
+
+        self.assertIn("pilot_deployment_identity_hash_mismatch", result["failureCodes"])
+
+    def test_pilot_to_full_identity_continuity_rejects_unexpected_identity_drift(self):
+        for label, mutate in {
+            "deployment": lambda value: value["api"].__setitem__(
+                "deploymentId", "unexpected"
+            ),
+            "version": lambda value: value["web"].__setitem__(
+                "contractVersion", "30"
+            ),
+            "before": lambda value: value["artistDataBinding"][
+                "productionIdentity"
+            ]["before"].__setitem__("sha256", "7" * 64),
+        }.items():
+            with self.subTest(label=label):
+                pilot = deployment_identity()
+                full = json.loads(json.dumps(pilot))
+                full["pilotDeploymentIdentityHash"] = self.gate.sha256_json(pilot)
+                full["artistDataBinding"]["artifactManifest"] = {
+                    "path": "backfill/full/artifact-manifest.json",
+                    "sha256": "5" * 64,
+                }
+                mutate(full)
+                result = self.call(
+                    "evaluate_pilot_full_identity_continuity", pilot, full
+                )
+                self.assertIn("pilot_full_identity_drift", result["failureCodes"])
+
+    def test_request_timing_rejects_ten_calls_in_a_rolling_minute(self):
+        binding = {
+            "runId": "0" * 32,
+            "snapshot": "candidate",
+            "evaluatorGitSha": "a" * 40,
+            "deploymentIdentityHash": "b" * 64,
+        }
+        document = {
+            **binding,
+            "schemaVersion": "nga-request-timing-evidence-v1",
+            "configuredRequestsPerMinute": 9,
+            "requests": [
+                {
+                    "sequence": index + 1,
+                    "label": f"request-{index + 1}",
+                    "startedAt": (
+                        datetime(2026, 8, 22, tzinfo=timezone.utc)
+                        + timedelta(seconds=index * 6)
+                    ).isoformat().replace("+00:00", "Z"),
+                }
+                for index in range(10)
+            ],
+            "lastPublicRequestAt": "2026-08-22T00:00:54Z",
+        }
+
+        result = self.call(
+            "evaluate_request_timing_evidence",
+            document,
+            expected_binding=binding,
+            expected_labels=[f"request-{index + 1}" for index in range(10)],
+        )
+
+        self.assertIn("request_timing_rolling_budget_exceeded", result["failureCodes"])
+
+    def test_request_cooldown_rejects_missing_and_stale_discovery_handoff(self):
+        binding = {
+            "runId": "0" * 32,
+            "snapshot": "candidate",
+            "evaluatorGitSha": "a" * 40,
+            "deploymentIdentityHash": "b" * 64,
+        }
+        missing = self.call(
+            "evaluate_request_cooldown_handoff",
+            {},
+            expected_binding=binding,
+            phase="pilot",
+            now=datetime(2026, 8, 22, 0, 2, tzinfo=timezone.utc),
+        )
+        stale = self.call(
+            "evaluate_request_cooldown_handoff",
+            {
+                **binding,
+                "schemaVersion": "nga-request-cooldown-handoff-v1",
+                "phase": "pilot",
+                "requestTimingPath": "raw/request-timing.json",
+                "requestTimingSha256": "c" * 64,
+                "lastPublicRequestAt": "2026-08-22T00:01:30Z",
+                "nextRunNotBefore": "2026-08-22T00:02:30Z",
+                "cooldownSeconds": 60,
+            },
+            expected_binding=binding,
+            phase="pilot",
+            now=datetime(2026, 8, 22, 0, 2, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(missing["passed"])
+        self.assertIn("request_cooldown_not_elapsed", stale["failureCodes"])
+
+    def test_request_pacer_records_cache_repeat_in_the_same_timing_ledger(self):
+        monotonic = [0.0]
+        wall = [datetime(2026, 8, 22, tzinfo=timezone.utc)]
+
+        def sleep(seconds):
+            monotonic[0] += seconds
+            wall[0] += timedelta(seconds=seconds)
+
+        pacer = self.gate.RequestPacer(
+            requests_per_minute=2,
+            clock=lambda: monotonic[0],
+            sleep=sleep,
+            wall_clock=lambda: wall[0],
+        )
+        for label in ("cache:first", "cache:repeat", "cache:changed"):
+            pacer.wait(label)
+
+        self.assertEqual(
+            [event["label"] for event in pacer.evidence],
+            ["cache:first", "cache:repeat", "cache:changed"],
+        )
+        self.assertEqual(pacer.evidence[-1]["startedAt"], "2026-08-22T00:01:00Z")
+
+    def test_request_timing_rejects_an_unpaced_cache_repeat(self):
+        binding = {
+            "runId": "0" * 32,
+            "snapshot": "candidate",
+            "evaluatorGitSha": "a" * 40,
+            "deploymentIdentityHash": "b" * 64,
+        }
+        document = {
+            **binding,
+            "schemaVersion": "nga-request-timing-evidence-v1",
+            "configuredRequestsPerMinute": 9,
+            "requests": [
+                {
+                    "sequence": 1,
+                    "label": "cache:first",
+                    "startedAt": "2026-08-22T00:00:00Z",
+                },
+                {
+                    "sequence": 2,
+                    "label": "cache:changed",
+                    "startedAt": "2026-08-22T00:00:07Z",
+                },
+            ],
+            "lastPublicRequestAt": "2026-08-22T00:00:07Z",
+        }
+
+        result = self.call(
+            "evaluate_request_timing_evidence",
+            document,
+            expected_binding=binding,
+            expected_labels=["cache:first", "cache:repeat", "cache:changed"],
+        )
+
+        self.assertIn("request_timing_inventory_mismatch", result["failureCodes"])
+
+    def test_candidate_rehash_rejects_self_attested_rolling_request_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            timing_path = root / "raw/request-timing.json"
+            timing = json.loads(timing_path.read_text(encoding="utf-8"))
+            base = datetime(2026, 8, 22, tzinfo=timezone.utc)
+            for index, event in enumerate(timing["requests"]):
+                event["startedAt"] = (base + timedelta(seconds=index * 6)).isoformat().replace(
+                    "+00:00", "Z"
+                )
+            timing["lastPublicRequestAt"] = timing["requests"][-1]["startedAt"]
+            timing_path.write_text(json.dumps(timing) + "\n", encoding="utf-8")
+            forged = self.call(
+                "evaluate_request_timing_evidence",
+                timing,
+                expected_binding={
+                    field: timing[field]
+                    for field in (
+                        "runId",
+                        "snapshot",
+                        "evaluatorGitSha",
+                        "deploymentIdentityHash",
+                    )
+                },
+                expected_labels=[event["label"] for event in timing["requests"]],
+            )
+            for relative in ("identity.json", "summary.json"):
+                document = json.loads((root / relative).read_text(encoding="utf-8"))
+                document["requestTiming"] = {**forged, "passed": True, "failureCodes": [], "failures": []}
+                (root / relative).write_text(json.dumps(document) + "\n", encoding="utf-8")
+
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_cannot_rewrite_away_discovery_cooldown_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            previous_relative = "raw/previous-request-cooldown.json"
+            (root / previous_relative).unlink()
+            for relative in ("identity.json", "summary.json"):
+                document = json.loads((root / relative).read_text(encoding="utf-8"))
+                document["previousRequestCooldown"] = None
+                (root / relative).write_text(json.dumps(document) + "\n", encoding="utf-8")
+            manifest_path = root / "artifact-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["artifacts"].pop(previous_relative)
+            manifest["groups"]["python"]["paths"].remove(previous_relative)
+            manifest["groups"]["python"]["count"] -= 1
+            manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_playwright_cooldown_starts_after_the_last_python_public_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            timing = json.loads(
+                (root / "raw/request-timing.json").read_text(encoding="utf-8")
+            )
+            handoff_path = root / "playwright-handoff.json"
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+            too_early = datetime.fromisoformat(
+                timing["requests"][0]["startedAt"].replace("Z", "+00:00")
+            )
+            handoff["pythonCompletedAt"] = too_early.isoformat().replace(
+                "+00:00", "Z"
+            )
+            handoff["playwrightNotBefore"] = (
+                too_early + timedelta(seconds=60)
+            ).isoformat().replace("+00:00", "Z")
+            handoff_path.write_text(json.dumps(handoff) + "\n", encoding="utf-8")
+            json_mutate(
+                root / "summary.json",
+                lambda summary: summary.__setitem__("playwrightHandoff", handoff),
+            )
+            report_path = root / "playwright/playwright-report.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["config"]["metadata"]["ngaStagingRun"] = handoff
+            report["config"]["metadata"]["bindingSha256"] = hashlib.sha256(
+                handoff_path.read_bytes()
+            ).hexdigest()
+            report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+
+            evaluation = self.call("evaluate_evidence_bundle", root)
+
+            self.assertIn("playwright_cooldown_invalid", evaluation["failureCodes"])
+
+    def test_task8_orders_full_identity_rebind_before_discovery_and_uses_cooldowns(self):
+        plan = (
+            ROOT
+            / "docs/superpowers/plans/2026-08-22-nga-artist-attribution-relation-staging.md"
+        ).read_text(encoding="utf-8")
+        full_apply = plan.index("--environment=staging --phase=full --manifest=")
+        fresh_after = plan.index(
+            "Immediately after the full apply and those verification checks succeed"
+        )
+        full_discovery = plan.index(
+            '--out-dir "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-discovery"'
+        )
+        self.assertLess(full_apply, fresh_after)
+        self.assertLess(fresh_after, full_discovery)
+        self.assertEqual(plan.count("Immediately after the full mutation"), 0)
+        self.assertIn(
+            '--previous-request-handoff "$NGA_ARTIST_EVIDENCE_ROOT/candidate/pilot-discovery/request-cooldown-handoff.json"',
+            plan,
+        )
+        self.assertIn(
+            '--previous-request-handoff "$NGA_ARTIST_EVIDENCE_ROOT/candidate/full-discovery/request-cooldown-handoff.json"',
+            plan,
+        )
+        self.assertIn('handoff["nextRunNotBefore"]', plan)
+
     def test_inventory_rejects_duplicate_request_bodies_with_conflicting_gates(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2605,6 +2983,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             "wrong header": lambda source: source["files"][
                 "objects.csv"
             ].__setitem__("header", "objectid,fabricated"),
+            "wrong pinned digest": lambda source: source["files"][
+                "objects.csv"
+            ].__setitem__("sha256", "f" * 64),
             "wrong candidate count": lambda source: source.__setitem__(
                 "candidateCount", 63_252
             ),
@@ -3567,6 +3948,19 @@ class InventoryAndRelevanceTests(GateTestCase):
                 (evidence / "summary.json").read_text(encoding="utf-8")
             )
             deployment_hash = summary_document["deploymentIdentityHash"]
+            pilot_identity = json.loads(
+                (evidence / "identity.json").read_text(encoding="utf-8")
+            )["deploymentIdentity"]
+            full_identity = json.loads(json.dumps(pilot_identity))
+            full_identity["capturedAt"] = "2026-08-22T01:00:00Z"
+            full_identity["pilotDeploymentIdentityHash"] = deployment_hash
+            full_identity["artistDataBinding"]["artifactManifest"] = {
+                "path": "backfill/full/artifact-manifest.json",
+                "sha256": "5" * 64,
+            }
+            full_identity["artistDataBinding"]["productionIdentity"]["after"][
+                "sha256"
+            ] = "6" * 64
             summary_path = evidence / "summary.json"
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             manifest_path = evidence / "artifact-manifest.json"
@@ -3583,13 +3977,14 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "pilotArtifactManifestSha256": hashlib.sha256(
                     manifest_bytes
                 ).hexdigest(),
+                "pilotDeploymentIdentityHash": deployment_hash,
             }
             inspection_path = root / "inspection.json"
             inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
             result = self.call(
                 "evaluate_pilot_inspection",
                 inspection_path,
-                deployment_identity_hash=deployment_hash,
+                deployment_identity=full_identity,
                 evaluator_git_sha=evaluator_sha,
             )
             self.assertEqual(result["failureCodes"], [])
@@ -3597,13 +3992,20 @@ class InventoryAndRelevanceTests(GateTestCase):
                 result["pilotArtifactManifestSha256"],
                 inspection["pilotArtifactManifestSha256"],
             )
+            rehashed = self.call(
+                "evaluate_recorded_pilot_inspection",
+                result,
+                deployment_identity=full_identity,
+                evaluator_git_sha=evaluator_sha,
+            )
+            self.assertEqual(rehashed["failureCodes"], [], rehashed)
 
             inspection["decision"] = "hold"
             inspection_path.write_text(json.dumps(inspection), encoding="utf-8")
             blocked = self.call(
                 "evaluate_pilot_inspection",
                 inspection_path,
-                deployment_identity_hash=deployment_hash,
+                deployment_identity=full_identity,
                 evaluator_git_sha=evaluator_sha,
             )
             self.assertIn("pilot_inspection_not_approved", blocked["failureCodes"])
@@ -3638,7 +4040,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             result = self.call(
                 "evaluate_pilot_inspection",
                 inspection_path,
-                deployment_identity_hash=deployment_hash,
+                deployment_identity=deployment_identity(),
                 evaluator_git_sha=evaluator_sha,
             )
             self.assertIn("pilot_artifact_manifest_missing", result["failureCodes"])
@@ -3712,7 +4114,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                 result = self.call(
                     "evaluate_pilot_inspection",
                     inspection_path,
-                    deployment_identity_hash=deployment_hash,
+                    deployment_identity=deployment_identity(),
                     evaluator_git_sha=evaluator_sha,
                 )
                 self.assertFalse(result["passed"], result)
@@ -4158,7 +4560,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             result = self.call(
                 "evaluate_pilot_inspection",
                 inspection_path,
-                deployment_identity_hash=summary["deploymentIdentityHash"],
+                deployment_identity=deployment_identity(),
                 evaluator_git_sha=evaluator_sha,
             )
             self.assertFalse(result["passed"], result)
@@ -4438,7 +4840,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             result = self.call(
                 "evaluate_pilot_inspection",
                 inspection_path,
-                deployment_identity_hash=summary["deploymentIdentityHash"],
+                deployment_identity=deployment_identity(),
                 evaluator_git_sha="a" * 40,
             )
             self.assertFalse(result["passed"], result)

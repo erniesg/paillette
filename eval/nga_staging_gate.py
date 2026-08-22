@@ -42,6 +42,7 @@ EXPECTED_VERSIONS = {
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PLAYWRIGHT_COOLDOWN_SECONDS = 60
+REQUEST_COOLDOWN_SECONDS = 60
 MANUAL_RELEVANCE_MINIMUMS = {
     "precisionAt5": 0.2,
     "mrr": 0.2,
@@ -278,6 +279,30 @@ def build_playwright_handoff(
     }
 
 
+def build_request_cooldown_handoff(
+    *,
+    binding: Mapping[str, str],
+    phase: str,
+    request_timing_sha256: str,
+    last_public_request_at: str,
+) -> dict[str, Any]:
+    last = _parse_utc_timestamp(last_public_request_at)
+    if last is None:
+        raise ValueError("last public request time must be timezone-aware")
+    return {
+        **binding,
+        "schemaVersion": "nga-request-cooldown-handoff-v1",
+        "phase": phase,
+        "requestTimingPath": "raw/request-timing.json",
+        "requestTimingSha256": request_timing_sha256,
+        "lastPublicRequestAt": last_public_request_at,
+        "nextRunNotBefore": (
+            last + dt.timedelta(seconds=REQUEST_COOLDOWN_SECONDS)
+        ).isoformat().replace("+00:00", "Z"),
+        "cooldownSeconds": REQUEST_COOLDOWN_SECONDS,
+    }
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(
         value,
@@ -293,6 +318,328 @@ def sha256_bytes(value: bytes) -> str:
 
 def sha256_json(value: Any) -> str:
     return sha256_bytes(canonical_json(value).encode("utf-8"))
+
+
+def evaluate_pilot_full_identity_continuity(
+    pilot_identity: Mapping[str, Any],
+    full_identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Allow only the documented pilot-to-full evidence rebinding."""
+    failures: list[dict[str, Any]] = []
+    pilot_hash = sha256_json(pilot_identity)
+    if full_identity.get("pilotDeploymentIdentityHash") != pilot_hash:
+        failures.append(
+            _failure(
+                "pilot_deployment_identity_hash_mismatch",
+                expected=pilot_hash,
+                actual=full_identity.get("pilotDeploymentIdentityHash"),
+            )
+        )
+
+    for field in ("schemaVersion", "snapshot", "api", "web"):
+        if full_identity.get(field) != pilot_identity.get(field):
+            failures.append(_failure("pilot_full_identity_drift", field=field))
+    pilot_captured_at = _parse_utc_timestamp(pilot_identity.get("capturedAt"))
+    full_captured_at = _parse_utc_timestamp(full_identity.get("capturedAt"))
+    if (
+        pilot_captured_at is None
+        or full_captured_at is None
+        or full_captured_at <= pilot_captured_at
+    ):
+        failures.append(
+            _failure("pilot_full_identity_drift", field="capturedAt")
+        )
+
+    pilot_artist_value = pilot_identity.get("artistDataBinding")
+    full_artist_value = full_identity.get("artistDataBinding")
+    pilot_artist = (
+        pilot_artist_value if isinstance(pilot_artist_value, Mapping) else {}
+    )
+    full_artist = full_artist_value if isinstance(full_artist_value, Mapping) else {}
+    if full_artist.get("schemaVersion") != pilot_artist.get("schemaVersion"):
+        failures.append(
+            _failure(
+                "pilot_full_identity_drift",
+                field="artistDataBinding.schemaVersion",
+            )
+        )
+
+    pilot_production_value = pilot_artist.get("productionIdentity")
+    full_production_value = full_artist.get("productionIdentity")
+    pilot_production = (
+        pilot_production_value
+        if isinstance(pilot_production_value, Mapping)
+        else {}
+    )
+    full_production = (
+        full_production_value if isinstance(full_production_value, Mapping) else {}
+    )
+    for role in ("trustedPreflight", "before"):
+        if full_production.get(role) != pilot_production.get(role):
+            failures.append(
+                _failure(
+                    "pilot_full_identity_drift",
+                    field=f"artistDataBinding.productionIdentity.{role}",
+                )
+            )
+
+    pilot_after_value = pilot_production.get("after")
+    full_after_value = full_production.get("after")
+    pilot_after = pilot_after_value if isinstance(pilot_after_value, Mapping) else {}
+    full_after = full_after_value if isinstance(full_after_value, Mapping) else {}
+    if full_after.get("path") != pilot_after.get("path"):
+        failures.append(
+            _failure(
+                "pilot_full_identity_drift",
+                field="artistDataBinding.productionIdentity.after.path",
+            )
+        )
+    if (
+        not isinstance(full_after.get("sha256"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", str(full_after.get("sha256"))) is None
+        or full_after.get("sha256") == pilot_after.get("sha256")
+    ):
+        failures.append(_failure("full_production_after_not_fresh"))
+
+    full_manifest_value = full_artist.get("artifactManifest")
+    full_manifest = (
+        full_manifest_value if isinstance(full_manifest_value, Mapping) else {}
+    )
+    if (
+        full_manifest.get("path") != "backfill/full/artifact-manifest.json"
+        or not isinstance(full_manifest.get("sha256"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", str(full_manifest.get("sha256"))) is None
+    ):
+        failures.append(_failure("full_artist_manifest_binding_invalid"))
+
+    allowed_top = set(pilot_identity) | {"pilotDeploymentIdentityHash"}
+    if set(full_identity) != allowed_top:
+        failures.append(_failure("pilot_full_identity_drift", field="topLevelFields"))
+    return _result(
+        failures,
+        pilotDeploymentIdentityHash=pilot_hash,
+        fullDeploymentIdentityHash=sha256_json(full_identity),
+    )
+
+
+def evaluate_request_timing_evidence(
+    document: Mapping[str, Any],
+    *,
+    expected_binding: Mapping[str, Any],
+    expected_labels: Sequence[str],
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    _validate_run_binding(
+        document, expected_binding, "raw/request-timing.json", failures
+    )
+    expected_fields = {
+        *expected_binding,
+        "schemaVersion",
+        "configuredRequestsPerMinute",
+        "requests",
+        "lastPublicRequestAt",
+    }
+    if (
+        document.get("schemaVersion") != "nga-request-timing-evidence-v1"
+        or set(document) != expected_fields
+    ):
+        failures.append(_failure("request_timing_document_invalid"))
+    rate = document.get("configuredRequestsPerMinute")
+    if type(rate) is not int or not 1 <= rate <= 9:
+        failures.append(_failure("request_timing_rate_invalid", actual=rate))
+        rate = 9
+    requests_value = document.get("requests")
+    requests = requests_value if isinstance(requests_value, list) else []
+    actual_labels: list[Any] = []
+    parsed_times: list[dt.datetime] = []
+    for index, event_value in enumerate(requests):
+        event = event_value if isinstance(event_value, Mapping) else {}
+        actual_labels.append(event.get("label"))
+        parsed = _parse_utc_timestamp(event.get("startedAt"))
+        if (
+            set(event) != {"sequence", "label", "startedAt"}
+            or event.get("sequence") != index + 1
+            or not isinstance(event.get("label"), str)
+            or parsed is None
+        ):
+            failures.append(
+                _failure("request_timing_event_invalid", sequence=index + 1)
+            )
+        elif parsed_times and parsed < parsed_times[-1]:
+            failures.append(
+                _failure("request_timing_not_monotonic", sequence=index + 1)
+            )
+        if parsed is not None:
+            parsed_times.append(parsed)
+    if actual_labels != list(expected_labels):
+        failures.append(
+            _failure(
+                "request_timing_inventory_mismatch",
+                expected=list(expected_labels),
+                actual=actual_labels,
+            )
+        )
+    rolling_start = 0
+    for end, timestamp in enumerate(parsed_times):
+        while (
+            rolling_start <= end
+            and (timestamp - parsed_times[rolling_start]).total_seconds() >= 60
+        ):
+            rolling_start += 1
+        count = end - rolling_start + 1
+        if count > rate or count > 9:
+            failures.append(
+                _failure(
+                    "request_timing_rolling_budget_exceeded",
+                    sequence=end + 1,
+                    actual=count,
+                    configured=rate,
+                )
+            )
+            break
+    expected_last = (
+        requests[-1].get("startedAt")
+        if requests and isinstance(requests[-1], Mapping)
+        else None
+    )
+    if document.get("lastPublicRequestAt") != expected_last:
+        failures.append(_failure("request_timing_last_request_mismatch"))
+    return _result(
+        failures,
+        requestCount=len(requests),
+        configuredRequestsPerMinute=rate,
+        lastPublicRequestAt=expected_last,
+    )
+
+
+def evaluate_request_cooldown_handoff(
+    handoff: Mapping[str, Any],
+    *,
+    expected_binding: Mapping[str, Any],
+    phase: str,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    _validate_run_binding(
+        handoff,
+        expected_binding,
+        "request-cooldown-handoff.json",
+        failures,
+    )
+    expected_fields = {
+        *expected_binding,
+        "schemaVersion",
+        "phase",
+        "requestTimingPath",
+        "requestTimingSha256",
+        "lastPublicRequestAt",
+        "nextRunNotBefore",
+        "cooldownSeconds",
+    }
+    if (
+        handoff.get("schemaVersion") != "nga-request-cooldown-handoff-v1"
+        or set(handoff) != expected_fields
+        or handoff.get("phase") != phase
+        or handoff.get("requestTimingPath") != "raw/request-timing.json"
+        or not isinstance(handoff.get("requestTimingSha256"), str)
+        or re.fullmatch(
+            r"[a-f0-9]{64}", str(handoff.get("requestTimingSha256"))
+        )
+        is None
+        or handoff.get("cooldownSeconds") != REQUEST_COOLDOWN_SECONDS
+    ):
+        failures.append(_failure("request_cooldown_handoff_invalid"))
+    last = _parse_utc_timestamp(handoff.get("lastPublicRequestAt"))
+    not_before = _parse_utc_timestamp(handoff.get("nextRunNotBefore"))
+    if (
+        last is None
+        or not_before is None
+        or (not_before - last).total_seconds() != REQUEST_COOLDOWN_SECONDS
+    ):
+        failures.append(_failure("request_cooldown_handoff_invalid"))
+    current = now or dt.datetime.now(dt.timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("request cooldown comparison time must be timezone-aware")
+    if not_before is not None and current.astimezone(dt.timezone.utc) < not_before:
+        failures.append(
+            _failure(
+                "request_cooldown_not_elapsed",
+                nextRunNotBefore=handoff.get("nextRunNotBefore"),
+            )
+        )
+    return _result(failures, handoff=dict(handoff))
+
+
+def validate_request_cooldown_file(
+    handoff_path: Path,
+    *,
+    current_binding: Mapping[str, Any],
+    phase: str,
+    expected_labels: Sequence[str],
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    if (
+        handoff_path.name != "request-cooldown-handoff.json"
+        or handoff_path.is_symlink()
+    ):
+        return _result([_failure("request_cooldown_path_invalid")])
+    try:
+        handoff_bytes = handoff_path.read_bytes()
+        handoff_value = json.loads(handoff_bytes)
+    except (OSError, json.JSONDecodeError) as error:
+        return _result(
+            [_failure("request_cooldown_handoff_invalid", error=str(error))]
+        )
+    handoff = handoff_value if isinstance(handoff_value, Mapping) else {}
+    previous_binding = {
+        "runId": handoff.get("runId"),
+        "snapshot": current_binding.get("snapshot"),
+        "evaluatorGitSha": current_binding.get("evaluatorGitSha"),
+        "deploymentIdentityHash": current_binding.get("deploymentIdentityHash"),
+    }
+    cooldown = evaluate_request_cooldown_handoff(
+        handoff,
+        expected_binding=previous_binding,
+        phase=phase,
+        now=now,
+    )
+    failures.extend(cooldown["failures"])
+    if (
+        not isinstance(previous_binding["runId"], str)
+        or RUN_ID_PATTERN.fullmatch(str(previous_binding["runId"])) is None
+    ):
+        failures.append(_failure("request_cooldown_handoff_invalid", field="runId"))
+
+    timing_path = handoff_path.parent / "raw/request-timing.json"
+    if timing_path.is_symlink():
+        failures.append(_failure("request_cooldown_path_invalid"))
+    try:
+        timing_bytes = timing_path.read_bytes()
+        timing_value = json.loads(timing_bytes)
+    except (OSError, json.JSONDecodeError) as error:
+        failures.append(
+            _failure("request_timing_document_invalid", error=str(error))
+        )
+        timing_bytes = b""
+        timing_value = {}
+    timing = timing_value if isinstance(timing_value, Mapping) else {}
+    timing_evaluation = evaluate_request_timing_evidence(
+        timing,
+        expected_binding=previous_binding,
+        expected_labels=expected_labels,
+    )
+    failures.extend(timing_evaluation["failures"])
+    if sha256_bytes(timing_bytes) != handoff.get("requestTimingSha256"):
+        failures.append(_failure("request_cooldown_timing_hash_mismatch"))
+    if handoff.get("lastPublicRequestAt") != timing.get("lastPublicRequestAt"):
+        failures.append(_failure("request_cooldown_timing_mismatch"))
+    return _result(
+        failures,
+        handoffContent=capture_bound_json_bytes(handoff_bytes),
+        requestTimingContent=capture_bound_json_bytes(timing_bytes),
+        evaluation=cooldown,
+    )
 
 
 def _validate_origin(value: str, expected: str, label: str) -> None:
@@ -2682,7 +3029,7 @@ def evaluate_manual_relevance_completion(
 def evaluate_pilot_inspection(
     inspection_path: Path,
     *,
-    deployment_identity_hash: str,
+    deployment_identity: Mapping[str, Any],
     evaluator_git_sha: str,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
@@ -2709,6 +3056,7 @@ def evaluate_pilot_inspection(
         "pilotSummarySha256",
         "pilotArtifactManifestPath",
         "pilotArtifactManifestSha256",
+        "pilotDeploymentIdentityHash",
     ):
         if not isinstance(inspection.get(field), str) or not inspection.get(field):
             failures.append(_failure("pilot_inspection_invalid", field=field))
@@ -2738,12 +3086,20 @@ def evaluate_pilot_inspection(
                 actual=actual_summary_hash,
             )
         )
+    pilot_deployment_hash = inspection.get("pilotDeploymentIdentityHash")
+    if (
+        not isinstance(pilot_deployment_hash, str)
+        or re.fullmatch(r"[a-f0-9]{64}", pilot_deployment_hash) is None
+        or deployment_identity.get("pilotDeploymentIdentityHash")
+        != pilot_deployment_hash
+    ):
+        failures.append(_failure("pilot_deployment_identity_hash_mismatch"))
     expected_summary = {
         "phase": "pilot",
         "snapshot": "candidate",
         "gatePassed": True,
         "evaluatorGitSha": evaluator_git_sha,
-        "deploymentIdentityHash": deployment_identity_hash,
+        "deploymentIdentityHash": pilot_deployment_hash,
     }
     for field, expected in expected_summary.items():
         if summary.get(field) != expected:
@@ -2891,6 +3247,20 @@ def evaluate_pilot_inspection(
                     actual=case_inventory,
                 )
             )
+        pilot_identity_value = (bundle_evaluation.get("identity") or {}).get(
+            "deploymentIdentity"
+        )
+        pilot_identity = (
+            pilot_identity_value
+            if isinstance(pilot_identity_value, Mapping)
+            else {}
+        )
+        continuity = evaluate_pilot_full_identity_continuity(
+            pilot_identity, deployment_identity
+        )
+        failures.extend(continuity["failures"])
+        if sha256_json(pilot_identity) != pilot_deployment_hash:
+            failures.append(_failure("pilot_deployment_identity_hash_mismatch"))
     return _result(
         failures,
         pilotSummaryPath=str(summary_path),
@@ -2899,7 +3269,90 @@ def evaluate_pilot_inspection(
             str(manifest_path) if manifest_path is not None else None
         ),
         pilotArtifactManifestSha256=manifest_hash,
+        pilotDeploymentIdentityHash=pilot_deployment_hash,
         inspection=inspection,
+    )
+
+
+def evaluate_recorded_pilot_inspection(
+    record: Mapping[str, Any],
+    *,
+    deployment_identity: Mapping[str, Any],
+    evaluator_git_sha: str,
+) -> dict[str, Any]:
+    """Rehash the reviewed pilot bundle from the full bundle's bound record."""
+    failures: list[dict[str, Any]] = []
+    if (
+        record.get("passed") is not True
+        or record.get("failureCodes") != []
+        or record.get("failures") != []
+    ):
+        failures.append(_failure("recorded_pilot_inspection_failed"))
+    summary_path_value = record.get("pilotSummaryPath")
+    manifest_path_value = record.get("pilotArtifactManifestPath")
+    if not isinstance(summary_path_value, str) or not isinstance(
+        manifest_path_value, str
+    ):
+        return _result(
+            [*failures, _failure("recorded_pilot_inspection_invalid")]
+        )
+    summary_path = Path(summary_path_value)
+    manifest_path = Path(manifest_path_value)
+    if not summary_path.is_absolute() or not manifest_path.is_absolute():
+        return _result(
+            [*failures, _failure("recorded_pilot_inspection_invalid")]
+        )
+    try:
+        summary_bytes = summary_path.read_bytes()
+        manifest_bytes = manifest_path.read_bytes()
+        manifest_value = json.loads(manifest_bytes)
+    except (OSError, json.JSONDecodeError) as error:
+        return _result(
+            [
+                *failures,
+                _failure("recorded_pilot_inspection_invalid", error=str(error)),
+            ]
+        )
+    if (
+        summary_path.parent != manifest_path.parent
+        or summary_path.name != "summary.json"
+        or manifest_path.name != "artifact-manifest.json"
+        or record.get("pilotSummarySha256") != sha256_bytes(summary_bytes)
+        or record.get("pilotArtifactManifestSha256")
+        != sha256_bytes(manifest_bytes)
+    ):
+        failures.append(_failure("recorded_pilot_inspection_hash_mismatch"))
+    manifest = manifest_value if isinstance(manifest_value, Mapping) else {}
+    bundle = evaluate_evidence_bundle(
+        manifest_path.parent, manifest, require_hard_pass=True
+    )
+    failures.extend(
+        _failure("recorded_pilot_bundle_invalid", reason=failure.get("code"))
+        for failure in bundle["failures"]
+    )
+    pilot_identity_value = (bundle.get("identity") or {}).get(
+        "deploymentIdentity"
+    )
+    pilot_identity = (
+        pilot_identity_value if isinstance(pilot_identity_value, Mapping) else {}
+    )
+    continuity = evaluate_pilot_full_identity_continuity(
+        pilot_identity, deployment_identity
+    )
+    failures.extend(continuity["failures"])
+    if (
+        bundle.get("phase") != "pilot"
+        or bundle.get("snapshot") != "candidate"
+        or bundle.get("evaluatorGitSha") != evaluator_git_sha
+        or record.get("pilotDeploymentIdentityHash")
+        != continuity.get("pilotDeploymentIdentityHash")
+    ):
+        failures.append(_failure("recorded_pilot_inspection_binding_mismatch"))
+    return _result(
+        failures,
+        pilotDeploymentIdentityHash=continuity.get(
+            "pilotDeploymentIdentityHash"
+        ),
     )
 
 
@@ -2972,15 +3425,20 @@ class RequestPacer:
         *,
         clock: Any = time.monotonic,
         sleep: Any = time.sleep,
+        wall_clock: Any | None = None,
     ) -> None:
         if not 1 <= requests_per_minute <= 9:
             raise ValueError("requests per minute must be between 1 and 9")
         self.requests_per_minute = requests_per_minute
         self.clock = clock
         self.sleep = sleep
+        self.wall_clock = wall_clock or (lambda: dt.datetime.now(dt.timezone.utc))
         self.timestamps: list[float] = []
+        self.evidence: list[dict[str, Any]] = []
 
-    def wait(self) -> None:
+    def wait(self, label: str = "unlabeled") -> str:
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("request timing label must be nonblank")
         now = float(self.clock())
         self.timestamps = [
             timestamp for timestamp in self.timestamps if now - timestamp < 60.0
@@ -2996,6 +3454,36 @@ class RequestPacer:
                 if now - timestamp < 60.0
             ]
         self.timestamps.append(now)
+        wall_time = self.wall_clock()
+        if not isinstance(wall_time, dt.datetime) or wall_time.tzinfo is None:
+            raise ValueError("request timing wall clock must be timezone-aware")
+        started_at = wall_time.astimezone(dt.timezone.utc).isoformat().replace(
+            "+00:00", "Z"
+        )
+        self.evidence.append(
+            {
+                "sequence": len(self.evidence) + 1,
+                "label": label,
+                "startedAt": started_at,
+            }
+        )
+        return started_at
+
+
+def expected_public_request_labels(
+    selected: Mapping[str, Any], phase: str
+) -> list[str]:
+    labels = [f"text:{case['id']}" for case in selected.get("text", [])]
+    labels.extend(("cache:first", "cache:repeat", "cache:changed"))
+    labels.extend(f"image:{case['id']}" for case in selected.get("image", []))
+    labels.append("image:repeat")
+    if phase == "full":
+        labels.extend(
+            f"image-negative:{name}"
+            for name in ("invalid_mime", "zero_byte", "multiple_files", "oversize")
+        )
+    labels.append("ngs:text")
+    return labels
 
 
 def evaluate_staging_health_response(
@@ -3674,6 +4162,12 @@ def evaluate_evidence_bundle(
         out_dir, "fixtures-manifest.json", failures
     )
     handoff = _read_evidence_json(out_dir, "playwright-handoff.json", failures)
+    request_timing = _read_evidence_json(
+        out_dir, "raw/request-timing.json", failures
+    )
+    request_cooldown_handoff = _read_evidence_json(
+        out_dir, "request-cooldown-handoff.json", failures
+    )
     identity_documents = {
         name: _read_evidence_json(out_dir, relative, failures)
         for name, relative in IDENTITY_EVIDENCE_PATHS.items()
@@ -3722,6 +4216,32 @@ def evaluate_evidence_bundle(
         "evaluatorGitSha": evaluator_git_sha,
         "deploymentIdentityHash": deployment_hash,
     }
+    request_labels = expected_public_request_labels(selected, str(phase))
+    request_timing_evaluation = evaluate_request_timing_evidence(
+        request_timing,
+        expected_binding=expected_binding,
+        expected_labels=request_labels,
+    )
+    failures.extend(request_timing_evaluation["failures"])
+    cooldown_not_before = _parse_utc_timestamp(
+        request_cooldown_handoff.get("nextRunNotBefore")
+    )
+    request_cooldown_evaluation = evaluate_request_cooldown_handoff(
+        request_cooldown_handoff,
+        expected_binding=expected_binding,
+        phase=str(phase),
+        now=cooldown_not_before or dt.datetime.now(dt.timezone.utc),
+    )
+    failures.extend(request_cooldown_evaluation["failures"])
+    request_timing_path = out_dir / "raw/request-timing.json"
+    if (
+        not request_timing_path.is_file()
+        or request_cooldown_handoff.get("requestTimingSha256")
+        != sha256_bytes(request_timing_path.read_bytes())
+        or request_cooldown_handoff.get("lastPublicRequestAt")
+        != request_timing.get("lastPublicRequestAt")
+    ):
+        failures.append(_failure("request_cooldown_timing_hash_mismatch"))
     _validate_run_binding(identity, expected_binding, "identity.json", failures)
     raw_deployment_document = identity_documents.get("deploymentIdentity") or {}
     try:
@@ -3798,6 +4318,10 @@ def evaluate_evidence_bundle(
             )
     if identity.get("identityReleaseDecision") != identity_decision:
         failures.append(_failure("evidence_identity_decision_mismatch"))
+    if identity.get("requestTiming") != request_timing_evaluation:
+        failures.append(_failure("evidence_request_timing_mismatch"))
+    if identity.get("requestCooldownHandoff") != request_cooldown_handoff:
+        failures.append(_failure("evidence_request_cooldown_mismatch"))
     summary_versions_value = summary.get("versions")
     summary_versions = (
         summary_versions_value
@@ -3816,6 +4340,80 @@ def evaluate_evidence_bundle(
             failures.append(
                 _failure("evidence_summary_identity_mismatch", field=field)
             )
+    if summary.get("requestTiming") != request_timing_evaluation:
+        failures.append(_failure("evidence_summary_request_timing_mismatch"))
+    if summary.get("requestCooldownHandoff") != request_cooldown_handoff:
+        failures.append(_failure("evidence_summary_request_cooldown_mismatch"))
+    previous_relative = "raw/previous-request-cooldown.json"
+    previous_path = out_dir / previous_relative
+    previous_document: Mapping[str, Any] | None = None
+    if snapshot == "candidate" and not previous_path.is_file():
+        failures.append(_failure("candidate_previous_request_cooldown_missing"))
+    if previous_path.is_file():
+        previous_document = _read_evidence_json(out_dir, previous_relative, failures)
+        _validate_run_binding(
+            previous_document, expected_binding, previous_relative, failures
+        )
+        if (
+            previous_document.get("schemaVersion")
+            != "nga-previous-request-cooldown-evidence-v1"
+            or previous_document.get("phase") != phase
+            or set(previous_document)
+            != {
+                *expected_binding,
+                "schemaVersion",
+                "phase",
+                "handoffContent",
+                "requestTimingContent",
+            }
+        ):
+            failures.append(_failure("previous_request_cooldown_evidence_invalid"))
+        try:
+            previous_handoff = parse_bound_json_bytes(
+                previous_document.get("handoffContent")
+            )
+            previous_timing = parse_bound_json_bytes(
+                previous_document.get("requestTimingContent")
+            )
+        except ValueError:
+            previous_handoff = {}
+            previous_timing = {}
+            failures.append(_failure("previous_request_cooldown_evidence_invalid"))
+        previous_binding = {
+            "runId": previous_handoff.get("runId"),
+            "snapshot": snapshot,
+            "evaluatorGitSha": evaluator_git_sha,
+            "deploymentIdentityHash": deployment_hash,
+        }
+        previous_timing_evaluation = evaluate_request_timing_evidence(
+            previous_timing,
+            expected_binding=previous_binding,
+            expected_labels=request_labels,
+        )
+        failures.extend(previous_timing_evaluation["failures"])
+        previous_not_before = _parse_utc_timestamp(
+            previous_handoff.get("nextRunNotBefore")
+        )
+        previous_cooldown_evaluation = evaluate_request_cooldown_handoff(
+            previous_handoff,
+            expected_binding=previous_binding,
+            phase=str(phase),
+            now=previous_not_before or dt.datetime.now(dt.timezone.utc),
+        )
+        failures.extend(previous_cooldown_evaluation["failures"])
+        previous_timing_content = previous_document.get("requestTimingContent")
+        if (
+            not isinstance(previous_timing_content, Mapping)
+            or previous_handoff.get("requestTimingSha256")
+            != previous_timing_content.get("sha256")
+            or previous_handoff.get("lastPublicRequestAt")
+            != previous_timing.get("lastPublicRequestAt")
+        ):
+            failures.append(_failure("previous_request_cooldown_timing_mismatch"))
+    if identity.get("previousRequestCooldown") != previous_document:
+        failures.append(_failure("evidence_previous_request_cooldown_mismatch"))
+    if summary.get("previousRequestCooldown") != previous_document:
+        failures.append(_failure("evidence_summary_previous_request_cooldown_mismatch"))
     if (
         summary_versions.get("localEvaluator")
         != identity_decision.get("localVersions")
@@ -3854,6 +4452,27 @@ def evaluate_evidence_bundle(
         }
     elif identity.get("artistDataEvidence") is not None:
         failures.append(_failure("unexpected_artist_data_evidence"))
+
+    recorded_pilot_value = identity.get("pilotInspection")
+    recorded_pilot = (
+        recorded_pilot_value
+        if isinstance(recorded_pilot_value, Mapping)
+        else None
+    )
+    if summary.get("pilotInspection") != recorded_pilot:
+        failures.append(_failure("evidence_pilot_inspection_mismatch"))
+    if phase == "full" and snapshot == "candidate":
+        if recorded_pilot is None:
+            failures.append(_failure("candidate_pilot_inspection_missing"))
+        else:
+            recomputed_pilot = evaluate_recorded_pilot_inspection(
+                recorded_pilot,
+                deployment_identity=deployment_identity,
+                evaluator_git_sha=str(evaluator_git_sha),
+            )
+            failures.extend(recomputed_pilot["failures"])
+    elif recorded_pilot is not None:
+        failures.append(_failure("unexpected_pilot_inspection"))
 
     expected_text_ids = [case["id"] for case in selected["text"]]
     expected_image_ids = [case["id"] for case in selected["image"]]
@@ -3929,9 +4548,14 @@ def evaluate_evidence_bundle(
         failures.append(_failure("playwright_summary_handoff_mismatch"))
     completed_at = _parse_utc_timestamp(handoff.get("pythonCompletedAt"))
     not_before = _parse_utc_timestamp(handoff.get("playwrightNotBefore"))
+    last_public_request_at = _parse_utc_timestamp(
+        request_timing.get("lastPublicRequestAt")
+    )
     if (
         completed_at is None
         or not_before is None
+        or last_public_request_at is None
+        or completed_at < last_public_request_at
         or (not_before - completed_at).total_seconds()
         < PLAYWRIGHT_COOLDOWN_SECONDS
     ):
@@ -4124,7 +4748,9 @@ def evaluate_evidence_bundle(
         "fixtures-manifest.json",
         "manual-relevance.json",
         "playwright-handoff.json",
+        "request-cooldown-handoff.json",
         *IDENTITY_EVIDENCE_PATHS.values(),
+        "raw/request-timing.json",
         "raw/cache-probe.json",
         "raw/image-identity-probe.json",
         "raw/ngs-probe.json",
@@ -4136,6 +4762,8 @@ def evaluate_evidence_bundle(
     }
     if summary_manual.get("status") == "graded":
         required_python_paths.add("relevance-labels.json")
+    if previous_path.is_file():
+        required_python_paths.add(previous_relative)
     if phase == "full":
         required_python_paths.add("raw/image-negative-probes.json")
     required_playwright_paths = {
@@ -4874,6 +5502,7 @@ class RunConfig:
     repo_root: Path
     relevance_labels: Path | None = None
     pilot_inspection: Path | None = None
+    previous_request_handoff: Path | None = None
     requests_per_minute: int = 8
 
 
@@ -4898,6 +5527,35 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         evaluator_git_sha=candidate_sha,
         deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
     )
+    inventory = load_case_inventory(
+        config.repo_root / "eval/nga-staging-cases.yaml",
+        config.repo_root / "eval/nga-constraint-queries.yaml",
+    )
+    selected = select_cases(inventory, config.phase)
+    request_labels = expected_public_request_labels(selected, config.phase)
+    previous_request_cooldown: dict[str, Any] | None = None
+    if config.snapshot == "candidate" and config.fail_on_gates:
+        if config.previous_request_handoff is None:
+            raise GateStopped(
+                "official candidate requires a discovery request cooldown handoff"
+            )
+        previous_evaluation = validate_request_cooldown_file(
+            config.previous_request_handoff,
+            current_binding=binding,
+            phase=config.phase,
+            expected_labels=request_labels,
+        )
+        if previous_evaluation.get("passed") is not True:
+            raise GateStopped(
+                "discovery request cooldown handoff is missing, stale, or incomplete"
+            )
+        previous_request_cooldown = {
+            **binding,
+            "schemaVersion": "nga-previous-request-cooldown-evidence-v1",
+            "phase": config.phase,
+            "handoffContent": previous_evaluation["handoffContent"],
+            "requestTimingContent": previous_evaluation["requestTimingContent"],
+        }
     artist_data_evidence: dict[str, Any] | None = None
     if config.snapshot == "candidate":
         artist_root = _find_artist_evidence_root(config.out_dir)
@@ -4921,7 +5579,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             raise GateStopped("full candidate requires a reviewed pilot inspection")
         pilot_inspection = evaluate_pilot_inspection(
             config.pilot_inspection,
-            deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
+            deployment_identity=deployment_identity,
             evaluator_git_sha=candidate_sha,
         )
         if not pilot_inspection["passed"]:
@@ -4938,11 +5596,6 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         )
     health = health_evaluation["observation"]
 
-    inventory = load_case_inventory(
-        config.repo_root / "eval/nga-staging-cases.yaml",
-        config.repo_root / "eval/nga-constraint-queries.yaml",
-    )
-    selected = select_cases(inventory, config.phase)
     local_version_sources = capture_local_version_sources(config.repo_root)
     local_versions = parse_captured_local_versions(local_version_sources)
     web_response = network.request("GET", f"{config.web_base_url}/nga/search")
@@ -4998,6 +5651,11 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     identity_release_decision = identity_evaluation["decision"]
     for name, document in identity_documents.items():
         _write_json(config.out_dir / IDENTITY_EVIDENCE_PATHS[name], document)
+    if previous_request_cooldown is not None:
+        _write_json(
+            config.out_dir / "raw/previous-request-cooldown.json",
+            previous_request_cooldown,
+        )
     identity = {
         **binding,
         "generatedAt": started_at,
@@ -5009,6 +5667,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "deploymentBinding": deployment_binding,
         "artistDataEvidence": artist_data_evidence,
         "pilotInspection": pilot_inspection,
+        "previousRequestCooldown": previous_request_cooldown,
         "liveContractBinding": live_contract_binding,
         "publicSearchRequestsPerMinute": config.requests_per_minute,
         "health": health,
@@ -5030,7 +5689,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     text_endpoint = f"{config.web_base_url}/api/public-search/nga/text"
     for case in selected["text"]:
         request_body = _text_request_body(case)
-        pacer.wait()
+        pacer.wait(f"text:{case['id']}")
         response = _post_json(network, text_endpoint, request_body)
         evaluated = evaluate_text_case(case, response, deployed_versions)
         record = {
@@ -5083,13 +5742,13 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "request": {"constraints": {"classifications": ["Drawing"]}},
         "expected": {"constraints": {"classifications": ["Drawing"]}},
     }
-    pacer.wait()
+    pacer.wait("cache:first")
     cache_first = _post_json(network, text_endpoint, _text_request_body(cache_case))
-    time.sleep(1.0)
-    # The exact repeat should be served by the web cache and does not consume a
-    # cold-miss slot. If it is not, the cache probe fails independently.
+    # Cache hits still consume an anonymous public-search request and must share
+    # the exact same process limiter and raw timing ledger as cold misses.
+    pacer.wait("cache:repeat")
     cache_repeat = _post_json(network, text_endpoint, _text_request_body(cache_case))
-    pacer.wait()
+    pacer.wait("cache:changed")
     cache_changed = _post_json(
         network, text_endpoint, _text_request_body(changed_cache_case)
     )
@@ -5137,7 +5796,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     for case in selected["image"]:
         fixture = fixture_manifest[case["fixtureId"]]
         image_bytes = fixture_bytes[case["fixtureId"]]
-        pacer.wait()
+        pacer.wait(f"image:{case['id']}")
         response = _post_image(
             network,
             image_endpoint,
@@ -5175,7 +5834,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     first_image_case = selected["image"][0]
     first_fixture = fixture_manifest[first_image_case["fixtureId"]]
     first_bytes = fixture_bytes[first_image_case["fixtureId"]]
-    pacer.wait()
+    pacer.wait("image:repeat")
     repeated_response = _post_image(
         network,
         image_endpoint,
@@ -5287,7 +5946,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         }
         negative_responses = {}
         for name, files in negative_specs.items():
-            pacer.wait()
+            pacer.wait(f"image-negative:{name}")
             negative_responses[name] = _post_image(
                 network, image_endpoint, files=files
             )
@@ -5302,6 +5961,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         }
         _write_json(config.out_dir / "raw/image-negative-probes.json", negative_record)
 
+    pacer.wait("ngs:text")
     ngs_response = _post_json(
         network,
         f"{config.web_base_url}/api/public-search/ngs/text",
@@ -5321,6 +5981,37 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             "evaluation": ngs_probe,
         },
     )
+    request_timing = {
+        **binding,
+        "schemaVersion": "nga-request-timing-evidence-v1",
+        "configuredRequestsPerMinute": config.requests_per_minute,
+        "requests": pacer.evidence,
+        "lastPublicRequestAt": (
+            pacer.evidence[-1]["startedAt"] if pacer.evidence else None
+        ),
+    }
+    request_timing_evaluation = evaluate_request_timing_evidence(
+        request_timing,
+        expected_binding=binding,
+        expected_labels=request_labels,
+    )
+    if request_timing_evaluation.get("passed") is not True:
+        raise GateStopped("raw request timing exceeded the anonymous rolling budget")
+    request_timing_path = config.out_dir / "raw/request-timing.json"
+    _write_json(request_timing_path, request_timing)
+    request_cooldown_handoff = build_request_cooldown_handoff(
+        binding=binding,
+        phase=config.phase,
+        request_timing_sha256=sha256_bytes(request_timing_path.read_bytes()),
+        last_public_request_at=str(request_timing["lastPublicRequestAt"]),
+    )
+    _write_json(
+        config.out_dir / "request-cooldown-handoff.json",
+        request_cooldown_handoff,
+    )
+    identity["requestTiming"] = request_timing_evaluation
+    identity["requestCooldownHandoff"] = request_cooldown_handoff
+    _write_json(config.out_dir / "identity.json", identity)
     if config.relevance_labels is not None:
         labels_document = load_json_object(config.relevance_labels, "relevance labels")
         retained_labels = retain_relevance_labels(
@@ -5434,7 +6125,10 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "ngsProbe": ngs_probe,
         "manualRelevance": manual_relevance,
         "pilotInspection": pilot_inspection,
+        "previousRequestCooldown": previous_request_cooldown,
         "playwrightHandoff": playwright_handoff,
+        "requestTiming": request_timing_evaluation,
+        "requestCooldownHandoff": request_cooldown_handoff,
         "gatePassed": not all_failures,
         "failureCount": len(all_failures),
         "gateFailures": all_failures,
@@ -5492,6 +6186,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deployment-identity", type=Path, required=True)
     parser.add_argument("--relevance-labels", type=Path)
     parser.add_argument("--pilot-inspection", type=Path)
+    parser.add_argument(
+        "--previous-request-handoff",
+        type=Path,
+        help="Discovery request cooldown handoff required by official candidate runs.",
+    )
     parser.add_argument("--fail-on-gates", action="store_true")
     parser.add_argument(
         "--public-search-requests-per-minute",
@@ -5539,6 +6238,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 pilot_inspection=(
                     args.pilot_inspection.resolve() if args.pilot_inspection else None
+                ),
+                previous_request_handoff=(
+                    args.previous_request_handoff.resolve()
+                    if args.previous_request_handoff
+                    else None
                 ),
                 requests_per_minute=args.public_search_requests_per_minute,
             )
