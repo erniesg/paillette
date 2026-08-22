@@ -655,11 +655,18 @@ match the prepared mapping while image vectors remain byte-identical to
 preflight. Do not recapture or replace the original pre-mutation pilot rows.
 
 Only after independent review of the exact repaired HEAD may the coordinator
-create a new exact-head evidence root and locally copy the immutable evidence:
+run the following fenced block as one fail-fast shell operation. It requires a
+previously absent exact-head evidence root, creates that root exclusively, and
+does not reach lineage creation unless every pinned and copied digest check
+succeeds:
 
 ```bash
+set -euo pipefail
+
 NGA_ARTIST_PARTIAL_ROOT="$(pwd)/.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z"
 NGA_ARTIST_EVIDENCE_ROOT="$(pwd)/.agent/evidence/nga-staging/$(git rev-parse HEAD)/$(date -u +%Y%m%dT%H%M%SZ)"
+test ! -e "$NGA_ARTIST_EVIDENCE_ROOT"
+mkdir "$NGA_ARTIST_EVIDENCE_ROOT"
 mkdir -p \
   "$NGA_ARTIST_EVIDENCE_ROOT/preflight" \
   "$NGA_ARTIST_EVIDENCE_ROOT/backfill" \
@@ -678,11 +685,7 @@ NGA_ARTIST_RESUME_RESPONSE_SHA="$(shasum -a 256 "$NGA_ARTIST_RESUME_DIR/0001.jso
 test "$NGA_ARTIST_RESUME_RESPONSE_SHA" = "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5"
 test "$(shasum -a 256 "$NGA_ARTIST_PARTIAL_ROOT/backfill/pilot/artifact-manifest.json" | awk '{print $1}')" = "$NGA_ARTIST_PILOT_SHA"
 test "$(shasum -a 256 "$NGA_ARTIST_PARTIAL_ROOT/preflight/pilot/preflight-manifest.json" | awk '{print $1}')" = "$NGA_ARTIST_PILOT_PREFLIGHT_SHA"
-```
 
-Create the explicit lineage document using only those verified local bytes:
-
-```bash
 node --input-type=module - \
   "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/resume-lineage.json" \
   "$NGA_ARTIST_PILOT_SHA" \

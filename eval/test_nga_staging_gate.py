@@ -8,6 +8,7 @@ import io
 import json
 import math
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -3402,6 +3403,84 @@ class InventoryAndRelevanceTests(GateTestCase):
             plan,
         )
 
+    def test_task8_recovery_bootstrap_fails_before_lineage_on_bad_pinned_response(self):
+        plan = (
+            ROOT
+            / "docs/superpowers/plans/2026-08-22-nga-artist-attribution-relation-staging.md"
+        ).read_text(encoding="utf-8")
+        recovery = plan.split(
+            "#### Reviewed forward recovery for the preserved partial pilot", 1
+        )[1].split(
+            "The following is the only forward mutation command described", 1
+        )[0]
+        shell_blocks = re.findall(r"```bash\n(.*?)```", recovery, flags=re.DOTALL)
+        self.assertEqual(
+            len(shell_blocks),
+            1,
+            "bootstrap, rehash, and lineage creation must be one shell operation",
+        )
+        bootstrap = "\n".join(shell_blocks)
+        self.assertIn("set -euo pipefail", bootstrap)
+        self.assertIn('test ! -e "$NGA_ARTIST_EVIDENCE_ROOT"', bootstrap)
+        self.assertRegex(
+            bootstrap,
+            r'\nmkdir "\$NGA_ARTIST_EVIDENCE_ROOT"\n',
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            destination = root / "new-evidence"
+            files = {
+                "preflight/pilot/preflight-manifest.json": b'{"pilot":true}\n',
+                "preflight/production-identity.json": b'{"production":true}\n',
+                "backfill/pilot/artifact-manifest.json": b'{"artifact":true}\n',
+                (
+                    "backfill/pilot/apply-responses/"
+                    "2026-08-22T13-49-24-534Z-1855/0001.json"
+                ): b'{"substituted":"response"}\n',
+                (
+                    "candidate/production-identity/pilot/before.json"
+                ): b'{"before":true}\n',
+            }
+            for relative, payload in files.items():
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+
+            bootstrap = re.sub(
+                r'^NGA_ARTIST_PARTIAL_ROOT=.*$',
+                'NGA_ARTIST_PARTIAL_ROOT="$SOURCE_ROOT"',
+                bootstrap,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            bootstrap = re.sub(
+                r'^NGA_ARTIST_EVIDENCE_ROOT=.*$',
+                'NGA_ARTIST_EVIDENCE_ROOT="$DESTINATION_ROOT"',
+                bootstrap,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            result = subprocess.run(
+                ["bash", "-c", bootstrap],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "SOURCE_ROOT": str(source),
+                    "DESTINATION_ROOT": str(destination),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(
+                (destination / "backfill/pilot/resume-lineage.json").exists(),
+                "lineage creation must not be reached after a bad pinned response",
+            )
+
     def test_inventory_rejects_duplicate_request_bodies_with_conflicting_gates(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -3873,6 +3952,35 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "artist_apply_resume_lineage_invalid",
                 traversal["failureCodes"],
                 traversal,
+            )
+
+            lineage["responses"][0]["sourcePath"] = (
+                "backfill/pilot/apply-responses/production-run/0001.json"
+            )
+            production_lineage_payload = (
+                json.dumps(lineage, indent=2) + "\n"
+            ).encode()
+            lineage_path.write_bytes(production_lineage_payload)
+            verification["resumeLineage"]["sha256"] = hashlib.sha256(
+                production_lineage_payload
+            ).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+            production_named = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertIn(
+                "artist_apply_resume_lineage_invalid",
+                production_named["failureCodes"],
+                production_named,
             )
 
             lineage["responses"][0]["sourcePath"] = (

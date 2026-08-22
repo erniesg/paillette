@@ -2223,6 +2223,12 @@ def evaluate_artist_data_evidence(
                             str(item.get("sourcePath") or ""),
                         )
                         is not None
+                        and re.search(
+                            r"(?:^|[/_.-])production(?:[/_.-]|$)",
+                            str(item.get("sourcePath") or ""),
+                            flags=re.IGNORECASE,
+                        )
+                        is None
                         for index, (item, source) in enumerate(
                             zip(lineage_responses, resumed_sources)
                         )
