@@ -80,6 +80,29 @@ export const canonicalJson = (value) => {
   return JSON.stringify(normalize(value));
 };
 
+export function parseWranglerJsonOutput(output, label = 'Wrangler') {
+  if (typeof output !== 'string') {
+    throw new Error(`${label} response has no JSON payload`);
+  }
+  const match = /^[\t ]*[\[{]/m.exec(output);
+  if (!match) throw new Error(`${label} response has no JSON payload`);
+  let payload;
+  try {
+    payload = JSON.parse(output.slice(match.index));
+  } catch {
+    throw new Error(`${label} response has malformed or trailing JSON payload`);
+  }
+  if (
+    payload === null ||
+    (typeof payload !== 'object' && !Array.isArray(payload))
+  ) {
+    throw new Error(
+      `${label} response JSON payload must be an object or array`
+    );
+  }
+  return payload;
+}
+
 const containsExactRecoveryValue = (value, field, expected) => {
   if (Array.isArray(value)) {
     return value.some((entry) =>
@@ -711,7 +734,8 @@ export function verifyNgaArtistPostApplyState({
   if (!['pilot', 'full'].includes(phase)) {
     throw new Error('post-apply phase must be pilot or full');
   }
-  const expectedCount = phase === 'pilot' ? PILOT_OBJECT_IDS.length : FULL_STAGED_COUNT;
+  const expectedCount =
+    phase === 'pilot' ? PILOT_OBJECT_IDS.length : FULL_STAGED_COUNT;
   const mappingById = exactRowsByArtworkId(mapping, 'mapping');
   const originalById = exactRowsByArtworkId(originalRecords, 'rollback D1');
   const originalVectorsById = exactRowsByArtworkId(
@@ -723,7 +747,10 @@ export function verifyNgaArtistPostApplyState({
     postVectors,
     'post-apply vector'
   );
-  if (mappingById.size !== expectedCount || originalById.size !== expectedCount) {
+  if (
+    mappingById.size !== expectedCount ||
+    originalById.size !== expectedCount
+  ) {
     throw new Error(
       `post-apply expected scope is ${expectedCount} records for ${phase}`
     );
@@ -756,9 +783,11 @@ export function verifyNgaArtistPostApplyState({
     }
   }
 
-  const orderedIds = [...expectedIds].sort((left, right) =>
-    Number(left.split(':').at(-1)) - Number(right.split(':').at(-1))
+  const orderedIds = [...expectedIds].sort(
+    (left, right) =>
+      Number(left.split(':').at(-1)) - Number(right.split(':').at(-1))
   );
+  let applicationRecordChanges = 0;
   for (const id of orderedIds) {
     const desired = mappingById.get(id);
     const original = structuredClone(originalById.get(id));
@@ -800,6 +829,23 @@ export function verifyNgaArtistPostApplyState({
     ) {
       throw new Error(`post-apply NGA artist metadata mismatch for ${id}`);
     }
+    const originalSemantic = {
+      ...original,
+      custom_metadata: originalCustom,
+      field_sources: originalSources,
+    };
+    const actualSemantic = {
+      ...actual,
+      custom_metadata: actualCustom,
+      field_sources: actualSources,
+    };
+    if (
+      (phase === 'pilot' ||
+        !PILOT_OBJECT_IDS.includes(id.replace(/^open-access-art:nga:/, ''))) &&
+      canonicalJson(actualSemantic) !== canonicalJson(originalSemantic)
+    ) {
+      applicationRecordChanges += 1;
+    }
     original.primary_artist_id = desired.primaryArtistId;
     original.custom_metadata = expectedCustom;
     original.field_sources = expectedSources;
@@ -816,9 +862,23 @@ export function verifyNgaArtistPostApplyState({
       ...(expectedVector.metadata || {}),
       primaryArtistId: desired.primaryArtistId,
     };
-    if (canonicalJson(postVectorsById.get(id)) !== canonicalJson(expectedVector)) {
-      throw new Error(`post-apply vector changed beyond primaryArtistId for ${id}`);
+    if (
+      canonicalJson(postVectorsById.get(id)) !== canonicalJson(expectedVector)
+    ) {
+      throw new Error(
+        `post-apply vector changed beyond primaryArtistId for ${id}`
+      );
     }
+  }
+
+  const expectedApplicationRecordChanges =
+    phase === 'pilot'
+      ? PILOT_OBJECT_IDS.length
+      : FULL_STAGED_COUNT - PILOT_OBJECT_IDS.length;
+  if (applicationRecordChanges !== expectedApplicationRecordChanges) {
+    throw new Error(
+      `post-apply application-record change count mismatch: expected ${expectedApplicationRecordChanges}, got ${applicationRecordChanges}`
+    );
   }
 
   const orderedPostRecords = orderedIds.map((id) => postById.get(id));
@@ -827,6 +887,7 @@ export function verifyNgaArtistPostApplyState({
     phase,
     recordCount: expectedCount,
     vectorCount: expectedCount,
+    applicationRecordChanges,
     unrelatedFieldsUnchanged: true,
     vectorValuesUnchanged: true,
     idempotentD1State: true,

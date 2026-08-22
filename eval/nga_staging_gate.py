@@ -1048,24 +1048,85 @@ def _load_ndjson(payload: bytes) -> list[Mapping[str, Any]] | None:
     return rows
 
 
-def _d1_changes_from_apply_stdout(value: Any) -> int | None:
-    changes: list[int] = []
+def _parse_wrangler_json_output(value: Any) -> Any | None:
+    if not isinstance(value, str):
+        return None
+    match = re.search(r"^[\t ]*[\[{]", value, flags=re.MULTILINE)
+    if match is None:
+        return None
+    try:
+        payload = json.loads(value[match.start() :])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, (Mapping, list)) else None
 
-    def visit(item: Any) -> bool:
+
+def _d1_facts_from_apply_stdout(value: Any) -> Mapping[str, Any] | None:
+    payload = _parse_wrangler_json_output(value)
+    results = payload if isinstance(payload, list) else [payload]
+    if (
+        not results
+        or any(
+            not isinstance(result, Mapping) or result.get("success") is not True
+            for result in results
+        )
+    ):
+        return None
+    query_counts: list[int] = []
+
+    def collect_query_counts(item: Any) -> bool:
         if isinstance(item, list):
-            return all(visit(child) for child in item)
+            return all(collect_query_counts(child) for child in item)
         if not isinstance(item, Mapping):
             return True
-        if "meta" in item:
-            meta = item.get("meta")
-            count = meta.get("changes") if isinstance(meta, Mapping) else None
-            if type(count) is not int or count < 0:
+        for key, child in item.items():
+            if key == "Total queries executed":
+                if type(child) is not int or child < 0:
+                    return False
+                query_counts.append(child)
+            elif not collect_query_counts(child):
                 return False
-            changes.append(count)
-            return True
-        return all(visit(child) for child in item.values())
+        return True
 
-    return sum(changes) if visit(value) and changes else None
+    if not collect_query_counts(results) or not query_counts:
+        return None
+    telemetry: dict[str, list[Any]] = {
+        "changes": [],
+        "rowsRead": [],
+        "rowsWritten": [],
+        "changedDb": [],
+        "finalBookmarks": [],
+    }
+    telemetry_fields = (
+        ("changes", "changes", lambda item: type(item) is int and item >= 0),
+        ("rows_read", "rowsRead", lambda item: type(item) is int and item >= 0),
+        (
+            "rows_written",
+            "rowsWritten",
+            lambda item: type(item) is int and item >= 0,
+        ),
+        ("changed_db", "changedDb", lambda item: type(item) is bool),
+    )
+    for result in results:
+        meta_value = result.get("meta")
+        if meta_value is not None and not isinstance(meta_value, Mapping):
+            return None
+        meta = meta_value if isinstance(meta_value, Mapping) else {}
+        for source, target, valid in telemetry_fields:
+            if source not in meta:
+                continue
+            if not valid(meta[source]):
+                return None
+            telemetry[target].append(meta[source])
+        if "finalBookmark" in result:
+            bookmark = result.get("finalBookmark")
+            if not isinstance(bookmark, str) or not bookmark.strip():
+                return None
+            telemetry["finalBookmarks"].append(bookmark)
+    return {
+        "queryCount": sum(query_counts),
+        "telemetry": telemetry,
+    }
 
 
 def _valid_production_capture(
@@ -1883,11 +1944,12 @@ def evaluate_artist_data_evidence(
                 "artifactManifestSha256",
                 "stateManifest",
                 "preflightInputs",
+                "resumeLineage",
                 "applyResponses",
                 "applySummary",
                 "summary",
             }
-            or post.get("schemaVersion") != "nga-post-apply-verification-v2"
+            or post.get("schemaVersion") != "nga-post-apply-verification-v3"
             or _parse_utc_timestamp(post.get("verifiedAt")) is None
             or post.get("environment") != "staging"
             or post.get("phase") != phase
@@ -1915,9 +1977,13 @@ def evaluate_artist_data_evidence(
         )
         apply_inventory_valid = len(apply_responses) == len(ordered_apply)
         apply_counts_valid = True
-        expected_d1_changes = 0
-        actual_d1_changes = 0
+        expected_d1_queries = 0
+        actual_d1_queries = 0
         d1_chunk_count = 0
+        resumed_response_count = 0
+        executed_response_count = 0
+        saw_executed_response = False
+        resumed_sources: list[Mapping[str, Any]] = []
         seen_response_paths: set[str] = set()
         for index, artifact_value in enumerate(ordered_apply):
             artifact = artifact_value if isinstance(artifact_value, Mapping) else {}
@@ -1933,17 +1999,20 @@ def evaluate_artist_data_evidence(
             kind = artifact.get("kind")
             artifact_path = str(artifact.get("path") or "")
             response_path = f"apply-responses/{sequence:04d}.json"
+            execution = descriptor.get("execution")
             expected_descriptor_keys = {
                 "sequence",
                 "kind",
                 "path",
                 "artifactPath",
                 "sha256",
+                "execution",
                 *(
-                    ("expectedChanges", "actualChanges")
+                    ("expectedQueryCount", "actualQueryCount", "telemetry")
                     if kind == "d1-sql"
                     else ()
                 ),
+                *(("source",) if execution == "resumed" else ()),
             }
             if (
                 set(descriptor) != expected_descriptor_keys
@@ -1952,8 +2021,18 @@ def evaluate_artist_data_evidence(
                 or descriptor.get("artifactPath") != artifact_path
                 or descriptor.get("path") != response_path
                 or response_path in seen_response_paths
+                or execution not in {"resumed", "executed"}
+                or (execution == "resumed" and saw_executed_response)
             ):
                 apply_inventory_valid = False
+            if execution == "resumed":
+                resumed_response_count += 1
+                source_value = descriptor.get("source")
+                if isinstance(source_value, Mapping):
+                    resumed_sources.append(source_value)
+            elif execution == "executed":
+                executed_response_count += 1
+                saw_executed_response = True
             seen_response_paths.add(response_path)
             response_resolved = _resolve_bound_file(post_path.parent, descriptor)
             if response_resolved is None or not response_resolved[1]:
@@ -1963,6 +2042,25 @@ def evaluate_artist_data_evidence(
                 continue
             response_file, response_payload = response_resolved
             bound_paths.append(str(response_file.resolve()))
+            if execution == "resumed":
+                source_value = descriptor.get("source")
+                source = source_value if isinstance(source_value, Mapping) else {}
+                source_resolved = (
+                    _resolve_bound_file(manifest_path.parent, source)
+                    if manifest_path is not None
+                    else None
+                )
+                if (
+                    source_resolved is None
+                    or not source_resolved[1]
+                    or source.get("sha256") != descriptor.get("sha256")
+                    or source_resolved[1] != response_payload
+                ):
+                    failures.append(
+                        _failure("artist_apply_resume_source_hash_mismatch")
+                    )
+                else:
+                    bound_paths.append(str(source_resolved[0].resolve()))
             response_value = _load_bound_json(response_payload)
             response = (
                 response_value if isinstance(response_value, Mapping) else {}
@@ -1991,54 +2089,171 @@ def evaluate_artist_data_evidence(
             sql_ids = re.findall(
                 r"^\s*AND id = '([^']+)'\s*;?\s*$", sql_text, flags=re.MULTILINE
             )
-            expected_chunk_changes = sum(
-                1
-                for artwork_id in sql_ids
-                if phase == "pilot"
-                or artwork_id.removeprefix("open-access-art:nga:")
-                not in NGA_PILOT_OBJECT_IDS
-            )
+            expected_chunk_queries = len(sql_ids)
             if (
                 len(sql_ids) != artifact.get("recordCount")
                 or len(set(sql_ids)) != len(sql_ids)
                 or any(artwork_id not in mapping_by_id for artwork_id in sql_ids)
             ):
                 apply_inventory_valid = False
-            try:
-                stdout_value = json.loads(str(response.get("stdout")))
-            except json.JSONDecodeError:
-                stdout_value = None
-            actual_chunk_changes = _d1_changes_from_apply_stdout(stdout_value)
+            facts = _d1_facts_from_apply_stdout(response.get("stdout"))
+            actual_chunk_queries = (
+                facts.get("queryCount") if isinstance(facts, Mapping) else None
+            )
+            actual_telemetry = (
+                facts.get("telemetry") if isinstance(facts, Mapping) else None
+            )
             if (
-                descriptor.get("expectedChanges") != expected_chunk_changes
-                or descriptor.get("actualChanges") != actual_chunk_changes
-                or actual_chunk_changes != expected_chunk_changes
+                descriptor.get("expectedQueryCount") != expected_chunk_queries
+                or descriptor.get("actualQueryCount") != actual_chunk_queries
+                or actual_chunk_queries != expected_chunk_queries
+                or canonical_json(descriptor.get("telemetry"))
+                != canonical_json(actual_telemetry)
             ):
                 apply_counts_valid = False
-            expected_d1_changes += expected_chunk_changes
-            actual_d1_changes += (
-                actual_chunk_changes if actual_chunk_changes is not None else 0
+            expected_d1_queries += expected_chunk_queries
+            actual_d1_queries += (
+                actual_chunk_queries if isinstance(actual_chunk_queries, int) else 0
             )
         if not apply_inventory_valid:
             failures.append(_failure("artist_apply_response_inventory_invalid"))
+        resume_lineage_value = post.get("resumeLineage")
+        if resumed_response_count:
+            resume_lineage = (
+                resume_lineage_value
+                if isinstance(resume_lineage_value, Mapping)
+                else {}
+            )
+            lineage_resolved = (
+                _resolve_bound_file(manifest_path.parent, resume_lineage)
+                if manifest_path is not None
+                else None
+            )
+            if lineage_resolved is None or not lineage_resolved[1]:
+                failures.append(
+                    _failure("artist_apply_resume_lineage_hash_mismatch")
+                )
+            else:
+                lineage_path, lineage_payload = lineage_resolved
+                lineage_value = _load_bound_json(lineage_payload)
+                lineage = (
+                    lineage_value if isinstance(lineage_value, Mapping) else {}
+                )
+                bound_paths.append(str(lineage_path.resolve()))
+                source_git_sha = str(lineage.get("sourceGitSha") or "")
+                source_root = str(lineage.get("sourceEvidenceRoot") or "")
+                lineage_manifest_value = lineage.get("artifactManifest")
+                lineage_manifest = (
+                    lineage_manifest_value
+                    if isinstance(lineage_manifest_value, Mapping)
+                    else {}
+                )
+                lineage_preflight_value = lineage.get("preflightManifests")
+                lineage_preflight = (
+                    lineage_preflight_value
+                    if isinstance(lineage_preflight_value, list)
+                    else []
+                )
+                lineage_responses_value = lineage.get("responses")
+                lineage_responses = (
+                    lineage_responses_value
+                    if isinstance(lineage_responses_value, list)
+                    else []
+                )
+                expected_preflight_hashes = {
+                    str(item.get("phase") or ""): item.get("manifestSha256")
+                    for item in preflight
+                    if isinstance(item, Mapping)
+                }
+                lineage_valid = (
+                    set(lineage)
+                    == {
+                        "schemaVersion",
+                        "sourceGitSha",
+                        "sourceEvidenceRoot",
+                        "artifactManifest",
+                        "preflightManifests",
+                        "responses",
+                    }
+                    and lineage.get("schemaVersion")
+                    == "nga-apply-resume-lineage-v1"
+                    and re.fullmatch(r"[a-f0-9]{40}", source_git_sha)
+                    is not None
+                    and re.fullmatch(
+                        rf"\.agent/evidence/nga-staging/{source_git_sha}/\d{{8}}T\d{{6}}Z",
+                        source_root,
+                    )
+                    is not None
+                    and set(lineage_manifest) == {"sourcePath", "sha256"}
+                    and lineage_manifest.get("sourcePath")
+                    == f"backfill/{phase}/artifact-manifest.json"
+                    and lineage_manifest.get("sha256")
+                    == sha256_bytes(manifest_bytes)
+                    and len(lineage_preflight) == len(expected_preflight_hashes)
+                    and all(
+                        isinstance(item, Mapping)
+                        and item.get("sourcePath")
+                        == (
+                            "preflight/pilot/preflight-manifest.json"
+                            if item.get("phase") == "pilot"
+                            else "preflight/full-remaining/preflight-manifest.json"
+                            if item.get("phase") == "full"
+                            else None
+                        )
+                        for item in lineage_preflight
+                    )
+                    and {
+                        str(item.get("phase") or ""): item.get("sha256")
+                        for item in lineage_preflight
+                        if isinstance(item, Mapping)
+                        and set(item) == {"phase", "sourcePath", "sha256"}
+                    }
+                    == expected_preflight_hashes
+                    and len(lineage_responses) == resumed_response_count
+                    and all(
+                        isinstance(item, Mapping)
+                        and set(item)
+                        == {"sequence", "sourcePath", "copiedPath", "sha256"}
+                        and item.get("sequence") == index + 1
+                        and item.get("copiedPath") == source.get("path")
+                        and item.get("sha256") == source.get("sha256")
+                        and re.fullmatch(
+                            rf"backfill/{phase}/apply-responses/[^/]+/{index + 1:04d}\.json",
+                            str(item.get("sourcePath") or ""),
+                        )
+                        is not None
+                        for index, (item, source) in enumerate(
+                            zip(lineage_responses, resumed_sources)
+                        )
+                    )
+                )
+                if not lineage_valid:
+                    failures.append(_failure("artist_apply_resume_lineage_invalid"))
+        elif resume_lineage_value is not None:
+            failures.append(_failure("artist_apply_resume_lineage_invalid"))
         expected_apply_summary = {
             "responseCount": len(ordered_apply),
+            "resumedResponseCount": resumed_response_count,
+            "executedResponseCount": executed_response_count,
             "d1ChunkCount": d1_chunk_count,
-            "expectedD1Changes": expected_d1_changes,
-            "actualD1Changes": actual_d1_changes,
+            "expectedD1QueryCount": expected_d1_queries,
+            "actualD1QueryCount": actual_d1_queries,
+            "expectedApplicationRecordChanges": (
+                expected_count if phase == "pilot" else expected_count - 5
+            ),
+            "verifiedApplicationRecordChanges": (
+                expected_count if phase == "pilot" else expected_count - 5
+            ),
         }
-        expected_total_changes = (
-            expected_count if phase == "pilot" else expected_count - 5
-        )
         if (
             not apply_counts_valid
-            or expected_d1_changes != expected_total_changes
-            or actual_d1_changes != expected_total_changes
+            or expected_d1_queries != expected_count
+            or actual_d1_queries != expected_count
             or canonical_json(apply_summary)
             != canonical_json(expected_apply_summary)
         ):
             failures.append(
-                _failure("artist_apply_response_change_count_mismatch")
+                _failure("artist_apply_response_query_count_mismatch")
             )
         state_resolved = _resolve_bound_file(post_path.parent, state_descriptor)
         if state_resolved is None or not state_resolved[1]:
@@ -2152,6 +2367,7 @@ def evaluate_artist_data_evidence(
                 mapping_by_id,
                 key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1]),
             )
+            application_record_changes = 0
             for artwork_id in ordered_ids:
                 desired = mapping_by_id.get(artwork_id, {})
                 original_value = rollback_d1_by_id.get(artwork_id)
@@ -2215,6 +2431,24 @@ def evaluate_artist_data_evidence(
                     **original_sources,
                     "primary_artist_id": "nga.objects_constituents",
                 }
+                original_semantic = {
+                    **original,
+                    "custom_metadata": original_custom,
+                    "field_sources": original_sources,
+                }
+                actual_semantic = {
+                    **actual,
+                    "custom_metadata": actual_custom,
+                    "field_sources": actual_sources,
+                }
+                if (
+                    phase == "pilot"
+                    or artwork_id.removeprefix("open-access-art:nga:")
+                    not in NGA_PILOT_OBJECT_IDS
+                ) and canonical_json(actual_semantic) != canonical_json(
+                    original_semantic
+                ):
+                    application_record_changes += 1
                 original["primary_artist_id"] = desired.get("primaryArtistId")
                 original["custom_metadata"] = expected_custom
                 original["field_sources"] = expected_sources
@@ -2241,10 +2475,22 @@ def evaluate_artist_data_evidence(
                     state_valid = False
             if not state_valid:
                 failures.append(_failure("artist_post_apply_state_mismatch"))
+            expected_application_record_changes = (
+                expected_count if phase == "pilot" else expected_count - 5
+            )
+            if application_record_changes != expected_application_record_changes:
+                failures.append(
+                    _failure(
+                        "artist_post_apply_application_change_count_mismatch",
+                        expected=expected_application_record_changes,
+                        actual=application_record_changes,
+                    )
+                )
             expected_summary = {
                 "phase": phase,
                 "recordCount": expected_count,
                 "vectorCount": expected_count,
+                "applicationRecordChanges": application_record_changes,
                 "unrelatedFieldsUnchanged": True,
                 "vectorValuesUnchanged": True,
                 "idempotentD1State": True,

@@ -8,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -212,7 +213,13 @@ const replaceArtifact = (artifact, path, content) => {
 
 const createMockPnpm = (
   artifact,
-  { d1Changes = 5, mutateRows = (rows) => rows, mutateVectors = (rows) => rows } = {}
+  {
+    d1Changes = 5,
+    d1QueryCount = 5,
+    d1Prefix = '',
+    mutateRows = (rows) => rows,
+    mutateVectors = (rows) => rows,
+  } = {}
 ) => {
   const bin = join(artifact.root, 'bin');
   mkdirSync(bin);
@@ -241,12 +248,25 @@ const createMockPnpm = (
     .split('\n')
     .map((line) => JSON.parse(line));
   const mock = `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
 const args = process.argv.slice(2).join(' ');
 if (args.includes('d1 execute') && args.includes('--file')) {
-  process.stdout.write(JSON.stringify([{ success: true, meta: { changes: Number(process.env.NGA_APPLY_TEST_D1_CHANGES) } }]));
+  if (process.env.NGA_APPLY_TEST_D1_MARKER) appendFileSync(process.env.NGA_APPLY_TEST_D1_MARKER, 'd1\\n');
+  process.stdout.write(process.env.NGA_APPLY_TEST_D1_PREFIX + JSON.stringify([{
+    results: [{ 'Total queries executed': Number(process.env.NGA_APPLY_TEST_D1_QUERY_COUNT) }],
+    success: true,
+    finalBookmark: '00000000-0000000a-00004c16-00000000',
+    meta: {
+      changes: Number(process.env.NGA_APPLY_TEST_D1_CHANGES),
+      rows_read: 10,
+      rows_written: 15,
+      changed_db: true
+    }
+  }]));
 } else if (args.includes('d1 execute') && args.includes('--command=')) {
   process.stdout.write(JSON.stringify([{ results: JSON.parse(process.env.NGA_APPLY_TEST_POST_ROWS) }]));
 } else if (args.includes('vectorize upsert')) {
+  if (process.env.NGA_APPLY_TEST_VECTOR_MARKER) appendFileSync(process.env.NGA_APPLY_TEST_VECTOR_MARKER, 'vector\\n');
   process.stdout.write(JSON.stringify({ count: 5 }));
 } else if (args.includes('vectorize get-vectors')) {
   process.stdout.write(JSON.stringify({ vectors: JSON.parse(process.env.NGA_APPLY_TEST_POST_VECTORS) }));
@@ -261,9 +281,96 @@ if (args.includes('d1 execute') && args.includes('--file')) {
   return {
     PATH: `${bin}:${process.env.PATH}`,
     NGA_APPLY_TEST_D1_CHANGES: String(d1Changes),
-    NGA_APPLY_TEST_POST_ROWS: JSON.stringify(mutateRows(postRows)),
+    NGA_APPLY_TEST_D1_QUERY_COUNT: String(d1QueryCount),
+    NGA_APPLY_TEST_D1_PREFIX: d1Prefix,
+    NGA_APPLY_TEST_POST_ROWS: JSON.stringify(
+      mutateRows(postRows, originalRows)
+    ),
     NGA_APPLY_TEST_POST_VECTORS: JSON.stringify(mutateVectors(postVectors)),
   };
+};
+
+const liveD1Stdout = ({ queryCount = 5, changes = 11, prefix = '' } = {}) =>
+  `${prefix}${JSON.stringify([
+    {
+      results: [{ 'Total queries executed': queryCount }],
+      success: true,
+      finalBookmark: '00000000-0000000a-00004c16-00000000',
+      meta: {
+        changes,
+        rows_read: 10,
+        rows_written: 15,
+        changed_db: true,
+      },
+    },
+  ])}`;
+
+const createResumeResponseDirectory = (artifact, mutate = (value) => value) => {
+  const directory = join(artifact.root, 'resume-responses');
+  mkdirSync(directory);
+  const response = mutate({
+    sequence: 1,
+    kind: 'd1-sql',
+    path: 'sql/artist-0001.sql',
+    status: 0,
+    stdout: liveD1Stdout({
+      prefix:
+        '├ Checking if file needs uploading\n│\n├ 🌀 Uploading fixture.sql\n│ 🌀 Uploading complete.\n│\n',
+    }),
+    stderr: '',
+  });
+  writeFileSync(
+    join(directory, '0001.json'),
+    `${JSON.stringify(response, null, 2)}\n`
+  );
+  return directory;
+};
+
+const createResumeLineage = (
+  artifact,
+  resumeDirectory,
+  mutate = (value) => value
+) => {
+  const responsePath = join(resumeDirectory, '0001.json');
+  const lineage = mutate({
+    schemaVersion: 'nga-apply-resume-lineage-v1',
+    sourceGitSha: 'c5913a3193beff80f92bc5a90215f73869bc3cb6',
+    sourceEvidenceRoot:
+      '.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z',
+    artifactManifest: {
+      sourcePath: 'backfill/pilot/artifact-manifest.json',
+      sha256: artifact.manifestSha256,
+    },
+    preflightManifests: [
+      {
+        phase: 'pilot',
+        sourcePath: 'preflight/pilot/preflight-manifest.json',
+        sha256: '2'.repeat(64),
+      },
+    ],
+    responses: [
+      {
+        sequence: 1,
+        sourcePath:
+          'backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json',
+        copiedPath: 'resume-responses/0001.json',
+        sha256: sha256(readFileSync(responsePath)),
+      },
+    ],
+  });
+  const path = join(artifact.root, 'resume-lineage.json');
+  const text = `${JSON.stringify(lineage, null, 2)}\n`;
+  writeFileSync(path, text);
+  return { path, sha256: sha256(text) };
+};
+
+const resumeArguments = (artifact, resumeDirectory, mutateLineage) => {
+  const lineage = createResumeLineage(artifact, resumeDirectory, mutateLineage);
+  return [
+    `--resume-response-dir=${resumeDirectory}`,
+    `--resume-lineage=${lineage.path}`,
+    `--confirm-resume-lineage-sha256=${lineage.sha256}`,
+  ];
 };
 
 const runApply = ({ manifestPath, manifestSha256, extra = [], env = {} }) =>
@@ -387,7 +494,10 @@ test('rejects a preflight binding without a durable D1 recovery point', () => {
   const result = runApply({ ...artifact, manifestSha256: sha256(text) });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /preflight.*rollback|recovery point|time-travel/i);
+  assert.match(
+    result.stderr,
+    /preflight.*rollback|recovery point|time-travel/i
+  );
 });
 
 test('rejects rehashed SQL chunks whose declared count hides an ID gap', () => {
@@ -613,15 +723,19 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
   const verification = JSON.parse(
     readFileSync(join(passingOut, 'verification.json'), 'utf8')
   );
-  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v2');
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v3');
   assert.equal(verification.phase, 'pilot');
   assert.equal(verification.summary.recordCount, 5);
   assert.equal(verification.summary.vectorCount, 5);
   assert.deepEqual(verification.applySummary, {
     responseCount: 2,
+    resumedResponseCount: 0,
+    executedResponseCount: 2,
     d1ChunkCount: 1,
-    expectedD1Changes: 5,
-    actualD1Changes: 5,
+    expectedD1QueryCount: 5,
+    actualD1QueryCount: 5,
+    expectedApplicationRecordChanges: 5,
+    verifiedApplicationRecordChanges: 5,
   });
   assert.deepEqual(
     verification.applyResponses.map((response) => ({
@@ -629,8 +743,9 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
       kind: response.kind,
       path: response.path,
       artifactPath: response.artifactPath,
-      expectedChanges: response.expectedChanges,
-      actualChanges: response.actualChanges,
+      execution: response.execution,
+      expectedQueryCount: response.expectedQueryCount,
+      actualQueryCount: response.actualQueryCount,
     })),
     [
       {
@@ -638,16 +753,18 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
         kind: 'd1-sql',
         path: 'apply-responses/0001.json',
         artifactPath: 'sql/artist-0001.sql',
-        expectedChanges: 5,
-        actualChanges: 5,
+        execution: 'executed',
+        expectedQueryCount: 5,
+        actualQueryCount: 5,
       },
       {
         sequence: 2,
         kind: 'image-vectors',
         path: 'apply-responses/0002.json',
         artifactPath: 'vectors/artist-0001.ndjson',
-        expectedChanges: undefined,
-        actualChanges: undefined,
+        execution: 'executed',
+        expectedQueryCount: undefined,
+        actualQueryCount: undefined,
       },
     ]
   );
@@ -665,9 +782,9 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
 
   const failures = [
     {
-      label: 'zero-row D1 execution',
-      options: { d1Changes: 0 },
-      pattern: /D1 changes.*expected 5|expected 5.*D1 changes/i,
+      label: 'zero-query D1 execution',
+      options: { d1QueryCount: 0 },
+      pattern: /D1 quer(?:y|ies).*expected 5|expected 5.*D1 quer(?:y|ies)/i,
     },
     {
       label: 'partial D1 state',
@@ -701,6 +818,332 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
     assert.notEqual(result.status, 0, fixture.label);
     assert.match(result.stderr, fixture.pattern, fixture.label);
   }
+});
+
+test('accepts live-shaped prefixed D1 output and derives exact application-record changes from post-state', () => {
+  const artifact = createArtifacts();
+  const outDir = join(artifact.root, 'post-apply');
+  const result = runApply({
+    ...artifact,
+    extra: ['--execute', `--post-apply-out-dir=${outDir}`],
+    env: createMockPnpm(artifact, {
+      d1Changes: 11,
+      d1QueryCount: 5,
+      d1Prefix:
+        '├ Checking if file needs uploading\n│\n├ 🌀 Uploading fixture.sql\n│ 🌀 Uploading complete.\n│\n',
+    }),
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const verification = JSON.parse(
+    readFileSync(join(outDir, 'verification.json'), 'utf8')
+  );
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v3');
+  assert.deepEqual(verification.applySummary, {
+    responseCount: 2,
+    resumedResponseCount: 0,
+    executedResponseCount: 2,
+    d1ChunkCount: 1,
+    expectedD1QueryCount: 5,
+    actualD1QueryCount: 5,
+    expectedApplicationRecordChanges: 5,
+    verifiedApplicationRecordChanges: 5,
+  });
+  assert.deepEqual(verification.applyResponses[0].telemetry, {
+    changes: [11],
+    rowsRead: [10],
+    rowsWritten: [15],
+    changedDb: [true],
+    finalBookmarks: ['00000000-0000000a-00004c16-00000000'],
+  });
+});
+
+test('rejects absent, malformed, trailing, failed, or wrong-query-count D1 payloads', () => {
+  const fixtures = [
+    {
+      label: 'absent JSON payload',
+      stdout: '├ Checking only\n',
+      pattern: /D1 apply response.*JSON|JSON payload/i,
+    },
+    {
+      label: 'malformed JSON payload',
+      stdout: '├ Checking\n[{',
+      pattern: /D1 apply response.*JSON|JSON payload/i,
+    },
+    {
+      label: 'trailing payload',
+      stdout: `${liveD1Stdout()}\ntrailing`,
+      pattern: /D1 apply response.*JSON|trailing/i,
+    },
+    {
+      label: 'failed result',
+      stdout: liveD1Stdout().replace('"success":true', '"success":false'),
+      pattern: /D1 apply response.*success/i,
+    },
+    {
+      label: 'wrong query count',
+      stdout: liveD1Stdout({ queryCount: 4 }),
+      pattern: /quer(?:y|ies).*expected 5|expected 5.*quer(?:y|ies)/i,
+    },
+  ];
+  for (const fixture of fixtures) {
+    const artifact = createArtifacts();
+    const bin = join(artifact.root, 'bin');
+    mkdirSync(bin);
+    const mock = `#!/usr/bin/env node
+const args = process.argv.slice(2).join(' ');
+if (args.includes('d1 execute') && args.includes('--file')) {
+  process.stdout.write(process.env.NGA_APPLY_TEST_D1_STDOUT);
+} else {
+  process.stderr.write('unexpected command after invalid D1 response');
+  process.exit(2);
+}
+`;
+    const command = join(bin, 'pnpm');
+    writeFileSync(command, mock);
+    chmodSync(command, 0o755);
+    const result = runApply({
+      ...artifact,
+      extra: [
+        '--execute',
+        `--post-apply-out-dir=${join(artifact.root, 'post-apply')}`,
+      ],
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        NGA_APPLY_TEST_D1_STDOUT: fixture.stdout,
+      },
+    });
+    assert.notEqual(result.status, 0, fixture.label);
+    assert.match(result.stderr, fixture.pattern, fixture.label);
+  }
+});
+
+test('resumes an exact successful D1 prefix without re-executing it and executes the vector suffix once', () => {
+  const artifact = createArtifacts();
+  const resumeDirectory = createResumeResponseDirectory(artifact);
+  const outDir = join(artifact.root, 'post-apply');
+  const d1Marker = join(artifact.root, 'd1-called');
+  const vectorMarker = join(artifact.root, 'vector-called');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${outDir}`,
+      ...resumeArguments(artifact, resumeDirectory),
+    ],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: d1Marker,
+      NGA_APPLY_TEST_VECTOR_MARKER: vectorMarker,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    existsSync(d1Marker),
+    false,
+    'resumed D1 must not execute again'
+  );
+  assert.equal(readFileSync(vectorMarker, 'utf8'), 'vector\n');
+  const verification = JSON.parse(
+    readFileSync(join(outDir, 'verification.json'), 'utf8')
+  );
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v3');
+  assert.equal(verification.applyResponses[0].execution, 'resumed');
+  assert.equal(verification.applyResponses[1].execution, 'executed');
+  assert.deepEqual(verification.applyResponses[0].source, {
+    path: 'resume-responses/0001.json',
+    sha256: sha256(readFileSync(join(resumeDirectory, '0001.json'))),
+  });
+  assert.deepEqual(verification.resumeLineage, {
+    path: 'resume-lineage.json',
+    sha256: sha256(readFileSync(join(artifact.root, 'resume-lineage.json'))),
+  });
+  for (const descriptor of verification.applyResponses) {
+    assert.equal(
+      sha256(readFileSync(join(outDir, descriptor.path))),
+      descriptor.sha256
+    );
+  }
+});
+
+test('resume requires current complete D1 state before it can verify success', () => {
+  const artifact = createArtifacts();
+  const resumeDirectory = createResumeResponseDirectory(artifact);
+  const d1Marker = join(artifact.root, 'd1-called');
+  const vectorMarker = join(artifact.root, 'vector-called');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(artifact.root, 'post-apply')}`,
+      ...resumeArguments(artifact, resumeDirectory),
+    ],
+    env: {
+      ...createMockPnpm(artifact, {
+        mutateRows: (_rows, originals) => originals,
+      }),
+      NGA_APPLY_TEST_D1_MARKER: d1Marker,
+      NGA_APPLY_TEST_VECTOR_MARKER: vectorMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /post-apply primary artist mismatch/i);
+  assert.equal(
+    existsSync(d1Marker),
+    false,
+    'resumed D1 must not execute again'
+  );
+  assert.equal(readFileSync(vectorMarker, 'utf8'), 'vector\n');
+});
+
+test('rejects unsafe, tampered, gapped, or mismatched resume prefixes', () => {
+  const fixtures = [
+    {
+      label: 'failed status',
+      mutate: (value) => ({ ...value, status: 1 }),
+      pattern: /resume.*(?:status|successful|apply step)/i,
+    },
+    {
+      label: 'wrong step path',
+      mutate: (value) => ({ ...value, path: 'sql/other.sql' }),
+      pattern: /resume.*(?:path|step|mismatch)/i,
+    },
+    {
+      label: 'wrong query count',
+      mutate: (value) => ({
+        ...value,
+        stdout: liveD1Stdout({ queryCount: 4 }),
+      }),
+      pattern: /resume.*quer(?:y|ies)|quer(?:y|ies).*expected 5/i,
+    },
+  ];
+  for (const fixture of fixtures) {
+    const artifact = createArtifacts();
+    const resumeDirectory = createResumeResponseDirectory(
+      artifact,
+      fixture.mutate
+    );
+    const marker = join(artifact.root, 'd1-called');
+    const result = runApply({
+      ...artifact,
+      extra: [
+        '--execute',
+        `--post-apply-out-dir=${join(artifact.root, 'post-apply')}`,
+        ...resumeArguments(artifact, resumeDirectory),
+      ],
+      env: {
+        ...createMockPnpm(artifact),
+        NGA_APPLY_TEST_D1_MARKER: marker,
+      },
+    });
+    assert.notEqual(result.status, 0, fixture.label);
+    assert.match(result.stderr, fixture.pattern, fixture.label);
+    assert.equal(existsSync(marker), false, fixture.label);
+  }
+
+  const gapArtifact = createArtifacts();
+  const gapDirectory = createResumeResponseDirectory(gapArtifact);
+  const gapResumeArguments = resumeArguments(gapArtifact, gapDirectory);
+  renameSync(join(gapDirectory, '0001.json'), join(gapDirectory, '0002.json'));
+  const gap = runApply({
+    ...gapArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(gapArtifact.root, 'post-apply')}`,
+      ...gapResumeArguments,
+    ],
+  });
+  assert.notEqual(gap.status, 0);
+  assert.match(gap.stderr, /resume.*(?:gap|contiguous|0001)/i);
+
+  const extraArtifact = createArtifacts();
+  const extraDirectory = createResumeResponseDirectory(extraArtifact);
+  writeFileSync(join(extraDirectory, 'extra.json'), '{}\n');
+  const extra = runApply({
+    ...extraArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(extraArtifact.root, 'post-apply')}`,
+      ...resumeArguments(extraArtifact, extraDirectory),
+    ],
+  });
+  assert.notEqual(extra.status, 0);
+  assert.match(extra.stderr, /resume.*(?:extra|inventory)/i);
+
+  const symlinkArtifact = createArtifacts();
+  const realDirectory = createResumeResponseDirectory(symlinkArtifact);
+  const symlinkDirectory = join(symlinkArtifact.root, 'resume-link');
+  symlinkSync(realDirectory, symlinkDirectory, 'dir');
+  const symlinked = runApply({
+    ...symlinkArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(symlinkArtifact.root, 'post-apply')}`,
+      ...resumeArguments(symlinkArtifact, realDirectory),
+      `--resume-response-dir=${symlinkDirectory}`,
+    ],
+  });
+  assert.notEqual(symlinked.status, 0);
+  assert.match(symlinked.stderr, /resume.*symlink/i);
+
+  const intermediateSymlinkArtifact = createArtifacts();
+  const intermediateRealDirectory = createResumeResponseDirectory(
+    intermediateSymlinkArtifact
+  );
+  const intermediateLink = join(
+    intermediateSymlinkArtifact.root,
+    'resume-parent-link'
+  );
+  symlinkSync(intermediateSymlinkArtifact.root, intermediateLink, 'dir');
+  const intermediate = runApply({
+    ...intermediateSymlinkArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(intermediateSymlinkArtifact.root, 'post-apply')}`,
+      ...resumeArguments(
+        intermediateSymlinkArtifact,
+        intermediateRealDirectory
+      ),
+      `--resume-response-dir=${join(intermediateLink, 'resume-responses')}`,
+    ],
+  });
+  assert.notEqual(intermediate.status, 0);
+  assert.match(intermediate.stderr, /resume.*symlink/i);
+});
+
+test('resume requires hash-confirmed preserved-source lineage and rejects response tamper', () => {
+  const missingArtifact = createArtifacts();
+  const missingDirectory = createResumeResponseDirectory(missingArtifact);
+  const missing = runApply({
+    ...missingArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(missingArtifact.root, 'post-apply')}`,
+      `--resume-response-dir=${missingDirectory}`,
+    ],
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /resume.*lineage/i);
+
+  const tamperedArtifact = createArtifacts();
+  const tamperedDirectory = createResumeResponseDirectory(tamperedArtifact);
+  const tamperedArgs = resumeArguments(tamperedArtifact, tamperedDirectory);
+  const responsePath = join(tamperedDirectory, '0001.json');
+  const response = JSON.parse(readFileSync(responsePath, 'utf8'));
+  response.stderr = 'tampered after lineage confirmation';
+  writeFileSync(responsePath, `${JSON.stringify(response, null, 2)}\n`);
+  const tampered = runApply({
+    ...tamperedArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(tamperedArtifact.root, 'post-apply')}`,
+      ...tamperedArgs,
+    ],
+  });
+  assert.notEqual(tampered.status, 0);
+  assert.match(tampered.stderr, /resume.*(?:SHA-256|lineage|tamper)/i);
 });
 
 test('rejects a changed support artifact bound into the manifest', () => {

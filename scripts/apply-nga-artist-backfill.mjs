@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   mkdirSync,
+  lstatSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -21,6 +22,7 @@ import {
   STAGING_IMAGE_VECTOR_INDEX,
   STAGING_ORG_ID,
   canonicalJson,
+  parseWranglerJsonOutput,
   verifyNgaArtistPostApplyState,
 } from './lib/nga-artist-backfill.mjs';
 import { buildNgaArtistUpdateSql } from './lib/nga-structured-search-backfill.mjs';
@@ -44,6 +46,9 @@ const allowedOptions = new Set([
   'd1-database',
   'image-vector-index',
   'post-apply-out-dir',
+  'resume-response-dir',
+  'resume-lineage',
+  'confirm-resume-lineage-sha256',
 ]);
 for (const key of args.keys()) {
   if (!allowedOptions.has(key)) throw new Error(`unsupported option --${key}`);
@@ -59,6 +64,9 @@ const imageVectorIndex = String(
   args.get('image-vector-index') || STAGING_IMAGE_VECTOR_INDEX
 );
 const postApplyOutDirectoryValue = args.get('post-apply-out-dir');
+const resumeResponseDirectoryValue = args.get('resume-response-dir');
+const resumeLineageValue = args.get('resume-lineage');
+const resumeLineageConfirmation = args.get('confirm-resume-lineage-sha256');
 if (environment !== 'staging') {
   throw new Error(
     'only --environment=staging is allowed; production is forbidden'
@@ -86,11 +94,37 @@ if (args.has('execute')) {
   ) {
     throw new Error('production-named post-apply evidence is forbidden');
   }
-  const existingPostApply = statSync(resolve(String(postApplyOutDirectoryValue)), {
-    throwIfNoEntry: false,
-  });
-  if (existingPostApply && readdirSync(resolve(String(postApplyOutDirectoryValue))).length) {
+  const existingPostApply = statSync(
+    resolve(String(postApplyOutDirectoryValue)),
+    {
+      throwIfNoEntry: false,
+    }
+  );
+  if (
+    existingPostApply &&
+    readdirSync(resolve(String(postApplyOutDirectoryValue))).length
+  ) {
     throw new Error('--post-apply-out-dir must be empty before execution');
+  }
+}
+if (
+  resumeResponseDirectoryValue !== undefined ||
+  resumeLineageValue !== undefined ||
+  resumeLineageConfirmation !== undefined
+) {
+  if (!args.has('execute')) {
+    throw new Error('resume options are allowed only with --execute');
+  }
+  if (
+    !resumeResponseDirectoryValue ||
+    resumeResponseDirectoryValue === true ||
+    !resumeLineageValue ||
+    resumeLineageValue === true ||
+    !/^[a-f0-9]{64}$/.test(String(resumeLineageConfirmation || ''))
+  ) {
+    throw new Error(
+      '--resume-response-dir requires --resume-lineage and --confirm-resume-lineage-sha256'
+    );
   }
 }
 
@@ -204,6 +238,7 @@ if (
 }
 
 const artifactRoot = realpathSync(dirname(manifestPath));
+const artifactRequestRoot = dirname(resolve(String(manifestArgument)));
 const resolveManifestFile = (artifact) => {
   if (
     typeof artifact?.path !== 'string' ||
@@ -301,29 +336,29 @@ if (
   rollbackD1Artifact?.recordCount !== expectedRecordCount ||
   new Set(rollbackD1Records.map((row) => String(row?.id || ''))).size !==
     expectedRecordCount ||
-  rollbackD1Records.some(
-    (row) => {
-      let customMetadata;
-      try {
-        customMetadata =
-          typeof row?.custom_metadata === 'string'
-            ? JSON.parse(row.custom_metadata)
-            : row?.custom_metadata;
-      } catch {
-        return true;
-      }
-      return (
-        !mappingById.has(String(row?.id || '')) ||
-        row?.org_id !== STAGING_ORG_ID ||
-        customMetadata?.provider !== 'nga' ||
-        !Object.prototype.hasOwnProperty.call(row, 'primary_artist_id') ||
-        !Object.prototype.hasOwnProperty.call(row, 'custom_metadata') ||
-        !Object.prototype.hasOwnProperty.call(row, 'field_sources')
-      );
+  rollbackD1Records.some((row) => {
+    let customMetadata;
+    try {
+      customMetadata =
+        typeof row?.custom_metadata === 'string'
+          ? JSON.parse(row.custom_metadata)
+          : row?.custom_metadata;
+    } catch {
+      return true;
     }
-  )
+    return (
+      !mappingById.has(String(row?.id || '')) ||
+      row?.org_id !== STAGING_ORG_ID ||
+      customMetadata?.provider !== 'nga' ||
+      !Object.prototype.hasOwnProperty.call(row, 'primary_artist_id') ||
+      !Object.prototype.hasOwnProperty.call(row, 'custom_metadata') ||
+      !Object.prototype.hasOwnProperty.call(row, 'field_sources')
+    );
+  })
 ) {
-  throw new Error('D1 rollback source is incomplete or outside the exact scope');
+  throw new Error(
+    'D1 rollback source is incomplete or outside the exact scope'
+  );
 }
 
 const splitSqlStatements = (text, path) => {
@@ -429,7 +464,7 @@ const resolvedArtifacts = manifest.orderedArtifacts.map((artifact) => {
   return { ...artifact, resolvedPath: declared.resolvedPath };
 });
 const sqlIds = [];
-const expectedD1ChangesByPath = new Map();
+const expectedD1QueriesByPath = new Map();
 const enrichedIds = [];
 const enrichedById = new Map();
 for (const artifact of resolvedArtifacts) {
@@ -457,17 +492,7 @@ for (const artifact of resolvedArtifacts) {
       sqlIds.push(matches[0][1]);
       artifactIds.push(matches[0][1]);
     }
-    expectedD1ChangesByPath.set(
-      artifact.path,
-      phase === 'pilot'
-        ? artifactIds.length
-        : artifactIds.filter(
-            (id) =>
-              !PILOT_OBJECT_IDS.includes(
-                id.replace(/^open-access-art:nga:/, '')
-              )
-          ).length
-    );
+    expectedD1QueriesByPath.set(artifact.path, artifactIds.length);
   } else {
     const rows = parseNdjson(artifact);
     if (rows.length !== artifact.recordCount) {
@@ -587,7 +612,7 @@ const steps = resolvedArtifacts.map((artifact, index) => ({
   path: relative(artifactRoot, artifact.resolvedPath),
   sha256: artifact.sha256,
   ...(artifact.kind === 'd1-sql'
-    ? { expectedChanges: expectedD1ChangesByPath.get(artifact.path) }
+    ? { expectedQueryCount: expectedD1QueriesByPath.get(artifact.path) }
     : {}),
   command:
     artifact.kind === 'd1-sql'
@@ -625,35 +650,322 @@ const steps = resolvedArtifacts.map((artifact, index) => ({
         ],
 }));
 
-const d1ChangesFromResponse = (stdout, path) => {
-  let payload;
-  try {
-    payload = JSON.parse(stdout);
-  } catch {
-    throw new Error(`D1 apply response is not JSON for ${path}`);
+const d1FactsFromResponse = (stdout, path, expectedQueryCount) => {
+  const payload = parseWranglerJsonOutput(
+    stdout,
+    `D1 apply response for ${path}`
+  );
+  const results = Array.isArray(payload) ? payload : [payload];
+  if (
+    !results.length ||
+    results.some(
+      (result) =>
+        !result || typeof result !== 'object' || result.success !== true
+    )
+  ) {
+    throw new Error(`D1 apply response has no successful result for ${path}`);
   }
-  const changes = [];
-  const visit = (value) => {
+  const queryCounts = [];
+  const collectQueryCounts = (value) => {
     if (Array.isArray(value)) {
-      value.forEach(visit);
+      value.forEach(collectQueryCounts);
       return;
     }
     if (!value || typeof value !== 'object') return;
-    if (Object.prototype.hasOwnProperty.call(value, 'meta')) {
-      const count = value.meta?.changes;
-      if (!Number.isInteger(count) || count < 0) {
-        throw new Error(`D1 apply response has invalid changes for ${path}`);
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'Total queries executed') {
+        if (!Number.isInteger(child) || child < 0) {
+          throw new Error(
+            `D1 apply response has invalid query count for ${path}`
+          );
+        }
+        queryCounts.push(child);
+      } else {
+        collectQueryCounts(child);
       }
-      changes.push(count);
-      return;
     }
-    Object.values(value).forEach(visit);
   };
-  visit(payload);
-  if (!changes.length) {
-    throw new Error(`D1 apply response has no changes count for ${path}`);
+  collectQueryCounts(results);
+  if (!queryCounts.length) {
+    throw new Error(
+      `D1 apply response has no executed query count for ${path}`
+    );
   }
-  return changes.reduce((total, count) => total + count, 0);
+  const actualQueryCount = queryCounts.reduce(
+    (total, count) => total + count,
+    0
+  );
+  if (actualQueryCount !== expectedQueryCount) {
+    throw new Error(
+      `D1 queries mismatch for ${path}: expected ${expectedQueryCount}, got ${actualQueryCount}`
+    );
+  }
+  const telemetry = {
+    changes: [],
+    rowsRead: [],
+    rowsWritten: [],
+    changedDb: [],
+    finalBookmarks: [],
+  };
+  const telemetryFields = [
+    ['changes', 'changes', (value) => Number.isInteger(value) && value >= 0],
+    ['rows_read', 'rowsRead', (value) => Number.isInteger(value) && value >= 0],
+    [
+      'rows_written',
+      'rowsWritten',
+      (value) => Number.isInteger(value) && value >= 0,
+    ],
+    ['changed_db', 'changedDb', (value) => typeof value === 'boolean'],
+  ];
+  for (const result of results) {
+    const meta = result.meta;
+    if (meta !== undefined && (!meta || typeof meta !== 'object')) {
+      throw new Error(`D1 apply response has invalid telemetry for ${path}`);
+    }
+    for (const [source, target, valid] of telemetryFields) {
+      if (!Object.prototype.hasOwnProperty.call(meta || {}, source)) continue;
+      if (!valid(meta[source])) {
+        throw new Error(`D1 apply response has invalid telemetry for ${path}`);
+      }
+      telemetry[target].push(meta[source]);
+    }
+    if (Object.prototype.hasOwnProperty.call(result, 'finalBookmark')) {
+      if (
+        typeof result.finalBookmark !== 'string' ||
+        !result.finalBookmark.trim()
+      ) {
+        throw new Error(`D1 apply response has invalid bookmark for ${path}`);
+      }
+      telemetry.finalBookmarks.push(result.finalBookmark);
+    }
+  }
+  return { actualQueryCount, telemetry };
+};
+
+const parseResponseEnvelope = (text, step, label) => {
+  let response;
+  try {
+    response = JSON.parse(text);
+  } catch {
+    throw new Error(`${label} is not a valid response JSON file`);
+  }
+  if (
+    !response ||
+    typeof response !== 'object' ||
+    Array.isArray(response) ||
+    Object.keys(response).sort().join(',') !==
+      'kind,path,sequence,status,stderr,stdout' ||
+    response.sequence !== step.sequence ||
+    response.kind !== step.kind ||
+    response.path !== step.path ||
+    response.status !== 0 ||
+    typeof response.stdout !== 'string' ||
+    typeof response.stderr !== 'string'
+  ) {
+    throw new Error(`${label} does not match the successful apply step`);
+  }
+  return response;
+};
+
+const resolveResumePathWithoutSymlinks = (value, label, kind) => {
+  const requestedPath = resolve(String(value));
+  if (
+    requestedPath === artifactRequestRoot ||
+    !requestedPath.startsWith(`${artifactRequestRoot}${sep}`)
+  ) {
+    throw new Error(`${label} escapes the manifest artifact root`);
+  }
+  let currentPath = artifactRequestRoot;
+  for (const component of relative(artifactRequestRoot, requestedPath).split(
+    sep
+  )) {
+    currentPath = join(currentPath, component);
+    let currentInfo;
+    try {
+      currentInfo = lstatSync(currentPath);
+    } catch {
+      throw new Error(`${label} is missing`);
+    }
+    if (currentInfo.isSymbolicLink()) {
+      throw new Error(`${label} must not contain a symlink`);
+    }
+  }
+  const resolvedPath = realpathSync(requestedPath);
+  const info = lstatSync(resolvedPath);
+  if (
+    resolvedPath === artifactRoot ||
+    !resolvedPath.startsWith(`${artifactRoot}${sep}`) ||
+    (kind === 'file' ? !info.isFile() : !info.isDirectory())
+  ) {
+    throw new Error(`${label} is not a ${kind} under the artifact root`);
+  }
+  return resolvedPath;
+};
+
+const loadResumePrefix = () => {
+  if (resumeResponseDirectoryValue === undefined) {
+    return { evidence: [], lineage: null };
+  }
+  const lineagePath = resolveResumePathWithoutSymlinks(
+    resumeLineageValue,
+    'resume lineage',
+    'file'
+  );
+  const lineageText = readFileSync(lineagePath, 'utf8');
+  const lineageSha256 = sha256(lineageText);
+  if (lineageSha256 !== resumeLineageConfirmation) {
+    throw new Error('resume lineage SHA-256 confirmation mismatch');
+  }
+  let lineage;
+  try {
+    lineage = JSON.parse(lineageText);
+  } catch {
+    throw new Error('resume lineage is malformed JSON');
+  }
+  const resumeRoot = resolveResumePathWithoutSymlinks(
+    resumeResponseDirectoryValue,
+    'resume response directory',
+    'directory'
+  );
+  const entries = readdirSync(resumeRoot, { withFileTypes: true });
+  if (
+    !entries.length ||
+    entries.some(
+      (entry) => !entry.isFile() || !/^\d{4}\.json$/.test(entry.name)
+    )
+  ) {
+    throw new Error('resume response inventory has extras or non-files');
+  }
+  const names = entries.map((entry) => entry.name).sort();
+  if (
+    names.length > steps.length ||
+    names.some(
+      (name, index) => name !== `${String(index + 1).padStart(4, '0')}.json`
+    )
+  ) {
+    throw new Error(
+      'resume response inventory must be a contiguous prefix from 0001'
+    );
+  }
+  const sourceGitSha = String(lineage?.sourceGitSha || '');
+  const sourceEvidenceRoot = String(lineage?.sourceEvidenceRoot || '');
+  const lineagePreflight = lineage?.preflightManifests;
+  const lineageResponses = lineage?.responses;
+  if (
+    !lineage ||
+    typeof lineage !== 'object' ||
+    Array.isArray(lineage) ||
+    Object.keys(lineage).sort().join(',') !==
+      'artifactManifest,preflightManifests,responses,schemaVersion,sourceEvidenceRoot,sourceGitSha' ||
+    lineage.schemaVersion !== 'nga-apply-resume-lineage-v1' ||
+    !/^[a-f0-9]{40}$/.test(sourceGitSha) ||
+    sourceEvidenceRoot !==
+      `.agent/evidence/nga-staging/${sourceGitSha}/${sourceEvidenceRoot.split('/').at(-1)}` ||
+    !/^\.agent\/evidence\/nga-staging\/[a-f0-9]{40}\/\d{8}T\d{6}Z$/.test(
+      sourceEvidenceRoot
+    ) ||
+    Object.keys(lineage.artifactManifest || {})
+      .sort()
+      .join(',') !== 'sha256,sourcePath' ||
+    lineage.artifactManifest.sourcePath !==
+      `backfill/${phase}/artifact-manifest.json` ||
+    lineage.artifactManifest.sha256 !== actualManifestSha256 ||
+    !Array.isArray(lineagePreflight) ||
+    lineagePreflight.length !== preflightInputs.length ||
+    !Array.isArray(lineageResponses) ||
+    lineageResponses.length !== names.length
+  ) {
+    throw new Error(
+      'resume lineage does not match the preserved artifact scope'
+    );
+  }
+  const expectedPreflightByPhase = new Map(
+    preflightInputs.map((binding) => [binding.phase, binding.manifestSha256])
+  );
+  if (
+    lineagePreflight.some(
+      (binding) =>
+        !binding ||
+        typeof binding !== 'object' ||
+        Array.isArray(binding) ||
+        Object.keys(binding).sort().join(',') !== 'phase,sha256,sourcePath' ||
+        binding.sourcePath !==
+          (binding.phase === 'pilot'
+            ? 'preflight/pilot/preflight-manifest.json'
+            : binding.phase === 'full'
+              ? 'preflight/full-remaining/preflight-manifest.json'
+              : null) ||
+        binding.sha256 !== expectedPreflightByPhase.get(binding.phase)
+    ) ||
+    new Set(lineagePreflight.map((binding) => binding.phase)).size !==
+      lineagePreflight.length
+  ) {
+    throw new Error(
+      'resume lineage preflight bindings do not match the manifest'
+    );
+  }
+  const evidence = names.map((name, index) => {
+    const step = steps[index];
+    const sourcePath = join(resumeRoot, name);
+    if (lstatSync(sourcePath).isSymbolicLink()) {
+      throw new Error('resume response files must not be symlinks');
+    }
+    const sourceRealPath = realpathSync(sourcePath);
+    if (!sourceRealPath.startsWith(`${resumeRoot}${sep}`)) {
+      throw new Error('resume response file escapes its directory');
+    }
+    const responseText = readFileSync(sourceRealPath, 'utf8');
+    const source = lineageResponses[index];
+    const copiedPath = relative(artifactRoot, sourceRealPath);
+    if (
+      !source ||
+      typeof source !== 'object' ||
+      Array.isArray(source) ||
+      Object.keys(source).sort().join(',') !==
+        'copiedPath,sequence,sha256,sourcePath' ||
+      source.sequence !== step.sequence ||
+      source.copiedPath !== copiedPath ||
+      source.sha256 !== sha256(responseText) ||
+      source.sourcePath !==
+        `backfill/${phase}/apply-responses/${source.sourcePath
+          ?.split('/')
+          .at(-2)}/${name}` ||
+      /(?:^|[\/_.-])production(?:[\/_.-]|$)/i.test(source.sourcePath)
+    ) {
+      throw new Error(`resume response ${name} does not match its lineage`);
+    }
+    const response = parseResponseEnvelope(
+      responseText,
+      step,
+      `resume response ${name}`
+    );
+    const facts =
+      step.kind === 'd1-sql'
+        ? d1FactsFromResponse(
+            response.stdout,
+            step.path,
+            step.expectedQueryCount
+          )
+        : undefined;
+    return {
+      step,
+      response,
+      responseText,
+      facts,
+      execution: 'resumed',
+      source: {
+        path: copiedPath,
+        sha256: sha256(responseText),
+      },
+    };
+  });
+  return {
+    evidence,
+    lineage: {
+      path: relative(artifactRoot, lineagePath),
+      sha256: lineageSha256,
+    },
+  };
 };
 
 if (!args.has('execute')) {
@@ -672,15 +984,17 @@ if (!args.has('execute')) {
     )}\n`
   );
 } else {
+  const resume = loadResumePrefix();
+  const resumedEvidence = resume.evidence;
   const responseDirectory = join(
     artifactRoot,
     'apply-responses',
     `${new Date().toISOString().replaceAll(/[:.]/g, '-')}-${process.pid}`
   );
   mkdirSync(responseDirectory, { recursive: true });
-  const responses = [];
-  const responseEvidence = [];
-  for (const step of steps) {
+  const responses = resumedEvidence.map((entry) => entry.response);
+  const responseEvidence = [...resumedEvidence];
+  for (const step of steps.slice(resumedEvidence.length)) {
     const currentDigest = sha256(
       readFileSync(resolve(artifactRoot, step.path))
     );
@@ -713,18 +1027,17 @@ if (!args.has('execute')) {
         `serial apply failed at ${step.path}; see ${responsePath}`
       );
     }
-    const actualChanges =
+    const facts =
       step.kind === 'd1-sql'
-        ? d1ChangesFromResponse(result.stdout, step.path)
+        ? d1FactsFromResponse(result.stdout, step.path, step.expectedQueryCount)
         : undefined;
-    if (step.kind === 'd1-sql') {
-      if (actualChanges !== step.expectedChanges) {
-        throw new Error(
-          `D1 changes mismatch for ${step.path}: expected ${step.expectedChanges}, got ${actualChanges}; see ${responsePath}`
-        );
-      }
-    }
-    responseEvidence.push({ step, responseText, actualChanges });
+    responseEvidence.push({
+      step,
+      response,
+      responseText,
+      facts,
+      execution: 'executed',
+    });
   }
 
   const postApplyOutDirectory = resolve(String(postApplyOutDirectoryValue));
@@ -810,7 +1123,7 @@ if (!args.has('execute')) {
   const boundResponseDirectory = join(postApplyRoot, 'apply-responses');
   mkdirSync(boundResponseDirectory, { recursive: false });
   const applyResponses = responseEvidence.map(
-    ({ step, responseText, actualChanges }) => {
+    ({ step, responseText, facts, execution, source }) => {
       const path = `apply-responses/${String(step.sequence).padStart(4, '0')}.json`;
       writeFileSync(join(postApplyRoot, path), responseText, { flag: 'wx' });
       return {
@@ -819,10 +1132,13 @@ if (!args.has('execute')) {
         path,
         artifactPath: step.path,
         sha256: sha256(responseText),
+        execution,
+        ...(source ? { source } : {}),
         ...(step.kind === 'd1-sql'
           ? {
-              expectedChanges: step.expectedChanges,
-              actualChanges,
+              expectedQueryCount: step.expectedQueryCount,
+              actualQueryCount: facts.actualQueryCount,
+              telemetry: facts.telemetry,
             }
           : {}),
       };
@@ -833,18 +1149,29 @@ if (!args.has('execute')) {
   );
   const applySummary = {
     responseCount: applyResponses.length,
+    resumedResponseCount: applyResponses.filter(
+      (response) => response.execution === 'resumed'
+    ).length,
+    executedResponseCount: applyResponses.filter(
+      (response) => response.execution === 'executed'
+    ).length,
     d1ChunkCount: d1Responses.length,
-    expectedD1Changes: d1Responses.reduce(
-      (total, response) => total + response.expectedChanges,
+    expectedD1QueryCount: d1Responses.reduce(
+      (total, response) => total + response.expectedQueryCount,
       0
     ),
-    actualD1Changes: d1Responses.reduce(
-      (total, response) => total + response.actualChanges,
+    actualD1QueryCount: d1Responses.reduce(
+      (total, response) => total + response.actualQueryCount,
       0
     ),
+    expectedApplicationRecordChanges:
+      phase === 'pilot'
+        ? PILOT_OBJECT_IDS.length
+        : FULL_STAGED_COUNT - PILOT_OBJECT_IDS.length,
+    verifiedApplicationRecordChanges: summary.applicationRecordChanges,
   };
   const verification = {
-    schemaVersion: 'nga-post-apply-verification-v2',
+    schemaVersion: 'nga-post-apply-verification-v3',
     verifiedAt: new Date().toISOString(),
     environment,
     phase,
@@ -854,6 +1181,7 @@ if (!args.has('execute')) {
       sha256: sha256(stateManifestText),
     },
     preflightInputs,
+    resumeLineage: resume.lineage,
     applyResponses,
     applySummary,
     summary,

@@ -633,6 +633,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         "phase": phase,
         "recordCount": 5,
         "vectorCount": 5,
+        "applicationRecordChanges": 5,
         "unrelatedFieldsUnchanged": True,
         "vectorValuesUnchanged": True,
         "idempotentD1State": True,
@@ -647,7 +648,22 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
     for sequence, ordered_artifact in enumerate(manifest["orderedArtifacts"], 1):
         is_d1 = ordered_artifact["kind"] == "d1-sql"
         stdout = (
-            json.dumps([{"success": True, "meta": {"changes": 5}}])
+            "├ Checking if file needs uploading\n│\n"
+            + json.dumps(
+                [
+                    {
+                        "results": [{"Total queries executed": 5}],
+                        "success": True,
+                        "finalBookmark": "00000000-0000000a-00004c16-00000000",
+                        "meta": {
+                            "changes": 11,
+                            "rows_read": 10,
+                            "rows_written": 15,
+                            "changed_db": True,
+                        },
+                    }
+                ]
+            )
             if is_d1
             else json.dumps({"count": 5})
         )
@@ -671,15 +687,28 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
                 "path": relative,
                 "artifactPath": ordered_artifact["path"],
                 "sha256": hashlib.sha256(payload).hexdigest(),
+                "execution": "executed",
                 **(
-                    {"expectedChanges": 5, "actualChanges": 5}
+                    {
+                        "expectedQueryCount": 5,
+                        "actualQueryCount": 5,
+                        "telemetry": {
+                            "changes": [11],
+                            "rowsRead": [10],
+                            "rowsWritten": [15],
+                            "changedDb": [True],
+                            "finalBookmarks": [
+                                "00000000-0000000a-00004c16-00000000"
+                            ],
+                        },
+                    }
                     if is_d1
                     else {}
                 ),
             }
         )
     verification = {
-        "schemaVersion": "nga-post-apply-verification-v2",
+        "schemaVersion": "nga-post-apply-verification-v3",
         "verifiedAt": "2026-08-22T00:06:00Z",
         "environment": "staging",
         "phase": phase,
@@ -689,12 +718,17 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "sha256": hashlib.sha256(state_manifest_bytes).hexdigest(),
         },
         "preflightInputs": [preflight_binding],
+        "resumeLineage": None,
         "applyResponses": response_payloads,
         "applySummary": {
             "responseCount": 2,
+            "resumedResponseCount": 0,
+            "executedResponseCount": 2,
             "d1ChunkCount": 1,
-            "expectedD1Changes": 5,
-            "actualD1Changes": 5,
+            "expectedD1QueryCount": 5,
+            "actualD1QueryCount": 5,
+            "expectedApplicationRecordChanges": 5,
+            "verifiedApplicationRecordChanges": 5,
         },
         "summary": post_summary,
     }
@@ -3331,10 +3365,22 @@ class InventoryAndRelevanceTests(GateTestCase):
             "wrangler d1 time-travel info paillette-db-stg", plan
         )
         self.assertIn("nga-artist-data-binding-v3", plan)
-        self.assertIn("nga-post-apply-verification-v2", plan)
+        self.assertIn("nga-post-apply-verification-v3", plan)
         self.assertIn("candidate/post-apply/pilot/apply-responses/0001.json", plan)
         self.assertIn("candidate/post-apply/full/apply-responses/NNNN.json", plan)
-        self.assertIn("exactly 63,248 D1 changes", plan)
+        self.assertIn("exactly 63,253 D1 queries", plan)
+        self.assertIn("63,248 application-record changes", plan)
+        self.assertIn("Total queries executed", plan)
+        self.assertIn("telemetry", plan)
+        self.assertIn("--resume-response-dir", plan)
+        self.assertIn("--resume-lineage", plan)
+        self.assertIn("--confirm-resume-lineage-sha256", plan)
+        self.assertIn("c5913a3193beff80f92bc5a90215f73869bc3cb6", plan)
+        self.assertIn(
+            "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5",
+            plan,
+        )
+        self.assertNotIn("exactly 63,248 D1 changes", plan)
         self.assertIn("exactly 12 Python public requests", plan)
         for relative in (
             "preflight/pilot/preflight-manifest.json",
@@ -3663,19 +3709,19 @@ class InventoryAndRelevanceTests(GateTestCase):
                 ),
                 "artist_apply_response_inventory_invalid",
             ),
-            "wrong self-consistent D1 changes": (
-                self._rewrite_apply_response_change_count,
-                "artist_apply_response_change_count_mismatch",
+            "wrong self-consistent D1 query count": (
+                self._rewrite_apply_response_query_count,
+                "artist_apply_response_query_count_mismatch",
             ),
-            "wrong declared total changes": (
+            "wrong declared total query count": (
                 lambda root, binding: rewrite_bound_post_apply_verification(
                     root,
                     binding,
                     lambda verification: verification["applySummary"].update(
-                        actualD1Changes=4
+                        actualD1QueryCount=4
                     ),
                 ),
-                "artist_apply_response_change_count_mismatch",
+                "artist_apply_response_query_count_mismatch",
             ),
         }
         for label, (mutate, expected_code) in mutations.items():
@@ -3693,8 +3739,142 @@ class InventoryAndRelevanceTests(GateTestCase):
 
                 self.assertIn(expected_code, result["failureCodes"], result)
 
+    def test_artist_evidence_accepts_exact_query_count_with_nonrow_telemetry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertTrue(result["passed"], result)
+            verification = json.loads(
+                (
+                    evidence_root / binding["postApplyVerification"]["path"]
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                verification["applySummary"]["actualD1QueryCount"], 5
+            )
+            self.assertEqual(
+                verification["applyResponses"][0]["telemetry"]["changes"],
+                [11],
+            )
+
+    def test_artist_evidence_rehashes_resumed_response_source_lineage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            response_descriptor = verification["applyResponses"][0]
+            response_path = verification_path.parent / response_descriptor["path"]
+            source_relative = "resume-responses/0001.json"
+            source_path = (
+                evidence_root
+                / binding["artifactManifest"]["path"]
+            ).parent / source_relative
+            source_path.parent.mkdir(parents=True)
+            source_payload = response_path.read_bytes()
+            source_path.write_bytes(source_payload)
+            response_descriptor["execution"] = "resumed"
+            response_descriptor["source"] = {
+                "path": source_relative,
+                "sha256": hashlib.sha256(source_payload).hexdigest(),
+            }
+            lineage = {
+                "schemaVersion": "nga-apply-resume-lineage-v1",
+                "sourceGitSha": "c5913a3193beff80f92bc5a90215f73869bc3cb6",
+                "sourceEvidenceRoot": (
+                    ".agent/evidence/nga-staging/"
+                    "c5913a3193beff80f92bc5a90215f73869bc3cb6/"
+                    "20260822T134448Z"
+                ),
+                "artifactManifest": {
+                    "sourcePath": "backfill/pilot/artifact-manifest.json",
+                    "sha256": binding["artifactManifest"]["sha256"],
+                },
+                "preflightManifests": [
+                    {
+                        "phase": "pilot",
+                        "sourcePath": "preflight/pilot/preflight-manifest.json",
+                        "sha256": binding["preflightManifests"][0]["sha256"],
+                    }
+                ],
+                "responses": [
+                    {
+                        "sequence": 1,
+                        "sourcePath": (
+                            "backfill/pilot/apply-responses/"
+                            "2026-08-22T13-49-24-534Z-1855/0001.json"
+                        ),
+                        "copiedPath": source_relative,
+                        "sha256": hashlib.sha256(source_payload).hexdigest(),
+                    }
+                ],
+            }
+            lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
+            lineage_path = source_path.parent.parent / "resume-lineage.json"
+            lineage_path.write_bytes(lineage_payload)
+            verification["resumeLineage"] = {
+                "path": "resume-lineage.json",
+                "sha256": hashlib.sha256(lineage_payload).hexdigest(),
+            }
+            verification["applySummary"]["resumedResponseCount"] = 1
+            verification["applySummary"]["executedResponseCount"] = 1
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+
+            baseline = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertTrue(baseline["passed"], baseline)
+
+            source_path.write_text("{}\n", encoding="utf-8")
+            tampered = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertIn(
+                "artist_apply_resume_source_hash_mismatch",
+                tampered["failureCodes"],
+                tampered,
+            )
+
+            source_path.write_bytes(source_payload)
+            lineage_path.write_text("{}\n", encoding="utf-8")
+            lineage_tampered = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertIn(
+                "artist_apply_resume_lineage_hash_mismatch",
+                lineage_tampered["failureCodes"],
+                lineage_tampered,
+            )
+
     @staticmethod
-    def _rewrite_apply_response_change_count(evidence_root, binding):
+    def _rewrite_apply_response_query_count(evidence_root, binding):
         verification_path = (
             evidence_root / binding["postApplyVerification"]["path"]
         )
@@ -3704,14 +3884,26 @@ class InventoryAndRelevanceTests(GateTestCase):
         descriptor = verification["applyResponses"][0]
         response_path = verification_path.parent / descriptor["path"]
         response = json.loads(response_path.read_text(encoding="utf-8"))
-        response["stdout"] = json.dumps(
-            [{"success": True, "meta": {"changes": 4}}]
+        response["stdout"] = "├ Checking\n" + json.dumps(
+            [
+                {
+                    "results": [{"Total queries executed": 4}],
+                    "success": True,
+                    "finalBookmark": "00000000-0000000a-00004c16-00000000",
+                    "meta": {
+                        "changes": 11,
+                        "rows_read": 10,
+                        "rows_written": 15,
+                        "changed_db": True,
+                    },
+                }
+            ]
         )
         response_payload = (json.dumps(response, indent=2) + "\n").encode()
         response_path.write_bytes(response_payload)
         descriptor["sha256"] = hashlib.sha256(response_payload).hexdigest()
-        descriptor["actualChanges"] = 4
-        verification["applySummary"]["actualD1Changes"] = 4
+        descriptor["actualQueryCount"] = 4
+        verification["applySummary"]["actualD1QueryCount"] = 4
         verification_payload = (
             json.dumps(verification, indent=2) + "\n"
         ).encode()

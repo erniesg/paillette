@@ -17,6 +17,7 @@ import {
   STAGING_IMAGE_VECTOR_INDEX,
   STAGING_ORG_ID,
   canonicalJson,
+  parseWranglerJsonOutput,
   sha256,
 } from './lib/nga-artist-backfill.mjs';
 
@@ -89,11 +90,8 @@ const extractD1Rows = (payload) => {
 };
 
 const parseVectorizePayload = (output) => {
-  const jsonOffset = output.search(/^[\t ]*[\[{]/m);
-  if (jsonOffset === -1)
-    throw new Error('unexpected Wrangler Vectorize JSON response');
   try {
-    return JSON.parse(output.slice(jsonOffset));
+    return parseWranglerJsonOutput(output, 'Wrangler Vectorize');
   } catch {
     throw new Error('unexpected Wrangler Vectorize JSON response');
   }

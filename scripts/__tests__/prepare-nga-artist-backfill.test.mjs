@@ -243,6 +243,7 @@ test('verifies exact post-apply D1 and vector state against rollback bytes', () 
 
   assert.equal(result.recordCount, 5);
   assert.equal(result.vectorCount, 5);
+  assert.equal(result.applicationRecordChanges, 5);
   assert.equal(result.unrelatedFieldsUnchanged, true);
   assert.equal(result.vectorValuesUnchanged, true);
   assert.equal(result.idempotentD1State, true);
@@ -302,6 +303,13 @@ test('verifies exact post-apply D1 and vector state against rollback bytes', () 
         ],
       },
       pattern: /post-apply vector changed/i,
+    },
+    {
+      label: 'one row did not change from immutable preflight state',
+      change: {
+        originalRecords: [postRecords[0], ...originalRecords.slice(1)],
+      },
+      pattern: /application-record change count mismatch/i,
     },
   ];
   for (const fixture of invalid) {
