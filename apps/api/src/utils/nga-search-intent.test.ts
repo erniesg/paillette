@@ -164,6 +164,99 @@ describe('parseNgaSearchIntent', () => {
   });
 
   it.each([
+    [
+      'oil paintings by Rembrandt',
+      'paintings by Rembrandt in oil',
+      'Rembrandt',
+      { classifications: ['Painting'], mediumFamilies: ['oil'] },
+    ],
+    [
+      'paintings from 1700 to 1800 by Rembrandt',
+      'paintings by Rembrandt from 1700 to 1800',
+      'Rembrandt',
+      {
+        dateRange: { startYear: 1700, endYear: 1800 },
+        classifications: ['Painting'],
+      },
+    ],
+    [
+      '19th century paintings by Pierre-Auguste Renoir',
+      'paintings by Pierre-Auguste Renoir in the 19th century',
+      'Pierre Auguste Renoir',
+      {
+        dateRange: { startYear: 1800, endYear: 1899 },
+        classifications: ['Painting'],
+      },
+    ],
+  ])(
+    'compiles structured constraints equivalently before and after an artist target in %s',
+    (prefixQuery, suffixQuery, targetText, constraints) => {
+      const suffixIntent = parseNgaSearchIntent(suffixQuery);
+
+      expect(suffixIntent.attribution).toEqual({
+        relationship: 'direct',
+        targetText,
+      });
+      expect(suffixIntent.constraints).toEqual(constraints);
+      expect(compileNgaSearchPlan(suffixQuery)).toEqual(
+        compileNgaSearchPlan(prefixQuery)
+      );
+    }
+  );
+
+  it('protects a numeric token inside a multiword artist name from exact-date parsing', () => {
+    const intent = parseNgaSearchIntent('paintings by Master of 1518');
+
+    expect(intent.attribution).toEqual({
+      relationship: 'direct',
+      targetText: 'Master of 1518',
+    });
+    expect(intent.constraints).toEqual({ classifications: ['Painting'] });
+    expect(compileNgaSearchPlan('paintings by Master of 1518')).toMatchObject({
+      mode: 'attribution',
+      retrievalQuery: 'master of 1518',
+      attribution: { relationship: 'direct', targetText: 'Master Of 1518' },
+    });
+  });
+
+  it('does not steal an ambiguous artwork-class relation as attribution', () => {
+    const query = 'paintings after photographs and drawings by Rembrandt';
+    const intent = parseNgaSearchIntent(query);
+
+    expect(intent.attribution).toBeUndefined();
+    expect(intent.relation).toBeUndefined();
+    expect(intent.unresolved).toEqual([
+      'paintings after photographs and drawings by rembrandt',
+    ]);
+    expect(compileNgaSearchPlan(query).mode).not.toBe('attribution');
+  });
+
+  it('compares occupied spans in original coordinates after repeated punctuation folding', () => {
+    const query = 'paintings!!!!!!!!!!!!!!!!!!!!!!!! after Rembrandt';
+    const markerStart = query.indexOf('after');
+
+    expect(
+      parseNgaAttributionIntent(query, [
+        { start: markerStart, end: query.length },
+      ])
+    ).toBeNull();
+  });
+
+  it.each(['-', '\u2013', '\u2014'])(
+    'keeps original occupied-span coordinates across %s and punctuation variants',
+    (dash) => {
+      const query = `paintings!!! ${dash.repeat(24)} after Rembrandt`;
+      const markerStart = query.indexOf('after');
+
+      expect(
+        parseNgaAttributionIntent(query, [
+          { start: markerStart, end: query.length },
+        ])
+      ).toBeNull();
+    }
+  );
+
+  it.each([
     'paintings by',
     'paintings by artists',
     'paintings after 1800',

@@ -247,12 +247,69 @@ const findClassificationSpans = (query: string): ClassificationSpan[] => {
 
 export type NgaSearchIntentSpan = { start: number; end: number };
 
+type NormalizedAttributionQuery = {
+  text: string;
+  originalStarts: number[];
+  originalEnds: number[];
+};
+
+const normalizeAttributionQuery = (
+  value: string
+): NormalizedAttributionQuery => {
+  let text = '';
+  const originalStarts: number[] = [];
+  const originalEnds: number[] = [];
+  let pendingSpace: NgaSearchIntentSpan | null = null;
+
+  const append = (textValue: string, start: number, end: number) => {
+    text += textValue;
+    for (let index = 0; index < textValue.length; index += 1) {
+      originalStarts.push(start);
+      originalEnds.push(end);
+    }
+  };
+
+  for (let start = 0; start < value.length; ) {
+    const codePoint = String.fromCodePoint(value.codePointAt(start)!);
+    let end = start + codePoint.length;
+    while (end < value.length) {
+      const next = String.fromCodePoint(value.codePointAt(end)!);
+      if (!/^\p{M}$/u.test(next)) break;
+      end += next.length;
+    }
+
+    const segment = value.slice(start, end).normalize('NFC');
+    if (/^[\p{P}\p{S}\s]+$/u.test(segment)) {
+      pendingSpace = pendingSpace
+        ? { start: pendingSpace.start, end }
+        : { start, end };
+    } else {
+      if (pendingSpace && text) {
+        append(' ', pendingSpace.start, pendingSpace.end);
+      }
+      pendingSpace = null;
+      append(segment, start, end);
+    }
+    start = end;
+  }
+
+  return { text, originalStarts, originalEnds };
+};
+
 const normalizeAttributionText = (value: string) =>
-  value
-    .normalize('NFC')
-    .replace(/[\p{P}\p{S}]+/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
+  normalizeAttributionQuery(value).text;
+
+const originalAttributionSpan = (
+  normalized: NormalizedAttributionQuery,
+  start: number,
+  end: number
+): NgaSearchIntentSpan => ({
+  start: normalized.originalStarts[start] ?? normalized.text.length,
+  end:
+    normalized.originalEnds[Math.max(start, end - 1)] ??
+    normalized.originalStarts[start] ??
+    normalized.text.length,
+});
 
 const ATTRIBUTION_CARRIERS = [
   ...CLASSIFICATIONS.flatMap((entry) => entry.aliases),
@@ -360,44 +417,95 @@ const overlapsOccupiedSpan = (
 ) =>
   occupiedSpans.some((span) => start < span.end && end > span.start);
 
-const stripTrailingAttributionControls = (value: string) =>
-  value
-    .replace(/\s+please$/iu, '')
-    .replace(
-      /\s+(?:(?:from|before|after|around|circa)\s+)?(?:1[0-9]{3}|20[0-9]{2}|(?:early|mid|late\s+)?\d{1,2}(?:st|nd|rd|th)?\s+cent(?:ury|ry|ryy))$/iu,
-      ''
-    )
-    .trim();
+const findAttributionConstraintSuffix = (
+  query: string,
+  targetStart: number
+): number | null => {
+  const targetAndSuffix = query.slice(targetStart);
+  for (const boundary of targetAndSuffix.matchAll(
+    /\b(?:in|from|before|after|between|around|circa|made|on)\b/giu
+  )) {
+    if (!boundary.index) continue;
+    const suffix = targetAndSuffix.slice(boundary.index);
+    const suffixIntent = parseNgaSearchIntentFlat(suffix);
+    if (
+      Object.keys(suffixIntent.constraints).length > 0 &&
+      /^(?:(?:and|or|to)\s*)*$/.test(suffixIntent.semanticQuery)
+    ) {
+      return targetStart + boundary.index;
+    }
+  }
+  return null;
+};
 
-export const parseNgaAttributionIntent = (
+type ParsedNgaAttribution = {
+  intent: NgaAttributionIntent;
+  workQuery: string;
+};
+
+const parseNgaAttributionMatch = (
   query: string,
   occupiedSpans: readonly NgaSearchIntentSpan[] = []
-): NgaAttributionIntent | null => {
-  const normalized = normalizeAttributionText(query);
+): ParsedNgaAttribution | null => {
+  const normalized = normalizeAttributionQuery(query);
 
   for (const pattern of ATTRIBUTION_PATTERNS) {
-    const marker = pattern.marker.exec(normalized);
+    const marker = pattern.marker.exec(normalized.text);
     if (!marker || marker.index === undefined) continue;
-    if (!ATTRIBUTION_CARRIER_PATTERN.test(normalized.slice(0, marker.index))) {
-      continue;
-    }
-
-    const targetText = stripTrailingAttributionControls(
-      normalized.slice(marker.index + marker[0].length)
-    );
     if (
-      !targetText ||
-      targetIsControlOnly(targetText) ||
-      overlapsOccupiedSpan(marker.index, normalized.length, occupiedSpans)
+      !ATTRIBUTION_CARRIER_PATTERN.test(
+        normalized.text.slice(0, marker.index)
+      )
     ) {
       continue;
     }
 
-    return { relationship: pattern.relationship, targetText };
+    let targetStart = marker.index + marker[0].length;
+    while (normalized.text[targetStart] === ' ') targetStart += 1;
+    const suffixStart = findAttributionConstraintSuffix(
+      normalized.text,
+      targetStart
+    );
+    let targetEnd = suffixStart ?? normalized.text.length;
+    while (normalized.text[targetEnd - 1] === ' ') targetEnd -= 1;
+    const targetText = normalized.text
+      .slice(targetStart, targetEnd)
+      .replace(/\s+please$/iu, '')
+      .trim();
+    const matchSpan = originalAttributionSpan(
+      normalized,
+      marker.index,
+      targetEnd
+    );
+    if (
+      !targetText ||
+      targetIsControlOnly(targetText) ||
+      overlapsOccupiedSpan(matchSpan.start, matchSpan.end, occupiedSpans)
+    ) {
+      continue;
+    }
+
+    const suffixOriginalStart =
+      suffixStart === null
+        ? query.length
+        : originalAttributionSpan(normalized, suffixStart, suffixStart + 1)
+            .start;
+    return {
+      intent: { relationship: pattern.relationship, targetText },
+      workQuery: `${query.slice(0, matchSpan.start)} ${query.slice(
+        suffixOriginalStart
+      )}`.trim(),
+    };
   }
 
   return null;
 };
+
+export const parseNgaAttributionIntent = (
+  query: string,
+  occupiedSpans: readonly NgaSearchIntentSpan[] = []
+): NgaAttributionIntent | null =>
+  parseNgaAttributionMatch(query, occupiedSpans)?.intent ?? null;
 
 export const canonicalNgaAttribution = (
   intent: NgaAttributionIntent
@@ -411,7 +519,7 @@ export const canonicalNgaAttribution = (
 });
 
 const attributionNegationSpans = (query: string): NgaSearchIntentSpan[] => {
-  const normalized = normalizeAttributionText(query);
+  const normalized = normalizeAttributionQuery(query);
   const marker =
     '(?:after|(?:attributed|ascribed)\\s+to|(?:from\\s+(?:the\\s+)?)?(?:workshop|studio|circle|school)\\s+of|(?:(?:by|from)\\s+)?(?:a\\s+|the\\s+)?follower\\s+of|(?:(?:created|made|painted|drawn|sculpted|executed)\\s+)?by)';
   const carrier = `(?:${ATTRIBUTION_CARRIERS.map(escapeRegExp).join('|')})`;
@@ -433,10 +541,13 @@ const attributionNegationSpans = (query: string): NgaSearchIntentSpan[] => {
   ];
 
   return patterns.flatMap((pattern) =>
-    [...normalized.matchAll(pattern)].map((match) => ({
-      start: match.index,
-      end: match.index + match[0].length,
-    }))
+    [...normalized.text.matchAll(pattern)].map((match) =>
+      originalAttributionSpan(
+        normalized,
+        match.index,
+        match.index + match[0].length
+      )
+    )
   );
 };
 
@@ -1311,14 +1422,26 @@ export const parseNgaSearchIntent = (
     };
   }
 
-  const attribution = parseNgaAttributionIntent(
-    originalQuery,
-    attributionNegationSpans(originalQuery)
-  );
-  if (attribution) {
+  const attributionMatch = relationAnalysis.ambiguous
+    ? null
+    : parseNgaAttributionMatch(
+        originalQuery,
+        attributionNegationSpans(originalQuery)
+      );
+  if (attributionMatch) {
+    const workIntent = parseNgaSearchIntentFlat(
+      attributionMatch.workQuery,
+      explicitConstraints
+    );
+    const targetSemanticText = fold(attributionMatch.intent.targetText);
     return {
-      ...parseNgaSearchIntentFlat(originalQuery, explicitConstraints),
-      attribution,
+      ...workIntent,
+      originalQuery,
+      semanticQuery:
+        attributionMatch.intent.relationship === 'after'
+          ? `after ${targetSemanticText} attribution`
+          : targetSemanticText,
+      attribution: attributionMatch.intent,
     };
   }
 
