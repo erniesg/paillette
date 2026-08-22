@@ -331,6 +331,10 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     page,
     request,
   }, testInfo) => {
+    // This intentionally performs two sequential live embedding requests.
+    // A cold inference can take ~15 seconds, so the default 30-second test
+    // budget is not enough to prove both requests and their final UI state.
+    testInfo.setTimeout(90_000);
     const requests = publicSearchRequests(page);
     const first = await downloadFixture(request, 'open-access-art:nga:131994');
     const second = await downloadFixture(request, 'open-access-art:nga:11236');
