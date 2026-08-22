@@ -3430,7 +3430,8 @@ class InventoryAndRelevanceTests(GateTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"
-            destination = root / "new-evidence"
+            head_root = root / "nga-staging" / "fixture-head"
+            destination = head_root / "new-evidence"
             files = {
                 "preflight/pilot/preflight-manifest.json": b'{"pilot":true}\n',
                 "preflight/production-identity.json": b'{"production":true}\n',
@@ -3456,18 +3457,31 @@ class InventoryAndRelevanceTests(GateTestCase):
                 flags=re.MULTILINE,
             )
             bootstrap = re.sub(
+                r'^NGA_ARTIST_EVIDENCE_HEAD_ROOT=.*$',
+                'NGA_ARTIST_EVIDENCE_HEAD_ROOT="$DESTINATION_HEAD_ROOT"',
+                bootstrap,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            bootstrap = re.sub(
                 r'^NGA_ARTIST_EVIDENCE_ROOT=.*$',
                 'NGA_ARTIST_EVIDENCE_ROOT="$DESTINATION_ROOT"',
                 bootstrap,
                 count=1,
                 flags=re.MULTILINE,
             )
+            self.assertIn(
+                'NGA_ARTIST_EVIDENCE_HEAD_ROOT="$DESTINATION_HEAD_ROOT"',
+                bootstrap,
+            )
+            self.assertFalse(head_root.exists())
             result = subprocess.run(
                 ["bash", "-c", bootstrap],
                 cwd=ROOT,
                 env={
                     **os.environ,
                     "SOURCE_ROOT": str(source),
+                    "DESTINATION_HEAD_ROOT": str(head_root),
                     "DESTINATION_ROOT": str(destination),
                 },
                 check=False,
@@ -3476,6 +3490,17 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
 
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            temporary_root = root.resolve()
+            for created_destination in (head_root, destination):
+                self.assertTrue(created_destination.is_dir())
+                self.assertIn(
+                    temporary_root,
+                    (
+                        created_destination.resolve(),
+                        *created_destination.resolve().parents,
+                    ),
+                    f"created destination escaped the temporary tree: {created_destination}",
+                )
             self.assertFalse(
                 (destination / "backfill/pilot/resume-lineage.json").exists(),
                 "lineage creation must not be reached after a bad pinned response",
