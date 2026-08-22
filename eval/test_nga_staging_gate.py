@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -188,7 +189,7 @@ def deployment_identity(
         capture_paths = production_identity_paths(phase)
         state_paths = artist_state_paths(phase)
         identity["artistDataBinding"] = artist_binding or {
-            "schemaVersion": "nga-artist-data-binding-v3",
+            "schemaVersion": "nga-artist-data-binding-v4",
             "artifactManifest": {
                 "path": f"backfill/{phase}/artifact-manifest.json",
                 "sha256": "1" * 64,
@@ -557,6 +558,8 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
 
     post_apply = candidate / "post-apply" / phase
     post_apply.mkdir(parents=True, exist_ok=True)
+    settled_attempt = post_apply / "settlement-attempts" / "0001"
+    settled_attempt.mkdir(parents=True, exist_ok=True)
     state_payloads = {
         "ids.json": preflight_payloads["ids.json"],
         "staged-nga-records.json": (
@@ -568,7 +571,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         ).encode(),
     }
     for relative, payload in state_payloads.items():
-        path = post_apply / relative
+        path = settled_attempt / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
     state_manifest = {
@@ -623,7 +626,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         },
     }
     state_manifest_bytes = (json.dumps(state_manifest, indent=2) + "\n").encode()
-    (post_apply / "state-manifest.json").write_bytes(state_manifest_bytes)
+    (settled_attempt / "state-manifest.json").write_bytes(state_manifest_bytes)
     ordered_ids = sorted(
         (row["id"] for row in mapping),
         key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1]),
@@ -666,7 +669,15 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
                 ]
             )
             if is_d1
-            else json.dumps({"count": 5})
+            else (
+                "Enqueued 5 vectors into index "
+                "'paillette-embeddings-v2-stg' for upsertion.\n"
+                "Mutation changeset identifier: "
+                "283fa906-9e2a-4fbe-a6b1-34617719f705\n"
+                + json.dumps(
+                    {"index": "paillette-embeddings-v2-stg", "count": 5}
+                )
+            )
         )
         response = {
             "sequence": sequence,
@@ -704,18 +715,26 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
                         },
                     }
                     if is_d1
-                    else {}
+                    else {
+                        "vectorMutation": {
+                            "index": "paillette-embeddings-v2-stg",
+                            "count": 5,
+                            "mutationId": (
+                                "283fa906-9e2a-4fbe-a6b1-34617719f705"
+                            ),
+                        }
+                    }
                 ),
             }
         )
     verification = {
-        "schemaVersion": "nga-post-apply-verification-v3",
+        "schemaVersion": "nga-post-apply-verification-v4",
         "verifiedAt": "2026-08-22T00:06:00Z",
         "environment": "staging",
         "phase": phase,
         "artifactManifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "stateManifest": {
-            "path": "state-manifest.json",
+            "path": "settlement-attempts/0001/state-manifest.json",
             "sha256": hashlib.sha256(state_manifest_bytes).hexdigest(),
         },
         "preflightInputs": [preflight_binding],
@@ -728,8 +747,32 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "d1ChunkCount": 1,
             "expectedD1QueryCount": 5,
             "actualD1QueryCount": 5,
+            "vectorChunkCount": 1,
+            "expectedVectorCount": 5,
+            "actualVectorCount": 5,
+            "vectorMutationIds": [
+                "283fa906-9e2a-4fbe-a6b1-34617719f705"
+            ],
             "expectedApplicationRecordChanges": 5,
             "verifiedApplicationRecordChanges": 5,
+        },
+        "settlement": {
+            "timeoutMs": 900000,
+            "pollMs": 15000,
+            "attemptCount": 1,
+            "settledAttempt": 1,
+            "attempts": [
+                {
+                    "sequence": 1,
+                    "outcome": "settled",
+                    "stateManifest": {
+                        "path": "settlement-attempts/0001/state-manifest.json",
+                        "sha256": hashlib.sha256(
+                            state_manifest_bytes
+                        ).hexdigest(),
+                    },
+                }
+            ],
         },
         "summary": post_summary,
     }
@@ -784,7 +827,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "sha256": hashlib.sha256(payload).hexdigest(),
         }
     return {
-        "schemaVersion": "nga-artist-data-binding-v3",
+        "schemaVersion": "nga-artist-data-binding-v4",
         "artifactManifest": {
             "path": f"backfill/{phase}/artifact-manifest.json",
             "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
@@ -858,6 +901,244 @@ def rewrite_bound_post_apply_verification(root: Path, binding, mutate):
     binding["postApplyVerification"]["sha256"] = hashlib.sha256(
         payload
     ).hexdigest()
+
+
+def prepend_pending_settlement_attempt(root: Path, binding):
+    verification_path = root / binding["postApplyVerification"]["path"]
+    verification = json.loads(verification_path.read_text(encoding="utf-8"))
+    post_root = verification_path.parent
+    attempts_root = post_root / "settlement-attempts"
+    settled_root = attempts_root / "0002"
+    (attempts_root / "0001").rename(settled_root)
+    pending_root = attempts_root / "0001"
+    shutil.copytree(settled_root, pending_root)
+
+    state_path = pending_root / "state-manifest.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    vector_descriptor = state["inputs"]["imageVectors"][0]
+    rollback_path = (
+        root
+        / binding["artifactManifest"]["path"]
+    ).parent / "rollback/image-vectors-0001-unit.ndjson"
+    vector_path = pending_root / vector_descriptor["path"]
+    vector_payload = rollback_path.read_bytes()
+    vector_path.write_bytes(vector_payload)
+    vector_descriptor["sha256"] = hashlib.sha256(vector_payload).hexdigest()
+    state["vectorFiles"][0]["sha256"] = vector_descriptor["sha256"]
+    pending_state_payload = (json.dumps(state, indent=2) + "\n").encode()
+    state_path.write_bytes(pending_state_payload)
+
+    settled_state_path = settled_root / "state-manifest.json"
+    settled_state_payload = settled_state_path.read_bytes()
+    pending_ids = sorted(
+        (row["id"] for row in json.loads(
+            (root / binding["artifactManifest"]["path"]).parent.joinpath(
+                "mapping.json"
+            ).read_text(encoding="utf-8")
+        )),
+        key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1]),
+    )
+    verification["stateManifest"] = {
+        "path": "settlement-attempts/0002/state-manifest.json",
+        "sha256": hashlib.sha256(settled_state_payload).hexdigest(),
+    }
+    verification["settlement"] = {
+        **verification["settlement"],
+        "attemptCount": 2,
+        "settledAttempt": 2,
+        "attempts": [
+            {
+                "sequence": 1,
+                "outcome": "pending",
+                "stateManifest": {
+                    "path": "settlement-attempts/0001/state-manifest.json",
+                    "sha256": hashlib.sha256(pending_state_payload).hexdigest(),
+                },
+                "pendingVectorCount": len(pending_ids),
+                "pendingVectorIdsSha256": hashlib.sha256(
+                    json.dumps(
+                        pending_ids, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                ).hexdigest(),
+            },
+            {
+                "sequence": 2,
+                "outcome": "settled",
+                "stateManifest": verification["stateManifest"],
+            },
+        ],
+    }
+    verification_payload = (json.dumps(verification, indent=2) + "\n").encode()
+    verification_path.write_bytes(verification_payload)
+    binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+        verification_payload
+    ).hexdigest()
+
+
+def bind_mixed_resume_lineage(root: Path, binding):
+    verification_path = root / binding["postApplyVerification"]["path"]
+    verification = json.loads(verification_path.read_text(encoding="utf-8"))
+    artifact_root = (root / binding["artifactManifest"]["path"]).parent
+    recovery_root = artifact_root / "recovery"
+    response_root = recovery_root / "responses"
+    response_root.mkdir(parents=True)
+    source_sha = "4905eaa89da8afa323979fc9655896cf1fa9adc1"
+    source_root = (
+        ".agent/evidence/nga-staging/"
+        f"{source_sha}/20260822T150634Z"
+    )
+    source_paths = [
+        "backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json",
+        "backfill/pilot/apply-responses/2026-08-22T15-09-40-358Z-88212/0002.json",
+    ]
+    response_payloads = []
+    for index, descriptor in enumerate(verification["applyResponses"], 1):
+        response_payload = (verification_path.parent / descriptor["path"]).read_bytes()
+        copied_relative = f"recovery/responses/{index:04d}.json"
+        (artifact_root / copied_relative).write_bytes(response_payload)
+        descriptor["execution"] = "resumed"
+        descriptor["source"] = {
+            "path": copied_relative,
+            "sha256": hashlib.sha256(response_payload).hexdigest(),
+        }
+        response_payloads.append(response_payload)
+
+    parent = {
+        "schemaVersion": "nga-apply-resume-lineage-v1",
+        "artifactManifest": {
+            "sourcePath": "backfill/pilot/artifact-manifest.json",
+            "sha256": binding["artifactManifest"]["sha256"],
+        },
+        "responses": [
+            {
+                "sequence": 1,
+                "sha256": hashlib.sha256(response_payloads[0]).hexdigest(),
+            }
+        ],
+    }
+    parent_payload = (json.dumps(parent, indent=2) + "\n").encode()
+    parent_copied = "recovery/provenance/parent-lineages/0001.json"
+    parent_path = artifact_root / parent_copied
+    parent_path.parent.mkdir(parents=True)
+    parent_path.write_bytes(parent_payload)
+
+    attempts = []
+    settled_source = verification_path.parent / "settlement-attempts/0001"
+    source_attempt_paths = [
+        "candidate/post-apply/pilot/state-manifest.json",
+        "candidate/diagnostic-after-vector-processed/state-manifest.json",
+    ]
+    for index, (kind, source_path) in enumerate(
+        zip(("immediate", "settled-diagnostic"), source_attempt_paths), 1
+    ):
+        attempt_root = recovery_root / "provenance/prior-attempts" / f"{index:04d}"
+        shutil.copytree(settled_source, attempt_root)
+        state_payload = (attempt_root / "state-manifest.json").read_bytes()
+        attempts.append(
+            {
+                "kind": kind,
+                "sourcePath": source_path,
+                "copiedPath": (
+                    f"recovery/provenance/prior-attempts/{index:04d}/"
+                    "state-manifest.json"
+                ),
+                "sha256": hashlib.sha256(state_payload).hexdigest(),
+            }
+        )
+    incident = {
+        "schemaVersion": "nga-vector-settlement-incident-v1",
+        "gitSha": source_sha,
+        "boundaries": {
+            "fullBackfillStarted": False,
+            "productionChanged": False,
+            "cachePurged": False,
+            "nextExternalMutationAllowed": False,
+        },
+        "immediateCapture": {
+            "path": attempts[0]["sourcePath"],
+            "sha256": attempts[0]["sha256"],
+        },
+        "settledDiagnostic": {
+            "path": attempts[1]["sourcePath"],
+            "sha256": attempts[1]["sha256"],
+        },
+        "stagingMutation": {
+            "rawResponse": {
+                "path": source_paths[1],
+                "sha256": hashlib.sha256(response_payloads[1]).hexdigest(),
+            }
+        },
+    }
+    incident_payload = (json.dumps(incident, indent=2) + "\n").encode()
+    incident_copied = "recovery/provenance/vector-settlement-incident.json"
+    incident_path = artifact_root / incident_copied
+    incident_path.parent.mkdir(parents=True, exist_ok=True)
+    incident_path.write_bytes(incident_payload)
+    lineage = {
+        "schemaVersion": "nga-apply-resume-lineage-v2",
+        "phase": "pilot",
+        "artifactManifest": {
+            "sourcePath": "backfill/pilot/artifact-manifest.json",
+            "sha256": binding["artifactManifest"]["sha256"],
+        },
+        "preflightManifests": [
+            {
+                "phase": "pilot",
+                "sourcePath": "preflight/pilot/preflight-manifest.json",
+                "sha256": binding["preflightManifests"][0]["sha256"],
+            }
+        ],
+        "responses": [
+            {
+                "sequence": index,
+                "sourceGitSha": source_sha,
+                "sourceEvidenceRoot": source_root,
+                "sourcePath": source_paths[index - 1],
+                "copiedPath": f"recovery/responses/{index:04d}.json",
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "parentLineage": 1 if index == 1 else None,
+                "incident": "vector-settlement" if index == 2 else None,
+            }
+            for index, payload in enumerate(response_payloads, 1)
+        ],
+        "parentLineages": [
+            {
+                "sequence": 1,
+                "sourceGitSha": source_sha,
+                "sourceEvidenceRoot": source_root,
+                "sourcePath": (
+                    "backfill/pilot/recovery/resume-lineage.json"
+                ),
+                "copiedPath": parent_copied,
+                "sha256": hashlib.sha256(parent_payload).hexdigest(),
+            }
+        ],
+        "priorSettlementEvidence": {
+            "sourceGitSha": source_sha,
+            "sourceEvidenceRoot": source_root,
+            "incident": {
+                "sourcePath": "VECTOR_SETTLEMENT_INCIDENT.json",
+                "copiedPath": incident_copied,
+                "sha256": hashlib.sha256(incident_payload).hexdigest(),
+            },
+            "attempts": attempts,
+        },
+    }
+    lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
+    lineage_path = recovery_root / "resume-lineage.json"
+    lineage_path.write_bytes(lineage_payload)
+    verification["resumeLineage"] = {
+        "path": "recovery/resume-lineage.json",
+        "sha256": hashlib.sha256(lineage_payload).hexdigest(),
+    }
+    verification["applySummary"]["resumedResponseCount"] = 2
+    verification["applySummary"]["executedResponseCount"] = 0
+    verification_payload = (json.dumps(verification, indent=2) + "\n").encode()
+    verification_path.write_bytes(verification_payload)
+    binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+        verification_payload
+    ).hexdigest()
+    return lineage_path, incident_path
 
 
 def rewrite_identity_response_body(path: Path, body: bytes):
@@ -3365,10 +3646,11 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertNotIn(
             "wrangler d1 time-travel info paillette-db-stg", plan
         )
-        self.assertIn("nga-artist-data-binding-v3", plan)
-        self.assertIn("nga-post-apply-verification-v3", plan)
-        self.assertIn("candidate/post-apply/pilot/apply-responses/0001.json", plan)
+        self.assertIn("nga-artist-data-binding-v4", plan)
+        self.assertIn("nga-post-apply-verification-v4", plan)
+        self.assertIn("candidate/post-apply/pilot", plan)
         self.assertIn("candidate/post-apply/full/apply-responses/NNNN.json", plan)
+        self.assertIn("settlement attempt", plan)
         self.assertIn("exactly 63,253 D1 queries", plan)
         self.assertIn("63,248 application-record changes", plan)
         self.assertIn("Total queries executed", plan)
@@ -3376,11 +3658,18 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertIn("--resume-response-dir", plan)
         self.assertIn("--resume-lineage", plan)
         self.assertIn("--confirm-resume-lineage-sha256", plan)
-        self.assertIn("c5913a3193beff80f92bc5a90215f73869bc3cb6", plan)
+        self.assertIn("4905eaa89da8afa323979fc9655896cf1fa9adc1", plan)
         self.assertIn(
             "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5",
             plan,
         )
+        self.assertIn(
+            "0ea74c7098f1fe84d8a62bf4de96a0e1f40691f6b1e3249020cb98b129bb72c8",
+            plan,
+        )
+        self.assertIn("prepare-nga-artist-apply-resume.mjs", plan)
+        self.assertIn("--settle-only", plan)
+        self.assertNotIn("node --input-type=module -", plan)
         self.assertNotIn("exactly 63,248 D1 changes", plan)
         self.assertIn("exactly 12 Python public requests", plan)
         for relative in (
@@ -3409,9 +3698,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             / "docs/superpowers/plans/2026-08-22-nga-artist-attribution-relation-staging.md"
         ).read_text(encoding="utf-8")
         recovery = plan.split(
-            "#### Reviewed forward recovery for the preserved partial pilot", 1
+            "#### Zero-mutation settlement recovery for the preserved pilot", 1
         )[1].split(
-            "The following is the only forward mutation command described", 1
+            "The only recovery execution is generic", 1
         )[0]
         shell_blocks = re.findall(r"```bash\n(.*?)```", recovery, flags=re.DOTALL)
         self.assertEqual(
@@ -3429,39 +3718,18 @@ class InventoryAndRelevanceTests(GateTestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / "source"
             head_root = root / "nga-staging" / "fixture-head"
             destination = head_root / "new-evidence"
-            files = {
-                "preflight/pilot/preflight-manifest.json": b'{"pilot":true}\n',
-                "preflight/production-identity.json": b'{"production":true}\n',
-                "backfill/pilot/artifact-manifest.json": b'{"artifact":true}\n',
-                (
-                    "backfill/pilot/apply-responses/"
-                    "2026-08-22T13-49-24-534Z-1855/0001.json"
-                ): b'{"substituted":"response"}\n',
-                (
-                    "candidate/production-identity/pilot/before.json"
-                ): b'{"before":true}\n',
-            }
-            for relative, payload in files.items():
-                path = source / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(payload)
-
-            bootstrap = re.sub(
-                r'^NGA_ARTIST_PARTIAL_ROOT=.*$',
-                'NGA_ARTIST_PARTIAL_ROOT="$SOURCE_ROOT"',
-                bootstrap,
-                count=1,
-                flags=re.MULTILINE,
-            )
             bootstrap = re.sub(
                 r'^NGA_ARTIST_EVIDENCE_HEAD_ROOT=.*$',
                 'NGA_ARTIST_EVIDENCE_HEAD_ROOT="$DESTINATION_HEAD_ROOT"',
                 bootstrap,
                 count=1,
                 flags=re.MULTILINE,
+            )
+            bootstrap = bootstrap.replace(
+                "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5",
+                "0" * 64,
             )
             bootstrap = re.sub(
                 r'^NGA_ARTIST_EVIDENCE_ROOT=.*$',
@@ -3480,7 +3748,6 @@ class InventoryAndRelevanceTests(GateTestCase):
                 cwd=ROOT,
                 env={
                     **os.environ,
-                    "SOURCE_ROOT": str(source),
                     "DESTINATION_HEAD_ROOT": str(head_root),
                     "DESTINATION_ROOT": str(destination),
                 },
@@ -3502,7 +3769,10 @@ class InventoryAndRelevanceTests(GateTestCase):
                     f"created destination escaped the temporary tree: {created_destination}",
                 )
             self.assertFalse(
-                (destination / "backfill/pilot/resume-lineage.json").exists(),
+                (
+                    destination
+                    / "backfill/pilot/settlement-resume/resume-lineage.json"
+                ).exists(),
                 "lineage creation must not be reached after a bad pinned response",
             )
 
@@ -3512,9 +3782,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             / "docs/superpowers/plans/2026-08-22-nga-artist-attribution-relation-staging.md"
         ).read_text(encoding="utf-8")
         recovery = plan.split(
-            "#### Reviewed forward recovery for the preserved partial pilot", 1
+            "#### Zero-mutation settlement recovery for the preserved pilot", 1
         )[1].split(
-            "The following is the only forward mutation command described", 1
+            "The only recovery execution is generic", 1
         )[0]
         bootstrap = re.findall(
             r"```bash\n(.*?)```", recovery, flags=re.DOTALL
@@ -3522,35 +3792,8 @@ class InventoryAndRelevanceTests(GateTestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / "source"
             head_root = root / "nga-staging" / "fixture-head"
-            destination = head_root / "20260822T134448Z"
-            response_payload = b'{"valid":"pinned-response"}\n'
-            response_sha256 = hashlib.sha256(response_payload).hexdigest()
-            files = {
-                "preflight/pilot/preflight-manifest.json": b'{"pilot":true}\n',
-                "preflight/production-identity.json": b'{"production":true}\n',
-                "backfill/pilot/artifact-manifest.json": b'{"artifact":true}\n',
-                (
-                    "backfill/pilot/apply-responses/"
-                    "2026-08-22T13-49-24-534Z-1855/0001.json"
-                ): response_payload,
-                (
-                    "candidate/production-identity/pilot/before.json"
-                ): b'{"before":true}\n',
-            }
-            for relative, payload in files.items():
-                path = source / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(payload)
-
-            bootstrap = re.sub(
-                r'^NGA_ARTIST_PARTIAL_ROOT=.*$',
-                'NGA_ARTIST_PARTIAL_ROOT="$SOURCE_ROOT"',
-                bootstrap,
-                count=1,
-                flags=re.MULTILINE,
-            )
+            destination = head_root / "20260822T150634Z"
             bootstrap = re.sub(
                 r'^NGA_ARTIST_EVIDENCE_HEAD_ROOT=.*$',
                 'NGA_ARTIST_EVIDENCE_HEAD_ROOT="$DESTINATION_HEAD_ROOT"',
@@ -3564,9 +3807,6 @@ class InventoryAndRelevanceTests(GateTestCase):
                 bootstrap,
                 count=1,
                 flags=re.MULTILINE,
-            ).replace(
-                "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5",
-                response_sha256,
             )
             self.assertFalse(head_root.exists())
 
@@ -3575,7 +3815,6 @@ class InventoryAndRelevanceTests(GateTestCase):
                 cwd=ROOT,
                 env={
                     **os.environ,
-                    "SOURCE_ROOT": str(source),
                     "DESTINATION_HEAD_ROOT": str(head_root),
                     "DESTINATION_ROOT": str(destination),
                 },
@@ -3585,20 +3824,26 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            lineage_path = destination / "backfill/pilot/resume-lineage.json"
+            lineage_path = (
+                destination
+                / "backfill/pilot/settlement-resume/resume-lineage.json"
+            )
             lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
-            self.assertEqual(lineage["responses"][0]["sha256"], response_sha256)
+            self.assertEqual(lineage["schemaVersion"], "nga-apply-resume-lineage-v2")
+            self.assertEqual(
+                [response["sha256"] for response in lineage["responses"]],
+                [
+                    "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5",
+                    "0ea74c7098f1fe84d8a62bf4de96a0e1f40691f6b1e3249020cb98b129bb72c8",
+                ],
+            )
             self.assertEqual(
                 lineage["artifactManifest"]["sha256"],
-                hashlib.sha256(
-                    files["backfill/pilot/artifact-manifest.json"]
-                ).hexdigest(),
+                "b61671def2240e93534d6db9fdaa32c9ea42f0f4df8042510d1367df8eb27c39",
             )
             self.assertEqual(
                 lineage["preflightManifests"][0]["sha256"],
-                hashlib.sha256(
-                    files["preflight/pilot/preflight-manifest.json"]
-                ).hexdigest(),
+                "510cc68e62deb6afe3790fac5d6e3111ca49a4a2e83af98a37c13ffcf796baf9",
             )
 
     def test_inventory_rejects_duplicate_request_bodies_with_conflicting_gates(self):
@@ -3841,7 +4086,8 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "artist_preflight_artifact_hash_mismatch",
             ),
             "tampered post-apply vector": (
-                "candidate/post-apply/pilot/image-vectors/original-0001-unit.ndjson",
+                "candidate/post-apply/pilot/settlement-attempts/0001/"
+                "image-vectors/original-0001-unit.ndjson",
                 lambda path: path.write_text("{}\n", encoding="utf-8"),
                 "artist_post_apply_artifact_hash_mismatch",
             ),
@@ -3964,6 +4210,218 @@ class InventoryAndRelevanceTests(GateTestCase):
                 [11],
             )
 
+    def test_artist_evidence_rehashes_vector_response_facts(self):
+        mutations = {
+            "wrong index": lambda response: response.update(
+                stdout=(
+                    "Enqueued 5 vectors into index 'other-index' for upsertion.\n"
+                    "Mutation changeset identifier: "
+                    "283fa906-9e2a-4fbe-a6b1-34617719f705\n"
+                    + json.dumps({"index": "other-index", "count": 5})
+                )
+            ),
+            "wrong count": lambda response: response.update(
+                stdout=(
+                    "Enqueued 4 vectors into index "
+                    "'paillette-embeddings-v2-stg' for upsertion.\n"
+                    "Mutation changeset identifier: "
+                    "283fa906-9e2a-4fbe-a6b1-34617719f705\n"
+                    + json.dumps(
+                        {"index": "paillette-embeddings-v2-stg", "count": 4}
+                    )
+                )
+            ),
+            "duplicate mutation identity": lambda response: response.update(
+                stdout=(
+                    response["stdout"].replace(
+                        "Mutation changeset identifier:",
+                        "Mutation changeset identifier: "
+                        "00000000-0000-4000-8000-000000000000\n"
+                        "Mutation changeset identifier:",
+                    )
+                )
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                verification_path = (
+                    evidence_root / binding["postApplyVerification"]["path"]
+                )
+                verification = json.loads(
+                    verification_path.read_text(encoding="utf-8")
+                )
+                descriptor = verification["applyResponses"][1]
+                response_path = verification_path.parent / descriptor["path"]
+                response = json.loads(response_path.read_text(encoding="utf-8"))
+                mutate(response)
+                response_payload = (json.dumps(response, indent=2) + "\n").encode()
+                response_path.write_bytes(response_payload)
+                descriptor["sha256"] = hashlib.sha256(response_payload).hexdigest()
+                verification_payload = (
+                    json.dumps(verification, indent=2) + "\n"
+                ).encode()
+                verification_path.write_bytes(verification_payload)
+                binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                    verification_payload
+                ).hexdigest()
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(
+                    "artist_apply_response_query_count_mismatch",
+                    result["failureCodes"],
+                    result,
+                )
+
+    def test_artist_evidence_validates_stale_then_settled_attempt_chain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            prepend_pending_settlement_attempt(evidence_root, binding)
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertTrue(result["passed"], result)
+
+        mutations = {
+            "settled declared before final": lambda verification, root: (
+                verification["settlement"]["attempts"][0].update(
+                    outcome="settled"
+                ),
+                verification["settlement"]["attempts"][0].pop(
+                    "pendingVectorCount"
+                ),
+                verification["settlement"]["attempts"][0].pop(
+                    "pendingVectorIdsSha256"
+                ),
+            ),
+            "reordered attempts": lambda verification, root: verification[
+                "settlement"
+            ]["attempts"].reverse(),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                prepend_pending_settlement_attempt(evidence_root, binding)
+                rewrite_bound_post_apply_verification(
+                    evidence_root,
+                    binding,
+                    lambda verification: mutate(verification, evidence_root),
+                )
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(
+                    "artist_settlement_evidence_invalid",
+                    result["failureCodes"],
+                    result,
+                )
+
+    def test_artist_evidence_rejects_self_consistent_third_state_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            prepend_pending_settlement_attempt(evidence_root, binding)
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            state_path = (
+                verification_path.parent
+                / verification["settlement"]["attempts"][0]["stateManifest"]["path"]
+            )
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            vector_descriptor = state["inputs"]["imageVectors"][0]
+            vector_path = state_path.parent / vector_descriptor["path"]
+            vectors = [
+                json.loads(line)
+                for line in vector_path.read_text(encoding="utf-8").splitlines()
+                if line
+            ]
+            vectors[0]["metadata"]["unrelatedDrift"] = True
+            vector_payload = (
+                "".join(
+                    json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+                    for row in vectors
+                )
+            ).encode()
+            vector_path.write_bytes(vector_payload)
+            vector_descriptor["sha256"] = hashlib.sha256(vector_payload).hexdigest()
+            state["vectorFiles"][0]["sha256"] = vector_descriptor["sha256"]
+            state_payload = (json.dumps(state, indent=2) + "\n").encode()
+            state_path.write_bytes(state_payload)
+            verification["settlement"]["attempts"][0]["stateManifest"][
+                "sha256"
+            ] = hashlib.sha256(state_payload).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertIn(
+                "artist_settlement_evidence_invalid",
+                result["failureCodes"],
+                result,
+            )
+
+    def test_artist_evidence_rejects_symlinked_settlement_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            state_path = (
+                verification_path.parent
+                / "settlement-attempts/0001/state-manifest.json"
+            )
+            moved_path = state_path.with_name("moved-state-manifest.json")
+            state_path.rename(moved_path)
+            state_path.symlink_to(moved_path.name)
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertIn(
+                "artist_settlement_evidence_invalid",
+                result["failureCodes"],
+                result,
+            )
+
     def test_artist_evidence_rehashes_resumed_response_source_lineage(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence_root = Path(directory)
@@ -3990,13 +4448,8 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "sha256": hashlib.sha256(source_payload).hexdigest(),
             }
             lineage = {
-                "schemaVersion": "nga-apply-resume-lineage-v1",
-                "sourceGitSha": "c5913a3193beff80f92bc5a90215f73869bc3cb6",
-                "sourceEvidenceRoot": (
-                    ".agent/evidence/nga-staging/"
-                    "c5913a3193beff80f92bc5a90215f73869bc3cb6/"
-                    "20260822T134448Z"
-                ),
+                "schemaVersion": "nga-apply-resume-lineage-v2",
+                "phase": "pilot",
                 "artifactManifest": {
                     "sourcePath": "backfill/pilot/artifact-manifest.json",
                     "sha256": binding["artifactManifest"]["sha256"],
@@ -4011,14 +4464,26 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "responses": [
                     {
                         "sequence": 1,
+                        "sourceGitSha": (
+                            "c5913a3193beff80f92bc5a90215f73869bc3cb6"
+                        ),
+                        "sourceEvidenceRoot": (
+                            ".agent/evidence/nga-staging/"
+                            "c5913a3193beff80f92bc5a90215f73869bc3cb6/"
+                            "20260822T134448Z"
+                        ),
                         "sourcePath": (
                             "backfill/pilot/apply-responses/"
                             "2026-08-22T13-49-24-534Z-1855/0001.json"
                         ),
                         "copiedPath": source_relative,
                         "sha256": hashlib.sha256(source_payload).hexdigest(),
+                        "parentLineage": None,
+                        "incident": None,
                     }
                 ],
+                "parentLineages": [],
+                "priorSettlementEvidence": None,
             }
             lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
             lineage_path = source_path.parent.parent / "resume-lineage.json"
@@ -4145,6 +4610,63 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "artist_apply_resume_lineage_hash_mismatch",
                 lineage_tampered["failureCodes"],
                 lineage_tampered,
+            )
+
+    def test_artist_evidence_binds_mixed_parent_and_incident_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            lineage_path, incident_path = bind_mixed_resume_lineage(
+                evidence_root, binding
+            )
+
+            baseline = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertTrue(baseline["passed"], baseline)
+
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            lineage = json.loads(lineage_path.read_text(encoding="utf-8"))
+            incident = json.loads(incident_path.read_text(encoding="utf-8"))
+            incident["stagingMutation"]["rawResponse"]["sha256"] = lineage[
+                "responses"
+            ][0]["sha256"]
+            incident_payload = (json.dumps(incident, indent=2) + "\n").encode()
+            incident_path.write_bytes(incident_payload)
+            lineage["priorSettlementEvidence"]["incident"][
+                "sha256"
+            ] = hashlib.sha256(incident_payload).hexdigest()
+            lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
+            lineage_path.write_bytes(lineage_payload)
+            verification["resumeLineage"]["sha256"] = hashlib.sha256(
+                lineage_payload
+            ).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+
+            tampered = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertIn(
+                "artist_apply_resume_lineage_invalid",
+                tampered["failureCodes"],
+                tampered,
             )
 
     @staticmethod

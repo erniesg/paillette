@@ -641,29 +641,41 @@ node scripts/apply-nga-artist-backfill.mjs \
   --execute
 ```
 
-The apply script requires exactly five successful D1 queries for the five hash-validated SQL statements, immediately re-exports the five rows/vectors, recursively rehashes that post-apply state, and writes `nga-post-apply-verification-v3` evidence. It copies every executed Wrangler response into deterministic paths `candidate/post-apply/pilot/apply-responses/0001.json` onward and binds those files in exact manifest order with their SHA-256 digests, SQL artifact paths, per-chunk expected/actual query counts, and non-authoritative D1 telemetry. The evaluator rehashes each raw response, strictly reparses the optional status prefix plus JSON `stdout`, and independently derives exactly five application-record changes from the immutable rollback rows versus verified post-state. `meta.changes`, `rows_written`, and related SQLite counters are telemetry, not exact application-row counts. A missing, tampered, reordered, duplicated, failed, or inconsistent response is a stop condition even when final state is correct. The script also requires exact primary IDs, relation metadata, idempotent D1 state, unchanged vector value hashes, unchanged counts, and zero unrelated field changes before exiting zero. Separately prove direct Vectorize filter success. On any failure, stop; rollback requires separate authorization using the hash-bound D1 Time Travel recovery point, complete original D1 rows, and rollback vector NDJSON, and full backfill remains prohibited until the pilot recovery and gate receive independent approval.
+The future fresh-apply path runs each ordered mutation at most once, validates
+the D1 query count and the Vectorize index/count/single mutation identity, then
+performs only read-only settlement captures. It preserves each stale attempt
+without overwriting it and writes `nga-post-apply-verification-v4` only after a
+fresh capture proves the exact five-row D1/vector state. `meta.changes`,
+`rows_written`, and related SQLite counters remain telemetry, not row-count
+proof. A timeout, missing or inconsistent response, third-state vector,
+unrelated drift, or count mismatch stops without rerunning a mutation. Recovery
+from interruption uses the generic v2 lineage preparer and resume prefix; it
+never relies on a manually authored lineage. Rollback and full backfill remain
+separately authorized operations.
 
-#### Reviewed forward recovery for the preserved partial pilot
+#### Zero-mutation settlement recovery for the preserved pilot
 
-The preserved run at candidate `c5913a3193beff80f92bc5a90215f73869bc3cb6` stopped after its first ordered step. Its raw D1 response is
-`backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json`
-with SHA-256
-`eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5`.
-It reports status zero, success, `Total queries executed: 5`, and telemetry
-`meta.changes: 11`; the preserved diagnostic capture proves the five D1 rows
-match the prepared mapping while image vectors remain byte-identical to
-preflight. Do not recapture or replace the original pre-mutation pilot rows.
+The preserved exact-root incident
+`.agent/evidence/nga-staging/4905eaa89da8afa323979fc9655896cf1fa9adc1/20260822T150634Z`
+proves that both ordered mutations already ran exactly once. D1 response
+`0001.json` has SHA-256 `eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5`.
+Vector response `0002.json` has SHA-256
+`0ea74c7098f1fe84d8a62bf4de96a0e1f40691f6b1e3249020cb98b129bb72c8`
+and proves index `paillette-embeddings-v2-stg`, count five, and mutation ID
+`283fa906-9e2a-4fbe-a6b1-34617719f705`. The immediate read was stale; the
+later diagnostic observed the desired vectors. Neither diagnostic substitutes
+for a new generic settlement capture. Do not execute either mutation again.
 
-Only after independent review of the exact repaired HEAD may the coordinator
-run the following fenced block as one fail-fast shell operation. It requires a
-previously absent exact-head evidence root, creates that root exclusively, and
-does not reach lineage creation unless every pinned and copied digest check
-succeeds:
+Only after independent exact-HEAD review may the coordinator run this one
+fail-fast bootstrap. It exclusively creates a new exact-head evidence root,
+copies the immutable pre-mutation and incident artifacts, verifies every pinned
+digest, and lets the repository script—not a manual JSON heredoc—write v2
+response provenance and recursively copy/hash the prior attempt evidence:
 
 ```bash
 set -euo pipefail
 
-NGA_ARTIST_PARTIAL_ROOT="$(pwd)/.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z"
+NGA_ARTIST_INCIDENT_ROOT="$(pwd)/.agent/evidence/nga-staging/4905eaa89da8afa323979fc9655896cf1fa9adc1/20260822T150634Z"
 NGA_ARTIST_EVIDENCE_HEAD_ROOT="$(pwd)/.agent/evidence/nga-staging/$(git rev-parse HEAD)"
 NGA_ARTIST_EVIDENCE_ROOT="$NGA_ARTIST_EVIDENCE_HEAD_ROOT/$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$NGA_ARTIST_EVIDENCE_HEAD_ROOT"
@@ -671,82 +683,69 @@ test -d "$NGA_ARTIST_EVIDENCE_HEAD_ROOT"
 test ! -L "$NGA_ARTIST_EVIDENCE_HEAD_ROOT"
 test ! -e "$NGA_ARTIST_EVIDENCE_ROOT"
 mkdir "$NGA_ARTIST_EVIDENCE_ROOT"
-mkdir -p \
-  "$NGA_ARTIST_EVIDENCE_ROOT/preflight" \
-  "$NGA_ARTIST_EVIDENCE_ROOT/backfill" \
-  "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot"
-cp -pR "$NGA_ARTIST_PARTIAL_ROOT/preflight/pilot" "$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot"
-cp -p "$NGA_ARTIST_PARTIAL_ROOT/preflight/production-identity.json" "$NGA_ARTIST_EVIDENCE_ROOT/preflight/production-identity.json"
-cp -pR "$NGA_ARTIST_PARTIAL_ROOT/backfill/pilot" "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot"
-cp -p "$NGA_ARTIST_PARTIAL_ROOT/candidate/production-identity/pilot/before.json" "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot/before.json"
+mkdir -p "$NGA_ARTIST_EVIDENCE_ROOT/preflight" "$NGA_ARTIST_EVIDENCE_ROOT/backfill" "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot"
+cp -pR "$NGA_ARTIST_INCIDENT_ROOT/preflight/pilot" "$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot"
+cp -p "$NGA_ARTIST_INCIDENT_ROOT/preflight/production-identity.json" "$NGA_ARTIST_EVIDENCE_ROOT/preflight/production-identity.json"
+cp -pR "$NGA_ARTIST_INCIDENT_ROOT/backfill/pilot" "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot"
+cp -p "$NGA_ARTIST_INCIDENT_ROOT/candidate/production-identity/pilot/before.json" "$NGA_ARTIST_EVIDENCE_ROOT/candidate/production-identity/pilot/before.json"
 realpath "$NGA_ARTIST_EVIDENCE_ROOT" > "$NGA_ARTIST_EVIDENCE_ROOT/preflight/evidence-root.txt"
 
 NGA_ARTIST_PILOT_MANIFEST="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/artifact-manifest.json"
 NGA_ARTIST_PILOT_SHA="$(shasum -a 256 "$NGA_ARTIST_PILOT_MANIFEST" | awk '{print $1}')"
-NGA_ARTIST_PILOT_PREFLIGHT_SHA="$(shasum -a 256 "$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot/preflight-manifest.json" | awk '{print $1}')"
-NGA_ARTIST_RESUME_DIR="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855"
-NGA_ARTIST_RESUME_RESPONSE_SHA="$(shasum -a 256 "$NGA_ARTIST_RESUME_DIR/0001.json" | awk '{print $1}')"
-test "$NGA_ARTIST_RESUME_RESPONSE_SHA" = "eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5"
-test "$(shasum -a 256 "$NGA_ARTIST_PARTIAL_ROOT/backfill/pilot/artifact-manifest.json" | awk '{print $1}')" = "$NGA_ARTIST_PILOT_SHA"
-test "$(shasum -a 256 "$NGA_ARTIST_PARTIAL_ROOT/preflight/pilot/preflight-manifest.json" | awk '{print $1}')" = "$NGA_ARTIST_PILOT_PREFLIGHT_SHA"
+test "$NGA_ARTIST_PILOT_SHA" = "b61671def2240e93534d6db9fdaa32c9ea42f0f4df8042510d1367df8eb27c39"
+test "$(shasum -a 256 "$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot/preflight-manifest.json" | awk '{print $1}')" = "510cc68e62deb6afe3790fac5d6e3111ca49a4a2e83af98a37c13ffcf796baf9"
+test "$(shasum -a 256 "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/resume-lineage.json" | awk '{print $1}')" = "455988f4c7fcfc1e266af1082c52195b12f8adbc918831555b507d8162e29be0"
+test "$(shasum -a 256 "$NGA_ARTIST_INCIDENT_ROOT/VECTOR_SETTLEMENT_INCIDENT.json" | awk '{print $1}')" = "bb569f29b2f3063bfa43e27f7e3069c9a4a5747427875fb648b49e91e4381f3e"
 
-node --input-type=module - \
-  "$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/resume-lineage.json" \
-  "$NGA_ARTIST_PILOT_SHA" \
-  "$NGA_ARTIST_PILOT_PREFLIGHT_SHA" \
-  "$NGA_ARTIST_RESUME_RESPONSE_SHA" <<'NODE'
-import { writeFileSync } from 'node:fs';
-const [out, manifestSha256, preflightSha256, responseSha256] = process.argv.slice(2);
-const value = {
-  schemaVersion: 'nga-apply-resume-lineage-v1',
-  sourceGitSha: 'c5913a3193beff80f92bc5a90215f73869bc3cb6',
-  sourceEvidenceRoot: '.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z',
-  artifactManifest: {
-    sourcePath: 'backfill/pilot/artifact-manifest.json',
-    sha256: manifestSha256,
-  },
-  preflightManifests: [{
-    phase: 'pilot',
-    sourcePath: 'preflight/pilot/preflight-manifest.json',
-    sha256: preflightSha256,
-  }],
-  responses: [{
-    sequence: 1,
-    sourcePath: 'backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json',
-    copiedPath: 'apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json',
-    sha256: responseSha256,
-  }],
-};
-writeFileSync(out, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
-NODE
-
-NGA_ARTIST_RESUME_LINEAGE="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/resume-lineage.json"
-NGA_ARTIST_RESUME_LINEAGE_SHA="$(shasum -a 256 "$NGA_ARTIST_RESUME_LINEAGE" | awk '{print $1}')"
+node scripts/prepare-nga-artist-apply-resume.mjs \
+  --phase=pilot \
+  --manifest="$NGA_ARTIST_PILOT_MANIFEST" \
+  --confirm-manifest-sha256="$NGA_ARTIST_PILOT_SHA" \
+  --source-evidence-root="$NGA_ARTIST_INCIDENT_ROOT" \
+  --response=backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json \
+  --confirm-response-sha256=eece2f3e3b3dd2abd6384caff8227965a5bcac0d731c49b61ed7f86a22c3cca5 \
+  --response=backfill/pilot/apply-responses/2026-08-22T15-09-40-358Z-88212/0002.json \
+  --confirm-response-sha256=0ea74c7098f1fe84d8a62bf4de96a0e1f40691f6b1e3249020cb98b129bb72c8 \
+  --parent-lineage=backfill/pilot/resume-lineage.json \
+  --confirm-parent-lineage-sha256=455988f4c7fcfc1e266af1082c52195b12f8adbc918831555b507d8162e29be0 \
+  --incident=VECTOR_SETTLEMENT_INCIDENT.json \
+  --confirm-incident-sha256=bb569f29b2f3063bfa43e27f7e3069c9a4a5747427875fb648b49e91e4381f3e \
+  --out-dir="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/settlement-resume"
 ```
 
-The following is the only forward mutation command described by this recovery
-section. It must validate and skip response step 0001, execute the image-vector
-step exactly once, capture current D1/vector state, bind both resumed and new
-raw responses plus the lineage file, and require the combined five-record state
-before exit zero:
+The only recovery execution is generic `--settle-only`. It validates the
+complete v2 response/parent/incident chain, runs zero D1 and zero Vectorize
+mutation commands, creates each read-only attempt directory exclusively, and
+polls only current staging state until exact desired state or the strict
+timeout. Stale vectors are pending only while D1 is exact and every vector is
+either byte-equivalent to its original or exact desired form; third-state,
+unrelated, D1, or count drift fails immediately. A timeout preserves all
+attempts and writes no v4 verification:
 
 ```bash
+NGA_ARTIST_RESUME_ROOT="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/settlement-resume"
+NGA_ARTIST_RESUME_LINEAGE="$NGA_ARTIST_RESUME_ROOT/resume-lineage.json"
+NGA_ARTIST_RESUME_LINEAGE_SHA="$(shasum -a 256 "$NGA_ARTIST_RESUME_LINEAGE" | awk '{print $1}')"
+test ! -e "$NGA_ARTIST_EVIDENCE_ROOT/candidate/post-apply/pilot"
 node scripts/apply-nga-artist-backfill.mjs \
   --environment=staging \
   --phase=pilot \
   --manifest="$NGA_ARTIST_PILOT_MANIFEST" \
   --confirm-manifest-sha256="$NGA_ARTIST_PILOT_SHA" \
-  --resume-response-dir="$NGA_ARTIST_RESUME_DIR" \
+  --resume-response-dir="$NGA_ARTIST_RESUME_ROOT/responses" \
   --resume-lineage="$NGA_ARTIST_RESUME_LINEAGE" \
   --confirm-resume-lineage-sha256="$NGA_ARTIST_RESUME_LINEAGE_SHA" \
+  --settlement-timeout-ms=900000 \
+  --settlement-poll-ms=15000 \
   --post-apply-out-dir="$NGA_ARTIST_EVIDENCE_ROOT/candidate/post-apply/pilot" \
-  --execute
+  --settle-only
 ```
 
-Stop after the recovered pilot verification and fresh pilot `after` production
-identity are captured. This repair does not authorize rollback, the full
-backfill, any production action, or any additional live call; each requires the
-coordinator's separate decision after exact-head review.
+The successful output is `nga-post-apply-verification-v4`; it binds every raw
+response, strict Vectorize facts, the v2 provenance graph, every read-only
+attempt, and the newly observed settled state. Stop after this recovered pilot.
+This section authorizes no mutation, rollback, full backfill, production
+action, cache operation, or other live call.
 
 Immediately after those pilot verification checks succeed, require
 `candidate/production-identity/pilot/after.json` not to exist and create it
@@ -756,7 +755,7 @@ condition; do not overwrite it.
 - [ ] **Step 5: Run and inspect the pilot live gate**
 
 Create a deployment identity JSON binding the exact reviewed API/web staging
-versions, candidate git SHA, and an `nga-artist-data-binding-v3` object. That
+versions, candidate git SHA, and an `nga-artist-data-binding-v4` object. That
 object references `backfill/pilot/artifact-manifest.json`,
 `preflight/pilot/preflight-manifest.json`, and
 `candidate/post-apply/pilot/verification.json` by fixed relative path and
@@ -895,7 +894,7 @@ node scripts/apply-nga-artist-backfill.mjs \
   --execute
 ```
 
-The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. It requires exactly 63,253 D1 queries for the 63,253 guarded SQL statements, then re-exports and verifies the full 63,253-row D1/vector state before exiting zero. Its `nga-post-apply-verification-v3` file binds every deterministic `candidate/post-apply/full/apply-responses/NNNN.json` response in execution order and records per-chunk and total expected/actual query counts plus non-authoritative telemetry. The evaluator rehashes and strictly reparses every response, derives exactly 63,248 application-record changes by comparing the immutable full-remaining rollback rows with verified post-state while excluding the five separately proved pilot IDs, and requires the complete 63,253 final state. Final state without the response history and state-derived application-record count is insufficient. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
+The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. It requires exactly 63,253 D1 queries and Vectorize response counts for the hash-bound chunks, executes every ordered mutation at most once, and then performs only read-only settlement captures. Its `nga-post-apply-verification-v4` file binds every deterministic `candidate/post-apply/full/apply-responses/NNNN.json` response, strict Vectorize index/count/single-mutation facts, and every exclusive settlement attempt in order. The evaluator recursively rehashes and reparses them, derives exactly 63,248 application-record changes from immutable rollback rows versus the newly settled state while excluding the five pilot IDs, and requires all 63,253 final records. Final state without response history, settlement history, and state-derived application-record count is insufficient. Timeout or drift stops without rerunning a mutation. Final invariants remain exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
 
 Immediately after the full apply and those verification checks succeed—and
 before Step 7, full discovery, or any official gate—write a fresh

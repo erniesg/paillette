@@ -103,6 +103,45 @@ export function parseWranglerJsonOutput(output, label = 'Wrangler') {
   return payload;
 }
 
+export function parseNgaVectorUpsertFacts(
+  output,
+  { expectedIndex, expectedCount }
+) {
+  const payload = parseWranglerJsonOutput(output, 'Vectorize apply response');
+  const jsonStart = /^[\t ]*[\[{]/m.exec(output)?.index;
+  const prefix = Number.isInteger(jsonStart) ? output.slice(0, jsonStart) : '';
+  const mutationMatches = [
+    ...prefix.matchAll(
+      /Mutation changeset identifier:\s*([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/gi
+    ),
+  ];
+  const enqueueMatches = [
+    ...prefix.matchAll(
+      /Enqueued\s+(\d+)\s+vectors\s+into\s+index\s+'([^']+)'\s+for\s+upsertion\./gi
+    ),
+  ];
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload) ||
+    payload.index !== expectedIndex ||
+    payload.count !== expectedCount ||
+    mutationMatches.length !== 1 ||
+    enqueueMatches.length !== 1 ||
+    enqueueMatches[0][2] !== expectedIndex ||
+    Number(enqueueMatches[0][1]) !== expectedCount
+  ) {
+    throw new Error(
+      'Vectorize apply response must prove the exact index, count, and one mutation identity'
+    );
+  }
+  return {
+    index: expectedIndex,
+    count: expectedCount,
+    mutationId: mutationMatches[0][1].toLowerCase(),
+  };
+}
+
 const containsExactRecoveryValue = (value, field, expected) => {
   if (Array.isArray(value)) {
     return value.some((entry) =>
@@ -723,7 +762,7 @@ const exactRowsByArtworkId = (rows, label) => {
   return byId;
 };
 
-export function verifyNgaArtistPostApplyState({
+export function inspectNgaArtistPostApplyState({
   phase,
   mapping,
   originalRecords,
@@ -788,6 +827,7 @@ export function verifyNgaArtistPostApplyState({
       Number(left.split(':').at(-1)) - Number(right.split(':').at(-1))
   );
   let applicationRecordChanges = 0;
+  const pendingVectorIds = [];
   for (const id of orderedIds) {
     const desired = mappingById.get(id);
     const original = structuredClone(originalById.get(id));
@@ -862,9 +902,13 @@ export function verifyNgaArtistPostApplyState({
       ...(expectedVector.metadata || {}),
       primaryArtistId: desired.primaryArtistId,
     };
-    if (
-      canonicalJson(postVectorsById.get(id)) !== canonicalJson(expectedVector)
-    ) {
+    const actualVectorJson = canonicalJson(postVectorsById.get(id));
+    if (actualVectorJson === canonicalJson(expectedVector)) {
+      continue;
+    }
+    if (actualVectorJson === canonicalJson(originalVector)) {
+      pendingVectorIds.push(id);
+    } else {
       throw new Error(
         `post-apply vector changed beyond primaryArtistId for ${id}`
       );
@@ -881,17 +925,38 @@ export function verifyNgaArtistPostApplyState({
     );
   }
 
+  if (pendingVectorIds.length) {
+    return {
+      outcome: 'pending',
+      pendingVectorCount: pendingVectorIds.length,
+      pendingVectorIdsSha256: sha256(canonicalJson(pendingVectorIds)),
+    };
+  }
+
   const orderedPostRecords = orderedIds.map((id) => postById.get(id));
   const orderedPostVectors = orderedIds.map((id) => postVectorsById.get(id));
   return {
-    phase,
-    recordCount: expectedCount,
-    vectorCount: expectedCount,
-    applicationRecordChanges,
-    unrelatedFieldsUnchanged: true,
-    vectorValuesUnchanged: true,
-    idempotentD1State: true,
-    postRecordsSha256: sha256(canonicalJson(orderedPostRecords)),
-    postVectorsSha256: sha256(canonicalJson(orderedPostVectors)),
+    outcome: 'settled',
+    summary: {
+      phase,
+      recordCount: expectedCount,
+      vectorCount: expectedCount,
+      applicationRecordChanges,
+      unrelatedFieldsUnchanged: true,
+      vectorValuesUnchanged: true,
+      idempotentD1State: true,
+      postRecordsSha256: sha256(canonicalJson(orderedPostRecords)),
+      postVectorsSha256: sha256(canonicalJson(orderedPostVectors)),
+    },
   };
+}
+
+export function verifyNgaArtistPostApplyState(input) {
+  const result = inspectNgaArtistPostApplyState(input);
+  if (result.outcome !== 'settled') {
+    throw new Error(
+      `post-apply vector settlement pending for ${result.pendingVectorCount} records`
+    );
+  }
+  return result.summary;
 }

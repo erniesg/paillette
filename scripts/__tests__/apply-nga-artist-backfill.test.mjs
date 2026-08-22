@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
+  cpSync,
   existsSync,
   chmodSync,
   mkdirSync,
@@ -12,13 +14,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 
 import { buildNgaArtistUpdateSql } from '../lib/nga-structured-search-backfill.mjs';
 
 const scriptPath = resolve('scripts/apply-nga-artist-backfill.mjs');
+const prepareResumeScriptPath = resolve(
+  'scripts/prepare-nga-artist-apply-resume.mjs'
+);
 const temporaryDirectories = [];
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const pilotIds = ['131994', '110821', '11236', '38', '579'].map(
@@ -219,6 +224,8 @@ const createMockPnpm = (
     d1Prefix = '',
     mutateRows = (rows) => rows,
     mutateVectors = (rows) => rows,
+    staleVectorReads = 0,
+    vectorStdout = null,
   } = {}
 ) => {
   const bin = join(artifact.root, 'bin');
@@ -247,8 +254,15 @@ const createMockPnpm = (
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line));
+  const originalVectors = readFileSync(
+    join(artifact.root, 'rollback', 'image-vectors-0001.ndjson'),
+    'utf8'
+  )
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
   const mock = `#!/usr/bin/env node
-const { appendFileSync } = require('node:fs');
+const { appendFileSync, existsSync, readFileSync } = require('node:fs');
 const args = process.argv.slice(2).join(' ');
 if (args.includes('d1 execute') && args.includes('--file')) {
   if (process.env.NGA_APPLY_TEST_D1_MARKER) appendFileSync(process.env.NGA_APPLY_TEST_D1_MARKER, 'd1\\n');
@@ -267,9 +281,17 @@ if (args.includes('d1 execute') && args.includes('--file')) {
   process.stdout.write(JSON.stringify([{ results: JSON.parse(process.env.NGA_APPLY_TEST_POST_ROWS) }]));
 } else if (args.includes('vectorize upsert')) {
   if (process.env.NGA_APPLY_TEST_VECTOR_MARKER) appendFileSync(process.env.NGA_APPLY_TEST_VECTOR_MARKER, 'vector\\n');
-  process.stdout.write(JSON.stringify({ count: 5 }));
+  process.stdout.write(process.env.NGA_APPLY_TEST_VECTOR_STDOUT);
 } else if (args.includes('vectorize get-vectors')) {
-  process.stdout.write(JSON.stringify({ vectors: JSON.parse(process.env.NGA_APPLY_TEST_POST_VECTORS) }));
+  let readIndex = 0;
+  if (process.env.NGA_APPLY_TEST_VECTOR_READ_MARKER) {
+    if (existsSync(process.env.NGA_APPLY_TEST_VECTOR_READ_MARKER)) {
+      readIndex = readFileSync(process.env.NGA_APPLY_TEST_VECTOR_READ_MARKER, 'utf8').trim().split('\\n').filter(Boolean).length;
+    }
+    appendFileSync(process.env.NGA_APPLY_TEST_VECTOR_READ_MARKER, 'read\\n');
+  }
+  const snapshots = JSON.parse(process.env.NGA_APPLY_TEST_VECTOR_SNAPSHOTS);
+  process.stdout.write(JSON.stringify({ vectors: snapshots[Math.min(readIndex, snapshots.length - 1)] }));
 } else {
   process.stderr.write('unexpected mock command: ' + args);
   process.exit(2);
@@ -283,10 +305,17 @@ if (args.includes('d1 execute') && args.includes('--file')) {
     NGA_APPLY_TEST_D1_CHANGES: String(d1Changes),
     NGA_APPLY_TEST_D1_QUERY_COUNT: String(d1QueryCount),
     NGA_APPLY_TEST_D1_PREFIX: d1Prefix,
+    NGA_APPLY_TEST_VECTOR_STDOUT:
+      vectorStdout ||
+      "✨ Enqueued 5 vectors into index 'paillette-embeddings-v2-stg' for upsertion. Mutation changeset identifier: 283fa906-9e2a-4fbe-a6b1-34617719f705\n" +
+        JSON.stringify({ index: 'paillette-embeddings-v2-stg', count: 5 }),
     NGA_APPLY_TEST_POST_ROWS: JSON.stringify(
       mutateRows(postRows, originalRows)
     ),
-    NGA_APPLY_TEST_POST_VECTORS: JSON.stringify(mutateVectors(postVectors)),
+    NGA_APPLY_TEST_VECTOR_SNAPSHOTS: JSON.stringify([
+      ...Array.from({ length: staleVectorReads }, () => originalVectors),
+      mutateVectors(postVectors),
+    ]),
   };
 };
 
@@ -326,17 +355,35 @@ const createResumeResponseDirectory = (artifact, mutate = (value) => value) => {
   return directory;
 };
 
+const addVectorResumeResponse = (artifact, directory) => {
+  const response = {
+    sequence: 2,
+    kind: 'image-vectors',
+    path: 'vectors/artist-0001.ndjson',
+    status: 0,
+    stdout:
+      "✨ Enqueued 5 vectors into index 'paillette-embeddings-v2-stg' for upsertion. Mutation changeset identifier: 283fa906-9e2a-4fbe-a6b1-34617719f705\n" +
+      JSON.stringify({ index: 'paillette-embeddings-v2-stg', count: 5 }),
+    stderr: '',
+  };
+  writeFileSync(
+    join(directory, '0002.json'),
+    `${JSON.stringify(response, null, 2)}\n`
+  );
+  return directory;
+};
+
 const createResumeLineage = (
   artifact,
   resumeDirectory,
   mutate = (value) => value
 ) => {
-  const responsePath = join(resumeDirectory, '0001.json');
+  const responseNames = ['0001.json', '0002.json'].filter((name) =>
+    existsSync(join(resumeDirectory, name))
+  );
   const lineage = mutate({
-    schemaVersion: 'nga-apply-resume-lineage-v1',
-    sourceGitSha: 'c5913a3193beff80f92bc5a90215f73869bc3cb6',
-    sourceEvidenceRoot:
-      '.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z',
+    schemaVersion: 'nga-apply-resume-lineage-v2',
+    phase: 'pilot',
     artifactManifest: {
       sourcePath: 'backfill/pilot/artifact-manifest.json',
       sha256: artifact.manifestSha256,
@@ -348,15 +395,20 @@ const createResumeLineage = (
         sha256: '2'.repeat(64),
       },
     ],
-    responses: [
-      {
-        sequence: 1,
+    responses: responseNames.map((name, index) => ({
+        sequence: index + 1,
+        sourceGitSha: 'c5913a3193beff80f92bc5a90215f73869bc3cb6',
+        sourceEvidenceRoot:
+          '.agent/evidence/nga-staging/c5913a3193beff80f92bc5a90215f73869bc3cb6/20260822T134448Z',
         sourcePath:
-          'backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json',
-        copiedPath: 'resume-responses/0001.json',
-        sha256: sha256(readFileSync(responsePath)),
-      },
-    ],
+          `backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/${name}`,
+        copiedPath: `resume-responses/${name}`,
+        sha256: sha256(readFileSync(join(resumeDirectory, name))),
+        parentLineage: null,
+        incident: null,
+      })),
+    parentLineages: [],
+    priorSettlementEvidence: null,
   });
   const path = join(artifact.root, 'resume-lineage.json');
   const text = `${JSON.stringify(lineage, null, 2)}\n`;
@@ -711,6 +763,88 @@ test('execute is explicit and rejects a manifest whose artifact hash changed', (
   assert.match(result.stderr, /artifact SHA-256 mismatch/i);
 });
 
+test('active settlement requires an exclusive absent output directory', () => {
+  const artifact = createArtifacts();
+  const outDir = join(artifact.root, 'post-apply');
+  mkdirSync(outDir);
+
+  const result = runApply({
+    ...artifact,
+    extra: ['--execute', `--post-apply-out-dir=${outDir}`],
+    env: createMockPnpm(artifact),
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /post-apply.*(?:absent|exist)|exclusive/i);
+});
+
+test('active settlement safely creates a missing stable output parent', () => {
+  const artifact = createArtifacts();
+  const outDir = join(artifact.root, 'candidate', 'post-apply', 'pilot');
+
+  const result = runApply({
+    ...artifact,
+    extra: ['--execute', `--post-apply-out-dir=${outDir}`],
+    env: createMockPnpm(artifact),
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(outDir, 'verification.json')), true);
+});
+
+test('active settlement rejects an output outside the artifact root before mutation', () => {
+  const artifact = createArtifacts();
+  const outsideRoot = `${artifact.root}-outside`;
+  temporaryDirectories.push(outsideRoot);
+  const mutationMarker = join(artifact.root, 'mutation-marker');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(outsideRoot, 'post-apply')}`,
+    ],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: mutationMarker,
+      NGA_APPLY_TEST_VECTOR_MARKER: mutationMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /post-apply.*artifact root|escapes/i);
+  assert.equal(existsSync(mutationMarker), false);
+});
+
+test('active settlement rejects a symlinked output parent before mutation', () => {
+  const artifact = createArtifacts();
+  const outsideRoot = `${artifact.root}-outside`;
+  temporaryDirectories.push(outsideRoot);
+  mkdirSync(outsideRoot);
+  symlinkSync(outsideRoot, join(artifact.root, 'candidate'));
+  const mutationMarker = join(artifact.root, 'mutation-marker');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(
+        artifact.root,
+        'candidate',
+        'post-apply',
+        'pilot'
+      )}`,
+    ],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: mutationMarker,
+      NGA_APPLY_TEST_VECTOR_MARKER: mutationMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /post-apply.*symlink/i);
+  assert.equal(existsSync(mutationMarker), false);
+});
+
 test('execute succeeds only after exact post-apply state is re-exported and verified', () => {
   const passing = createArtifacts();
   const passingOut = join(passing.root, 'post-apply');
@@ -723,7 +857,7 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
   const verification = JSON.parse(
     readFileSync(join(passingOut, 'verification.json'), 'utf8')
   );
-  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v3');
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v4');
   assert.equal(verification.phase, 'pilot');
   assert.equal(verification.summary.recordCount, 5);
   assert.equal(verification.summary.vectorCount, 5);
@@ -734,6 +868,10 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
     d1ChunkCount: 1,
     expectedD1QueryCount: 5,
     actualD1QueryCount: 5,
+    vectorChunkCount: 1,
+    expectedVectorCount: 5,
+    actualVectorCount: 5,
+    vectorMutationIds: ['283fa906-9e2a-4fbe-a6b1-34617719f705'],
     expectedApplicationRecordChanges: 5,
     verifiedApplicationRecordChanges: 5,
   });
@@ -779,6 +917,15 @@ test('execute succeeds only after exact post-apply state is re-exported and veri
     assert.equal(captured.path, response.artifactPath);
     assert.equal(captured.status, 0);
   }
+  assert.deepEqual(verification.applyResponses[1].vectorMutation, {
+    index: 'paillette-embeddings-v2-stg',
+    count: 5,
+    mutationId: '283fa906-9e2a-4fbe-a6b1-34617719f705',
+  });
+  assert.deepEqual(
+    verification.settlement.attempts.map((attempt) => attempt.outcome),
+    ['settled']
+  );
 
   const failures = [
     {
@@ -838,7 +985,7 @@ test('accepts live-shaped prefixed D1 output and derives exact application-recor
   const verification = JSON.parse(
     readFileSync(join(outDir, 'verification.json'), 'utf8')
   );
-  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v3');
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v4');
   assert.deepEqual(verification.applySummary, {
     responseCount: 2,
     resumedResponseCount: 0,
@@ -846,6 +993,10 @@ test('accepts live-shaped prefixed D1 output and derives exact application-recor
     d1ChunkCount: 1,
     expectedD1QueryCount: 5,
     actualD1QueryCount: 5,
+    vectorChunkCount: 1,
+    expectedVectorCount: 5,
+    actualVectorCount: 5,
+    vectorMutationIds: ['283fa906-9e2a-4fbe-a6b1-34617719f705'],
     expectedApplicationRecordChanges: 5,
     verifiedApplicationRecordChanges: 5,
   });
@@ -856,6 +1007,130 @@ test('accepts live-shaped prefixed D1 output and derives exact application-recor
     changedDb: [true],
     finalBookmarks: ['00000000-0000000a-00004c16-00000000'],
   });
+});
+
+test('rejects vector responses without exact index count and one mutation identity', () => {
+  const fixtures = [
+    {
+      label: 'missing mutation identity',
+      stdout: JSON.stringify({
+        index: 'paillette-embeddings-v2-stg',
+        count: 5,
+      }),
+    },
+    {
+      label: 'wrong index',
+      stdout:
+        "✨ Enqueued 5 vectors into index 'other-index' for upsertion. Mutation changeset identifier: 283fa906-9e2a-4fbe-a6b1-34617719f705\n" +
+        JSON.stringify({ index: 'other-index', count: 5 }),
+    },
+    {
+      label: 'wrong count',
+      stdout:
+        "✨ Enqueued 4 vectors into index 'paillette-embeddings-v2-stg' for upsertion. Mutation changeset identifier: 283fa906-9e2a-4fbe-a6b1-34617719f705\n" +
+        JSON.stringify({ index: 'paillette-embeddings-v2-stg', count: 4 }),
+    },
+    {
+      label: 'duplicate mutation identity',
+      stdout:
+        "✨ Enqueued 5 vectors into index 'paillette-embeddings-v2-stg' for upsertion. Mutation changeset identifier: 283fa906-9e2a-4fbe-a6b1-34617719f705\nMutation changeset identifier: 00000000-0000-4000-8000-000000000000\n" +
+        JSON.stringify({
+          index: 'paillette-embeddings-v2-stg',
+          count: 5,
+        }),
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const artifact = createArtifacts();
+    const result = runApply({
+      ...artifact,
+      extra: [
+        '--execute',
+        `--post-apply-out-dir=${join(artifact.root, 'post-apply')}`,
+      ],
+      env: createMockPnpm(artifact, { vectorStdout: fixture.stdout }),
+    });
+    assert.notEqual(result.status, 0, fixture.label);
+    assert.match(result.stderr, /vector.*(?:index|count|mutation)/i, fixture.label);
+  }
+});
+
+test('polls stale vector state until settled without re-executing mutations', () => {
+  const artifact = createArtifacts();
+  const d1Marker = join(artifact.root, 'd1-called');
+  const vectorMarker = join(artifact.root, 'vector-called');
+  const vectorReadMarker = join(artifact.root, 'vector-read');
+  const outDir = join(artifact.root, 'post-apply');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      '--settlement-timeout-ms=500',
+      '--settlement-poll-ms=1',
+      `--post-apply-out-dir=${outDir}`,
+    ],
+    env: {
+      ...createMockPnpm(artifact, { staleVectorReads: 1 }),
+      NGA_APPLY_TEST_D1_MARKER: d1Marker,
+      NGA_APPLY_TEST_VECTOR_MARKER: vectorMarker,
+      NGA_APPLY_TEST_VECTOR_READ_MARKER: vectorReadMarker,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(d1Marker, 'utf8'), 'd1\n');
+  assert.equal(readFileSync(vectorMarker, 'utf8'), 'vector\n');
+  assert.equal(readFileSync(vectorReadMarker, 'utf8'), 'read\nread\n');
+  const verification = JSON.parse(
+    readFileSync(join(outDir, 'verification.json'), 'utf8')
+  );
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v4');
+  assert.deepEqual(
+    verification.settlement.attempts.map((attempt) => attempt.outcome),
+    ['pending', 'settled']
+  );
+  assert.equal(
+    existsSync(join(outDir, 'settlement-attempts/0001/state-manifest.json')),
+    true
+  );
+  assert.equal(
+    existsSync(join(outDir, 'settlement-attempts/0002/state-manifest.json')),
+    true
+  );
+});
+
+test('times out pending settlement without re-executing mutations', () => {
+  const artifact = createArtifacts();
+  const d1Marker = join(artifact.root, 'd1-called');
+  const vectorMarker = join(artifact.root, 'vector-called');
+  const vectorReadMarker = join(artifact.root, 'vector-read');
+  const outDir = join(artifact.root, 'post-apply');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      '--settlement-timeout-ms=20',
+      '--settlement-poll-ms=1',
+      `--post-apply-out-dir=${outDir}`,
+    ],
+    env: {
+      ...createMockPnpm(artifact, { staleVectorReads: 100 }),
+      NGA_APPLY_TEST_D1_MARKER: d1Marker,
+      NGA_APPLY_TEST_VECTOR_MARKER: vectorMarker,
+      NGA_APPLY_TEST_VECTOR_READ_MARKER: vectorReadMarker,
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /settlement.*timeout/i);
+  assert.equal(readFileSync(d1Marker, 'utf8'), 'd1\n');
+  assert.equal(readFileSync(vectorMarker, 'utf8'), 'vector\n');
+  assert.equal(existsSync(join(outDir, 'settlement-timeout.json')), true);
+  assert.equal(existsSync(join(outDir, 'verification.json')), false);
+  assert.ok(
+    readFileSync(vectorReadMarker, 'utf8').trim().split('\n').length >= 1
+  );
 });
 
 test('rejects absent, malformed, trailing, failed, or wrong-query-count D1 payloads', () => {
@@ -948,7 +1223,7 @@ test('resumes an exact successful D1 prefix without re-executing it and executes
   const verification = JSON.parse(
     readFileSync(join(outDir, 'verification.json'), 'utf8')
   );
-  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v3');
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v4');
   assert.equal(verification.applyResponses[0].execution, 'resumed');
   assert.equal(verification.applyResponses[1].execution, 'executed');
   assert.deepEqual(verification.applyResponses[0].source, {
@@ -965,6 +1240,362 @@ test('resumes an exact successful D1 prefix without re-executing it and executes
       descriptor.sha256
     );
   }
+});
+
+test('settle-only requires complete v2 provenance and executes no mutation command', () => {
+  const artifact = createArtifacts();
+  const resumeDirectory = addVectorResumeResponse(
+    artifact,
+    createResumeResponseDirectory(artifact)
+  );
+  const outDir = join(artifact.root, 'post-apply');
+  const d1Marker = join(artifact.root, 'd1-called');
+  const vectorMarker = join(artifact.root, 'vector-called');
+  const vectorReadMarker = join(artifact.root, 'vector-read');
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--settle-only',
+      '--settlement-timeout-ms=500',
+      '--settlement-poll-ms=1',
+      `--post-apply-out-dir=${outDir}`,
+      ...resumeArguments(artifact, resumeDirectory),
+    ],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: d1Marker,
+      NGA_APPLY_TEST_VECTOR_MARKER: vectorMarker,
+      NGA_APPLY_TEST_VECTOR_READ_MARKER: vectorReadMarker,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(d1Marker), false);
+  assert.equal(existsSync(vectorMarker), false);
+  assert.equal(
+    existsSync(join(artifact.root, 'apply-responses')),
+    false,
+    'settle-only must not create a mutation-response run directory'
+  );
+  assert.equal(readFileSync(vectorReadMarker, 'utf8'), 'read\n');
+  const verification = JSON.parse(
+    readFileSync(join(outDir, 'verification.json'), 'utf8')
+  );
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v4');
+  assert.equal(verification.applySummary.resumedResponseCount, 2);
+  assert.equal(verification.applySummary.executedResponseCount, 0);
+  assert.deepEqual(
+    verification.applyResponses.map((response) => response.execution),
+    ['resumed', 'resumed']
+  );
+});
+
+test('prepares generic v2 provenance that settle-only can consume without mutations', () => {
+  const artifact = createArtifacts();
+  const preflightText = '{"fixture":"preflight"}\n';
+  const manifest = JSON.parse(readFileSync(artifact.manifestPath, 'utf8'));
+  manifest.preflightInputs[0].manifestSha256 = sha256(preflightText);
+  const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+  writeFileSync(artifact.manifestPath, manifestText);
+  artifact.manifestSha256 = sha256(manifestText);
+
+  const sourceRoot = join(
+    artifact.root,
+    'source',
+    '.agent',
+    'evidence',
+    'nga-staging',
+    'a'.repeat(40),
+    '20260822T150634Z'
+  );
+  mkdirSync(join(sourceRoot, 'backfill', 'pilot'), { recursive: true });
+  mkdirSync(join(sourceRoot, 'preflight', 'pilot'), { recursive: true });
+  copyFileSync(
+    artifact.manifestPath,
+    join(sourceRoot, 'backfill', 'pilot', 'artifact-manifest.json')
+  );
+  writeFileSync(
+    join(sourceRoot, 'preflight', 'pilot', 'preflight-manifest.json'),
+    preflightText
+  );
+  const fixtureResponses = addVectorResumeResponse(
+    artifact,
+    createResumeResponseDirectory(artifact)
+  );
+  const sourceResponseRoot = join(
+    sourceRoot,
+    'backfill',
+    'pilot',
+    'apply-responses',
+    'fixture-run'
+  );
+  mkdirSync(sourceResponseRoot, { recursive: true });
+  for (const name of ['0001.json', '0002.json']) {
+    copyFileSync(join(fixtureResponses, name), join(sourceResponseRoot, name));
+  }
+  const outDir = join(artifact.root, 'prepared-resume');
+  const prepared = spawnSync(
+    process.execPath,
+    [
+      prepareResumeScriptPath,
+      '--phase=pilot',
+      `--manifest=${artifact.manifestPath}`,
+      `--confirm-manifest-sha256=${artifact.manifestSha256}`,
+      `--source-evidence-root=${sourceRoot}`,
+      '--response=backfill/pilot/apply-responses/fixture-run/0001.json',
+      `--confirm-response-sha256=${sha256(readFileSync(join(sourceResponseRoot, '0001.json')))}`,
+      '--response=backfill/pilot/apply-responses/fixture-run/0002.json',
+      `--confirm-response-sha256=${sha256(readFileSync(join(sourceResponseRoot, '0002.json')))}`,
+      `--out-dir=${outDir}`,
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const preparedValue = JSON.parse(prepared.stdout);
+  const applyOut = join(artifact.root, 'post-apply');
+  const d1Marker = join(artifact.root, 'd1-called');
+  const vectorMarker = join(artifact.root, 'vector-called');
+  const settled = runApply({
+    ...artifact,
+    extra: [
+      '--settle-only',
+      '--settlement-timeout-ms=500',
+      '--settlement-poll-ms=1',
+      `--resume-response-dir=${preparedValue.responseDirectory}`,
+      `--resume-lineage=${preparedValue.resumeLineage}`,
+      `--confirm-resume-lineage-sha256=${preparedValue.resumeLineageSha256}`,
+      `--post-apply-out-dir=${applyOut}`,
+    ],
+    env: {
+      ...createMockPnpm(artifact),
+      NGA_APPLY_TEST_D1_MARKER: d1Marker,
+      NGA_APPLY_TEST_VECTOR_MARKER: vectorMarker,
+    },
+  });
+
+  assert.equal(settled.status, 0, settled.stderr);
+  assert.equal(existsSync(d1Marker), false);
+  assert.equal(existsSync(vectorMarker), false);
+});
+
+test('prepares mixed parent and incident provenance with immutable prior attempts', () => {
+  const artifact = createArtifacts();
+  const preflightText = '{"fixture":"preflight"}\n';
+  const manifest = JSON.parse(readFileSync(artifact.manifestPath, 'utf8'));
+  manifest.preflightInputs[0].manifestSha256 = sha256(preflightText);
+  const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+  writeFileSync(artifact.manifestPath, manifestText);
+  artifact.manifestSha256 = sha256(manifestText);
+
+  const firstApply = join(artifact.root, 'first-apply');
+  const mockEnvironment = createMockPnpm(artifact, { staleVectorReads: 1 });
+  const localApply = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      '--settlement-timeout-ms=500',
+      '--settlement-poll-ms=1',
+      `--post-apply-out-dir=${firstApply}`,
+    ],
+    env: {
+      ...mockEnvironment,
+      NGA_APPLY_TEST_VECTOR_READ_MARKER: join(artifact.root, 'vector-reads'),
+    },
+  });
+  assert.equal(localApply.status, 0, localApply.stderr);
+
+  const sourceGitSha = 'b'.repeat(40);
+  const sourceRoot = join(
+    artifact.root,
+    'source',
+    '.agent',
+    'evidence',
+    'nga-staging',
+    sourceGitSha,
+    '20260822T150634Z'
+  );
+  mkdirSync(join(sourceRoot, 'backfill', 'pilot'), { recursive: true });
+  mkdirSync(join(sourceRoot, 'preflight', 'pilot'), { recursive: true });
+  copyFileSync(
+    artifact.manifestPath,
+    join(sourceRoot, 'backfill', 'pilot', 'artifact-manifest.json')
+  );
+  writeFileSync(
+    join(sourceRoot, 'preflight', 'pilot', 'preflight-manifest.json'),
+    preflightText
+  );
+  const d1Relative =
+    'backfill/pilot/apply-responses/2026-08-22T13-49-24-534Z-1855/0001.json';
+  const vectorRelative =
+    'backfill/pilot/apply-responses/2026-08-22T15-09-40-358Z-88212/0002.json';
+  for (const [relativePath, name] of [
+    [d1Relative, '0001.json'],
+    [vectorRelative, '0002.json'],
+  ]) {
+    const target = join(sourceRoot, relativePath);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(firstApply, 'apply-responses', name), target);
+  }
+  cpSync(
+    join(firstApply, 'settlement-attempts', '0001'),
+    join(sourceRoot, 'candidate', 'post-apply', 'pilot'),
+    { recursive: true }
+  );
+  cpSync(
+    join(firstApply, 'settlement-attempts', '0002'),
+    join(sourceRoot, 'candidate', 'diagnostic-after-vector-processed'),
+    { recursive: true }
+  );
+  const d1Sha = sha256(readFileSync(join(sourceRoot, d1Relative)));
+  const vectorSha = sha256(readFileSync(join(sourceRoot, vectorRelative)));
+  const parent = {
+    schemaVersion: 'nga-apply-resume-lineage-v1',
+    sourceGitSha: 'c'.repeat(40),
+    sourceEvidenceRoot: `.agent/evidence/nga-staging/${'c'.repeat(40)}/20260822T134448Z`,
+    artifactManifest: {
+      sourcePath: 'backfill/pilot/artifact-manifest.json',
+      sha256: artifact.manifestSha256,
+    },
+    preflightManifests: [
+      {
+        phase: 'pilot',
+        sourcePath: 'preflight/pilot/preflight-manifest.json',
+        sha256: sha256(preflightText),
+      },
+    ],
+    responses: [
+      {
+        sequence: 1,
+        sourcePath: d1Relative,
+        copiedPath: d1Relative.replace('backfill/pilot/', ''),
+        sha256: d1Sha,
+      },
+    ],
+  };
+  const parentText = `${JSON.stringify(parent, null, 2)}\n`;
+  const parentRelative = 'backfill/pilot/resume-lineage.json';
+  writeFileSync(join(sourceRoot, parentRelative), parentText);
+  const immediateRelative = 'candidate/post-apply/pilot/state-manifest.json';
+  const settledRelative =
+    'candidate/diagnostic-after-vector-processed/state-manifest.json';
+  const incident = {
+    schemaVersion: 'nga-vector-settlement-incident-v1',
+    recordedAt: '2026-08-22T15:12:55.928Z',
+    gitSha: sourceGitSha,
+    status: 'paused-after-single-vector-upsert-before-official-verification',
+    stagingMutation: {
+      d1CommandsExecutedThisResume: 0,
+      vectorUpsertCommandsExecutedThisResume: 1,
+      vectorCount: 5,
+      mutationId: '283fa906-9e2a-4fbe-a6b1-34617719f705',
+      rawResponse: { path: vectorRelative, sha256: vectorSha },
+    },
+    immediateCapture: {
+      path: immediateRelative,
+      sha256: sha256(readFileSync(join(sourceRoot, immediateRelative))),
+    },
+    settledDiagnostic: {
+      path: settledRelative,
+      sha256: sha256(readFileSync(join(sourceRoot, settledRelative))),
+    },
+    boundaries: {
+      fullBackfillStarted: false,
+      productionChanged: false,
+      cachePurged: false,
+      nextExternalMutationAllowed: false,
+    },
+  };
+  const incidentText = `${JSON.stringify(incident, null, 2)}\n`;
+  writeFileSync(join(sourceRoot, 'VECTOR_SETTLEMENT_INCIDENT.json'), incidentText);
+  const outDir = join(artifact.root, 'mixed-resume');
+  const prepared = spawnSync(
+    process.execPath,
+    [
+      prepareResumeScriptPath,
+      '--phase=pilot',
+      `--manifest=${artifact.manifestPath}`,
+      `--confirm-manifest-sha256=${artifact.manifestSha256}`,
+      `--source-evidence-root=${sourceRoot}`,
+      `--response=${d1Relative}`,
+      `--confirm-response-sha256=${d1Sha}`,
+      `--response=${vectorRelative}`,
+      `--confirm-response-sha256=${vectorSha}`,
+      `--parent-lineage=${parentRelative}`,
+      `--confirm-parent-lineage-sha256=${sha256(parentText)}`,
+      '--incident=VECTOR_SETTLEMENT_INCIDENT.json',
+      `--confirm-incident-sha256=${sha256(incidentText)}`,
+      `--out-dir=${outDir}`,
+    ],
+    { encoding: 'utf8' }
+  );
+
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const lineage = JSON.parse(
+    readFileSync(join(outDir, 'resume-lineage.json'), 'utf8')
+  );
+  assert.equal(lineage.responses[0].parentLineage, 1);
+  assert.equal(lineage.responses[1].incident, 'vector-settlement');
+  assert.deepEqual(
+    lineage.priorSettlementEvidence.attempts.map((attempt) => attempt.kind),
+    ['immediate', 'settled-diagnostic']
+  );
+  const preparedValue = JSON.parse(prepared.stdout);
+  const settleOut = join(artifact.root, 'settled-from-mixed');
+  const settled = runApply({
+    ...artifact,
+    extra: [
+      '--settle-only',
+      '--settlement-timeout-ms=500',
+      '--settlement-poll-ms=1',
+      `--resume-response-dir=${preparedValue.responseDirectory}`,
+      `--resume-lineage=${preparedValue.resumeLineage}`,
+      `--confirm-resume-lineage-sha256=${preparedValue.resumeLineageSha256}`,
+      `--post-apply-out-dir=${settleOut}`,
+    ],
+    env: {
+      ...mockEnvironment,
+      NGA_APPLY_TEST_VECTOR_SNAPSHOTS: JSON.stringify([
+        JSON.parse(mockEnvironment.NGA_APPLY_TEST_VECTOR_SNAPSHOTS).at(-1),
+      ]),
+      NGA_APPLY_TEST_VECTOR_READ_MARKER: '',
+    },
+  });
+  assert.equal(settled.status, 0, settled.stderr);
+  assert.equal(
+    JSON.parse(readFileSync(join(settleOut, 'verification.json'), 'utf8'))
+      .settlement.attemptCount,
+    1,
+    'prior diagnostic evidence must not substitute for a fresh capture'
+  );
+
+  incident.stagingMutation.rawResponse.sha256 = d1Sha;
+  const mixedIncidentText = `${JSON.stringify(incident, null, 2)}\n`;
+  writeFileSync(
+    join(sourceRoot, 'VECTOR_SETTLEMENT_INCIDENT.json'),
+    mixedIncidentText
+  );
+  const mixed = spawnSync(
+    process.execPath,
+    [
+      prepareResumeScriptPath,
+      '--phase=pilot',
+      `--manifest=${artifact.manifestPath}`,
+      `--confirm-manifest-sha256=${artifact.manifestSha256}`,
+      `--source-evidence-root=${sourceRoot}`,
+      `--response=${d1Relative}`,
+      `--confirm-response-sha256=${d1Sha}`,
+      `--response=${vectorRelative}`,
+      `--confirm-response-sha256=${vectorSha}`,
+      `--parent-lineage=${parentRelative}`,
+      `--confirm-parent-lineage-sha256=${sha256(parentText)}`,
+      '--incident=VECTOR_SETTLEMENT_INCIDENT.json',
+      `--confirm-incident-sha256=${sha256(mixedIncidentText)}`,
+      `--out-dir=${join(artifact.root, 'mixed-invalid')}`,
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.notEqual(mixed.status, 0);
+  assert.match(mixed.stderr, /incident.*response|mixed.*provenance/i);
 });
 
 test('resume requires current complete D1 state before it can verify success', () => {

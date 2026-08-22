@@ -946,7 +946,7 @@ def _evaluate_artist_data_binding(
     }
     valid = (
         set(value) == ARTIST_DATA_BINDING_FIELDS
-        and value.get("schemaVersion") == "nga-artist-data-binding-v3"
+        and value.get("schemaVersion") == "nga-artist-data-binding-v4"
         and set(production) == PRODUCTION_IDENTITY_FIELDS
         and phase is not None
         and (expected_phase is None or phase == expected_phase)
@@ -1126,6 +1126,42 @@ def _d1_facts_from_apply_stdout(value: Any) -> Mapping[str, Any] | None:
     return {
         "queryCount": sum(query_counts),
         "telemetry": telemetry,
+    }
+
+
+def _vector_facts_from_apply_stdout(
+    value: Any, *, expected_index: str, expected_count: int
+) -> Mapping[str, Any] | None:
+    payload = _parse_wrangler_json_output(value)
+    if not isinstance(value, str) or not isinstance(payload, Mapping):
+        return None
+    json_start = re.search(r"^[\t ]*[\[{]", value, flags=re.MULTILINE)
+    prefix = value[: json_start.start()] if json_start is not None else ""
+    enqueue_matches = re.findall(
+        r"Enqueued\s+(\d+)\s+vectors\s+into\s+index\s+'([^']+)'"
+        r"\s+for\s+upsertion\.",
+        prefix,
+        flags=re.IGNORECASE,
+    )
+    mutation_matches = re.findall(
+        r"Mutation changeset identifier:\s*"
+        r"([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+        r"[89ab][0-9a-f]{3}-[0-9a-f]{12})",
+        prefix,
+        flags=re.IGNORECASE,
+    )
+    if (
+        set(payload) != {"index", "count"}
+        or payload.get("index") != expected_index
+        or payload.get("count") != expected_count
+        or enqueue_matches != [(str(expected_count), expected_index)]
+        or len(mutation_matches) != 1
+    ):
+        return None
+    return {
+        "index": expected_index,
+        "count": expected_count,
+        "mutationId": mutation_matches[0].lower(),
     }
 
 
@@ -1947,15 +1983,20 @@ def evaluate_artist_data_evidence(
                 "resumeLineage",
                 "applyResponses",
                 "applySummary",
+                "settlement",
                 "summary",
             }
-            or post.get("schemaVersion") != "nga-post-apply-verification-v3"
+            or post.get("schemaVersion") != "nga-post-apply-verification-v4"
             or _parse_utc_timestamp(post.get("verifiedAt")) is None
             or post.get("environment") != "staging"
             or post.get("phase") != phase
             or post.get("artifactManifestSha256") != sha256_bytes(manifest_bytes)
             or canonical_json(post.get("preflightInputs")) != canonical_json(preflight)
-            or state_descriptor.get("path") != "state-manifest.json"
+            or re.fullmatch(
+                r"settlement-attempts/\d{4}/state-manifest\.json",
+                str(state_descriptor.get("path") or ""),
+            )
+            is None
         ):
             failures.append(_failure("artist_post_apply_verification_invalid"))
 
@@ -1980,6 +2021,10 @@ def evaluate_artist_data_evidence(
         expected_d1_queries = 0
         actual_d1_queries = 0
         d1_chunk_count = 0
+        expected_vector_count = 0
+        actual_vector_count = 0
+        vector_chunk_count = 0
+        vector_mutation_ids: list[str] = []
         resumed_response_count = 0
         executed_response_count = 0
         saw_executed_response = False
@@ -2010,7 +2055,7 @@ def evaluate_artist_data_evidence(
                 *(
                     ("expectedQueryCount", "actualQueryCount", "telemetry")
                     if kind == "d1-sql"
-                    else ()
+                    else ("vectorMutation",)
                 ),
                 *(("source",) if execution == "resumed" else ()),
             }
@@ -2077,6 +2122,34 @@ def evaluate_artist_data_evidence(
             ):
                 apply_inventory_valid = False
                 continue
+            if kind == "image-vectors":
+                vector_chunk_count += 1
+                expected_chunk_vectors = artifact.get("recordCount")
+                vector_facts = _vector_facts_from_apply_stdout(
+                    response.get("stdout"),
+                    expected_index=NGA_STAGING_IMAGE_VECTOR_INDEX,
+                    expected_count=(
+                        expected_chunk_vectors
+                        if type(expected_chunk_vectors) is int
+                        else -1
+                    ),
+                )
+                if (
+                    vector_facts is None
+                    or canonical_json(descriptor.get("vectorMutation"))
+                    != canonical_json(vector_facts)
+                ):
+                    apply_counts_valid = False
+                if type(expected_chunk_vectors) is int:
+                    expected_vector_count += expected_chunk_vectors
+                if isinstance(vector_facts, Mapping):
+                    actual_count = vector_facts.get("count")
+                    mutation_id = vector_facts.get("mutationId")
+                    if type(actual_count) is int:
+                        actual_vector_count += actual_count
+                    if isinstance(mutation_id, str):
+                        vector_mutation_ids.append(mutation_id)
+                continue
             if kind != "d1-sql":
                 continue
             d1_chunk_count += 1
@@ -2140,8 +2213,6 @@ def evaluate_artist_data_evidence(
                     lineage_value if isinstance(lineage_value, Mapping) else {}
                 )
                 bound_paths.append(str(lineage_path.resolve()))
-                source_git_sha = str(lineage.get("sourceGitSha") or "")
-                source_root = str(lineage.get("sourceEvidenceRoot") or "")
                 lineage_manifest_value = lineage.get("artifactManifest")
                 lineage_manifest = (
                     lineage_manifest_value
@@ -2160,6 +2231,12 @@ def evaluate_artist_data_evidence(
                     if isinstance(lineage_responses_value, list)
                     else []
                 )
+                parent_lineages_value = lineage.get("parentLineages")
+                parent_lineages = (
+                    parent_lineages_value
+                    if isinstance(parent_lineages_value, list)
+                    else []
+                )
                 expected_preflight_hashes = {
                     str(item.get("phase") or ""): item.get("manifestSha256")
                     for item in preflight
@@ -2169,21 +2246,16 @@ def evaluate_artist_data_evidence(
                     set(lineage)
                     == {
                         "schemaVersion",
-                        "sourceGitSha",
-                        "sourceEvidenceRoot",
+                        "phase",
                         "artifactManifest",
                         "preflightManifests",
                         "responses",
+                        "parentLineages",
+                        "priorSettlementEvidence",
                     }
                     and lineage.get("schemaVersion")
-                    == "nga-apply-resume-lineage-v1"
-                    and re.fullmatch(r"[a-f0-9]{40}", source_git_sha)
-                    is not None
-                    and re.fullmatch(
-                        rf"\.agent/evidence/nga-staging/{source_git_sha}/\d{{8}}T\d{{6}}Z",
-                        source_root,
-                    )
-                    is not None
+                    == "nga-apply-resume-lineage-v2"
+                    and lineage.get("phase") == phase
                     and set(lineage_manifest) == {"sourcePath", "sha256"}
                     and lineage_manifest.get("sourcePath")
                     == f"backfill/{phase}/artifact-manifest.json"
@@ -2210,30 +2282,307 @@ def evaluate_artist_data_evidence(
                     }
                     == expected_preflight_hashes
                     and len(lineage_responses) == resumed_response_count
-                    and all(
-                        isinstance(item, Mapping)
-                        and set(item)
-                        == {"sequence", "sourcePath", "copiedPath", "sha256"}
-                        and item.get("sequence") == index + 1
-                        and item.get("copiedPath") == source.get("path")
-                        and item.get("sha256") == source.get("sha256")
-                        and re.fullmatch(
-                            rf"backfill/{phase}/apply-responses/"
-                            rf"(?!\.{{1,2}}/)[^/]+/{index + 1:04d}\.json",
-                            str(item.get("sourcePath") or ""),
-                        )
-                        is not None
-                        and re.search(
-                            r"(?:^|[/_.-])production(?:[/_.-]|$)",
-                            str(item.get("sourcePath") or ""),
-                            flags=re.IGNORECASE,
+                )
+                parent_documents: list[Mapping[str, Any] | None] = []
+                for parent_index, parent_value in enumerate(parent_lineages, 1):
+                    parent = (
+                        parent_value if isinstance(parent_value, Mapping) else {}
+                    )
+                    parent_sha = str(parent.get("sourceGitSha") or "")
+                    parent_root = str(parent.get("sourceEvidenceRoot") or "")
+                    parent_resolved = (
+                        _resolve_bound_file(manifest_path.parent, {
+                            "path": parent.get("copiedPath"),
+                            "sha256": parent.get("sha256"),
+                        })
+                        if manifest_path is not None
+                        else None
+                    )
+                    parent_document: Mapping[str, Any] | None = None
+                    if parent_resolved is not None and parent_resolved[1]:
+                        parent_loaded = _load_bound_json(parent_resolved[1])
+                        if isinstance(parent_loaded, Mapping):
+                            parent_document = parent_loaded
+                        bound_paths.append(str(parent_resolved[0].resolve()))
+                    parent_manifest = (
+                        parent_document.get("artifactManifest")
+                        if parent_document is not None
+                        and isinstance(parent_document.get("artifactManifest"), Mapping)
+                        else {}
+                    )
+                    if (
+                        set(parent)
+                        != {
+                            "sequence",
+                            "sourceGitSha",
+                            "sourceEvidenceRoot",
+                            "sourcePath",
+                            "copiedPath",
+                            "sha256",
+                        }
+                        or parent.get("sequence") != parent_index
+                        or re.fullmatch(r"[a-f0-9]{40}", parent_sha) is None
+                        or re.fullmatch(
+                            rf"\.agent/evidence/nga-staging/{parent_sha}/\d{{8}}T\d{{6}}Z",
+                            parent_root,
                         )
                         is None
-                        for index, (item, source) in enumerate(
-                            zip(lineage_responses, resumed_sources)
+                        or not str(parent.get("sourcePath") or "").endswith(
+                            "/resume-lineage.json"
                         )
-                    )
-                )
+                        or parent_document is None
+                        or parent_document.get("schemaVersion")
+                        != "nga-apply-resume-lineage-v1"
+                        or parent_manifest.get("sha256")
+                        != sha256_bytes(manifest_bytes)
+                    ):
+                        lineage_valid = False
+                    parent_documents.append(parent_document)
+
+                prior_value = lineage.get("priorSettlementEvidence")
+                prior = prior_value if isinstance(prior_value, Mapping) else None
+                incident_document: Mapping[str, Any] | None = None
+                if prior_value is not None:
+                    if prior is None:
+                        lineage_valid = False
+                    else:
+                        prior_sha = str(prior.get("sourceGitSha") or "")
+                        prior_root = str(prior.get("sourceEvidenceRoot") or "")
+                        incident_descriptor = (
+                            prior.get("incident")
+                            if isinstance(prior.get("incident"), Mapping)
+                            else {}
+                        )
+                        incident_resolved = (
+                            _resolve_bound_file(manifest_path.parent, {
+                                "path": incident_descriptor.get("copiedPath"),
+                                "sha256": incident_descriptor.get("sha256"),
+                            })
+                            if manifest_path is not None
+                            else None
+                        )
+                        if incident_resolved is not None and incident_resolved[1]:
+                            incident_loaded = _load_bound_json(incident_resolved[1])
+                            if isinstance(incident_loaded, Mapping):
+                                incident_document = incident_loaded
+                            bound_paths.append(str(incident_resolved[0].resolve()))
+                        incident_boundaries = (
+                            incident_document.get("boundaries")
+                            if incident_document is not None
+                            and isinstance(incident_document.get("boundaries"), Mapping)
+                            else {}
+                        )
+                        prior_attempts_value = prior.get("attempts")
+                        prior_attempts = (
+                            prior_attempts_value
+                            if isinstance(prior_attempts_value, list)
+                            else []
+                        )
+                        if (
+                            set(prior)
+                            != {
+                                "sourceGitSha",
+                                "sourceEvidenceRoot",
+                                "incident",
+                                "attempts",
+                            }
+                            or re.fullmatch(r"[a-f0-9]{40}", prior_sha) is None
+                            or re.fullmatch(
+                                rf"\.agent/evidence/nga-staging/{prior_sha}/\d{{8}}T\d{{6}}Z",
+                                prior_root,
+                            )
+                            is None
+                            or set(incident_descriptor)
+                            != {"sourcePath", "copiedPath", "sha256"}
+                            or incident_document is None
+                            or incident_document.get("schemaVersion")
+                            != "nga-vector-settlement-incident-v1"
+                            or incident_document.get("gitSha") != prior_sha
+                            or incident_boundaries.get("fullBackfillStarted")
+                            is not False
+                            or incident_boundaries.get("productionChanged")
+                            is not False
+                            or incident_boundaries.get("cachePurged")
+                            is not False
+                            or len(prior_attempts) != 2
+                        ):
+                            lineage_valid = False
+                        immediate_capture = (
+                            incident_document.get("immediateCapture")
+                            if incident_document is not None
+                            and isinstance(incident_document.get("immediateCapture"), Mapping)
+                            else {}
+                        )
+                        settled_diagnostic = (
+                            incident_document.get("settledDiagnostic")
+                            if incident_document is not None
+                            and isinstance(incident_document.get("settledDiagnostic"), Mapping)
+                            else {}
+                        )
+                        expected_prior = [
+                            ("immediate", immediate_capture),
+                            ("settled-diagnostic", settled_diagnostic),
+                        ]
+                        for (kind, source_attempt), attempt_value in zip(
+                            expected_prior, prior_attempts
+                        ):
+                            attempt = (
+                                attempt_value
+                                if isinstance(attempt_value, Mapping)
+                                else {}
+                            )
+                            attempt_resolved = (
+                                _resolve_bound_file(manifest_path.parent, {
+                                    "path": attempt.get("copiedPath"),
+                                    "sha256": attempt.get("sha256"),
+                                })
+                                if manifest_path is not None
+                                else None
+                            )
+                            if (
+                                set(attempt)
+                                != {"kind", "sourcePath", "copiedPath", "sha256"}
+                                or attempt.get("kind") != kind
+                                or attempt.get("sourcePath") != source_attempt.get("path")
+                                or attempt.get("sha256") != source_attempt.get("sha256")
+                                or attempt_resolved is None
+                                or not attempt_resolved[1]
+                            ):
+                                lineage_valid = False
+                                continue
+                            prior_state_path, prior_state_payload = attempt_resolved
+                            bound_paths.append(str(prior_state_path.resolve()))
+                            prior_state_value = _load_bound_json(prior_state_payload)
+                            prior_state = (
+                                prior_state_value
+                                if isinstance(prior_state_value, Mapping)
+                                else {}
+                            )
+                            prior_inputs = (
+                                prior_state.get("inputs")
+                                if isinstance(prior_state.get("inputs"), Mapping)
+                                else {}
+                            )
+                            for prior_input in [
+                                prior_inputs.get("ids"),
+                                prior_inputs.get("stagedRecords"),
+                                *(
+                                    prior_inputs.get("imageVectors")
+                                    if isinstance(prior_inputs.get("imageVectors"), list)
+                                    else []
+                                ),
+                            ]:
+                                prior_input_resolved = _resolve_bound_file(
+                                    prior_state_path.parent,
+                                    prior_input if isinstance(prior_input, Mapping) else {},
+                                )
+                                if (
+                                    prior_input_resolved is None
+                                    or not prior_input_resolved[1]
+                                ):
+                                    lineage_valid = False
+                                else:
+                                    bound_paths.append(
+                                        str(prior_input_resolved[0].resolve())
+                                    )
+
+                used_parents: set[int] = set()
+                incident_response_count = 0
+                for index, (item_value, source) in enumerate(
+                    zip(lineage_responses, resumed_sources)
+                ):
+                    item = item_value if isinstance(item_value, Mapping) else {}
+                    item_sha = str(item.get("sourceGitSha") or "")
+                    item_root = str(item.get("sourceEvidenceRoot") or "")
+                    source_path = str(item.get("sourcePath") or "")
+                    parent_sequence = item.get("parentLineage")
+                    incident_marker = item.get("incident")
+                    if (
+                        set(item)
+                        != {
+                            "sequence",
+                            "sourceGitSha",
+                            "sourceEvidenceRoot",
+                            "sourcePath",
+                            "copiedPath",
+                            "sha256",
+                            "parentLineage",
+                            "incident",
+                        }
+                        or item.get("sequence") != index + 1
+                        or item.get("copiedPath") != source.get("path")
+                        or item.get("sha256") != source.get("sha256")
+                        or re.fullmatch(r"[a-f0-9]{40}", item_sha) is None
+                        or re.fullmatch(
+                            rf"\.agent/evidence/nga-staging/{item_sha}/\d{{8}}T\d{{6}}Z",
+                            item_root,
+                        )
+                        is None
+                        or re.fullmatch(
+                            rf"backfill/{phase}/apply-responses/"
+                            rf"(?!\.{{1,2}}/)[^/]+/{index + 1:04d}\.json",
+                            source_path,
+                        )
+                        is None
+                        or re.search(
+                            r"(?:^|[/_.-])production(?:[/_.-]|$)",
+                            source_path,
+                            flags=re.IGNORECASE,
+                        )
+                        is not None
+                    ):
+                        lineage_valid = False
+                    if parent_sequence is not None:
+                        parent_index = (
+                            parent_sequence - 1
+                            if type(parent_sequence) is int
+                            else -1
+                        )
+                        parent_document = (
+                            parent_documents[parent_index]
+                            if 0 <= parent_index < len(parent_documents)
+                            else None
+                        )
+                        parent_response = next(
+                            (
+                                entry
+                                for entry in parent_document.get("responses", [])
+                                if isinstance(entry, Mapping)
+                                and entry.get("sequence") == index + 1
+                            ),
+                            None,
+                        ) if parent_document is not None else None
+                        if (
+                            parent_response is None
+                            or parent_response.get("sha256") != item.get("sha256")
+                        ):
+                            lineage_valid = False
+                        else:
+                            used_parents.add(parent_sequence)
+                    if incident_marker is not None:
+                        staging_mutation = (
+                            incident_document.get("stagingMutation")
+                            if incident_document is not None
+                            and isinstance(incident_document.get("stagingMutation"), Mapping)
+                            else {}
+                        )
+                        raw_response = (
+                            staging_mutation.get("rawResponse")
+                            if isinstance(staging_mutation.get("rawResponse"), Mapping)
+                            else {}
+                        )
+                        if (
+                            incident_marker != "vector-settlement"
+                            or ordered_apply[index].get("kind") != "image-vectors"
+                            or raw_response.get("path") != source_path
+                            or raw_response.get("sha256") != item.get("sha256")
+                        ):
+                            lineage_valid = False
+                        incident_response_count += 1
+                if used_parents != set(range(1, len(parent_lineages) + 1)):
+                    lineage_valid = False
+                if (prior is not None) != (incident_response_count == 1):
+                    lineage_valid = False
                 if not lineage_valid:
                     failures.append(_failure("artist_apply_resume_lineage_invalid"))
         elif resume_lineage_value is not None:
@@ -2245,6 +2594,10 @@ def evaluate_artist_data_evidence(
             "d1ChunkCount": d1_chunk_count,
             "expectedD1QueryCount": expected_d1_queries,
             "actualD1QueryCount": actual_d1_queries,
+            "vectorChunkCount": vector_chunk_count,
+            "expectedVectorCount": expected_vector_count,
+            "actualVectorCount": actual_vector_count,
+            "vectorMutationIds": vector_mutation_ids,
             "expectedApplicationRecordChanges": (
                 expected_count if phase == "pilot" else expected_count - 5
             ),
@@ -2256,12 +2609,263 @@ def evaluate_artist_data_evidence(
             not apply_counts_valid
             or expected_d1_queries != expected_count
             or actual_d1_queries != expected_count
+            or expected_vector_count != expected_count
+            or actual_vector_count != expected_count
+            or len(vector_mutation_ids) != vector_chunk_count
+            or len(set(vector_mutation_ids)) != vector_chunk_count
             or canonical_json(apply_summary)
             != canonical_json(expected_apply_summary)
         ):
             failures.append(
                 _failure("artist_apply_response_query_count_mismatch")
             )
+
+        settlement_value = post.get("settlement")
+        settlement = (
+            settlement_value if isinstance(settlement_value, Mapping) else {}
+        )
+        attempts_value = settlement.get("attempts")
+        attempts = attempts_value if isinstance(attempts_value, list) else []
+        settlement_valid = (
+            set(settlement)
+            == {"timeoutMs", "pollMs", "attemptCount", "settledAttempt", "attempts"}
+            and type(settlement.get("timeoutMs")) is int
+            and 1 <= settlement.get("timeoutMs", 0) <= 3_600_000
+            and type(settlement.get("pollMs")) is int
+            and 0 <= settlement.get("pollMs", -1) <= 60_000
+            and settlement.get("attemptCount") == len(attempts)
+            and len(attempts) >= 1
+            and settlement.get("settledAttempt") == len(attempts)
+        )
+        for attempt_index, attempt_value in enumerate(attempts, 1):
+            attempt = attempt_value if isinstance(attempt_value, Mapping) else {}
+            outcome = attempt.get("outcome")
+            expected_attempt_keys = {
+                "sequence",
+                "outcome",
+                "stateManifest",
+                *(("pendingVectorCount", "pendingVectorIdsSha256") if outcome == "pending" else ()),
+            }
+            descriptor_value = attempt.get("stateManifest")
+            descriptor = (
+                descriptor_value
+                if isinstance(descriptor_value, Mapping)
+                else {}
+            )
+            expected_attempt_path = (
+                f"settlement-attempts/{attempt_index:04d}/state-manifest.json"
+            )
+            if (
+                set(attempt) != expected_attempt_keys
+                or attempt.get("sequence") != attempt_index
+                or outcome not in {"pending", "settled"}
+                or (attempt_index < len(attempts) and outcome != "pending")
+                or (attempt_index == len(attempts) and outcome != "settled")
+                or descriptor.get("path") != expected_attempt_path
+            ):
+                settlement_valid = False
+            attempt_resolved = _resolve_bound_file(post_path.parent, descriptor)
+            if attempt_resolved is None or not attempt_resolved[1]:
+                settlement_valid = False
+                continue
+            attempt_state_path, attempt_state_payload = attempt_resolved
+            attempt_state_value = _load_bound_json(attempt_state_payload)
+            attempt_state = (
+                attempt_state_value
+                if isinstance(attempt_state_value, Mapping)
+                else {}
+            )
+            bound_paths.append(str(attempt_state_path.resolve()))
+            attempt_inputs_value = attempt_state.get("inputs")
+            attempt_inputs = (
+                attempt_inputs_value
+                if isinstance(attempt_inputs_value, Mapping)
+                else {}
+            )
+            attempt_counts = (
+                attempt_state.get("counts")
+                if isinstance(attempt_state.get("counts"), Mapping)
+                else {}
+            )
+            if (
+                set(attempt_state)
+                != {
+                    "schemaVersion",
+                    "captureKind",
+                    "capturedAt",
+                    "environment",
+                    "phase",
+                    "expectedOrgId",
+                    "resources",
+                    "counts",
+                    "hashes",
+                    "vectorFiles",
+                    "inputs",
+                }
+                or _parse_utc_timestamp(attempt_state.get("capturedAt")) is None
+                or attempt_state.get("schemaVersion") != 2
+                or attempt_state.get("captureKind") != "post-apply"
+                or attempt_state.get("environment") != "staging"
+                or attempt_state.get("phase") != phase
+                or attempt_state.get("expectedOrgId") != NGA_STAGING_ORG_ID
+                or attempt_state.get("resources")
+                != {
+                    "d1Database": NGA_STAGING_D1_DATABASE,
+                    "imageVectorIndex": NGA_STAGING_IMAGE_VECTOR_INDEX,
+                }
+                or attempt_counts
+                != {
+                    "ids": expected_count,
+                    "stagedRecords": expected_count,
+                    "imageVectors": expected_count,
+                }
+                or set(attempt_inputs) != {"ids", "stagedRecords", "imageVectors"}
+                or attempt_state.get("hashes")
+                != {
+                    "ids": (
+                        attempt_inputs.get("ids", {}).get("sha256")
+                        if isinstance(attempt_inputs.get("ids"), Mapping)
+                        else None
+                    ),
+                    "stagedRecords": (
+                        attempt_inputs.get("stagedRecords", {}).get("sha256")
+                        if isinstance(attempt_inputs.get("stagedRecords"), Mapping)
+                        else None
+                    ),
+                }
+                or canonical_json(attempt_state.get("vectorFiles"))
+                != canonical_json(attempt_inputs.get("imageVectors"))
+            ):
+                settlement_valid = False
+                continue
+            _, attempt_ids = load_state_input(
+                attempt_state_path.parent,
+                attempt_inputs.get("ids"),
+                failure_code="artist_settlement_attempt_invalid",
+            )
+            _, attempt_d1 = load_state_input(
+                attempt_state_path.parent,
+                attempt_inputs.get("stagedRecords"),
+                failure_code="artist_settlement_attempt_invalid",
+            )
+            attempt_vectors: list[Any] = []
+            vector_descriptors = attempt_inputs.get("imageVectors")
+            if not isinstance(vector_descriptors, list):
+                settlement_valid = False
+                vector_descriptors = []
+            for vector_descriptor in vector_descriptors:
+                _, vector_rows = load_state_input(
+                    attempt_state_path.parent,
+                    vector_descriptor,
+                    failure_code="artist_settlement_attempt_invalid",
+                    ndjson=True,
+                )
+                attempt_vectors.extend(vector_rows)
+            attempt_id_set = {
+                str(artwork_id)
+                for artwork_id in attempt_ids
+                if isinstance(artwork_id, str)
+            }
+            attempt_d1_by_id = {
+                str(row.get("id") or ""): row
+                for row in attempt_d1
+                if isinstance(row, Mapping)
+            }
+            attempt_vectors_by_id: dict[str, Mapping[str, Any]] = {}
+            for row in attempt_vectors:
+                if not isinstance(row, Mapping):
+                    continue
+                metadata = (
+                    row.get("metadata")
+                    if isinstance(row.get("metadata"), Mapping)
+                    else {}
+                )
+                attempt_vectors_by_id[
+                    str(row.get("id") or metadata.get("artworkId") or "")
+                ] = row
+            if (
+                len(attempt_ids) != expected_count
+                or len(attempt_id_set) != expected_count
+                or set(attempt_d1_by_id) != attempt_id_set
+                or set(attempt_vectors_by_id) != attempt_id_set
+                or attempt_id_set != set(mapping_by_id)
+            ):
+                settlement_valid = False
+                continue
+            pending_ids: list[str] = []
+            for artwork_id in sorted(
+                mapping_by_id,
+                key=lambda value: int(value.rsplit(":", 1)[1]),
+            ):
+                desired = mapping_by_id.get(artwork_id, {})
+                original_d1 = _semantic_d1_snapshot(
+                    rollback_d1_by_id.get(artwork_id)
+                )
+                actual_d1 = _semantic_d1_snapshot(
+                    attempt_d1_by_id.get(artwork_id)
+                )
+                original_vector = rollback_by_id.get(artwork_id)
+                actual_vector = attempt_vectors_by_id.get(artwork_id)
+                if (
+                    original_d1 is None
+                    or actual_d1 is None
+                    or not isinstance(original_vector, Mapping)
+                    or not isinstance(actual_vector, Mapping)
+                ):
+                    settlement_valid = False
+                    continue
+                expected_d1 = json.loads(json.dumps(original_d1))
+                expected_d1["primary_artist_id"] = desired.get("primaryArtistId")
+                expected_d1["custom_metadata"] = {
+                    **(
+                        original_d1.get("custom_metadata")
+                        if isinstance(original_d1.get("custom_metadata"), Mapping)
+                        else {}
+                    ),
+                    "ngaArtists": desired.get("customMetadata", {}).get("ngaArtists"),
+                }
+                expected_d1["field_sources"] = {
+                    **(
+                        original_d1.get("field_sources")
+                        if isinstance(original_d1.get("field_sources"), Mapping)
+                        else {}
+                    ),
+                    "primary_artist_id": "nga.objects_constituents",
+                }
+                expected_d1["updated_at"] = actual_d1.get("updated_at")
+                if canonical_json(actual_d1) != canonical_json(expected_d1):
+                    settlement_valid = False
+                    continue
+                desired_vector = json.loads(json.dumps(original_vector))
+                desired_vector["metadata"] = {
+                    **(
+                        desired_vector.get("metadata")
+                        if isinstance(desired_vector.get("metadata"), Mapping)
+                        else {}
+                    ),
+                    "primaryArtistId": desired.get("primaryArtistId"),
+                }
+                if canonical_json(actual_vector) == canonical_json(desired_vector):
+                    continue
+                if canonical_json(actual_vector) == canonical_json(original_vector):
+                    pending_ids.append(artwork_id)
+                else:
+                    settlement_valid = False
+            actual_outcome = "pending" if pending_ids else "settled"
+            if actual_outcome != outcome:
+                settlement_valid = False
+            if outcome == "pending" and (
+                attempt.get("pendingVectorCount") != len(pending_ids)
+                or attempt.get("pendingVectorIdsSha256") != sha256_json(pending_ids)
+            ):
+                settlement_valid = False
+        if (
+            not settlement_valid
+            or canonical_json(state_descriptor)
+            != canonical_json(attempts[-1].get("stateManifest") if attempts else {})
+        ):
+            failures.append(_failure("artist_settlement_evidence_invalid"))
+
         state_resolved = _resolve_bound_file(post_path.parent, state_descriptor)
         if state_resolved is None or not state_resolved[1]:
             failures.append(_failure("artist_post_apply_artifact_hash_mismatch"))
