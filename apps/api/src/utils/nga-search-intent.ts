@@ -531,6 +531,7 @@ const attributionNegationSpans = (query: string): NgaSearchIntentSpan[] => {
   const marker =
     '(?:after|(?:attributed|ascribed)\\s+to|(?:from\\s+(?:the\\s+)?)?(?:workshop|studio|circle|school)\\s+of|(?:(?:by|from)\\s+)?(?:a\\s+|the\\s+)?follower\\s+of|(?:(?:created|made|painted|drawn|sculpted|executed)\\s+)?by)';
   const carrier = `(?:${ATTRIBUTION_CARRIERS.map(escapeRegExp).join('|')})`;
+  const excludedAttributionPhrase = `(?:(?:(?:those|these|such)\\s+)?${carrier}\\s+${marker}|(?:those|these|such)\\s+${marker}|${marker})`;
   const workModifier = `(?:(?:a|an|the|early|mid|late|first|second|third|fourth|\\d+(?:st|nd|rd|th)?|century|centry|centryy|${MEDIUMS.flatMap(
     (entry) => entry.aliases
   )
@@ -547,7 +548,7 @@ const attributionNegationSpans = (query: string): NgaSearchIntentSpan[] => {
       'giu'
     ),
     new RegExp(
-      `\\b(?:except(?:\\s+for)?|excluding|other\\s+than|without)\\b(?:\\s+(?:those|works?|artworks?|pieces?|examples?))*[\\s\\S]*?${marker}\\b[\\s\\S]*$`,
+      `\\b(?:except(?:\\s+for)?|excluding|other\\s+than|without)\\s+${excludedAttributionPhrase}\\b[\\s\\S]*$`,
       'giu'
     ),
     new RegExp(

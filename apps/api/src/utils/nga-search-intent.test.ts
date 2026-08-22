@@ -324,11 +324,29 @@ describe('parseNgaSearchIntent', () => {
     'paintings, excluding Rembrandt',
     'paintings excluding works by Rembrandt',
     'paintings — other than works by Rembrandt',
+    'paintings of works other than by Rembrandt',
     'paintings without works by Rembrandt',
     'paintings without Rembrandt',
   ])('does not invert exclusion wording into positive attribution in %s', (query) => {
     expect(parseNgaSearchIntent(query).attribution).toBeUndefined();
     expect(compileNgaSearchPlan(query).attribution).toBeUndefined();
+  });
+
+  it.each([
+    'paintings without frames by Rembrandt',
+    'paintings without a frame by Rembrandt.',
+    'paintings, excluding landscapes by Rembrandt',
+    'paintings — other than landscapes by Rembrandt',
+    'OIL PAINTINGS WITHOUT FRAMES—BY REMBRANDT!',
+  ])('keeps attribution when an earlier exclusion governs a different constraint in %s', (query) => {
+    const attribution = parseNgaSearchIntent(query).attribution;
+
+    expect(attribution).toBeDefined();
+    expect(canonicalNgaAttribution(attribution!)).toEqual({
+      relationship: 'direct',
+      targetText: 'Rembrandt',
+    });
+    expect(compileNgaSearchPlan(query).mode).toBe('attribution');
   });
 
   it('rejects attribution matches that overlap an occupied relation or negation span', () => {
