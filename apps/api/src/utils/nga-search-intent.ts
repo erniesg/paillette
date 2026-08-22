@@ -10,7 +10,7 @@ import {
 } from '@paillette/types/public-search-core';
 import { deriveNgaDisplayDateRange } from '@paillette/types/nga-date-range';
 
-export const NGA_SEARCH_PARSER_VERSION = 'nga-v5' as const;
+export const NGA_SEARCH_PARSER_VERSION = 'nga-v6' as const;
 
 type VocabularyEntry = {
   canonical: string;
@@ -121,6 +121,10 @@ const fold = (value: string) =>
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('en-US')
+    .replace(
+      /\b(does|do|did|is|was|were|has|have|had)n['\u2019]t\b/g,
+      '$1 not'
+    )
     .replace(/[\u2010-\u2015]/g, '-')
     .replace(/([a-z])-/g, '$1 ')
     .replace(/-([a-z])/g, ' $1')
@@ -269,6 +273,12 @@ const RELATION_CONNECTORS: RelationConnector[] = [
   },
   {
     kind: 'depicts',
+    pattern:
+      /\b(?:does|do|did)\s+not\s+(?:only|merely|just)\s+(?:show|depict)\b/g,
+    workSide: 'left',
+  },
+  {
+    kind: 'depicts',
     pattern: /\b(?:showing|depicting|of)\b/g,
     workSide: 'left',
   },
@@ -284,11 +294,154 @@ type CompiledRelation = {
   workText: string;
   targetText: string;
   targetMatch: ClassificationSpan;
+  connectorStart: number;
+  connectorEnd: number;
 };
 
 type RelationAnalysis = {
   compiled?: CompiledRelation;
   ambiguous: boolean;
+};
+
+type NegatedRelationConnector = {
+  kind: PublicSearchRelation['kind'];
+  pattern: RegExp;
+  workSide: 'left' | 'right';
+  targetNegated?: boolean;
+};
+
+type CompiledNegatedRelation = {
+  kind: PublicSearchRelation['kind'];
+  workText: string;
+  targetText: string;
+  workMatch: ClassificationSpan;
+  targetMatch: ClassificationSpan;
+};
+
+const NEGATED_RELATION_CONNECTORS: NegatedRelationConnector[] = [
+  {
+    kind: 'derived_from',
+    pattern: /\bused\s+as\s+(?:the\s+)?basis\s+for\b/g,
+    workSide: 'right',
+    targetNegated: true,
+  },
+  {
+    kind: 'derived_from',
+    pattern: /\bnot\s+used\s+as\s+(?:the\s+)?basis\s+for\b/g,
+    workSide: 'right',
+  },
+  {
+    kind: 'depicts',
+    pattern: /\b(?:shown|depicted)\s+in\b/g,
+    workSide: 'right',
+    targetNegated: true,
+  },
+  {
+    kind: 'depicts',
+    pattern: /\b(?:not|never)\s+(?:shown|depicted)\s+in\b/g,
+    workSide: 'right',
+  },
+  {
+    kind: 'features',
+    pattern: /\bfeatured\s+in\b/g,
+    workSide: 'right',
+    targetNegated: true,
+  },
+  {
+    kind: 'features',
+    pattern: /\b(?:not|never)\s+featured\s+in\b/g,
+    workSide: 'right',
+  },
+  {
+    kind: 'derived_from',
+    pattern: /\b(?:not|never)\s+based\s+on\b/g,
+    workSide: 'left',
+  },
+  {
+    kind: 'depicts',
+    pattern:
+      /\b(?:(?:not|never)\s+(?:showing|depicting)|(?:does|do|did)\s+not(?!\s+(?:only|merely|just)\b)(?:\s+[a-z]+){0,2}\s+(?:show|depict))\b/g,
+    workSide: 'left',
+  },
+  {
+    kind: 'features',
+    pattern:
+      /\b(?:(?:not|never)\s+(?:featuring|with)|(?:does|do|did)\s+not(?!\s+(?:only|merely|just)\b)(?:\s+[a-z]+){0,2}\s+feature|(?:with\s+no|without))\b/g,
+    workSide: 'left',
+  },
+];
+
+const isAfterRelationTargetPrefix = (value: string): boolean => {
+  const allowed = new Set([
+    'a',
+    'an',
+    'the',
+    ...MEDIUMS.flatMap((entry) => entry.aliases).filter(
+      (alias) => !alias.includes(' ')
+    ),
+  ]);
+  return value
+    .split(' ')
+    .filter(Boolean)
+    .every((token) => allowed.has(token));
+};
+
+const hasNegatedTargetPrefix = (query: string, targetStart: number) => {
+  const match = query.slice(0, targetStart).match(/\bno\b([\s\S]*)$/);
+  return Boolean(
+    match && isAfterRelationTargetPrefix((match[1] || '').trim())
+  );
+};
+
+const analyzeNegatedRelation = (
+  query: string
+): CompiledNegatedRelation | undefined => {
+  const spans = findClassificationSpans(query);
+  const candidates: CompiledNegatedRelation[] = [];
+
+  for (const connector of NEGATED_RELATION_CONNECTORS) {
+    for (const match of query.matchAll(connector.pattern)) {
+      const start = match.index;
+      const end = start + match[0].length;
+      const left = spans.filter((span) => span.end <= start);
+      const right = spans.filter((span) => span.start >= end);
+      if (left.length !== 1 || right.length !== 1) continue;
+      if (
+        connector.workSide === 'left' &&
+        !isAfterRelationTargetPrefix(
+          query.slice(end, right[0]!.start).trim()
+        )
+      ) {
+        continue;
+      }
+      if (
+        connector.targetNegated &&
+        !hasNegatedTargetPrefix(query, left[0]!.start)
+      ) {
+        continue;
+      }
+      const rawTargetText =
+        connector.workSide === 'left'
+          ? query.slice(end).trim()
+          : query.slice(0, start).trim();
+      const targetText = connector.targetNegated
+        ? rawTargetText.replace(/\bno\b/, ' ').replace(/\s+/g, ' ').trim()
+        : rawTargetText;
+
+      candidates.push({
+        kind: connector.kind,
+        workText:
+          connector.workSide === 'left'
+            ? query.slice(0, start).trim()
+            : query.slice(end).trim(),
+        targetText,
+        workMatch: connector.workSide === 'left' ? left[0]! : right[0]!,
+        targetMatch: connector.workSide === 'left' ? right[0]! : left[0]!,
+      });
+    }
+  }
+
+  return candidates.length === 1 ? candidates[0] : undefined;
 };
 
 const isClassificationList = (
@@ -308,21 +461,6 @@ const isClassificationList = (
         /^(?:and|or)(?:\s+(?:a|an|the))?$/.test(connector)
     )
   );
-};
-
-const isAfterRelationTargetPrefix = (value: string): boolean => {
-  const allowed = new Set([
-    'a',
-    'an',
-    'the',
-    ...MEDIUMS.flatMap((entry) => entry.aliases).filter(
-      (alias) => !alias.includes(' ')
-    ),
-  ]);
-  return value
-    .split(' ')
-    .filter(Boolean)
-    .every((token) => allowed.has(token));
 };
 
 const analyzeRelation = (query: string): RelationAnalysis => {
@@ -375,6 +513,8 @@ const analyzeRelation = (query: string): RelationAnalysis => {
             ? query.slice(end).trim()
             : query.slice(0, start).trim(),
         targetMatch,
+        connectorStart: start,
+        connectorEnd: end,
       });
     }
   }
@@ -399,6 +539,106 @@ const analyzeRelation = (query: string): RelationAnalysis => {
       ambiguousPicture ||
       (spans.length > 1 && !isClassificationList(query, spans)),
   };
+};
+
+const compileScopedNegatedRelation = (
+  query: string,
+  compiled: CompiledRelation
+): CompiledNegatedRelation | undefined => {
+  const spans = findClassificationSpans(query);
+  if (spans.length !== 2) return undefined;
+
+  const targetIsFirst = spans[0]!.start === compiled.targetMatch.start;
+  const targetPrefixIsNegated =
+    targetIsFirst &&
+    hasNegatedTargetPrefix(query, compiled.targetMatch.start);
+
+  const workMatch = spans.find(
+    (span) => span.start !== compiled.targetMatch.start
+  );
+  if (!workMatch) return undefined;
+  const workModifier = query
+    .slice(workMatch.end, compiled.connectorStart)
+    .trim();
+  const targetModifier = query
+    .slice(compiled.targetMatch.end, compiled.connectorStart)
+    .trim();
+  const targetPrefixModifier = query
+    .slice(compiled.connectorEnd, compiled.targetMatch.start)
+    .trim();
+  const isNegatedModifier = (value: string) =>
+    /(?:^|\s)(?:not|never)(?:\s+(?!(?:by|in|with|without|only|merely|just)\b)[a-z]+){0,2}$/.test(
+      value
+    ) ||
+    /(?:^|\s)(?:not|never)\s+(?:at\s+all|in\s+(?:any|no)\s+way)$/.test(
+      value
+    ) ||
+    /(?:^|\s)in\s+no\s+way$/.test(value) ||
+    /(?:^|\s)(?:that|which)\s+is\s+not\s+(?:a|an|the)\s+(?:depiction|representation|feature|copy)$/.test(
+      value
+    ) || /(?:^|\s)(?:free|devoid)$/.test(value);
+  const targetPrefixNegatesRelation = (value: string) => {
+    return (
+      /^(?:no|not|zero)\b/.test(value) ||
+      /^(?:anything|everything|all)\s+(?:but|except)\b/.test(value)
+    );
+  };
+  const modifierIsNegated =
+    isNegatedModifier(workModifier) ||
+    (targetIsFirst && isNegatedModifier(targetModifier)) ||
+    (!targetIsFirst && targetPrefixNegatesRelation(targetPrefixModifier));
+  if (!modifierIsNegated && !targetPrefixIsNegated) return undefined;
+
+  const workText = modifierIsNegated && !targetIsFirst
+    ? compiled.workText
+        .replace(/\b(?:no|not|never|without|free|devoid)\b[\s\S]*$/, ' ')
+        .replace(/\b(?:that|which)\s+is\s*$/, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : compiled.workText;
+  const targetText = (
+    targetIsFirst && isNegatedModifier(targetModifier)
+      ? query.slice(0, compiled.targetMatch.end)
+      : compiled.targetText
+  )
+    .replace(/\b(?:no|not|never|zero)\b/g, ' ')
+    .replace(/\b(?:anything|everything|all)\s+(?:but|except)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    kind: compiled.relation.kind,
+    workText,
+    targetText,
+    workMatch,
+    targetMatch: compiled.targetMatch,
+  };
+};
+
+const negatesReturnedWorkClassification = (
+  query: string,
+  compiled: CompiledRelation
+) => {
+  const workMatch = findClassificationSpans(query).find(
+    (span) => span.start !== compiled.targetMatch.start
+  );
+  if (!workMatch) return false;
+  const match = query
+    .slice(0, workMatch.start)
+    .match(/\b(?:no|not)\b([\s\S]*)$/);
+  if (!match) return false;
+  const modifier = (match[1] || '').trim();
+  if (isAfterRelationTargetPrefix(modifier)) return true;
+
+  const modifierIntent = parseNgaSearchIntentFlat(
+    `${modifier} ${workMatch.matched}`
+  );
+  return (
+    /^(?:a|an|the)?$/.test(modifierIntent.semanticQuery) &&
+    modifierIntent.constraints.classifications?.includes(
+      workMatch.canonical
+    ) === true
+  );
 };
 
 const findVocabularyMatch = (
@@ -780,13 +1020,80 @@ const buildRelationRetrievalQuery = (
   return `${workPhrase} ${connector} ${targetPhrase}`;
 };
 
+const buildNegatedRelationRetrievalQuery = (
+  compiled: CompiledNegatedRelation,
+  workSemanticQuery: string
+): string => {
+  const targetExtras = cleanRoleExtras(
+    compiled.targetText.replace(
+      new RegExp(`\\b${escapeRegExp(compiled.targetMatch.matched)}\\b`),
+      ' '
+    )
+  );
+  const workPhrase = [
+    cleanRoleExtras(workSemanticQuery),
+    fold(compiled.workMatch.canonical),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const targetPhrase = [targetExtras, fold(compiled.targetMatch.canonical)]
+    .filter(Boolean)
+    .join(' ');
+  const connector =
+    compiled.kind === 'depicts'
+      ? 'not depicting'
+      : compiled.kind === 'features'
+        ? 'not featuring'
+        : 'not based on';
+  return `${workPhrase} ${connector} ${targetPhrase}`;
+};
+
 export const parseNgaSearchIntent = (
   originalQuery: string,
   explicitConstraints?: PublicSearchConstraints
 ): PublicSearchInterpretation => {
   const normalized = fold(originalQuery);
   const relationAnalysis = analyzeRelation(normalized);
-
+  if (
+    relationAnalysis.compiled &&
+    negatesReturnedWorkClassification(normalized, relationAnalysis.compiled)
+  ) {
+    return {
+      parserVersion: NGA_SEARCH_PARSER_VERSION,
+      originalQuery,
+      semanticQuery: normalized,
+      constraints:
+        explicitConstraints === undefined
+          ? {}
+          : normalizePublicSearchConstraints(explicitConstraints),
+      corrections: [],
+      unresolved: [normalized],
+    };
+  }
+  const negatedRelation =
+    analyzeNegatedRelation(normalized) ||
+    (relationAnalysis.compiled
+      ? compileScopedNegatedRelation(normalized, relationAnalysis.compiled)
+      : undefined);
+  if (negatedRelation) {
+    const inferredWorkIntent = parseNgaSearchIntentFlat(
+      negatedRelation.workText
+    );
+    return {
+      parserVersion: NGA_SEARCH_PARSER_VERSION,
+      originalQuery,
+      semanticQuery: buildNegatedRelationRetrievalQuery(
+        negatedRelation,
+        inferredWorkIntent.semanticQuery
+      ),
+      constraints:
+        explicitConstraints === undefined
+          ? inferredWorkIntent.constraints
+          : normalizePublicSearchConstraints(explicitConstraints),
+      corrections: inferredWorkIntent.corrections,
+      unresolved: [normalized],
+    };
+  }
   if (relationAnalysis.compiled) {
     const inferredWorkIntent = parseNgaSearchIntentFlat(
       relationAnalysis.compiled.workText

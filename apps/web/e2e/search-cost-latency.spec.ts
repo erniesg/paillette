@@ -17,7 +17,7 @@ const card = (id: string) => ({
 
 const spotlightBundle = {
   schemaVersion: 1,
-  contractVersion: '27',
+  contractVersion: '28',
   corpusVersion: 'e2e-fixture',
   provider: 'nga',
   generatedAt: '2026-07-17T08:00:00.000Z',
@@ -69,7 +69,7 @@ const installSearchHarness = async (
   const searches: CapturedSearch[] = [];
   const spotlightRequests: string[] = [];
 
-  await page.route('**/search-spotlights/nga/v27-*.json', async (route) => {
+  await page.route('**/search-spotlights/nga/v28-*.json', async (route) => {
     spotlightRequests.push(route.request().url());
     await route.fulfill({ json: spotlightBundle });
   });
@@ -115,7 +115,7 @@ const installSearchHarness = async (
               ...(request.url().endsWith('/text') && interpretation
                 ? {
                     interpretation: {
-                      parserVersion: 'nga-v5',
+                      parserVersion: 'nga-v6',
                       originalQuery:
                         interpretation.originalQuery ||
                         interpretation.semanticQuery,
@@ -190,14 +190,14 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   page.on('request', (request) => {
     const url = request.url();
     if (url.includes('/api/public-search/')) searches.push(url);
-    if (url.includes('/search-spotlights/nga/v27-')) {
+    if (url.includes('/search-spotlights/nga/v28-')) {
       spotlightRequests.push(url);
     }
   });
 
   const documentResponse = await openNgaSearchPage(page);
   expect(documentResponse?.headers()['link']).toMatch(
-    /<\/search-spotlights\/nga\/v27-[a-f0-9]{64}\.json>; rel=preload; as=fetch; crossorigin/
+    /<\/search-spotlights\/nga\/v28-[a-f0-9]{64}\.json>; rel=preload; as=fetch; crossorigin/
   );
   await expect(
     page.locator('[data-suggestion-query="a stormy sea with ships"]')
@@ -212,7 +212,7 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   expect(searches).toEqual([]);
   expect(spotlightRequests).toHaveLength(1);
   expect(spotlightRequests[0]).toMatch(
-    /\/search-spotlights\/nga\/v27-[a-f0-9]{64}\.json$/
+    /\/search-spotlights\/nga\/v28-[a-f0-9]{64}\.json$/
   );
 });
 

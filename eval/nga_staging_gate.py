@@ -34,13 +34,18 @@ EXPECTED_API_ORIGIN = "https://paillette-api-stg.berlayar.ai"
 EXPECTED_WEB_ORIGIN = "https://paillette-stg.berlayar.ai"
 EVALUATOR_USER_AGENT = "Paillette-NGA-Staging-Gate/1.0"
 EXPECTED_VERSIONS = {
-    "parser": "nga-v5",
+    "parser": "nga-v6",
     "plan": "nga-plan-v1",
-    "contract": "27",
-    "apiResultCache": "v6",
+    "contract": "28",
+    "apiResultCache": "v7",
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PLAYWRIGHT_COOLDOWN_SECONDS = 60
+MANUAL_RELEVANCE_MINIMUMS = {
+    "precisionAt5": 0.2,
+    "mrr": 0.2,
+    "ndcgAt10": 0.7,
+}
 PLAYWRIGHT_TEST_COUNT = 7
 PLAYWRIGHT_PUBLIC_SEARCH_REQUEST_BUDGET = 6
 PILOT_TEXT_CASE_IDS = (
@@ -688,6 +693,31 @@ def _result(failures: list[dict[str, Any]], **details: Any) -> dict[str, Any]:
     }
 
 
+def _evaluate_minimum_results(
+    case: Mapping[str, Any], actual: int
+) -> list[dict[str, Any]]:
+    if "minimumResults" not in case:
+        return []
+    minimum_results = case.get("minimumResults")
+    if type(minimum_results) is not int or minimum_results < 1:
+        return [
+            _failure(
+                "invalid_minimum_results",
+                declared=minimum_results,
+                requirement="integer greater than or equal to 1",
+            )
+        ]
+    if actual < minimum_results:
+        return [
+            _failure(
+                str(case.get("capabilityFailure") or "minimum_results_not_met"),
+                expectedMinimum=minimum_results,
+                actual=actual,
+            )
+        ]
+    return []
+
+
 def _strict_success_rows(
     payload: Mapping[str, Any], schema_code: str
 ) -> tuple[Mapping[str, Any], list[Any], list[dict[str, Any]]]:
@@ -892,6 +922,7 @@ def evaluate_text_case(
 
     if case.get("expectedZeroResults") is True and rows:
         failures.append(_failure("expected_zero_results", actual=len(rows)))
+    failures.extend(_evaluate_minimum_results(case, len(row_records)))
 
     return _result(
         failures,
@@ -1157,15 +1188,56 @@ def evaluate_image_case(
 ) -> dict[str, Any]:
     evaluated = evaluate_image_response(response, case.get("constraints"))
     failures = list(evaluated["failures"])
-    minimum_results = case.get("minimumResults")
-    if type(minimum_results) is int and len(evaluated["rows"]) < minimum_results:
-        failures.append(
-            _failure(
-                str(case.get("capabilityFailure") or "minimum_results_not_met"),
-                expectedMinimum=minimum_results,
-                actual=len(evaluated["rows"]),
+    failures.extend(_evaluate_minimum_results(case, len(evaluated["rows"])))
+    target_expectation = case.get("targetExpectation")
+    if target_expectation is not None:
+        fixture_id = case.get("fixtureId")
+        if not isinstance(target_expectation, Mapping) or not isinstance(
+            fixture_id, str
+        ):
+            failures.append(_failure("invalid_image_target_expectation"))
+        else:
+            policy = target_expectation.get("policy")
+            target_rank = next(
+                (
+                    row["rank"]
+                    for row in evaluated["rows"]
+                    if row.get("id") == fixture_id
+                ),
+                None,
             )
-        )
+            if policy == "required":
+                max_rank = target_expectation.get("maxRank")
+                if type(max_rank) is not int or max_rank < 1:
+                    failures.append(_failure("invalid_image_target_expectation"))
+                elif target_rank is None:
+                    failures.append(
+                        _failure(
+                            "required_image_target_missing",
+                            artworkId=fixture_id,
+                            expectedMaxRank=max_rank,
+                        )
+                    )
+                elif target_rank > max_rank:
+                    failures.append(
+                        _failure(
+                            "required_image_target_rank_not_met",
+                            artworkId=fixture_id,
+                            expectedMaxRank=max_rank,
+                            actualRank=target_rank,
+                        )
+                    )
+            elif policy == "excluded":
+                if target_rank is not None:
+                    failures.append(
+                        _failure(
+                            "excluded_image_target_returned",
+                            artworkId=fixture_id,
+                            actualRank=target_rank,
+                        )
+                    )
+            else:
+                failures.append(_failure("invalid_image_target_expectation"))
     return {
         **evaluated,
         "failures": failures,
@@ -1515,16 +1587,57 @@ def evaluate_manual_relevance_completion(
     summary: Mapping[str, Any], snapshot: str
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
-    if (
-        snapshot == "candidate"
-        and int(summary.get("caseCount") or 0) > 0
-        and summary.get("status") != "graded"
-    ):
+    case_count = int(summary.get("caseCount") or 0)
+    if snapshot != "candidate" or case_count <= 0:
+        return _result(failures, summary=summary)
+    if summary.get("status") != "graded":
         failures.append(
             _failure(
                 "manual_relevance_incomplete", actual=summary.get("status")
             )
         )
+        return _result(failures, summary=summary)
+
+    metrics_value = summary.get("metrics")
+    metrics = metrics_value if isinstance(metrics_value, Mapping) else {}
+    by_case_value = metrics.get("byCase")
+    by_case = by_case_value if isinstance(by_case_value, Mapping) else {}
+    if len(by_case) != case_count:
+        failures.append(
+            _failure(
+                "manual_relevance_metrics_incomplete",
+                expectedCaseCount=case_count,
+                actualCaseCount=len(by_case),
+            )
+        )
+        return _result(failures, summary=summary)
+
+    for case_id, case_metrics_value in by_case.items():
+        case_metrics = (
+            case_metrics_value
+            if isinstance(case_metrics_value, Mapping)
+            else {}
+        )
+        for metric, minimum in MANUAL_RELEVANCE_MINIMUMS.items():
+            actual = case_metrics.get(metric)
+            if type(actual) not in {int, float}:
+                failures.append(
+                    _failure(
+                        "manual_relevance_metrics_incomplete",
+                        caseId=case_id,
+                        metric=metric,
+                    )
+                )
+            elif actual < minimum:
+                failures.append(
+                    _failure(
+                        "manual_relevance_threshold_not_met",
+                        caseId=case_id,
+                        metric=metric,
+                        expectedMinimum=minimum,
+                        actual=actual,
+                    )
+                )
     return _result(failures, summary=summary)
 
 

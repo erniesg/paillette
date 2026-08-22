@@ -3166,7 +3166,7 @@ describe('Search API auth and quota behavior', () => {
 
     const base = {
       version: 'public-image-search-v1',
-      contractVersion: '27',
+      contractVersion: '28',
       mode: 'image',
       imageDigest: 'a'.repeat(64),
       orgId: 'open-access-art',
@@ -3205,7 +3205,7 @@ describe('Search API auth and quota behavior', () => {
 
     const mutations: Array<[string, Record<string, unknown>]> = [
       ['identity version', { ...base, version: 'public-image-search-v2' }],
-      ['contract version', { ...base, contractVersion: '28' }],
+      ['contract version', { ...base, contractVersion: '29' }],
       ['mode', { ...base, mode: 'image-alternate' }],
       ['image bytes digest', { ...base, imageDigest: 'b'.repeat(64) }],
       [
@@ -3706,7 +3706,7 @@ describe('Search API auth and quota behavior', () => {
 
     expect(response.status).toBe(200);
     expect(payload.data.interpretation).toMatchObject({
-      parserVersion: 'nga-v5',
+      parserVersion: 'nga-v6',
       constraints: {
         dateRange: { startYear: 1701, endYear: 1799 },
         classifications: ['Painting'],
@@ -4117,7 +4117,7 @@ describe('Search API auth and quota behavior', () => {
       const payload = (await response.json()) as any;
       expect(response.status).toBe(200);
       expect(payload.data.interpretation).toMatchObject({
-        parserVersion: 'nga-v5',
+        parserVersion: 'nga-v6',
         constraints: fixture.expectedConstraints,
         relation: fixture.expectedRelation,
       });

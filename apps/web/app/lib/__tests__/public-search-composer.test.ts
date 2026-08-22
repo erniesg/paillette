@@ -230,7 +230,7 @@ describe('public search composer ownership', () => {
 
 describe('image draft constraint ownership', () => {
   const acceptedA = {
-    parserVersion: 'nga-v5' as const,
+    parserVersion: 'nga-v6' as const,
     originalQuery: 'oil paintings before 1800',
     semanticQuery: 'oil paintings',
     constraints: {
@@ -273,7 +273,7 @@ describe('uncached image execution', () => {
   const canonicalQueryKey = [
     'search',
     'image',
-    '27',
+    '28',
     'nga',
     'digest-123',
     30,

@@ -10,7 +10,7 @@ import type {
 } from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '../types';
 
-const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 6;
+const PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION = 7;
 
 export const PUBLIC_SEARCH_RESULT_CACHE_SCHEMA_VERSION = 2 as const;
 export const PUBLIC_SEARCH_RESULT_CACHE_READ_TIMEOUT_MS = 300;

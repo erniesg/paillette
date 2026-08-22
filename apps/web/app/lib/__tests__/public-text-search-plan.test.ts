@@ -82,9 +82,9 @@ describe('buildPublicTextSearchPlan', () => {
     expect(plan?.queryKey.join(':')).toContain('Painting');
   });
 
-  it('versions browser text-search identity with public contract 27', () => {
+  it('versions browser text-search identity with public contract 28', () => {
     const plan = buildPublicTextSearchPlan(baseInput);
 
-    expect(plan?.queryKey[2]).toBe('27');
+    expect(plan?.queryKey[2]).toBe('28');
   });
 });

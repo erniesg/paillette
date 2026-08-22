@@ -1,10 +1,10 @@
 {
   "schemaVersion": "nga-staging-gate-v1",
   "expectedVersions": {
-    "parser": "nga-v5",
+    "parser": "nga-v6",
     "plan": "nga-plan-v1",
-    "contract": "27",
-    "apiResultCache": "v6"
+    "contract": "28",
+    "apiResultCache": "v7"
   },
   "pilot": {
     "textCaseIds": [
@@ -191,6 +191,109 @@
       "expected": {"constraints": {}, "relation": null, "unresolved": true}
     },
     {
+      "id": "negated-relation-active",
+      "category": "relation-negation",
+      "query": "painting not depicting a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-without",
+      "category": "relation-negation",
+      "query": "painting without a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not featuring sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-passive-no",
+      "category": "relation-negation",
+      "query": "no sculpture shown in a painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-modified-derived",
+      "category": "relation-negation",
+      "query": "painting not at all based on drawing",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not based on drawing",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-passive-modifier",
+      "category": "relation-negation",
+      "query": "sculpture not really depicted in a painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "affirmative-not-only-relation",
+      "category": "relation-negation-scope",
+      "query": "painting does not only depict a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      }
+    },
+    {
+      "id": "unrelated-negative-qualifier",
+      "category": "relation-negation-scope",
+      "query": "painting without a frame depicting a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "without frame painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      }
+    },
+    {
+      "id": "negated-work-classification",
+      "category": "relation-negation-scope",
+      "query": "no painting depicting a sculpture",
+      "expected": {
+        "constraints": {},
+        "semanticQuery": "no painting depicting a sculpture",
+        "relation": null,
+        "unresolved": true
+      }
+    },
+    {
+      "id": "negated-relation-target-no",
+      "category": "relation-negation-scope",
+      "query": "painting depicting no sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
       "id": "attribution-after-person",
       "category": "artist-attribution",
       "query": "painting after Rembrandt",
@@ -295,7 +398,18 @@
       "category": "image-combined-hard-constraints",
       "fixtureId": "open-access-art:nga:110821",
       "filename": "nga-query.jpg",
-      "constraints": {"dateRange": {"startYear": 1500, "endYear": 1799}, "classifications": ["Painting"]}
+      "constraints": {"dateRange": {"startYear": 1500, "endYear": 1799}, "classifications": ["Painting"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "excluded"}
+    },
+    {
+      "id": "image-self-compatible",
+      "category": "image-self-retrieval",
+      "fixtureId": "open-access-art:nga:110821",
+      "filename": "nga-query.jpg",
+      "constraints": {"dateRange": {"startYear": 1500, "endYear": 1799}, "classifications": ["Print"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "required", "maxRank": 3}
     },
     {
       "id": "image-classification",

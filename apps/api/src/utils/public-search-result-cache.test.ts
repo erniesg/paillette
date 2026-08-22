@@ -92,7 +92,7 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(baseKey).toBe(caseEquivalent);
     expect(composedEquivalent).toBe(composed);
     expect(withSecretA).toBe(withSecretB);
-    expect(baseKey).toMatch(/^public-search-result:v6:[a-f0-9]{64}$/);
+    expect(baseKey).toMatch(/^public-search-result:v7:[a-f0-9]{64}$/);
     expect(baseKey).not.toContain(identity.query);
     expect(baseKey).not.toContain('secret');
 
@@ -188,10 +188,10 @@ describe('buildPublicSearchResultCacheKey', () => {
 });
 
 describe('getOrLoadPublicSearchResult', () => {
-  it('does not address a stale v5 entry for an nga-v5 exact-date search', async () => {
+  it('does not address a stale v6 entry for an nga-v6 exact-date search', async () => {
     const cache = createCache({
       get: vi.fn(async (key: string) =>
-        key.startsWith('public-search-result:v5:') ? cachedValue() : null
+        key.startsWith('public-search-result:v6:') ? cachedValue() : null
       ) as unknown as KVNamespace['get'],
     });
     const load = vi.fn().mockResolvedValue({ response, cacheable: false });
@@ -199,7 +199,7 @@ describe('getOrLoadPublicSearchResult', () => {
     await expect(
       getOrLoadPublicSearchResult({
         ...identity,
-        parserVersion: 'nga-v5',
+        parserVersion: 'nga-v6',
         constraints: { dateRange: { startYear: 1889, endYear: 1889 } },
         cache,
         load,

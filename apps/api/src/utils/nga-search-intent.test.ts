@@ -97,8 +97,8 @@ const loadConstraintCorpus = (): CorpusQuery[] =>
     });
 
 describe('parseNgaSearchIntent', () => {
-  it('reports the nga-v5 parser contract', () => {
-    expect(parseNgaSearchIntent('paintings').parserVersion).toBe('nga-v5');
+  it('reports the nga-v6 parser contract', () => {
+    expect(parseNgaSearchIntent('paintings').parserVersion).toBe('nga-v6');
   });
 
   it('ships a versioned evaluation corpus with at least 80 representative queries', () => {
@@ -366,6 +366,221 @@ describe('parseNgaSearchIntent', () => {
     expect(intent.relation).toBeUndefined();
     expect(intent.constraints).toEqual({});
     expect(intent.unresolved.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [
+      'painting not depicting a sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'sculpture not depicted in a painting',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting without a sculpture',
+      'Painting',
+      'painting not featuring sculpture',
+    ],
+    [
+      "painting doesn't depict a sculpture",
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting with no sculpture',
+      'Painting',
+      'painting not featuring sculpture',
+    ],
+    [
+      'painting not really depicting a sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'no sculpture shown in a painting',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting in no way depicting sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting not at all based on drawing',
+      'Painting',
+      'painting not based on drawing',
+    ],
+    [
+      'painting that is not a depiction of sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting never in any way depicting sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'sculpture not really depicted in a painting',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'sculpture never actually featured in a painting',
+      'Painting',
+      'painting not featuring sculpture',
+    ],
+    [
+      'photograph not actually used as basis for a drawing',
+      'Drawing',
+      'drawing not based on photograph',
+    ],
+    [
+      'painting depicting no sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting showing no sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting featuring no sculpture',
+      'Painting',
+      'painting not featuring sculpture',
+    ],
+    [
+      'drawing based on no photograph',
+      'Drawing',
+      'drawing not based on photograph',
+    ],
+    [
+      'painting free of sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting devoid of sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting depicting anything but sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting depicting no large sculpture',
+      'Painting',
+      'painting not depicting large sculpture',
+    ],
+    [
+      'painting depicting no known sculpture',
+      'Painting',
+      'painting not depicting known sculpture',
+    ],
+    [
+      'painting depicting not a sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting depicting zero sculptures',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting with no visible sculpture',
+      'Painting',
+      'painting not featuring visible sculpture',
+    ],
+    [
+      'painting with zero sculptures',
+      'Painting',
+      'painting not featuring sculpture',
+    ],
+    [
+      'painting depicting anything except sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+    [
+      'painting depicting all but sculpture',
+      'Painting',
+      'painting not depicting sculpture',
+    ],
+  ])(
+    'fails closed without compiling a positive relation for %s',
+    (query, workClassification, semanticQuery) => {
+      const intent = parseNgaSearchIntent(query);
+
+      expect(intent.constraints).toEqual({
+        classifications: [workClassification],
+      });
+      expect(intent.relation).toBeUndefined();
+      expect(intent.semanticQuery).toBe(semanticQuery);
+      expect(intent.unresolved).toEqual([query.replace("doesn't", 'does not')]);
+      expect(compileNgaSearchPlan(query)).toEqual({
+        version: 'nga-plan-v1',
+        mode: 'structured',
+        retrievalQuery: semanticQuery,
+        constraints: { classifications: [workClassification] },
+      });
+    }
+  );
+
+  it('keeps explicit constraints authoritative for a negated relation', () => {
+    const intent = parseNgaSearchIntent('painting not showing sculpture', {
+      classifications: ['Drawing'],
+    });
+
+    expect(intent.constraints).toEqual({ classifications: ['Drawing'] });
+    expect(intent.relation).toBeUndefined();
+    expect(intent.semanticQuery).toBe('painting not depicting sculpture');
+    expect(intent.unresolved).toEqual(['painting not showing sculpture']);
+  });
+
+  it.each([
+    'painting not by Rodin depicting sculpture',
+    'painting of sculpture not by Rodin',
+    'painting without a frame depicting a sculpture',
+    'drawing without borders based on a photograph',
+    'painting not in color showing sculpture',
+    'painting not only depicting a sculpture',
+    'painting not merely depicting a sculpture',
+    'painting not just depicting a sculpture',
+    'painting does not only depict a sculpture',
+    'painting does not merely depict a sculpture',
+    'painting does not just feature a sculpture',
+    'no frame around a sculpture shown in a painting',
+    'no border around a drawing used as basis for painting',
+  ])('does not mistake an unrelated negative qualifier for relation negation in %s', (query) => {
+    const intent = parseNgaSearchIntent(query);
+
+    expect(intent.relation).toBeDefined();
+    expect(intent.unresolved).toEqual([]);
+  });
+
+  it.each([
+    'no painting depicting a sculpture',
+    'not a painting depicting a sculpture',
+    'no drawing based on a photograph',
+    'no oil painting depicting a sculpture',
+    'not an oil painting depicting a sculpture',
+    'no watercolor drawing based on a photograph',
+    'no 18th century painting depicting a sculpture',
+    'not a late eighteenth century painting depicting a sculpture',
+  ])('fails closed when the returned work classification is negated in %s', (query) => {
+    const intent = parseNgaSearchIntent(query);
+
+    expect(intent.constraints).toEqual({});
+    expect(intent.relation).toBeUndefined();
+    expect(intent.unresolved).toEqual([query]);
   });
 
   it('preserves attribution wording instead of inventing a source relation', () => {

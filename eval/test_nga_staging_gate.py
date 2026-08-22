@@ -68,7 +68,7 @@ def passing_response(row=None, *, relation=None, constraints=None):
     if constraints is None:
         constraints = {}
     interpretation = {
-        "parserVersion": "nga-v5",
+        "parserVersion": "nga-v6",
         "originalQuery": "painting showing a sculpture",
         "semanticQuery": "depicting sculpture",
         "constraints": constraints,
@@ -110,16 +110,16 @@ def deployment_identity(snapshot="candidate", git_sha="a" * 40):
             "versionId": "api-version",
             "gitSha": git_sha,
             "apiVersion": "v1",
-            "parserVersion": "nga-v5" if snapshot == "candidate" else "nga-v4",
+            "parserVersion": "nga-v6" if snapshot == "candidate" else "nga-v4",
             "planVersion": "nga-plan-v1" if snapshot == "candidate" else "unversioned",
-            "resultCacheVersion": "v6" if snapshot == "candidate" else "v5",
+            "resultCacheVersion": "v7" if snapshot == "candidate" else "v5",
         },
         "web": {
             "origin": "https://paillette-stg.berlayar.ai",
             "deploymentId": "web-deployment",
             "versionId": "web-version",
             "gitSha": git_sha,
-            "contractVersion": "27" if snapshot == "candidate" else "26",
+            "contractVersion": "28" if snapshot == "candidate" else "26",
         },
     }
 
@@ -574,7 +574,13 @@ def make_complete_evidence_bundle(
     first_image_case = selected["image"][0]
     for case in selected["image"]:
         fixture = fixtures[case["fixtureId"]]
-        row = evidence_row(case, artwork_id=fixture["artworkId"])
+        target_policy = (case.get("targetExpectation") or {}).get("policy")
+        artwork_id = (
+            "open-access-art:nga:eligible-neighbor"
+            if target_policy == "excluded"
+            else fixture["artworkId"]
+        )
+        row = evidence_row(case, artwork_id=artwork_id)
         response = evidence_response(
             {"success": True, "data": {"results": [row], "count": 1, "queryTime": 1}},
             image_endpoint,
@@ -918,7 +924,7 @@ class HostAndEnvironmentTests(GateTestCase):
                 else:
                     payload = None
                     body = (
-                        b'<link href="/search-spotlights/nga/v27-'
+                        b'<link href="/search-spotlights/nga/v28-'
                         + (b"a" * 64)
                         + b'.json">'
                     )
@@ -1049,14 +1055,14 @@ class HostAndEnvironmentTests(GateTestCase):
             "extract_web_contract_versions",
             {
                 "headers": {
-                    "link": '</search-spotlights/nga/v27-'
+                    "link": '</search-spotlights/nga/v28-'
                     + ('a' * 64)
                     + '.json>; rel=preload; as=fetch'
                 },
                 "body": b"<html></html>",
             },
         )
-        self.assertEqual(versions, ["27"])
+        self.assertEqual(versions, ["28"])
 
     def test_candidate_requires_exact_task7_deployment_binding(self):
         evaluator_sha = "a" * 40
@@ -1101,10 +1107,10 @@ class HostAndEnvironmentTests(GateTestCase):
 
     def test_live_web_contract_must_match_task7_deployment_identity(self):
         exact = self.call("evaluate_live_contract_binding", ["26"], "26")
-        mismatch = self.call("evaluate_live_contract_binding", ["26"], "27")
-        missing = self.call("evaluate_live_contract_binding", [], "27")
+        mismatch = self.call("evaluate_live_contract_binding", ["26"], "28")
+        missing = self.call("evaluate_live_contract_binding", [], "28")
         ambiguous = self.call(
-            "evaluate_live_contract_binding", ["26", "27"], "27"
+            "evaluate_live_contract_binding", ["26", "28"], "28"
         )
         self.assertEqual(exact["failureCodes"], [])
         self.assertIn("live_contract_mismatch", mismatch["failureCodes"])
@@ -1310,10 +1316,10 @@ class InterpretationAndConstraintTests(GateTestCase):
             {"id": "version", "expected": {"constraints": {}}},
             response,
             observed_versions={
-                "parser": "nga-v5",
+                "parser": "nga-v6",
                 "plan": "nga-plan-v1",
-                "contract": "27",
-                "apiResultCache": "v6",
+                "contract": "28",
+                "apiResultCache": "v7",
             },
         )
         self.assertEqual(
@@ -1338,6 +1344,49 @@ class InterpretationAndConstraintTests(GateTestCase):
 
 
 class ScopeAndCacheTests(GateTestCase):
+    def test_text_case_can_require_nonempty_results(self):
+        response = passing_response()
+        response["json"]["data"]["results"] = []
+        response["json"]["data"]["count"] = 0
+        result = self.call(
+            "evaluate_text_case",
+            {
+                "id": "expected-nonempty",
+                "expected": {"constraints": {}},
+                "minimumResults": 1,
+            },
+            response,
+        )
+        self.assertIn("minimum_results_not_met", result["failureCodes"])
+
+    def test_minimum_results_declaration_fails_closed_for_text_and_image(self):
+        text_response = passing_response()
+        image_response = passing_response()
+        image_response["headers"]["cache-control"] = "no-store"
+
+        for invalid in ("1", 0, -1, True, 1.5):
+            with self.subTest(invalid=invalid):
+                text = self.call(
+                    "evaluate_text_case",
+                    {
+                        "id": "invalid-text-minimum",
+                        "expected": {"constraints": {}},
+                        "minimumResults": invalid,
+                    },
+                    text_response,
+                )
+                image = self.call(
+                    "evaluate_image_case",
+                    {
+                        "id": "invalid-image-minimum",
+                        "minimumResults": invalid,
+                    },
+                    image_response,
+                )
+
+                self.assertIn("invalid_minimum_results", text["failureCodes"])
+                self.assertIn("invalid_minimum_results", image["failureCodes"])
+
     def test_text_success_requires_strict_shapes_and_cache_evidence(self):
         mutations = {
             "missing data": lambda response: response["json"].pop("data"),
@@ -1508,6 +1557,61 @@ class ScopeAndCacheTests(GateTestCase):
 
 
 class ImageProbeTests(GateTestCase):
+    def test_required_image_target_must_be_within_declared_rank(self):
+        case = {
+            "id": "image-self-compatible",
+            "fixtureId": "open-access-art:nga:target",
+            "targetExpectation": {"policy": "required", "maxRank": 2},
+        }
+        first = passing_row()
+        first["id"] = "open-access-art:nga:neighbor"
+        target = passing_row()
+        target["id"] = "open-access-art:nga:target"
+        response = passing_response(row=first)
+        response["headers"]["cache-control"] = "no-store"
+        response["json"]["data"]["results"] = [first, target]
+        response["json"]["data"]["count"] = 2
+
+        self.assertEqual(
+            self.call("evaluate_image_case", case, response)["failureCodes"], []
+        )
+
+        case["targetExpectation"]["maxRank"] = 1
+        self.assertIn(
+            "required_image_target_rank_not_met",
+            self.call("evaluate_image_case", case, response)["failureCodes"],
+        )
+
+        response["json"]["data"]["results"] = [first]
+        response["json"]["data"]["count"] = 1
+        self.assertIn(
+            "required_image_target_missing",
+            self.call("evaluate_image_case", case, response)["failureCodes"],
+        )
+
+    def test_excluded_image_target_must_not_bypass_hard_constraints(self):
+        case = {
+            "id": "image-incompatible-neighbors",
+            "fixtureId": "open-access-art:nga:target",
+            "targetExpectation": {"policy": "excluded"},
+        }
+        target = passing_row()
+        target["id"] = "open-access-art:nga:target"
+        response = passing_response(row=target)
+        response["headers"]["cache-control"] = "no-store"
+
+        self.assertIn(
+            "excluded_image_target_returned",
+            self.call("evaluate_image_case", case, response)["failureCodes"],
+        )
+
+        neighbor = passing_row()
+        neighbor["id"] = "open-access-art:nga:neighbor"
+        response["json"]["data"]["results"] = [neighbor]
+        self.assertEqual(
+            self.call("evaluate_image_case", case, response)["failureCodes"], []
+        )
+
     def test_artist_capability_requires_a_positive_matching_row(self):
         case = {
             "id": "image-artist-capability",
@@ -1671,10 +1775,10 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(
             self.call("observe_local_versions", ROOT),
             {
-                "parser": "nga-v5",
+                "parser": "nga-v6",
                 "plan": "nga-plan-v1",
-                "contract": "27",
-                "apiResultCache": "v6",
+                "contract": "28",
+                "apiResultCache": "v7",
             },
         )
 
@@ -1716,7 +1820,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "evaluate_declared_interpretation",
                 case,
                 record["interpretation"],
-                "nga-v5",
+                "nga-v6",
             )
             if not result["passed"]:
                 failures[case["legacyId"]] = result["failures"]
@@ -1752,7 +1856,7 @@ class InventoryAndRelevanceTests(GateTestCase):
         for case in (legacy_clean, new_clean, explicit_null):
             with self.subTest(case=case["id"], mutation="relation"):
                 interpretation = {
-                    "parserVersion": "nga-v5",
+                    "parserVersion": "nga-v6",
                     "semanticQuery": case.get("expected", {}).get(
                         "semanticQuery", ""
                     ),
@@ -1764,7 +1868,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                     "evaluate_declared_interpretation",
                     case,
                     interpretation,
-                    "nga-v5",
+                    "nga-v6",
                 )
                 self.assertIn(
                     "relation_direction_mismatch", result["failureCodes"]
@@ -1772,7 +1876,7 @@ class InventoryAndRelevanceTests(GateTestCase):
 
             with self.subTest(case=case["id"], mutation="unresolved"):
                 interpretation = {
-                    "parserVersion": "nga-v5",
+                    "parserVersion": "nga-v6",
                     "semanticQuery": case.get("expected", {}).get(
                         "semanticQuery", ""
                     ),
@@ -1783,7 +1887,7 @@ class InventoryAndRelevanceTests(GateTestCase):
                     "evaluate_declared_interpretation",
                     case,
                     interpretation,
-                    "nga-v5",
+                    "nga-v6",
                 )
                 self.assertIn("unexpected_unresolved", result["failureCodes"])
 
@@ -1811,19 +1915,29 @@ class InventoryAndRelevanceTests(GateTestCase):
         ]
         self.assertEqual(
             {case["id"] for case in unresolved_cases},
-            {"unsupported-relation-near", "unsupported-relation-compound"},
+            {
+                "unsupported-relation-near",
+                "unsupported-relation-compound",
+                "negated-relation-active",
+                "negated-relation-without",
+                "negated-relation-passive-no",
+                "negated-relation-modified-derived",
+                "negated-relation-passive-modifier",
+                "negated-work-classification",
+                "negated-relation-target-no",
+            },
         )
         for case in [*legacy_unresolved, *unresolved_cases]:
             result = self.call(
                 "evaluate_declared_interpretation",
                 case,
                 {
-                    "parserVersion": "nga-v5",
+                    "parserVersion": "nga-v6",
                     "semanticQuery": case["query"],
                     "constraints": {},
                     "unresolved": [],
                 },
-                "nga-v5",
+                "nga-v6",
             )
             self.assertIn("unresolved_ambiguity_missing", result["failureCodes"])
 
@@ -1963,12 +2077,44 @@ class InventoryAndRelevanceTests(GateTestCase):
         )
         graded = self.call(
             "evaluate_manual_relevance_completion",
-            {"status": "graded", "caseCount": 1},
+            {
+                "status": "graded",
+                "caseCount": 1,
+                "metrics": {
+                    "byCase": {
+                        "relation": {
+                            "precisionAt5": 0.4,
+                            "mrr": 1.0,
+                            "ndcgAt10": 0.9,
+                        }
+                    }
+                },
+            },
+            "candidate",
+        )
+        weak = self.call(
+            "evaluate_manual_relevance_completion",
+            {
+                "status": "graded",
+                "caseCount": 1,
+                "metrics": {
+                    "byCase": {
+                        "relation": {
+                            "precisionAt5": 0.0,
+                            "mrr": 0.0,
+                            "ndcgAt10": 0.0,
+                        }
+                    }
+                },
+            },
             "candidate",
         )
         self.assertIn("manual_relevance_incomplete", candidate["failureCodes"])
         self.assertEqual(baseline["failureCodes"], [])
         self.assertEqual(graded["failureCodes"], [])
+        self.assertIn(
+            "manual_relevance_threshold_not_met", weak["failureCodes"]
+        )
 
     def test_full_candidate_pilot_inspection_binds_reviewed_pilot_evidence(self):
         evaluator_sha = "a" * 40

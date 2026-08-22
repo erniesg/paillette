@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PUBLIC_SEARCH_CONTRACT_VERSION = '27' as const;
+export const PUBLIC_SEARCH_CONTRACT_VERSION = '28' as const;
 export const PUBLIC_SEARCH_SPOTLIGHT_SCHEMA_VERSION = 1 as const;
 export const PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES = 256 * 1024;
 export const PUBLIC_SEARCH_CANONICAL_TOP_K = 100 as const;
@@ -142,7 +142,13 @@ export type NgaSearchPlan = {
 };
 
 export type PublicSearchInterpretation = {
-  parserVersion: 'nga-v1' | 'nga-v2' | 'nga-v3' | 'nga-v4' | 'nga-v5';
+  parserVersion:
+    | 'nga-v1'
+    | 'nga-v2'
+    | 'nga-v3'
+    | 'nga-v4'
+    | 'nga-v5'
+    | 'nga-v6';
   originalQuery: string;
   semanticQuery: string;
   constraints: PublicSearchConstraints;
