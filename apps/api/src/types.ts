@@ -46,6 +46,20 @@ export interface SearchImageRequest {
   // Image will come from multipart form data
 }
 
+export type ArtworkRelationEvidence =
+  | {
+      verified: true;
+      source:
+        | 'catalogue_artist'
+        | 'institution_metadata'
+        | 'image_caption_agreement';
+    }
+  | { verified: false; source: null };
+
+export type ArtworkSearchMetadata = Record<string, any> & {
+  relationEvidence?: ArtworkRelationEvidence;
+};
+
 export interface ArtworkSearchResult {
   id: string;
   orgId?: string;
@@ -56,7 +70,7 @@ export interface ArtworkSearchResult {
   imageUrl: string | null;
   thumbnailUrl?: string | null;
   similarity: number;
-  metadata?: Record<string, any>;
+  metadata?: ArtworkSearchMetadata;
 }
 
 export interface SearchResponse {

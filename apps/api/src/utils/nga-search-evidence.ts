@@ -1,0 +1,274 @@
+import type {
+  NgaAttributionIntent,
+  NgaSearchPlan,
+  PublicSearchRelation,
+} from '@paillette/types/public-search';
+import type { ArtworkRelationEvidence, ArtworkSearchResult } from '../types';
+
+type NgaArtistRelationship = {
+  constituentId?: unknown;
+  roleType?: unknown;
+  role?: unknown;
+  prefix?: unknown;
+  suffix?: unknown;
+  preferredDisplayName?: unknown;
+  forwardDisplayName?: unknown;
+  alternativeNames?: unknown;
+};
+
+export type NgaAttributionEvidenceMetadata = {
+  artist?: unknown;
+  primaryArtistId?: unknown;
+  ngaArtists?: unknown;
+};
+
+type ClassifiedRelationEvidence =
+  | Extract<ArtworkRelationEvidence, { verified: true }>
+  | { verified: false; source: null };
+
+const fold = (value: unknown) =>
+  String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^a-z0-9]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+const tokens = (value: unknown) => fold(value).split(' ').filter(Boolean);
+
+const containsPhrase = (value: unknown, phrase: string) =>
+  Boolean(phrase && ` ${fold(value)} `.includes(` ${phrase} `));
+
+const containsAllTargetTokens = (value: unknown, targetText: string) => {
+  const requested = [...new Set(tokens(targetText))];
+  if (!requested.length) return false;
+  const available = new Set(tokens(value));
+  return requested.every((token) => available.has(token));
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const artistRelationships = (
+  metadata: NgaAttributionEvidenceMetadata
+): NgaArtistRelationship[] => {
+  if (!isRecord(metadata.ngaArtists)) return [];
+  const relationships = metadata.ngaArtists.relationships;
+  return Array.isArray(relationships) ? relationships.filter(isRecord) : [];
+};
+
+const QUALIFIED_ROLE_MARKERS = [
+  'after',
+  'attributed to',
+  'attributed',
+  'workshop of',
+  'studio of',
+  'circle of',
+  'school of',
+  'follower of',
+] as const;
+
+const ROLE_MARKERS: Record<
+  Exclude<NgaAttributionIntent['relationship'], 'direct'>,
+  readonly string[]
+> = {
+  after: ['after'],
+  attributed_to: ['attributed to', 'attributed'],
+  workshop_of: ['workshop of'],
+  studio_of: ['studio of'],
+  circle_of: ['circle of'],
+  school_of: ['school of'],
+  follower_of: ['follower of'],
+};
+
+const matchesRole = (
+  value: unknown,
+  relationship: NgaAttributionIntent['relationship'],
+  implicitDirect: boolean
+) => {
+  const normalized = fold(value);
+  if (relationship === 'direct') {
+    return (
+      implicitDirect ||
+      (containsPhrase(normalized, 'artist') &&
+        !QUALIFIED_ROLE_MARKERS.some((marker) =>
+          containsPhrase(normalized, marker)
+        ))
+    );
+  }
+  return ROLE_MARKERS[relationship].some((marker) =>
+    containsPhrase(normalized, marker)
+  );
+};
+
+const relationshipNames = (relationship: NgaArtistRelationship) => [
+  relationship.preferredDisplayName,
+  relationship.forwardDisplayName,
+  ...(Array.isArray(relationship.alternativeNames)
+    ? relationship.alternativeNames
+    : []),
+];
+
+const relationshipMatches = (
+  relationship: NgaArtistRelationship,
+  intent: NgaAttributionIntent
+) => {
+  if (fold(relationship.roleType) !== 'artist') return false;
+  const roleText = [relationship.role, relationship.prefix, relationship.suffix]
+    .map(fold)
+    .filter(Boolean)
+    .join(' ');
+  return (
+    matchesRole(roleText, intent.relationship, false) &&
+    relationshipNames(relationship).some((name) =>
+      containsAllTargetTokens(name, intent.targetText)
+    )
+  );
+};
+
+export const matchesNgaAttributionEvidence = (
+  metadata: NgaAttributionEvidenceMetadata,
+  intent: NgaAttributionIntent
+): boolean => {
+  const relationships = artistRelationships(metadata);
+  if (intent.relationship === 'direct') {
+    const primaryArtistId = fold(metadata.primaryArtistId);
+    const primaryRelationship = primaryArtistId
+      ? relationships.find(
+          (relationship) => fold(relationship.constituentId) === primaryArtistId
+        )
+      : undefined;
+    if (primaryRelationship) {
+      return relationshipMatches(primaryRelationship, intent);
+    }
+    return (
+      relationships.length === 0 &&
+      matchesRole(metadata.artist, intent.relationship, true) &&
+      containsAllTargetTokens(metadata.artist, intent.targetText)
+    );
+  }
+
+  return (
+    relationships.some((relationship) =>
+      relationshipMatches(relationship, intent)
+    ) ||
+    (matchesRole(metadata.artist, intent.relationship, false) &&
+      containsAllTargetTokens(metadata.artist, intent.targetText))
+  );
+};
+
+const CLASSIFICATION_PHRASES: Record<string, readonly string[]> = {
+  painting: ['painting', 'paintings'],
+  drawing: ['drawing', 'drawings'],
+  print: ['print', 'prints'],
+  sculpture: ['sculpture', 'sculptures'],
+  photograph: ['photograph', 'photographs', 'photo', 'photos', 'photography'],
+  'decorative art': ['decorative art', 'decorative arts'],
+};
+
+const containsClassification = (value: unknown, classification: string) => {
+  const normalized = fold(classification);
+  return (CLASSIFICATION_PHRASES[normalized] || [normalized]).some((phrase) =>
+    containsPhrase(value, phrase)
+  );
+};
+
+const institutionTextFields = (result: ArtworkSearchResult) => [
+  result.title,
+  result.metadata?.description,
+];
+
+const searchSourceChannels = (result: ArtworkSearchResult) => {
+  const rawSources =
+    result.metadata?.searchSources || result.metadata?.search_sources;
+  if (!Array.isArray(rawSources)) return new Set<string>();
+  return new Set(
+    rawSources.flatMap((source) =>
+      isRecord(source) && typeof source.channel === 'string'
+        ? [source.channel]
+        : []
+    )
+  );
+};
+
+const DERIVATION_CONNECTORS = [
+  'based on',
+  'used as basis for',
+  'used as the basis for',
+  'derived from',
+  'copied from',
+  'adapted from',
+  'after',
+] as const;
+
+export const classifyNgaRelationEvidence = (
+  result: ArtworkSearchResult,
+  relation: PublicSearchRelation
+): ClassifiedRelationEvidence => {
+  const institutionFields = institutionTextFields(result);
+  if (relation.kind === 'derived_from') {
+    const verified = institutionFields.some(
+      (value) =>
+        containsClassification(value, relation.sourceClassification) &&
+        DERIVATION_CONNECTORS.some((connector) =>
+          containsPhrase(value, connector)
+        )
+    );
+    return verified
+      ? { verified: true, source: 'institution_metadata' }
+      : { verified: false, source: null };
+  }
+
+  if (
+    institutionFields.some((value) =>
+      containsClassification(value, relation.subjectClassification)
+    )
+  ) {
+    return { verified: true, source: 'institution_metadata' };
+  }
+
+  const channels = searchSourceChannels(result);
+  const hasImage =
+    channels.has('image_embedding') || channels.has('jina_image');
+  const hasCaption =
+    channels.has('institution_caption_embedding') ||
+    channels.has('generated_caption_embedding') ||
+    channels.has('caption_embedding') ||
+    channels.has('caption');
+  return hasImage && hasCaption
+    ? { verified: true, source: 'image_caption_agreement' }
+    : { verified: false, source: null };
+};
+
+export const filterNgaRelationEvidence = (
+  results: ArtworkSearchResult[],
+  plan: NgaSearchPlan
+): ArtworkSearchResult[] => {
+  if (plan.mode !== 'relational' || !plan.relation) return results;
+
+  const verified = results.flatMap((result) => {
+    const evidence = classifyNgaRelationEvidence(result, plan.relation!);
+    if (!evidence.verified) return [];
+    return [
+      {
+        ...result,
+        metadata: {
+          ...(result.metadata || {}),
+          relationEvidence: evidence,
+        },
+      },
+    ];
+  });
+
+  return [
+    ...verified.filter(
+      (result) =>
+        result.metadata?.relationEvidence?.source === 'institution_metadata'
+    ),
+    ...verified.filter(
+      (result) =>
+        result.metadata?.relationEvidence?.source === 'image_caption_agreement'
+    ),
+  ];
+};

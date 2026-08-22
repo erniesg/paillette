@@ -26,6 +26,7 @@ import {
   normalizePublicSearchConstraints,
   normalizePublicSearchText,
   parsePublicSearchConstraints,
+  type NgaAttributionIntent,
   type NgaSearchPlan,
   type PublicSearchConstraints,
 } from '@paillette/types/public-search';
@@ -35,6 +36,10 @@ import {
   parseNgaSearchIntent,
   validateNgaSearchConstraints,
 } from '../utils/nga-search-intent';
+import {
+  filterNgaRelationEvidence,
+  matchesNgaAttributionEvidence,
+} from '../utils/nga-search-evidence';
 import {
   isAllowedPublicSearchRouteScope,
   isNgsPublicOrg,
@@ -1440,6 +1445,166 @@ async function getArtworksByIds(
   return new Map(artworks.map((artwork) => [artwork.id, artwork]));
 }
 
+export type NgaAttributionSearchScope = {
+  orgId?: string;
+  provider: 'nga';
+};
+
+export async function searchNgaAttributionMatches(
+  db: D1Database,
+  scope: NgaAttributionSearchScope,
+  intent: NgaAttributionIntent,
+  constraints: PublicSearchConstraints | undefined,
+  topK: number
+): Promise<ArtworkSearchResult[]> {
+  const targetTokens = searchQueryTokens(intent.targetText).slice(0, 8);
+  if (!targetTokens.length) return [];
+
+  const artistText = normalizedTextSql('artist');
+  const relationshipsText = normalizedTextSql(
+    `CASE
+      WHEN json_valid(custom_metadata)
+        THEN coalesce(json_extract(custom_metadata, '$.ngaArtists.relationships'), '')
+      ELSE ''
+    END`
+  );
+  const evidenceText = `(${artistText} || ${relationshipsText})`;
+  const targetQueries = targetTokens.map((token) => `% ${escapeLike(token)} %`);
+  const tokenScoreSql = targetQueries
+    .map(
+      () => `CASE WHEN ${evidenceText} LIKE ? ESCAPE '\\' THEN 10 ELSE 0 END`
+    )
+    .join(' + ');
+  const tokenWhereSql = targetQueries
+    .map(() => `${evidenceText} LIKE ? ESCAPE '\\'`)
+    .join(' AND ');
+  const orgFilter = scope.orgId ? 'AND org_id = ?' : '';
+  const providerFilter = providerSearchSql(scope.provider);
+  const structuredFilter = buildStructuredConstraintSql(constraints);
+  const approved: ArtworkSearchResult[] = [];
+  const pageSize = Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS);
+  let offset = 0;
+
+  while (approved.length < topK) {
+    const { results } = await db
+      .prepare(
+        `
+      SELECT
+        id,
+        org_id,
+        title,
+        artist,
+        year,
+        year_start,
+        year_end,
+        date_text,
+        medium,
+        medium_family,
+        classification,
+        subclassification,
+        visual_classification,
+        primary_artist_id,
+        culture,
+        origin,
+        dimensions_height,
+        dimensions_width,
+        dimensions_depth,
+        dimensions_unit,
+        description,
+        provenance,
+        credit_line,
+        rights,
+        accession_number,
+        source_url,
+        source_institution,
+        source_collection,
+        source_record_id,
+        field_sources,
+        dominant_colors,
+        color_palette,
+        citation,
+        image_url,
+        thumbnail_url,
+        custom_metadata,
+        (${tokenScoreSql}) AS match_score
+      FROM artworks
+      WHERE deleted_at IS NULL
+        ${orgFilter}
+        ${providerFilter}
+        ${backableSearchSql(scope.orgId)}
+        ${structuredFilter.sql}
+        AND ${tokenWhereSql}
+      ORDER BY match_score DESC, title COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?
+      `
+      )
+      .bind(
+        ...targetQueries,
+        ...(scope.orgId ? [scope.orgId] : []),
+        ...(scope.provider ? [scope.provider] : []),
+        ...structuredFilter.params,
+        ...targetQueries,
+        pageSize,
+        offset
+      )
+      .all<ArtworkMetadataSearchRow>();
+
+    if (!results.length) break;
+
+    for (const [index, artwork] of results.entries()) {
+      const similarity = Math.min(
+        Math.max(artwork.match_score / (targetQueries.length * 10), 0.01),
+        1
+      );
+      const mapped = mapSearchRow(artwork, similarity, [
+        {
+          channel: 'metadata',
+          label: 'NGA catalogue artist',
+          source:
+            'artworks.artist and custom_metadata.ngaArtists.relationships',
+          weight: 1,
+          rank: offset + index + 1,
+          score: similarity,
+        },
+      ]);
+      if (
+        constraints &&
+        !searchResultMatchesStructuredConstraints(mapped, constraints)
+      ) {
+        continue;
+      }
+      if (
+        !matchesNgaAttributionEvidence(
+          {
+            artist: mapped.artist,
+            primaryArtistId: mapped.metadata?.primaryArtistId,
+            ngaArtists: mapped.metadata?.ngaArtists,
+          },
+          intent
+        )
+      ) {
+        continue;
+      }
+      approved.push({
+        ...mapped,
+        metadata: {
+          ...(mapped.metadata || {}),
+          relationEvidence: {
+            verified: true,
+            source: 'catalogue_artist',
+          },
+        },
+      });
+      if (approved.length === topK) break;
+    }
+
+    offset += results.length;
+    if (results.length < pageSize) break;
+  }
+
+  return approved;
+}
+
 async function searchArtworksHybrid(
   env: Env,
   orgId: string | undefined,
@@ -1508,7 +1673,13 @@ async function searchArtworksHybrid(
       : metadataResults;
   }
 
-  const initialRoute = buildRoutedSearchPlan(query, forcedIntent, ngaPlanMode);
+  const routedPlan = buildRoutedSearchPlan(query, forcedIntent, ngaPlanMode);
+  const initialRoute = structuredConstraints?.artistIds?.length
+    ? {
+        ...routedPlan,
+        weights: { ...routedPlan.weights, caption: 0 },
+      }
+    : routedPlan;
   const metadataQuery = initialRoute.metadataQuery || query;
   const temporalFilter = parseTemporalFilter(metadataQuery);
   const jinaConfig = getJinaConfig(env);
@@ -2373,9 +2544,21 @@ searchRoutes.post('/search/text', async (c) => {
       provider === 'nga' &&
       (c.env as Env & { NGA_STRUCTURED_SEARCH_ENABLED?: string })
         .NGA_STRUCTURED_SEARCH_ENABLED !== 'false';
-    const ngaPlan = structuredSearchEnabled
+    const compiledNgaPlan = structuredSearchEnabled
       ? compileNgaSearchPlan(query, constraints)
       : undefined;
+    const ngaPlan = compiledNgaPlan?.relation
+      ? {
+          ...compiledNgaPlan,
+          relationEvidence: {
+            policy:
+              compiledNgaPlan.relation.kind === 'derived_from'
+                ? ('catalogue_derivation' as const)
+                : ('visible_subject' as const),
+            status: 'candidate' as const,
+          },
+        }
+      : compiledNgaPlan;
     const parsedInterpretation = structuredSearchEnabled
       ? parseNgaSearchIntent(query, constraints)
       : undefined;
@@ -2387,6 +2570,9 @@ searchRoutes.post('/search/text', async (c) => {
             ...(ngaPlan.relation
               ? { relation: ngaPlan.relation }
               : { relation: undefined }),
+            ...(ngaPlan.relationEvidence
+              ? { relationEvidence: ngaPlan.relationEvidence }
+              : { relationEvidence: undefined }),
           }
         : undefined;
     const constraintError = interpretation
@@ -2423,6 +2609,7 @@ searchRoutes.post('/search/text', async (c) => {
     const executeSearch = async (): Promise<SearchResponse> => {
       const exactFreeTextArtist =
         ngaPlan?.mode !== 'relational' &&
+        ngaPlan?.mode !== 'attribution' &&
         !facet &&
         (await hasExactArtistFacetMatch(
           c.env.DB,
@@ -2431,47 +2618,55 @@ searchRoutes.post('/search/text', async (c) => {
           retrievalQuery
         ));
       resolvedFacet = exactFreeTextArtist ? 'artist' : facet;
+      const retrievalTopK =
+        ngaPlan?.mode === 'relational' ? MAX_SEARCH_RESULTS : topK;
 
       const baseResults =
-        facet === 'artist'
-          ? await searchArtworksByArtistFacet(
+        ngaPlan?.mode === 'attribution' && ngaPlan.attribution
+          ? await searchNgaAttributionMatches(
               c.env.DB,
-              orgId,
-              provider,
-              retrievalQuery,
-              topK,
-              structuredConstraints
+              { orgId, provider: 'nga' },
+              ngaPlan.attribution,
+              structuredConstraints,
+              topK
             )
-          : facet === 'classification'
-            ? await searchArtworksByClassificationFacet(
+          : facet === 'artist'
+            ? await searchArtworksByArtistFacet(
                 c.env.DB,
                 orgId,
                 provider,
                 retrievalQuery,
-                topK,
+                retrievalTopK,
                 structuredConstraints
               )
-            : await searchArtworksHybrid(
-                c.env,
-                orgId,
-                provider,
-                retrievalQuery,
-                topK,
-                exactFreeTextArtist ? 'artist_exact' : undefined,
-                scheduleBackgroundWork,
-                degradedChannels,
-                structuredConstraints,
-                ngaPlan?.mode
-              );
+            : facet === 'classification'
+              ? await searchArtworksByClassificationFacet(
+                  c.env.DB,
+                  orgId,
+                  provider,
+                  retrievalQuery,
+                  retrievalTopK,
+                  structuredConstraints
+                )
+              : await searchArtworksHybrid(
+                  c.env,
+                  orgId,
+                  provider,
+                  retrievalQuery,
+                  retrievalTopK,
+                  exactFreeTextArtist ? 'artist_exact' : undefined,
+                  scheduleBackgroundWork,
+                  degradedChannels,
+                  structuredConstraints,
+                  ngaPlan?.mode
+                );
       const constrainedResults = structuredConstraints
-        ? baseResults
-            .filter((result) =>
-              searchResultMatchesStructuredConstraints(
-                result,
-                structuredConstraints
-              )
+        ? baseResults.filter((result) =>
+            searchResultMatchesStructuredConstraints(
+              result,
+              structuredConstraints
             )
-            .slice(0, topK)
+          )
         : baseResults;
       const enrichedResults = visualRefinement
         ? await rerankByVisualRefinement(
@@ -2482,22 +2677,42 @@ searchRoutes.post('/search/text', async (c) => {
             degradedChannels
           )
         : constrainedResults;
-      const finalResults = structuredConstraints
-        ? enrichedResults
-            .filter((result) =>
-              searchResultMatchesStructuredConstraints(
-                result,
-                structuredConstraints
-              )
+      const hydratedResults = structuredConstraints
+        ? enrichedResults.filter((result) =>
+            searchResultMatchesStructuredConstraints(
+              result,
+              structuredConstraints
             )
-            .slice(0, topK)
+          )
         : enrichedResults;
+      const finalResults = (
+        ngaPlan?.relation
+          ? filterNgaRelationEvidence(hydratedResults, ngaPlan)
+          : hydratedResults
+      ).slice(0, topK);
+      const responseInterpretation = interpretation
+        ? {
+            ...interpretation,
+            ...(ngaPlan?.relationEvidence
+              ? {
+                  relationEvidence: {
+                    ...ngaPlan.relationEvidence,
+                    status: finalResults.length
+                      ? ('verified' as const)
+                      : ('unverified' as const),
+                  },
+                }
+              : {}),
+          }
+        : undefined;
 
       return {
         results: finalResults,
         count: finalResults.length,
         queryTime: performance.now() - startTime,
-        ...(interpretation ? { interpretation } : {}),
+        ...(responseInterpretation
+          ? { interpretation: responseInterpretation }
+          : {}),
       };
     };
 
@@ -2542,6 +2757,8 @@ searchRoutes.post('/search/text', async (c) => {
                     version: ngaPlan.version,
                     mode: ngaPlan.mode,
                     relation: ngaPlan.relation || null,
+                    relationEvidencePolicy:
+                      ngaPlan.relationEvidence?.policy || null,
                   }
                 : null,
             }),
@@ -2555,9 +2772,20 @@ searchRoutes.post('/search/text', async (c) => {
           };
         },
       });
+      const cachedRelationEvidence =
+        cached.response.interpretation?.relationEvidence;
       searchResponse = {
         ...cached.response,
-        ...(interpretation ? { interpretation } : {}),
+        ...(interpretation
+          ? {
+              interpretation: {
+                ...interpretation,
+                ...(cachedRelationEvidence
+                  ? { relationEvidence: cachedRelationEvidence }
+                  : {}),
+              },
+            }
+          : {}),
       };
       cacheHeader = cached.disposition.toUpperCase();
       // A coalesced follower cannot observe the leader's degradation set, so
