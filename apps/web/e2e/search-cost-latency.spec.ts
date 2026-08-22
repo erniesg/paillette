@@ -194,6 +194,14 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   page,
 }) => {
   const { searches, spotlightRequests } = await installSearchHarness(page);
+  const observedSpotlightRequests: string[] = [];
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname.startsWith('/search-spotlights/nga/')
+    ) {
+      observedSpotlightRequests.push(request.url());
+    }
+  });
 
   const documentResponse = await openNgaSearchPage(page);
   expect(documentResponse?.headers()['link']).toContain(
@@ -213,8 +221,11 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   expect(spotlightRequests).toEqual([
     new URL(NGA_SEARCH_SPOTLIGHT_ASSET_PATH, page.url()).toString(),
   ]);
+  expect(observedSpotlightRequests).toEqual([
+    new URL(NGA_SEARCH_SPOTLIGHT_ASSET_PATH, page.url()).toString(),
+  ]);
   expect(
-    spotlightRequests.some((url) =>
+    observedSpotlightRequests.some((url) =>
       url.includes(PREVIOUS_NGA_SPOTLIGHT_PATH_PREFIX)
     )
   ).toBe(false);
