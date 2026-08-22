@@ -231,6 +231,34 @@ describe('buildPublicSearchResultCacheKey', () => {
     expect(targetKey).not.toBe(baseKey);
     expect(evidenceKey).not.toBe(baseKey);
   });
+
+  it.each(['-', '\u2013', '\u2014'])(
+    'uses one canonical cache identity when a %s-delimited range moves across attribution',
+    async (dash) => {
+      const prefixPlan = compileNgaSearchPlan(
+        `paintings from 1700${dash}1800 by Rembrandt`
+      );
+      const suffixPlan = compileNgaSearchPlan(
+        `paintings by Rembrandt from 1700${dash}1800`
+      );
+      const cacheIdentity = (ngaPlan: typeof prefixPlan) => ({
+        ...identity,
+        query: ngaPlan.retrievalQuery,
+        constraints: ngaPlan.constraints,
+        ngaPlan,
+      });
+
+      expect(suffixPlan.attribution).toEqual({
+        relationship: 'direct',
+        targetText: 'Rembrandt',
+      });
+      await expect(
+        buildPublicSearchResultCacheKey(cacheIdentity(suffixPlan))
+      ).resolves.toBe(
+        await buildPublicSearchResultCacheKey(cacheIdentity(prefixPlan))
+      );
+    }
+  );
 });
 
 describe('getOrLoadPublicSearchResult', () => {

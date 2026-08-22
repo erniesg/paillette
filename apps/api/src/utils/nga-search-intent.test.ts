@@ -204,6 +204,47 @@ describe('parseNgaSearchIntent', () => {
     }
   );
 
+  it.each(['-', '\u2013', '\u2014'])(
+    'compiles a %s-delimited date range equivalently before and after Rembrandt',
+    (dash) => {
+      const prefixQuery = `paintings from 1700${dash}1800 by Rembrandt`;
+      const suffixQuery = `paintings by Rembrandt from 1700${dash}1800`;
+      const suffixIntent = parseNgaSearchIntent(suffixQuery);
+
+      expect(suffixIntent.attribution).toEqual({
+        relationship: 'direct',
+        targetText: 'Rembrandt',
+      });
+      expect(suffixIntent.constraints).toEqual({
+        dateRange: { startYear: 1700, endYear: 1800 },
+        classifications: ['Painting'],
+      });
+      expect(compileNgaSearchPlan(suffixQuery)).toEqual(
+        compileNgaSearchPlan(prefixQuery)
+      );
+    }
+  );
+
+  it('keeps a multiword target and ordinary punctuation stable around a dash-delimited suffix range', () => {
+    const prefixQuery =
+      'paintings from 1700-1800 by Pierre-Auguste Renoir';
+    const suffixQuery =
+      'paintings!!! by Pierre-Auguste Renoir, from 1700\u20131800';
+    const suffixIntent = parseNgaSearchIntent(suffixQuery);
+
+    expect(suffixIntent.attribution).toEqual({
+      relationship: 'direct',
+      targetText: 'Pierre Auguste Renoir',
+    });
+    expect(suffixIntent.constraints).toEqual({
+      dateRange: { startYear: 1700, endYear: 1800 },
+      classifications: ['Painting'],
+    });
+    expect(compileNgaSearchPlan(suffixQuery)).toEqual(
+      compileNgaSearchPlan(prefixQuery)
+    );
+  });
+
   it('protects a numeric token inside a multiword artist name from exact-date parsing', () => {
     const intent = parseNgaSearchIntent('paintings by Master of 1518');
 

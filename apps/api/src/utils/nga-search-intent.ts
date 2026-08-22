@@ -418,21 +418,28 @@ const overlapsOccupiedSpan = (
   occupiedSpans.some((span) => start < span.end && end > span.start);
 
 const findAttributionConstraintSuffix = (
-  query: string,
+  normalized: NormalizedAttributionQuery,
+  originalQuery: string,
   targetStart: number
 ): number | null => {
-  const targetAndSuffix = query.slice(targetStart);
+  const targetAndSuffix = normalized.text.slice(targetStart);
   for (const boundary of targetAndSuffix.matchAll(
     /\b(?:in|from|before|after|between|around|circa|made|on)\b/giu
   )) {
     if (!boundary.index) continue;
-    const suffix = targetAndSuffix.slice(boundary.index);
+    const suffixStart = targetStart + boundary.index;
+    const originalSuffixStart = originalAttributionSpan(
+      normalized,
+      suffixStart,
+      suffixStart + boundary[0].length
+    ).start;
+    const suffix = originalQuery.slice(originalSuffixStart);
     const suffixIntent = parseNgaSearchIntentFlat(suffix);
     if (
       Object.keys(suffixIntent.constraints).length > 0 &&
       /^(?:(?:and|or|to)\s*)*$/.test(suffixIntent.semanticQuery)
     ) {
-      return targetStart + boundary.index;
+      return suffixStart;
     }
   }
   return null;
@@ -463,7 +470,8 @@ const parseNgaAttributionMatch = (
     let targetStart = marker.index + marker[0].length;
     while (normalized.text[targetStart] === ' ') targetStart += 1;
     const suffixStart = findAttributionConstraintSuffix(
-      normalized.text,
+      normalized,
+      query,
       targetStart
     );
     let targetEnd = suffixStart ?? normalized.text.length;
