@@ -4,6 +4,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import Papa from 'papaparse';
 
+import { buildNgaArtistMetadata } from './lib/nga-artist-metadata.mjs';
+import { NGA_SOURCE_COMMIT } from './lib/nga-artist-backfill.mjs';
+
 import {
   OPEN_ACCESS_PROVIDER_PRESETS,
   buildDryRunManifest,
@@ -41,6 +44,9 @@ const jinaTilesPerImage = Number.parseInt(
   10
 );
 const outPath = args.get('out');
+const ngaSourceCommit = String(args.get('nga-source-commit') || '').trim();
+const ngaDataUrl = (commit, filename) =>
+  `https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/${commit}/data/${filename}`;
 
 const fetchJson = async (url, init) => {
   const response = await fetch(url, init);
@@ -114,7 +120,12 @@ async function fetchMetSummary() {
   const normalizedSamples = records.map(normalizeMetArtwork).filter(Boolean);
   const skipped = records
     .map((record, index) =>
-      record ? null : { sourceRecordId: String(objectIds[index]), reason: 'met_object_detail_404' }
+      record
+        ? null
+        : {
+            sourceRecordId: String(objectIds[index]),
+            reason: 'met_object_detail_404',
+          }
     )
     .filter(Boolean);
 
@@ -237,14 +248,19 @@ async function fetchClevelandSummary() {
 }
 
 async function fetchNgaSummary() {
-  const [objects, images] = await Promise.all([
-    fetchCsv(
-      'https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects.csv'
-    ),
-    fetchCsv(
-      'https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/published_images.csv'
-    ),
-  ]);
+  if (ngaSourceCommit !== NGA_SOURCE_COMMIT) {
+    throw new Error(
+      `--nga-source-commit=${NGA_SOURCE_COMMIT} is required for the NGA provider`
+    );
+  }
+  const [objects, images, relationships, constituents, alternativeNames] =
+    await Promise.all([
+      fetchCsv(ngaDataUrl(ngaSourceCommit, 'objects.csv')),
+      fetchCsv(ngaDataUrl(ngaSourceCommit, 'published_images.csv')),
+      fetchCsv(ngaDataUrl(ngaSourceCommit, 'objects_constituents.csv')),
+      fetchCsv(ngaDataUrl(ngaSourceCommit, 'constituents.csv')),
+      fetchCsv(ngaDataUrl(ngaSourceCommit, 'constituents_altnames.csv')),
+    ]);
   const objectsById = new Map(
     objects
       .filter((object) => object.objectid)
@@ -253,6 +269,19 @@ async function fetchNgaSummary() {
   const objectIds = new Set();
   const objectIdsWithCaption = new Set();
   const normalizedSamples = [];
+
+  for (const image of images) {
+    if (String(image.openaccess).trim() !== '1') continue;
+    const objectId = String(image.depictstmsobjectid || '').trim();
+    if (objectId) objectIds.add(objectId);
+  }
+  const artistMetadata = buildNgaArtistMetadata({
+    relationships,
+    constituents,
+    alternativeNames,
+    requiredObjectIds: objectIds,
+  });
+  objectIds.clear();
 
   for (const image of images) {
     if (String(image.openaccess).trim() !== '1') continue;
@@ -276,6 +305,8 @@ async function fetchNgaSummary() {
       const normalized = normalizeNgaArtwork({
         object: objectsById.get(objectId),
         image,
+        artistMetadata,
+        artistMetadataSourceCommit: ngaSourceCommit,
       });
       if (normalized) normalizedSamples.push(normalized);
     }

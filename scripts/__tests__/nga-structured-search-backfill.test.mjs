@@ -2,12 +2,35 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildNgaArtistUpdateSql,
   buildStructuredMetadataUpdateSql,
   canonicalClassification,
   deriveMediumFamily,
   mergeAuthoritativeRecords,
   enrichVectorLine,
 } from '../lib/nga-structured-search-backfill.mjs';
+
+test('artist repair SQL cannot update unrelated columns', () => {
+  const sql = buildNgaArtistUpdateSql(
+    {
+      id: 'open-access-art:nga:38',
+      primaryArtistId: '123',
+      customMetadata: {
+        ngaArtists: {
+          sourceCommit: '79d114c2186ca38af27a9478717f1e509d799495',
+          relationships: [],
+        },
+      },
+      fieldSources: { primary_artist_id: 'nga.objects_constituents' },
+    },
+    'eabbf000-708e-4d4c-8ac8-966b59d4fcac'
+  );
+  const setClause = sql.slice(sql.indexOf('SET') + 3, sql.indexOf('WHERE'));
+  assert.deepEqual(
+    [...setClause.matchAll(/^\s*([a-z_]+)\s*=/gm)].map((match) => match[1]),
+    ['primary_artist_id', 'custom_metadata', 'field_sources', 'updated_at']
+  );
+});
 
 test('normalizes bounded NGA classification and medium vocabularies', () => {
   assert.equal(

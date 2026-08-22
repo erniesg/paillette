@@ -84,6 +84,7 @@ export function enrichVectorLine(line, record) {
 }
 
 const sqlString = (value) => `'${String(value).replaceAll("'", "''")}'`;
+export const sqlJsonLiteral = (value) => sqlString(JSON.stringify(value));
 const sqlNullableString = (value) => {
   const normalized = clean(value);
   return normalized ? sqlString(normalized) : 'NULL';
@@ -111,4 +112,42 @@ export function buildStructuredMetadataUpdateSql(record) {
   medium_family = ${sqlNullableString(mediumFamily)},
   primary_artist_id = ${sqlNullableString(record.primary_artist_id)}
 WHERE id = ${sqlString(record.id)};`;
+}
+
+export function buildNgaArtistUpdateSql(record, expectedOrgId) {
+  const id = String(record?.id || '');
+  const primaryArtistId = String(record?.primaryArtistId || '');
+  const orgId = String(expectedOrgId || '');
+  if (!/^open-access-art:nga:\d+$/.test(id)) {
+    throw new Error('artist update requires an exact NGA artwork ID');
+  }
+  if (!/^\d+$/.test(primaryArtistId)) {
+    throw new Error('artist update requires a decimal primaryArtistId');
+  }
+  if (!/^[a-f0-9-]{36}$/i.test(orgId)) {
+    throw new Error('artist update requires an expected organization ID');
+  }
+  const ngaArtists = record?.customMetadata?.ngaArtists;
+  if (!ngaArtists || typeof ngaArtists !== 'object') {
+    throw new Error('artist update requires customMetadata.ngaArtists');
+  }
+  if (record?.fieldSources?.primary_artist_id !== 'nga.objects_constituents') {
+    throw new Error('artist update requires authoritative field provenance');
+  }
+  const ngaArtistsLiteral = sqlJsonLiteral(ngaArtists);
+
+  return `UPDATE artworks SET
+  primary_artist_id = ${sqlString(primaryArtistId)},
+  custom_metadata = json_patch(coalesce(custom_metadata, '{}'), json(${sqlJsonLiteral({ ngaArtists })})),
+  field_sources = json_patch(coalesce(field_sources, '{}'), json(${sqlJsonLiteral({ primary_artist_id: 'nga.objects_constituents' })})),
+  updated_at = CURRENT_TIMESTAMP
+WHERE org_id = ${sqlString(orgId)}
+  AND json_extract(custom_metadata, '$.provider') = 'nga'
+  AND id LIKE 'open-access-art:nga:%'
+  AND id = ${sqlString(id)}
+  AND (
+    primary_artist_id IS NOT ${sqlString(primaryArtistId)}
+    OR json_extract(custom_metadata, '$.ngaArtists') IS NOT json(${ngaArtistsLiteral})
+    OR json_extract(field_sources, '$.primary_artist_id') IS NOT 'nga.objects_constituents'
+  );`;
 }
