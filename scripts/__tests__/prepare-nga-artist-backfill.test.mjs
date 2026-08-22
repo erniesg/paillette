@@ -358,6 +358,74 @@ test('preserves complete original D1 rows as a usable rollback source', () => {
   assert.notEqual(artifacts.rollbackD1Records, records);
 });
 
+test('preserves captured string-valued D1 JSON columns in rollback artifacts', () => {
+  const records = PILOT_OBJECT_IDS.map((id, index) =>
+    stagedRecord(id, {
+      primary_artist_id: null,
+      custom_metadata: JSON.stringify({ provider: 'nga', retained: index }),
+      field_sources: JSON.stringify({ title: 'nga.objects' }),
+    })
+  );
+  const vectors = records.map((row, index) => ({
+    id: row.id,
+    values: [index],
+    metadata: { artworkId: row.id, provider: 'nga' },
+  }));
+  const artistMetadata = new Map(
+    PILOT_OBJECT_IDS.map((id, index) => [
+      id,
+      { primaryArtistId: String(4000 + index), relationships: [] },
+    ])
+  );
+
+  const artifacts = buildNgaBackfillArtifacts({
+    phase: 'pilot',
+    expectedOrgId: ORG_ID,
+    stagedRecords: records,
+    sourceCandidateIds: new Set(PILOT_OBJECT_IDS),
+    artistMetadata,
+    vectors,
+  });
+
+  assert.deepEqual(artifacts.rollbackD1Records, records);
+  assert.equal(typeof artifacts.rollbackD1Records[0].custom_metadata, 'string');
+  assert.equal(typeof artifacts.rollbackD1Records[0].field_sources, 'string');
+});
+
+test('rejects malformed or non-object captured D1 JSON columns', () => {
+  const vectors = PILOT_OBJECT_IDS.map((id, index) => ({
+    id: `open-access-art:nga:${id}`,
+    values: [index],
+    metadata: { artworkId: `open-access-art:nga:${id}`, provider: 'nga' },
+  }));
+  const artistMetadata = new Map(
+    PILOT_OBJECT_IDS.map((id) => [
+      id,
+      { primaryArtistId: id, relationships: [] },
+    ])
+  );
+  const build = (override) =>
+    buildNgaBackfillArtifacts({
+      phase: 'pilot',
+      expectedOrgId: ORG_ID,
+      stagedRecords: PILOT_OBJECT_IDS.map((id, index) =>
+        stagedRecord(id, index === 0 ? override : {})
+      ),
+      sourceCandidateIds: new Set(PILOT_OBJECT_IDS),
+      artistMetadata,
+      vectors,
+    });
+
+  assert.throws(
+    () => build({ custom_metadata: '{not-json' }),
+    /malformed staged custom_metadata/i
+  );
+  assert.throws(
+    () => build({ field_sources: '[]' }),
+    /malformed staged field_sources/i
+  );
+});
+
 test('requires the pinned commit, five exact digests, and literal official headers', () => {
   const entries = Object.fromEntries(
     Object.entries(EXPECTED_NGA_SOURCE_SHA256).map(([filename, sha256]) => [

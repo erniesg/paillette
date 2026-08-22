@@ -98,28 +98,11 @@ const normalizeJsonRows = (value) => {
   throw new Error('staged-records JSON must contain an array of complete rows');
 };
 
-const parseJsonColumn = (value, field) => {
-  if (value === null || value === undefined || value === '') return {};
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error(`malformed staged ${field}`);
-  }
-};
-
 const normalizeStagedRecords = (payloads) => {
   const records = [];
   for (const payload of payloads) {
     for (const row of normalizeJsonRows(payload)) {
-      records.push({
-        ...row,
-        custom_metadata: parseJsonColumn(
-          row.custom_metadata,
-          'custom_metadata'
-        ),
-        field_sources: parseJsonColumn(row.field_sources, 'field_sources'),
-      });
+      records.push(structuredClone(row));
     }
   }
   return records;

@@ -560,6 +560,24 @@ export function enrichNgaArtistVector(vector, record) {
 const vectorArtworkId = (vector) =>
   String(vector?.metadata?.artworkId || vector?.id || '');
 
+const stagedJsonObject = (value, field, artworkId) => {
+  if (value === null || value === undefined || value === '') return {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // The field-specific error below is the stable public contract.
+    }
+  }
+  throw new Error(`malformed staged ${field} for ${artworkId}`);
+};
+
 export function buildNgaBackfillArtifacts({
   phase,
   expectedOrgId,
@@ -603,7 +621,13 @@ export function buildNgaBackfillArtifacts({
     if (staged.org_id !== expectedOrgId) {
       throw new Error(`unexpected organization for ${staged.id}`);
     }
-    if (staged.custom_metadata?.provider !== 'nga') {
+    const stagedCustomMetadata = stagedJsonObject(
+      staged.custom_metadata,
+      'custom_metadata',
+      staged.id
+    );
+    stagedJsonObject(staged.field_sources, 'field_sources', staged.id);
+    if (stagedCustomMetadata.provider !== 'nga') {
       throw new Error(`unexpected provider for ${staged.id}`);
     }
     const record = {

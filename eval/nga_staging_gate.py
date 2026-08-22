@@ -358,6 +358,39 @@ def canonical_json(value: Any) -> str:
     )
 
 
+def _semantic_d1_snapshot(row_value: Any) -> dict[str, Any] | None:
+    if not isinstance(row_value, Mapping):
+        return None
+    row = dict(row_value)
+    for field in ("custom_metadata", "field_sources"):
+        value = row.get(field)
+        if value is None or value == "":
+            parsed: Any = {}
+        elif isinstance(value, Mapping):
+            parsed = dict(value)
+        elif isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return None
+        else:
+            return None
+        if not isinstance(parsed, Mapping):
+            return None
+        row[field] = dict(parsed)
+    return row
+
+
+def _semantic_d1_snapshots_equal(left: Any, right: Any) -> bool:
+    normalized_left = _semantic_d1_snapshot(left)
+    normalized_right = _semantic_d1_snapshot(right)
+    return (
+        normalized_left is not None
+        and normalized_right is not None
+        and canonical_json(normalized_left) == canonical_json(normalized_right)
+    )
+
+
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -1742,8 +1775,10 @@ def evaluate_artist_data_evidence(
             or set(captured_vector_by_id) != captured_id_set
             or not captured_id_set.issubset(mapping_by_id)
             or any(
-                canonical_json(captured_d1_by_id.get(artwork_id))
-                != canonical_json(rollback_d1_by_id.get(artwork_id))
+                not _semantic_d1_snapshots_equal(
+                    captured_d1_by_id.get(artwork_id),
+                    rollback_d1_by_id.get(artwork_id),
+                )
                 or canonical_json(captured_vector_by_id.get(artwork_id))
                 != canonical_json(rollback_by_id.get(artwork_id))
                 for artwork_id in captured_id_set

@@ -3554,6 +3554,78 @@ class InventoryAndRelevanceTests(GateTestCase):
 
                 self.assertIn(expected_code, result["failureCodes"], result)
 
+    def test_capture_prepare_evaluator_lifecycle_accepts_normalized_d1_json_columns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, evidence_root)
+            rewrite_bound_artist_json(
+                evidence_root,
+                binding,
+                "rollback/d1-records.json",
+                lambda rows: [
+                    row.update(
+                        custom_metadata=json.loads(row["custom_metadata"]),
+                        field_sources=json.loads(row["field_sources"]),
+                    )
+                    for row in rows
+                ],
+            )
+            verification_path = (
+                evidence_root / binding["postApplyVerification"]["path"]
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            verification["artifactManifestSha256"] = binding[
+                "artifactManifest"
+            ]["sha256"]
+            verification_bytes = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_bytes)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_bytes
+            ).hexdigest()
+
+            result = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+
+            self.assertTrue(result["passed"], result)
+
+            rewrite_bound_artist_json(
+                evidence_root,
+                binding,
+                "rollback/d1-records.json",
+                lambda rows: rows[0].update(title="Unauthorized drift"),
+            )
+            verification = json.loads(
+                verification_path.read_text(encoding="utf-8")
+            )
+            verification["artifactManifestSha256"] = binding[
+                "artifactManifest"
+            ]["sha256"]
+            verification_bytes = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_bytes)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_bytes
+            ).hexdigest()
+
+            tampered = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertIn(
+                "artist_preflight_state_mismatch", tampered["failureCodes"]
+            )
+
     def test_artist_evidence_rejects_an_invented_manifest_digest(self):
         binding = deployment_identity()["artistDataBinding"]
         with tempfile.TemporaryDirectory() as directory:
