@@ -312,8 +312,35 @@ const unicodeSearchQueryTokens = (query: string) =>
       );
     });
 
-const unicodeSqlCandidatePattern = (token: string) =>
-  `% ${escapeLike(foldNgaEvidenceText(token))} %`;
+const NGA_LATIN_GLOB_EQUIVALENTS = new Map<string, string>(
+  NGA_LATIN_FOLD_GROUPS.filter(([replacement]) => replacement.length === 1)
+);
+const NGA_LATIN_GLOB_EXPANSIONS = NGA_LATIN_FOLD_GROUPS.filter(
+  ([replacement]) => replacement.length > 1
+);
+
+const sqliteGlobCharacterClass = (
+  character: string,
+  expansionEquivalents = ''
+) => {
+  const equivalents = NGA_LATIN_GLOB_EQUIVALENTS.get(character) || '';
+  return `[${character}${character.toLocaleUpperCase('en-US')}${equivalents}${expansionEquivalents}]`;
+};
+
+const unicodeSqlCandidatePattern = (token: string) => {
+  const folded = foldNgaEvidenceText(token);
+  const characterClasses: string[] = [];
+  for (let index = 0; index < folded.length; index += 1) {
+    const expansion = NGA_LATIN_GLOB_EXPANSIONS.find(([replacement]) =>
+      folded.startsWith(replacement, index)
+    );
+    characterClasses.push(
+      sqliteGlobCharacterClass(folded[index]!, expansion?.[1])
+    );
+    if (expansion) index += expansion[0].length - 1;
+  }
+  return `*${characterClasses.join('*')}*`;
+};
 
 const normalizeArtistFacetQuery = (query: string) =>
   normalizeSearchWords(
@@ -628,17 +655,6 @@ const normalizedTextSql = (expression: string) => {
 
   return `(' ' || lower(${normalized}) || ' ')`;
 };
-
-const normalizedNgaEvidenceSql = (expression: string) =>
-  NGA_LATIN_FOLD_GROUPS.reduce(
-    (sql, [replacement, characters]) =>
-      [...characters].reduce(
-        (foldedSql, character) =>
-          `replace(${foldedSql}, '${character}', '${replacement}')`,
-        sql
-      ),
-    normalizedTextSql(expression)
-  );
 
 const buildRoutedSearchPlan = (
   query: string,
@@ -1486,18 +1502,15 @@ export async function searchNgaAttributionMatches(
   const targetTokens = unicodeSearchQueryTokens(intent.targetText).slice(0, 8);
   if (!targetTokens.length) return [];
 
-  const artistText = normalizedNgaEvidenceSql('artist');
-  const relationshipsText = normalizedNgaEvidenceSql(
-    `CASE
+  const artistText = `coalesce(artist, '')`;
+  const relationshipsText = `(CASE
       WHEN json_valid(custom_metadata)
         THEN coalesce(json_extract(custom_metadata, '$.ngaArtists.relationships'), '')
       ELSE ''
-    END`
-  );
-  const evidenceText = `(${artistText} || ${relationshipsText})`;
+    END)`;
+  const evidenceText = `(${artistText} || ' ' || ${relationshipsText})`;
   const targetQueries = targetTokens.map(unicodeSqlCandidatePattern);
-  const buildTokenCandidateSql = () =>
-    `${evidenceText} LIKE ? ESCAPE '\\'`;
+  const buildTokenCandidateSql = () => `${evidenceText} GLOB ?`;
   const tokenScoreSql = targetQueries
     .map(() => `CASE WHEN ${buildTokenCandidateSql()} THEN 10 ELSE 0 END`)
     .join(' + ');

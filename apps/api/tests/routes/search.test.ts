@@ -163,18 +163,30 @@ const normalizeArtistForTest = (value: string | null) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const normalizeNgaCandidateForTest = (value: string) =>
-  ` ${value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLocaleLowerCase('en-US')
-    .replace(/[-,./()[\]_:;"'‘’]/gu, ' ')} `;
-
-const ngaCandidatePatternMatches = (value: string, pattern: unknown) => {
-  const literal = String(pattern)
-    .replace(/^%|%$/gu, '')
-    .replace(/\\([%_\\])/gu, '$1');
-  return value.includes(literal);
+const ngaGlobPatternMatches = (value: string, pattern: unknown) => {
+  const source = String(pattern);
+  let expression = '^';
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    if (character === '*') {
+      expression += '.*';
+      continue;
+    }
+    if (character === '?') {
+      expression += '.';
+      continue;
+    }
+    if (character === '[') {
+      const closing = source.indexOf(']', index + 1);
+      if (closing !== -1) {
+        expression += source.slice(index, closing + 1);
+        index = closing;
+        continue;
+      }
+    }
+    expression += character.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&');
+  }
+  return new RegExp(`${expression}$`, 'su').test(value);
 };
 
 class FakeStatement {
@@ -617,11 +629,9 @@ class FakeSearchDb {
           } catch {
             relationships = '';
           }
-          const evidence = normalizeNgaCandidateForTest(
-            `${row.artist || ''} ${relationships}`
-          );
+          const evidence = `${row.artist || ''} ${relationships}`;
           return scorePatterns.every((pattern) =>
-            ngaCandidatePatternMatches(evidence, pattern)
+            ngaGlobPatternMatches(evidence, pattern)
           );
         });
         const limit = Number(params[params.length - 2]);
