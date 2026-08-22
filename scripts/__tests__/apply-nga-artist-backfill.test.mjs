@@ -363,6 +363,38 @@ test('rejects rehashed SQL that changes unrelated columns or required guards', (
   }
 });
 
+test('rejects rehashed SQL with block comments or trailing assignment tokens', () => {
+  const sqlPath = 'sql/artist-0001.sql';
+  const mutations = [
+    (sql) =>
+      sql.replace(
+        '  updated_at = CURRENT_TIMESTAMP',
+        '  updated_at = CURRENT_TIMESTAMP /*'
+      ),
+    (sql) =>
+      sql.replace(
+        '  updated_at = CURRENT_TIMESTAMP',
+        '  updated_at = CURRENT_TIMESTAMP /* hand edit */'
+      ),
+    (sql) =>
+      sql.replace(
+        '  updated_at = CURRENT_TIMESTAMP',
+        '  updated_at = CURRENT_TIMESTAMP + 0'
+      ),
+  ];
+
+  for (const mutate of mutations) {
+    let artifact = createArtifacts();
+    const sql = readFileSync(join(artifact.root, sqlPath), 'utf8');
+    const mutatedSql = mutate(sql);
+    assert.notEqual(mutatedSql, sql, 'test mutation must alter its fixture');
+    artifact = replaceArtifact(artifact, sqlPath, mutatedSql);
+    const result = runApply(artifact);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /SQL.*(?:exact|generated|mutation|scope)/i);
+  }
+});
+
 test('rejects rehashed enriched and rollback vectors with duplicate or missing IDs', () => {
   let artifact = createArtifacts();
   const vectorPath = 'vectors/artist-0001.ndjson';
