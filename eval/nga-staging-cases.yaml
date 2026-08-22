@@ -3,8 +3,8 @@
   "expectedVersions": {
     "parser": "nga-v7",
     "plan": "nga-plan-v2",
-    "contract": "30",
-    "apiResultCache": "v9"
+    "contract": "31",
+    "apiResultCache": "v10"
   },
   "pilot": {
     "textCaseIds": [

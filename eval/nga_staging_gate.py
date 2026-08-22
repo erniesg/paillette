@@ -37,8 +37,8 @@ EVALUATOR_USER_AGENT = "Paillette-NGA-Staging-Gate/1.0"
 EXPECTED_VERSIONS = {
     "parser": "nga-v7",
     "plan": "nga-plan-v2",
-    "contract": "30",
-    "apiResultCache": "v9",
+    "contract": "31",
+    "apiResultCache": "v10",
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PLAYWRIGHT_COOLDOWN_SECONDS = 60

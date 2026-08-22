@@ -397,14 +397,50 @@ describe('NGA relation evidence', () => {
     ).toEqual({ verified: true, source: 'institution_metadata' });
   });
 
+  it('accepts busts only with object-specific sculpture context', () => {
+    const descriptions = [
+      'A plaster bust of the artist is placed near the window.',
+      'A bust of a man rests on a pedestal.',
+      'White busts of artists are arranged on a shelf.',
+    ];
+
+    descriptions.forEach((description, index) => {
+      expect(
+        classifyNgaRelationEvidence(
+          result(`bust-object-${index}`, {
+            metadata: { description },
+          }),
+          visibleRelation
+        )
+      ).toEqual({ verified: true, source: 'institution_metadata' });
+    });
+  });
+
+  it('does not confuse anatomical bust language with sculpture evidence', () => {
+    const descriptions = [
+      'Her rose-pink dress is belted under her bust and has long sleeves.',
+      'The neckline frames the bust of the woman.',
+      'Her bust on the right is bare.',
+    ];
+
+    descriptions.forEach((description, index) => {
+      expect(
+        classifyNgaRelationEvidence(
+          result(`anatomical-bust-${index}`, {
+            metadata: { description },
+          }),
+          visibleRelation
+        )
+      ).toEqual({ verified: false, source: null });
+    });
+  });
+
   it('requires caption subject evidence alongside image and caption channels', () => {
     const withChannels = (caption: string | null, ...channels: string[]) =>
       result(channels.join('-'), {
         metadata: {
           searchSources: channels.map((channel) => ({ channel })),
-          ...(caption
-            ? { generated_caption: { text: caption } }
-            : {}),
+          ...(caption ? { generated_caption: { text: caption } } : {}),
         },
       });
 

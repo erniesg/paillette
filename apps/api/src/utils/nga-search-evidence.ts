@@ -345,8 +345,6 @@ const CLASSIFICATION_PHRASES: Record<string, readonly string[]> = {
     'sculptures',
     'statue',
     'statues',
-    'bust',
-    'busts',
     'figurine',
     'figurines',
   ],
@@ -354,10 +352,56 @@ const CLASSIFICATION_PHRASES: Record<string, readonly string[]> = {
   'decorative art': ['decorative art', 'decorative arts'],
 };
 
+const SCULPTURAL_BUST_PRECEDING_TOKENS = new Set([
+  'bronze',
+  'carved',
+  'ceramic',
+  'clay',
+  'marble',
+  'plaster',
+  'portrait',
+  'sculpted',
+  'sculptural',
+  'sculpture',
+  'stone',
+  'terracotta',
+  'wooden',
+]);
+
+const SCULPTURAL_BUST_CONTEXT_TOKENS = new Set([
+  'carved',
+  'display',
+  'displayed',
+  'mounted',
+  'pedestal',
+  'plinth',
+  'sculpted',
+  'sculptural',
+  'sculpture',
+  'shelf',
+]);
+
+const containsSculpturalBust = (value: unknown) => {
+  const words = tokens(value);
+  return words.some((word, index) => {
+    if (word !== 'bust' && word !== 'busts') return false;
+    const previous = words[index - 1];
+    return (
+      (previous && SCULPTURAL_BUST_PRECEDING_TOKENS.has(previous)) ||
+      words
+        .slice(Math.max(0, index - 3), index + 9)
+        .some((token) => SCULPTURAL_BUST_CONTEXT_TOKENS.has(token))
+    );
+  });
+};
+
 const containsClassification = (value: unknown, classification: string) => {
   const normalized = fold(classification);
-  return (CLASSIFICATION_PHRASES[normalized] || [normalized]).some((phrase) =>
-    containsPhrase(value, phrase)
+  return (
+    (CLASSIFICATION_PHRASES[normalized] || [normalized]).some((phrase) =>
+      containsPhrase(value, phrase)
+    ) ||
+    (normalized === 'sculpture' && containsSculpturalBust(value))
   );
 };
 
