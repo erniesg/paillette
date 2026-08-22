@@ -34,10 +34,10 @@ EXPECTED_API_ORIGIN = "https://paillette-api-stg.berlayar.ai"
 EXPECTED_WEB_ORIGIN = "https://paillette-stg.berlayar.ai"
 EVALUATOR_USER_AGENT = "Paillette-NGA-Staging-Gate/1.0"
 EXPECTED_VERSIONS = {
-    "parser": "nga-v6",
-    "plan": "nga-plan-v1",
-    "contract": "28",
-    "apiResultCache": "v7",
+    "parser": "nga-v7",
+    "plan": "nga-plan-v2",
+    "contract": "29",
+    "apiResultCache": "v8",
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 PLAYWRIGHT_COOLDOWN_SECONDS = 60
@@ -46,8 +46,8 @@ MANUAL_RELEVANCE_MINIMUMS = {
     "mrr": 0.2,
     "ndcgAt10": 0.7,
 }
-PLAYWRIGHT_TEST_COUNT = 7
-PLAYWRIGHT_PUBLIC_SEARCH_REQUEST_BUDGET = 6
+PLAYWRIGHT_TEST_COUNT = 9
+PLAYWRIGHT_PUBLIC_SEARCH_REQUEST_BUDGET = 8
 PILOT_TEXT_CASE_IDS = (
     "relation-active-depicts",
     "relation-passive-depicts",
@@ -66,6 +66,8 @@ PLAYWRIGHT_SCREENSHOTS = (
     "04-live-same-name.png",
     "05-controlled-replacement-ownership.png",
     "06-invalid-upload-preserves-results.png",
+    "08-direct-artist-attribution.png",
+    "09-derived-verified-empty.png",
     "07-ngs-locked.png",
 )
 PLAYWRIGHT_SPEC_TITLES = (
@@ -75,6 +77,8 @@ PLAYWRIGHT_SPEC_TITLES = (
     "separate live same-filename image requests execute distinctly",
     "controlled out-of-order image responses keep replacement result ownership",
     "invalid uploads preserve prior results and expose an alert",
+    "direct artist attribution returns the pinned primary-artist fixture",
+    "derived relation empty state reports unverified catalogue evidence",
     "NGS stays visibly locked and sends no public-search request",
 )
 PLAYWRIGHT_SPEC_IDS = (
@@ -84,6 +88,8 @@ PLAYWRIGHT_SPEC_IDS = (
     "d1c3b58c6b8000469ec5-5aeb23a432ab4df1c50c",
     "d1c3b58c6b8000469ec5-1788ccaa5c6cbf7ba7ef",
     "d1c3b58c6b8000469ec5-b87deb1a9d50a0245a51",
+    "d1c3b58c6b8000469ec5-0f940651da0b878f8942",
+    "d1c3b58c6b8000469ec5-9d59bbae641205ec3b17",
     "d1c3b58c6b8000469ec5-00841a90e29eb411d3b7",
 )
 PLAYWRIGHT_ARTIFACT_DIRECTORIES = (
@@ -93,6 +99,8 @@ PLAYWRIGHT_ARTIFACT_DIRECTORIES = (
     "nga-staging-gate-anonymous-60fa1-requests-execute-distinctly-nga-staging-chrome",
     "nga-staging-gate-anonymous-9934e-eplacement-result-ownership-nga-staging-chrome",
     "nga-staging-gate-anonymous-f48c0-results-and-expose-an-alert-nga-staging-chrome",
+    "nga-staging-gate-anonymous-9855a-nned-primary-artist-fixture-nga-staging-chrome",
+    "nga-staging-gate-anonymous-6806a-verified-catalogue-evidence-nga-staging-chrome",
     "nga-staging-gate-anonymous-9b265-ds-no-public-search-request-nga-staging-chrome",
 )
 PLAYWRIGHT_PROJECT_NAME = "nga-staging-chrome"
@@ -248,6 +256,53 @@ def validate_staging_origins(api_base_url: str, web_base_url: str) -> None:
     _validate_origin(web_base_url, EXPECTED_WEB_ORIGIN, "web base URL")
 
 
+def _evaluate_artist_data_binding(identity: Mapping[str, Any]) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    value = identity.get("artistDataBinding")
+    if not isinstance(value, Mapping):
+        return _result([_failure("artist_data_identity_incomplete")])
+
+    mapping_value = value.get("mapping")
+    mapping = mapping_value if isinstance(mapping_value, Mapping) else {}
+    vectors_value = value.get("vectorValues")
+    vectors = vectors_value if isinstance(vectors_value, Mapping) else {}
+    production_value = value.get("productionIdentity")
+    production = (
+        production_value if isinstance(production_value, Mapping) else {}
+    )
+    hash_fields = (
+        value.get("backfillManifestSha256"),
+        mapping.get("sha256"),
+        vectors.get("hashesSha256"),
+        vectors.get("originalSha256"),
+        vectors.get("enrichedSha256"),
+        production.get("beforeSha256"),
+        production.get("afterSha256"),
+    )
+    valid_hashes = all(
+        isinstance(item, str) and re.fullmatch(r"[a-f0-9]{64}", item)
+        for item in hash_fields
+    )
+    valid = (
+        value.get("schemaVersion") == "nga-artist-data-binding-v1"
+        and type(mapping.get("count")) is int
+        and mapping.get("count") > 0
+        and vectors.get("count") == mapping.get("count")
+        and valid_hashes
+        and vectors.get("preserved") is True
+        and vectors.get("originalSha256") == vectors.get("enrichedSha256")
+    )
+    if not valid:
+        failures.append(_failure("artist_data_identity_invalid"))
+    if (
+        isinstance(production.get("beforeSha256"), str)
+        and isinstance(production.get("afterSha256"), str)
+        and production.get("beforeSha256") != production.get("afterSha256")
+    ):
+        failures.append(_failure("production_artist_data_identity_changed"))
+    return _result(failures, binding=value)
+
+
 def evaluate_deployment_binding(
     identity: Mapping[str, Any], *, snapshot: str, evaluator_git_sha: str
 ) -> dict[str, Any]:
@@ -352,12 +407,17 @@ def evaluate_deployment_binding(
                     actual=deployed_versions,
                 )
             )
+        artist_data = _evaluate_artist_data_binding(identity)
+        failures.extend(artist_data["failures"])
+    else:
+        artist_data = _result([], binding=identity.get("artistDataBinding"))
     return _result(
         failures,
         snapshot=snapshot,
         evaluatorGitSha=evaluator_git_sha,
         deploymentIdentityHash=sha256_json(identity),
         deployedVersions=deployed_versions,
+        artistDataBinding=artist_data,
         identity=identity,
     )
 
@@ -667,6 +727,82 @@ def inspect_row(
     return violations
 
 
+ATTRIBUTION_ROLE_MARKERS = {
+    "after": ("after",),
+    "attributed_to": ("attributed to", "attributed"),
+    "workshop_of": ("workshop of",),
+    "studio_of": ("studio of",),
+    "circle_of": ("circle of",),
+    "school_of": ("school of",),
+    "follower_of": ("follower of",),
+}
+
+
+def _row_proves_attribution(
+    row: Mapping[str, Any], attribution: Mapping[str, Any]
+) -> bool:
+    metadata_value = row.get("metadata")
+    metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
+    artists_value = metadata.get("ngaArtists")
+    artists = artists_value if isinstance(artists_value, Mapping) else {}
+    relationships_value = artists.get("relationships")
+    relationships = relationships_value if isinstance(relationships_value, list) else []
+    relationship_kind = attribution.get("relationship")
+    target_tokens = set(fold(attribution.get("targetText")).split())
+    if not target_tokens or relationship_kind not in {
+        "direct",
+        *ATTRIBUTION_ROLE_MARKERS,
+    }:
+        return False
+
+    for value in relationships:
+        relationship = value if isinstance(value, Mapping) else {}
+        constituent_id = relationship.get("constituentId")
+        names = [
+            relationship.get("preferredDisplayName"),
+            relationship.get("forwardDisplayName"),
+        ]
+        alternatives = relationship.get("alternativeNames")
+        if isinstance(alternatives, list):
+            names.extend(alternatives)
+        names_match = any(
+            isinstance(name, str)
+            and target_tokens.issubset(set(fold(name).split()))
+            for name in names
+        )
+        if (
+            relationship.get("roleType") != "artist"
+            or not isinstance(constituent_id, str)
+            or re.fullmatch(r"\d+", constituent_id) is None
+            or not names_match
+        ):
+            continue
+        role_text = fold(
+            " ".join(
+                str(relationship.get(field) or "")
+                for field in ("prefix", "role", "suffix")
+            )
+        )
+        if relationship_kind == "direct":
+            has_qualified_marker = any(
+                f" {marker} " in f" {role_text} "
+                for markers in ATTRIBUTION_ROLE_MARKERS.values()
+                for marker in markers
+            )
+            if (
+                not has_qualified_marker
+                and metadata.get("primaryArtistId") == constituent_id
+            ):
+                return True
+            continue
+        if any(
+            f" {marker} " in f" {role_text} "
+            for marker in ATTRIBUTION_ROLE_MARKERS[str(relationship_kind)]
+        ):
+            return True
+    return False
+
+
 def _failure(code: str, **details: Any) -> dict[str, Any]:
     return {"code": code, **details}
 
@@ -795,6 +931,17 @@ def evaluate_declared_interpretation(
             )
         )
 
+    expected_attribution = expected.get("attribution")
+    actual_attribution = interpretation.get("attribution")
+    if "attribution" in expected and actual_attribution != expected_attribution:
+        failures.append(
+            _failure(
+                "attribution_interpretation_mismatch",
+                expected=expected_attribution,
+                actual=actual_attribution,
+            )
+        )
+
     unresolved = interpretation.get("unresolved")
     expects_unresolved = expected.get("unresolved") is True
     if expects_unresolved:
@@ -817,6 +964,7 @@ def evaluate_declared_interpretation(
         parserVersion=parser_version,
         constraints=actual_constraints,
         relation=actual_relation,
+        attribution=actual_attribution,
         unresolved=unresolved,
     )
 
@@ -853,6 +1001,10 @@ def evaluate_text_case(
     failures.extend(interpretation_evaluation["failures"])
     parser_version = interpretation_evaluation["parserVersion"]
     actual_constraints = interpretation_evaluation["constraints"]
+    expected_value = case.get("expected")
+    expected = expected_value if isinstance(expected_value, Mapping) else {}
+    expected_relation = expected.get("relation")
+    expected_attribution = expected.get("attribution")
 
     row_records = []
     for rank, row_value in enumerate(rows, 1):
@@ -867,6 +1019,53 @@ def evaluate_text_case(
                     rank=rank,
                     artworkId=row_value.get("id"),
                     violations=violations,
+                )
+            )
+        metadata_value = row_value.get("metadata")
+        metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
+        row_evidence_value = metadata.get("relationEvidence")
+        row_evidence = (
+            row_evidence_value
+            if isinstance(row_evidence_value, Mapping)
+            else {}
+        )
+        if isinstance(expected_relation, Mapping):
+            expected_sources = (
+                {"institution_metadata"}
+                if expected_relation.get("kind") == "derived_from"
+                else {"institution_metadata", "image_caption_agreement"}
+            )
+            if (
+                row_evidence.get("verified") is not True
+                or row_evidence.get("source") not in expected_sources
+            ):
+                failures.append(
+                    _failure(
+                        "unverified_relation_row",
+                        rank=rank,
+                        artworkId=row_value.get("id"),
+                    )
+                )
+        if isinstance(expected_attribution, Mapping) and (
+            row_evidence.get("verified") is not True
+            or row_evidence.get("source") != "catalogue_artist"
+        ):
+            failures.append(
+                _failure(
+                    "unverified_attribution_row",
+                    rank=rank,
+                    artworkId=row_value.get("id"),
+                )
+            )
+        if isinstance(expected_attribution, Mapping) and not _row_proves_attribution(
+            row_value, expected_attribution
+        ):
+            failures.append(
+                _failure(
+                    "attribution_hard_filter_violation",
+                    rank=rank,
+                    artworkId=row_value.get("id"),
+                    expected=expected_attribution,
                 )
             )
         row_records.append(
@@ -922,6 +1121,48 @@ def evaluate_text_case(
 
     if case.get("expectedZeroResults") is True and rows:
         failures.append(_failure("expected_zero_results", actual=len(rows)))
+    relation_evidence_value = interpretation.get("relationEvidence")
+    relation_evidence = (
+        relation_evidence_value
+        if isinstance(relation_evidence_value, Mapping)
+        else {}
+    )
+    if isinstance(expected_relation, Mapping):
+        expected_policy = (
+            "catalogue_derivation"
+            if expected_relation.get("kind") == "derived_from"
+            else "visible_subject"
+        )
+        expected_status = "verified" if rows else "unverified"
+        if (
+            relation_evidence.get("policy") != expected_policy
+            or relation_evidence.get("status") != expected_status
+        ):
+            failures.append(
+                _failure(
+                    "relation_evidence_status_mismatch",
+                    expected={
+                        "policy": expected_policy,
+                        "status": expected_status,
+                    },
+                    actual=relation_evidence_value,
+                )
+            )
+    if case.get("expectedVerifiedEmpty") is True:
+        if rows:
+            failures.append(
+                _failure("unsupported_derived_relation_row", actual=len(rows))
+            )
+        if (
+            not isinstance(expected_relation, Mapping)
+            or expected_relation.get("kind") != "derived_from"
+            or relation_evidence
+            != {
+                "policy": "catalogue_derivation",
+                "status": "unverified",
+            }
+        ):
+            failures.append(_failure("derived_verified_empty_evidence_mismatch"))
     failures.extend(_evaluate_minimum_results(case, len(row_records)))
 
     return _result(
@@ -932,6 +1173,8 @@ def evaluate_text_case(
         interpretation=interpretation,
         constraints=actual_constraints,
         relation=interpretation_evaluation["relation"],
+        attribution=interpretation_evaluation["attribution"],
+        relationEvidence=relation_evidence_value,
         cache=cache_state or None,
         cacheControl=cache_control,
         etag=etag,
@@ -1458,16 +1701,29 @@ def select_cases(inventory: Mapping[str, Any], phase: str) -> dict[str, Any]:
     }
 
 
-def score_manual_relevance(labels: Sequence[int]) -> dict[str, float]:
+def compute_relevance_metrics(
+    labels: Sequence[int], *, strong_threshold: int = 2
+) -> dict[str, float | int]:
     if not isinstance(labels, Sequence) or isinstance(labels, (str, bytes)):
         raise ValueError("human relevance labels must be a sequence")
     if any(type(label) is not int or label < 0 or label > 3 for label in labels):
         raise ValueError("human relevance labels must be integers from 0 to 3")
     if not labels:
         raise ValueError("at least one human relevance label is required")
+    if type(strong_threshold) is not int or not 1 <= strong_threshold <= 3:
+        raise ValueError("strong relevance threshold must be an integer from 1 to 3")
     top_five = list(labels[:5])
     precision_at_five = sum(label > 0 for label in top_five) / 5
+    strong_results_at_five = sum(label >= strong_threshold for label in top_five)
     first_relevant = next((index for index, label in enumerate(labels, 1) if label > 0), None)
+    first_strong = next(
+        (
+            index
+            for index, label in enumerate(labels, 1)
+            if label >= strong_threshold
+        ),
+        None,
+    )
     mrr = 0.0 if first_relevant is None else 1 / first_relevant
     top_ten = list(labels[:10])
     dcg = sum(
@@ -1481,9 +1737,44 @@ def score_manual_relevance(labels: Sequence[int]) -> dict[str, float]:
     )
     return {
         "precisionAt5": precision_at_five,
+        "strongPrecisionAt5": strong_results_at_five / 5,
+        "strongResultsAt5": strong_results_at_five,
+        "strongResultCount": sum(
+            label >= strong_threshold for label in labels
+        ),
         "mrr": mrr,
+        "strongMrr": 0.0 if first_strong is None else 1 / first_strong,
         "ndcgAt10": 0.0 if idcg == 0 else dcg / idcg,
     }
+
+
+def score_manual_relevance(labels: Sequence[int]) -> dict[str, float | int]:
+    return compute_relevance_metrics(labels, strong_threshold=2)
+
+
+def evaluate_strong_relevance(
+    metrics: Mapping[str, Any], *, minimum_strong_results: int = 1
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    if type(minimum_strong_results) is not int or minimum_strong_results < 1:
+        return _result([_failure("invalid_strong_relevance_minimum")])
+    actual = metrics.get("strongResultsAt5")
+    precision = metrics.get("strongPrecisionAt5")
+    if type(actual) is not int or type(precision) not in {int, float}:
+        failures.append(_failure("strong_relevance_metrics_incomplete"))
+    elif actual < minimum_strong_results:
+        failures.append(
+            _failure(
+                "strong_relevance_threshold_not_met",
+                expectedMinimum=minimum_strong_results,
+                actual=actual,
+            )
+        )
+    return _result(
+        failures,
+        minimumStrongResults=minimum_strong_results,
+        metrics=metrics,
+    )
 
 
 def make_manual_grading_template(
@@ -1492,7 +1783,11 @@ def make_manual_grading_template(
     return {
         "caseId": case_id,
         "status": "manual_review_required",
-        "instructions": "Assign each relevance field an integer 0-3; do not infer it from similarity.",
+        "instructions": (
+            "Assign each relevance field an integer 0-3; do not infer it from "
+            "similarity. Grades 2-3 are strong; grade 1 is weak and cannot "
+            "satisfy the strong-result gate."
+        ),
         "results": [
             {
                 "rank": rank,
@@ -1552,7 +1847,15 @@ def summarize_manual_relevance(
         ]
         by_case[case_id] = score_manual_relevance(labels)
 
-    metric_names = ("precisionAt5", "mrr", "ndcgAt10")
+    metric_names = (
+        "precisionAt5",
+        "strongPrecisionAt5",
+        "strongResultsAt5",
+        "strongResultCount",
+        "mrr",
+        "strongMrr",
+        "ndcgAt10",
+    )
     macro = {
         metric: sum(metrics[metric] for metrics in by_case.values()) / len(by_case)
         for metric in metric_names
@@ -1638,6 +1941,14 @@ def evaluate_manual_relevance_completion(
                         actual=actual,
                     )
                 )
+        strong_gate = evaluate_strong_relevance(
+            case_metrics,
+            minimum_strong_results=1,
+        )
+        failures.extend(
+            {**failure, "caseId": case_id}
+            for failure in strong_gate["failures"]
+        )
     return _result(failures, summary=summary)
 
 
@@ -1769,7 +2080,15 @@ def evaluate_pilot_inspection(
                 actual=sorted(by_case),
             )
         )
-    metric_names = ("precisionAt5", "mrr", "ndcgAt10")
+    metric_names = (
+        "precisionAt5",
+        "strongPrecisionAt5",
+        "strongResultsAt5",
+        "strongResultCount",
+        "mrr",
+        "strongMrr",
+        "ndcgAt10",
+    )
     metric_sets = [macro, *[value for value in by_case.values() if isinstance(value, Mapping)]]
     if (
         len(metric_sets) != len(PILOT_RELATION_CASE_IDS) + 1
@@ -3866,9 +4185,9 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "failureCount": len(all_failures),
         "gateFailures": all_failures,
         "limitations": [
-            "Relation relevance requires independent 0-3 human labels; similarity is never used as truth.",
+            "Relation relevance requires independent 0-3 human labels; similarity is never used as truth, and grade 1 remains weak rather than strong relevance.",
             "NGS non-upstream contact is inferred from the public proxy's scope-forbidden response and is also checked in the browser gate.",
-            "Official NGA objects_constituents identifies primary artists for the pinned works, but the shipped objects.csv ingestion does not join that relation and staged evidence has null primaryArtistId; the positive constrained artist case therefore remains an explicit launch-blocking unsupported capability until ingestion is repaired.",
+            "The artist-data gate binds the full Task 2 manifest, mapping, preserved image-vector values, and unchanged production identity; it does not authorize or perform the backfill.",
             "Local evaluator versions and deployed API/web identity are reported separately; candidate evaluation requires Task 7 to supply exact deployment IDs, version IDs, and Git SHAs.",
             "Semantic text-plus-image fusion is intentionally out of scope.",
         ],

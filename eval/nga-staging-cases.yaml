@@ -1,10 +1,10 @@
 {
   "schemaVersion": "nga-staging-gate-v1",
   "expectedVersions": {
-    "parser": "nga-v6",
-    "plan": "nga-plan-v1",
-    "contract": "28",
-    "apiResultCache": "v7"
+    "parser": "nga-v7",
+    "plan": "nga-plan-v2",
+    "contract": "29",
+    "apiResultCache": "v8"
   },
   "pilot": {
     "textCaseIds": [
@@ -297,13 +297,171 @@
       "id": "attribution-after-person",
       "category": "artist-attribution",
       "query": "painting after Rembrandt",
-      "expected": {"constraints": {"classifications": ["Painting"]}, "semanticQuery": "after rembrandt attribution", "relation": null}
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "after rembrandt attribution",
+        "relation": null,
+        "attribution": {"relationship": "after", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
     },
     {
       "id": "attribution-academic",
       "category": "artist-attribution",
       "query": "drawings attributed to Rembrandt",
-      "expected": {"constraints": {"classifications": ["Drawing"]}, "relation": null}
+      "expected": {
+        "constraints": {"classifications": ["Drawing"]},
+        "semanticQuery": "rembrandt",
+        "relation": null,
+        "attribution": {"relationship": "attributed_to", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-direct-multiword",
+      "category": "artist-multiword",
+      "query": "paintings by Lavinia Fontana",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "lavinia fontana",
+        "attribution": {"relationship": "direct", "targetText": "Lavinia Fontana"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-direct-case-punctuation",
+      "category": "artist-case-punctuation-dash",
+      "query": "PAINTINGS BY LAVINIA FONTANA!",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "lavinia fontana",
+        "attribution": {"relationship": "direct", "targetText": "LAVINIA FONTANA"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-direct-dash-combined",
+      "category": "artist-combined-constraints",
+      "query": "paintings by Lavinia Fontana—before 1700",
+      "expected": {
+        "constraints": {
+          "dateRange": {"startYear": 1000, "endYear": 1699},
+          "classifications": ["Painting"]
+        },
+        "semanticQuery": "lavinia fontana",
+        "attribution": {"relationship": "direct", "targetText": "Lavinia Fontana"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-after-accented-multiword",
+      "category": "artist-multiword",
+      "query": "painting after José de Ribera",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "after jose de ribera attribution",
+        "attribution": {"relationship": "after", "targetText": "José de Ribera"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-workshop-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the workshop of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "workshop_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-studio-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the studio of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "studio_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-circle-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the circle of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "circle_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-school-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the school of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "school_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-follower-role",
+      "category": "artist-attribution-role",
+      "query": "paintings by a follower of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "follower_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-negated-control",
+      "category": "artist-ambiguity-control",
+      "query": "paintings not by Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "not rembrandt",
+        "attribution": null
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-multiple-target-control",
+      "category": "artist-ambiguity-control",
+      "query": "paintings by Rembrandt or Frans Hals",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt or frans hals",
+        "attribution": {"relationship": "direct", "targetText": "Rembrandt or Frans Hals"}
+      },
+      "expectedZeroResults": true
+    },
+    {
+      "id": "visible-relation-strong-tail",
+      "category": "visible-relation-weak-tail",
+      "query": "painting showing a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "derived-photograph-drawing-verified-empty",
+      "category": "derived-verified-empty",
+      "query": "photograph used as basis for drawing",
+      "expected": {
+        "constraints": {"classifications": ["Drawing"]},
+        "semanticQuery": "drawing based on photograph",
+        "relation": {"kind": "derived_from", "workClassification": "Drawing", "sourceClassification": "Photograph"}
+      },
+      "expectedVerifiedEmpty": true
     },
     {
       "id": "academic-user-phrasing",
@@ -439,7 +597,16 @@
       "filename": "nga-query.jpg",
       "constraints": {"artistIds": ["1364"]},
       "minimumResults": 1,
-      "capabilityFailure": "artist_constraint_capability_unproven"
+      "targetExpectation": {"policy": "required", "maxRank": 3}
+    },
+    {
+      "id": "image-artist-wrong-primary",
+      "category": "image-artist-primary-control",
+      "fixtureId": "open-access-art:nga:131994",
+      "filename": "nga-query.jpg",
+      "constraints": {"artistIds": ["1974"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "excluded"}
     }
   ]
 }

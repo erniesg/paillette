@@ -10,10 +10,13 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { NgaStagingRequestBudget } from './support/nga-staging-request-budget';
+import {
+  NGA_STAGING_LIVE_REQUEST_BUDGET,
+  NgaStagingRequestBudget,
+} from './support/nga-staging-request-budget';
 
 const STAGING_ORIGIN = 'https://paillette-stg.berlayar.ai';
-const LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = 6;
+const LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = NGA_STAGING_LIVE_REQUEST_BUDGET;
 const publicSearchBudget = new NgaStagingRequestBudget<Request>(
   LIVE_PUBLIC_SEARCH_REQUEST_BUDGET
 );
@@ -194,6 +197,7 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
     publicSearchBudget.assertLiveWithinBudget();
     const summary = publicSearchBudget.summary();
     expect(summary.mocked).toBe(2);
+    expect(summary.live).toBe(LIVE_PUBLIC_SEARCH_REQUEST_BUDGET);
     expect(summary.total).toBe(summary.live + summary.mocked);
   });
 
@@ -300,13 +304,13 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
       ({ url, method }) => url.endsWith('/nga/image') && method === 'POST'
     );
     expect(imageFormRequests).toHaveLength(1);
-    expect(JSON.parse(imageFormRequests[0]?.fields.constraints || '{}')).toEqual(
-      {
-        dateRange: { startYear: 1000, endYear: 1799 },
-        classifications: ['Painting'],
-        mediumFamilies: ['oil'],
-      }
-    );
+    expect(
+      JSON.parse(imageFormRequests[0]?.fields.constraints || '{}')
+    ).toEqual({
+      dateRange: { startYear: 1000, endYear: 1799 },
+      classifications: ['Painting'],
+      mediumFamilies: ['oil'],
+    });
     expect(JSON.stringify(imageFormRequests[0]?.fields)).not.toContain(
       'oil paintings before 1800'
     );
@@ -488,6 +492,49 @@ test.describe.serial('anonymous NGA staging browser gate', () => {
       testInfo,
       '06-invalid-upload-preserves-results'
     );
+  });
+
+  test('direct artist attribution returns the pinned primary-artist fixture', async ({
+    page,
+  }, testInfo) => {
+    const requests = publicSearchRequests(page);
+    await openNga(page);
+    await submitText(page, 'paintings by Lavinia Fontana');
+
+    await expect(page.getByText('By · Lavinia Fontana')).toBeVisible();
+    await expect(
+      page.getByText('Self-Portrait before a Painting of "Amor Fedele"', {
+        exact: true,
+      })
+    ).toBeVisible({ timeout: 30_000 });
+    expect(
+      requests.filter(({ url }) => url.endsWith('/nga/text'))
+    ).toHaveLength(1);
+    await attachScreenshot(page, testInfo, '08-direct-artist-attribution');
+  });
+
+  test('derived relation empty state reports unverified catalogue evidence', async ({
+    page,
+  }, testInfo) => {
+    const requests = publicSearchRequests(page);
+    await openNga(page);
+    await submitText(page, 'photograph used as basis for drawing');
+
+    await expect(
+      page.getByText('No catalogue-verified matches.')
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        'The indexed NGA catalogue does not verify this historical relationship.'
+      )
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Lower threshold' })
+    ).toHaveCount(0);
+    expect(
+      requests.filter(({ url }) => url.endsWith('/nga/text'))
+    ).toHaveLength(1);
+    await attachScreenshot(page, testInfo, '09-derived-verified-empty');
   });
 
   test('NGS stays visibly locked and sends no public-search request', async ({

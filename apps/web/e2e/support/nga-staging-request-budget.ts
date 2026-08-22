@@ -4,6 +4,9 @@ export type NgaStagingRequestSummary = {
   mocked: number;
 };
 
+export const NGA_STAGING_EXPECTED_TEST_COUNT = 9;
+export const NGA_STAGING_LIVE_REQUEST_BUDGET = 8;
+
 export class NgaStagingRequestBudget<Request extends object> {
   private readonly observed: Request[] = [];
   private readonly mocked = new WeakSet<Request>();

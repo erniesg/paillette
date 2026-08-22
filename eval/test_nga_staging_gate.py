@@ -68,7 +68,7 @@ def passing_response(row=None, *, relation=None, constraints=None):
     if constraints is None:
         constraints = {}
     interpretation = {
-        "parserVersion": "nga-v6",
+        "parserVersion": "nga-v7",
         "originalQuery": "painting showing a sculpture",
         "semanticQuery": "depicting sculpture",
         "constraints": constraints,
@@ -77,6 +77,20 @@ def passing_response(row=None, *, relation=None, constraints=None):
     }
     if relation is not None:
         interpretation["relation"] = relation
+        interpretation["relationEvidence"] = {
+            "policy": (
+                "catalogue_derivation"
+                if relation.get("kind") == "derived_from"
+                else "visible_subject"
+            ),
+            "status": "verified",
+        }
+        metadata = dict(row.get("metadata") or {})
+        metadata["relationEvidence"] = {
+            "verified": True,
+            "source": "institution_metadata",
+        }
+        row = {**row, "metadata": metadata}
     return {
         "status": 200,
         "headers": {
@@ -100,7 +114,7 @@ def passing_response(row=None, *, relation=None, constraints=None):
 
 
 def deployment_identity(snapshot="candidate", git_sha="a" * 40):
-    return {
+    identity = {
         "schemaVersion": "nga-deployment-identity-v1",
         "snapshot": snapshot,
         "capturedAt": "2026-08-22T00:00:00Z",
@@ -110,18 +124,36 @@ def deployment_identity(snapshot="candidate", git_sha="a" * 40):
             "versionId": "api-version",
             "gitSha": git_sha,
             "apiVersion": "v1",
-            "parserVersion": "nga-v6" if snapshot == "candidate" else "nga-v4",
-            "planVersion": "nga-plan-v1" if snapshot == "candidate" else "unversioned",
-            "resultCacheVersion": "v7" if snapshot == "candidate" else "v5",
+            "parserVersion": "nga-v7" if snapshot == "candidate" else "nga-v4",
+            "planVersion": "nga-plan-v2" if snapshot == "candidate" else "unversioned",
+            "resultCacheVersion": "v8" if snapshot == "candidate" else "v5",
         },
         "web": {
             "origin": "https://paillette-stg.berlayar.ai",
             "deploymentId": "web-deployment",
             "versionId": "web-version",
             "gitSha": git_sha,
-            "contractVersion": "28" if snapshot == "candidate" else "26",
+            "contractVersion": "29" if snapshot == "candidate" else "26",
         },
     }
+    if snapshot == "candidate":
+        identity["artistDataBinding"] = {
+            "schemaVersion": "nga-artist-data-binding-v1",
+            "backfillManifestSha256": "1" * 64,
+            "mapping": {"count": 63253, "sha256": "2" * 64},
+            "vectorValues": {
+                "count": 63253,
+                "hashesSha256": "3" * 64,
+                "originalSha256": "4" * 64,
+                "enrichedSha256": "4" * 64,
+                "preserved": True,
+            },
+            "productionIdentity": {
+                "beforeSha256": "5" * 64,
+                "afterSha256": "5" * 64,
+            },
+        }
+    return identity
 
 
 def parse_with_exact_local_v5(cases):
@@ -168,6 +200,8 @@ PLAYWRIGHT_SCREENSHOTS = [
     "04-live-same-name.png",
     "05-controlled-replacement-ownership.png",
     "06-invalid-upload-preserves-results.png",
+    "08-direct-artist-attribution.png",
+    "09-derived-verified-empty.png",
     "07-ngs-locked.png",
 ]
 PLAYWRIGHT_TITLES = [
@@ -177,6 +211,8 @@ PLAYWRIGHT_TITLES = [
     "separate live same-filename image requests execute distinctly",
     "controlled out-of-order image responses keep replacement result ownership",
     "invalid uploads preserve prior results and expose an alert",
+    "direct artist attribution returns the pinned primary-artist fixture",
+    "derived relation empty state reports unverified catalogue evidence",
     "NGS stays visibly locked and sends no public-search request",
 ]
 PLAYWRIGHT_IDS = [
@@ -186,6 +222,8 @@ PLAYWRIGHT_IDS = [
     "d1c3b58c6b8000469ec5-5aeb23a432ab4df1c50c",
     "d1c3b58c6b8000469ec5-1788ccaa5c6cbf7ba7ef",
     "d1c3b58c6b8000469ec5-b87deb1a9d50a0245a51",
+    "d1c3b58c6b8000469ec5-0f940651da0b878f8942",
+    "d1c3b58c6b8000469ec5-9d59bbae641205ec3b17",
     "d1c3b58c6b8000469ec5-00841a90e29eb411d3b7",
 ]
 PLAYWRIGHT_ARTIFACT_DIRECTORIES = [
@@ -195,6 +233,8 @@ PLAYWRIGHT_ARTIFACT_DIRECTORIES = [
     "nga-staging-gate-anonymous-60fa1-requests-execute-distinctly-nga-staging-chrome",
     "nga-staging-gate-anonymous-9934e-eplacement-result-ownership-nga-staging-chrome",
     "nga-staging-gate-anonymous-f48c0-results-and-expose-an-alert-nga-staging-chrome",
+    "nga-staging-gate-anonymous-9855a-nned-primary-artist-fixture-nga-staging-chrome",
+    "nga-staging-gate-anonymous-6806a-verified-catalogue-evidence-nga-staging-chrome",
     "nga-staging-gate-anonymous-9b265-ds-no-public-search-request-nga-staging-chrome",
 ]
 PLAYWRIGHT_PROJECT = "nga-staging-chrome"
@@ -260,6 +300,48 @@ def evidence_row(case, *, artwork_id="open-access-art:nga:32679"):
     artist_ids = constraints.get("artistIds")
     if artist_ids:
         metadata["primaryArtistId"] = artist_ids[0]
+    expected = case.get("expected", {})
+    relation = expected.get("relation")
+    if relation:
+        metadata["relationEvidence"] = {
+            "verified": True,
+            "source": "institution_metadata",
+        }
+    if expected.get("attribution"):
+        attribution = expected["attribution"]
+        relationship = attribution["relationship"]
+        role = {
+            "direct": "artist",
+            "after": "after",
+            "attributed_to": "attributed to",
+            "workshop_of": "workshop of",
+            "studio_of": "studio of",
+            "circle_of": "circle of",
+            "school_of": "school of",
+            "follower_of": "follower of",
+        }[relationship]
+        constituent_id = "1364" if relationship == "direct" else "9999"
+        if relationship == "direct":
+            metadata["primaryArtistId"] = constituent_id
+        metadata["ngaArtists"] = {
+            "relationships": [
+                {
+                    "constituentId": constituent_id,
+                    "displayOrder": 1,
+                    "roleType": "artist",
+                    "role": role,
+                    "prefix": None,
+                    "suffix": None,
+                    "preferredDisplayName": attribution["targetText"],
+                    "forwardDisplayName": attribution["targetText"],
+                    "alternativeNames": [],
+                }
+            ]
+        }
+        metadata["relationEvidence"] = {
+            "verified": True,
+            "source": "catalogue_artist",
+        }
     row["metadata"] = metadata
     return row
 
@@ -267,7 +349,12 @@ def evidence_row(case, *, artwork_id="open-access-art:nga:32679"):
 def text_evidence_response(case, parser_version, url):
     expected = case.get("expected", {})
     constraints = expected.get("constraints", {})
-    rows = [] if case.get("expectedZeroResults") is True else [evidence_row(case)]
+    rows = (
+        []
+        if case.get("expectedZeroResults") is True
+        or case.get("expectedVerifiedEmpty") is True
+        else [evidence_row(case)]
+    )
     interpretation = {
         "parserVersion": parser_version,
         "originalQuery": case["query"],
@@ -280,6 +367,18 @@ def text_evidence_response(case, parser_version, url):
     }
     if "relation" in expected:
         interpretation["relation"] = expected["relation"]
+        relation = expected["relation"]
+        if relation:
+            interpretation["relationEvidence"] = {
+                "policy": (
+                    "catalogue_derivation"
+                    if relation["kind"] == "derived_from"
+                    else "visible_subject"
+                ),
+                "status": "verified" if rows else "unverified",
+            }
+    if "attribution" in expected:
+        interpretation["attribution"] = expected["attribution"]
     payload = {
         "success": True,
         "data": {
@@ -401,7 +500,11 @@ def make_complete_evidence_bundle(
         {
             "caseId": case_id,
             "status": "manual_review_required",
-            "instructions": "Assign each relevance field an integer 0-3; do not infer it from similarity.",
+            "instructions": (
+                "Assign each relevance field an integer 0-3; do not infer it from "
+                "similarity. Grades 2-3 are strong; grade 1 is weak and cannot "
+                "satisfy the strong-result gate."
+            ),
             "results": [
                 {
                     "rank": 1,
@@ -463,8 +566,8 @@ def make_complete_evidence_bundle(
         .isoformat()
         .replace("+00:00", "Z"),
         "cooldownSeconds": 60,
-        "browserPublicSearchRequestBudget": 6,
-        "expectedTestCount": 7,
+        "browserPublicSearchRequestBudget": 8,
+        "expectedTestCount": 9,
     }
     summary["playwrightHandoff"] = handoff
     root.mkdir(parents=True, exist_ok=True)
@@ -781,7 +884,7 @@ def make_complete_evidence_bundle(
             }
         ],
         "stats": {
-            "expected": 7,
+            "expected": 9,
             "skipped": 0,
             "unexpected": 0,
             "flaky": 0,
@@ -1444,6 +1547,10 @@ class ScopeAndCacheTests(GateTestCase):
         pacer.wait()
         self.assertEqual(sleeps, [60.0])
 
+        self.gate.RequestPacer(requests_per_minute=9)
+        with self.assertRaisesRegex(ValueError, "between 1 and 9"):
+            self.gate.RequestPacer(requests_per_minute=10)
+
     def test_ngs_success_is_exposure_and_403_is_denied(self):
         exposed = self.call(
             "evaluate_ngs_probe",
@@ -1771,14 +1878,338 @@ class ImageProbeTests(GateTestCase):
 
 
 class InventoryAndRelevanceTests(GateTestCase):
+    def test_weak_only_labels_fail_strong_relevance(self):
+        metrics = self.call(
+            "compute_relevance_metrics", [1, 1, 1, 1, 1], strong_threshold=2
+        )
+        self.assertEqual(metrics["strongPrecisionAt5"], 0.0)
+        self.assertFalse(
+            self.call(
+                "evaluate_strong_relevance",
+                metrics,
+                minimum_strong_results=1,
+            )["passed"]
+        )
+
+    def test_derived_verified_empty_requires_unverified_catalogue_evidence(self):
+        relation = {
+            "kind": "derived_from",
+            "workClassification": "Drawing",
+            "sourceClassification": "Photograph",
+        }
+        case = {
+            "id": "derived-verified-empty",
+            "expected": {
+                "constraints": {"classifications": ["Drawing"]},
+                "relation": relation,
+            },
+            "expectedVerifiedEmpty": True,
+        }
+        response = passing_response(
+            row=passing_row(),
+            relation=relation,
+            constraints={"classifications": ["Drawing"]},
+        )
+        response["json"]["data"]["results"] = []
+        response["json"]["data"]["count"] = 0
+        response["json"]["data"]["interpretation"]["parserVersion"] = "nga-v7"
+        response["json"]["data"]["interpretation"]["relationEvidence"] = {
+            "policy": "catalogue_derivation",
+            "status": "unverified",
+        }
+        observed = {
+            "parser": "nga-v7",
+            "plan": "nga-plan-v2",
+            "contract": "29",
+            "apiResultCache": "v8",
+        }
+
+        self.assertEqual(
+            self.call("evaluate_text_case", case, response, observed)["failureCodes"],
+            [],
+        )
+
+        response["json"]["data"]["results"] = [
+            passing_row(
+                metadata={
+                    **passing_row()["metadata"],
+                    "visualClassification": "Drawing",
+                }
+            )
+        ]
+        response["json"]["data"]["count"] = 1
+        unsupported = self.call("evaluate_text_case", case, response, observed)
+        self.assertIn("unsupported_derived_relation_row", unsupported["failureCodes"])
+
+        response["json"]["data"]["results"] = []
+        response["json"]["data"]["count"] = 0
+        response["json"]["data"]["interpretation"]["relationEvidence"][
+            "status"
+        ] = "verified"
+        wrong_status = self.call("evaluate_text_case", case, response, observed)
+        self.assertIn(
+            "derived_verified_empty_evidence_mismatch",
+            wrong_status["failureCodes"],
+        )
+
+    def test_relation_rows_require_verified_row_evidence(self):
+        relation = {
+            "kind": "depicts",
+            "workClassification": "Painting",
+            "subjectClassification": "Sculpture",
+        }
+        case = {
+            "id": "visible-relation-evidence",
+            "expected": {
+                "constraints": {"classifications": ["Painting"]},
+                "relation": relation,
+            },
+        }
+        row = passing_row()
+        response = passing_response(
+            row=row,
+            relation=relation,
+            constraints={"classifications": ["Painting"]},
+        )
+        response["json"]["data"]["interpretation"]["parserVersion"] = "nga-v7"
+        response["json"]["data"]["interpretation"]["relationEvidence"] = {
+            "policy": "visible_subject",
+            "status": "verified",
+        }
+        response["json"]["data"]["results"][0]["metadata"].pop(
+            "relationEvidence"
+        )
+        result = self.call(
+            "evaluate_text_case",
+            case,
+            response,
+            {"parser": "nga-v7"},
+        )
+        self.assertIn("unverified_relation_row", result["failureCodes"])
+
+        row["metadata"] = {
+            **row["metadata"],
+            "relationEvidence": {
+                "verified": True,
+                "source": "institution_metadata",
+            },
+        }
+        response["json"]["data"]["results"] = [row]
+        verified = self.call(
+            "evaluate_text_case",
+            case,
+            response,
+            {"parser": "nga-v7"},
+        )
+        self.assertNotIn("unverified_relation_row", verified["failureCodes"])
+
+    def test_attribution_rows_require_exact_catalogue_relationship(self):
+        attribution = {"relationship": "direct", "targetText": "Lavinia Fontana"}
+        case = {
+            "id": "artist-direct-proof",
+            "expected": {"constraints": {}, "attribution": attribution},
+        }
+        row = passing_row()
+        row["metadata"] = {
+            **row["metadata"],
+            "primaryArtistId": "1364",
+            "relationEvidence": {"verified": True, "source": "catalogue_artist"},
+        }
+        response = passing_response(row=row)
+        response["json"]["data"]["interpretation"]["attribution"] = attribution
+        missing = self.call("evaluate_text_case", case, response, {"parser": "nga-v7"})
+        self.assertIn("attribution_hard_filter_violation", missing["failureCodes"])
+
+        response["json"]["data"]["results"][0]["metadata"]["ngaArtists"] = {
+            "relationships": [
+                {
+                    "constituentId": "1364",
+                    "displayOrder": 1,
+                    "roleType": "artist",
+                    "role": "painter",
+                    "prefix": None,
+                    "suffix": None,
+                    "preferredDisplayName": "Lavinia Fontana",
+                    "forwardDisplayName": "Lavinia Fontana",
+                    "alternativeNames": [],
+                }
+            ]
+        }
+        exact = self.call("evaluate_text_case", case, response, {"parser": "nga-v7"})
+        self.assertNotIn("attribution_hard_filter_violation", exact["failureCodes"])
+
+    def test_artist_fixture_contract_requires_primary_id_and_top_three(self):
+        inventory = json.loads(
+            (ROOT / "eval" / "nga-staging-cases.yaml").read_text(encoding="utf-8")
+        )
+        case = next(
+            item for item in inventory["imageCases"] if item["id"] == "image-artist"
+        )
+        rows = []
+        for index in range(4):
+            row = passing_row(id=f"open-access-art:nga:neighbor-{index}")
+            row["metadata"] = {**row["metadata"], "primaryArtistId": "1364"}
+            rows.append(row)
+        rows[3]["id"] = "open-access-art:nga:131994"
+        response = passing_response(row=rows[0])
+        response["headers"]["cache-control"] = "no-store"
+        response["json"]["data"]["results"] = rows
+        response["json"]["data"]["count"] = len(rows)
+
+        result = self.call("evaluate_image_case", case, response)
+        self.assertIn("required_image_target_rank_not_met", result["failureCodes"])
+
+    def test_wrong_artist_id_excludes_fixture_and_all_rows_keep_primary_id(self):
+        inventory = json.loads(
+            (ROOT / "eval" / "nga-staging-cases.yaml").read_text(encoding="utf-8")
+        )
+        case = next(
+            item
+            for item in inventory["imageCases"]
+            if item["id"] == "image-artist-wrong-primary"
+        )
+        fixture = passing_row(id="open-access-art:nga:131994")
+        fixture["metadata"] = {
+            **fixture["metadata"],
+            "primaryArtistId": "1364",
+        }
+        response = passing_response(row=fixture)
+        response["headers"]["cache-control"] = "no-store"
+        leaked = self.call("evaluate_image_case", case, response)
+        self.assertIn("excluded_image_target_returned", leaked["failureCodes"])
+        self.assertIn("hard_constraint_violation", leaked["failureCodes"])
+
+        matching = passing_row(id="open-access-art:nga:1974-work")
+        matching["metadata"] = {
+            **matching["metadata"],
+            "primaryArtistId": "1974",
+        }
+        response["json"]["data"]["results"] = [matching]
+        response["json"]["data"]["count"] = 1
+        clean = self.call("evaluate_image_case", case, response)
+        self.assertEqual(clean["failureCodes"], [])
+
+    def test_candidate_identity_requires_artist_backfill_binding(self):
+        evaluator_sha = "a" * 40
+        identity = deployment_identity(git_sha=evaluator_sha)
+        identity["api"].update(
+            parserVersion="nga-v7",
+            planVersion="nga-plan-v2",
+            resultCacheVersion="v8",
+        )
+        identity["web"]["contractVersion"] = "29"
+        identity.pop("artistDataBinding")
+
+        result = self.call(
+            "evaluate_deployment_binding",
+            identity,
+            snapshot="candidate",
+            evaluator_git_sha=evaluator_sha,
+        )
+        self.assertIn("artist_data_identity_incomplete", result["failureCodes"])
+
+    def test_artist_data_identity_binds_counts_hashes_vectors_and_production(self):
+        evaluator_sha = "a" * 40
+        exact = deployment_identity(git_sha=evaluator_sha)
+        self.assertEqual(
+            self.call(
+                "evaluate_deployment_binding",
+                exact,
+                snapshot="candidate",
+                evaluator_git_sha=evaluator_sha,
+            )["failureCodes"],
+            [],
+        )
+
+        mutations = {
+            "mapping count": lambda value: value["mapping"].__setitem__(
+                "count", 63252
+            ),
+            "mapping hash": lambda value: value["mapping"].__setitem__(
+                "sha256", "bad"
+            ),
+            "vector hashes": lambda value: value["vectorValues"].__setitem__(
+                "hashesSha256", "bad"
+            ),
+            "vector values changed": lambda value: value["vectorValues"].update(
+                enrichedSha256="6" * 64, preserved=False
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(exact))
+                mutate(changed["artistDataBinding"])
+                result = self.call(
+                    "evaluate_deployment_binding",
+                    changed,
+                    snapshot="candidate",
+                    evaluator_git_sha=evaluator_sha,
+                )
+                self.assertIn("artist_data_identity_invalid", result["failureCodes"])
+
+        production_changed = json.loads(json.dumps(exact))
+        production_changed["artistDataBinding"]["productionIdentity"][
+            "afterSha256"
+        ] = "6" * 64
+        result = self.call(
+            "evaluate_deployment_binding",
+            production_changed,
+            snapshot="candidate",
+            evaluator_git_sha=evaluator_sha,
+        )
+        self.assertIn("production_artist_data_identity_changed", result["failureCodes"])
+
+    def test_new_case_inventory_covers_every_attribution_role_and_control(self):
+        document = json.loads(
+            (ROOT / "eval" / "nga-staging-cases.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            document["expectedVersions"],
+            {
+                "parser": "nga-v7",
+                "plan": "nga-plan-v2",
+                "contract": "29",
+                "apiResultCache": "v8",
+            },
+        )
+        attribution_roles = {
+            case.get("expected", {}).get("attribution", {}).get("relationship")
+            for case in document["textCases"]
+            if case.get("expected", {}).get("attribution")
+        }
+        self.assertEqual(
+            attribution_roles,
+            {
+                "direct",
+                "after",
+                "attributed_to",
+                "workshop_of",
+                "studio_of",
+                "circle_of",
+                "school_of",
+                "follower_of",
+            },
+        )
+        categories = {case["category"] for case in document["textCases"]}
+        self.assertTrue(
+            {
+                "artist-multiword",
+                "artist-case-punctuation-dash",
+                "artist-combined-constraints",
+                "artist-ambiguity-control",
+                "visible-relation-weak-tail",
+                "derived-verified-empty",
+            }.issubset(categories)
+        )
+
     def test_local_version_observation_reads_the_deployed_contract_literals(self):
         self.assertEqual(
             self.call("observe_local_versions", ROOT),
             {
-                "parser": "nga-v6",
-                "plan": "nga-plan-v1",
-                "contract": "28",
-                "apiResultCache": "v7",
+                "parser": "nga-v7",
+                "plan": "nga-plan-v2",
+                "contract": "29",
+                "apiResultCache": "v8",
             },
         )
 
@@ -1820,10 +2251,27 @@ class InventoryAndRelevanceTests(GateTestCase):
                 "evaluate_declared_interpretation",
                 case,
                 record["interpretation"],
-                "nga-v6",
+                "nga-v7",
             )
             if not result["passed"]:
                 failures[case["legacyId"]] = result["failures"]
+        self.assertEqual(failures, {})
+
+    def test_all_new_declared_expectations_match_exact_local_v7(self):
+        cases = json.loads(
+            (ROOT / "eval" / "nga-staging-cases.yaml").read_text(encoding="utf-8")
+        )["textCases"]
+        parsed = parse_with_exact_local_v5(cases)
+        failures = {}
+        for case, record in zip(cases, parsed, strict=True):
+            result = self.call(
+                "evaluate_declared_interpretation",
+                case,
+                record["interpretation"],
+                "nga-v7",
+            )
+            if not result["passed"]:
+                failures[case["id"]] = result["failures"]
         self.assertEqual(failures, {})
 
     def test_unexpected_relation_and_unresolved_fail_clean_legacy_and_new_cases(self):
@@ -1959,7 +2407,7 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(full["counts"]["legacy"], 92)
         self.assertGreaterEqual(full["counts"]["newText"], 24)
 
-    def test_artist_case_records_official_ids_but_does_not_invent_ingested_ids(self):
+    def test_artist_case_and_fixtures_bind_applied_primary_ids(self):
         inventory = json.loads(
             (ROOT / "eval" / "nga-staging-cases.yaml").read_text(encoding="utf-8")
         )
@@ -1969,8 +2417,8 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(artist_case["constraints"]["artistIds"], ["1364"])
         self.assertEqual(artist_case["minimumResults"], 1)
         self.assertEqual(
-            artist_case["capabilityFailure"],
-            "artist_constraint_capability_unproven",
+            artist_case["targetExpectation"],
+            {"policy": "required", "maxRank": 3},
         )
         self.assertNotIn("expectedZeroResults", artist_case)
 
@@ -1991,12 +2439,21 @@ class InventoryAndRelevanceTests(GateTestCase):
             },
             expected_ids,
         )
-        self.assertTrue(
-            all(
-                fixture["officialPrimaryArtist"]["ingestedPrimaryArtistId"]
-                is None
+        self.assertEqual(
+            {
+                fixture["officialPrimaryArtist"]["sourceCommit"]
                 for fixture in fixtures
-            )
+            },
+            {"79d114c2186ca38af27a9478717f1e509d799495"},
+        )
+        self.assertEqual(
+            {
+                fixture["artworkId"]: fixture["officialPrimaryArtist"][
+                    "ingestedPrimaryArtistId"
+                ]
+                for fixture in fixtures
+            },
+            expected_ids,
         )
 
     def test_manual_relevance_metrics_use_human_labels(self):
@@ -2084,6 +2541,10 @@ class InventoryAndRelevanceTests(GateTestCase):
                     "byCase": {
                         "relation": {
                             "precisionAt5": 0.4,
+                            "strongPrecisionAt5": 0.2,
+                            "strongResultsAt5": 1,
+                            "strongResultCount": 1,
+                            "strongMrr": 1.0,
                             "mrr": 1.0,
                             "ndcgAt10": 0.9,
                         }
@@ -2536,6 +2997,28 @@ class InventoryAndRelevanceTests(GateTestCase):
                 with self.assertRaises(self.gate.GateStopped):
                     self.call("rehash_evidence", root)
 
+    def test_rehash_requires_artist_and_verified_empty_browser_evidence(self):
+        required_titles = {
+            "direct artist attribution returns the pinned primary-artist fixture",
+            "derived relation empty state reports unverified catalogue evidence",
+        }
+        self.assertTrue(required_titles.issubset(set(PLAYWRIGHT_TITLES)))
+        for title in sorted(required_titles):
+            with self.subTest(title=title), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                report_path = root / "playwright/playwright-report.json"
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                report["suites"][0]["specs"] = [
+                    spec
+                    for spec in report["suites"][0]["specs"]
+                    if spec["title"] != title
+                ]
+                report["stats"]["expected"] -= 1
+                report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
+
     def test_rehash_requires_exact_passing_browser_specs_and_real_artifacts(self):
         def wrong_title(root):
             json_mutate(
@@ -2785,7 +3268,8 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(
             handoff["runId"], "0123456789abcdef0123456789abcdef"
         )
-        self.assertEqual(handoff["browserPublicSearchRequestBudget"], 6)
+        self.assertEqual(handoff["browserPublicSearchRequestBudget"], 8)
+        self.assertEqual(handoff["expectedTestCount"], 9)
         completed_at = datetime.fromisoformat(
             handoff["pythonCompletedAt"].replace("Z", "+00:00")
         )
@@ -2810,8 +3294,8 @@ class InventoryAndRelevanceTests(GateTestCase):
                 .isoformat()
                 .replace("+00:00", "Z"),
                 "cooldownSeconds": 60,
-                "browserPublicSearchRequestBudget": 6,
-                "expectedTestCount": 7,
+                "browserPublicSearchRequestBudget": 8,
+                "expectedTestCount": 9,
             }
             binding = root / "playwright-handoff.json"
             binding.write_text(json.dumps(handoff) + "\n", encoding="utf-8")
@@ -2873,7 +3357,19 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertIn("replacement result title", source)
         self.assertIn("candidate result title", source)
         self.assertIn("separate live same-filename image requests", source)
-        self.assertIn("LIVE_PUBLIC_SEARCH_REQUEST_BUDGET = 6", source)
+        self.assertIn("NGA_STAGING_LIVE_REQUEST_BUDGET", source)
+        self.assertIn(
+            "expect(summary.live).toBe(LIVE_PUBLIC_SEARCH_REQUEST_BUDGET)",
+            source,
+        )
+        self.assertIn(
+            "direct artist attribution returns the pinned primary-artist fixture",
+            source,
+        )
+        self.assertIn(
+            "derived relation empty state reports unverified catalogue evidence",
+            source,
+        )
         self.assertIn("screenshot: 'off'", config)
         self.assertNotIn("screenshot: 'on'", config)
 

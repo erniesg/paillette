@@ -11,9 +11,10 @@
       "officialPrimaryArtist": {
         "constituentId": "23812",
         "role": "artist",
-        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects_constituents.csv",
+        "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/79d114c2186ca38af27a9478717f1e509d799495/data/objects_constituents.csv",
         "verifiedAt": "2026-08-22",
-        "ingestedPrimaryArtistId": null,
+        "ingestedPrimaryArtistId": "23812",
         "ingestionEvidence": [
           "scripts/lib/open-access-art-ingest.mjs",
           "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"
@@ -30,9 +31,10 @@
       "officialPrimaryArtist": {
         "constituentId": "1364",
         "role": "painter",
-        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects_constituents.csv",
+        "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/79d114c2186ca38af27a9478717f1e509d799495/data/objects_constituents.csv",
         "verifiedAt": "2026-08-22",
-        "ingestedPrimaryArtistId": null,
+        "ingestedPrimaryArtistId": "1364",
         "ingestionEvidence": [
           "scripts/lib/open-access-art-ingest.mjs",
           "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"
@@ -49,9 +51,10 @@
       "officialPrimaryArtist": {
         "constituentId": "1974",
         "role": "artist",
-        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/main/data/objects_constituents.csv",
+        "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+        "sourceUrl": "https://raw.githubusercontent.com/NationalGalleryOfArt/opendata/79d114c2186ca38af27a9478717f1e509d799495/data/objects_constituents.csv",
         "verifiedAt": "2026-08-22",
-        "ingestedPrimaryArtistId": null,
+        "ingestedPrimaryArtistId": "1974",
         "ingestionEvidence": [
           "scripts/lib/open-access-art-ingest.mjs",
           "tmp/nga-production-release/full-prepared-20260821/verified-staging-structured-snapshot.ndjson"

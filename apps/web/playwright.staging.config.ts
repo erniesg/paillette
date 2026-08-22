@@ -2,6 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  NGA_STAGING_EXPECTED_TEST_COUNT,
+  NGA_STAGING_LIVE_REQUEST_BUDGET,
+} from './e2e/support/nga-staging-request-budget';
 
 const STAGING_ORIGIN = 'https://paillette-stg.berlayar.ai';
 const baseURL = process.env.NGA_STAGING_WEB_BASE_URL || STAGING_ORIGIN;
@@ -50,9 +54,10 @@ if (runBindingPath) {
     Number.isFinite(completedAt) &&
     Number.isFinite(notBefore) &&
     binding.cooldownSeconds === 60 &&
-    binding.browserPublicSearchRequestBudget === 6 &&
+    binding.browserPublicSearchRequestBudget ===
+      NGA_STAGING_LIVE_REQUEST_BUDGET &&
     notBefore - completedAt >= binding.cooldownSeconds * 1000 &&
-    binding.expectedTestCount === 7;
+    binding.expectedTestCount === NGA_STAGING_EXPECTED_TEST_COUNT;
   if (!valid) {
     throw new Error('NGA staging Playwright run binding is invalid.');
   }
@@ -93,7 +98,7 @@ export default defineConfig({
     baseURL,
     channel: 'chrome',
     trace: 'on',
-    // The spec writes exactly seven named screenshots into the evidence root.
+    // The spec writes exactly nine named screenshots into the evidence root.
     // Automatic screenshots would create extra, unbound manifest artifacts.
     screenshot: 'off',
     video: 'off',
