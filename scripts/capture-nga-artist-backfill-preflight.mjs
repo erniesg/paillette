@@ -32,6 +32,7 @@ const allowed = new Set([
   'd1-database',
   'image-vector-index',
   'phase',
+  'capture-kind',
   'exclude-ids-file',
   'out-dir',
 ]);
@@ -45,6 +46,7 @@ const imageVectorIndex = String(
   args.get('image-vector-index') || STAGING_IMAGE_VECTOR_INDEX
 );
 const phase = String(args.get('phase') || '');
+const captureKind = String(args.get('capture-kind') || 'preflight');
 if (!args.get('out-dir') || args.get('out-dir') === true)
   throw new Error('--out-dir is required');
 const outputDirectory = resolve(String(args.get('out-dir')));
@@ -56,6 +58,9 @@ if (imageVectorIndex !== STAGING_IMAGE_VECTOR_INDEX)
   throw new Error('production Vectorize names are forbidden');
 if (!['pilot', 'full'].includes(phase))
   throw new Error('--phase must be pilot or full');
+if (!['preflight', 'post-apply'].includes(captureKind)) {
+  throw new Error('--capture-kind must be preflight or post-apply');
+}
 if (
   statSync(outputDirectory, { throwIfNoEntry: false }) &&
   readdirSync(outputDirectory).length
@@ -96,6 +101,57 @@ const d1Query = (sql) =>
       '--json',
     ])
   );
+
+const findRecoveryPoint = (value) => {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findRecoveryPoint(entry);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const bookmark =
+    typeof value.bookmark === 'string' && value.bookmark.trim()
+      ? value.bookmark.trim()
+      : null;
+  const timestamp =
+    typeof value.timestamp === 'string' && value.timestamp.trim()
+      ? value.timestamp.trim()
+      : null;
+  if (bookmark || timestamp) return { bookmark, timestamp };
+  for (const entry of Object.values(value)) {
+    const found = findRecoveryPoint(entry);
+    if (found) return found;
+  }
+  return null;
+};
+let recoveryPoint = null;
+let timeTravelText = null;
+if (captureKind === 'preflight') {
+  const timeTravelOutput = runWrangler([
+    'd1',
+    'time-travel',
+    'info',
+    d1Database,
+    '--env',
+    'staging',
+    '--json',
+  ]);
+  let timeTravelPayload;
+  try {
+    timeTravelPayload = JSON.parse(timeTravelOutput);
+  } catch {
+    throw new Error('unexpected Wrangler D1 time-travel JSON response');
+  }
+  recoveryPoint = findRecoveryPoint(timeTravelPayload);
+  if (!recoveryPoint) {
+    throw new Error('D1 time-travel response has no usable recovery point');
+  }
+  timeTravelText = timeTravelOutput.endsWith('\n')
+    ? timeTravelOutput
+    : `${timeTravelOutput}\n`;
+}
 
 const excluded = new Set();
 if (args.has('exclude-ids-file')) {
@@ -171,7 +227,7 @@ if (
   vectors.length !== objectIds.length
 ) {
   throw new Error(
-    `preflight coverage gap: ${stagedRecords.length} rows and ${vectors.length} vectors for ${objectIds.length} IDs`
+    `${captureKind} coverage gap: ${stagedRecords.length} D1 rows and ${vectors.length} vectors for ${objectIds.length} IDs`
   );
 }
 const expectedArtworkIds = new Set(
@@ -196,6 +252,11 @@ writeFileSync(join(outputDirectory, 'ids.json'), idsText, { flag: 'wx' });
 writeFileSync(join(outputDirectory, 'staged-nga-records.json'), recordsText, {
   flag: 'wx',
 });
+if (timeTravelText !== null) {
+  writeFileSync(join(outputDirectory, 'd1-time-travel.json'), timeTravelText, {
+    flag: 'wx',
+  });
+}
 const vectorFiles = [];
 for (let offset = 0; offset < vectors.length; offset += 500) {
   const content = `${vectors
@@ -211,7 +272,8 @@ for (let offset = 0; offset < vectors.length; offset += 500) {
   });
 }
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  captureKind,
   capturedAt: new Date().toISOString(),
   environment,
   phase,
@@ -224,6 +286,17 @@ const manifest = {
   },
   hashes: { ids: sha256(idsText), stagedRecords: sha256(recordsText) },
   vectorFiles,
+  ...(timeTravelText === null
+    ? {}
+    : {
+        rollback: {
+          d1TimeTravel: {
+            path: 'd1-time-travel.json',
+            sha256: sha256(timeTravelText),
+          },
+          recoveryPoint,
+        },
+      }),
   inputs: {
     ids: { path: 'ids.json', sha256: sha256(idsText), count: objectIds.length },
     stagedRecords: {
@@ -235,7 +308,12 @@ const manifest = {
   },
 };
 writeFileSync(
-  join(outputDirectory, 'preflight-manifest.json'),
+  join(
+    outputDirectory,
+    captureKind === 'preflight'
+      ? 'preflight-manifest.json'
+      : 'state-manifest.json'
+  ),
   `${JSON.stringify(manifest, null, 2)}\n`,
   { flag: 'wx' }
 );

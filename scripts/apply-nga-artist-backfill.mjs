@@ -2,7 +2,15 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
@@ -13,6 +21,7 @@ import {
   STAGING_IMAGE_VECTOR_INDEX,
   STAGING_ORG_ID,
   canonicalJson,
+  verifyNgaArtistPostApplyState,
 } from './lib/nga-artist-backfill.mjs';
 import { buildNgaArtistUpdateSql } from './lib/nga-structured-search-backfill.mjs';
 
@@ -34,6 +43,7 @@ const allowedOptions = new Set([
   'execute',
   'd1-database',
   'image-vector-index',
+  'post-apply-out-dir',
 ]);
 for (const key of args.keys()) {
   if (!allowedOptions.has(key)) throw new Error(`unsupported option --${key}`);
@@ -48,6 +58,7 @@ const d1Database = String(args.get('d1-database') || STAGING_D1_DATABASE);
 const imageVectorIndex = String(
   args.get('image-vector-index') || STAGING_IMAGE_VECTOR_INDEX
 );
+const postApplyOutDirectoryValue = args.get('post-apply-out-dir');
 if (environment !== 'staging') {
   throw new Error(
     'only --environment=staging is allowed; production is forbidden'
@@ -63,6 +74,24 @@ if (imageVectorIndex !== STAGING_IMAGE_VECTOR_INDEX) {
   throw new Error(
     `only staging image-vector index ${STAGING_IMAGE_VECTOR_INDEX} is allowed`
   );
+}
+if (args.has('execute')) {
+  if (!postApplyOutDirectoryValue || postApplyOutDirectoryValue === true) {
+    throw new Error('--post-apply-out-dir is required with --execute');
+  }
+  if (
+    /(?:^|[\\/_.-])production(?:[\\/_.-]|$)/i.test(
+      String(postApplyOutDirectoryValue)
+    )
+  ) {
+    throw new Error('production-named post-apply evidence is forbidden');
+  }
+  const existingPostApply = statSync(resolve(String(postApplyOutDirectoryValue)), {
+    throwIfNoEntry: false,
+  });
+  if (existingPostApply && readdirSync(resolve(String(postApplyOutDirectoryValue))).length) {
+    throw new Error('--post-apply-out-dir must be empty before execution');
+  }
 }
 
 const manifestArgument = args.get('manifest');
@@ -124,6 +153,15 @@ for (const binding of preflightInputs) {
     binding?.resources?.d1Database !== STAGING_D1_DATABASE ||
     binding?.resources?.imageVectorIndex !== STAGING_IMAGE_VECTOR_INDEX ||
     !Array.isArray(binding?.imageVectors) ||
+    binding?.rollback?.d1TimeTravel?.path !== 'd1-time-travel.json' ||
+    !/^[a-f0-9]{64}$/.test(
+      String(binding?.rollback?.d1TimeTravel?.sha256 || '')
+    ) ||
+    !['bookmark', 'timestamp'].some(
+      (field) =>
+        typeof binding?.rollback?.recoveryPoint?.[field] === 'string' &&
+        Boolean(binding.rollback.recoveryPoint[field].trim())
+    ) ||
     !/^[a-f0-9]{64}$/.test(String(binding?.ids?.sha256 || '')) ||
     !/^[a-f0-9]{64}$/.test(String(binding?.stagedRecords?.sha256 || '')) ||
     binding?.counts?.ids !== binding?.ids?.count ||
@@ -135,7 +173,9 @@ for (const binding of preflightInputs) {
       (entry) => !/^[a-f0-9]{64}$/.test(String(entry?.sha256 || ''))
     )
   ) {
-    throw new Error('manifest contains an invalid preflight input binding');
+    throw new Error(
+      'manifest contains an invalid preflight input or rollback binding'
+    );
   }
   preflightPhases.push(binding.phase);
   preflightRecordCount += binding.counts.stagedRecords;
@@ -251,6 +291,41 @@ if (
   throw new Error('mapping differs from the exact pilot allowlist');
 }
 
+const rollbackD1Records = parseDeclaredJson('rollback/d1-records.json');
+if (!Array.isArray(rollbackD1Records)) {
+  throw new Error('D1 rollback source must contain an array');
+}
+const rollbackD1Artifact = declaredFiles.get('rollback/d1-records.json');
+if (
+  rollbackD1Records.length !== expectedRecordCount ||
+  rollbackD1Artifact?.recordCount !== expectedRecordCount ||
+  new Set(rollbackD1Records.map((row) => String(row?.id || ''))).size !==
+    expectedRecordCount ||
+  rollbackD1Records.some(
+    (row) => {
+      let customMetadata;
+      try {
+        customMetadata =
+          typeof row?.custom_metadata === 'string'
+            ? JSON.parse(row.custom_metadata)
+            : row?.custom_metadata;
+      } catch {
+        return true;
+      }
+      return (
+        !mappingById.has(String(row?.id || '')) ||
+        row?.org_id !== STAGING_ORG_ID ||
+        customMetadata?.provider !== 'nga' ||
+        !Object.prototype.hasOwnProperty.call(row, 'primary_artist_id') ||
+        !Object.prototype.hasOwnProperty.call(row, 'custom_metadata') ||
+        !Object.prototype.hasOwnProperty.call(row, 'field_sources')
+      );
+    }
+  )
+) {
+  throw new Error('D1 rollback source is incomplete or outside the exact scope');
+}
+
 const splitSqlStatements = (text, path) => {
   const statements = [];
   let current = '';
@@ -354,6 +429,7 @@ const resolvedArtifacts = manifest.orderedArtifacts.map((artifact) => {
   return { ...artifact, resolvedPath: declared.resolvedPath };
 });
 const sqlIds = [];
+const expectedD1ChangesByPath = new Map();
 const enrichedIds = [];
 const enrichedById = new Map();
 for (const artifact of resolvedArtifacts) {
@@ -367,6 +443,7 @@ for (const artifact of resolvedArtifacts) {
         `SQL statement count mismatch for ${artifact.path}: declared ${artifact.recordCount}, actual ${statements.length}`
       );
     }
+    const artifactIds = [];
     for (const statement of statements) {
       const matches = [
         ...statement.matchAll(/^\s*AND id = '([^']+)'\s*;?\s*$/gm),
@@ -378,7 +455,19 @@ for (const artifact of resolvedArtifacts) {
         throw new Error('SQL mutation scope has an unapproved ID');
       assertExactSqlMutationScope(statement, mappingRow);
       sqlIds.push(matches[0][1]);
+      artifactIds.push(matches[0][1]);
     }
+    expectedD1ChangesByPath.set(
+      artifact.path,
+      phase === 'pilot'
+        ? artifactIds.length
+        : artifactIds.filter(
+            (id) =>
+              !PILOT_OBJECT_IDS.includes(
+                id.replace(/^open-access-art:nga:/, '')
+              )
+          ).length
+    );
   } else {
     const rows = parseNdjson(artifact);
     if (rows.length !== artifact.recordCount) {
@@ -475,7 +564,12 @@ const vectorRecordCount = resolvedArtifacts
 if (
   manifest.invariants?.stagedRecordCount !== expectedRecordCount ||
   manifest.invariants?.mappingCount !== expectedRecordCount ||
+  manifest.invariants?.expectedD1Changes !==
+    (phase === 'pilot'
+      ? PILOT_OBJECT_IDS.length
+      : FULL_STAGED_COUNT - PILOT_OBJECT_IDS.length) ||
   manifest.invariants?.imageVectorCount !== expectedRecordCount ||
+  manifest.invariants?.rollbackD1RecordCount !== expectedRecordCount ||
   manifest.invariants?.rollbackVectorCount !== expectedRecordCount ||
   manifest.invariants?.vectorValuesUnchanged !== true ||
   manifest.invariants?.captionVectorsChanged !== 0 ||
@@ -492,6 +586,9 @@ const steps = resolvedArtifacts.map((artifact, index) => ({
   kind: artifact.kind,
   path: relative(artifactRoot, artifact.resolvedPath),
   sha256: artifact.sha256,
+  ...(artifact.kind === 'd1-sql'
+    ? { expectedChanges: expectedD1ChangesByPath.get(artifact.path) }
+    : {}),
   command:
     artifact.kind === 'd1-sql'
       ? [
@@ -527,6 +624,37 @@ const steps = resolvedArtifacts.map((artifact, index) => ({
           '--json',
         ],
 }));
+
+const d1ChangesFromResponse = (stdout, path) => {
+  let payload;
+  try {
+    payload = JSON.parse(stdout);
+  } catch {
+    throw new Error(`D1 apply response is not JSON for ${path}`);
+  }
+  const changes = [];
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (Object.prototype.hasOwnProperty.call(value, 'meta')) {
+      const count = value.meta?.changes;
+      if (!Number.isInteger(count) || count < 0) {
+        throw new Error(`D1 apply response has invalid changes for ${path}`);
+      }
+      changes.push(count);
+      return;
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(payload);
+  if (!changes.length) {
+    throw new Error(`D1 apply response has no changes count for ${path}`);
+  }
+  return changes.reduce((total, count) => total + count, 0);
+};
 
 if (!args.has('execute')) {
   process.stdout.write(
@@ -583,7 +711,113 @@ if (!args.has('execute')) {
         `serial apply failed at ${step.path}; see ${responsePath}`
       );
     }
+    if (step.kind === 'd1-sql') {
+      const actualChanges = d1ChangesFromResponse(result.stdout, step.path);
+      if (actualChanges !== step.expectedChanges) {
+        throw new Error(
+          `D1 changes mismatch for ${step.path}: expected ${step.expectedChanges}, got ${actualChanges}; see ${responsePath}`
+        );
+      }
+    }
   }
+
+  const postApplyOutDirectory = resolve(String(postApplyOutDirectoryValue));
+  const captureScript = fileURLToPath(
+    new URL('./capture-nga-artist-backfill-preflight.mjs', import.meta.url)
+  );
+  const capture = spawnSync(
+    process.execPath,
+    [
+      captureScript,
+      '--environment=staging',
+      `--phase=${phase}`,
+      '--capture-kind=post-apply',
+      `--out-dir=${postApplyOutDirectory}`,
+    ],
+    { encoding: 'utf8' }
+  );
+  if (capture.status !== 0) {
+    throw new Error(
+      `post-apply state capture failed: ${capture.stderr || capture.stdout}`
+    );
+  }
+  const postApplyRoot = realpathSync(postApplyOutDirectory);
+  const stateManifestPath = join(postApplyRoot, 'state-manifest.json');
+  const stateManifestText = readFileSync(stateManifestPath);
+  const stateManifest = JSON.parse(stateManifestText.toString('utf8'));
+  const resolveStateFile = (descriptor) => {
+    if (
+      typeof descriptor?.path !== 'string' ||
+      !descriptor.path ||
+      isAbsolute(descriptor.path) ||
+      descriptor.path.split(/[\\/]/).includes('..') ||
+      !/^[a-f0-9]{64}$/.test(String(descriptor.sha256 || ''))
+    ) {
+      throw new Error('post-apply state manifest contains an invalid path');
+    }
+    const path = realpathSync(resolve(postApplyRoot, descriptor.path));
+    if (path !== postApplyRoot && !path.startsWith(`${postApplyRoot}${sep}`)) {
+      throw new Error('post-apply state path escapes its evidence root');
+    }
+    const content = readFileSync(path);
+    if (sha256(content) !== descriptor.sha256) {
+      throw new Error(
+        `post-apply state SHA-256 mismatch for ${descriptor.path}`
+      );
+    }
+    return content;
+  };
+  if (
+    stateManifest.schemaVersion !== 2 ||
+    stateManifest.captureKind !== 'post-apply' ||
+    stateManifest.environment !== 'staging' ||
+    stateManifest.phase !== phase ||
+    stateManifest.expectedOrgId !== STAGING_ORG_ID ||
+    canonicalJson(stateManifest.resources) !==
+      canonicalJson({ d1Database, imageVectorIndex }) ||
+    stateManifest.counts?.ids !== expectedRecordCount ||
+    stateManifest.counts?.stagedRecords !== expectedRecordCount ||
+    stateManifest.counts?.imageVectors !== expectedRecordCount
+  ) {
+    throw new Error('post-apply state manifest identity or counts mismatch');
+  }
+  resolveStateFile(stateManifest.inputs?.ids);
+  const postRecords = JSON.parse(
+    resolveStateFile(stateManifest.inputs?.stagedRecords).toString('utf8')
+  );
+  const postVectors = (stateManifest.inputs?.imageVectors || []).flatMap(
+    (descriptor) =>
+      resolveStateFile(descriptor)
+        .toString('utf8')
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+  );
+  const summary = verifyNgaArtistPostApplyState({
+    phase,
+    mapping,
+    originalRecords: rollbackD1Records,
+    originalVectors: [...rollbackById.values()],
+    postRecords,
+    postVectors,
+  });
+  const verification = {
+    schemaVersion: 'nga-post-apply-verification-v1',
+    verifiedAt: new Date().toISOString(),
+    environment,
+    phase,
+    artifactManifestSha256: actualManifestSha256,
+    stateManifest: {
+      path: 'state-manifest.json',
+      sha256: sha256(stateManifestText),
+    },
+    preflightInputs,
+    summary,
+  };
+  const verificationText = `${JSON.stringify(verification, null, 2)}\n`;
+  writeFileSync(join(postApplyRoot, 'verification.json'), verificationText, {
+    flag: 'wx',
+  });
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -591,6 +825,10 @@ if (!args.has('execute')) {
         environment,
         phase,
         manifestSha256: actualManifestSha256,
+        postApplyVerification: {
+          path: join(postApplyRoot, 'verification.json'),
+          sha256: sha256(verificationText),
+        },
         responses,
       },
       null,

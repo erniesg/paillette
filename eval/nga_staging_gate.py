@@ -143,6 +143,19 @@ PRODUCTION_IDENTITY_PATHS = {
     }
     for phase in ("pilot", "full")
 }
+ARTIST_STATE_PATHS = {
+    "pilot": {
+        "preflightManifests": ["preflight/pilot/preflight-manifest.json"],
+        "postApplyVerification": "candidate/post-apply/pilot/verification.json",
+    },
+    "full": {
+        "preflightManifests": [
+            "preflight/pilot/preflight-manifest.json",
+            "preflight/full-remaining/preflight-manifest.json",
+        ],
+        "postApplyVerification": "candidate/post-apply/full/verification.json",
+    },
+}
 PRODUCTION_IDENTITY_ROLES = {
     "trustedPreflight": "trusted_preflight",
     "before": "before",
@@ -168,6 +181,8 @@ DEPLOYMENT_IDENTITY_WEB_FIELDS = {
 ARTIST_DATA_BINDING_FIELDS = {
     "schemaVersion",
     "artifactManifest",
+    "preflightManifests",
+    "postApplyVerification",
     "productionIdentity",
 }
 PRODUCTION_IDENTITY_FIELDS = set(PRODUCTION_IDENTITY_ROLES)
@@ -854,14 +869,20 @@ def _evaluate_artist_data_binding(
 
     manifest_value = value.get("artifactManifest")
     manifest = manifest_value if isinstance(manifest_value, Mapping) else {}
+    preflight_value = value.get("preflightManifests")
+    preflight = preflight_value if isinstance(preflight_value, list) else []
+    post_apply_value = value.get("postApplyVerification")
+    post_apply = post_apply_value if isinstance(post_apply_value, Mapping) else {}
     production_value = value.get("productionIdentity")
     production = (
         production_value if isinstance(production_value, Mapping) else {}
     )
     phase = _artist_binding_phase(value)
     expected_paths = PRODUCTION_IDENTITY_PATHS.get(phase or "", {})
+    expected_state_paths = ARTIST_STATE_PATHS.get(phase or "", {})
     descriptors = {
         "artifactManifest": manifest,
+        "postApplyVerification": post_apply,
         **{
             name: (
                 production.get(name)
@@ -873,7 +894,7 @@ def _evaluate_artist_data_binding(
     }
     valid = (
         set(value) == ARTIST_DATA_BINDING_FIELDS
-        and value.get("schemaVersion") == "nga-artist-data-binding-v2"
+        and value.get("schemaVersion") == "nga-artist-data-binding-v3"
         and set(production) == PRODUCTION_IDENTITY_FIELDS
         and phase is not None
         and (expected_phase is None or phase == expected_phase)
@@ -890,6 +911,22 @@ def _evaluate_artist_data_binding(
             descriptors[name].get("path") == expected_path
             for name, expected_path in expected_paths.items()
         )
+        and len(preflight)
+        == len(expected_state_paths.get("preflightManifests", []))
+        and all(
+            isinstance(descriptor, Mapping)
+            and set(descriptor) == BOUND_ARTIFACT_DESCRIPTOR_FIELDS
+            and descriptor.get("path") == expected_path
+            and isinstance(descriptor.get("sha256"), str)
+            and re.fullmatch(r"[a-f0-9]{64}", descriptor["sha256"]) is not None
+            for descriptor, expected_path in zip(
+                preflight,
+                expected_state_paths.get("preflightManifests", []),
+                strict=True,
+            )
+        )
+        and post_apply.get("path")
+        == expected_state_paths.get("postApplyVerification")
     )
     if not valid:
         failures.append(_failure("artist_data_identity_invalid"))
@@ -1106,6 +1143,7 @@ def evaluate_artist_data_evidence(
     required_json = {
         "source-manifest.json",
         "mapping.json",
+        "rollback/d1-records.json",
         "vector-value-hashes.json",
     }
     if not required_json.issubset(declared_files):
@@ -1281,6 +1319,52 @@ def evaluate_artist_data_evidence(
             failures.append(
                 _failure("artist_vector_identity_mismatch", artworkId=artwork_id)
             )
+
+    rollback_d1_record = declared_files.get("rollback/d1-records.json")
+    rollback_d1_value = (
+        _load_bound_json(rollback_d1_record[2]) if rollback_d1_record else None
+    )
+    rollback_d1 = rollback_d1_value if isinstance(rollback_d1_value, list) else []
+    rollback_d1_by_id = {
+        str(row.get("id") or ""): row
+        for row in rollback_d1
+        if isinstance(row, Mapping)
+    }
+    rollback_d1_complete = True
+    for row_value in rollback_d1:
+        row = row_value if isinstance(row_value, Mapping) else {}
+        try:
+            custom_metadata = (
+                json.loads(row.get("custom_metadata") or "{}")
+                if isinstance(row.get("custom_metadata"), str)
+                else row.get("custom_metadata") or {}
+            )
+        except json.JSONDecodeError:
+            custom_metadata = None
+        if (
+            row.get("org_id") != NGA_STAGING_ORG_ID
+            or not isinstance(custom_metadata, Mapping)
+            or custom_metadata.get("provider") != "nga"
+            or not {"primary_artist_id", "custom_metadata", "field_sources"}.issubset(
+                row
+            )
+        ):
+            rollback_d1_complete = False
+    if (
+        len(rollback_d1) != expected_count
+        or len(rollback_d1_by_id) != expected_count
+        or set(rollback_d1_by_id) != set(mapping_by_id)
+        or not rollback_d1_complete
+        or any(
+            not isinstance(row, Mapping) or set(row) != set(rollback_d1[0])
+            for row in rollback_d1
+        )
+    ):
+        failures.append(_failure("artist_rollback_d1_invalid"))
+    if rollback_d1_record and rollback_d1_record[0].get("recordCount") != len(
+        rollback_d1
+    ):
+        failures.append(_failure("artist_artifact_count_mismatch"))
     for artwork_id, row in rollback_by_id.items():
         metadata_value = row.get("metadata")
         metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
@@ -1334,7 +1418,9 @@ def evaluate_artist_data_evidence(
     expected_invariants = {
         "stagedRecordCount": expected_count,
         "mappingCount": expected_count,
+        "expectedD1Changes": expected_count if phase == "pilot" else expected_count - 5,
         "imageVectorCount": expected_count,
+        "rollbackD1RecordCount": expected_count,
         "rollbackVectorCount": expected_count,
         "vectorValuesUnchanged": True,
         "captionVectorsChanged": 0,
@@ -1424,6 +1510,525 @@ def evaluate_artist_data_evidence(
         ):
             failures.append(_failure("artist_preflight_scope_mismatch"))
 
+    bound_paths = [str(marker.resolve())] if marker.is_file() else []
+    if manifest_path is not None:
+        bound_paths.append(str(manifest_path.resolve()))
+    bound_paths.extend(str(value[1].resolve()) for value in declared_files.values())
+
+    def load_state_input(
+        root: Path,
+        descriptor_value: Any,
+        *,
+        failure_code: str,
+        ndjson: bool = False,
+    ) -> tuple[Path | None, list[Any]]:
+        descriptor = (
+            descriptor_value if isinstance(descriptor_value, Mapping) else {}
+        )
+        resolved = _resolve_bound_file(root, descriptor)
+        if resolved is None:
+            failures.append(_failure(failure_code))
+            return None, []
+        path, payload = resolved
+        if not payload:
+            failures.append(_failure(failure_code))
+            return path, []
+        value = _load_ndjson(payload) if ndjson else _load_bound_json(payload)
+        if not isinstance(value, list):
+            failures.append(_failure(failure_code))
+            return path, []
+        bound_paths.append(str(path.resolve()))
+        return path, value
+
+    def contains_recovery_value(value: Any, key: str, expected: Any) -> bool:
+        if isinstance(value, Mapping):
+            return value.get(key) == expected or any(
+                contains_recovery_value(child, key, expected)
+                for child in value.values()
+            )
+        if isinstance(value, list):
+            return any(
+                contains_recovery_value(child, key, expected) for child in value
+            )
+        return False
+
+    preflight_descriptors_value = binding.get("preflightManifests")
+    preflight_descriptors = (
+        preflight_descriptors_value
+        if isinstance(preflight_descriptors_value, list)
+        else []
+    )
+    expected_preflight_paths = ARTIST_STATE_PATHS.get(phase, {}).get(
+        "preflightManifests", []
+    )
+    preflight_scope_ids: set[str] = set()
+    for descriptor_value, expected_path in zip(
+        preflight_descriptors, expected_preflight_paths
+    ):
+        descriptor = (
+            descriptor_value if isinstance(descriptor_value, Mapping) else {}
+        )
+        resolved = _resolve_bound_file(
+            evidence_root, descriptor, expected_path=expected_path
+        )
+        if resolved is None:
+            failures.append(_failure("artist_preflight_manifest_missing"))
+            continue
+        preflight_path, preflight_payload = resolved
+        if not preflight_payload:
+            failures.append(_failure("artist_preflight_manifest_hash_mismatch"))
+            continue
+        preflight_manifest_value = _load_bound_json(preflight_payload)
+        preflight_manifest = (
+            preflight_manifest_value
+            if isinstance(preflight_manifest_value, Mapping)
+            else {}
+        )
+        if not preflight_manifest:
+            failures.append(_failure("artist_preflight_manifest_invalid"))
+            continue
+        bound_paths.append(str(preflight_path.resolve()))
+        capture_phase = preflight_manifest.get("phase")
+        expected_capture_count = (
+            5
+            if capture_phase == "pilot"
+            else NGA_FULL_STAGED_COUNT - 5
+            if phase == "full" and capture_phase == "full"
+            else -1
+        )
+        capture_counts_value = preflight_manifest.get("counts")
+        capture_counts = (
+            capture_counts_value
+            if isinstance(capture_counts_value, Mapping)
+            else {}
+        )
+        capture_inputs_value = preflight_manifest.get("inputs")
+        capture_inputs = (
+            capture_inputs_value
+            if isinstance(capture_inputs_value, Mapping)
+            else {}
+        )
+        rollback_value = preflight_manifest.get("rollback")
+        capture_rollback = (
+            rollback_value if isinstance(rollback_value, Mapping) else {}
+        )
+        if (
+            preflight_manifest.get("schemaVersion") != 2
+            or preflight_manifest.get("captureKind") != "preflight"
+            or _parse_utc_timestamp(preflight_manifest.get("capturedAt")) is None
+            or preflight_manifest.get("environment") != "staging"
+            or preflight_manifest.get("expectedOrgId") != NGA_STAGING_ORG_ID
+            or preflight_manifest.get("resources")
+            != {
+                "d1Database": NGA_STAGING_D1_DATABASE,
+                "imageVectorIndex": NGA_STAGING_IMAGE_VECTOR_INDEX,
+            }
+            or capture_counts
+            != {
+                "ids": expected_capture_count,
+                "stagedRecords": expected_capture_count,
+                "imageVectors": expected_capture_count,
+            }
+            or set(capture_inputs) != {"ids", "stagedRecords", "imageVectors"}
+            or preflight_manifest.get("hashes")
+            != {
+                "ids": (
+                    capture_inputs.get("ids", {}).get("sha256")
+                    if isinstance(capture_inputs.get("ids"), Mapping)
+                    else None
+                ),
+                "stagedRecords": (
+                    capture_inputs.get("stagedRecords", {}).get("sha256")
+                    if isinstance(capture_inputs.get("stagedRecords"), Mapping)
+                    else None
+                ),
+            }
+            or canonical_json(preflight_manifest.get("vectorFiles"))
+            != canonical_json(capture_inputs.get("imageVectors"))
+            or set(capture_rollback) != {"d1TimeTravel", "recoveryPoint"}
+        ):
+            failures.append(_failure("artist_preflight_manifest_invalid"))
+
+        matching_binding = next(
+            (
+                item
+                for item in preflight
+                if isinstance(item, Mapping) and item.get("phase") == capture_phase
+            ),
+            None,
+        )
+        captured_binding = {
+            "manifestSha256": sha256_bytes(preflight_payload),
+            "phase": capture_phase,
+            "expectedOrgId": preflight_manifest.get("expectedOrgId"),
+            "resources": preflight_manifest.get("resources"),
+            "counts": capture_counts_value,
+            "ids": capture_inputs.get("ids"),
+            "stagedRecords": capture_inputs.get("stagedRecords"),
+            "imageVectors": capture_inputs.get("imageVectors"),
+            "rollback": rollback_value,
+        }
+        if (
+            not isinstance(matching_binding, Mapping)
+            or canonical_json(captured_binding) != canonical_json(matching_binding)
+        ):
+            failures.append(_failure("artist_preflight_scope_mismatch"))
+
+        _, captured_ids = load_state_input(
+            preflight_path.parent,
+            capture_inputs.get("ids"),
+            failure_code="artist_preflight_artifact_hash_mismatch",
+        )
+        _, captured_d1 = load_state_input(
+            preflight_path.parent,
+            capture_inputs.get("stagedRecords"),
+            failure_code="artist_preflight_artifact_hash_mismatch",
+        )
+        captured_vectors: list[Any] = []
+        vector_descriptors = capture_inputs.get("imageVectors")
+        if not isinstance(vector_descriptors, list):
+            failures.append(_failure("artist_preflight_artifact_hash_mismatch"))
+            vector_descriptors = []
+        for vector_descriptor in vector_descriptors:
+            _, rows = load_state_input(
+                preflight_path.parent,
+                vector_descriptor,
+                failure_code="artist_preflight_artifact_hash_mismatch",
+                ndjson=True,
+            )
+            captured_vectors.extend(rows)
+        captured_d1_by_id = {
+            str(row.get("id") or ""): row
+            for row in captured_d1
+            if isinstance(row, Mapping)
+        }
+        captured_vector_by_id = {}
+        for row in captured_vectors:
+            if not isinstance(row, Mapping):
+                continue
+            metadata_value = row.get("metadata")
+            metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
+            captured_vector_by_id[str(row.get("id") or metadata.get("artworkId") or "")] = row
+        captured_id_set = {
+            str(value) for value in captured_ids if isinstance(value, str)
+        }
+        if (
+            len(captured_ids) != expected_capture_count
+            or len(captured_id_set) != expected_capture_count
+            or len(captured_d1) != expected_capture_count
+            or len(captured_d1_by_id) != expected_capture_count
+            or len(captured_vectors) != expected_capture_count
+            or len(captured_vector_by_id) != expected_capture_count
+            or set(captured_d1_by_id) != captured_id_set
+            or set(captured_vector_by_id) != captured_id_set
+            or not captured_id_set.issubset(mapping_by_id)
+            or any(
+                canonical_json(captured_d1_by_id.get(artwork_id))
+                != canonical_json(rollback_d1_by_id.get(artwork_id))
+                or canonical_json(captured_vector_by_id.get(artwork_id))
+                != canonical_json(rollback_by_id.get(artwork_id))
+                for artwork_id in captured_id_set
+            )
+        ):
+            failures.append(_failure("artist_preflight_state_mismatch"))
+        preflight_scope_ids.update(captured_id_set)
+
+        recovery_descriptor = capture_rollback.get("d1TimeTravel")
+        recovery_resolved = _resolve_bound_file(
+            preflight_path.parent,
+            recovery_descriptor
+            if isinstance(recovery_descriptor, Mapping)
+            else {},
+        )
+        if recovery_resolved is None or not recovery_resolved[1]:
+            failures.append(_failure("artist_preflight_rollback_hash_mismatch"))
+        else:
+            recovery_path, recovery_payload = recovery_resolved
+            recovery_document = _load_bound_json(recovery_payload)
+            recovery_point_value = capture_rollback.get("recoveryPoint")
+            recovery_point = (
+                recovery_point_value
+                if isinstance(recovery_point_value, Mapping)
+                else {}
+            )
+            usable_recovery = any(
+                _nonblank_string(recovery_point.get(field))
+                and contains_recovery_value(
+                    recovery_document, field, recovery_point.get(field)
+                )
+                for field in ("bookmark", "timestamp")
+            )
+            if not usable_recovery:
+                failures.append(_failure("artist_preflight_recovery_point_invalid"))
+            bound_paths.append(str(recovery_path.resolve()))
+    if preflight_scope_ids != set(mapping_by_id):
+        failures.append(_failure("artist_preflight_scope_mismatch"))
+
+    post_descriptor_value = binding.get("postApplyVerification")
+    post_descriptor = (
+        post_descriptor_value
+        if isinstance(post_descriptor_value, Mapping)
+        else {}
+    )
+    expected_post_path = ARTIST_STATE_PATHS.get(phase, {}).get(
+        "postApplyVerification"
+    )
+    post_resolved = _resolve_bound_file(
+        evidence_root, post_descriptor, expected_path=expected_post_path
+    )
+    if post_resolved is None:
+        failures.append(_failure("artist_post_apply_verification_missing"))
+    elif not post_resolved[1]:
+        failures.append(_failure("artist_post_apply_verification_hash_mismatch"))
+    else:
+        post_path, post_payload = post_resolved
+        post_value = _load_bound_json(post_payload)
+        post = post_value if isinstance(post_value, Mapping) else {}
+        bound_paths.append(str(post_path.resolve()))
+        state_descriptor_value = post.get("stateManifest")
+        state_descriptor = (
+            state_descriptor_value
+            if isinstance(state_descriptor_value, Mapping)
+            else {}
+        )
+        if (
+            set(post)
+            != {
+                "schemaVersion",
+                "verifiedAt",
+                "environment",
+                "phase",
+                "artifactManifestSha256",
+                "stateManifest",
+                "preflightInputs",
+                "summary",
+            }
+            or post.get("schemaVersion") != "nga-post-apply-verification-v1"
+            or _parse_utc_timestamp(post.get("verifiedAt")) is None
+            or post.get("environment") != "staging"
+            or post.get("phase") != phase
+            or post.get("artifactManifestSha256") != sha256_bytes(manifest_bytes)
+            or canonical_json(post.get("preflightInputs")) != canonical_json(preflight)
+            or state_descriptor.get("path") != "state-manifest.json"
+        ):
+            failures.append(_failure("artist_post_apply_verification_invalid"))
+        state_resolved = _resolve_bound_file(post_path.parent, state_descriptor)
+        if state_resolved is None or not state_resolved[1]:
+            failures.append(_failure("artist_post_apply_artifact_hash_mismatch"))
+        else:
+            state_path, state_payload = state_resolved
+            state_value = _load_bound_json(state_payload)
+            state = state_value if isinstance(state_value, Mapping) else {}
+            bound_paths.append(str(state_path.resolve()))
+            state_counts_value = state.get("counts")
+            state_counts = (
+                state_counts_value
+                if isinstance(state_counts_value, Mapping)
+                else {}
+            )
+            state_inputs_value = state.get("inputs")
+            state_inputs = (
+                state_inputs_value
+                if isinstance(state_inputs_value, Mapping)
+                else {}
+            )
+            if (
+                state.get("schemaVersion") != 2
+                or state.get("captureKind") != "post-apply"
+                or _parse_utc_timestamp(state.get("capturedAt")) is None
+                or state.get("environment") != "staging"
+                or state.get("phase") != phase
+                or state.get("expectedOrgId") != NGA_STAGING_ORG_ID
+                or state.get("resources")
+                != {
+                    "d1Database": NGA_STAGING_D1_DATABASE,
+                    "imageVectorIndex": NGA_STAGING_IMAGE_VECTOR_INDEX,
+                }
+                or state_counts
+                != {
+                    "ids": expected_count,
+                    "stagedRecords": expected_count,
+                    "imageVectors": expected_count,
+                }
+                or set(state_inputs) != {"ids", "stagedRecords", "imageVectors"}
+                or state.get("hashes")
+                != {
+                    "ids": (
+                        state_inputs.get("ids", {}).get("sha256")
+                        if isinstance(state_inputs.get("ids"), Mapping)
+                        else None
+                    ),
+                    "stagedRecords": (
+                        state_inputs.get("stagedRecords", {}).get("sha256")
+                        if isinstance(state_inputs.get("stagedRecords"), Mapping)
+                        else None
+                    ),
+                }
+                or canonical_json(state.get("vectorFiles"))
+                != canonical_json(state_inputs.get("imageVectors"))
+                or "rollback" in state
+            ):
+                failures.append(_failure("artist_post_apply_state_manifest_invalid"))
+            _, post_ids = load_state_input(
+                state_path.parent,
+                state_inputs.get("ids"),
+                failure_code="artist_post_apply_artifact_hash_mismatch",
+            )
+            _, post_d1 = load_state_input(
+                state_path.parent,
+                state_inputs.get("stagedRecords"),
+                failure_code="artist_post_apply_artifact_hash_mismatch",
+            )
+            post_vectors: list[Any] = []
+            post_vector_descriptors = state_inputs.get("imageVectors")
+            if not isinstance(post_vector_descriptors, list):
+                failures.append(_failure("artist_post_apply_artifact_hash_mismatch"))
+                post_vector_descriptors = []
+            for vector_descriptor in post_vector_descriptors:
+                _, rows = load_state_input(
+                    state_path.parent,
+                    vector_descriptor,
+                    failure_code="artist_post_apply_artifact_hash_mismatch",
+                    ndjson=True,
+                )
+                post_vectors.extend(rows)
+            post_d1_by_id = {
+                str(row.get("id") or ""): row
+                for row in post_d1
+                if isinstance(row, Mapping)
+            }
+            post_vectors_by_id = {}
+            for row in post_vectors:
+                if not isinstance(row, Mapping):
+                    continue
+                metadata_value = row.get("metadata")
+                metadata = (
+                    metadata_value if isinstance(metadata_value, Mapping) else {}
+                )
+                post_vectors_by_id[
+                    str(row.get("id") or metadata.get("artworkId") or "")
+                ] = row
+            post_id_set = {str(value) for value in post_ids if isinstance(value, str)}
+            state_valid = (
+                len(post_ids) == expected_count
+                and len(post_id_set) == expected_count
+                and len(post_d1) == expected_count
+                and len(post_d1_by_id) == expected_count
+                and len(post_vectors) == expected_count
+                and len(post_vectors_by_id) == expected_count
+                and post_id_set == set(mapping_by_id)
+                and set(post_d1_by_id) == post_id_set
+                and set(post_vectors_by_id) == post_id_set
+            )
+            ordered_ids = sorted(
+                post_id_set, key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1])
+            )
+            for artwork_id in ordered_ids:
+                desired = mapping_by_id.get(artwork_id, {})
+                original_value = rollback_d1_by_id.get(artwork_id)
+                actual_value = post_d1_by_id.get(artwork_id)
+                original_vector = rollback_by_id.get(artwork_id)
+                actual_vector = post_vectors_by_id.get(artwork_id)
+                if not all(
+                    isinstance(value, Mapping)
+                    for value in (
+                        desired,
+                        original_value,
+                        actual_value,
+                        original_vector,
+                        actual_vector,
+                    )
+                ):
+                    state_valid = False
+                    continue
+                original = json.loads(json.dumps(original_value))
+                actual = json.loads(json.dumps(actual_value))
+                try:
+                    original_custom = (
+                        json.loads(original.get("custom_metadata") or "{}")
+                        if isinstance(original.get("custom_metadata"), str)
+                        else original.get("custom_metadata") or {}
+                    )
+                    actual_custom = (
+                        json.loads(actual.get("custom_metadata") or "{}")
+                        if isinstance(actual.get("custom_metadata"), str)
+                        else actual.get("custom_metadata") or {}
+                    )
+                    original_sources = (
+                        json.loads(original.get("field_sources") or "{}")
+                        if isinstance(original.get("field_sources"), str)
+                        else original.get("field_sources") or {}
+                    )
+                    actual_sources = (
+                        json.loads(actual.get("field_sources") or "{}")
+                        if isinstance(actual.get("field_sources"), str)
+                        else actual.get("field_sources") or {}
+                    )
+                except json.JSONDecodeError:
+                    state_valid = False
+                    continue
+                if not all(
+                    isinstance(value, Mapping)
+                    for value in (
+                        original_custom,
+                        actual_custom,
+                        original_sources,
+                        actual_sources,
+                    )
+                ):
+                    state_valid = False
+                    continue
+                expected_custom = {
+                    **original_custom,
+                    "ngaArtists": desired.get("customMetadata", {}).get("ngaArtists"),
+                }
+                expected_sources = {
+                    **original_sources,
+                    "primary_artist_id": "nga.objects_constituents",
+                }
+                original["primary_artist_id"] = desired.get("primaryArtistId")
+                original["custom_metadata"] = expected_custom
+                original["field_sources"] = expected_sources
+                original["updated_at"] = actual.get("updated_at")
+                actual["custom_metadata"] = actual_custom
+                actual["field_sources"] = actual_sources
+                expected_vector = json.loads(json.dumps(original_vector))
+                expected_vector["metadata"] = {
+                    **(
+                        expected_vector.get("metadata")
+                        if isinstance(expected_vector.get("metadata"), Mapping)
+                        else {}
+                    ),
+                    "primaryArtistId": desired.get("primaryArtistId"),
+                }
+                if (
+                    actual_value.get("primary_artist_id")
+                    != desired.get("primaryArtistId")
+                    or canonical_json(actual_custom) != canonical_json(expected_custom)
+                    or canonical_json(actual_sources) != canonical_json(expected_sources)
+                    or canonical_json(actual) != canonical_json(original)
+                    or canonical_json(actual_vector) != canonical_json(expected_vector)
+                ):
+                    state_valid = False
+            if not state_valid:
+                failures.append(_failure("artist_post_apply_state_mismatch"))
+            expected_summary = {
+                "phase": phase,
+                "recordCount": expected_count,
+                "vectorCount": expected_count,
+                "unrelatedFieldsUnchanged": True,
+                "vectorValuesUnchanged": True,
+                "idempotentD1State": True,
+                "postRecordsSha256": sha256_json(
+                    [post_d1_by_id.get(artwork_id) for artwork_id in ordered_ids]
+                ),
+                "postVectorsSha256": sha256_json(
+                    [post_vectors_by_id.get(artwork_id) for artwork_id in ordered_ids]
+                ),
+            }
+            if canonical_json(post.get("summary")) != canonical_json(expected_summary):
+                failures.append(_failure("artist_post_apply_summary_mismatch"))
+
     ordered_value = manifest.get("orderedArtifacts") if manifest else None
     ordered = ordered_value if isinstance(ordered_value, list) else []
     ordered_counts = {"d1-sql": 0, "image-vectors": 0}
@@ -1445,10 +2050,6 @@ def evaluate_artist_data_evidence(
     production_value = binding.get("productionIdentity")
     production = production_value if isinstance(production_value, Mapping) else {}
     captures: dict[str, Mapping[str, Any]] = {}
-    bound_paths = [str(marker.resolve())] if marker.is_file() else []
-    if manifest_path is not None:
-        bound_paths.append(str(manifest_path.resolve()))
-    bound_paths.extend(str(value[1].resolve()) for value in declared_files.values())
     expected_production_paths = PRODUCTION_IDENTITY_PATHS.get(phase, {})
     for name, expected_path in expected_production_paths.items():
         descriptor_value = production.get(name)

@@ -80,6 +80,19 @@ export const canonicalJson = (value) => {
   return JSON.stringify(normalize(value));
 };
 
+const containsExactRecoveryValue = (value, field, expected) => {
+  if (Array.isArray(value)) {
+    return value.some((entry) =>
+      containsExactRecoveryValue(entry, field, expected)
+    );
+  }
+  if (!value || typeof value !== 'object') return false;
+  if (value[field] === expected) return true;
+  return Object.values(value).some((entry) =>
+    containsExactRecoveryValue(entry, field, expected)
+  );
+};
+
 export function validateNgaSourceFiles(entries, sourceCommit) {
   if (sourceCommit !== NGA_SOURCE_COMMIT) {
     throw new Error(`source commit must be pinned to ${NGA_SOURCE_COMMIT}`);
@@ -181,6 +194,8 @@ export async function validatePreflightBindings({
     const manifestContent = await readFile(manifestPath);
     const manifest = JSON.parse(manifestContent.toString('utf8'));
     if (
+      manifest.schemaVersion !== 2 ||
+      manifest.captureKind !== 'preflight' ||
       manifest.environment !== 'staging' ||
       !['pilot', 'full'].includes(manifest.phase) ||
       manifest.expectedOrgId !== STAGING_ORG_ID ||
@@ -192,6 +207,37 @@ export async function validatePreflightBindings({
       );
     }
     const root = await realpath(dirname(manifestPath));
+    const timeTravel = await resolveBoundPreflightFile(
+      root,
+      manifest.rollback?.d1TimeTravel
+    );
+    let timeTravelValue;
+    try {
+      timeTravelValue = JSON.parse(timeTravel.content.toString('utf8'));
+    } catch {
+      throw new Error('malformed D1 time-travel rollback input');
+    }
+    const declaredRecovery = manifest.rollback?.recoveryPoint;
+    const recoveryFields = ['bookmark', 'timestamp'].filter(
+      (field) =>
+        typeof declaredRecovery?.[field] === 'string' &&
+        Boolean(declaredRecovery[field].trim())
+    );
+    if (
+      !declaredRecovery ||
+      typeof declaredRecovery !== 'object' ||
+      Array.isArray(declaredRecovery) ||
+      recoveryFields.length === 0 ||
+      !recoveryFields.every((field) =>
+        containsExactRecoveryValue(
+          timeTravelValue,
+          field,
+          declaredRecovery[field]
+        )
+      )
+    ) {
+      throw new Error('D1 time-travel rollback recovery point is invalid');
+    }
     const ids = await resolveBoundPreflightFile(root, manifest.inputs?.ids);
     const staged = await resolveBoundPreflightFile(
       root,
@@ -285,6 +331,13 @@ export async function validatePreflightBindings({
         sha256: entry.sha256,
         count: entry.count,
       })),
+      rollback: {
+        d1TimeTravel: {
+          path: timeTravel.path,
+          sha256: timeTravel.sha256,
+        },
+        recoveryPoint: declaredRecovery,
+      },
     });
   }
 
@@ -537,6 +590,7 @@ export function buildNgaBackfillArtifacts({
 
   const mapping = [];
   const sql = [];
+  const rollbackD1Records = [];
   const enrichedVectors = [];
   const rollbackVectors = [];
   const vectorValueHashes = [];
@@ -568,6 +622,7 @@ export function buildNgaBackfillArtifacts({
     const enriched = enrichNgaArtistVector(vector, record);
     mapping.push(record);
     sql.push(buildNgaArtistUpdateSql(record, expectedOrgId));
+    rollbackD1Records.push(structuredClone(staged));
     enrichedVectors.push(enriched.enriched);
     rollbackVectors.push(enriched.rollback);
     vectorValueHashes.push({
@@ -581,5 +636,177 @@ export function buildNgaBackfillArtifacts({
   );
   if (extras.length) throw new Error(`unexpected vector ID ${extras[0]}`);
 
-  return { mapping, sql, enrichedVectors, rollbackVectors, vectorValueHashes };
+  return {
+    mapping,
+    sql,
+    rollbackD1Records,
+    enrichedVectors,
+    rollbackVectors,
+    vectorValueHashes,
+  };
+}
+
+const postApplyJsonObject = (value, field, artworkId) => {
+  if (value === null || value === undefined || value === '') return {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return structuredClone(value);
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // The field-specific error below is the stable public contract.
+    }
+  }
+  throw new Error(`malformed post-apply ${field} for ${artworkId}`);
+};
+
+const exactRowsByArtworkId = (rows, label) => {
+  const byId = new Map();
+  for (const row of rows || []) {
+    const id = String(row?.id || row?.metadata?.artworkId || '');
+    if (!/^open-access-art:nga:\d+$/.test(id) || byId.has(id)) {
+      throw new Error(`duplicate or invalid ${label} ID ${id}`);
+    }
+    byId.set(id, row);
+  }
+  return byId;
+};
+
+export function verifyNgaArtistPostApplyState({
+  phase,
+  mapping,
+  originalRecords,
+  originalVectors,
+  postRecords,
+  postVectors,
+}) {
+  if (!['pilot', 'full'].includes(phase)) {
+    throw new Error('post-apply phase must be pilot or full');
+  }
+  const expectedCount = phase === 'pilot' ? PILOT_OBJECT_IDS.length : FULL_STAGED_COUNT;
+  const mappingById = exactRowsByArtworkId(mapping, 'mapping');
+  const originalById = exactRowsByArtworkId(originalRecords, 'rollback D1');
+  const originalVectorsById = exactRowsByArtworkId(
+    originalVectors,
+    'rollback vector'
+  );
+  const postById = exactRowsByArtworkId(postRecords, 'post-apply D1');
+  const postVectorsById = exactRowsByArtworkId(
+    postVectors,
+    'post-apply vector'
+  );
+  if (mappingById.size !== expectedCount || originalById.size !== expectedCount) {
+    throw new Error(
+      `post-apply expected scope is ${expectedCount} records for ${phase}`
+    );
+  }
+  if (postById.size !== expectedCount) {
+    throw new Error(
+      `post-apply D1 count mismatch: expected ${expectedCount}, got ${postById.size}`
+    );
+  }
+  if (
+    originalVectorsById.size !== expectedCount ||
+    postVectorsById.size !== expectedCount
+  ) {
+    throw new Error(
+      `post-apply vector count mismatch: expected ${expectedCount}, got ${postVectorsById.size}`
+    );
+  }
+  const expectedIds = new Set(mappingById.keys());
+  for (const [label, rows] of [
+    ['rollback D1', originalById],
+    ['rollback vector', originalVectorsById],
+    ['post-apply D1', postById],
+    ['post-apply vector', postVectorsById],
+  ]) {
+    if (
+      rows.size !== expectedIds.size ||
+      [...rows.keys()].some((id) => !expectedIds.has(id))
+    ) {
+      throw new Error(`${label} ID gap or extra relative to mapping`);
+    }
+  }
+
+  const orderedIds = [...expectedIds].sort((left, right) =>
+    Number(left.split(':').at(-1)) - Number(right.split(':').at(-1))
+  );
+  for (const id of orderedIds) {
+    const desired = mappingById.get(id);
+    const original = structuredClone(originalById.get(id));
+    const actual = structuredClone(postById.get(id));
+    if (String(actual.primary_artist_id || '') !== desired.primaryArtistId) {
+      throw new Error(`post-apply primary artist mismatch for ${id}`);
+    }
+    const originalCustom = postApplyJsonObject(
+      original.custom_metadata,
+      'custom_metadata',
+      id
+    );
+    const actualCustom = postApplyJsonObject(
+      actual.custom_metadata,
+      'custom_metadata',
+      id
+    );
+    const originalSources = postApplyJsonObject(
+      original.field_sources,
+      'field_sources',
+      id
+    );
+    const actualSources = postApplyJsonObject(
+      actual.field_sources,
+      'field_sources',
+      id
+    );
+    const expectedCustom = {
+      ...originalCustom,
+      ngaArtists: desired.customMetadata.ngaArtists,
+    };
+    const expectedSources = {
+      ...originalSources,
+      primary_artist_id: 'nga.objects_constituents',
+    };
+    if (
+      canonicalJson(actualCustom) !== canonicalJson(expectedCustom) ||
+      canonicalJson(actualSources) !== canonicalJson(expectedSources)
+    ) {
+      throw new Error(`post-apply NGA artist metadata mismatch for ${id}`);
+    }
+    original.primary_artist_id = desired.primaryArtistId;
+    original.custom_metadata = expectedCustom;
+    original.field_sources = expectedSources;
+    original.updated_at = actual.updated_at;
+    actual.custom_metadata = actualCustom;
+    actual.field_sources = actualSources;
+    if (canonicalJson(actual) !== canonicalJson(original)) {
+      throw new Error(`unrelated D1 fields changed for ${id}`);
+    }
+
+    const originalVector = originalVectorsById.get(id);
+    const expectedVector = structuredClone(originalVector);
+    expectedVector.metadata = {
+      ...(expectedVector.metadata || {}),
+      primaryArtistId: desired.primaryArtistId,
+    };
+    if (canonicalJson(postVectorsById.get(id)) !== canonicalJson(expectedVector)) {
+      throw new Error(`post-apply vector changed beyond primaryArtistId for ${id}`);
+    }
+  }
+
+  const orderedPostRecords = orderedIds.map((id) => postById.get(id));
+  const orderedPostVectors = orderedIds.map((id) => postVectorsById.get(id));
+  return {
+    phase,
+    recordCount: expectedCount,
+    vectorCount: expectedCount,
+    unrelatedFieldsUnchanged: true,
+    vectorValuesUnchanged: true,
+    idempotentD1State: true,
+    postRecordsSha256: sha256(canonicalJson(orderedPostRecords)),
+    postVectorsSha256: sha256(canonicalJson(orderedPostVectors)),
+  };
 }

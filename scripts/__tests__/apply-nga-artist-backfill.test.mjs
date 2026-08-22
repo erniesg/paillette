@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -66,6 +67,15 @@ const createArtifacts = (overrides = {}) => {
     ...row,
     metadata: { artworkId: row.id, provider: 'nga' },
   }));
+  const rollbackD1Rows = mappingRows.map((row, index) => ({
+    id: row.id,
+    org_id: 'eabbf000-708e-4d4c-8ac8-966b59d4fcac',
+    title: `Original ${index}`,
+    primary_artist_id: null,
+    custom_metadata: JSON.stringify({ provider: 'nga', retained: index }),
+    field_sources: JSON.stringify({ title: 'nga.objects' }),
+    updated_at: '2026-08-22T00:00:00Z',
+  }));
   const vectors = `${vectorRows.map((row) => JSON.stringify(row)).join('\n')}\n`;
   const rollback = `${rollbackRows.map((row) => JSON.stringify(row)).join('\n')}\n`;
   const valueHashes = `${JSON.stringify(
@@ -76,10 +86,12 @@ const createArtifacts = (overrides = {}) => {
     }))
   )}\n`;
   const mapping = `${JSON.stringify(mappingRows)}\n`;
+  const rollbackD1 = `${JSON.stringify(rollbackD1Rows)}\n`;
   const sourceManifest = `${JSON.stringify({ sourceCommit: '79d114c2186ca38af27a9478717f1e509d799495' })}\n`;
   writeFileSync(join(root, 'sql', 'artist-0001.sql'), sql);
   writeFileSync(join(root, 'vectors', 'artist-0001.ndjson'), vectors);
   writeFileSync(join(root, 'rollback', 'image-vectors-0001.ndjson'), rollback);
+  writeFileSync(join(root, 'rollback', 'd1-records.json'), rollbackD1);
   writeFileSync(join(root, 'vector-value-hashes.json'), valueHashes);
   writeFileSync(join(root, 'source-manifest.json'), sourceManifest);
   writeFileSync(join(root, 'mapping.json'), mapping);
@@ -115,6 +127,16 @@ const createArtifacts = (overrides = {}) => {
             count: 5,
           },
         ],
+        rollback: {
+          d1TimeTravel: {
+            path: 'd1-time-travel.json',
+            sha256: '6'.repeat(64),
+          },
+          recoveryPoint: {
+            bookmark: '00000000-0000000a-00004c16-00000000',
+            timestamp: '2026-08-22T00:00:00Z',
+          },
+        },
       },
     ],
     resources: {
@@ -124,8 +146,10 @@ const createArtifacts = (overrides = {}) => {
     invariants: {
       stagedRecordCount: 5,
       mappingCount: 5,
+      expectedD1Changes: 5,
       imageVectorCount: 5,
       rollbackVectorCount: 5,
+      rollbackD1RecordCount: 5,
       vectorValuesUnchanged: true,
       captionVectorsChanged: 0,
     },
@@ -133,6 +157,11 @@ const createArtifacts = (overrides = {}) => {
       { path: 'source-manifest.json', sha256: sha256(sourceManifest) },
       { path: 'mapping.json', sha256: sha256(mapping) },
       { path: 'vector-value-hashes.json', sha256: sha256(valueHashes) },
+      {
+        path: 'rollback/d1-records.json',
+        sha256: sha256(rollbackD1),
+        recordCount: 5,
+      },
       {
         path: 'rollback/image-vectors-0001.ndjson',
         sha256: sha256(rollback),
@@ -179,6 +208,62 @@ const replaceArtifact = (artifact, path, content) => {
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   writeFileSync(artifact.manifestPath, manifestText);
   return { ...artifact, manifestSha256: sha256(manifestText) };
+};
+
+const createMockPnpm = (
+  artifact,
+  { d1Changes = 5, mutateRows = (rows) => rows, mutateVectors = (rows) => rows } = {}
+) => {
+  const bin = join(artifact.root, 'bin');
+  mkdirSync(bin);
+  const mapping = JSON.parse(readFileSync(join(artifact.root, 'mapping.json')));
+  const originalRows = JSON.parse(
+    readFileSync(join(artifact.root, 'rollback', 'd1-records.json'))
+  );
+  const postRows = originalRows.map((row, index) => ({
+    ...row,
+    primary_artist_id: mapping[index].primaryArtistId,
+    custom_metadata: JSON.stringify({
+      ...JSON.parse(row.custom_metadata),
+      ngaArtists: mapping[index].customMetadata.ngaArtists,
+    }),
+    field_sources: JSON.stringify({
+      ...JSON.parse(row.field_sources),
+      primary_artist_id: 'nga.objects_constituents',
+    }),
+    updated_at: '2026-08-22T00:05:00Z',
+  }));
+  const postVectors = readFileSync(
+    join(artifact.root, 'vectors', 'artist-0001.ndjson'),
+    'utf8'
+  )
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  const mock = `#!/usr/bin/env node
+const args = process.argv.slice(2).join(' ');
+if (args.includes('d1 execute') && args.includes('--file')) {
+  process.stdout.write(JSON.stringify([{ success: true, meta: { changes: Number(process.env.NGA_APPLY_TEST_D1_CHANGES) } }]));
+} else if (args.includes('d1 execute') && args.includes('--command=')) {
+  process.stdout.write(JSON.stringify([{ results: JSON.parse(process.env.NGA_APPLY_TEST_POST_ROWS) }]));
+} else if (args.includes('vectorize upsert')) {
+  process.stdout.write(JSON.stringify({ count: 5 }));
+} else if (args.includes('vectorize get-vectors')) {
+  process.stdout.write(JSON.stringify({ vectors: JSON.parse(process.env.NGA_APPLY_TEST_POST_VECTORS) }));
+} else {
+  process.stderr.write('unexpected mock command: ' + args);
+  process.exit(2);
+}
+`;
+  const command = join(bin, 'pnpm');
+  writeFileSync(command, mock);
+  chmodSync(command, 0o755);
+  return {
+    PATH: `${bin}:${process.env.PATH}`,
+    NGA_APPLY_TEST_D1_CHANGES: String(d1Changes),
+    NGA_APPLY_TEST_POST_ROWS: JSON.stringify(mutateRows(postRows)),
+    NGA_APPLY_TEST_POST_VECTORS: JSON.stringify(mutateVectors(postVectors)),
+  };
 };
 
 const runApply = ({ manifestPath, manifestSha256, extra = [], env = {} }) =>
@@ -290,6 +375,19 @@ test('rejects a confirmed artifact manifest without hashed preflight bindings', 
   const result = runApply({ ...artifact, manifestSha256: sha256(text) });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /preflight.*bound|preflightInputs/i);
+});
+
+test('rejects a preflight binding without a durable D1 recovery point', () => {
+  const artifact = createArtifacts();
+  const manifest = JSON.parse(readFileSync(artifact.manifestPath, 'utf8'));
+  delete manifest.preflightInputs[0].rollback;
+  const text = `${JSON.stringify(manifest, null, 2)}\n`;
+  writeFileSync(artifact.manifestPath, text);
+
+  const result = runApply({ ...artifact, manifestSha256: sha256(text) });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /preflight.*rollback|recovery point|time-travel/i);
 });
 
 test('rejects rehashed SQL chunks whose declared count hides an ID gap', () => {
@@ -463,8 +561,9 @@ test('rejects any enriched-vector change beyond metadata.primaryArtistId', () =>
 test('rejects a rollback chunk whose declared line count is false', () => {
   const artifact = createArtifacts();
   const manifest = JSON.parse(readFileSync(artifact.manifestPath, 'utf8'));
-  manifest.files.find((entry) =>
-    entry.path.startsWith('rollback/')
+  manifest.files.find(
+    (entry) =>
+      entry.path.startsWith('rollback/') && entry.path.endsWith('.ndjson')
   ).recordCount = 4;
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
   writeFileSync(artifact.manifestPath, text);
@@ -473,12 +572,90 @@ test('rejects a rollback chunk whose declared line count is false', () => {
   assert.match(result.stderr, /rollback.*count|declared.*rollback/i);
 });
 
+test('rejects a prepared manifest without a complete D1 rollback source', () => {
+  const artifact = createArtifacts();
+  const manifest = JSON.parse(readFileSync(artifact.manifestPath, 'utf8'));
+  manifest.files = manifest.files.filter(
+    (entry) => entry.path !== 'rollback/d1-records.json'
+  );
+  const text = `${JSON.stringify(manifest, null, 2)}\n`;
+  writeFileSync(artifact.manifestPath, text);
+
+  const result = runApply({ ...artifact, manifestSha256: sha256(text) });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /D1 rollback|rollback.*D1/i);
+});
+
 test('execute is explicit and rejects a manifest whose artifact hash changed', () => {
   const artifact = createArtifacts();
   writeFileSync(join(artifact.root, 'sql', 'artist-0001.sql'), 'SELECT 2;\n');
-  const result = runApply({ ...artifact, extra: ['--execute'] });
+  const result = runApply({
+    ...artifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(artifact.root, 'post-apply')}`,
+    ],
+  });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /artifact SHA-256 mismatch/i);
+});
+
+test('execute succeeds only after exact post-apply state is re-exported and verified', () => {
+  const passing = createArtifacts();
+  const passingOut = join(passing.root, 'post-apply');
+  const passed = runApply({
+    ...passing,
+    extra: ['--execute', `--post-apply-out-dir=${passingOut}`],
+    env: createMockPnpm(passing),
+  });
+  assert.equal(passed.status, 0, passed.stderr);
+  const verification = JSON.parse(
+    readFileSync(join(passingOut, 'verification.json'), 'utf8')
+  );
+  assert.equal(verification.schemaVersion, 'nga-post-apply-verification-v1');
+  assert.equal(verification.phase, 'pilot');
+  assert.equal(verification.summary.recordCount, 5);
+  assert.equal(verification.summary.vectorCount, 5);
+
+  const failures = [
+    {
+      label: 'zero-row D1 execution',
+      options: { d1Changes: 0 },
+      pattern: /D1 changes.*expected 5|expected 5.*D1 changes/i,
+    },
+    {
+      label: 'partial D1 state',
+      options: { mutateRows: (rows) => rows.slice(0, -1) },
+      pattern: /post-apply.*(?:D1|coverage)/i,
+    },
+    {
+      label: 'incomplete vector upsert',
+      options: { mutateVectors: (rows) => rows.slice(0, -1) },
+      pattern: /post-apply.*(?:vector|coverage)/i,
+    },
+    {
+      label: 'changed unrelated field',
+      options: {
+        mutateRows: (rows) => [
+          { ...rows[0], title: 'Unexpected drift' },
+          ...rows.slice(1),
+        ],
+      },
+      pattern: /unrelated D1 fields changed/i,
+    },
+  ];
+  for (const fixture of failures) {
+    const artifact = createArtifacts();
+    const outDir = join(artifact.root, 'post-apply');
+    const result = runApply({
+      ...artifact,
+      extra: ['--execute', `--post-apply-out-dir=${outDir}`],
+      env: createMockPnpm(artifact, fixture.options),
+    });
+    assert.notEqual(result.status, 0, fixture.label);
+    assert.match(result.stderr, fixture.pattern, fixture.label);
+  }
 });
 
 test('rejects a changed support artifact bound into the manifest', () => {

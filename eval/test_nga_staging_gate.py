@@ -144,6 +144,20 @@ def production_identity_paths(phase):
     }
 
 
+def artist_state_paths(phase):
+    return {
+        "preflightManifests": (
+            ["preflight/pilot/preflight-manifest.json"]
+            if phase == "pilot"
+            else [
+                "preflight/pilot/preflight-manifest.json",
+                "preflight/full-remaining/preflight-manifest.json",
+            ]
+        ),
+        "postApplyVerification": f"candidate/post-apply/{phase}/verification.json",
+    }
+
+
 def deployment_identity(
     snapshot="candidate", git_sha="a" * 40, artist_binding=None, phase="pilot"
 ):
@@ -171,11 +185,20 @@ def deployment_identity(
     }
     if snapshot == "candidate":
         capture_paths = production_identity_paths(phase)
+        state_paths = artist_state_paths(phase)
         identity["artistDataBinding"] = artist_binding or {
-            "schemaVersion": "nga-artist-data-binding-v2",
+            "schemaVersion": "nga-artist-data-binding-v3",
             "artifactManifest": {
                 "path": f"backfill/{phase}/artifact-manifest.json",
                 "sha256": "1" * 64,
+            },
+            "preflightManifests": [
+                {"path": path, "sha256": "8" * 64}
+                for path in state_paths["preflightManifests"]
+            ],
+            "postApplyVerification": {
+                "path": state_paths["postApplyVerification"],
+                "sha256": "9" * 64,
             },
             "productionIdentity": {
                 "trustedPreflight": {
@@ -202,6 +225,15 @@ def full_deployment_identity(gate, pilot):
     full["artistDataBinding"]["artifactManifest"] = {
         "path": "backfill/full/artifact-manifest.json",
         "sha256": "5" * 64,
+    }
+    full_state_paths = artist_state_paths("full")
+    full["artistDataBinding"]["preflightManifests"] = [
+        {"path": path, "sha256": str(index + 8) * 64}
+        for index, path in enumerate(full_state_paths["preflightManifests"])
+    ]
+    full["artistDataBinding"]["postApplyVerification"] = {
+        "path": full_state_paths["postApplyVerification"],
+        "sha256": "a" * 64,
     }
     full_paths = production_identity_paths("full")
     full["artistDataBinding"]["productionIdentity"]["before"] = {
@@ -231,6 +263,8 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
 
     object_ids = ["131994", "110821", "11236", "38", "579"]
     mapping = []
+    rollback_d1 = []
+    post_d1 = []
     rollback = []
     enriched = []
     value_hashes = []
@@ -264,6 +298,39 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
                 },
             }
         )
+        original_d1 = {
+            "id": artwork_id,
+            "org_id": "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
+            "title": f"Original {object_id}",
+            "primary_artist_id": None,
+            "custom_metadata": json.dumps(
+                {"provider": "nga", "retained": index}, separators=(",", ":")
+            ),
+            "field_sources": json.dumps(
+                {"title": "nga.objects"}, separators=(",", ":")
+            ),
+            "updated_at": "2026-08-22T00:00:00Z",
+        }
+        changed_d1 = json.loads(json.dumps(original_d1))
+        changed_d1["primary_artist_id"] = primary_artist_id
+        changed_d1["custom_metadata"] = json.dumps(
+            {
+                "provider": "nga",
+                "retained": index,
+                "ngaArtists": mapping[-1]["customMetadata"]["ngaArtists"],
+            },
+            separators=(",", ":"),
+        )
+        changed_d1["field_sources"] = json.dumps(
+            {
+                "title": "nga.objects",
+                "primary_artist_id": "nga.objects_constituents",
+            },
+            separators=(",", ":"),
+        )
+        changed_d1["updated_at"] = "2026-08-22T00:05:00Z"
+        rollback_d1.append(original_d1)
+        post_d1.append(changed_d1)
         original = {
             "id": artwork_id,
             "values": [float(index), float(index) / 10],
@@ -297,6 +364,109 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         },
         "candidateCount": 63_253,
     }
+    preflight_phase = preflight / phase
+    preflight_phase.mkdir(parents=True, exist_ok=True)
+    preflight_payloads = {
+        "ids.json": (json.dumps([row["id"] for row in mapping], indent=2) + "\n").encode(),
+        "staged-nga-records.json": (
+            json.dumps(rollback_d1, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode(),
+        "image-vectors/original-0001-unit.ndjson": "".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            for row in rollback
+        ).encode(),
+        "d1-time-travel.json": (
+            json.dumps(
+                {
+                    "bookmark": "00000000-0000000a-00004c16-00000000",
+                    "timestamp": "2026-08-22T00:00:00Z",
+                }
+            )
+            + "\n"
+        ).encode(),
+    }
+    for relative, payload in preflight_payloads.items():
+        path = preflight_phase / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    preflight_manifest = {
+        "schemaVersion": 2,
+        "captureKind": "preflight",
+        "capturedAt": "2026-08-22T00:00:00Z",
+        "environment": "staging",
+        "phase": phase,
+        "expectedOrgId": "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
+        "resources": {
+            "d1Database": "paillette-db-stg",
+            "imageVectorIndex": "paillette-embeddings-v2-stg",
+        },
+        "counts": {"ids": 5, "stagedRecords": 5, "imageVectors": 5},
+        "hashes": {
+            "ids": hashlib.sha256(preflight_payloads["ids.json"]).hexdigest(),
+            "stagedRecords": hashlib.sha256(
+                preflight_payloads["staged-nga-records.json"]
+            ).hexdigest(),
+        },
+        "vectorFiles": [
+            {
+                "path": "image-vectors/original-0001-unit.ndjson",
+                "sha256": hashlib.sha256(
+                    preflight_payloads["image-vectors/original-0001-unit.ndjson"]
+                ).hexdigest(),
+                "count": 5,
+            }
+        ],
+        "rollback": {
+            "d1TimeTravel": {
+                "path": "d1-time-travel.json",
+                "sha256": hashlib.sha256(
+                    preflight_payloads["d1-time-travel.json"]
+                ).hexdigest(),
+            },
+            "recoveryPoint": {
+                "bookmark": "00000000-0000000a-00004c16-00000000",
+                "timestamp": "2026-08-22T00:00:00Z",
+            },
+        },
+        "inputs": {
+            "ids": {
+                "path": "ids.json",
+                "sha256": hashlib.sha256(preflight_payloads["ids.json"]).hexdigest(),
+                "count": 5,
+            },
+            "stagedRecords": {
+                "path": "staged-nga-records.json",
+                "sha256": hashlib.sha256(
+                    preflight_payloads["staged-nga-records.json"]
+                ).hexdigest(),
+                "count": 5,
+            },
+            "imageVectors": [
+                {
+                    "path": "image-vectors/original-0001-unit.ndjson",
+                    "sha256": hashlib.sha256(
+                        preflight_payloads["image-vectors/original-0001-unit.ndjson"]
+                    ).hexdigest(),
+                    "count": 5,
+                }
+            ],
+        },
+    }
+    preflight_manifest_bytes = (json.dumps(preflight_manifest, indent=2) + "\n").encode()
+    (preflight_phase / "preflight-manifest.json").write_bytes(
+        preflight_manifest_bytes
+    )
+    preflight_binding = {
+        "manifestSha256": hashlib.sha256(preflight_manifest_bytes).hexdigest(),
+        "phase": phase,
+        "expectedOrgId": preflight_manifest["expectedOrgId"],
+        "resources": preflight_manifest["resources"],
+        "counts": preflight_manifest["counts"],
+        "ids": preflight_manifest["inputs"]["ids"],
+        "stagedRecords": preflight_manifest["inputs"]["stagedRecords"],
+        "imageVectors": preflight_manifest["inputs"]["imageVectors"],
+        "rollback": preflight_manifest["rollback"],
+    }
     sql_text = "".join(
         f"UPDATE artworks SET primary_artist_id = '{row['primaryArtistId']}' "
         f"WHERE id = '{row['id']}';\n"
@@ -306,6 +476,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         "source-manifest.json": json.dumps(source_manifest, indent=2) + "\n",
         "mapping.json": json.dumps(mapping, indent=2) + "\n",
         "vector-value-hashes.json": json.dumps(value_hashes, indent=2) + "\n",
+        "rollback/d1-records.json": json.dumps(rollback_d1, indent=2) + "\n",
         "sql/artist-0001-unit.sql": sql_text,
         "vectors/enriched-0001-unit.ndjson": "".join(
             json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
@@ -322,6 +493,7 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
         "sql/artist-0001-unit.sql",
         "vectors/enriched-0001-unit.ndjson",
         "rollback/image-vectors-0001-unit.ndjson",
+        "rollback/d1-records.json",
     }
     files = []
     for relative, text_value in file_payloads.items():
@@ -352,35 +524,13 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "commit": "79d114c2186ca38af27a9478717f1e509d799495",
             "manifestSha256": file_by_path["source-manifest.json"]["sha256"],
         },
-        "preflightInputs": [
-            {
-                "manifestSha256": "a" * 64,
-                "phase": "pilot",
-                "expectedOrgId": "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
-                "resources": {
-                    "d1Database": "paillette-db-stg",
-                    "imageVectorIndex": "paillette-embeddings-v2-stg",
-                },
-                "counts": {"ids": 5, "stagedRecords": 5, "imageVectors": 5},
-                "ids": {"path": "ids.json", "sha256": "b" * 64, "count": 5},
-                "stagedRecords": {
-                    "path": "staged-nga-records.json",
-                    "sha256": "c" * 64,
-                    "count": 5,
-                },
-                "imageVectors": [
-                    {
-                        "path": "image-vectors/0001.ndjson",
-                        "sha256": "d" * 64,
-                        "count": 5,
-                    }
-                ],
-            }
-        ],
+        "preflightInputs": [preflight_binding],
         "invariants": {
             "stagedRecordCount": 5,
             "mappingCount": 5,
+            "expectedD1Changes": 5,
             "imageVectorCount": 5,
+            "rollbackD1RecordCount": 5,
             "rollbackVectorCount": 5,
             "vectorValuesUnchanged": True,
             "captionVectorsChanged": 0,
@@ -397,6 +547,111 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
     manifest_path = backfill / "artifact-manifest.json"
     manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
     manifest_path.write_bytes(manifest_bytes)
+
+    post_apply = candidate / "post-apply" / phase
+    post_apply.mkdir(parents=True, exist_ok=True)
+    state_payloads = {
+        "ids.json": preflight_payloads["ids.json"],
+        "staged-nga-records.json": (
+            json.dumps(post_d1, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode(),
+        "image-vectors/original-0001-unit.ndjson": "".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            for row in enriched
+        ).encode(),
+    }
+    for relative, payload in state_payloads.items():
+        path = post_apply / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    state_manifest = {
+        "schemaVersion": 2,
+        "captureKind": "post-apply",
+        "capturedAt": "2026-08-22T00:05:00Z",
+        "environment": "staging",
+        "phase": phase,
+        "expectedOrgId": "eabbf000-708e-4d4c-8ac8-966b59d4fcac",
+        "resources": {
+            "d1Database": "paillette-db-stg",
+            "imageVectorIndex": "paillette-embeddings-v2-stg",
+        },
+        "counts": {"ids": 5, "stagedRecords": 5, "imageVectors": 5},
+        "hashes": {
+            "ids": hashlib.sha256(state_payloads["ids.json"]).hexdigest(),
+            "stagedRecords": hashlib.sha256(
+                state_payloads["staged-nga-records.json"]
+            ).hexdigest(),
+        },
+        "vectorFiles": [
+            {
+                "path": "image-vectors/original-0001-unit.ndjson",
+                "sha256": hashlib.sha256(
+                    state_payloads["image-vectors/original-0001-unit.ndjson"]
+                ).hexdigest(),
+                "count": 5,
+            }
+        ],
+        "inputs": {
+            "ids": {
+                "path": "ids.json",
+                "sha256": hashlib.sha256(state_payloads["ids.json"]).hexdigest(),
+                "count": 5,
+            },
+            "stagedRecords": {
+                "path": "staged-nga-records.json",
+                "sha256": hashlib.sha256(
+                    state_payloads["staged-nga-records.json"]
+                ).hexdigest(),
+                "count": 5,
+            },
+            "imageVectors": [
+                {
+                    "path": "image-vectors/original-0001-unit.ndjson",
+                    "sha256": hashlib.sha256(
+                        state_payloads["image-vectors/original-0001-unit.ndjson"]
+                    ).hexdigest(),
+                    "count": 5,
+                }
+            ],
+        },
+    }
+    state_manifest_bytes = (json.dumps(state_manifest, indent=2) + "\n").encode()
+    (post_apply / "state-manifest.json").write_bytes(state_manifest_bytes)
+    ordered_ids = sorted(
+        (row["id"] for row in mapping),
+        key=lambda artwork_id: int(artwork_id.rsplit(":", 1)[1]),
+    )
+    post_by_id = {row["id"]: row for row in post_d1}
+    enriched_by_id = {row["id"]: row for row in enriched}
+    post_summary = {
+        "phase": phase,
+        "recordCount": 5,
+        "vectorCount": 5,
+        "unrelatedFieldsUnchanged": True,
+        "vectorValuesUnchanged": True,
+        "idempotentD1State": True,
+        "postRecordsSha256": gate.sha256_json(
+            [post_by_id[artwork_id] for artwork_id in ordered_ids]
+        ),
+        "postVectorsSha256": gate.sha256_json(
+            [enriched_by_id[artwork_id] for artwork_id in ordered_ids]
+        ),
+    }
+    verification = {
+        "schemaVersion": "nga-post-apply-verification-v1",
+        "verifiedAt": "2026-08-22T00:06:00Z",
+        "environment": "staging",
+        "phase": phase,
+        "artifactManifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "stateManifest": {
+            "path": "state-manifest.json",
+            "sha256": hashlib.sha256(state_manifest_bytes).hexdigest(),
+        },
+        "preflightInputs": [preflight_binding],
+        "summary": post_summary,
+    }
+    verification_bytes = (json.dumps(verification, indent=2) + "\n").encode()
+    (post_apply / "verification.json").write_bytes(verification_bytes)
 
     resources = {
         "api": {
@@ -446,10 +701,20 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "sha256": hashlib.sha256(payload).hexdigest(),
         }
     return {
-        "schemaVersion": "nga-artist-data-binding-v2",
+        "schemaVersion": "nga-artist-data-binding-v3",
         "artifactManifest": {
             "path": f"backfill/{phase}/artifact-manifest.json",
             "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        },
+        "preflightManifests": [
+            {
+                "path": f"preflight/{phase}/preflight-manifest.json",
+                "sha256": hashlib.sha256(preflight_manifest_bytes).hexdigest(),
+            }
+        ],
+        "postApplyVerification": {
+            "path": f"candidate/post-apply/{phase}/verification.json",
+            "sha256": hashlib.sha256(verification_bytes).hexdigest(),
         },
         "productionIdentity": {
             "trustedPreflight": production_bindings["trusted_preflight"],
@@ -2965,7 +3230,9 @@ class InventoryAndRelevanceTests(GateTestCase):
             ROOT
             / "docs/superpowers/plans/2026-08-22-nga-artist-attribution-relation-staging.md"
         ).read_text(encoding="utf-8")
-        full_apply = plan.index("--environment=staging --phase=full --manifest=")
+        full_apply = plan.index(
+            '--post-apply-out-dir="$NGA_ARTIST_EVIDENCE_ROOT/candidate/post-apply/full"'
+        )
         fresh_after = plan.index(
             "Immediately after the full apply and those verification checks succeed"
         )
@@ -2984,7 +3251,16 @@ class InventoryAndRelevanceTests(GateTestCase):
             plan,
         )
         self.assertIn('handoff["nextRunNotBefore"]', plan)
+        self.assertNotIn(
+            "wrangler d1 time-travel info paillette-db-stg", plan
+        )
+        self.assertIn("nga-artist-data-binding-v3", plan)
+        self.assertIn("exactly 63,248 D1 changes", plan)
         for relative in (
+            "preflight/pilot/preflight-manifest.json",
+            "preflight/full-remaining",
+            "candidate/post-apply/pilot/verification.json",
+            "candidate/post-apply/full/verification.json",
             "candidate/production-identity/pilot/before.json",
             "candidate/production-identity/pilot/after.json",
             "candidate/production-identity/full/before.json",
@@ -3215,6 +3491,46 @@ class InventoryAndRelevanceTests(GateTestCase):
                         },
                     )
                 )
+
+    def test_artist_evidence_rehashes_preflight_rollback_and_post_apply_state(self):
+        mutations = {
+            "missing post apply verification": (
+                "candidate/post-apply/pilot/verification.json",
+                lambda path: path.unlink(),
+                "artist_post_apply_verification_missing",
+            ),
+            "tampered D1 recovery point": (
+                "preflight/pilot/d1-time-travel.json",
+                lambda path: path.write_text(
+                    '{"bookmark":"tampered"}\n', encoding="utf-8"
+                ),
+                "artist_preflight_rollback_hash_mismatch",
+            ),
+            "tampered original staged rows": (
+                "preflight/pilot/staged-nga-records.json",
+                lambda path: path.write_text("[]\n", encoding="utf-8"),
+                "artist_preflight_artifact_hash_mismatch",
+            ),
+            "tampered post-apply vector": (
+                "candidate/post-apply/pilot/image-vectors/original-0001-unit.ndjson",
+                lambda path: path.write_text("{}\n", encoding="utf-8"),
+                "artist_post_apply_artifact_hash_mismatch",
+            ),
+        }
+        for label, (relative, mutate, expected_code) in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, evidence_root)
+                mutate(evidence_root / relative)
+
+                result = self.call(
+                    "evaluate_artist_data_evidence",
+                    evidence_root,
+                    binding,
+                    phase="pilot",
+                )
+
+                self.assertIn(expected_code, result["failureCodes"], result)
 
     def test_artist_evidence_rejects_an_invented_manifest_digest(self):
         binding = deployment_identity()["artistDataBinding"]

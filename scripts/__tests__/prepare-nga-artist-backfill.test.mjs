@@ -23,6 +23,7 @@ import {
   publishPreparedArtifacts,
   sha256,
   validateNgaSourceFiles,
+  verifyNgaArtistPostApplyState,
   validatePreflightBindings,
   validateStagedNgaScope,
 } from '../lib/nga-artist-backfill.mjs';
@@ -77,11 +78,18 @@ const createPreflight = ({ phase = 'pilot', suffix = '' } = {}) => {
   const idsPath = join(root, 'ids.json');
   const stagedPath = join(root, 'staged-nga-records.json');
   const vectorPath = join(vectorDirectory, 'original-0001.ndjson');
+  const timeTravelPath = join(root, 'd1-time-travel.json');
+  const timeTravelText = `${JSON.stringify({
+    bookmark: '00000000-0000000a-00004c16-00000000',
+    timestamp: '2026-08-22T00:00:00Z',
+  })}\n`;
   writeFileSync(idsPath, idsText);
   writeFileSync(stagedPath, stagedText);
   writeFileSync(vectorPath, vectorText);
+  writeFileSync(timeTravelPath, timeTravelText);
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    captureKind: 'preflight',
     environment: 'staging',
     phase,
     expectedOrgId: ORG_ID,
@@ -90,6 +98,16 @@ const createPreflight = ({ phase = 'pilot', suffix = '' } = {}) => {
       imageVectorIndex: 'paillette-embeddings-v2-stg',
     },
     counts: { ids: 5, stagedRecords: 5, imageVectors: 5 },
+    rollback: {
+      d1TimeTravel: {
+        path: 'd1-time-travel.json',
+        sha256: sha256(timeTravelText),
+      },
+      recoveryPoint: {
+        bookmark: '00000000-0000000a-00004c16-00000000',
+        timestamp: '2026-08-22T00:00:00Z',
+      },
+    },
     inputs: {
       ids: { path: 'ids.json', sha256: sha256(idsText), count: 5 },
       stagedRecords: {
@@ -114,6 +132,7 @@ const createPreflight = ({ phase = 'pilot', suffix = '' } = {}) => {
     stagedPath,
     vectorDirectory,
     vectorPath,
+    timeTravelPath,
     manifestPath,
   };
 };
@@ -168,6 +187,175 @@ test('changes only image-vector primaryArtistId and hashes complete values', () 
   });
   assert.equal(result.originalValuesSha256, result.enrichedValuesSha256);
   assert.match(result.originalValuesSha256, /^[a-f0-9]{64}$/);
+});
+
+test('verifies exact post-apply D1 and vector state against rollback bytes', () => {
+  const mapping = PILOT_OBJECT_IDS.map((id, index) =>
+    artistRecord(id, String(2000 + index))
+  );
+  const originalRecords = PILOT_OBJECT_IDS.map((id, index) =>
+    stagedRecord(id, {
+      title: `Retained title ${index}`,
+      primary_artist_id: null,
+      custom_metadata: JSON.stringify({
+        provider: 'nga',
+        retained: { index },
+      }),
+      field_sources: JSON.stringify({ title: 'nga.objects' }),
+      updated_at: '2026-08-22T00:00:00Z',
+    })
+  );
+  const originalVectors = mapping.map((row, index) => ({
+    id: row.id,
+    values: [index, index + 0.25],
+    metadata: { artworkId: row.id, provider: 'nga', retained: index },
+  }));
+  const postRecords = originalRecords.map((row, index) => ({
+    ...row,
+    primary_artist_id: mapping[index].primaryArtistId,
+    custom_metadata: JSON.stringify({
+      provider: 'nga',
+      retained: { index },
+      ngaArtists: mapping[index].customMetadata.ngaArtists,
+    }),
+    field_sources: JSON.stringify({
+      title: 'nga.objects',
+      primary_artist_id: 'nga.objects_constituents',
+    }),
+    updated_at: '2026-08-22T00:05:00Z',
+  }));
+  const postVectors = originalVectors.map((row, index) => ({
+    ...row,
+    metadata: {
+      ...row.metadata,
+      primaryArtistId: mapping[index].primaryArtistId,
+    },
+  }));
+
+  const result = verifyNgaArtistPostApplyState({
+    phase: 'pilot',
+    mapping,
+    originalRecords,
+    originalVectors,
+    postRecords,
+    postVectors,
+  });
+
+  assert.equal(result.recordCount, 5);
+  assert.equal(result.vectorCount, 5);
+  assert.equal(result.unrelatedFieldsUnchanged, true);
+  assert.equal(result.vectorValuesUnchanged, true);
+  assert.equal(result.idempotentD1State, true);
+  assert.match(result.postRecordsSha256, /^[a-f0-9]{64}$/);
+  assert.match(result.postVectorsSha256, /^[a-f0-9]{64}$/);
+
+  const invalid = [
+    {
+      label: 'zero rows',
+      change: { postRecords: [] },
+      pattern: /post-apply D1 count/i,
+    },
+    {
+      label: 'partial vectors',
+      change: { postVectors: postVectors.slice(0, -1) },
+      pattern: /post-apply vector count/i,
+    },
+    {
+      label: 'wrong primary',
+      change: {
+        postRecords: [
+          { ...postRecords[0], primary_artist_id: '999' },
+          ...postRecords.slice(1),
+        ],
+      },
+      pattern: /primary artist mismatch/i,
+    },
+    {
+      label: 'unrelated D1 drift',
+      change: {
+        postRecords: [
+          { ...postRecords[0], title: 'Changed without authority' },
+          ...postRecords.slice(1),
+        ],
+      },
+      pattern: /unrelated D1 fields changed/i,
+    },
+    {
+      label: 'vector value drift',
+      change: {
+        postVectors: [
+          { ...postVectors[0], values: [99, 100] },
+          ...postVectors.slice(1),
+        ],
+      },
+      pattern: /post-apply vector changed/i,
+    },
+    {
+      label: 'vector metadata drift',
+      change: {
+        postVectors: [
+          {
+            ...postVectors[0],
+            metadata: { ...postVectors[0].metadata, retained: 'changed' },
+          },
+          ...postVectors.slice(1),
+        ],
+      },
+      pattern: /post-apply vector changed/i,
+    },
+  ];
+  for (const fixture of invalid) {
+    assert.throws(
+      () =>
+        verifyNgaArtistPostApplyState({
+          phase: 'pilot',
+          mapping,
+          originalRecords,
+          originalVectors,
+          postRecords,
+          postVectors,
+          ...fixture.change,
+        }),
+      fixture.pattern,
+      fixture.label
+    );
+  }
+});
+
+test('preserves complete original D1 rows as a usable rollback source', () => {
+  const records = PILOT_OBJECT_IDS.map((id, index) =>
+    stagedRecord(id, {
+      title: `Original ${index}`,
+      primary_artist_id: null,
+      updated_at: `2026-08-22T00:00:0${index}Z`,
+    })
+  );
+  const vectors = records.map((row, index) => ({
+    id: row.id,
+    values: [index],
+    metadata: { artworkId: row.id, provider: 'nga' },
+  }));
+  const artistMetadata = new Map(
+    PILOT_OBJECT_IDS.map((id, index) => [
+      id,
+      {
+        primaryArtistId: String(3000 + index),
+        relationships: [],
+      },
+    ])
+  );
+
+  const artifacts = buildNgaBackfillArtifacts({
+    phase: 'pilot',
+    expectedOrgId: ORG_ID,
+    stagedRecords: records,
+    sourceCandidateIds: new Set(PILOT_OBJECT_IDS),
+    artistMetadata,
+    vectors,
+  });
+
+  assert.deepEqual(artifacts.rollbackD1Records, records);
+  assert.notEqual(artifacts.rollbackD1Records, records);
 });
 
 test('requires the pinned commit, five exact digests, and literal official headers', () => {

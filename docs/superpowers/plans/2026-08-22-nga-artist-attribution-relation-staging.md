@@ -162,7 +162,7 @@ CLI tests must prove: dry-run is the default; all five SHA-256 digests are requi
 - [ ] **Step 2: Run the focused tests and capture RED**
 
 ```bash
-node --test scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
+node --test scripts/__tests__/capture-nga-artist-backfill.test.mjs scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
 ```
 
 Expected: FAIL because the preparer and guarded artist update functions do not exist.
@@ -191,12 +191,12 @@ Use `mkdtemp` for intermediate downloads, SHA-256 each response before parsing, 
 
 `enrichNgaArtistVector` must deep-clone the source vector, change only `metadata.primaryArtistId`, and hash both full `values` arrays. `buildNgaArtistUpdateSql` must use a tested `sqlJsonLiteral(value)` escaper and emit `json_patch(coalesce(custom_metadata, '{}'), json(${sqlJsonLiteral(customMetadataPatch)}))` plus the equivalent `field_sources` expression; it updates only `primary_artist_id`, `custom_metadata`, `field_sources`, and `updated_at`, and contains all four scope guards.
 
-`capture-nga-artist-backfill-preflight.mjs` accepts only `--environment=staging`, the exact staging D1/index names from `apps/api/wrangler.toml`, `--phase=pilot|full`, optional `--exclude-ids-file`, and an empty `--out-dir`; it fetches D1 rows and image vectors by explicit manifest IDs and writes their canonical hashes. `apply-nga-artist-backfill.mjs` accepts the same environment/resource allowlist plus `--manifest`, `--confirm-manifest-sha256`, and optional `--execute`. Without `--execute`, it prints the exact serial command plan and writes nothing remotely. With `--execute`, it uses the manifest's ordered file list rather than a glob and records every Wrangler JSON response.
+`capture-nga-artist-backfill-preflight.mjs` accepts only `--environment=staging`, the exact staging D1/index names from `apps/api/wrangler.toml`, `--phase=pilot|full`, `--capture-kind=preflight|post-apply`, optional `--exclude-ids-file`, and an empty `--out-dir`; a preflight capture persists and hash-binds a usable D1 Time Travel recovery point before fetching the D1 rows and image vectors by explicit manifest IDs. `apply-nga-artist-backfill.mjs` accepts the same environment/resource allowlist plus `--manifest`, `--confirm-manifest-sha256`, optional `--execute`, and the required execute-only `--post-apply-out-dir`. Without `--execute`, it prints the exact serial command plan and writes nothing remotely. With `--execute`, it uses the manifest's ordered file list rather than a glob, requires each D1 chunk's exact changed-row count, records every Wrangler JSON response, re-exports the applied D1/vector state, and succeeds only after recursive hash and semantic verification.
 
 - [ ] **Step 4: Run focused tests and verify deterministic artifacts**
 
 ```bash
-node --test scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
+node --test scripts/__tests__/capture-nga-artist-backfill.test.mjs scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
 git diff --check
 ```
 
@@ -205,7 +205,7 @@ Expected: PASS. Running the same fixture twice must produce identical mapping, S
 - [ ] **Step 5: Commit the preparer**
 
 ```bash
-git add scripts/open-access-art-dry-run.mjs scripts/prepare-nga-artist-backfill.mjs scripts/capture-nga-artist-backfill-preflight.mjs scripts/apply-nga-artist-backfill.mjs scripts/lib/nga-artist-backfill.mjs scripts/lib/nga-structured-search-backfill.mjs scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
+git add scripts/open-access-art-dry-run.mjs scripts/prepare-nga-artist-backfill.mjs scripts/capture-nga-artist-backfill-preflight.mjs scripts/apply-nga-artist-backfill.mjs scripts/lib/nga-artist-backfill.mjs scripts/lib/nga-structured-search-backfill.mjs scripts/__tests__/capture-nga-artist-backfill.test.mjs scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
 git commit -m "feat(search): prepare guarded NGA artist backfill"
 ```
 
@@ -486,7 +486,7 @@ git commit -m "test(search): gate NGA artist and relation evidence"
 - [ ] **Step 1: Run every focused suite**
 
 ```bash
-node --test scripts/__tests__/nga-artist-metadata.test.mjs scripts/__tests__/open-access-art-ingest.test.mjs scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
+node --test scripts/__tests__/nga-artist-metadata.test.mjs scripts/__tests__/open-access-art-ingest.test.mjs scripts/__tests__/capture-nga-artist-backfill.test.mjs scripts/__tests__/prepare-nga-artist-backfill.test.mjs scripts/__tests__/apply-nga-artist-backfill.test.mjs scripts/__tests__/nga-structured-search-backfill.test.mjs
 pnpm --filter @paillette/api test -- src/utils/nga-search-intent.test.ts src/utils/public-search-result-cache.test.ts src/utils/nga-search-evidence.test.ts tests/routes/search.test.ts
 pnpm --filter @paillette/web test -- app/lib/__tests__/public-text-search-plan.test.ts app/lib/__tests__/public-search-composer.test.ts app/routes/__tests__/search-masonry-layout.test.ts app/lib/__tests__/search-spotlights.test.ts app/lib/__tests__/public-search-contract.test.ts test/nga-staging-request-budget.test.ts
 python3 -m unittest eval.test_nga_staging_gate
@@ -548,14 +548,23 @@ pnpm --dir apps/api exec wrangler versions list --env production --json
 pnpm --dir apps/web exec wrangler versions list --env production --json
 pnpm --dir apps/api exec wrangler deployments list --env production --json
 pnpm --dir apps/web exec wrangler deployments list --env production --json
-pnpm --dir apps/api exec wrangler d1 time-travel info paillette-db-stg --env staging --json
 pnpm --dir apps/api exec wrangler vectorize info paillette-embeddings-v2-stg --env staging
 pnpm --dir apps/api exec wrangler vectorize list-metadata-index paillette-embeddings-v2-stg --env staging
 pnpm --dir apps/api exec wrangler vectorize info paillette-caption-embeddings-v2-stg --env staging
 pnpm --dir apps/api exec wrangler vectorize list-metadata-index paillette-caption-embeddings-v2-stg --env staging
 ```
 
-Echo and retain the resolved absolute `NGA_ARTIST_EVIDENCE_ROOT` in `preflight/evidence-root.txt`. Then run `capture-nga-artist-backfill-preflight.mjs --environment=staging --phase=pilot --out-dir="$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot"`. Hash complete JSON/NDJSON values; do not reuse artifacts whose filename says production or whose index/deployment identity is unproven. The pilot capture remains the authoritative rollback source for those five IDs after they are patched.
+Echo and retain the resolved absolute `NGA_ARTIST_EVIDENCE_ROOT` in `preflight/evidence-root.txt`. Then run:
+
+```bash
+node scripts/capture-nga-artist-backfill-preflight.mjs \
+  --environment=staging \
+  --phase=pilot \
+  --capture-kind=preflight \
+  --out-dir="$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot"
+```
+
+This command first obtains a usable D1 recovery point, captures the exact D1 rows and vectors, and persists them together with `d1-time-travel.json` and `preflight-manifest.json` binding every complete JSON/NDJSON input. A missing, unusable, or hash-mismatched D1 recovery point is a stop condition. The durable bundle must exist and pass its recursive rehash before any apply. Do not reuse artifacts whose filename says production or whose index/deployment identity is unproven. The pilot capture remains the authoritative rollback source for those five IDs after they are patched.
 
 Canonicalize the production API/web `versions list` results into
 `preflight/production-identity.json` using schema
@@ -598,7 +607,7 @@ node scripts/prepare-nga-artist-backfill.mjs \
   --phase=pilot
 ```
 
-Verify the variable still equals the absolute path recorded in `preflight/evidence-root.txt` before any later command. Verify five mappings, five guarded SQL updates, five enriched vectors, five rollback vectors, source hashes, value hashes, and the final artifact-manifest hash.
+Verify the variable still equals the absolute path recorded in `preflight/evidence-root.txt` before any later command. Verify five mappings, five guarded SQL updates, five enriched vectors, five complete original D1 rollback records, five rollback vectors, source hashes, value hashes, and the final artifact-manifest hash.
 
 - [ ] **Step 3: Deploy the exact reviewed API and web to staging**
 
@@ -623,10 +632,16 @@ Step 1. A pre-existing file is a stop condition; do not overwrite it.
 ```bash
 NGA_ARTIST_PILOT_MANIFEST="$NGA_ARTIST_EVIDENCE_ROOT/backfill/pilot/artifact-manifest.json"
 NGA_ARTIST_PILOT_SHA="$(shasum -a 256 "$NGA_ARTIST_PILOT_MANIFEST" | awk '{print $1}')"
-node scripts/apply-nga-artist-backfill.mjs --environment=staging --phase=pilot --manifest="$NGA_ARTIST_PILOT_MANIFEST" --confirm-manifest-sha256="$NGA_ARTIST_PILOT_SHA" --execute
+node scripts/apply-nga-artist-backfill.mjs \
+  --environment=staging \
+  --phase=pilot \
+  --manifest="$NGA_ARTIST_PILOT_MANIFEST" \
+  --confirm-manifest-sha256="$NGA_ARTIST_PILOT_SHA" \
+  --post-apply-out-dir="$NGA_ARTIST_EVIDENCE_ROOT/candidate/post-apply/pilot" \
+  --execute
 ```
 
-Immediately export the five rows/vectors again. Require exact primary IDs, relation metadata, idempotent SQL row state, unchanged vector value hashes, unchanged counts, direct Vectorize filter success, and zero unrelated field changes. On any failure, stop and request rollback authorization using the captured D1 bookmark and rollback NDJSON; do not continue to the full backfill.
+The apply script itself requires exactly five changed D1 rows, immediately re-exports the five rows/vectors, recursively rehashes that post-apply state, and writes `verification.json`. It requires exact primary IDs, relation metadata, idempotent SQL row state, unchanged vector value hashes, unchanged counts, and zero unrelated field changes before exiting zero. Separately prove direct Vectorize filter success. On any failure, stop and request rollback authorization using the hash-bound D1 Time Travel recovery point, complete original D1 rows, and rollback vector NDJSON; do not continue to the full backfill.
 
 Immediately after those pilot verification checks succeed, require
 `candidate/production-identity/pilot/after.json` not to exist and create it
@@ -636,9 +651,11 @@ condition; do not overwrite it.
 - [ ] **Step 5: Run and inspect the pilot live gate**
 
 Create a deployment identity JSON binding the exact reviewed API/web staging
-versions, candidate git SHA, and an `nga-artist-data-binding-v2` object. That
-object references `backfill/pilot/artifact-manifest.json` by relative path and
-SHA-256, plus `preflight/production-identity.json` and the pilot-specific
+versions, candidate git SHA, and an `nga-artist-data-binding-v3` object. That
+object references `backfill/pilot/artifact-manifest.json`,
+`preflight/pilot/preflight-manifest.json`, and
+`candidate/post-apply/pilot/verification.json` by fixed relative path and
+actual SHA-256, plus `preflight/production-identity.json` and the pilot-specific
 `before.json`/`after.json` paths and their actual SHA-256 digests. Write this
 exact object once to `candidate/pilot-deployment-identity.json`; the full phase
 uses a different file and must not replace it. Do not copy counts or aggregate
@@ -737,6 +754,7 @@ Capture the remaining 63,248 staged IDs after the pilot while excluding the five
 node scripts/capture-nga-artist-backfill-preflight.mjs \
   --environment=staging \
   --phase=full \
+  --capture-kind=preflight \
   --exclude-ids-file="$NGA_ARTIST_EVIDENCE_ROOT/preflight/pilot/ids.json" \
   --out-dir="$NGA_ARTIST_EVIDENCE_ROOT/preflight/full-remaining"
 
@@ -760,10 +778,16 @@ with role `before`. This is a new phase-specific capture, not a reference to or
 replacement of either pilot capture.
 
 ```bash
-node scripts/apply-nga-artist-backfill.mjs --environment=staging --phase=full --manifest="$NGA_ARTIST_FULL_MANIFEST" --confirm-manifest-sha256="$NGA_ARTIST_FULL_SHA" --execute
+node scripts/apply-nga-artist-backfill.mjs \
+  --environment=staging \
+  --phase=full \
+  --manifest="$NGA_ARTIST_FULL_MANIFEST" \
+  --confirm-manifest-sha256="$NGA_ARTIST_FULL_SHA" \
+  --post-apply-out-dir="$NGA_ARTIST_EVIDENCE_ROOT/candidate/post-apply/full" \
+  --execute
 ```
 
-The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. After each chunk, record output and post-chunk counts. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
+The apply script resolves each chunk to an explicit real path under the hashed artifact root; it uses no shell glob. It requires exactly 63,248 D1 changes because the five pilot rows are already idempotent, then re-exports and verifies the full 63,253-row D1/vector state before exiting zero. Final invariants are exactly 63,253 valid primary IDs, zero source mismatches, unchanged vector counts/value hashes, zero non-NGA changes, and unchanged titles/artists/dates/media/rights/URLs/assets/collection membership.
 
 Immediately after the full apply and those verification checks succeed—and
 before Step 7, full discovery, or any official gate—write a fresh
@@ -771,7 +795,8 @@ before Step 7, full discovery, or any official gate—write a fresh
 requiring the path not to exist before the exclusive write. Recompute its
 content digest, and create the full-phase deployment identity once at
 `candidate/full-deployment-identity.json`. Bind the actual
-`backfill/full/artifact-manifest.json` path and digest and the fresh
+`backfill/full/artifact-manifest.json`, both pilot and full-remaining preflight
+manifest paths/digests, `candidate/post-apply/full/verification.json`, and the fresh
 full-after digest. Keep the trusted preflight and every pilot capture byte and
 digest fixed. The full identity must retain the reviewed API/web
 deployment and version identities, parser/plan/contract/cache versions, source

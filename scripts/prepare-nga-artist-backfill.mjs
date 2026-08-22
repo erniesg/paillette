@@ -8,8 +8,10 @@ import Papa from 'papaparse';
 import { buildNgaArtistMetadata } from './lib/nga-artist-metadata.mjs';
 import {
   EXPECTED_NGA_SOURCE_SHA256,
+  FULL_STAGED_COUNT,
   NGA_SOURCE_COMMIT,
   NGA_SOURCE_HEADERS,
+  PILOT_OBJECT_IDS,
   STAGING_D1_DATABASE,
   STAGING_IMAGE_VECTOR_INDEX,
   assertStagingBackfillIdentity,
@@ -240,6 +242,11 @@ try {
   addJson('source-manifest.json', sourceManifest);
   addJson('mapping.json', artifacts.mapping);
   fileRecordCounts.set('mapping.json', artifacts.mapping.length);
+  addJson('rollback/d1-records.json', artifacts.rollbackD1Records);
+  fileRecordCounts.set(
+    'rollback/d1-records.json',
+    artifacts.rollbackD1Records.length
+  );
 
   const mutationArtifacts = [];
   for (const [index, rows] of chunk(artifacts.sql, 500).entries()) {
@@ -304,7 +311,12 @@ try {
     invariants: {
       stagedRecordCount: artifacts.mapping.length,
       mappingCount: artifacts.mapping.length,
+      expectedD1Changes:
+        phase === 'pilot'
+          ? PILOT_OBJECT_IDS.length
+          : FULL_STAGED_COUNT - PILOT_OBJECT_IDS.length,
       imageVectorCount: artifacts.enrichedVectors.length,
+      rollbackD1RecordCount: artifacts.rollbackD1Records.length,
       rollbackVectorCount: artifacts.rollbackVectors.length,
       vectorValuesUnchanged: artifacts.vectorValueHashes.every(
         (row) => row.originalSha256 === row.enrichedSha256
