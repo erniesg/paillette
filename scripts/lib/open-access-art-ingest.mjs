@@ -330,7 +330,12 @@ export function normalizeClevelandArtwork(record) {
   });
 }
 
-export function normalizeNgaArtwork({ object, image, artistMetadata }) {
+export function normalizeNgaArtwork({
+  object,
+  image,
+  artistMetadata,
+  artistMetadataSourceCommit,
+}) {
   if (String(image?.openaccess ?? '').trim() !== '1') return null;
 
   const sourceRecordId =
@@ -341,6 +346,10 @@ export function normalizeNgaArtwork({ object, image, artistMetadata }) {
   const joinedArtistMetadata = artistMetadata?.get(sourceRecordId);
   if (!joinedArtistMetadata) {
     throw new Error(`missing NGA artist metadata for ${sourceRecordId}`);
+  }
+  const sourceCommit = optionalText(artistMetadataSourceCommit);
+  if (!/^[a-f0-9]{40}$/i.test(sourceCommit || '')) {
+    throw new Error('missing or malformed NGA artist metadata source commit');
   }
 
   const description = optionalText(image.assistivetext);
@@ -378,11 +387,7 @@ export function normalizeNgaArtwork({ object, image, artistMetadata }) {
       iiifUrl,
       viewType: image.viewtype,
       openAccess: true,
-      ...mergeNgaArtistCustomMetadata(
-        {},
-        joinedArtistMetadata,
-        joinedArtistMetadata.sourceCommit
-      ),
+      ...mergeNgaArtistCustomMetadata({}, joinedArtistMetadata, sourceCommit),
     }),
     fieldSources: {
       primary_artist_id: 'nga.objects_constituents',

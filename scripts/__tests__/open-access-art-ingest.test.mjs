@@ -13,13 +13,13 @@ import {
   openAccessArtworkId,
   summarizeCaptionCoverage,
 } from '../lib/open-access-art-ingest.mjs';
+import { buildNgaArtistMetadata } from '../lib/nga-artist-metadata.mjs';
 
 const ngaArtistMetadata = (objectId, overrides = {}) =>
   new Map([
     [
       objectId,
       {
-        sourceCommit: '79d114c',
         primaryArtistId: '23812',
         relationships: [
           {
@@ -38,6 +38,8 @@ const ngaArtistMetadata = (objectId, overrides = {}) =>
       },
     ],
   ]);
+
+const NGA_SOURCE_COMMIT = '79d114c2186ca38af27a9478717f1e509d799495';
 
 describe('open access artwork normalization', () => {
   it('keeps the pilot source set focused on ArtIC and NGA', () => {
@@ -81,6 +83,7 @@ describe('open access artwork normalization', () => {
         iiifurl: 'https://example.com/iiif/42',
       },
       artistMetadata: ngaArtistMetadata('42'),
+      artistMetadataSourceCommit: NGA_SOURCE_COMMIT,
     });
     assert.equal(normalized?.year, 1750);
     assert.equal(normalized?.year_start, 1750);
@@ -92,9 +95,78 @@ describe('open access artwork normalization', () => {
       'nga.objects_constituents'
     );
     assert.deepEqual(normalized?.custom_metadata.ngaArtists, {
-      sourceCommit: '79d114c',
+      sourceCommit: NGA_SOURCE_COMMIT,
       relationships: ngaArtistMetadata('42').get('42').relationships,
     });
+  });
+
+  it('persists pinned NGA provenance when given the builder output directly', () => {
+    const artistMetadata = buildNgaArtistMetadata({
+      requiredObjectIds: new Set(['42']),
+      relationships: [
+        {
+          objectid: '42',
+          constituentid: '23812',
+          displayorder: '1',
+          roletype: 'artist',
+          role: 'artist',
+          prefix: '',
+          suffix: '',
+        },
+      ],
+      constituents: [
+        {
+          constituentid: '23812',
+          preferreddisplayname: 'Sadeler, Justus',
+          forwarddisplayname: 'Justus Sadeler',
+        },
+      ],
+      alternativeNames: [],
+    });
+
+    const normalized = normalizeNgaArtwork({
+      object: { objectid: '42', title: 'Landscape' },
+      image: {
+        openaccess: '1',
+        depictstmsobjectid: '42',
+        iiifurl: 'https://example.com/iiif/42',
+      },
+      artistMetadata,
+      artistMetadataSourceCommit: NGA_SOURCE_COMMIT,
+    });
+
+    assert.deepEqual(normalized?.custom_metadata.ngaArtists, {
+      sourceCommit: NGA_SOURCE_COMMIT,
+      relationships: [
+        {
+          constituentId: '23812',
+          displayOrder: 1,
+          roleType: 'artist',
+          role: 'artist',
+          prefix: null,
+          suffix: null,
+          preferredDisplayName: 'Sadeler, Justus',
+          forwardDisplayName: 'Justus Sadeler',
+          alternativeNames: [],
+        },
+      ],
+    });
+  });
+
+  it('requires a pinned source commit for NGA artist metadata', () => {
+    assert.throws(
+      () =>
+        normalizeNgaArtwork({
+          object: { objectid: '42', title: 'Landscape' },
+          image: {
+            openaccess: '1',
+            depictstmsobjectid: '42',
+            iiifurl: 'https://example.com/iiif/42',
+          },
+          artistMetadata: ngaArtistMetadata('42'),
+        }),
+      /artist metadata source commit/
+    );
   });
 
   it('normalizes eligible Met public-domain image records without inventing captions', () => {
@@ -236,6 +308,7 @@ describe('open access artwork normalization', () => {
         assistivetext: 'The image shows two decorated ceramic jugs.',
       },
       artistMetadata: ngaArtistMetadata('17387'),
+      artistMetadataSourceCommit: NGA_SOURCE_COMMIT,
     });
 
     assert.equal(normalized?.id, 'open-access-art:nga:17387');
