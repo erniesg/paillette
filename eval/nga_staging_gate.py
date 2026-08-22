@@ -9,6 +9,7 @@ production or to a deceptive host.
 from __future__ import annotations
 
 import argparse
+import base64
 import dataclasses
 import datetime as dt
 import hashlib
@@ -109,6 +110,27 @@ RETAINED_RELEVANCE_SCHEMA = "nga-retained-relevance-labels-v1"
 NGA_SOURCE_COMMIT = "79d114c2186ca38af27a9478717f1e509d799495"
 NGA_FULL_STAGED_COUNT = 63_253
 NGA_PILOT_OBJECT_IDS = ("131994", "110821", "11236", "38", "579")
+NGA_PILOT_PRIMARY_ARTISTS = {
+    "131994": "1364",
+    "110821": "23812",
+    "11236": "1974",
+    "38": "119",
+    "579": "1507",
+}
+NGA_SOURCE_SHA256 = {
+    "objects.csv": "0435ee2468c5043046daef4a0c39badb586d52d4ed24712287423a4897961d67",
+    "published_images.csv": "8fb22d56ba09490937fb54ff07560c18ca4eb3468c24aa91167eeb4e9cc3a16d",
+    "objects_constituents.csv": "a460accc402ad8b0130e3b108f9bc9d03ac9621721db9ef713f944205eba6c1d",
+    "constituents.csv": "090ed9c7d71a3fb83660bbf0e52d6b6a133eab60bf87b4115a4b36bb9042d3b9",
+    "constituents_altnames.csv": "129547888f858aa15d951dff27c6761abd308357a1c0787438ded8091964a44f",
+}
+NGA_SOURCE_HEADERS = {
+    "objects.csv": "objectid,uuid,accessioned,accessionnum,locationid,title,displaydate,beginyear,endyear,visualbrowsertimespan,medium,dimensions,inscription,markings,attributioninverted,attribution,provenancetext,creditline,classification,subclassification,visualbrowserclassification,parentid,isvirtual,departmentabbr,portfolio,series,volume,watermarks,lastdetectedmodification,wikidataid,customprinturl",
+    "published_images.csv": "uuid,iiifurl,iiifthumburl,viewtype,sequence,width,height,maxpixels,openaccess,created,modified,depictstmsobjectid,assistivetext",
+    "objects_constituents.csv": "objectid,constituentid,displayorder,roletype,role,prefix,suffix,displaydate,beginyear,endyear,country,zipcode",
+    "constituents.csv": "constituentid,uuid,ulanid,preferreddisplayname,forwarddisplayname,lastname,displaydate,artistofngaobject,beginyear,endyear,visualbrowsertimespan,nationality,visualbrowsernationality,constituenttype,wikidataid",
+    "constituents_altnames.csv": "altnameid,constituentid,lastname,displayname,forwarddisplayname,nametype",
+}
 NGA_STAGING_ORG_ID = "eabbf000-708e-4d4c-8ac8-966b59d4fcac"
 NGA_STAGING_D1_DATABASE = "paillette-db-stg"
 NGA_STAGING_IMAGE_VECTOR_INDEX = "paillette-embeddings-v2-stg"
@@ -121,6 +143,18 @@ PRODUCTION_IDENTITY_ROLES = {
     "trustedPreflight": "trusted_preflight",
     "before": "before",
     "after": "after",
+}
+LOCAL_VERSION_SOURCE_PATHS = (
+    "packages/types/src/public-search-core.ts",
+    "apps/api/src/utils/public-search-result-cache.ts",
+    "apps/api/src/utils/nga-search-intent.ts",
+)
+IDENTITY_EVIDENCE_PATHS = {
+    "deploymentIdentity": "raw/identity/deployment-identity.json",
+    "localVersions": "raw/identity/local-versions.json",
+    "requestPolicy": "raw/identity/request-policy.json",
+    "health": "raw/identity/health.json",
+    "webContract": "raw/identity/web-contract.json",
 }
 EXPECTED_PRODUCTION_RESOURCES = {
     "api": {
@@ -541,6 +575,30 @@ def evaluate_artist_data_evidence(
         )
         if source_manifest.get("sourceCommit") != NGA_SOURCE_COMMIT:
             failures.append(_failure("artist_artifact_source_commit_mismatch"))
+        source_files_value = source_manifest.get("files")
+        source_files = (
+            source_files_value if isinstance(source_files_value, Mapping) else {}
+        )
+        trusted_source_inventory = (
+            source_manifest.get("schemaVersion") == 1
+            and source_manifest.get("candidateCount") == NGA_FULL_STAGED_COUNT
+            and set(source_files) == set(NGA_SOURCE_SHA256)
+        )
+        if trusted_source_inventory:
+            for filename, expected_digest in NGA_SOURCE_SHA256.items():
+                file_value = source_files.get(filename)
+                file_record = file_value if isinstance(file_value, Mapping) else {}
+                if (
+                    set(file_record) != {"sha256", "rowCount", "header"}
+                    or file_record.get("sha256") != expected_digest
+                    or file_record.get("header") != NGA_SOURCE_HEADERS[filename]
+                    or type(file_record.get("rowCount")) is not int
+                    or int(file_record["rowCount"]) <= 0
+                ):
+                    trusted_source_inventory = False
+                    break
+        if not trusted_source_inventory:
+            failures.append(_failure("artist_source_inventory_mismatch"))
 
     mapping_record = declared_files.get("mapping.json")
     mapping_value = _load_bound_json(mapping_record[2]) if mapping_record else None
@@ -560,6 +618,69 @@ def evaluate_artist_data_evidence(
             failures.append(_failure("artist_mapping_invalid"))
             continue
         mapping_by_id[artwork_id] = row
+        custom_value = row.get("customMetadata")
+        custom = custom_value if isinstance(custom_value, Mapping) else {}
+        artists_value = custom.get("ngaArtists")
+        artists = artists_value if isinstance(artists_value, Mapping) else {}
+        relationships_value = artists.get("relationships")
+        relationships = (
+            relationships_value if isinstance(relationships_value, list) else []
+        )
+        field_sources_value = row.get("fieldSources")
+        field_sources = (
+            field_sources_value
+            if isinstance(field_sources_value, Mapping)
+            else {}
+        )
+        parsed_relationships = [
+            _parse_artist_relationship(relationship)
+            for relationship in relationships
+        ]
+        if (
+            set(row) != {
+                "id",
+                "primaryArtistId",
+                "customMetadata",
+                "fieldSources",
+            }
+            or set(custom) != {"ngaArtists"}
+            or set(artists) != {"sourceCommit", "relationships"}
+            or artists.get("sourceCommit") != NGA_SOURCE_COMMIT
+            or field_sources
+            != {"primary_artist_id": "nga.objects_constituents"}
+            or not relationships
+            or any(relationship is None for relationship in parsed_relationships)
+        ):
+            failures.append(
+                _failure("artist_mapping_relationship_invalid", artworkId=artwork_id)
+            )
+            continue
+        valid_relationships = [
+            relationship
+            for relationship in parsed_relationships
+            if relationship is not None
+        ]
+        relationship_keys = [
+            canonical_json(relationship)
+            for relationship in valid_relationships
+        ]
+        minimum_order = min(
+            float(relationship["displayOrder"])
+            for relationship in valid_relationships
+        )
+        minimum_relationships = [
+            relationship
+            for relationship in valid_relationships
+            if float(relationship["displayOrder"]) == minimum_order
+        ]
+        if (
+            len(set(relationship_keys)) != len(relationship_keys)
+            or len(minimum_relationships) != 1
+            or minimum_relationships[0].get("constituentId") != primary_id
+        ):
+            failures.append(
+                _failure("artist_mapping_primary_mismatch", artworkId=artwork_id)
+            )
     if len(mapping) != expected_count or len(mapping_by_id) != expected_count:
         failures.append(_failure("artist_artifact_count_mismatch"))
     if mapping_record and mapping_record[0].get("recordCount") != len(mapping):
@@ -568,6 +689,11 @@ def evaluate_artist_data_evidence(
         f"open-access-art:nga:{object_id}" for object_id in NGA_PILOT_OBJECT_IDS
     }:
         failures.append(_failure("artist_pilot_id_scope_mismatch"))
+    if phase == "pilot" and {
+        artwork_id.removeprefix("open-access-art:nga:"): row.get("primaryArtistId")
+        for artwork_id, row in mapping_by_id.items()
+    } != NGA_PILOT_PRIMARY_ARTISTS:
+        failures.append(_failure("artist_pilot_mapping_mismatch"))
 
     enriched_rows: list[Mapping[str, Any]] = []
     rollback_rows: list[Mapping[str, Any]] = []
@@ -2872,18 +2998,23 @@ class RequestPacer:
         self.timestamps.append(now)
 
 
-def verify_staging_health(transport: Any, api_base_url: str) -> dict[str, Any]:
-    response = transport.request("GET", f"{api_base_url}/health")
+def evaluate_staging_health_response(
+    response: Mapping[str, Any], api_base_url: str
+) -> dict[str, Any]:
     payload = _response_json(response)
+    expected_url = f"{api_base_url}/health"
+    failures = []
     if (
-        response.get("status") != 200
+        response.get("requestUrl") != expected_url
+        or response.get("finalUrl") != expected_url
+        or response.get("status") != 200
         or payload.get("status") != "healthy"
         or payload.get("environment") != "staging"
     ):
-        raise GateStopped(
-            "API health did not prove status=healthy and environment=staging"
+        failures.append(
+            _failure("staging_health_invalid", expectedUrl=expected_url)
         )
-    return {
+    observation = {
         "requestUrl": response.get("requestUrl"),
         "finalUrl": response.get("finalUrl"),
         "status": response.get("status"),
@@ -2891,18 +3022,25 @@ def verify_staging_health(transport: Any, api_base_url: str) -> dict[str, Any]:
         "body": payload,
         "elapsedMs": response.get("elapsedMs"),
     }
+    return _result(failures, observation=observation)
 
 
-def observe_local_versions(repo_root: Path) -> dict[str, str]:
-    core = (repo_root / "packages/types/src/public-search-core.ts").read_text(
-        encoding="utf-8"
-    )
-    cache = (
-        repo_root / "apps/api/src/utils/public-search-result-cache.ts"
-    ).read_text(encoding="utf-8")
-    parser = (
-        repo_root / "apps/api/src/utils/nga-search-intent.ts"
-    ).read_text(encoding="utf-8")
+def verify_staging_health(transport: Any, api_base_url: str) -> dict[str, Any]:
+    response = transport.request("GET", f"{api_base_url}/health")
+    evaluation = evaluate_staging_health_response(response, api_base_url)
+    if not evaluation["passed"]:
+        raise GateStopped(
+            "API health did not prove status=healthy and environment=staging"
+        )
+    return evaluation["observation"]
+
+
+def _parse_local_version_sources(sources: Mapping[str, str]) -> dict[str, str]:
+    if set(sources) != set(LOCAL_VERSION_SOURCE_PATHS):
+        raise ValueError("local version source inventory mismatch")
+    core = sources[LOCAL_VERSION_SOURCE_PATHS[0]]
+    cache = sources[LOCAL_VERSION_SOURCE_PATHS[1]]
+    parser = sources[LOCAL_VERSION_SOURCE_PATHS[2]]
     contract_match = re.search(r"PUBLIC_SEARCH_CONTRACT_VERSION\s*=\s*'([^']+)'", core)
     plan_match = re.search(r"version:\s*'(nga-plan-v\d+)'", core)
     cache_match = re.search(r"PUBLIC_SEARCH_RESULT_CACHE_KEY_VERSION\s*=\s*(\d+)", cache)
@@ -2917,6 +3055,80 @@ def observe_local_versions(repo_root: Path) -> dict[str, str]:
         "contract": contract_match.group(1),
         "apiResultCache": f"v{cache_match.group(1)}",
     }
+
+
+def capture_local_version_sources(repo_root: Path) -> list[dict[str, Any]]:
+    records = []
+    for relative in LOCAL_VERSION_SOURCE_PATHS:
+        payload = (repo_root / relative).read_bytes()
+        records.append(
+            {
+                "path": relative,
+                "sha256": sha256_bytes(payload),
+                "byteLength": len(payload),
+                "contentBase64": base64.b64encode(payload).decode("ascii"),
+            }
+        )
+    return records
+
+
+def capture_bound_json_bytes(payload: bytes) -> dict[str, Any]:
+    return {
+        "sha256": sha256_bytes(payload),
+        "byteLength": len(payload),
+        "contentBase64": base64.b64encode(payload).decode("ascii"),
+    }
+
+
+def parse_bound_json_bytes(value: Any) -> Mapping[str, Any]:
+    record = value if isinstance(value, Mapping) else {}
+    if set(record) != {"sha256", "byteLength", "contentBase64"}:
+        raise ValueError("bound JSON byte record invalid")
+    try:
+        payload = base64.b64decode(record.get("contentBase64"), validate=True)
+        document = json.loads(payload)
+    except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("bound JSON bytes invalid") from None
+    if (
+        record.get("byteLength") != len(payload)
+        or record.get("sha256") != sha256_bytes(payload)
+        or not isinstance(document, Mapping)
+    ):
+        raise ValueError("bound JSON digest or shape invalid")
+    return document
+
+
+def parse_captured_local_versions(records_value: Any) -> dict[str, str]:
+    records = records_value if isinstance(records_value, list) else []
+    if len(records) != len(LOCAL_VERSION_SOURCE_PATHS):
+        raise ValueError("local version source inventory mismatch")
+    sources: dict[str, str] = {}
+    for index, expected_path in enumerate(LOCAL_VERSION_SOURCE_PATHS):
+        record_value = records[index]
+        record = record_value if isinstance(record_value, Mapping) else {}
+        if record.get("path") != expected_path or set(record) != {
+            "path",
+            "sha256",
+            "byteLength",
+            "contentBase64",
+        }:
+            raise ValueError("local version source inventory mismatch")
+        try:
+            payload = base64.b64decode(record.get("contentBase64"), validate=True)
+            text = payload.decode("utf-8")
+        except (TypeError, ValueError, UnicodeDecodeError):
+            raise ValueError("local version source encoding invalid") from None
+        if (
+            record.get("byteLength") != len(payload)
+            or record.get("sha256") != sha256_bytes(payload)
+        ):
+            raise ValueError("local version source digest mismatch")
+        sources[expected_path] = text
+    return _parse_local_version_sources(sources)
+
+
+def observe_local_versions(repo_root: Path) -> dict[str, str]:
+    return parse_captured_local_versions(capture_local_version_sources(repo_root))
 
 
 def canonical_text_identity(case: Mapping[str, Any]) -> str:
@@ -3023,6 +3235,85 @@ def _safe_response(response: Mapping[str, Any]) -> dict[str, Any]:
         "jsonSha256": sha256_bytes(json_bytes),
         "bodyLength": len(response.get("body") or b""),
         "bodySha256": sha256_bytes(response.get("body") or b""),
+    }
+
+
+def serialize_identity_response(response: Mapping[str, Any]) -> dict[str, Any]:
+    body_value = response.get("body")
+    if isinstance(body_value, bytes):
+        body = body_value
+    elif isinstance(response.get("json"), (Mapping, list)):
+        body = canonical_json(response.get("json")).encode("utf-8")
+    else:
+        body = b""
+    headers_value = response.get("headers")
+    headers = (
+        {str(key).lower(): str(value) for key, value in headers_value.items()}
+        if isinstance(headers_value, Mapping)
+        else {}
+    )
+    return {
+        "requestUrl": response.get("requestUrl"),
+        "finalUrl": response.get("finalUrl"),
+        "status": response.get("status"),
+        "elapsedMs": response.get("elapsedMs"),
+        "headers": headers,
+        "bodyBase64": base64.b64encode(body).decode("ascii"),
+        "bodyLength": len(body),
+        "bodySha256": sha256_bytes(body),
+    }
+
+
+def parse_identity_response(value: Any, *, expected_url: str) -> dict[str, Any]:
+    record = value if isinstance(value, Mapping) else {}
+    if set(record) != {
+        "requestUrl",
+        "finalUrl",
+        "status",
+        "elapsedMs",
+        "headers",
+        "bodyBase64",
+        "bodyLength",
+        "bodySha256",
+    }:
+        raise ValueError("identity response shape invalid")
+    headers_value = record.get("headers")
+    if (
+        record.get("requestUrl") != expected_url
+        or record.get("finalUrl") != expected_url
+        or type(record.get("status")) is not int
+        or isinstance(record.get("elapsedMs"), bool)
+        or not isinstance(record.get("elapsedMs"), (int, float))
+        or float(record["elapsedMs"]) < 0
+        or not isinstance(headers_value, Mapping)
+        or any(
+            not isinstance(key, str) or not isinstance(item, str)
+            for key, item in headers_value.items()
+        )
+    ):
+        raise ValueError("identity response metadata invalid")
+    try:
+        body = base64.b64decode(record.get("bodyBase64"), validate=True)
+    except (TypeError, ValueError):
+        raise ValueError("identity response body encoding invalid") from None
+    if (
+        record.get("bodyLength") != len(body)
+        or record.get("bodySha256") != sha256_bytes(body)
+        or len(body) > MAX_EVIDENCE_JSON_BYTES
+    ):
+        raise ValueError("identity response body digest mismatch")
+    try:
+        json_value = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        json_value = None
+    return {
+        "requestUrl": record["requestUrl"],
+        "finalUrl": record["finalUrl"],
+        "status": record["status"],
+        "elapsedMs": record["elapsedMs"],
+        "headers": dict(headers_value),
+        "body": body,
+        "json": json_value,
     }
 
 
@@ -3383,6 +3674,10 @@ def evaluate_evidence_bundle(
         out_dir, "fixtures-manifest.json", failures
     )
     handoff = _read_evidence_json(out_dir, "playwright-handoff.json", failures)
+    identity_documents = {
+        name: _read_evidence_json(out_dir, relative, failures)
+        for name, relative in IDENTITY_EVIDENCE_PATHS.items()
+    }
     report = _read_evidence_json(
         out_dir, "playwright/playwright-report.json", failures
     )
@@ -3428,12 +3723,16 @@ def evaluate_evidence_bundle(
         "deploymentIdentityHash": deployment_hash,
     }
     _validate_run_binding(identity, expected_binding, "identity.json", failures)
-    deployment_identity_value = identity.get("deploymentIdentity")
-    deployment_identity = (
-        deployment_identity_value
-        if isinstance(deployment_identity_value, Mapping)
-        else {}
-    )
+    raw_deployment_document = identity_documents.get("deploymentIdentity") or {}
+    try:
+        deployment_identity = parse_bound_json_bytes(
+            raw_deployment_document.get("content")
+        )
+    except ValueError:
+        deployment_identity = {}
+        failures.append(_failure("deployment_identity_raw_artifact_invalid"))
+    if identity.get("deploymentIdentity") != deployment_identity:
+        failures.append(_failure("evidence_deployment_identity_raw_mismatch"))
     recomputed_deployment_binding = evaluate_deployment_binding(
         deployment_identity,
         snapshot=str(snapshot),
@@ -3449,6 +3748,8 @@ def evaluate_evidence_bundle(
         "phase": phase,
         "snapshot": snapshot,
         "evaluatorGitSha": evaluator_git_sha,
+        "apiBaseUrl": EXPECTED_API_ORIGIN,
+        "webBaseUrl": EXPECTED_WEB_ORIGIN,
     }
     for field, expected in identity_expectations.items():
         if identity.get(field) != expected:
@@ -3467,6 +3768,65 @@ def evaluate_evidence_bundle(
         or deployment_binding != recomputed_deployment_binding
     ):
         failures.append(_failure("evidence_deployment_binding_mismatch"))
+    deployed_contract = str(
+        recomputed_deployment_binding.get("deployedVersions", {}).get("contract")
+        or ""
+    )
+    identity_evaluation = evaluate_identity_evidence(
+        identity_documents,
+        expected_binding=expected_binding,
+        deployed_contract_version=deployed_contract,
+    )
+    identity_decision = identity_evaluation["decision"]
+    if snapshot == "candidate" and identity_evaluation["passed"] is not True:
+        failures.extend(identity_evaluation["failures"])
+        failures.append(_failure("candidate_identity_evidence_failed"))
+    identity_decision_fields = {
+        "localVersions": "localVersions",
+        "publicSearchRequestsPerMinute": "publicSearchRequestsPerMinute",
+        "health": "health",
+        "webContract": "webContract",
+        "liveContractBinding": "liveContractBinding",
+    }
+    for decision_field, identity_field in identity_decision_fields.items():
+        if identity.get(identity_field) != identity_decision.get(decision_field):
+            failures.append(
+                _failure(
+                    "evidence_identity_observation_mismatch",
+                    field=identity_field,
+                )
+            )
+    if identity.get("identityReleaseDecision") != identity_decision:
+        failures.append(_failure("evidence_identity_decision_mismatch"))
+    summary_versions_value = summary.get("versions")
+    summary_versions = (
+        summary_versions_value
+        if isinstance(summary_versions_value, Mapping)
+        else {}
+    )
+    summary_identity_expectations = {
+        "publicSearchRequestsPerMinute": identity_decision.get(
+            "publicSearchRequestsPerMinute"
+        ),
+        "hosts": {"api": EXPECTED_API_ORIGIN, "web": EXPECTED_WEB_ORIGIN},
+        "identityReleaseDecision": identity_decision,
+    }
+    for field, expected in summary_identity_expectations.items():
+        if summary.get(field) != expected:
+            failures.append(
+                _failure("evidence_summary_identity_mismatch", field=field)
+            )
+    if (
+        summary_versions.get("localEvaluator")
+        != identity_decision.get("localVersions")
+        or summary_versions.get("liveContractBinding")
+        != identity_decision.get("liveContractBinding")
+        or summary_versions.get("deployed")
+        != recomputed_deployment_binding.get("deployedVersions")
+        or summary_versions.get("deploymentBinding")
+        != recomputed_deployment_binding
+    ):
+        failures.append(_failure("evidence_summary_versions_mismatch"))
     artist_data_evidence: dict[str, Any] | None = None
     artist_bound_paths: set[Path] = set()
     if snapshot == "candidate":
@@ -3764,6 +4124,7 @@ def evaluate_evidence_bundle(
         "fixtures-manifest.json",
         "manual-relevance.json",
         "playwright-handoff.json",
+        *IDENTITY_EVIDENCE_PATHS.values(),
         "raw/cache-probe.json",
         "raw/image-identity-probe.json",
         "raw/ngs-probe.json",
@@ -4264,6 +4625,7 @@ def evaluate_evidence_bundle(
         caseInventory=case_inventory,
         manualRelevance=summary_manual,
         artistDataEvidence=artist_data_evidence,
+        identityReleaseDecision=identity_decision,
     )
 
 
@@ -4349,8 +4711,7 @@ def evaluate_live_contract_binding(
     )
 
 
-def _observe_web_contract(transport: Any, web_base_url: str) -> dict[str, Any]:
-    response = transport.request("GET", f"{web_base_url}/nga/search")
+def _web_contract_from_response(response: Mapping[str, Any]) -> dict[str, Any]:
     body = response.get("body") or b""
     return {
         "requestUrl": response.get("requestUrl"),
@@ -4360,6 +4721,145 @@ def _observe_web_contract(transport: Any, web_base_url: str) -> dict[str, Any]:
         "bodySha256": sha256_bytes(body),
         "bodyLength": len(body),
     }
+
+
+def _observe_web_contract(transport: Any, web_base_url: str) -> dict[str, Any]:
+    response = transport.request("GET", f"{web_base_url}/nga/search")
+    return _web_contract_from_response(response)
+
+
+def evaluate_identity_evidence(
+    documents: Mapping[str, Mapping[str, Any]],
+    *,
+    expected_binding: Mapping[str, Any],
+    deployed_contract_version: str,
+) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    document_contracts = {
+        "deploymentIdentity": (
+            "nga-deployment-input-evidence-v1",
+            {"schemaVersion", *expected_binding, "content"},
+        ),
+        "localVersions": (
+            "nga-local-version-evidence-v1",
+            {"schemaVersion", *expected_binding, "sources"},
+        ),
+        "requestPolicy": (
+            "nga-request-policy-evidence-v1",
+            {
+                "schemaVersion",
+                *expected_binding,
+                "publicSearchRequestsPerMinute",
+            },
+        ),
+        "health": (
+            "nga-health-evidence-v1",
+            {"schemaVersion", *expected_binding, "request", "response"},
+        ),
+        "webContract": (
+            "nga-web-contract-evidence-v1",
+            {"schemaVersion", *expected_binding, "request", "response"},
+        ),
+    }
+    for name in IDENTITY_EVIDENCE_PATHS:
+        document_value = documents.get(name)
+        document = document_value if isinstance(document_value, Mapping) else {}
+        _validate_run_binding(
+            document,
+            expected_binding,
+            IDENTITY_EVIDENCE_PATHS[name],
+            failures,
+        )
+        expected_schema, expected_fields = document_contracts[name]
+        if (
+            document.get("schemaVersion") != expected_schema
+            or set(document) != expected_fields
+        ):
+            failures.append(
+                _failure("identity_evidence_document_invalid", document=name)
+            )
+
+    local_document = documents.get("localVersions") or {}
+    try:
+        local_versions = parse_captured_local_versions(
+            local_document.get("sources")
+        )
+    except ValueError:
+        local_versions = {}
+        failures.append(_failure("identity_local_versions_invalid"))
+    if local_versions != EXPECTED_VERSIONS:
+        failures.append(
+            _failure(
+                "identity_local_versions_mismatch",
+                expected=EXPECTED_VERSIONS,
+                actual=local_versions,
+            )
+        )
+
+    request_document = documents.get("requestPolicy") or {}
+    request_rate = request_document.get("publicSearchRequestsPerMinute")
+    if type(request_rate) is not int or not 1 <= request_rate <= 9:
+        failures.append(
+            _failure("identity_request_rate_invalid", actual=request_rate)
+        )
+
+    health_url = f"{EXPECTED_API_ORIGIN}/health"
+    health_document = documents.get("health") or {}
+    health_request = health_document.get("request")
+    if health_request != {"method": "GET", "url": health_url}:
+        failures.append(_failure("identity_health_request_invalid"))
+    try:
+        health_response = parse_identity_response(
+            health_document.get("response"), expected_url=health_url
+        )
+        health_evaluation = evaluate_staging_health_response(
+            health_response, EXPECTED_API_ORIGIN
+        )
+        health = health_evaluation["observation"]
+        if not health_evaluation["passed"]:
+            failures.extend(health_evaluation["failures"])
+    except ValueError:
+        health = {}
+        failures.append(_failure("identity_health_artifact_invalid"))
+
+    web_url = f"{EXPECTED_WEB_ORIGIN}/nga/search"
+    web_document = documents.get("webContract") or {}
+    web_request = web_document.get("request")
+    if web_request != {"method": "GET", "url": web_url}:
+        failures.append(_failure("identity_web_request_invalid"))
+    try:
+        web_response = parse_identity_response(
+            web_document.get("response"), expected_url=web_url
+        )
+        web_contract = _web_contract_from_response(web_response)
+    except ValueError:
+        web_contract = {}
+        failures.append(_failure("identity_web_artifact_invalid"))
+    if web_contract.get("status") != 200:
+        failures.append(
+            _failure(
+                "identity_web_observation_failed",
+                status=web_contract.get("status"),
+            )
+        )
+    live_contract_binding = evaluate_live_contract_binding(
+        web_contract.get("contractVersions")
+        if isinstance(web_contract.get("contractVersions"), list)
+        else [],
+        deployed_contract_version,
+    )
+    if live_contract_binding["passed"] is not True:
+        failures.extend(live_contract_binding["failures"])
+
+    decision = {
+        "localVersions": local_versions,
+        "publicSearchRequestsPerMinute": request_rate,
+        "health": health,
+        "webContract": web_contract,
+        "liveContractBinding": live_contract_binding,
+        "gatePassed": not failures,
+    }
+    return _result(failures, decision=decision)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -4383,6 +4883,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     validate_staging_origins(config.api_base_url, config.web_base_url)
     run_id = start_evidence_run(config.out_dir)
     candidate_sha = _git_sha(config.repo_root)
+    deployment_identity_bytes = config.deployment_identity.read_bytes()
     deployment_identity = load_deployment_identity(config.deployment_identity)
     deployment_binding = evaluate_deployment_binding(
         deployment_identity,
@@ -4391,6 +4892,12 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
     )
     if not deployment_binding["passed"]:
         raise GateStopped("deployment identity does not bind the requested snapshot")
+    binding = run_binding(
+        run_id=run_id,
+        snapshot=config.snapshot,
+        evaluator_git_sha=candidate_sha,
+        deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
+    )
     artist_data_evidence: dict[str, Any] | None = None
     if config.snapshot == "candidate":
         artist_root = _find_artist_evidence_root(config.out_dir)
@@ -4421,27 +4928,76 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             raise GateStopped("pilot inspection does not authorize the full candidate")
     network = transport or UrllibTransport()
     pacer = RequestPacer(config.requests_per_minute)
-    health = verify_staging_health(network, config.api_base_url)
+    health_response = network.request("GET", f"{config.api_base_url}/health")
+    health_evaluation = evaluate_staging_health_response(
+        health_response, config.api_base_url
+    )
+    if not health_evaluation["passed"]:
+        raise GateStopped(
+            "API health did not prove status=healthy and environment=staging"
+        )
+    health = health_evaluation["observation"]
 
     inventory = load_case_inventory(
         config.repo_root / "eval/nga-staging-cases.yaml",
         config.repo_root / "eval/nga-constraint-queries.yaml",
     )
     selected = select_cases(inventory, config.phase)
-    local_versions = observe_local_versions(config.repo_root)
-    web_contract = _observe_web_contract(network, config.web_base_url)
+    local_version_sources = capture_local_version_sources(config.repo_root)
+    local_versions = parse_captured_local_versions(local_version_sources)
+    web_response = network.request("GET", f"{config.web_base_url}/nga/search")
+    web_contract = _web_contract_from_response(web_response)
     deployed_versions = deployment_binding["deployedVersions"]
     live_contract_binding = evaluate_live_contract_binding(
         web_contract["contractVersions"], str(deployed_versions["contract"])
     )
 
     started_at = utc_now()
-    binding = run_binding(
-        run_id=run_id,
-        snapshot=config.snapshot,
-        evaluator_git_sha=candidate_sha,
-        deployment_identity_hash=deployment_binding["deploymentIdentityHash"],
+    identity_documents = {
+        "deploymentIdentity": {
+            **binding,
+            "schemaVersion": "nga-deployment-input-evidence-v1",
+            "content": capture_bound_json_bytes(deployment_identity_bytes),
+        },
+        "localVersions": {
+            **binding,
+            "schemaVersion": "nga-local-version-evidence-v1",
+            "sources": local_version_sources,
+        },
+        "requestPolicy": {
+            **binding,
+            "schemaVersion": "nga-request-policy-evidence-v1",
+            "publicSearchRequestsPerMinute": config.requests_per_minute,
+        },
+        "health": {
+            **binding,
+            "schemaVersion": "nga-health-evidence-v1",
+            "request": {
+                "method": "GET",
+                "url": f"{config.api_base_url}/health",
+            },
+            "response": serialize_identity_response(health_response),
+        },
+        "webContract": {
+            **binding,
+            "schemaVersion": "nga-web-contract-evidence-v1",
+            "request": {
+                "method": "GET",
+                "url": f"{config.web_base_url}/nga/search",
+            },
+            "response": serialize_identity_response(web_response),
+        },
+    }
+    identity_evaluation = evaluate_identity_evidence(
+        identity_documents,
+        expected_binding=binding,
+        deployed_contract_version=str(deployed_versions["contract"]),
     )
+    if config.snapshot == "candidate" and not identity_evaluation["passed"]:
+        raise GateStopped("raw identity evidence does not bind the candidate")
+    identity_release_decision = identity_evaluation["decision"]
+    for name, document in identity_documents.items():
+        _write_json(config.out_dir / IDENTITY_EVIDENCE_PATHS[name], document)
     identity = {
         **binding,
         "generatedAt": started_at,
@@ -4457,6 +5013,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
         "publicSearchRequestsPerMinute": config.requests_per_minute,
         "health": health,
         "webContract": web_contract,
+        "identityReleaseDecision": identity_release_decision,
     }
     _write_json(config.out_dir / "identity.json", identity)
     _write_json(
@@ -4862,6 +5419,7 @@ def run_gate(config: RunConfig, transport: Any | None = None) -> dict[str, Any]:
             "deploymentBinding": deployment_binding,
             "liveContractBinding": live_contract_binding,
         },
+        "identityReleaseDecision": identity_release_decision,
         "caseCounts": selected["counts"],
         "text": {
             "selected": len(text_results),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import http.server
 import hashlib
@@ -21,6 +22,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE_PATH = ROOT / "eval" / "nga_staging_gate.py"
+
+PILOT_PRIMARY_ARTISTS = {
+    "131994": "1364",
+    "110821": "23812",
+    "11236": "1974",
+    "38": "119",
+    "579": "1507",
+}
+TRUSTED_NGA_SOURCE_SHA256 = {
+    "objects.csv": "0435ee2468c5043046daef4a0c39badb586d52d4ed24712287423a4897961d67",
+    "published_images.csv": "8fb22d56ba09490937fb54ff07560c18ca4eb3468c24aa91167eeb4e9cc3a16d",
+    "objects_constituents.csv": "a460accc402ad8b0130e3b108f9bc9d03ac9621721db9ef713f944205eba6c1d",
+    "constituents.csv": "090ed9c7d71a3fb83660bbf0e52d6b6a133eab60bf87b4115a4b36bb9042d3b9",
+    "constituents_altnames.csv": "129547888f858aa15d951dff27c6761abd308357a1c0787438ded8091964a44f",
+}
+TRUSTED_NGA_SOURCE_HEADERS = {
+    "objects.csv": "objectid,uuid,accessioned,accessionnum,locationid,title,displaydate,beginyear,endyear,visualbrowsertimespan,medium,dimensions,inscription,markings,attributioninverted,attribution,provenancetext,creditline,classification,subclassification,visualbrowserclassification,parentid,isvirtual,departmentabbr,portfolio,series,volume,watermarks,lastdetectedmodification,wikidataid,customprinturl",
+    "published_images.csv": "uuid,iiifurl,iiifthumburl,viewtype,sequence,width,height,maxpixels,openaccess,created,modified,depictstmsobjectid,assistivetext",
+    "objects_constituents.csv": "objectid,constituentid,displayorder,roletype,role,prefix,suffix,displaydate,beginyear,endyear,country,zipcode",
+    "constituents.csv": "constituentid,uuid,ulanid,preferreddisplayname,forwarddisplayname,lastname,displaydate,artistofngaobject,beginyear,endyear,visualbrowsertimespan,nationality,visualbrowsernationality,constituenttype,wikidataid",
+    "constituents_altnames.csv": "altnameid,constituentid,lastname,displayname,forwarddisplayname,nametype",
+}
 
 
 def load_gate():
@@ -184,9 +207,33 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
     value_hashes = []
     for index, object_id in enumerate(object_ids, 1):
         artwork_id = f"open-access-art:nga:{object_id}"
-        primary_artist_id = str(1000 + index)
+        primary_artist_id = PILOT_PRIMARY_ARTISTS[object_id]
         mapping.append(
-            {"id": artwork_id, "primaryArtistId": primary_artist_id}
+            {
+                "id": artwork_id,
+                "primaryArtistId": primary_artist_id,
+                "customMetadata": {
+                    "ngaArtists": {
+                        "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+                        "relationships": [
+                            {
+                                "constituentId": primary_artist_id,
+                                "displayOrder": 1,
+                                "roleType": "artist",
+                                "role": "artist",
+                                "prefix": None,
+                                "suffix": None,
+                                "preferredDisplayName": f"Artist {primary_artist_id}",
+                                "forwardDisplayName": f"Artist {primary_artist_id}",
+                                "alternativeNames": [],
+                            }
+                        ],
+                    }
+                },
+                "fieldSources": {
+                    "primary_artist_id": "nga.objects_constituents"
+                },
+            }
         )
         original = {
             "id": artwork_id,
@@ -209,6 +256,17 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
     source_manifest = {
         "schemaVersion": 1,
         "sourceCommit": "79d114c2186ca38af27a9478717f1e509d799495",
+        "files": {
+            filename: {
+                "sha256": digest,
+                "rowCount": index + 1,
+                "header": TRUSTED_NGA_SOURCE_HEADERS[filename],
+            }
+            for index, (filename, digest) in enumerate(
+                TRUSTED_NGA_SOURCE_SHA256.items()
+            )
+        },
+        "candidateCount": 63_253,
     }
     sql_text = "".join(
         f"UPDATE artworks SET primary_artist_id = '{row['primaryArtistId']}' "
@@ -368,6 +426,35 @@ def write_artist_data_evidence(gate, evidence_root: Path, *, phase="pilot"):
             "after": production_bindings["after"],
         },
     }
+
+
+def rewrite_bound_artist_json(root: Path, binding, relative: str, mutate):
+    manifest_path = root / binding["artifactManifest"]["path"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(item for item in manifest["files"] if item["path"] == relative)
+    artifact_path = manifest_path.parent / relative
+    value = json.loads(artifact_path.read_text(encoding="utf-8"))
+    mutate(value)
+    payload = (json.dumps(value, indent=2) + "\n").encode()
+    artifact_path.write_bytes(payload)
+    record["sha256"] = hashlib.sha256(payload).hexdigest()
+    record["bytes"] = len(payload)
+    if relative == "source-manifest.json":
+        manifest["source"]["manifestSha256"] = record["sha256"]
+    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+    manifest_path.write_bytes(manifest_bytes)
+    binding["artifactManifest"]["sha256"] = hashlib.sha256(
+        manifest_bytes
+    ).hexdigest()
+
+
+def rewrite_identity_response_body(path: Path, body: bytes):
+    document = json.loads(path.read_text(encoding="utf-8"))
+    response = document["response"]
+    response["bodyBase64"] = base64.b64encode(body).decode("ascii")
+    response["bodyLength"] = len(body)
+    response["bodySha256"] = hashlib.sha256(body).hexdigest()
+    path.write_text(json.dumps(document) + "\n", encoding="utf-8")
 
 
 def parse_with_exact_local_v5(cases):
@@ -754,12 +841,95 @@ def make_complete_evidence_bundle(
         ],
     }
     manual = gate.summarize_manual_relevance(manual_templates, labels)
+    local_version_sources = gate.capture_local_version_sources(ROOT)
+    local_versions = gate.parse_captured_local_versions(local_version_sources)
+    health_url = "https://paillette-api-stg.berlayar.ai/health"
+    health_body = json.dumps(
+        {"status": "healthy", "environment": "staging"},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    health_response = {
+        "requestUrl": health_url,
+        "finalUrl": health_url,
+        "status": 200,
+        "headers": {"content-type": "application/json"},
+        "json": {"status": "healthy", "environment": "staging"},
+        "body": health_body,
+        "elapsedMs": 1,
+    }
+    health = gate.evaluate_staging_health_response(
+        health_response, "https://paillette-api-stg.berlayar.ai"
+    )["observation"]
+    web_url = "https://paillette-stg.berlayar.ai/nga/search"
+    deployed_contract = deployment_binding["deployedVersions"]["contract"]
+    web_body = (
+        f'<link href="/search-spotlights/nga/v{deployed_contract}-'
+        f'{"e" * 64}.json">'
+    ).encode()
+    web_response = {
+        "requestUrl": web_url,
+        "finalUrl": web_url,
+        "status": 200,
+        "headers": {"content-type": "text/html"},
+        "json": None,
+        "body": web_body,
+        "elapsedMs": 1,
+    }
+    web_contract = gate._web_contract_from_response(web_response)
+    live_contract_binding = gate.evaluate_live_contract_binding(
+        web_contract["contractVersions"], deployed_contract
+    )
+    identity_documents = {
+        "deploymentIdentity": {
+            **binding,
+            "schemaVersion": "nga-deployment-input-evidence-v1",
+            "content": gate.capture_bound_json_bytes(
+                (json.dumps(deployed_identity) + "\n").encode()
+            ),
+        },
+        "localVersions": {
+            **binding,
+            "schemaVersion": "nga-local-version-evidence-v1",
+            "sources": local_version_sources,
+        },
+        "requestPolicy": {
+            **binding,
+            "schemaVersion": "nga-request-policy-evidence-v1",
+            "publicSearchRequestsPerMinute": 8,
+        },
+        "health": {
+            **binding,
+            "schemaVersion": "nga-health-evidence-v1",
+            "request": {"method": "GET", "url": health_url},
+            "response": gate.serialize_identity_response(health_response),
+        },
+        "webContract": {
+            **binding,
+            "schemaVersion": "nga-web-contract-evidence-v1",
+            "request": {"method": "GET", "url": web_url},
+            "response": gate.serialize_identity_response(web_response),
+        },
+    }
+    identity_release_decision = gate.evaluate_identity_evidence(
+        identity_documents,
+        expected_binding=binding,
+        deployed_contract_version=deployed_contract,
+    )["decision"]
     identity = {
         **binding,
         "generatedAt": "2026-08-22T00:00:00Z",
         "phase": phase,
+        "apiBaseUrl": "https://paillette-api-stg.berlayar.ai",
+        "webBaseUrl": "https://paillette-stg.berlayar.ai",
+        "localVersions": local_versions,
         "deploymentIdentity": deployed_identity,
         "deploymentBinding": deployment_binding,
+        "liveContractBinding": live_contract_binding,
+        "publicSearchRequestsPerMinute": 8,
+        "health": health,
+        "webContract": web_contract,
+        "identityReleaseDecision": identity_release_decision,
     }
     if snapshot == "candidate":
         artist_evaluation = gate.evaluate_artist_data_evidence(
@@ -774,6 +944,18 @@ def make_complete_evidence_bundle(
         **binding,
         "generatedAt": "2026-08-22T00:01:00Z",
         "phase": phase,
+        "publicSearchRequestsPerMinute": 8,
+        "hosts": {
+            "api": "https://paillette-api-stg.berlayar.ai",
+            "web": "https://paillette-stg.berlayar.ai",
+        },
+        "versions": {
+            "localEvaluator": local_versions,
+            "deployed": deployment_binding["deployedVersions"],
+            "deploymentBinding": deployment_binding,
+            "liveContractBinding": live_contract_binding,
+        },
+        "identityReleaseDecision": identity_release_decision,
         "caseCounts": selected["counts"],
         "text": {"selected": len(text_ids), "passed": len(text_ids)},
         "image": {"selected": len(image_ids), "passed": len(image_ids)},
@@ -820,6 +1002,10 @@ def make_complete_evidence_bundle(
             labels_document=labels,
         ),
         "playwright-handoff.json": handoff,
+        **{
+            gate.IDENTITY_EVIDENCE_PATHS[name]: document
+            for name, document in identity_documents.items()
+        },
     }
 
     text_endpoint = "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
@@ -2338,6 +2524,168 @@ class InventoryAndRelevanceTests(GateTestCase):
         self.assertEqual(result["vectorRecordCount"], 5)
         self.assertEqual(result["vectorValueHashCount"], 5)
 
+    def test_artist_evidence_rejects_self_consistent_untrusted_source_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+            rewrite_bound_artist_json(
+                root,
+                binding,
+                "source-manifest.json",
+                lambda source: source["files"]["objects.csv"].__setitem__(
+                    "sha256", "f" * 64
+                ),
+            )
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+        self.assertIn("artist_source_inventory_mismatch", result["failureCodes"])
+
+    def test_artist_evidence_derives_primary_from_unique_minimum_relationship(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+
+            def add_lower_relationship(mapping):
+                mapping[0]["customMetadata"]["ngaArtists"]["relationships"].append(
+                    {
+                        "constituentId": "999",
+                        "displayOrder": 0,
+                        "roleType": "artist",
+                        "role": "artist",
+                        "prefix": None,
+                        "suffix": None,
+                        "preferredDisplayName": "Fabricated Artist",
+                        "forwardDisplayName": "Fabricated Artist",
+                        "alternativeNames": [],
+                    }
+                )
+
+            rewrite_bound_artist_json(
+                root, binding, "mapping.json", add_lower_relationship
+            )
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+        self.assertIn("artist_mapping_primary_mismatch", result["failureCodes"])
+
+    def test_artist_evidence_rejects_fabricated_self_consistent_known_mapping(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding = write_artist_data_evidence(self.gate, root)
+
+            def fabricate_mapping(mapping):
+                row = next(
+                    item for item in mapping if item["id"].endswith(":131994")
+                )
+                row["primaryArtistId"] = "999"
+                row["customMetadata"]["ngaArtists"]["relationships"][0][
+                    "constituentId"
+                ] = "999"
+
+            rewrite_bound_artist_json(
+                root, binding, "mapping.json", fabricate_mapping
+            )
+            result = self.call(
+                "evaluate_artist_data_evidence", root, binding, phase="pilot"
+            )
+        self.assertIn("artist_pilot_mapping_mismatch", result["failureCodes"])
+
+    def test_artist_evidence_requires_exact_source_inventory(self):
+        mutations = {
+            "missing": lambda source: source["files"].pop("objects.csv"),
+            "invented": lambda source: source["files"].__setitem__(
+                "invented.csv",
+                {
+                    "sha256": "f" * 64,
+                    "rowCount": 1,
+                    "header": "invented",
+                },
+            ),
+            "wrong header": lambda source: source["files"][
+                "objects.csv"
+            ].__setitem__("header", "objectid,fabricated"),
+            "wrong candidate count": lambda source: source.__setitem__(
+                "candidateCount", 63_252
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, root)
+                rewrite_bound_artist_json(
+                    root, binding, "source-manifest.json", mutate
+                )
+                result = self.call(
+                    "evaluate_artist_data_evidence", root, binding, phase="pilot"
+                )
+                self.assertIn(
+                    "artist_source_inventory_mismatch", result["failureCodes"]
+                )
+
+    def test_artist_mapping_requires_complete_runtime_relationship_schema(self):
+        mutations = {
+            "array": lambda relationship: relationship.__setitem__(
+                "alternativeNames", "Alias"
+            ),
+            "object": lambda relationship: relationship.__setitem__(
+                "preferredDisplayName", {"name": "Artist"}
+            ),
+            "null": lambda relationship: relationship.__setitem__("role", None),
+            "missing": lambda relationship: relationship.pop("roleType"),
+            "numeric string": lambda relationship: relationship.__setitem__(
+                "displayOrder", "1"
+            ),
+            "unsafe integer": lambda relationship: relationship.__setitem__(
+                "displayOrder", 2**53
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, root)
+
+                def mutate_mapping(mapping):
+                    relationship = mapping[0]["customMetadata"]["ngaArtists"][
+                        "relationships"
+                    ][0]
+                    mutate(relationship)
+
+                rewrite_bound_artist_json(
+                    root, binding, "mapping.json", mutate_mapping
+                )
+                result = self.call(
+                    "evaluate_artist_data_evidence", root, binding, phase="pilot"
+                )
+                self.assertIn(
+                    "artist_mapping_relationship_invalid", result["failureCodes"]
+                )
+
+    def test_artist_mapping_rejects_duplicate_and_missing_ids(self):
+        mutations = {
+            "duplicate": lambda mapping: mapping.__setitem__(
+                1, json.loads(json.dumps(mapping[0]))
+            ),
+            "missing": lambda mapping: mapping.pop(),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binding = write_artist_data_evidence(self.gate, root)
+                rewrite_bound_artist_json(root, binding, "mapping.json", mutate)
+                result = self.call(
+                    "evaluate_artist_data_evidence", root, binding, phase="pilot"
+                )
+                self.assertFalse(result["passed"], result)
+                self.assertTrue(
+                    {
+                        "artist_mapping_invalid",
+                        "artist_artifact_count_mismatch",
+                        "artist_pilot_id_scope_mismatch",
+                    }
+                    & set(result["failureCodes"])
+                )
+
     def test_artist_evidence_rejects_escape_missing_digest_and_phase_mismatch(self):
         mutations = {
             "escape": (
@@ -3434,6 +3782,196 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
             self.assertIn("raw_case_evidence_failed", evaluation["failureCodes"])
 
+    def test_candidate_rehash_rejects_rewritten_local_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            local_path = root / self.gate.IDENTITY_EVIDENCE_PATHS["localVersions"]
+            local = json.loads(local_path.read_text(encoding="utf-8"))
+            source = local["sources"][2]
+            payload = base64.b64decode(source["contentBase64"])
+            payload = payload.replace(b"nga-v7", b"nga-v999")
+            source["contentBase64"] = base64.b64encode(payload).decode("ascii")
+            source["byteLength"] = len(payload)
+            source["sha256"] = hashlib.sha256(payload).hexdigest()
+            local_path.write_text(json.dumps(local) + "\n", encoding="utf-8")
+
+            def rewrite_identity(identity):
+                identity["localVersions"]["parser"] = "nga-v999"
+                identity["identityReleaseDecision"]["localVersions"][
+                    "parser"
+                ] = "nga-v999"
+
+            def rewrite_summary(summary):
+                summary["versions"]["localEvaluator"]["parser"] = "nga-v999"
+                summary["identityReleaseDecision"]["localVersions"][
+                    "parser"
+                ] = "nga-v999"
+
+            json_mutate(
+                root / "identity.json", rewrite_identity
+            )
+            json_mutate(
+                root / "summary.json", rewrite_summary
+            )
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_rejects_rewritten_request_rate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            json_mutate(
+                root / self.gate.IDENTITY_EVIDENCE_PATHS["requestPolicy"],
+                lambda policy: policy.__setitem__(
+                    "publicSearchRequestsPerMinute", 99
+                ),
+            )
+
+            def rewrite_identity(identity):
+                identity["publicSearchRequestsPerMinute"] = 99
+                identity["identityReleaseDecision"][
+                    "publicSearchRequestsPerMinute"
+                ] = 99
+
+            def rewrite_summary(summary):
+                summary["publicSearchRequestsPerMinute"] = 99
+                summary["identityReleaseDecision"][
+                    "publicSearchRequestsPerMinute"
+                ] = 99
+
+            json_mutate(
+                root / "identity.json", rewrite_identity
+            )
+            json_mutate(
+                root / "summary.json", rewrite_summary
+            )
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_rejects_rewritten_web_observation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            web_raw_path = root / self.gate.IDENTITY_EVIDENCE_PATHS["webContract"]
+            rewrite_identity_response_body(
+                web_raw_path,
+                (
+                    f'<link href="/search-spotlights/nga/v28-'
+                    f'{"f" * 64}.json">'
+                ).encode(),
+            )
+
+            def rewrite_identity(identity):
+                identity["webContract"]["contractVersions"] = ["28"]
+                identity["liveContractBinding"]["liveContractVersions"] = ["28"]
+                identity["identityReleaseDecision"]["webContract"][
+                    "contractVersions"
+                ] = ["28"]
+                identity["identityReleaseDecision"]["liveContractBinding"][
+                    "liveContractVersions"
+                ] = ["28"]
+
+            def rewrite_summary(summary):
+                summary["versions"]["liveContractBinding"][
+                    "liveContractVersions"
+                ] = ["28"]
+                summary["identityReleaseDecision"]["webContract"][
+                    "contractVersions"
+                ] = ["28"]
+                summary["identityReleaseDecision"]["liveContractBinding"][
+                    "liveContractVersions"
+                ] = ["28"]
+
+            json_mutate(root / "identity.json", rewrite_identity)
+            json_mutate(root / "summary.json", rewrite_summary)
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_rejects_rewritten_health_observation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            health_body = json.dumps(
+                {"status": "healthy", "environment": "production"},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            rewrite_identity_response_body(
+                root / self.gate.IDENTITY_EVIDENCE_PATHS["health"], health_body
+            )
+
+            def rewrite_identity(identity):
+                identity["health"]["body"]["environment"] = "production"
+                identity["identityReleaseDecision"]["health"]["body"][
+                    "environment"
+                ] = "production"
+
+            def rewrite_summary(summary):
+                summary["identityReleaseDecision"]["health"]["body"][
+                    "environment"
+                ] = "production"
+
+            json_mutate(root / "identity.json", rewrite_identity)
+            json_mutate(root / "summary.json", rewrite_summary)
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_rejects_forged_live_binding_claims(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+
+            def rewrite_live(binding):
+                binding["liveContractVersions"] = ["28"]
+
+            json_mutate(
+                root / "identity.json",
+                lambda identity: (
+                    rewrite_live(identity["liveContractBinding"]),
+                    rewrite_live(
+                        identity["identityReleaseDecision"][
+                            "liveContractBinding"
+                        ]
+                    ),
+                ),
+            )
+            json_mutate(
+                root / "summary.json",
+                lambda summary: (
+                    rewrite_live(summary["versions"]["liveContractBinding"]),
+                    rewrite_live(
+                        summary["identityReleaseDecision"][
+                            "liveContractBinding"
+                        ]
+                    ),
+                ),
+            )
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_rejects_rewritten_identity_origins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_complete_evidence_bundle(self.gate, root)
+            json_mutate(
+                root / "identity.json",
+                lambda identity: identity.__setitem__(
+                    "webBaseUrl", "https://forged.example"
+                ),
+            )
+            with self.assertRaises(self.gate.GateStopped):
+                self.call("rehash_evidence", root)
+
+    def test_candidate_rehash_requires_each_raw_identity_artifact(self):
+        for name, relative in self.gate.IDENTITY_EVIDENCE_PATHS.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                make_complete_evidence_bundle(self.gate, root)
+                (root / relative).unlink()
+                with self.assertRaises(self.gate.GateStopped):
+                    self.call("rehash_evidence", root)
+
     def test_candidate_rehash_rejects_weak_only_manual_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -3497,7 +4035,8 @@ class InventoryAndRelevanceTests(GateTestCase):
                 ),
             )
             with self.assertRaisesRegex(
-                self.gate.GateStopped, "evidence_deployment_binding_mismatch"
+                self.gate.GateStopped,
+                "evidence_deployment_identity_raw_mismatch",
             ):
                 self.call("rehash_evidence", root)
 
