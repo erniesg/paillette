@@ -14,6 +14,8 @@ import { join, resolve } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 
+import { buildNgaArtistUpdateSql } from '../lib/nga-structured-search-backfill.mjs';
+
 const scriptPath = resolve('scripts/apply-nga-artist-backfill.mjs');
 const temporaryDirectories = [];
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -36,20 +38,24 @@ const createArtifacts = (overrides = {}) => {
   const mappingRows = pilotIds.map((id, index) => ({
     id,
     primaryArtistId: String(1000 + index),
+    customMetadata: {
+      ngaArtists: {
+        sourceCommit: '79d114c2186ca38af27a9478717f1e509d799495',
+        relationships: [],
+      },
+    },
+    fieldSources: { primary_artist_id: 'nga.objects_constituents' },
   }));
   const sql = mappingRows
-    .map(
-      (row) => `UPDATE artworks SET
-  primary_artist_id = '${row.primaryArtistId}'
-WHERE org_id = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac'
-  AND json_extract(custom_metadata, '$.provider') = 'nga'
-  AND id LIKE 'open-access-art:nga:%'
-  AND id = '${row.id}';`
+    .map((row) =>
+      buildNgaArtistUpdateSql(row, 'eabbf000-708e-4d4c-8ac8-966b59d4fcac')
     )
     .join('\n');
   const vectorRows = mappingRows.map((row, index) => ({
     id: row.id,
     values: [index / 10, 0.5],
+    namespace: 'image',
+    dimensions: 2,
     metadata: {
       artworkId: row.id,
       provider: 'nga',
@@ -303,6 +309,60 @@ test('rejects rehashed SQL chunks whose declared count hides an ID gap', () => {
   assert.match(result.stderr, /SQL.*count|ID gap/i);
 });
 
+test('rejects rehashed SQL that changes unrelated columns or required guards', () => {
+  const sqlPath = 'sql/artist-0001.sql';
+  const mutations = [
+    (sql) =>
+      sql.replace(
+        '  updated_at = CURRENT_TIMESTAMP',
+        "  updated_at = CURRENT_TIMESTAMP,\n  title = 'tampered'"
+      ),
+    (sql) =>
+      sql.replace(
+        "WHERE org_id = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac'",
+        "WHERE org_id = '00000000-0000-0000-0000-000000000000'"
+      ),
+    (sql) =>
+      sql.replace(
+        "  AND json_extract(custom_metadata, '$.provider') = 'nga'",
+        "  AND json_extract(custom_metadata, '$.provider') = 'met'"
+      ),
+    (sql) =>
+      sql.replace(
+        "  AND id LIKE 'open-access-art:nga:%'",
+        "  AND id LIKE 'open-access-art:%'"
+      ),
+    (sql) =>
+      sql.replace(
+        "  AND id = 'open-access-art:nga:131994'",
+        "  AND id <> 'open-access-art:nga:131994'"
+      ),
+    (sql) =>
+      sql.replace(
+        "WHERE org_id = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac'\n",
+        ''
+      ),
+    (sql) =>
+      sql.replace(
+        "  AND json_extract(custom_metadata, '$.provider') = 'nga'\n",
+        ''
+      ),
+    (sql) => sql.replace("  AND id LIKE 'open-access-art:nga:%'\n", ''),
+    (sql) => sql.replace("  AND id = 'open-access-art:nga:131994'\n", ''),
+  ];
+
+  for (const mutate of mutations) {
+    let artifact = createArtifacts();
+    const sql = readFileSync(join(artifact.root, sqlPath), 'utf8');
+    const mutatedSql = mutate(sql);
+    assert.notEqual(mutatedSql, sql, 'test mutation must alter its fixture');
+    artifact = replaceArtifact(artifact, sqlPath, mutatedSql);
+    const result = runApply(artifact);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /SQL.*(?:column|guard|scope|ID)/i);
+  }
+});
+
 test('rejects rehashed enriched and rollback vectors with duplicate or missing IDs', () => {
   let artifact = createArtifacts();
   const vectorPath = 'vectors/artist-0001.ndjson';
@@ -331,6 +391,41 @@ test('rejects rehashed enriched and rollback vectors with duplicate or missing I
   result = runApply(artifact);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /rollback.*count|rollback.*ID gap/i);
+});
+
+test('rejects any enriched-vector change beyond metadata.primaryArtistId', () => {
+  const vectorPath = 'vectors/artist-0001.ndjson';
+  const mutations = [
+    (row) => ({ ...row, dimensions: 3 }),
+    (row) => {
+      const { namespace: _removed, ...rest } = row;
+      return rest;
+    },
+    (row) => ({ ...row, extraTopLevel: true }),
+    (row) => ({ ...row, metadata: { ...row.metadata, provider: 'met' } }),
+    (row) => {
+      const { provider: _removed, ...metadata } = row.metadata;
+      return { ...row, metadata };
+    },
+    (row) => ({ ...row, metadata: { ...row.metadata, extraMetadata: true } }),
+  ];
+
+  for (const mutate of mutations) {
+    let artifact = createArtifacts();
+    const rows = readFileSync(join(artifact.root, vectorPath), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    rows[0] = mutate(rows[0]);
+    artifact = replaceArtifact(
+      artifact,
+      vectorPath,
+      `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`
+    );
+    const result = runApply(artifact);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /vector.*(?:structure|metadata|unchanged)/i);
+  }
 });
 
 test('rejects a rollback chunk whose declared line count is false', () => {

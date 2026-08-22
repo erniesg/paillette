@@ -173,6 +173,8 @@ export async function validatePreflightBindings({
   const boundStagedPaths = new Set();
   const boundVectorPaths = new Set();
   const bindings = [];
+  const validatedStagedRecordFiles = [];
+  const validatedImageVectorFiles = [];
 
   for (const inputPath of preflightManifestPaths) {
     const manifestPath = await realpath(resolve(inputPath));
@@ -252,11 +254,19 @@ export async function validatePreflightBindings({
       throw new Error('duplicate preflight staged-records binding');
     }
     boundStagedPaths.add(staged.resolvedPath);
+    validatedStagedRecordFiles.push({
+      path: staged.resolvedPath,
+      sha256: staged.sha256,
+    });
     for (const vector of vectors) {
       if (boundVectorPaths.has(vector.resolvedPath)) {
         throw new Error('duplicate preflight image-vector binding');
       }
       boundVectorPaths.add(vector.resolvedPath);
+      validatedImageVectorFiles.push({
+        path: vector.resolvedPath,
+        sha256: vector.sha256,
+      });
     }
     bindings.push({
       manifestSha256: sha256(manifestContent),
@@ -305,7 +315,55 @@ export async function validatePreflightBindings({
   ) {
     throw new Error(`preflight manifests do not form the exact ${phase} scope`);
   }
-  return bindings.sort((left, right) => left.phase.localeCompare(right.phase));
+  return {
+    bindings: bindings.sort((left, right) =>
+      left.phase.localeCompare(right.phase)
+    ),
+    stagedRecordFiles: validatedStagedRecordFiles,
+    imageVectorFiles: validatedImageVectorFiles,
+  };
+}
+
+const readStillBoundPreflightFile = async ({ path, sha256: expected }) => {
+  const content = await readFile(path);
+  if (sha256(content) !== expected) {
+    throw new Error(
+      `preflight input changed after preflight validation: ${path}`
+    );
+  }
+  return content;
+};
+
+export async function consumeValidatedPreflightInputs(validation) {
+  if (
+    !Array.isArray(validation?.stagedRecordFiles) ||
+    !Array.isArray(validation?.imageVectorFiles)
+  ) {
+    throw new Error('validated preflight input descriptors are required');
+  }
+  const stagedPayloads = [];
+  const vectors = [];
+  try {
+    for (const input of validation.stagedRecordFiles) {
+      const content = await readStillBoundPreflightFile(input);
+      stagedPayloads.push(JSON.parse(content.toString('utf8')));
+    }
+    for (const input of validation.imageVectorFiles) {
+      const content = await readStillBoundPreflightFile(input);
+      for (const line of content
+        .toString('utf8')
+        .split(/\r?\n/)
+        .filter(Boolean)) {
+        vectors.push(JSON.parse(line));
+      }
+    }
+  } catch (error) {
+    if (/changed after preflight validation/.test(String(error?.message))) {
+      throw error;
+    }
+    throw new Error('malformed JSON/NDJSON in consumed preflight input');
+  }
+  return { stagedPayloads, vectors };
 }
 
 export async function publishPreparedArtifacts(outputDirectory, files) {

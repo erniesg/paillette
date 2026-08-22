@@ -18,6 +18,7 @@ import {
   STAGING_ORG_ID,
   assertStagingBackfillIdentity,
   buildNgaBackfillArtifacts,
+  consumeValidatedPreflightInputs,
   enrichNgaArtistVector,
   publishPreparedArtifacts,
   sha256,
@@ -247,7 +248,7 @@ test('preparation rejects every non-staging organization identity', () => {
 
 test('binds every preparation input to its hashed preflight manifest', async () => {
   const preflight = createPreflight();
-  const bindings = await validatePreflightBindings({
+  const validation = await validatePreflightBindings({
     phase: 'pilot',
     expectedOrgId: ORG_ID,
     preflightManifestPaths: [preflight.manifestPath],
@@ -255,14 +256,14 @@ test('binds every preparation input to its hashed preflight manifest', async () 
     imageVectorPaths: [preflight.vectorDirectory],
   });
 
-  assert.equal(bindings.length, 1);
-  assert.match(bindings[0].manifestSha256, /^[a-f0-9]{64}$/);
+  assert.equal(validation.bindings.length, 1);
+  assert.match(validation.bindings[0].manifestSha256, /^[a-f0-9]{64}$/);
   assert.equal(
-    bindings[0].stagedRecords.sha256,
+    validation.bindings[0].stagedRecords.sha256,
     sha256(readFileSync(preflight.stagedPath))
   );
   assert.equal(
-    bindings[0].imageVectors[0].sha256,
+    validation.bindings[0].imageVectors[0].sha256,
     sha256(readFileSync(preflight.vectorPath))
   );
 
@@ -276,6 +277,31 @@ test('binds every preparation input to its hashed preflight manifest', async () 
       imageVectorPaths: [preflight.vectorDirectory],
     }),
     /preflight.*SHA-256|digest mismatch/i
+  );
+});
+
+test('rejects same-ID vector bytes swapped after preflight validation', async () => {
+  const preflight = createPreflight();
+  const validation = await validatePreflightBindings({
+    phase: 'pilot',
+    expectedOrgId: ORG_ID,
+    preflightManifestPaths: [preflight.manifestPath],
+    stagedRecordPaths: [preflight.stagedPath],
+    imageVectorPaths: [preflight.vectorDirectory],
+  });
+  const rows = readFileSync(preflight.vectorPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  rows[0].values = [9.9, 8.8];
+  writeFileSync(
+    preflight.vectorPath,
+    `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`
+  );
+
+  await assert.rejects(
+    consumeValidatedPreflightInputs(validation),
+    /changed after preflight validation|SHA-256/i
   );
 });
 

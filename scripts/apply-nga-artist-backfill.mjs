@@ -14,6 +14,7 @@ import {
   STAGING_ORG_ID,
   canonicalJson,
 } from './lib/nga-artist-backfill.mjs';
+import { buildNgaArtistUpdateSql } from './lib/nga-structured-search-backfill.mjs';
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -273,6 +274,82 @@ const splitSqlStatements = (text, path) => {
   return statements;
 };
 
+const parseSqlSetColumns = (statement) => {
+  const match = /^UPDATE artworks SET\s*\n([\s\S]*?)\nWHERE /u.exec(statement);
+  if (!match) throw new Error('SQL mutation scope has an invalid UPDATE shape');
+  const assignments = [];
+  let current = '';
+  let quoted = false;
+  let depth = 0;
+  for (let index = 0; index < match[1].length; index += 1) {
+    const character = match[1][index];
+    if (character === "'") {
+      if (quoted && match[1][index + 1] === "'") {
+        current += "''";
+        index += 1;
+        continue;
+      }
+      quoted = !quoted;
+    } else if (!quoted && character === '(') {
+      depth += 1;
+    } else if (!quoted && character === ')') {
+      depth -= 1;
+    } else if (!quoted && depth === 0 && character === ',') {
+      assignments.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  if (quoted || depth !== 0) throw new Error('SQL mutation scope is malformed');
+  assignments.push(current.trim());
+  const columns = assignments.map((assignment) => {
+    const column = /^([a-z_]+)\s*=/u.exec(assignment)?.[1];
+    if (!column)
+      throw new Error('SQL mutation scope has an invalid SET assignment');
+    return column;
+  });
+  return { assignments, columns };
+};
+
+const assertExactSqlMutationScope = (statement, mappingRow) => {
+  const { assignments, columns } = parseSqlSetColumns(statement);
+  const allowedColumns = [
+    'primary_artist_id',
+    'custom_metadata',
+    'field_sources',
+    'updated_at',
+  ];
+  if (
+    columns.length !== allowedColumns.length ||
+    new Set(columns).size !== columns.length ||
+    allowedColumns.some((column) => !columns.includes(column))
+  ) {
+    throw new Error(
+      'SQL mutation scope contains a forbidden or missing SET column'
+    );
+  }
+  const primaryAssignment = assignments.find((assignment) =>
+    assignment.startsWith('primary_artist_id')
+  );
+  if (
+    primaryAssignment !==
+    `primary_artist_id = '${String(mappingRow.primaryArtistId)}'`
+  ) {
+    throw new Error('SQL mutation scope has a primary artist mismatch');
+  }
+  const expectedStatement = buildNgaArtistUpdateSql(mappingRow, STAGING_ORG_ID);
+  const whereOffset = statement.indexOf('WHERE ');
+  const expectedWhereOffset = expectedStatement.indexOf('WHERE ');
+  if (
+    whereOffset < 0 ||
+    statement.slice(whereOffset) !==
+      expectedStatement.slice(expectedWhereOffset)
+  ) {
+    throw new Error('SQL mutation scope is missing an exact required guard');
+  }
+};
+
 const parseNdjson = (artifact) => {
   const lines = readFileSync(artifact.resolvedPath, 'utf8')
     .split(/\r?\n/)
@@ -363,6 +440,10 @@ for (const artifact of resolvedArtifacts) {
       ];
       if (matches.length !== 1)
         throw new Error(`SQL chunk has no exact scoped ID`);
+      const mappingRow = mappingById.get(matches[0][1]);
+      if (!mappingRow)
+        throw new Error('SQL mutation scope has an unapproved ID');
+      assertExactSqlMutationScope(statement, mappingRow);
       sqlIds.push(matches[0][1]);
     }
   } else {
@@ -439,6 +520,16 @@ for (const row of valueHashes) {
     originalDigest !== enrichedDigest
   ) {
     throw new Error(`vector value hash mismatch for ${row.id}`);
+  }
+  const expectedEnriched = structuredClone(original);
+  expectedEnriched.metadata = {
+    ...(expectedEnriched.metadata || {}),
+    primaryArtistId: String(mappingById.get(row.id).primaryArtistId),
+  };
+  if (canonicalJson(enriched) !== canonicalJson(expectedEnriched)) {
+    throw new Error(
+      `enriched vector structure changed beyond metadata.primaryArtistId for ${row.id}`
+    );
   }
 }
 

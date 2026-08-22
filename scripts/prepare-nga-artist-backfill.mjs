@@ -1,13 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import Papa from 'papaparse';
@@ -22,6 +15,7 @@ import {
   assertStagingBackfillIdentity,
   buildNgaBackfillArtifacts,
   canonicalJson,
+  consumeValidatedPreflightInputs,
   publishPreparedArtifacts,
   sha256,
   validateNgaSourceFiles,
@@ -112,10 +106,9 @@ const parseJsonColumn = (value, field) => {
   }
 };
 
-const readStagedRecords = async (paths) => {
+const normalizeStagedRecords = (payloads) => {
   const records = [];
-  for (const path of paths) {
-    const payload = JSON.parse(await readFile(resolve(path), 'utf8'));
+  for (const payload of payloads) {
     for (const row of normalizeJsonRows(payload)) {
       records.push({
         ...row,
@@ -128,35 +121,6 @@ const readStagedRecords = async (paths) => {
     }
   }
   return records;
-};
-
-const listNdjson = async (path) => {
-  const resolvedPath = resolve(path);
-  const info = await stat(resolvedPath);
-  if (!info.isDirectory()) return [resolvedPath];
-  return (await readdir(resolvedPath, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ndjson'))
-    .map((entry) => join(resolvedPath, entry.name))
-    .sort();
-};
-
-const readVectors = async (paths) => {
-  const vectors = [];
-  for (const input of paths) {
-    for (const path of await listNdjson(input)) {
-      const lines = (await readFile(path, 'utf8'))
-        .split(/\r?\n/)
-        .filter(Boolean);
-      for (const [index, line] of lines.entries()) {
-        try {
-          vectors.push(JSON.parse(line));
-        } catch {
-          throw new Error(`malformed vector NDJSON at ${path}:${index + 1}`);
-        }
-      }
-    }
-  }
-  return vectors;
 };
 
 const chunk = (values, size) => {
@@ -179,7 +143,7 @@ const assertEmptyOutput = async () => {
 };
 
 await assertEmptyOutput();
-const preflightBindings = await validatePreflightBindings({
+const preflightValidation = await validatePreflightBindings({
   phase,
   expectedOrgId,
   preflightManifestPaths:
@@ -228,8 +192,10 @@ try {
     }
   }
 
-  const stagedRecords = await readStagedRecords(
-    parsedArgs.get('staged-records')
+  const consumedPreflightInputs =
+    await consumeValidatedPreflightInputs(preflightValidation);
+  const stagedRecords = normalizeStagedRecords(
+    consumedPreflightInputs.stagedPayloads
   );
   const requiredObjectIds = new Set(
     stagedRecords.map((record) =>
@@ -242,7 +208,7 @@ try {
     alternativeNames: sourceRows['constituents_altnames.csv'],
     requiredObjectIds,
   });
-  const vectors = await readVectors(parsedArgs.get('image-vectors'));
+  const vectors = consumedPreflightInputs.vectors;
   const artifacts = buildNgaBackfillArtifacts({
     phase,
     expectedOrgId,
@@ -334,7 +300,7 @@ try {
       commit: sourceCommit,
       manifestSha256: sha256(fileContents.get('source-manifest.json')),
     },
-    preflightInputs: preflightBindings,
+    preflightInputs: preflightValidation.bindings,
     invariants: {
       stagedRecordCount: artifacts.mapping.length,
       mappingCount: artifacts.mapping.length,
