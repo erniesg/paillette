@@ -1,4 +1,7 @@
-import { PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES } from '@paillette/types/public-search-core';
+import {
+  PUBLIC_SEARCH_CONTRACT_VERSION,
+  PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES,
+} from '@paillette/types/public-search-core';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
 import type { ArtworkSearchResult } from '~/types';
 import { NGA_SEARCH_SPOTLIGHT_ASSET_PATH } from './generated-search-spotlight-assets';
@@ -47,8 +50,17 @@ const hasExpectedNgaSuggestions = (bundle: PublicSearchSpotlightBundle) => {
 
 export const getSearchSpotlightPath = (provider: SearchSpotlightProvider) => {
   switch (provider) {
-    case 'nga':
+    case 'nga': {
+      const expectedPath = new RegExp(
+        `^/search-spotlights/nga/v${PUBLIC_SEARCH_CONTRACT_VERSION}-[a-f0-9]{64}\\.json$`
+      );
+      if (!expectedPath.test(NGA_SEARCH_SPOTLIGHT_ASSET_PATH)) {
+        throw new SearchSpotlightValidationError(
+          'NGA spotlight asset does not match the active search contract'
+        );
+      }
       return NGA_SEARCH_SPOTLIGHT_ASSET_PATH;
+    }
   }
 };
 

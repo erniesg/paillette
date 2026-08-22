@@ -98,6 +98,8 @@ import {
   deriveDisplayedSearchError,
   deriveImageDraftConstraints,
   getEditorModeUpdate,
+  getInterpretationChips,
+  getSearchEmptyState,
   getSearchUrlStateKey,
   getConstraintChips,
   getPublicSearchErrorCopy,
@@ -148,6 +150,10 @@ const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
 const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
 export const MASONRY_IMAGE_CLASS_NAME =
   'h-full w-full object-contain transition-opacity duration-300 group-hover:opacity-90';
+export const IMAGE_SEARCH_COMPOSER_CLASS_NAME =
+  'mx-auto max-w-2xl space-y-2';
+export const IMAGE_SEARCH_PREVIEW_CLASS_NAME =
+  'flex flex-col gap-3 sm:flex-row sm:items-center';
 
 export const meta: MetaFunction = () => {
   return [
@@ -2168,6 +2174,14 @@ export default function SearchPage() {
     [trackArtworkInteraction]
   );
   const ownershipNotice = searchPresentation.ownershipNotice;
+  const interpretation = textSearchQuery.data?.interpretation;
+  const isNgaSearch = preferredRouteId === 'nga';
+  const interpretationChips = isNgaSearch
+    ? getInterpretationChips(interpretation)
+    : [];
+  const searchEmptyState = getSearchEmptyState(
+    isNgaSearch ? interpretation : undefined
+  );
   const imageDraftChips = getConstraintChips(imageDraftConstraints);
   const submittedConstraintChips = getSubmittedConstraintChips(submittedSearch);
   const selectedPalette = sortColours[0]
@@ -2352,7 +2366,7 @@ export default function SearchPage() {
               )}
 
               {editorMode === 'image' && (
-                <div className="mx-auto max-w-3xl space-y-3">
+                <div className={IMAGE_SEARCH_COMPOSER_CLASS_NAME}>
                   {ownershipNotice && (
                     <p className="text-center text-xs text-sky-100/75">
                       {ownershipNotice}
@@ -2389,7 +2403,9 @@ export default function SearchPage() {
                       'aria-describedby': 'image-upload-guidance',
                     })}
                     aria-busy={isPreparingImage}
-                    className={`rounded-lg border border-dashed px-5 py-5 transition-colors ${
+                    className={`rounded-lg border border-dashed transition-colors ${
+                      imagePreview ? 'px-3 py-3' : 'px-5 py-5'
+                    } ${
                       isDragActive
                         ? 'border-fuchsia-300 bg-fuchsia-300/10'
                         : isNgsSearchLocked
@@ -2404,7 +2420,7 @@ export default function SearchPage() {
                       })}
                     />
                     {imagePreview ? (
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className={IMAGE_SEARCH_PREVIEW_CLASS_NAME}>
                         <img
                           src={imagePreview}
                           alt="Selected image preview"
@@ -2558,34 +2574,28 @@ export default function SearchPage() {
                   </p>
                   {(submittedSearch?.kind === 'text' ||
                     submittedSearch?.kind === 'colour') &&
-                    textSearchQuery.data?.interpretation &&
-                    (Object.keys(
-                      textSearchQuery.data.interpretation.constraints
-                    ).length > 0 ||
-                      textSearchQuery.data.interpretation.corrections.length >
-                        0) && (
+                    interpretation &&
+                    (Object.keys(interpretation.constraints).length > 0 ||
+                      interpretation.corrections.length > 0 ||
+                      interpretationChips.length > 0) && (
                       <div className="flex flex-1 flex-wrap items-center gap-1.5">
-                        {textSearchQuery.data.interpretation.constraints
-                          .dateRange && (
+                        {interpretation.constraints.dateRange && (
                           <button
                             type="button"
-                            aria-label={`Remove date filter ${textSearchQuery.data.interpretation.constraints.dateRange.startYear} to ${textSearchQuery.data.interpretation.constraints.dateRange.endYear}`}
+                            aria-label={`Remove date filter ${interpretation.constraints.dateRange.startYear} to ${interpretation.constraints.dateRange.endYear}`}
                             onClick={() =>
                               removeInterpretationConstraint('dateRange')
                             }
                             className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 font-mono text-[10px] text-amber-100 transition hover:bg-amber-300/20"
                           >
-                            {textSearchQuery.data.interpretation.constraints
-                              .dateRange.startYear ===
-                            textSearchQuery.data.interpretation.constraints
-                              .dateRange.endYear
-                              ? textSearchQuery.data.interpretation.constraints
-                                  .dateRange.startYear
-                              : `${textSearchQuery.data.interpretation.constraints.dateRange.startYear}-${textSearchQuery.data.interpretation.constraints.dateRange.endYear}`}{' '}
+                            {interpretation.constraints.dateRange.startYear ===
+                            interpretation.constraints.dateRange.endYear
+                              ? interpretation.constraints.dateRange.startYear
+                              : `${interpretation.constraints.dateRange.startYear}-${interpretation.constraints.dateRange.endYear}`}{' '}
                             ×
                           </button>
                         )}
-                        {textSearchQuery.data.interpretation.constraints.classifications?.map(
+                        {interpretation.constraints.classifications?.map(
                           (classification) => (
                             <button
                               key={`classification-${classification}`}
@@ -2602,7 +2612,7 @@ export default function SearchPage() {
                             </button>
                           )
                         )}
-                        {textSearchQuery.data.interpretation.constraints.mediumFamilies?.map(
+                        {interpretation.constraints.mediumFamilies?.map(
                           (medium) => (
                             <button
                               key={`medium-${medium}`}
@@ -2617,7 +2627,7 @@ export default function SearchPage() {
                             </button>
                           )
                         )}
-                        {textSearchQuery.data.interpretation.constraints.artistIds?.map(
+                        {interpretation.constraints.artistIds?.map(
                           (artist) => (
                             <button
                               key={`artist-${artist}`}
@@ -2632,15 +2642,22 @@ export default function SearchPage() {
                             </button>
                           )
                         )}
-                        {textSearchQuery.data.interpretation.corrections
-                          .length > 0 && (
+                        {interpretation.corrections.length > 0 && (
                           <span className="font-mono text-[9px] text-white/45">
                             Interpreted{' '}
-                            {textSearchQuery.data.interpretation.corrections
+                            {interpretation.corrections
                               .map(({ from, to }) => `${from} as ${to}`)
                               .join(', ')}
                           </span>
                         )}
+                        {interpretationChips.map((chip) => (
+                          <span
+                            key={chip.key}
+                            className="rounded-full border border-violet-300/25 bg-violet-300/10 px-2.5 py-1 font-mono text-[10px] text-violet-100"
+                          >
+                            {chip.label}
+                          </span>
+                        ))}
                       </div>
                     )}
                   {submittedSearch?.kind === 'image' &&
@@ -3133,9 +3150,11 @@ export default function SearchPage() {
                         </>
                       ) : (
                         <>
-                          <p className="text-white/55">No artworks found.</p>
+                          <p className="text-white/55">
+                            {searchEmptyState.title}
+                          </p>
                           <p className="mt-1 text-sm text-white/35">
-                            Try a broader query or lower the minimum score.
+                            {searchEmptyState.detail}
                           </p>
                         </>
                       )}

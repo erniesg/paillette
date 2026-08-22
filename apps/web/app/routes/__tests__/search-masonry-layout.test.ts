@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  IMAGE_SEARCH_COMPOSER_CLASS_NAME,
+  IMAGE_SEARCH_PREVIEW_CLASS_NAME,
   MASONRY_IMAGE_CLASS_NAME,
   getSearchParamsForQuery,
   getMasonryImageFrameStyle,
@@ -156,5 +158,12 @@ describe('progressive search layout state', () => {
       showResultControls: true,
       ownershipNotice: 'Showing Text results until an image is uploaded.',
     });
+  });
+
+  it('keeps a selected image editor compact while its submitted image owns results', () => {
+    expect(IMAGE_SEARCH_COMPOSER_CLASS_NAME).toContain('max-w-2xl');
+    expect(IMAGE_SEARCH_COMPOSER_CLASS_NAME).not.toContain('min-h-');
+    expect(IMAGE_SEARCH_PREVIEW_CLASS_NAME).toContain('sm:flex-row');
+    expect(IMAGE_SEARCH_PREVIEW_CLASS_NAME).not.toContain('min-h-');
   });
 });

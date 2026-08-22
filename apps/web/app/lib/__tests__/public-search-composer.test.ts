@@ -12,6 +12,8 @@ import {
   deriveDisplayedSearchError,
   deriveImageDraftConstraints,
   getEditorModeUpdate,
+  getInterpretationChips,
+  getSearchEmptyState,
   getSearchUrlStateKey,
   getVisibleImagePreview,
   getPublicSearchErrorCopy,
@@ -44,6 +46,44 @@ const completedText: SubmittedSearch = {
 };
 
 describe('public search composer ownership', () => {
+  it('explains an unsupported NGA derivation without offering score relaxation', () => {
+    expect(
+      getSearchEmptyState({
+        relation: {
+          kind: 'derived_from',
+          workClassification: 'Drawing',
+          sourceClassification: 'Photograph',
+        },
+        relationEvidence: {
+          policy: 'catalogue_derivation',
+          status: 'unverified',
+        },
+      })
+    ).toEqual({
+      title: 'No catalogue-verified matches.',
+      detail:
+        'The indexed NGA catalogue does not verify this historical relationship.',
+      canLowerThreshold: false,
+    });
+  });
+
+  it('labels NGA attribution relationships without implying direct authorship', () => {
+    expect(
+      getInterpretationChips({
+        attribution: { relationship: 'after', targetText: 'Rembrandt' },
+      })
+    ).toEqual([{ key: 'attribution', label: 'After · Rembrandt' }]);
+    expect(
+      getInterpretationChips({
+        attribution: { relationship: 'attributed_to', targetText: 'Rembrandt' },
+      })
+    ).toEqual([{ key: 'attribution', label: 'Attributed to · Rembrandt' }]);
+  });
+
+  it('keeps generic empty states eligible for visual-search recovery controls', () => {
+    expect(getSearchEmptyState()).toMatchObject({ canLowerThreshold: true });
+  });
+
   it('gives programmatic URL targets the same stable identity as their arrival', () => {
     const target = getSearchUrlStateKey(
       'paintings before 1800',

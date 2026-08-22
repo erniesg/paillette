@@ -53,6 +53,68 @@ export type ConstraintChip = {
   removeLabel: string;
 };
 
+export type SearchEmptyState = {
+  title: string;
+  detail: string;
+  canLowerThreshold: boolean;
+};
+
+export type InterpretationChip = {
+  key: 'attribution';
+  label: string;
+};
+
+const ATTRIBUTION_RELATIONSHIP_LABELS = {
+  direct: 'By',
+  after: 'After',
+  attributed_to: 'Attributed to',
+  workshop_of: 'Workshop of',
+  studio_of: 'Studio of',
+  circle_of: 'Circle of',
+  school_of: 'School of',
+  follower_of: 'Follower of',
+} as const;
+
+export const getInterpretationChips = (
+  interpretation?: Pick<PublicSearchInterpretation, 'attribution'>
+): InterpretationChip[] => {
+  const attribution = interpretation?.attribution;
+  if (!attribution?.targetText.trim()) return [];
+
+  return [
+    {
+      key: 'attribution',
+      label: `${ATTRIBUTION_RELATIONSHIP_LABELS[attribution.relationship]} · ${attribution.targetText}`,
+    },
+  ];
+};
+
+export const getSearchEmptyState = (
+  interpretation?: Pick<
+    PublicSearchInterpretation,
+    'relation' | 'relationEvidence'
+  >
+): SearchEmptyState => {
+  if (
+    interpretation?.relation?.kind === 'derived_from' &&
+    interpretation.relationEvidence?.policy === 'catalogue_derivation' &&
+    interpretation.relationEvidence.status === 'unverified'
+  ) {
+    return {
+      title: 'No catalogue-verified matches.',
+      detail:
+        'The indexed NGA catalogue does not verify this historical relationship.',
+      canLowerThreshold: false,
+    };
+  }
+
+  return {
+    title: 'No artworks found.',
+    detail: 'Try a broader query or lower the minimum score.',
+    canLowerThreshold: true,
+  };
+};
+
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
