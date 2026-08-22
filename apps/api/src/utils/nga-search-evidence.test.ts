@@ -14,7 +14,7 @@ import {
 const relationship = (
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> => ({
-  constituentId: 'primary',
+  constituentId: '23812',
   displayOrder: 1,
   roleType: 'artist',
   role: 'artist',
@@ -30,7 +30,7 @@ const attributionMetadata = (
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> => ({
   artist: 'Paul Bril',
-  primaryArtistId: 'primary',
+  primaryArtistId: '23812',
   ngaArtists: { relationships: [relationship()] },
   ...overrides,
 });
@@ -72,11 +72,11 @@ describe('NGA catalogue attribution evidence', () => {
   it('requires both the requested role and every target token on boundaries', () => {
     const metadata = attributionMetadata({
       artist: 'after Rembrandt van Rijn',
-      primaryArtistId: 'rembrandt',
+      primaryArtistId: '1364',
       ngaArtists: {
         relationships: [
           relationship({
-            constituentId: 'rembrandt',
+            constituentId: '1364',
             role: 'artist after',
             preferredDisplayName: 'Rembrandt van Rijn',
             forwardDisplayName: 'Rembrandt van Rijn',
@@ -114,7 +114,7 @@ describe('NGA catalogue attribution evidence', () => {
         relationships: [
           relationship(),
           relationship({
-            constituentId: 'secondary',
+            constituentId: '1364',
             displayOrder: 2,
             role: 'artist after',
             preferredDisplayName: 'Rembrandt, Harmensz. van Rijn',
@@ -139,7 +139,7 @@ describe('NGA catalogue attribution evidence', () => {
         relationships: [
           relationship(),
           relationship({
-            constituentId: 'secondary',
+            constituentId: '1364',
             displayOrder: 2,
             preferredDisplayName: 'Rembrandt van Rijn',
             forwardDisplayName: 'Rembrandt van Rijn',
@@ -160,6 +160,126 @@ describe('NGA catalogue attribution evidence', () => {
         attribution('direct', 'Rembrandt')
       )
     ).toBe(false);
+  });
+
+  it('binds a legacy flat qualifier to its own contributor segment', () => {
+    const cases = [
+      {
+        artist: 'Rembrandt van Rijn and follower of Frans Hals',
+        target: 'Rembrandt van Rijn',
+        expected: false,
+      },
+      {
+        artist: 'follower of Frans Hals and Rembrandt van Rijn',
+        target: 'Rembrandt van Rijn',
+        expected: false,
+      },
+      {
+        artist: 'Rembrandt van Rijn; follower of Frans Hals',
+        target: 'Rembrandt van Rijn',
+        expected: false,
+      },
+      {
+        artist: 'Rembrandt van Rijn and follower of Frans Hals',
+        target: 'Frans Hals',
+        expected: true,
+      },
+      {
+        artist: 'follower of Frans Hals and Rembrandt van Rijn',
+        target: 'Frans Hals',
+        expected: true,
+      },
+    ] as const;
+
+    for (const fixture of cases) {
+      expect(
+        matchesNgaAttributionEvidence(
+          { artist: fixture.artist },
+          attribution('follower_of', fixture.target)
+        ),
+        `${fixture.artist} -> ${fixture.target}`
+      ).toBe(fixture.expected);
+    }
+  });
+
+  it('uses valid structured relationships exclusively for qualified roles', () => {
+    const metadata = attributionMetadata({
+      artist: 'Rembrandt van Rijn and follower of Frans Hals',
+      primaryArtistId: '1364',
+      ngaArtists: {
+        relationships: [
+          relationship({
+            constituentId: '1364',
+            preferredDisplayName: 'Rembrandt van Rijn',
+            forwardDisplayName: 'Rembrandt van Rijn',
+          }),
+          relationship({
+            constituentId: '2402',
+            displayOrder: 2,
+            role: 'artist follower of',
+            prefix: 'follower of',
+            preferredDisplayName: 'Frans Hals',
+            forwardDisplayName: 'Frans Hals',
+          }),
+        ],
+      },
+    });
+
+    expect(
+      matchesNgaAttributionEvidence(
+        metadata,
+        attribution('follower_of', 'Rembrandt van Rijn')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        metadata,
+        attribution('follower_of', 'Frans Hals')
+      )
+    ).toBe(true);
+  });
+
+  it('rejects malformed structured primitives without losing valid siblings', () => {
+    const malformedRelationships = [
+      relationship({ roleType: ['artist'] }),
+      relationship({ role: ['artist after'] }),
+      relationship({ prefix: ['after'], role: 'artist' }),
+      relationship({ suffix: { value: 'after' }, role: 'artist' }),
+      relationship({ preferredDisplayName: ['Rembrandt van Rijn'] }),
+      relationship({ forwardDisplayName: { value: 'Rembrandt van Rijn' } }),
+      relationship({ alternativeNames: [['Rembrandt van Rijn']] }),
+      relationship({ constituentId: 1364 }),
+      relationship({ displayOrder: '1' }),
+      relationship({ role: null }),
+      relationship({ preferredDisplayName: null }),
+    ];
+    const validSibling = relationship({
+      constituentId: '2402',
+      displayOrder: 2,
+      role: 'artist after',
+      prefix: 'after',
+      preferredDisplayName: 'Frans Hals',
+      forwardDisplayName: 'Frans Hals',
+    });
+    const metadata = attributionMetadata({
+      artist: 'after Rembrandt van Rijn',
+      ngaArtists: {
+        relationships: [...malformedRelationships, validSibling],
+      },
+    });
+
+    expect(
+      matchesNgaAttributionEvidence(
+        metadata,
+        attribution('after', 'Rembrandt van Rijn')
+      )
+    ).toBe(false);
+    expect(
+      matchesNgaAttributionEvidence(
+        metadata,
+        attribution('after', 'Frans Hals')
+      )
+    ).toBe(true);
   });
 });
 

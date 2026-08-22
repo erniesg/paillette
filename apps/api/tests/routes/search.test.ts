@@ -163,6 +163,18 @@ const normalizeArtistForTest = (value: string | null) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const normalizeNgaCandidateForTest = (value: string) =>
+  ` ${value
+    .replace(/[A-Z]/g, (character) => character.toLowerCase())
+    .replace(/[-,./()[\]_:;"'‘’]/gu, ' ')} `;
+
+const ngaCandidatePatternMatches = (value: string, pattern: unknown) => {
+  const literal = String(pattern)
+    .replace(/^%|%$/gu, '')
+    .replace(/\\([%_\\])/gu, '$1');
+  return value.includes(literal);
+};
+
 class FakeStatement {
   private params: unknown[] = [];
 
@@ -577,6 +589,62 @@ class FakeSearchDb {
     if (sql.includes('FROM artworks') && sql.includes('AS match_score')) {
       this.metadataSearchSql.push(sql);
       this.metadataSearchParams.push(params);
+      if (
+        sql.includes("'$.ngaArtists.relationships'") &&
+        sql.includes('ORDER BY match_score DESC, title COLLATE NOCASE ASC')
+      ) {
+        const scoreParamCount =
+          sql.slice(0, sql.indexOf('AS match_score')).match(/\?/g)?.length ||
+          0;
+        const scorePatterns = params.slice(0, scoreParamCount);
+        const scorePatternGroups = Array.from(
+          { length: scorePatterns.length / 2 },
+          (_, index) => scorePatterns.slice(index * 2, index * 2 + 2)
+        );
+        const structuredParamIndex =
+          scoreParamCount +
+          Number(sql.includes('AND org_id = ?')) +
+          Number(
+            sql.includes(
+              "json_extract(custom_metadata, '$.provider') = ?"
+            )
+          );
+        const matchingRows = this.rows.filter((row) => {
+          let relationships = '';
+          try {
+            relationships = JSON.stringify(
+              JSON.parse(row.custom_metadata || '{}').ngaArtists
+                ?.relationships || []
+            );
+          } catch {
+            relationships = '';
+          }
+          const evidence = normalizeNgaCandidateForTest(
+            `${row.artist || ''} ${relationships}`
+          );
+          return scorePatternGroups.every((patterns) =>
+            patterns.some((pattern) =>
+              ngaCandidatePatternMatches(evidence, pattern)
+            )
+          );
+        });
+        const limit = Number(params[params.length - 2]);
+        const offset = Number(params[params.length - 1]);
+
+        return {
+          success: true,
+          results: applyStructuredConstraintSql(
+            applySearchVisibility(matchingRows),
+            structuredParamIndex
+          )
+            .slice(offset, offset + limit)
+            .map((row) => ({
+              ...row,
+              match_score: scorePatternGroups.length * 10,
+            })),
+        } as unknown as { success: boolean; results: T[] };
+      }
+
       if (sql.includes('lower(trim(classification)) = ?')) {
         const hasOffset = sql.includes('OFFSET ?');
         const normalizedQuery = String(
@@ -4386,13 +4454,13 @@ describe('Search API auth and quota behavior', () => {
       id: 'nga-official-after-rembrandt',
       artist: 'Paul Bril',
       classification: 'Painting',
-      primary_artist_id: 'paul-bril',
+      primary_artist_id: '23812',
       custom_metadata: JSON.stringify({
         provider: 'nga',
         ngaArtists: {
           relationships: [
             {
-              constituentId: 'paul-bril',
+              constituentId: '23812',
               displayOrder: 1,
               roleType: 'artist',
               role: 'artist',
@@ -4403,7 +4471,7 @@ describe('Search API auth and quota behavior', () => {
               alternativeNames: [],
             },
             {
-              constituentId: 'rembrandt',
+              constituentId: '1364',
               displayOrder: 2,
               roleType: 'artist',
               role: 'artist after',
@@ -4472,6 +4540,97 @@ describe('Search API auth and quota behavior', () => {
     });
     expect(imageVectorize.query).not.toHaveBeenCalled();
     expect(captionVectorize.query).not.toHaveBeenCalled();
+  });
+
+  it('recalls accented official and alternative names without partial-token matches', async () => {
+    const jose = makeArtworkRow({
+      id: 'nga-accented-jose',
+      artist: 'After José de Ribera',
+      classification: 'Painting',
+      primary_artist_id: '1364',
+      custom_metadata: JSON.stringify({
+        provider: 'nga',
+        ngaArtists: {
+          relationships: [
+            {
+              constituentId: '1364',
+              displayOrder: 1,
+              roleType: 'artist',
+              role: 'artist after',
+              prefix: 'after',
+              suffix: null,
+              preferredDisplayName: 'José de Ribera',
+              forwardDisplayName: 'José de Ribera',
+              alternativeNames: [],
+            },
+          ],
+        },
+      }),
+    });
+    const leBrun = makeArtworkRow({
+      id: 'nga-accented-alternative',
+      artist: 'After Elisabeth Louise Vigee Le Brun',
+      classification: 'Painting',
+      primary_artist_id: '2402',
+      custom_metadata: JSON.stringify({
+        provider: 'nga',
+        ngaArtists: {
+          relationships: [
+            {
+              constituentId: '2402',
+              displayOrder: 1,
+              roleType: 'artist',
+              role: 'artist after',
+              prefix: 'after',
+              suffix: null,
+              preferredDisplayName: 'Le Brun, Elisabeth Louise Vigee',
+              forwardDisplayName: 'Elisabeth Louise Vigee Le Brun',
+              alternativeNames: ['Élisabeth Louise Vigée Le Brun'],
+            },
+          ],
+        },
+      }),
+    });
+    db = new FakeSearchDb([jose, leBrun]);
+    env = { ...makeEnv(db), SEARCH_FUSION_MODE: 'hybrid' };
+
+    const partial = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'painting after Jos', topK: 100, minScore: 0 },
+      'nga'
+    );
+    const joseResponse = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'painting after José de Ribera', topK: 100, minScore: 0 },
+      'nga'
+    );
+    const leBrunResponse = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      {
+        query: 'painting after Élisabeth Louise Vigée Le Brun',
+        topK: 100,
+        minScore: 0,
+      },
+      'nga'
+    );
+    const partialPayload = (await partial.json()) as any;
+    const josePayload = (await joseResponse.json()) as any;
+    const leBrunPayload = (await leBrunResponse.json()) as any;
+
+    expect(partial.status).toBe(200);
+    expect(partialPayload.data.results).toEqual([]);
+    expect(
+      josePayload.data.results.map((row: { id: string }) => row.id)
+    ).toEqual([jose.id]);
+    expect(
+      leBrunPayload.data.results.map((row: { id: string }) => row.id)
+    ).toEqual([leBrun.id]);
   });
 
   it('keeps explicit NGA artist IDs primary-only and skips caption retrieval', async () => {

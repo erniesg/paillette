@@ -6,14 +6,15 @@ import type {
 import type { ArtworkRelationEvidence, ArtworkSearchResult } from '../types';
 
 type NgaArtistRelationship = {
-  constituentId?: unknown;
-  roleType?: unknown;
-  role?: unknown;
-  prefix?: unknown;
-  suffix?: unknown;
-  preferredDisplayName?: unknown;
-  forwardDisplayName?: unknown;
-  alternativeNames?: unknown;
+  constituentId: string;
+  displayOrder: number;
+  roleType: 'artist';
+  role: string;
+  prefix: string | null;
+  suffix: string | null;
+  preferredDisplayName: string;
+  forwardDisplayName: string;
+  alternativeNames: string[];
 };
 
 export type NgaAttributionEvidenceMetadata = {
@@ -50,12 +51,55 @@ const containsAllTargetTokens = (value: unknown, targetText: string) => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
-const artistRelationships = (
+const isNonemptyString = (value: unknown): value is string =>
+  typeof value === 'string' && Boolean(value.trim());
+
+const isOptionalText = (value: unknown): value is string | null =>
+  value === null || isNonemptyString(value);
+
+const parseArtistRelationship = (
+  value: unknown
+): NgaArtistRelationship | null => {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.constituentId !== 'string' ||
+    !/^\d+$/u.test(value.constituentId) ||
+    typeof value.displayOrder !== 'number' ||
+    !Number.isSafeInteger(value.displayOrder) ||
+    value.roleType !== 'artist' ||
+    !isNonemptyString(value.role) ||
+    !isOptionalText(value.prefix) ||
+    !isOptionalText(value.suffix) ||
+    !isNonemptyString(value.preferredDisplayName) ||
+    !isNonemptyString(value.forwardDisplayName) ||
+    !Array.isArray(value.alternativeNames) ||
+    !value.alternativeNames.every(isNonemptyString)
+  ) {
+    return null;
+  }
+
+  return value as NgaArtistRelationship;
+};
+
+const structuredArtistRelationships = (
   metadata: NgaAttributionEvidenceMetadata
-): NgaArtistRelationship[] => {
-  if (!isRecord(metadata.ngaArtists)) return [];
+): { present: boolean; relationships: NgaArtistRelationship[] } => {
+  if (metadata.ngaArtists === undefined) {
+    return { present: false, relationships: [] };
+  }
+  if (!isRecord(metadata.ngaArtists)) {
+    return { present: true, relationships: [] };
+  }
   const relationships = metadata.ngaArtists.relationships;
-  return Array.isArray(relationships) ? relationships.filter(isRecord) : [];
+  return {
+    present: true,
+    relationships: Array.isArray(relationships)
+      ? relationships.flatMap((relationship) => {
+          const parsed = parseArtistRelationship(relationship);
+          return parsed ? [parsed] : [];
+        })
+      : [],
+  };
 };
 
 const QUALIFIED_ROLE_MARKERS = [
@@ -127,35 +171,98 @@ const relationshipMatches = (
   );
 };
 
+const flatArtistSegments = (value: string) =>
+  value
+    .normalize('NFC')
+    .split(/\s+(?:and|with)\s+|[;&|]+/giu)
+    .map(fold)
+    .filter(Boolean);
+
+const matchesQualifiedFlatSegment = (
+  segment: string,
+  intent: NgaAttributionIntent
+) => {
+  if (intent.relationship === 'direct') return false;
+
+  return ROLE_MARKERS[intent.relationship].some((marker) => {
+    const boundedSegment = ` ${segment} `;
+    const boundedMarker = ` ${marker} `;
+    let markerIndex = boundedSegment.indexOf(boundedMarker);
+
+    while (markerIndex >= 0) {
+      const before = boundedSegment.slice(0, markerIndex).trim();
+      const after = boundedSegment
+        .slice(markerIndex + boundedMarker.length)
+        .trim();
+      if (
+        (after && containsAllTargetTokens(after, intent.targetText)) ||
+        (!after && before && containsAllTargetTokens(before, intent.targetText))
+      ) {
+        return true;
+      }
+      markerIndex = boundedSegment.indexOf(
+        boundedMarker,
+        markerIndex + boundedMarker.length
+      );
+    }
+
+    return false;
+  });
+};
+
+const matchesLegacyFlatArtist = (
+  artist: unknown,
+  intent: NgaAttributionIntent
+) => {
+  if (typeof artist !== 'string' || !artist.trim()) return false;
+  const segments = flatArtistSegments(artist);
+
+  if (intent.relationship === 'direct') {
+    const primarySegment = segments[0];
+    return Boolean(
+      primarySegment &&
+        !QUALIFIED_ROLE_MARKERS.some((marker) =>
+          containsPhrase(primarySegment, marker)
+        ) &&
+        containsAllTargetTokens(primarySegment, intent.targetText)
+    );
+  }
+
+  return segments.some((segment) =>
+    matchesQualifiedFlatSegment(segment, intent)
+  );
+};
+
 export const matchesNgaAttributionEvidence = (
   metadata: NgaAttributionEvidenceMetadata,
   intent: NgaAttributionIntent
 ): boolean => {
-  const relationships = artistRelationships(metadata);
+  const structured = structuredArtistRelationships(metadata);
+  const relationships = structured.relationships;
   if (intent.relationship === 'direct') {
-    const primaryArtistId = fold(metadata.primaryArtistId);
+    const primaryArtistId =
+      typeof metadata.primaryArtistId === 'string' &&
+      /^\d+$/u.test(metadata.primaryArtistId)
+        ? metadata.primaryArtistId
+        : null;
     const primaryRelationship = primaryArtistId
       ? relationships.find(
-          (relationship) => fold(relationship.constituentId) === primaryArtistId
+          (relationship) => relationship.constituentId === primaryArtistId
         )
       : undefined;
     if (primaryRelationship) {
       return relationshipMatches(primaryRelationship, intent);
     }
-    return (
-      relationships.length === 0 &&
-      matchesRole(metadata.artist, intent.relationship, true) &&
-      containsAllTargetTokens(metadata.artist, intent.targetText)
-    );
+    return structured.present
+      ? false
+      : matchesLegacyFlatArtist(metadata.artist, intent);
   }
 
-  return (
-    relationships.some((relationship) =>
-      relationshipMatches(relationship, intent)
-    ) ||
-    (matchesRole(metadata.artist, intent.relationship, false) &&
-      containsAllTargetTokens(metadata.artist, intent.targetText))
-  );
+  return structured.present
+    ? relationships.some((relationship) =>
+        relationshipMatches(relationship, intent)
+      )
+    : matchesLegacyFlatArtist(metadata.artist, intent);
 };
 
 const CLASSIFICATION_PHRASES: Record<string, readonly string[]> = {

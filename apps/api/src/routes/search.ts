@@ -300,6 +300,27 @@ const searchQueryTokens = (query: string) =>
       (token) => token && token.length > 1 && !SEARCH_CONTROL_WORDS.has(token)
     );
 
+const unicodeSearchQueryTokens = (query: string) =>
+  (query.normalize('NFC').match(/[\p{L}\p{N}]+/gu) || [])
+    .map((token) => token.trim())
+    .filter((token) => {
+      const foldedToken = token
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/gu, '')
+        .toLocaleLowerCase('en-US');
+      return (
+        [...foldedToken].length > 1 && !SEARCH_CONTROL_WORDS.has(foldedToken)
+      );
+    });
+
+const sqliteAsciiLower = (value: string) =>
+  value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
+
+const unicodeSqlCandidatePatterns = (token: string) =>
+  [token.toLocaleLowerCase('en-US'), token.toLocaleUpperCase('en-US')].map(
+    (variant) => `% ${escapeLike(sqliteAsciiLower(variant))} %`
+  );
+
 const normalizeArtistFacetQuery = (query: string) =>
   normalizeSearchWords(
     query
@@ -1457,7 +1478,7 @@ export async function searchNgaAttributionMatches(
   constraints: PublicSearchConstraints | undefined,
   topK: number
 ): Promise<ArtworkSearchResult[]> {
-  const targetTokens = searchQueryTokens(intent.targetText).slice(0, 8);
+  const targetTokens = unicodeSearchQueryTokens(intent.targetText).slice(0, 8);
   if (!targetTokens.length) return [];
 
   const artistText = normalizedTextSql('artist');
@@ -1469,15 +1490,16 @@ export async function searchNgaAttributionMatches(
     END`
   );
   const evidenceText = `(${artistText} || ${relationshipsText})`;
-  const targetQueries = targetTokens.map((token) => `% ${escapeLike(token)} %`);
+  const targetQueries = targetTokens.map(unicodeSqlCandidatePatterns);
+  const buildTokenCandidateSql = (queries: string[]) =>
+    `(${queries.map(() => `${evidenceText} LIKE ? ESCAPE '\\'`).join(' OR ')})`;
   const tokenScoreSql = targetQueries
     .map(
-      () => `CASE WHEN ${evidenceText} LIKE ? ESCAPE '\\' THEN 10 ELSE 0 END`
+      (queries) =>
+        `CASE WHEN ${buildTokenCandidateSql(queries)} THEN 10 ELSE 0 END`
     )
     .join(' + ');
-  const tokenWhereSql = targetQueries
-    .map(() => `${evidenceText} LIKE ? ESCAPE '\\'`)
-    .join(' AND ');
+  const tokenWhereSql = targetQueries.map(buildTokenCandidateSql).join(' AND ');
   const orgFilter = scope.orgId ? 'AND org_id = ?' : '';
   const providerFilter = providerSearchSql(scope.provider);
   const structuredFilter = buildStructuredConstraintSql(constraints);
@@ -1539,11 +1561,11 @@ export async function searchNgaAttributionMatches(
       `
       )
       .bind(
-        ...targetQueries,
+        ...targetQueries.flat(),
         ...(scope.orgId ? [scope.orgId] : []),
         ...(scope.provider ? [scope.provider] : []),
         ...structuredFilter.params,
-        ...targetQueries,
+        ...targetQueries.flat(),
         pageSize,
         offset
       )
@@ -1553,7 +1575,7 @@ export async function searchNgaAttributionMatches(
 
     for (const [index, artwork] of results.entries()) {
       const similarity = Math.min(
-        Math.max(artwork.match_score / (targetQueries.length * 10), 0.01),
+        Math.max(artwork.match_score / (targetTokens.length * 10), 0.01),
         1
       );
       const mapped = mapSearchRow(artwork, similarity, [
