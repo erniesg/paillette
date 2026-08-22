@@ -3158,7 +3158,7 @@ class InventoryAndRelevanceTests(GateTestCase):
             safe_json_number,
         )
 
-    def test_direct_relationship_requires_exact_unqualified_artist_role(self):
+    def test_direct_relationship_uses_authoritative_primary_for_every_official_role(self):
         base = {
             "constituentId": "1364",
             "displayOrder": 1,
@@ -3181,15 +3181,37 @@ class InventoryAndRelevanceTests(GateTestCase):
                 row["metadata"] = {
                     **row["metadata"],
                     "primaryArtistId": "1364",
-                    "ngaArtists": {"relationships": [{**base, **mutation}]},
+                    "ngaArtists": {
+                        "relationships": [
+                            {**base, **mutation},
+                            {
+                                **base,
+                                "constituentId": "2402",
+                                "displayOrder": 2,
+                                "role": "artist",
+                                "preferredDisplayName": "Secondary Contributor",
+                                "forwardDisplayName": "Secondary Contributor",
+                            },
+                        ]
+                    },
                 }
-                self.assertFalse(
+                self.assertTrue(
                     self.call(
                         "_row_proves_attribution",
                         row,
                         {
                             "relationship": "direct",
                             "targetText": "Lavinia Fontana",
+                        },
+                    )
+                )
+                self.assertFalse(
+                    self.call(
+                        "_row_proves_attribution",
+                        row,
+                        {
+                            "relationship": "direct",
+                            "targetText": "Secondary Contributor",
                         },
                     )
                 )

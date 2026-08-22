@@ -317,6 +317,20 @@ describe('parseNgaSearchIntent', () => {
     expect(compileNgaSearchPlan(query).attribution).toBeUndefined();
   });
 
+  it.each([
+    'paintings except those by Rembrandt',
+    'paintings EXCEPT THOSE BY Rembrandt.',
+    'paintings by anyone but Rembrandt',
+    'paintings, excluding Rembrandt',
+    'paintings excluding works by Rembrandt',
+    'paintings — other than works by Rembrandt',
+    'paintings without works by Rembrandt',
+    'paintings without Rembrandt',
+  ])('does not invert exclusion wording into positive attribution in %s', (query) => {
+    expect(parseNgaSearchIntent(query).attribution).toBeUndefined();
+    expect(compileNgaSearchPlan(query).attribution).toBeUndefined();
+  });
+
   it('rejects attribution matches that overlap an occupied relation or negation span', () => {
     expect(
       parseNgaAttributionIntent('painting after Rembrandt', [

@@ -162,6 +162,46 @@ describe('NGA catalogue attribution evidence', () => {
     ).toBe(false);
   });
 
+  it.each(['painter', 'draughtsman', 'printmaker'])(
+    'accepts a matching authoritative primary whose official role is %s',
+    (role) => {
+      const metadata = attributionMetadata({
+        artist: 'Lavinia Fontana',
+        primaryArtistId: '1364',
+        ngaArtists: {
+          relationships: [
+            relationship({
+              constituentId: '1364',
+              role,
+              preferredDisplayName: 'Fontana, Lavinia',
+              forwardDisplayName: 'Lavinia Fontana',
+            }),
+            relationship({
+              constituentId: '2402',
+              displayOrder: 2,
+              role: 'artist',
+              preferredDisplayName: 'Secondary Contributor',
+              forwardDisplayName: 'Secondary Contributor',
+            }),
+          ],
+        },
+      });
+
+      expect(
+        matchesNgaAttributionEvidence(
+          metadata,
+          attribution('direct', 'Lavinia Fontana')
+        )
+      ).toBe(true);
+      expect(
+        matchesNgaAttributionEvidence(
+          metadata,
+          attribution('direct', 'Secondary Contributor')
+        )
+      ).toBe(false);
+    }
+  );
+
   it('binds a legacy flat qualifier to its own contributor segment', () => {
     const cases = [
       {

@@ -206,6 +206,14 @@ const relationshipMatches = (
   );
 };
 
+const relationshipNameMatches = (
+  relationship: NgaArtistRelationship,
+  targetText: string
+) =>
+  relationshipNames(relationship).some((name) =>
+    containsAllTargetTokens(name, targetText)
+  );
+
 const flatArtistSegments = (value: string) => {
   const parts = value.normalize('NFC').split(/(\s+(?:and|with)\s+|[,;&|]+)/giu);
   const segments = parts.flatMap((part, index) => {
@@ -303,7 +311,7 @@ export const matchesNgaAttributionEvidence = (
         )
       : undefined;
     if (primaryRelationship) {
-      return relationshipMatches(primaryRelationship, intent);
+      return relationshipNameMatches(primaryRelationship, intent.targetText);
     }
     return structured.present
       ? false

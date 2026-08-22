@@ -546,6 +546,14 @@ const attributionNegationSpans = (query: string): NgaSearchIntentSpan[] => {
       `\\b(?:no|not)\\s+${workModifier}${carrier}\\b[\\s\\S]*?${marker}\\b[\\s\\S]*$`,
       'giu'
     ),
+    new RegExp(
+      `\\b(?:except(?:\\s+for)?|excluding|other\\s+than|without)\\b(?:\\s+(?:those|works?|artworks?|pieces?|examples?))*[\\s\\S]*?${marker}\\b[\\s\\S]*$`,
+      'giu'
+    ),
+    new RegExp(
+      `\\b${marker}\\s+(?:anyone|anybody|artists?)\\s+(?:but|except)\\b[\\s\\S]*$`,
+      'giu'
+    ),
   ];
 
   return patterns.flatMap((pattern) =>

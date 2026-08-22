@@ -2086,12 +2086,7 @@ def _row_proves_attribution(
             )
         )
         if relationship_kind == "direct":
-            if (
-                fold(relationship.get("role")) == "artist"
-                and relationship.get("prefix") is None
-                and relationship.get("suffix") is None
-                and metadata.get("primaryArtistId") == constituent_id
-            ):
+            if metadata.get("primaryArtistId") == constituent_id:
                 return True
             continue
         if any(
