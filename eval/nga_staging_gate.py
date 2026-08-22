@@ -2218,7 +2218,8 @@ def evaluate_artist_data_evidence(
                         and item.get("copiedPath") == source.get("path")
                         and item.get("sha256") == source.get("sha256")
                         and re.fullmatch(
-                            rf"backfill/{phase}/apply-responses/[^/]+/{index + 1:04d}\.json",
+                            rf"backfill/{phase}/apply-responses/"
+                            rf"(?!\.{{1,2}}/)[^/]+/{index + 1:04d}\.json",
                             str(item.get("sourcePath") or ""),
                         )
                         is not None

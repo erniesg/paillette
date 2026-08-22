@@ -3846,6 +3846,52 @@ class InventoryAndRelevanceTests(GateTestCase):
             )
             self.assertTrue(baseline["passed"], baseline)
 
+            lineage["responses"][0]["sourcePath"] = (
+                "backfill/pilot/apply-responses/../0001.json"
+            )
+            traversal_lineage_payload = (
+                json.dumps(lineage, indent=2) + "\n"
+            ).encode()
+            lineage_path.write_bytes(traversal_lineage_payload)
+            verification["resumeLineage"]["sha256"] = hashlib.sha256(
+                traversal_lineage_payload
+            ).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+            traversal = self.call(
+                "evaluate_artist_data_evidence",
+                evidence_root,
+                binding,
+                phase="pilot",
+            )
+            self.assertIn(
+                "artist_apply_resume_lineage_invalid",
+                traversal["failureCodes"],
+                traversal,
+            )
+
+            lineage["responses"][0]["sourcePath"] = (
+                "backfill/pilot/apply-responses/"
+                "2026-08-22T13-49-24-534Z-1855/0001.json"
+            )
+            lineage_payload = (json.dumps(lineage, indent=2) + "\n").encode()
+            lineage_path.write_bytes(lineage_payload)
+            verification["resumeLineage"]["sha256"] = hashlib.sha256(
+                lineage_payload
+            ).hexdigest()
+            verification_payload = (
+                json.dumps(verification, indent=2) + "\n"
+            ).encode()
+            verification_path.write_bytes(verification_payload)
+            binding["postApplyVerification"]["sha256"] = hashlib.sha256(
+                verification_payload
+            ).hexdigest()
+
             source_path.write_text("{}\n", encoding="utf-8")
             tampered = self.call(
                 "evaluate_artist_data_evidence",

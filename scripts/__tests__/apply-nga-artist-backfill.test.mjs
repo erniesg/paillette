@@ -1144,6 +1144,24 @@ test('resume requires hash-confirmed preserved-source lineage and rejects respon
   });
   assert.notEqual(tampered.status, 0);
   assert.match(tampered.stderr, /resume.*(?:SHA-256|lineage|tamper)/i);
+
+  const traversalArtifact = createArtifacts();
+  const traversalDirectory = createResumeResponseDirectory(traversalArtifact);
+  const traversal = runApply({
+    ...traversalArtifact,
+    extra: [
+      '--execute',
+      `--post-apply-out-dir=${join(traversalArtifact.root, 'post-apply')}`,
+      ...resumeArguments(traversalArtifact, traversalDirectory, (lineage) => {
+        lineage.responses[0].sourcePath =
+          'backfill/pilot/apply-responses/../0001.json';
+        return lineage;
+      }),
+    ],
+    env: createMockPnpm(traversalArtifact),
+  });
+  assert.notEqual(traversal.status, 0);
+  assert.match(traversal.stderr, /resume.*lineage/i);
 });
 
 test('rejects a changed support artifact bound into the manifest', () => {

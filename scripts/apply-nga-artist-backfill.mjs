@@ -917,6 +917,7 @@ const loadResumePrefix = () => {
     const responseText = readFileSync(sourceRealPath, 'utf8');
     const source = lineageResponses[index];
     const copiedPath = relative(artifactRoot, sourceRealPath);
+    const sourcePathParts = String(source?.sourcePath || '').split('/');
     if (
       !source ||
       typeof source !== 'object' ||
@@ -926,10 +927,13 @@ const loadResumePrefix = () => {
       source.sequence !== step.sequence ||
       source.copiedPath !== copiedPath ||
       source.sha256 !== sha256(responseText) ||
-      source.sourcePath !==
-        `backfill/${phase}/apply-responses/${source.sourcePath
-          ?.split('/')
-          .at(-2)}/${name}` ||
+      sourcePathParts.length !== 5 ||
+      sourcePathParts[0] !== 'backfill' ||
+      sourcePathParts[1] !== phase ||
+      sourcePathParts[2] !== 'apply-responses' ||
+      !sourcePathParts[3] ||
+      ['.', '..'].includes(sourcePathParts[3]) ||
+      sourcePathParts[4] !== name ||
       /(?:^|[\/_.-])production(?:[\/_.-]|$)/i.test(source.sourcePath)
     ) {
       throw new Error(`resume response ${name} does not match its lineage`);
