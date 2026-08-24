@@ -16,7 +16,6 @@ import {
 const NGA_PROVIDER = 'nga' as const;
 const REQUEST_TOP_K = 30 as const;
 const REQUEST_MIN_SCORE = 0.2 as const;
-const CARD_COUNT = 4;
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
 
 type NgaSpotlightDefinitionId = NgaSpotlightDefinition['id'];
@@ -167,9 +166,9 @@ const getRenderableUniqueResults = (
     unique.push(result);
   }
 
-  if (unique.length < CARD_COUNT) {
+  if (unique.length === 0) {
     throw new Error(
-      `NGA spotlight ${definition.id} requires four renderable unique artworks`
+      `NGA spotlight ${definition.id} requires at least one renderable unique artwork`
     );
   }
 
@@ -247,7 +246,7 @@ const getSuggestion = async (
 
   return {
     ...definition,
-    artworks: results.slice(0, CARD_COUNT).map(toSpotlightArtwork),
+    artworks: results.slice(0, REQUEST_TOP_K).map(toSpotlightArtwork),
   };
 };
 

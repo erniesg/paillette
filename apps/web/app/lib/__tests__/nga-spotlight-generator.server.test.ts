@@ -151,7 +151,7 @@ describe('generateNgaSpotlightBundle', () => {
     }
   });
 
-  it('keeps four unique imageable allowlisted cards and ranks colour locally', async () => {
+  it('keeps every unique imageable allowlisted result and ranks colour locally', async () => {
     const { bundle } = await generateNgaSpotlightBundle({
       corpusVersion: CORPUS_VERSION,
       now: () => new Date(GENERATED_AT),
@@ -159,8 +159,12 @@ describe('generateNgaSpotlightBundle', () => {
     });
 
     for (const suggestion of bundle.suggestions) {
-      expect(suggestion.artworks).toHaveLength(4);
-      expect(new Set(suggestion.artworks.map(({ id }) => id)).size).toBe(4);
+      const expectedCount =
+        suggestion.id === 'blue-painted-ornament' ? 4 : 5;
+      expect(suggestion.artworks).toHaveLength(expectedCount);
+      expect(new Set(suggestion.artworks.map(({ id }) => id)).size).toBe(
+        expectedCount
+      );
       expect(
         suggestion.artworks.every(
           ({ imageUrl, thumbnailUrl }) => imageUrl || thumbnailUrl
@@ -206,17 +210,17 @@ describe('generateNgaSpotlightBundle', () => {
     ).rejects.toThrow(/non-NGA/i);
   });
 
-  it('fails when fewer than four renderable unique cards are available', async () => {
+  it('fails when no renderable unique cached results are available', async () => {
     await expect(
       generateNgaSpotlightBundle({
         corpusVersion: CORPUS_VERSION,
         now: () => new Date(GENERATED_AT),
         search: async (request) => ({
           ...makeSearchResponse(request),
-          results: [makeArtwork('one'), makeArtwork('two')],
+          results: [],
         }),
       })
-    ).rejects.toThrow(/four.*renderable.*unique/i);
+    ).rejects.toThrow(/at least one.*renderable.*unique/i);
   });
 
   it('fails rather than returning a bundle above the UTF-8 size cap', async () => {

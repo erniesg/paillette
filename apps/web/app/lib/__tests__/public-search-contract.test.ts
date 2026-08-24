@@ -49,11 +49,25 @@ describe('public search contract', () => {
     expect(PUBLIC_SEARCH_CONTRACT_VERSION).toBe('32');
   });
 
-  it('accepts a strict four-card NGA spotlight bundle', () => {
+  it('accepts NGA spotlight bundles with one to thirty cached results', () => {
     expect(PublicSearchSpotlightBundleSchema.parse(bundle)).toEqual(bundle);
+
+    expect(() =>
+      PublicSearchSpotlightBundleSchema.parse({
+        ...bundle,
+        suggestions: [
+          {
+            ...firstSuggestion,
+            artworks: Array.from({ length: 30 }, (_, index) =>
+              artwork(String(index + 1))
+            ),
+          },
+        ],
+      })
+    ).not.toThrow();
   });
 
-  it('rejects duplicate suggestion ids and incomplete card sets', () => {
+  it('rejects duplicate suggestion ids and out-of-range result sets', () => {
     expect(() =>
       PublicSearchSpotlightBundleSchema.parse({
         ...bundle,
@@ -66,7 +80,20 @@ describe('public search contract', () => {
         suggestions: [
           {
             ...firstSuggestion,
-            artworks: firstSuggestion.artworks.slice(0, 3),
+            artworks: [],
+          },
+        ],
+      })
+    ).toThrow();
+    expect(() =>
+      PublicSearchSpotlightBundleSchema.parse({
+        ...bundle,
+        suggestions: [
+          {
+            ...firstSuggestion,
+            artworks: Array.from({ length: 31 }, (_, index) =>
+              artwork(String(index + 1))
+            ),
           },
         ],
       })

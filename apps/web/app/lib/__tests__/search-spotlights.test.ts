@@ -88,38 +88,33 @@ describe('search spotlight loading', () => {
     expect(assetPath.endsWith(`-${digest}.json`)).toBe(true);
   });
 
-  it('preserves the immutable v31 spotlight payload in the v32 asset', async () => {
+  it('stores the complete cached result set for every NGA Try term', async () => {
     const assetPath = getSearchSpotlightPath('nga');
-    const previousPath = resolve(
-      process.cwd(),
-      'public/search-spotlights/nga/v31-3e30f6b05e228bfd7de9534827d3328daf0a85cf8cd18e9a8269d1a7ff87b2e4.json'
-    );
-    const [previous, current] = await Promise.all([
-      readFile(previousPath, 'utf8').then((value) => JSON.parse(value)),
-      readFile(resolve(process.cwd(), 'public', assetPath.slice(1)), 'utf8').then(
-        (value) => JSON.parse(value)
-      ),
-    ]);
+    const current = JSON.parse(
+      await readFile(
+        resolve(process.cwd(), 'public', assetPath.slice(1)),
+        'utf8'
+      )
+    ) as PublicSearchSpotlightBundle;
 
     expect(current.contractVersion).toBe('32');
-    const { contractVersion: previousContractVersion, ...previousPayload } =
-      previous;
-    const { contractVersion: currentContractVersion, ...currentPayload } =
-      current;
-    expect(previousContractVersion).toBe('31');
-    expect(currentContractVersion).toBe('32');
-    expect(currentPayload).toEqual(previousPayload);
     expect(
-      current.suggestions.map((suggestion: PublicSearchSpotlightBundle['suggestions'][number]) => ({
+      current.suggestions.map((suggestion) => ({
         id: suggestion.id,
-        artworkIds: suggestion.artworks.map(({ id }) => id),
+        cachedResults: suggestion.artworks.length,
       }))
     ).toEqual(
-      previous.suggestions.map((suggestion: PublicSearchSpotlightBundle['suggestions'][number]) => ({
-        id: suggestion.id,
-        artworkIds: suggestion.artworks.map(({ id }) => id),
+      NGA_SPOTLIGHT_DEFINITIONS.map((definition) => ({
+        id: definition.id,
+        cachedResults: definition.id === 'ginevra-de-benci' ? 1 : 30,
       }))
     );
+    expect(
+      current.suggestions.reduce(
+        (total, suggestion) => total + suggestion.artworks.length,
+        0
+      )
+    ).toBe(301);
   });
 
   it.each([
@@ -140,16 +135,13 @@ describe('search spotlight loading', () => {
         }),
     ],
     [
-      'fewer than four cards',
+      'empty cached result set',
       () =>
         responseFor({
           ...validBundle,
-          suggestions: [
-            {
-              ...validBundle.suggestions[0],
-              artworks: validBundle.suggestions[0]!.artworks.slice(0, 3),
-            },
-          ],
+          suggestions: validBundle.suggestions.map((suggestion, index) =>
+            index === 0 ? { ...suggestion, artworks: [] } : suggestion
+          ),
         }),
     ],
     [
@@ -253,5 +245,19 @@ describe('search spotlight loading', () => {
         minScore: 0.2,
       })
     ).toMatchObject({ count: 4 });
+  });
+
+  it('provides cached results for every NGA Try term', () => {
+    for (const definition of NGA_SPOTLIGHT_DEFINITIONS) {
+      expect(
+        getSpotlightSearchPlaceholder(validBundle, {
+          query: definition.query,
+          facet: 'facet' in definition ? definition.facet : null,
+          colourId: 'colourId' in definition ? definition.colourId : null,
+          topK: 30,
+          minScore: 0.2,
+        })
+      ).toMatchObject({ count: 4, queryTime: 0 });
+    }
   });
 });
