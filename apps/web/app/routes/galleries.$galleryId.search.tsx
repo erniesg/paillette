@@ -125,6 +125,7 @@ import {
 } from '~/lib/local-colour-refinement';
 import {
   getSpotlightArtworks,
+  getSpotlightSearchPlaceholder,
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
 import {
@@ -1256,6 +1257,47 @@ export default function SearchPage() {
     setHasMounted(true);
   }, []);
 
+  const shouldLoadNgaSpotlights = hasMounted && preferredRouteId === 'nga';
+  const spotlightBundleQuery = useQuery({
+    queryKey: [
+      'search-spotlights',
+      PUBLIC_SEARCH_CONTRACT_VERSION,
+      'nga',
+    ] as const,
+    queryFn: ({ signal }) =>
+      loadSearchSpotlightBundle('nga', {
+        signal,
+      }),
+    enabled: shouldLoadNgaSpotlights,
+    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
+    retry: false,
+  });
+
+  const spotlightSearchPlaceholder = useMemo(
+    () =>
+      textSearchPlan
+        ? getSpotlightSearchPlaceholder(spotlightBundleQuery.data, {
+            query: textSearchPlan.request.query,
+            facet: submittedTextOwner?.facet,
+            colourId:
+              submittedSearch?.kind === 'colour'
+                ? submittedSearch.colour
+                : null,
+            topK,
+            minScore,
+          })
+        : undefined,
+    [
+      minScore,
+      spotlightBundleQuery.data,
+      submittedSearch,
+      submittedTextOwner,
+      textSearchPlan,
+      topK,
+    ]
+  );
+
   useEffect(() => {
     if (urlQuery && normalizedUrlQuery !== urlQuery) {
       setSearchParams(
@@ -1362,6 +1404,7 @@ export default function SearchPage() {
     retry: false,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
+    placeholderData: spotlightSearchPlaceholder,
   });
 
   const imageQueryExecution = buildImageQueryExecution({
@@ -1416,24 +1459,6 @@ export default function SearchPage() {
   });
 
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
-  const shouldLoadNgaSpotlights =
-    hasMounted && !hasActiveSearch && preferredRouteId === 'nga';
-  const spotlightBundleQuery = useQuery({
-    queryKey: [
-      'search-spotlights',
-      PUBLIC_SEARCH_CONTRACT_VERSION,
-      'nga',
-    ] as const,
-    queryFn: ({ signal }) =>
-      loadSearchSpotlightBundle('nga', {
-        signal,
-      }),
-    enabled: shouldLoadNgaSpotlights,
-    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
-    gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    retry: false,
-  });
-
   const currentQuery =
     submittedSearch?.kind === 'image' ? imageSearchQuery : textSearchQuery;
   const rankedRawResults = currentQuery.data?.results || [];
@@ -1475,7 +1500,8 @@ export default function SearchPage() {
     hasMounted &&
     (isBrowsingCollection
       ? browseQuery.isLoading && results.length === 0
-      : currentQuery.isLoading || currentQuery.isFetching);
+      : currentQuery.isLoading ||
+        (currentQuery.isFetching && !currentQuery.data));
   const displayedSearchError = deriveDisplayedSearchError({
     isBrowsingCollection,
     shouldShowRankedSearch: shouldSearch,

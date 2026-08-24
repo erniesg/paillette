@@ -231,6 +231,52 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   ).toBe(false);
 });
 
+test('featured cards remain visible while the full search refreshes', async ({
+  page,
+}) => {
+  let releaseSearch!: () => void;
+  const searchGate = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  const searches: CapturedSearch[] = [];
+
+  await page.route(`**${NGA_SEARCH_SPOTLIGHT_ASSET_PATH}`, (route) =>
+    route.fulfill({ json: spotlightBundle })
+  );
+  await page.route('**/api/public-search/**', async (route) => {
+    const request = route.request();
+    searches.push({
+      url: request.url(),
+      method: request.method(),
+      body: request.postDataJSON() as Record<string, unknown>,
+    });
+    await searchGate;
+    await route.fulfill({
+      json: {
+        success: true,
+        data: {
+          results: [searchResult('live', 'Full search result', [], 0.95)],
+          count: 1,
+          queryTime: 1,
+        },
+      },
+    });
+  });
+
+  await openNgaSearchPage(page);
+  await chooseSuggestion(page, 'stormy seas and ships');
+
+  await expect.poll(() => searches.length).toBe(1);
+  await expect(
+    page.getByText('Spotlight artwork stormy-seas-ships-1', { exact: true })
+  ).toBeVisible();
+
+  releaseSearch();
+  await expect(
+    page.getByText('Full search result', { exact: true })
+  ).toBeVisible();
+});
+
 test('colour suggestion issues one base request with refinement kept client-side', async ({
   page,
 }) => {

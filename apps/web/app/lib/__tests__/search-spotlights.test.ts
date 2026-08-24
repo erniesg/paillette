@@ -10,6 +10,7 @@ import {
 import {
   getSearchSpotlightPath,
   getSpotlightArtworks,
+  getSpotlightSearchPlaceholder,
   loadSearchSpotlightBundle,
 } from '../search-spotlights';
 import { NGA_SPOTLIGHT_DEFINITIONS } from '../nga-spotlight-definitions';
@@ -222,5 +223,35 @@ describe('search spotlight loading', () => {
       },
     });
     expect(getSpotlightArtworks(validBundle, 'missing')).toEqual([]);
+  });
+
+  it('provides cached cards only for the exact featured search', () => {
+    expect(
+      getSpotlightSearchPlaceholder(validBundle, {
+        query: '  A STORMY SEA WITH SHIPS ',
+        topK: 3,
+        minScore: 0.97,
+      })
+    ).toMatchObject({
+      count: 3,
+      queryTime: 0,
+      results: [{ id: '1' }, { id: '2' }, { id: '3' }],
+    });
+
+    expect(
+      getSpotlightSearchPlaceholder(validBundle, {
+        query: 'Painting',
+        topK: 30,
+        minScore: 0.2,
+      })
+    ).toBeUndefined();
+    expect(
+      getSpotlightSearchPlaceholder(validBundle, {
+        query: 'Painting',
+        facet: 'classification',
+        topK: 30,
+        minScore: 0.2,
+      })
+    ).toMatchObject({ count: 4 });
   });
 });

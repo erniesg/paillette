@@ -1,9 +1,10 @@
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES,
+  normalizePublicSearchText,
 } from '@paillette/types/public-search-core';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
-import type { ArtworkSearchResult } from '~/types';
+import type { ArtworkSearchResult, SearchResponse } from '~/types';
 import { NGA_SEARCH_SPOTLIGHT_ASSET_PATH } from './generated-search-spotlight-assets';
 import { NGA_SPOTLIGHT_DEFINITIONS } from './nga-spotlight-definitions';
 
@@ -141,4 +142,44 @@ export const getSpotlightArtworks = (
       dominantColors: artwork.palette,
     },
   }));
+};
+
+export const getSpotlightSearchPlaceholder = (
+  bundle: PublicSearchSpotlightBundle | null | undefined,
+  {
+    query,
+    facet,
+    colourId,
+    topK,
+    minScore,
+  }: {
+    query: string;
+    facet?: 'artist' | 'classification' | null;
+    colourId?: string | null;
+    topK: number;
+    minScore: number;
+  }
+): SearchResponse | undefined => {
+  const normalizedQuery =
+    normalizePublicSearchText(query).toLocaleLowerCase('en-US');
+  if (!bundle || !normalizedQuery) return undefined;
+
+  const suggestion = bundle.suggestions.find(
+    (candidate) =>
+      normalizePublicSearchText(candidate.query).toLocaleLowerCase('en-US') ===
+        normalizedQuery &&
+      (candidate.facet || null) === (facet || null) &&
+      (candidate.colourId || null) === (colourId || null)
+  );
+  if (!suggestion) return undefined;
+
+  const results = getSpotlightArtworks(bundle, suggestion.id)
+    .filter((artwork) => artwork.similarity >= minScore)
+    .slice(0, topK);
+
+  return {
+    results,
+    count: results.length,
+    queryTime: 0,
+  };
 };
