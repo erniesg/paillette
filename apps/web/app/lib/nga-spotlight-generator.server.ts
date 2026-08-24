@@ -12,17 +12,43 @@ import {
   NGA_SPOTLIGHT_DEFINITIONS,
   type NgaSpotlightDefinition,
 } from './nga-spotlight-definitions';
+import {
+  NGS_SPOTLIGHT_DEFINITIONS,
+  type NgsSpotlightDefinition,
+} from './ngs-spotlight-definitions';
 
 const NGA_PROVIDER = 'nga' as const;
+const NGS_PROVIDER = 'ngs' as const;
 const REQUEST_TOP_K = 30 as const;
 const REQUEST_MIN_SCORE = 0.2 as const;
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
 
 type NgaSpotlightDefinitionId = NgaSpotlightDefinition['id'];
+type NgsSpotlightDefinitionId = NgsSpotlightDefinition['id'];
+type SpotlightProvider = typeof NGA_PROVIDER | typeof NGS_PROVIDER;
+type SpotlightDefinition = NgaSpotlightDefinition | NgsSpotlightDefinition;
+
+type SpotlightSearchRequest = {
+  provider: SpotlightProvider;
+  definitionId: string;
+  query: string;
+  topK: typeof REQUEST_TOP_K;
+  minScore: typeof REQUEST_MIN_SCORE;
+  facet?: 'artist' | 'classification';
+};
 
 export type NgaSpotlightSearchRequest = {
   provider: typeof NGA_PROVIDER;
   definitionId: NgaSpotlightDefinitionId;
+  query: string;
+  topK: typeof REQUEST_TOP_K;
+  minScore: typeof REQUEST_MIN_SCORE;
+  facet?: 'artist' | 'classification';
+};
+
+export type NgsSpotlightSearchRequest = {
+  provider: typeof NGS_PROVIDER;
+  definitionId: NgsSpotlightDefinitionId;
   query: string;
   topK: typeof REQUEST_TOP_K;
   minScore: typeof REQUEST_MIN_SCORE;
@@ -39,6 +65,14 @@ export type GenerateNgaSpotlightBundleResult = {
   bundle: PublicSearchSpotlightBundle;
   searchRequestCount: number;
 };
+
+export type GenerateNgsSpotlightBundleOptions = {
+  corpusVersion: string;
+  search: (request: NgsSpotlightSearchRequest) => Promise<SearchResponse>;
+  now?: () => Date;
+};
+
+export type GenerateNgsSpotlightBundleResult = GenerateNgaSpotlightBundleResult;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -132,18 +166,31 @@ const hasRequiredCardMetadata = (artwork: ArtworkSearchResult) => {
   );
 };
 
-const assertNgaResults = (
-  definition: NgaSpotlightDefinition,
+const assertProviderResults = (
+  provider: SpotlightProvider,
+  definition: SpotlightDefinition,
   results: readonly ArtworkSearchResult[]
 ) => {
   for (const result of results) {
     const metadata = asRecord(result.metadata);
-    if (metadata.provider !== NGA_PROVIDER) {
+    const sourceInstitution = asText(
+      metadata.sourceInstitution ?? metadata.source_institution
+    );
+    const matchesProvider =
+      provider === NGA_PROVIDER
+        ? metadata.provider === NGA_PROVIDER
+        : (metadata.provider === undefined ||
+            metadata.provider === NGS_PROVIDER) &&
+          sourceInstitution?.toLowerCase() === 'national gallery singapore';
+    if (!matchesProvider) {
       throw new Error(
-        `NGA spotlight ${definition.id} returned non-NGA artwork ${result.id}`
+        `${provider.toUpperCase()} spotlight ${definition.id} returned non-${provider.toUpperCase()} artwork ${result.id}`
       );
     }
-    if (metadata.isPublic === false || metadata.is_public === false) {
+    if (
+      provider === NGA_PROVIDER &&
+      (metadata.isPublic === false || metadata.is_public === false)
+    ) {
       throw new Error(
         `NGA spotlight ${definition.id} returned non-public artwork ${result.id}`
       );
@@ -152,7 +199,7 @@ const assertNgaResults = (
 };
 
 const getRenderableUniqueResults = (
-  definition: NgaSpotlightDefinition,
+  definition: SpotlightDefinition,
   results: readonly ArtworkSearchResult[]
 ) => {
   const unique: ArtworkSearchResult[] = [];
@@ -181,7 +228,8 @@ const getRenderableUniqueResults = (
 };
 
 const toSpotlightArtwork = (
-  artwork: ArtworkSearchResult
+  artwork: ArtworkSearchResult,
+  provider: SpotlightProvider
 ): PublicSearchSpotlightArtwork => {
   const metadata = asRecord(artwork.metadata);
   const sourceInstitution = asText(
@@ -200,7 +248,7 @@ const toSpotlightArtwork = (
       : {}),
     similarity: artwork.similarity,
     source: {
-      provider: NGA_PROVIDER,
+      provider,
       institution: sourceInstitution!,
       ...(asText(metadata.sourceRecordId ?? metadata.source_record_id)
         ? {
@@ -226,9 +274,10 @@ const toSpotlightArtwork = (
 };
 
 const getSearchRequest = (
-  definition: NgaSpotlightDefinition
-): NgaSpotlightSearchRequest => ({
-  provider: NGA_PROVIDER,
+  provider: SpotlightProvider,
+  definition: SpotlightDefinition
+): SpotlightSearchRequest => ({
+  provider,
   definitionId: definition.id,
   query: definition.query,
   topK: REQUEST_TOP_K,
@@ -237,38 +286,49 @@ const getSearchRequest = (
 });
 
 const getSuggestion = async (
-  definition: NgaSpotlightDefinition,
-  search: GenerateNgaSpotlightBundleOptions['search']
+  provider: SpotlightProvider,
+  definition: SpotlightDefinition,
+  search: (request: SpotlightSearchRequest) => Promise<SearchResponse>
 ) => {
-  const response = await search(getSearchRequest(definition));
-  assertNgaResults(definition, response.results);
+  const response = await search(getSearchRequest(provider, definition));
+  assertProviderResults(provider, definition, response.results);
   const results = getRenderableUniqueResults(definition, response.results);
 
   return {
     ...definition,
-    artworks: results.slice(0, REQUEST_TOP_K).map(toSpotlightArtwork),
+    artworks: results
+      .slice(0, REQUEST_TOP_K)
+      .map((artwork) => toSpotlightArtwork(artwork, provider)),
   };
 };
 
 const getUtf8Size = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
 
-export const generateNgaSpotlightBundle = async ({
+const generateSpotlightBundle = async ({
+  provider,
+  definitions,
   corpusVersion,
   search,
   now = () => new Date(),
-}: GenerateNgaSpotlightBundleOptions): Promise<GenerateNgaSpotlightBundleResult> => {
+}: {
+  provider: SpotlightProvider;
+  definitions: readonly SpotlightDefinition[];
+  corpusVersion: string;
+  search: (request: SpotlightSearchRequest) => Promise<SearchResponse>;
+  now?: () => Date;
+}): Promise<GenerateNgaSpotlightBundleResult> => {
   const suggestions = [];
 
-  for (const definition of NGA_SPOTLIGHT_DEFINITIONS) {
-    suggestions.push(await getSuggestion(definition, search));
+  for (const definition of definitions) {
+    suggestions.push(await getSuggestion(provider, definition, search));
   }
 
   const bundle = PublicSearchSpotlightBundleSchema.parse({
     schemaVersion: PUBLIC_SEARCH_SPOTLIGHT_SCHEMA_VERSION,
     contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
     corpusVersion,
-    provider: NGA_PROVIDER,
+    provider,
     generatedAt: now().toISOString(),
     requestDefaults: {
       topK: REQUEST_TOP_K,
@@ -280,12 +340,38 @@ export const generateNgaSpotlightBundle = async ({
   const byteLength = getUtf8Size(bundle);
   if (byteLength > PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES) {
     throw new Error(
-      `NGA spotlight bundle is ${byteLength} bytes; maximum is ${PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES}`
+      `${provider.toUpperCase()} spotlight bundle is ${byteLength} bytes; maximum is ${PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES}`
     );
   }
 
   return {
     bundle,
-    searchRequestCount: NGA_SPOTLIGHT_DEFINITIONS.length,
+    searchRequestCount: definitions.length,
   };
 };
+
+export const generateNgaSpotlightBundle = async ({
+  corpusVersion,
+  search,
+  now,
+}: GenerateNgaSpotlightBundleOptions): Promise<GenerateNgaSpotlightBundleResult> =>
+  generateSpotlightBundle({
+    provider: NGA_PROVIDER,
+    definitions: NGA_SPOTLIGHT_DEFINITIONS,
+    corpusVersion,
+    search: (request) => search(request as NgaSpotlightSearchRequest),
+    ...(now ? { now } : {}),
+  });
+
+export const generateNgsSpotlightBundle = async ({
+  corpusVersion,
+  search,
+  now,
+}: GenerateNgsSpotlightBundleOptions): Promise<GenerateNgsSpotlightBundleResult> =>
+  generateSpotlightBundle({
+    provider: NGS_PROVIDER,
+    definitions: NGS_SPOTLIGHT_DEFINITIONS,
+    corpusVersion,
+    search: (request) => search(request as NgsSpotlightSearchRequest),
+    ...(now ? { now } : {}),
+  });

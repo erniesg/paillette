@@ -14,8 +14,9 @@ import {
   loadSearchSpotlightBundle,
 } from '../search-spotlights';
 import { NGA_SPOTLIGHT_DEFINITIONS } from '../nga-spotlight-definitions';
+import { NGS_SPOTLIGHT_DEFINITIONS } from '../ngs-spotlight-definitions';
 
-const artwork = (id: string) => ({
+const artwork = (id: string, provider: 'nga' | 'ngs' = 'nga') => ({
   id,
   orgId: 'nga',
   title: `Artwork ${id}`,
@@ -25,8 +26,11 @@ const artwork = (id: string) => ({
   thumbnailUrl: `https://example.com/${id}-thumb.jpg`,
   similarity: 1 - Number(id) / 100,
   source: {
-    provider: 'nga' as const,
-    institution: 'National Gallery of Art, Washington',
+    provider,
+    institution:
+      provider === 'nga'
+        ? 'National Gallery of Art, Washington'
+        : 'National Gallery Singapore',
     recordId: id,
     url: `https://www.nga.gov/artworks/${id}`,
     accessionNumber: `A-${id}`,
@@ -46,6 +50,18 @@ const validBundle: PublicSearchSpotlightBundle = {
     ...definition,
     artworks: [1, 2, 3, 4].map((cardIndex) =>
       artwork(String(index * 4 + cardIndex))
+    ),
+  })),
+};
+
+const validNgsBundle: PublicSearchSpotlightBundle = {
+  ...validBundle,
+  corpusVersion: 'ngs-fixture-v1',
+  provider: 'ngs',
+  suggestions: NGS_SPOTLIGHT_DEFINITIONS.map((definition, index) => ({
+    ...definition,
+    artworks: [1, 2, 3, 4].map((cardIndex) =>
+      artwork(String(index * 4 + cardIndex), 'ngs')
     ),
   })),
 };
@@ -86,6 +102,35 @@ describe('search spotlight loading', () => {
     const digest = createHash('sha256').update(bytes).digest('hex');
 
     expect(assetPath.endsWith(`-${digest}.json`)).toBe(true);
+  });
+
+  it('loads the content-addressed NGS cache with an access token', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        responseFor({ success: true, data: validNgsBundle })
+      );
+    const getAccessToken = vi.fn(async () => 'ngs-token');
+
+    const loaded = await loadSearchSpotlightBundle('ngs', {
+      getAccessToken,
+    });
+
+    expect(getSearchSpotlightPath('ngs')).toMatch(
+      /^\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
+    );
+    expect(loaded).toEqual(validNgsBundle);
+    expect(getAccessToken).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /\/api\/v1\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
+      ),
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer ngs-token' },
+      })
+    );
+
+    fetcher.mockRestore();
   });
 
   it('stores the complete cached result set for every NGA Try term', async () => {

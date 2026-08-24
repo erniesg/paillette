@@ -23,6 +23,7 @@ import {
 import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
+  PublicSearchSpotlightBundleSchema,
   normalizePublicSearchConstraints,
   normalizePublicSearchText,
   parsePublicSearchConstraints,
@@ -30,6 +31,10 @@ import {
   type NgaSearchPlan,
   type PublicSearchConstraints,
 } from '@paillette/types/public-search';
+import {
+  NGS_SEARCH_SPOTLIGHT_ASSET_REVISION,
+  NGS_SEARCH_SPOTLIGHT_BUNDLE,
+} from '../generated/ngs-search-spotlight-asset';
 import {
   matchesNgaSearchConstraints,
   compileNgaSearchPlan,
@@ -2610,6 +2615,84 @@ const parseImageSearchConstraints = (
 };
 
 export const searchRoutes = new Hono<{ Bindings: Env }>();
+
+const ngsSearchSpotlightBundle = PublicSearchSpotlightBundleSchema.parse(
+  NGS_SEARCH_SPOTLIGHT_BUNDLE
+);
+
+const rewriteCachedAssetOrigin = (
+  value: string | null | undefined,
+  origin: string
+) => {
+  if (!value) return value;
+
+  try {
+    const url = new URL(value);
+    if (
+      (url.hostname === 'paillette-api.berlayar.ai' ||
+        url.hostname === 'paillette-api-stg.berlayar.ai') &&
+      url.pathname.startsWith('/api/v1/assets/')
+    ) {
+      return `${origin}${url.pathname}${url.search}`;
+    }
+  } catch {
+    return value;
+  }
+
+  return value;
+};
+
+const getNgsSearchSpotlightBundle = (origin: string) => ({
+  ...ngsSearchSpotlightBundle,
+  suggestions: ngsSearchSpotlightBundle.suggestions.map((suggestion) => ({
+    ...suggestion,
+    artworks: suggestion.artworks.map((artwork) => ({
+      ...artwork,
+      ...(artwork.imageUrl
+        ? { imageUrl: rewriteCachedAssetOrigin(artwork.imageUrl, origin) }
+        : {}),
+      ...(artwork.thumbnailUrl
+        ? {
+            thumbnailUrl: rewriteCachedAssetOrigin(
+              artwork.thumbnailUrl,
+              origin
+            ),
+          }
+        : {}),
+    })),
+  })),
+});
+
+searchRoutes.get(
+  '/search-spotlights/:revision',
+  requireAuthOrApiKey as any,
+  async (c) => {
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    if (
+      !isNgsPublicOrg(requestedOrgId) ||
+      c.req.param('revision') !== NGS_SEARCH_SPOTLIGHT_ASSET_REVISION
+    ) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Search spotlight cache not found',
+          },
+        },
+        404
+      );
+    }
+
+    c.header('Cache-Control', 'private, max-age=31536000, immutable');
+    c.header('Vary', 'Authorization');
+    return c.json({
+      success: true,
+      data: getNgsSearchSpotlightBundle(new URL(c.req.url).origin),
+      meta: { timestamp: ngsSearchSpotlightBundle.generatedAt },
+    });
+  }
+);
 
 searchRoutes.use('/search/image', async (c, next) => {
   c.header('Cache-Control', 'no-store');

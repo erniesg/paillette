@@ -14,6 +14,7 @@ import type {
   CreatedPailletteApiKey,
   DailyUsageSummary,
 } from '../types';
+import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
 
 // Mock data
 const mockGallery: Gallery = {
@@ -97,7 +98,8 @@ export class MockApiClient {
   async searchText(
     _galleryId: string,
     _request: SearchTextRequest,
-    _getAccessToken?: () => Promise<string | undefined>
+    _getAccessToken?: () => Promise<string | undefined>,
+    _signal?: AbortSignal
   ): Promise<SearchResponse> {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -107,6 +109,14 @@ export class MockApiClient {
       count: mockArtworks.length,
       queryTime: 100,
     };
+  }
+
+  async getSearchSpotlightBundle(
+    _path: string,
+    _getAccessToken: () => Promise<string | undefined>,
+    _signal?: AbortSignal
+  ): Promise<PublicSearchSpotlightBundle> {
+    throw new Error('Mock search spotlight cache is not configured');
   }
 
   async searchImage(

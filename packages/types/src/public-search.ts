@@ -20,7 +20,7 @@ export const PublicSearchSpotlightArtworkSchema = z
     similarity: z.number().min(0).max(1),
     source: z
       .object({
-        provider: z.literal('nga'),
+        provider: z.enum(['nga', 'ngs']),
         institution: z.string().min(1),
         recordId: z.string().min(1).optional(),
         url: z.string().url().optional(),
@@ -79,7 +79,7 @@ export const PublicSearchSpotlightBundleSchema = z
     schemaVersion: z.literal(PUBLIC_SEARCH_SPOTLIGHT_SCHEMA_VERSION),
     contractVersion: z.literal(PUBLIC_SEARCH_CONTRACT_VERSION),
     corpusVersion: z.string().min(1),
-    provider: z.literal('nga'),
+    provider: z.enum(['nga', 'ngs']),
     generatedAt: z.string().datetime(),
     requestDefaults: z
       .object({

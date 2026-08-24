@@ -3,9 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES } from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '~/types';
 import { NGA_SPOTLIGHT_DEFINITIONS } from '../nga-spotlight-definitions';
+import { NGS_SPOTLIGHT_DEFINITIONS } from '../ngs-spotlight-definitions';
 import {
   generateNgaSpotlightBundle,
+  generateNgsSpotlightBundle,
   type NgaSpotlightSearchRequest,
+  type NgsSpotlightSearchRequest,
 } from '../nga-spotlight-generator.server';
 
 const GENERATED_AT = '2026-07-17T08:00:00.000Z';
@@ -159,8 +162,7 @@ describe('generateNgaSpotlightBundle', () => {
     });
 
     for (const suggestion of bundle.suggestions) {
-      const expectedCount =
-        suggestion.id === 'blue-painted-ornament' ? 4 : 5;
+      const expectedCount = suggestion.id === 'blue-painted-ornament' ? 4 : 5;
       expect(suggestion.artworks).toHaveLength(expectedCount);
       expect(new Set(suggestion.artworks.map(({ id }) => id)).size).toBe(
         expectedCount
@@ -241,5 +243,43 @@ describe('generateNgaSpotlightBundle', () => {
         }),
       })
     ).rejects.toThrow(String(PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES));
+  });
+});
+
+describe('generateNgsSpotlightBundle', () => {
+  it('caches every stable NGS Try term without requiring public metadata', async () => {
+    const search = vi.fn(async (request: NgsSpotlightSearchRequest) => ({
+      count: 1,
+      queryTime: 1,
+      results: [
+        makeArtwork(`${request.definitionId}-1`, {
+          orgId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+          galleryId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+          metadata: {
+            sourceInstitution: 'National Gallery Singapore',
+            sourceRecordId: `${request.definitionId}-1`,
+            sourceUrl: `https://www.nationalgallery.sg/${request.definitionId}`,
+            colorPalette: { colors: ['#8a9a7a'], percentages: [1] },
+          },
+        }),
+      ],
+    }));
+
+    const generated = await generateNgsSpotlightBundle({
+      corpusVersion: 'ngs-corpus-2026-08-24',
+      now: () => new Date(GENERATED_AT),
+      search,
+    });
+
+    expect(search).toHaveBeenCalledTimes(10);
+    expect(generated.searchRequestCount).toBe(10);
+    expect(generated.bundle.provider).toBe('ngs');
+    expect(generated.bundle.suggestions.map(({ id }) => id)).toEqual(
+      NGS_SPOTLIGHT_DEFINITIONS.map(({ id }) => id)
+    );
+    expect(generated.bundle.suggestions[0]?.artworks[0]?.source).toMatchObject({
+      provider: 'ngs',
+      institution: 'National Gallery Singapore',
+    });
   });
 });

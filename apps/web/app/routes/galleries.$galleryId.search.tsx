@@ -128,6 +128,7 @@ import {
   getSpotlightSearchPlaceholder,
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
+import { apiClient } from '~/lib/api';
 import {
   trackPublicUsageEvent,
   type PublicArtworkInteractionType,
@@ -986,7 +987,7 @@ export default function SearchPage() {
   } = useLoaderData<typeof loader>();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthenticated, login, signup } = useUser();
+  const { isAuthenticated, login, signup, getAccessToken } = useUser();
   const isNgsSearchLocked = preferredRouteId === 'ngs' && !isAuthenticated;
   const canSearchOnPage = !isNgsSearchLocked;
   const urlQuery = searchParams.get('q') || '';
@@ -1257,27 +1258,40 @@ export default function SearchPage() {
     setHasMounted(true);
   }, []);
 
-  const shouldLoadNgaSpotlights = hasMounted && preferredRouteId === 'nga';
+  const spotlightProvider =
+    preferredRouteId === 'nga' || preferredRouteId === 'ngs'
+      ? preferredRouteId
+      : null;
+  const shouldLoadSpotlights =
+    hasMounted &&
+    Boolean(spotlightProvider) &&
+    (spotlightProvider !== 'ngs' || isAuthenticated);
   const spotlightBundleQuery = useQuery({
     queryKey: [
       'search-spotlights',
       PUBLIC_SEARCH_CONTRACT_VERSION,
-      'nga',
+      spotlightProvider,
     ] as const,
-    queryFn: ({ signal }) =>
-      loadSearchSpotlightBundle('nga', {
+    queryFn: ({ signal }) => {
+      if (!spotlightProvider) return null;
+      return loadSearchSpotlightBundle(spotlightProvider, {
+        ...(spotlightProvider === 'ngs' ? { getAccessToken } : {}),
         signal,
-      }),
-    enabled: shouldLoadNgaSpotlights,
+      });
+    },
+    enabled: shouldLoadSpotlights,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
   });
+  const spotlightBundle = isNgsSearchLocked
+    ? null
+    : spotlightBundleQuery.data;
 
   const spotlightSearchPlaceholder = useMemo(
     () =>
       textSearchPlan
-        ? getSpotlightSearchPlaceholder(spotlightBundleQuery.data, {
+        ? getSpotlightSearchPlaceholder(spotlightBundle, {
             query: textSearchPlan.request.query,
             facet: submittedTextOwner?.facet,
             colourId:
@@ -1290,7 +1304,7 @@ export default function SearchPage() {
         : undefined,
     [
       minScore,
-      spotlightBundleQuery.data,
+      spotlightBundle,
       submittedSearch,
       submittedTextOwner,
       textSearchPlan,
@@ -1384,16 +1398,23 @@ export default function SearchPage() {
       : (['search', 'text', 'locked', publicSearchOrgId] as const),
     queryFn: async ({ signal }) => {
       if (!textSearchPlan) return null;
-      return publicSearchText(
-        publicSearchOrgId,
-        textSearchPlan.request,
-        {
-          mode: submittedSearch?.kind === 'colour' ? 'colour' : 'text',
-          colours: searchColours,
-          facet: submittedTextOwner?.facet || undefined,
-        },
-        signal
-      );
+      return preferredRouteId === 'ngs'
+        ? apiClient.searchText(
+            publicSearchOrgId,
+            textSearchPlan.request,
+            getAccessToken,
+            signal
+          )
+        : publicSearchText(
+            publicSearchOrgId,
+            textSearchPlan.request,
+            {
+              mode: submittedSearch?.kind === 'colour' ? 'colour' : 'text',
+              colours: searchColours,
+              facet: submittedTextOwner?.facet || undefined,
+            },
+            signal
+          );
     },
     enabled:
       hasMounted &&
@@ -1404,7 +1425,7 @@ export default function SearchPage() {
     retry: false,
     staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    placeholderData: spotlightSearchPlaceholder,
+    initialData: spotlightSearchPlaceholder,
   });
 
   const imageQueryExecution = buildImageQueryExecution({
@@ -1525,24 +1546,24 @@ export default function SearchPage() {
 
     const spotlightId = activeIdleSuggestion.spotlightId;
     return spotlightId &&
-      spotlightBundleQuery.data?.suggestions.some(
+      spotlightBundle?.suggestions.some(
         (suggestion) => suggestion.id === spotlightId
       )
       ? spotlightId
       : null;
-  }, [activeIdleSuggestion, spotlightBundleQuery.data?.suggestions]);
+  }, [activeIdleSuggestion, spotlightBundle?.suggestions]);
   const idleShowcaseResults = useMemo(
     () =>
       activeSpotlightSuggestionId
         ? getSpotlightArtworks(
-            spotlightBundleQuery.data,
+            spotlightBundle,
             activeSpotlightSuggestionId
           )
         : [],
-    [activeSpotlightSuggestionId, spotlightBundleQuery.data]
+    [activeSpotlightSuggestionId, spotlightBundle]
   );
   const isIdleShowcaseLoading =
-    shouldLoadNgaSpotlights && spotlightBundleQuery.isLoading;
+    shouldLoadSpotlights && spotlightBundleQuery.isLoading;
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
