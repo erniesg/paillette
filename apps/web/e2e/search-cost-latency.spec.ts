@@ -231,6 +231,20 @@ test('idle NGA landing preloads one spotlight asset and issues no live searches'
   ).toBe(false);
 });
 
+test('idle NGA showcase follows the cached results for cycling Try terms', async ({
+  page,
+}) => {
+  await installSearchHarness(page);
+  await openNgaSearchPage(page);
+
+  await expect(
+    page.getByText('Spotlight artwork stormy-seas-ships-1', { exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByText('Spotlight artwork paintings-collection-1', { exact: true })
+  ).toBeVisible({ timeout: 12_000 });
+});
+
 test('featured cards remain visible while the full search refreshes', async ({
   page,
 }) => {

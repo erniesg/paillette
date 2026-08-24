@@ -64,7 +64,7 @@ export const PublicSearchSpotlightSuggestionSchema = z
     query: z.string().min(1),
     facet: z.enum(['artist', 'classification']).optional(),
     colourId: z.string().min(1).optional(),
-    artworks: z.array(PublicSearchSpotlightArtworkSchema).length(4),
+    artworks: z.array(PublicSearchSpotlightArtworkSchema).min(1).max(30),
   })
   .strict()
   .refine(
