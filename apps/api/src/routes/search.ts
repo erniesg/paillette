@@ -4,6 +4,7 @@ import { Env } from '../index';
 import {
   annotateUsageEvent,
   enforceDailyQuota,
+  getAuth,
   recordArtworkResults,
   requireAuthOrApiKey,
 } from '../middleware/auth';
@@ -11,9 +12,42 @@ import type {
   ApiResponse,
   SearchResponse,
   ArtworkSearchResult,
+  SearchDegradedChannel,
 } from '../types';
 import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
-import { isNgsPublicOrg, resolveOrgIdentifier } from '../utils/orgs';
+import { getOrCreateQueryEmbedding } from '../utils/query-embedding-cache';
+import {
+  PublicSearchColdMissRateLimitError,
+  enforcePublicSearchColdMissRateLimit,
+} from '../utils/public-search-cold-miss-rate-limit';
+import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
+import {
+  PUBLIC_SEARCH_CONTRACT_VERSION,
+  normalizePublicSearchConstraints,
+  normalizePublicSearchText,
+  parsePublicSearchConstraints,
+  type NgaAttributionIntent,
+  type NgaSearchPlan,
+  type PublicSearchConstraints,
+} from '@paillette/types/public-search';
+import {
+  matchesNgaSearchConstraints,
+  compileNgaSearchPlan,
+  parseNgaSearchIntent,
+  validateNgaSearchConstraints,
+} from '../utils/nga-search-intent';
+import {
+  filterNgaRelationEvidence,
+  foldNgaEvidenceText,
+  matchesNgaAttributionEvidence,
+  NGA_LATIN_FOLD_GROUPS,
+} from '../utils/nga-search-evidence';
+import {
+  isAllowedPublicSearchRouteScope,
+  isNgsPublicOrg,
+  resolveOpenAccessProviderScope,
+  resolveOrgIdentifier,
+} from '../utils/orgs';
 
 interface ArtworkSearchRow {
   id: string;
@@ -60,6 +94,7 @@ type CaptionVectorMatch = {
 
 type SearchSourceChannel =
   | 'image_embedding'
+  | 'institution_caption_embedding'
   | 'generated_caption_embedding'
   | 'metadata';
 
@@ -80,17 +115,81 @@ const DEFAULT_JINA_TEXT_MODEL = 'jina-embeddings-v5-text-small';
 const DEFAULT_JINA_DIMENSIONS = 1024;
 const JINA_EMBEDDINGS_ENDPOINT = 'https://api.jina.ai/v1/embeddings';
 const RRF_K = 60;
+const EXACT_METADATA_PRIORITY_BONUS = 0.03;
 const MAX_SEARCH_RESULTS = 100;
+const MAX_IMAGE_SEARCH_BYTES = 10 * 1024 * 1024;
+const IMAGE_SEARCH_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 const VECTORIZE_QUERY_METADATA = 'indexed' as const;
+const SEARCH_DEGRADED_CHANNEL_ORDER: SearchDegradedChannel[] = [
+  'image_embedding',
+  'caption_embedding',
+  'metadata',
+  'visual_refinement',
+];
+
+const getPublicSearchClientAddress = (
+  connectingIp: string | undefined,
+  forwardedFor: string | undefined
+) => connectingIp?.trim() || forwardedFor?.split(',')[0]?.trim();
 
 type EmbeddingIndexVersion = 'v1' | 'v2';
+type ScheduleBackgroundWork = (work: Promise<void>) => void;
 type SearchFusionMode = 'legacy' | 'metadata' | 'hybrid';
 type RoutedSearchIntent =
   | 'balanced'
   | 'accession_exact'
+  | 'artist_exact'
+  | 'title_exact'
   | 'color_visual'
+  | 'medium_exact'
   | 'temporal'
   | 'formal_visual';
+
+type PublicImageSearchIdentityInput = {
+  version: 'public-image-search-v1';
+  contractVersion: typeof PUBLIC_SEARCH_CONTRACT_VERSION;
+  mode: 'image';
+  imageDigest: string;
+  orgId: string | undefined;
+  provider: string | null;
+  index: {
+    version: EmbeddingIndexVersion;
+    binding: 'VECTORIZE' | 'VECTORIZE_V2';
+  };
+  embedding: {
+    provider: 'jina';
+    endpoint: string;
+    model: string;
+    dimensions: number;
+  };
+  constraints?: PublicSearchConstraints | null;
+  topK: number;
+  minScore: number;
+};
+
+export const buildPublicImageSearchIdentity = (
+  input: PublicImageSearchIdentityInput
+) =>
+  JSON.stringify({
+    version: input.version,
+    contractVersion: input.contractVersion,
+    mode: input.mode,
+    imageDigest: input.imageDigest,
+    orgId: input.orgId,
+    provider: input.provider,
+    index: input.index,
+    embedding: input.embedding,
+    constraints:
+      input.constraints == null
+        ? null
+        : normalizePublicSearchConstraints(input.constraints),
+    topK: input.topK,
+    minScore: input.minScore,
+  });
 
 type RoutedSearchWeights = {
   jinaImage: number;
@@ -110,7 +209,7 @@ const canonicalArtworkId = (id: string) =>
   id.match(/^data_aws\d*k_(.+)$/i)?.[1] || id;
 
 const ACCESSION_RE =
-  /\b(?:\d{4}-\d{5}(?:-\d{3})?|[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]+)?)\b/i;
+  /\b(?:\d{4}(?:\.[A-Z0-9]+(?:-[A-Z0-9]+)?){2,}|\d{4}-\d{5}(?:-\d{3})?|[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]+)?)\b/i;
 const HEX_COLOR_RE = /#[0-9a-fA-F]{6}\b/;
 const COLOR_TERMS = new Set([
   'black',
@@ -128,6 +227,41 @@ const COLOR_TERMS = new Set([
   'sage',
   'yellow',
 ]);
+const MEDIUM_TERMS = new Set([
+  'batik',
+  'bronze',
+  'canvas',
+  'charcoal',
+  'engraving',
+  'etching',
+  'graphite',
+  'gouache',
+  'ink',
+  'linocut',
+  'lithograph',
+  'oil',
+  'pencil',
+  'photograph',
+  'print',
+  'screenprint',
+  'sculpture',
+  'tempera',
+  'watercolour',
+  'watercolor',
+  'woodcut',
+]);
+const CLASSIFICATION_MEDIUM_TERMS = new Set([
+  'photograph',
+  'print',
+  'sculpture',
+]);
+const MEDIUM_TERM_ALIASES: Record<string, string[]> = {
+  linocut: ['linocut', 'lino cut'],
+  photograph: ['photograph', 'photography'],
+  screenprint: ['screenprint', 'screen print', 'silkscreen', 'silk screen'],
+  watercolour: ['watercolour', 'watercolor'],
+  watercolor: ['watercolour', 'watercolor'],
+};
 const FORMAL_VISUAL_TERMS = new Set(['brushwork', 'calligraphic', 'gestural']);
 const SEARCH_CONTROL_WORDS = new Set([
   'a',
@@ -168,8 +302,170 @@ const searchQueryTokens = (query: string) =>
       (token) => token && token.length > 1 && !SEARCH_CONTROL_WORDS.has(token)
     );
 
+const unicodeSearchQueryTokens = (query: string) =>
+  (query.normalize('NFC').match(/[\p{L}\p{N}]+/gu) || [])
+    .map((token) => token.trim())
+    .filter((token) => {
+      const foldedToken = foldNgaEvidenceText(token);
+      return (
+        [...foldedToken].length > 1 && !SEARCH_CONTROL_WORDS.has(foldedToken)
+      );
+    });
+
+const NGA_LATIN_GLOB_EQUIVALENTS = new Map<string, string>(
+  NGA_LATIN_FOLD_GROUPS.filter(([replacement]) => replacement.length === 1)
+);
+const NGA_LATIN_GLOB_EXPANSIONS = NGA_LATIN_FOLD_GROUPS.filter(
+  ([replacement]) => replacement.length > 1
+);
+const NGA_ATTRIBUTION_GLOB_PATTERN_MAX_BYTES = 48;
+const NGA_ATTRIBUTION_GLOB_PROBE_CHARACTERS = 3;
+
+const sqliteGlobCharacterClass = (
+  character: string,
+  expansionEquivalents = ''
+) => {
+  const equivalents = NGA_LATIN_GLOB_EQUIVALENTS.get(character) || '';
+  return `[${character}${character.toLocaleUpperCase('en-US')}${equivalents}${expansionEquivalents}]`;
+};
+
+const boundedSqliteGlobCharacterPatterns = (
+  character: string,
+  expansionEquivalents = ''
+) => {
+  const variants = [
+    ...new Set([
+      character,
+      character.toLocaleUpperCase('en-US'),
+      ...(NGA_LATIN_GLOB_EQUIVALENTS.get(character) || ''),
+      ...expansionEquivalents,
+    ]),
+  ];
+  const patterns: string[] = [];
+  let chunk: string[] = [];
+
+  for (const variant of variants) {
+    const nextPattern = `*[${[...chunk, variant].join('')}]*`;
+    if (
+      chunk.length &&
+      new TextEncoder().encode(nextPattern).length >
+        NGA_ATTRIBUTION_GLOB_PATTERN_MAX_BYTES
+    ) {
+      patterns.push(`*[${chunk.join('')}]*`);
+      chunk = [variant];
+    } else {
+      chunk.push(variant);
+    }
+  }
+  if (chunk.length) patterns.push(`*[${chunk.join('')}]*`);
+
+  return patterns;
+};
+
+const unicodeSqlCandidatePatterns = (token: string) => {
+  const folded = foldNgaEvidenceText(token);
+  const characterClasses: Array<{
+    expansionEquivalents: string;
+    index: number;
+    sourceCharacter: string;
+    value: string;
+  }> = [];
+  for (let index = 0; index < folded.length; index += 1) {
+    const expansion = NGA_LATIN_GLOB_EXPANSIONS.find(([replacement]) =>
+      folded.startsWith(replacement, index)
+    );
+    characterClasses.push({
+      expansionEquivalents: expansion?.[1] || '',
+      index,
+      sourceCharacter: folded[index]!,
+      value: sqliteGlobCharacterClass(folded[index]!, expansion?.[1]),
+    });
+    if (expansion) index += expansion[0].length - 1;
+  }
+
+  const selected: Array<{ index: number; value: string }> = [];
+  for (const candidate of [...characterClasses].sort(
+    (left, right) =>
+      new TextEncoder().encode(left.value).length -
+        new TextEncoder().encode(right.value).length || left.index - right.index
+  )) {
+    const next = [...selected, candidate]
+      .sort((left, right) => left.index - right.index)
+      .slice(0, NGA_ATTRIBUTION_GLOB_PROBE_CHARACTERS);
+    const pattern = `*${next.map(({ value }) => value).join('*')}*`;
+    if (
+      new TextEncoder().encode(pattern).length <=
+      NGA_ATTRIBUTION_GLOB_PATTERN_MAX_BYTES
+    ) {
+      selected.splice(0, selected.length, ...next);
+    }
+    if (selected.length === NGA_ATTRIBUTION_GLOB_PROBE_CHARACTERS) break;
+  }
+
+  if (selected.length) {
+    return [`*${selected.map(({ value }) => value).join('*')}*`];
+  }
+
+  const fallback = characterClasses[0];
+  return fallback
+    ? boundedSqliteGlobCharacterPatterns(
+        fallback.sourceCharacter,
+        fallback.expansionEquivalents
+      )
+    : [];
+};
+
+const normalizeArtistFacetQuery = (query: string) =>
+  normalizeSearchWords(
+    query
+      .replace(/\([^)]*(?:\d{3,4}|born|died|b\.|d\.)[^)]*\)/gi, ' ')
+      .replace(/\b(?:b|d)\.?\s*\d{3,4}\b/gi, ' ')
+  );
+
+const artistFacetTokens = (query: string) =>
+  normalizeArtistFacetQuery(query)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(
+      (token) =>
+        token &&
+        token.length > 1 &&
+        !SEARCH_CONTROL_WORDS.has(token) &&
+        !/^\d{3,4}$/.test(token)
+    )
+    .slice(0, 8);
+
 const backableSearchSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId) ? BACKABLE_NGS_PUBLIC_ARTWORK_SQL : '';
+
+const providerSearchSql = (provider: string | undefined) =>
+  provider
+    ? "AND json_valid(custom_metadata) AND json_extract(custom_metadata, '$.provider') = ?"
+    : '';
+
+const getVectorFilter = (
+  orgId: string | undefined,
+  provider: string | undefined,
+  constraints?: PublicSearchConstraints
+) => {
+  const filter: VectorizeVectorMetadataFilter = {};
+  if (orgId) filter.galleryId = orgId;
+  if (provider) filter.provider = provider;
+  if (constraints?.dateRange) {
+    filter.yearStart = { $lte: constraints.dateRange.endYear };
+    filter.yearEnd = { $gte: constraints.dateRange.startYear };
+  }
+  if (constraints?.classifications?.length) {
+    filter.classification = { $in: constraints.classifications };
+  }
+  if (constraints?.mediumFamilies?.length) {
+    filter.mediumFamily = { $in: constraints.mediumFamilies };
+  }
+  if (constraints?.artistIds?.length) {
+    filter.primaryArtistId = { $in: constraints.artistIds };
+  }
+  return Object.keys(filter).length > 0 ? filter : undefined;
+};
 
 const getEmbeddingIndexVersion = (env: Env): EmbeddingIndexVersion =>
   env.EMBEDDING_INDEX_VERSION === 'v2' ? 'v2' : 'v1';
@@ -226,6 +522,14 @@ const parseTemporalFilter = (query: string): TemporalFilter | null => {
     return null;
   }
 
+  const structuredRange = parseNgaSearchIntent(query).constraints.dateRange;
+  if (structuredRange) {
+    return {
+      ...structuredRange,
+      textQuery: query,
+    };
+  }
+
   const decadeMatch = query.match(/\b((?:1[0-9]{2}|20[0-9])0)'?s\b/i);
   if (decadeMatch?.[1]) {
     const startYear = Number(decadeMatch[1]);
@@ -259,28 +563,189 @@ const artworkMatchesTemporalFilter = (
   );
 };
 
-const normalizedTextSql = (expression: string) => `
-  (' ' || lower(
-    replace(
-      replace(
-        replace(
-          replace(
-            replace(
-              replace(coalesce(${expression}, ''), '-', ' '),
-              ',', ' '
-            ),
-            '.', ' '
-          ),
-          '/', ' '
-        ),
-        '(', ' '
-      ),
-      ')', ' '
-    )
-  ) || ' ')
-`;
+const artworkMatchesStructuredConstraints = (
+  artwork: ArtworkSearchRow,
+  constraints: PublicSearchConstraints
+) => {
+  const enriched = artwork as ArtworkSearchRow & {
+    year_start?: number | null;
+    year_end?: number | null;
+    visual_classification?: string | null;
+    medium_family?: string | null;
+    primary_artist_id?: string | null;
+  };
+  return matchesNgaSearchConstraints(
+    {
+      year: artwork.year,
+      yearStart: enriched.year_start,
+      yearEnd: enriched.year_end,
+      dateText: artwork.date_text,
+      classification: artwork.classification,
+      visualClassification: enriched.visual_classification,
+      medium: artwork.medium,
+      mediumFamily: enriched.medium_family,
+      primaryArtistId: enriched.primary_artist_id,
+    },
+    constraints
+  );
+};
 
-const buildRoutedSearchPlan = (query: string): RoutedSearchPlan => {
+const searchResultMatchesStructuredConstraints = (
+  result: ArtworkSearchResult,
+  constraints: PublicSearchConstraints
+) =>
+  matchesNgaSearchConstraints(
+    {
+      year: result.year,
+      yearStart:
+        typeof result.metadata?.yearStart === 'number'
+          ? result.metadata.yearStart
+          : null,
+      yearEnd:
+        typeof result.metadata?.yearEnd === 'number'
+          ? result.metadata.yearEnd
+          : null,
+      dateText:
+        typeof result.metadata?.dateText === 'string'
+          ? result.metadata.dateText
+          : null,
+      classification:
+        typeof result.metadata?.classification === 'string'
+          ? result.metadata.classification
+          : null,
+      visualClassification:
+        typeof result.metadata?.visualClassification === 'string'
+          ? result.metadata.visualClassification
+          : null,
+      medium:
+        typeof result.metadata?.medium === 'string'
+          ? result.metadata.medium
+          : null,
+      mediumFamily:
+        typeof result.metadata?.mediumFamily === 'string'
+          ? result.metadata.mediumFamily
+          : null,
+      primaryArtistId:
+        typeof result.metadata?.primaryArtistId === 'string'
+          ? result.metadata.primaryArtistId
+          : null,
+    },
+    constraints
+  );
+
+const buildStructuredConstraintSqlForDateMode = (
+  constraints: PublicSearchConstraints | undefined,
+  dateMode: 'stored-range' | 'displayed-date-candidate'
+): { sql: string; params: Array<string | number> } => {
+  if (!constraints) return { sql: '', params: [] };
+
+  const clauses: string[] = [];
+  const params: Array<string | number> = [];
+  if (constraints.dateRange) {
+    if (dateMode === 'displayed-date-candidate') {
+      clauses.push(`(trim(coalesce(date_text, '')) <> '')`);
+    } else {
+      clauses.push(
+        `(coalesce(year_end, year) >= ? AND coalesce(year_start, year) <= ?)`
+      );
+      params.push(
+        constraints.dateRange.startYear,
+        constraints.dateRange.endYear
+      );
+    }
+  }
+  if (constraints.classifications?.length) {
+    clauses.push(
+      `lower(trim(coalesce(nullif(trim(visual_classification), ''), classification, ''))) IN (${constraints.classifications.map(() => '?').join(', ')})`
+    );
+    params.push(
+      ...constraints.classifications.map((value) => value.toLowerCase())
+    );
+  }
+  if (constraints.mediumFamilies?.length) {
+    const placeholders = constraints.mediumFamilies.map(() => '?').join(', ');
+    const mediumFallbacks = constraints.mediumFamilies
+      .map(() => `(' ' || lower(coalesce(medium, '')) || ' ') GLOB ?`)
+      .join(' OR ');
+    clauses.push(
+      `(lower(trim(coalesce(medium_family, ''))) IN (${placeholders}) OR ${mediumFallbacks})`
+    );
+    params.push(
+      ...constraints.mediumFamilies.map((value) => value.toLowerCase()),
+      ...constraints.mediumFamilies.map(
+        (value) => `*[^a-z0-9]${value.toLowerCase()}[^a-z0-9]*`
+      )
+    );
+  }
+  if (constraints.artistIds?.length) {
+    clauses.push(
+      `primary_artist_id IN (${constraints.artistIds.map(() => '?').join(', ')})`
+    );
+    params.push(...constraints.artistIds);
+  }
+
+  return {
+    sql: clauses.length ? `AND (${clauses.join(' AND ')})` : '',
+    params,
+  };
+};
+
+export const buildStructuredConstraintSql = (
+  constraints?: PublicSearchConstraints
+) => buildStructuredConstraintSqlForDateMode(constraints, 'stored-range');
+
+const buildFacetStructuredConstraintSql = (
+  constraints?: PublicSearchConstraints
+) =>
+  buildStructuredConstraintSqlForDateMode(
+    constraints,
+    'displayed-date-candidate'
+  );
+
+const SEARCH_PUNCTUATION_SQL = [
+  "'-'",
+  "','",
+  "'.'",
+  "'/'",
+  "'('",
+  "')'",
+  "'['",
+  "']'",
+  "'_'",
+  "':'",
+  "';'",
+  'char(34)',
+  'char(39)',
+  'char(8216)',
+  'char(8217)',
+];
+
+const normalizedTextSql = (expression: string) => {
+  const normalized = SEARCH_PUNCTUATION_SQL.reduce(
+    (sql, punctuation) => `replace(${sql}, ${punctuation}, ' ')`,
+    `coalesce(${expression}, '')`
+  );
+
+  return `(' ' || lower(${normalized}) || ' ')`;
+};
+
+const buildRoutedSearchPlan = (
+  query: string,
+  forcedIntent?: 'artist_exact',
+  ngaPlanMode?: NgaSearchPlan['mode']
+): RoutedSearchPlan => {
+  if (ngaPlanMode === 'relational') {
+    return {
+      intent: 'balanced',
+      weights: { jinaImage: 1, caption: 1, metadata: 1 },
+    };
+  }
+  if (forcedIntent === 'artist_exact') {
+    return {
+      intent: 'artist_exact',
+      weights: { jinaImage: 0.1, caption: 1.5, metadata: 2.5 },
+    };
+  }
   const accession = extractAccession(query);
   if (accession) {
     return {
@@ -301,6 +766,18 @@ const buildRoutedSearchPlan = (query: string): RoutedSearchPlan => {
     };
   }
 
+  const normalizedQuery = normalizeSearchWords(query);
+  if (
+    tokens.some((token) => MEDIUM_TERMS.has(token)) &&
+    normalizedQuery !== 'oil lamp' &&
+    normalizedQuery !== 'oil lamps'
+  ) {
+    return {
+      intent: 'medium_exact',
+      weights: { jinaImage: 0.2, caption: 0.8, metadata: 3 },
+    };
+  }
+
   if (parseTemporalFilter(query)) {
     return {
       intent: 'temporal',
@@ -311,14 +788,129 @@ const buildRoutedSearchPlan = (query: string): RoutedSearchPlan => {
   if (tokens.some((token) => FORMAL_VISUAL_TERMS.has(token))) {
     return {
       intent: 'formal_visual',
-      weights: { jinaImage: 1.2, caption: 0.8, metadata: 0 },
+      weights: { jinaImage: 1.2, caption: 0.8, metadata: 0.2 },
     };
   }
 
   return {
     intent: 'balanced',
-    weights: { jinaImage: 1, caption: 1, metadata: 0 },
+    weights: { jinaImage: 1, caption: 1, metadata: 1 },
   };
+};
+
+const normalizeTitleQuery = (query: string) =>
+  normalizeSearchWords(
+    query
+      .replace(/^\s*(?:title|titled)\s*[:\-]?\s*/i, '')
+      .replace(/^["']|["']$/g, '')
+  );
+
+const normalizeComparableTitle = (title: string | null | undefined) =>
+  normalizeSearchWords(String(title || '').replace(/\[[^\]]+\]/g, ' '));
+
+const withoutSearchControlWords = (value: string) =>
+  normalizeSearchWords(value)
+    .split(/\s+/)
+    .filter((token) => token && !SEARCH_CONTROL_WORDS.has(token))
+    .join(' ');
+
+const containsNormalizedPhrase = (value: string, phrase: string) =>
+  Boolean(phrase && ` ${value} `.includes(` ${phrase} `));
+
+const exactMetadataMatchPriority = (
+  query: string,
+  artwork: ArtworkSearchResult
+) => {
+  const normalizedQuery = normalizeSearchWords(query);
+  const fullTitle = normalizeSearchWords(artwork.title || '');
+  const comparableTitle = normalizeComparableTitle(artwork.title);
+  const artist = normalizeSearchWords(artwork.artist || '');
+  const comparableArtist = withoutSearchControlWords(artwork.artist || '');
+  const comparableQuery = withoutSearchControlWords(query);
+
+  if (!normalizedQuery) return 0;
+
+  if (
+    artist &&
+    comparableTitle &&
+    (normalizedQuery === `${artist} ${comparableTitle}` ||
+      normalizedQuery === `${comparableTitle} ${artist}` ||
+      (containsNormalizedPhrase(normalizedQuery, artist) &&
+        containsNormalizedPhrase(normalizedQuery, comparableTitle)) ||
+      (containsNormalizedPhrase(comparableQuery, comparableArtist) &&
+        containsNormalizedPhrase(normalizedQuery, comparableTitle)))
+  ) {
+    return 4;
+  }
+
+  if (normalizedQuery === fullTitle || normalizedQuery === comparableTitle) {
+    return 3;
+  }
+
+  return artist &&
+    (normalizedQuery === artist || comparableQuery === comparableArtist)
+    ? 2
+    : 0;
+};
+
+const exactMediumMatchPriority = (
+  query: string,
+  artwork: ArtworkSearchResult
+) => {
+  const requestedTerms = searchQueryTokens(query).filter((token) =>
+    MEDIUM_TERMS.has(token)
+  );
+  if (!requestedTerms.length) return 0;
+
+  const metadata = artwork.metadata || {};
+  const medium = normalizeSearchWords(String(metadata.medium || ''));
+  const classification = normalizeSearchWords(
+    String(metadata.classification || '')
+  );
+  const matches = (value: string, term: string) =>
+    (MEDIUM_TERM_ALIASES[term] || [term]).some((alias) =>
+      containsNormalizedPhrase(value, alias)
+    );
+  const materialTerms = requestedTerms.filter(
+    (term) => !CLASSIFICATION_MEDIUM_TERMS.has(term)
+  );
+  const classificationTerms = requestedTerms.filter((term) =>
+    CLASSIFICATION_MEDIUM_TERMS.has(term)
+  );
+  const materialMatch = materialTerms.some((term) => matches(medium, term));
+  const classificationMatch = classificationTerms.some((term) =>
+    matches(classification, term)
+  );
+
+  if (materialMatch && (!classificationTerms.length || classificationMatch)) {
+    return 3;
+  }
+  if (materialMatch) return 2;
+  if (classificationMatch) return 1;
+  return 0;
+};
+
+const refineRoutedSearchPlan = (
+  route: RoutedSearchPlan,
+  query: string,
+  metadataMatches: ArtworkSearchResult[]
+): RoutedSearchPlan => {
+  if (route.intent === 'accession_exact' || route.intent === 'artist_exact') {
+    return route;
+  }
+  const titleQuery = normalizeTitleQuery(query);
+  if (
+    titleQuery &&
+    metadataMatches.some(
+      (match) => normalizeSearchWords(match.title || '') === titleQuery
+    )
+  ) {
+    return {
+      intent: 'title_exact',
+      weights: { jinaImage: 0.15, caption: 1.2, metadata: 4 },
+    };
+  }
+  return route;
 };
 
 const searchDescriptionSql = (orgId: string | undefined) =>
@@ -375,6 +967,14 @@ const mapSearchRow = (
   similarity: number,
   searchSources?: SearchSourceContribution[]
 ): ArtworkSearchResult => {
+  const structured = artwork as ArtworkSearchRow & {
+    year_start?: number | null;
+    year_end?: number | null;
+    subclassification?: string | null;
+    visual_classification?: string | null;
+    medium_family?: string | null;
+    primary_artist_id?: string | null;
+  };
   const customMetadata =
     (parseJsonObject(artwork.custom_metadata) as Record<string, unknown>) ?? {};
   const fieldSources = parseJsonObject(artwork.field_sources) as
@@ -403,9 +1003,15 @@ const mapSearchRow = (
     metadata: compactObject({
       ...sanitized.customMetadata,
       medium: artwork.medium,
+      mediumFamily: structured.medium_family,
       dateText: artwork.date_text,
       date_text: artwork.date_text,
+      yearStart: structured.year_start,
+      yearEnd: structured.year_end,
       classification: artwork.classification,
+      subclassification: structured.subclassification,
+      visualClassification: structured.visual_classification,
+      primaryArtistId: structured.primary_artist_id,
       culture: artwork.culture,
       origin: artwork.origin,
       dimensions,
@@ -464,29 +1070,47 @@ async function generateCloudflareCaptionQueryEmbedding(
 
 type JinaEmbeddingInput = string | { image: string };
 
-async function generateJinaQueryEmbedding(
+export async function generateJinaQueryEmbedding(
   apiKey: string,
   input: JinaEmbeddingInput,
   model = DEFAULT_JINA_MULTIMODAL_MODEL,
-  dimensions = DEFAULT_JINA_DIMENSIONS
+  dimensions = DEFAULT_JINA_DIMENSIONS,
+  endpoint = JINA_EMBEDDINGS_ENDPOINT,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<number[]> {
-  const response = await fetch(JINA_EMBEDDINGS_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      input: [input],
-      normalized: true,
-      embedding_type: 'float',
-      task: 'retrieval.query',
-      dimensions,
-      truncate: true,
-    }),
-  });
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abortFromCaller();
+  options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(new Error('Query embedding request timed out')),
+    options.timeoutMs ?? 8_000
+  );
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        input: [input],
+        normalized: true,
+        embedding_type: 'float',
+        task: 'retrieval.query',
+        dimensions,
+        truncate: true,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
+  }
 
   const payload = await response.json<{
     data?: Array<{ embedding?: number[] | string }>;
@@ -520,10 +1144,154 @@ const getJinaDimensions = (value: string | undefined) => {
 };
 
 const getJinaConfig = (env: Env) => ({
-  apiKey: env.JINA_API_KEY,
+  apiKey: env.QUERY_EMBEDDING_API_TOKEN || env.JINA_API_KEY,
+  endpoint: env.QUERY_EMBEDDING_API_URL || JINA_EMBEDDINGS_ENDPOINT,
   model: env.JINA_MULTIMODAL_MODEL || DEFAULT_JINA_MULTIMODAL_MODEL,
   dimensions: getJinaDimensions(env.JINA_EMBEDDING_DIMENSIONS),
+  timeoutMs: env.QUERY_EMBEDDING_API_URL ? 20_000 : 8_000,
 });
+
+const getCachedJinaQueryEmbedding = (
+  env: Env,
+  query: string,
+  config: ReturnType<typeof getJinaConfig>,
+  model: string,
+  dimensions: number,
+  schedule?: ScheduleBackgroundWork
+) =>
+  getOrCreateQueryEmbedding({
+    cache: env.CACHE,
+    query,
+    model,
+    endpointIdentity: config.endpoint,
+    dimensions,
+    indexVersion: `${PUBLIC_SEARCH_CONTRACT_VERSION}:${getEmbeddingIndexVersion(env)}:retrieval.query`,
+    schedule,
+    generate: (normalizedQuery) =>
+      generateJinaQueryEmbedding(
+        config.apiKey!,
+        normalizedQuery,
+        model,
+        dimensions,
+        config.endpoint,
+        { timeoutMs: config.timeoutMs }
+      ),
+  });
+
+const cosineSimilarity = (a: ArrayLike<number>, b: ArrayLike<number>) => {
+  if (!a.length || a.length !== b.length) return null;
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    const valueA = a[index] || 0;
+    const valueB = b[index] || 0;
+    dot += valueA * valueB;
+    normA += valueA * valueA;
+    normB += valueB * valueB;
+  }
+
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  return denominator > 0 ? dot / denominator : null;
+};
+
+const getImageVectorsByIds = async (vectorize: Vectorize, ids: string[]) => {
+  const chunks: string[][] = [];
+  for (let offset = 0; offset < ids.length; offset += 20) {
+    chunks.push(ids.slice(offset, offset + 20));
+  }
+
+  const chunkResults = await Promise.all(
+    chunks.map((chunk) => vectorize.getByIds(chunk))
+  );
+  return chunkResults.flat();
+};
+
+const rerankByVisualRefinement = async (
+  env: Env,
+  results: ArtworkSearchResult[],
+  visualRefinement: string,
+  schedule?: ScheduleBackgroundWork,
+  degradedChannels?: Set<SearchDegradedChannel>
+) => {
+  const vectorize = getImageVectorize(env);
+  const config = getJinaConfig(env);
+  if (!vectorize || !config.apiKey || results.length < 2) {
+    return results;
+  }
+
+  try {
+    const candidateIds = results.map((result) => canonicalArtworkId(result.id));
+    const [queryEmbedding, vectors] = await Promise.all([
+      getCachedJinaQueryEmbedding(
+        env,
+        visualRefinement,
+        config,
+        config.model,
+        config.dimensions,
+        schedule
+      ),
+      getImageVectorsByIds(vectorize, candidateIds),
+    ]);
+    const visualScoreById = new Map<string, number>();
+
+    for (const vector of vectors) {
+      const similarity = cosineSimilarity(queryEmbedding, vector.values);
+      if (similarity !== null) {
+        visualScoreById.set(canonicalArtworkId(vector.id), similarity);
+      }
+    }
+
+    if (!visualScoreById.size) {
+      return results;
+    }
+
+    const visualRankById = new Map(
+      [...visualScoreById.entries()]
+        .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
+        .map(([id], index) => [id, index + 1])
+    );
+    const scored = results.map((result, index) => {
+      const id = canonicalArtworkId(result.id);
+      const visualRank = visualRankById.get(id);
+      return {
+        result,
+        originalIndex: index,
+        visualRank,
+        visualScore: visualScoreById.get(id),
+        score:
+          2 / (RRF_K + index + 1) + (visualRank ? 3 / (RRF_K + visualRank) : 0),
+      };
+    });
+
+    scored.sort(
+      (a, b) => b.score - a.score || a.originalIndex - b.originalIndex
+    );
+    const maxScore = scored[0]?.score || 1;
+
+    return scored.map(({ result, score, visualRank, visualScore }) => ({
+      ...result,
+      similarity: score / maxScore,
+      metadata: {
+        ...result.metadata,
+        visual_refinement: {
+          query: visualRefinement,
+          rank: visualRank || null,
+          score: visualScore ?? null,
+          method: 'candidate_vector_rrf',
+        },
+      },
+    }));
+  } catch (error) {
+    degradedChannels?.add('visual_refinement');
+    console.warn(
+      'Visual refinement failed; preserving base text ranking',
+      error
+    );
+    return results;
+  }
+};
 
 const getCaptionConfig = (env: Env) => ({
   provider: env.CAPTION_EMBEDDING_PROVIDER || 'cloudflare-bge',
@@ -531,21 +1299,54 @@ const getCaptionConfig = (env: Env) => ({
   dimensions: getJinaDimensions(env.JINA_TEXT_EMBEDDING_DIMENSIONS),
 });
 
+const getSearchResultModelIdentity = (env: Env) => {
+  const image = getJinaConfig(env);
+  const caption = getCaptionConfig(env);
+
+  return JSON.stringify({
+    image: {
+      provider: 'jina',
+      endpoint: image.endpoint,
+      model: image.model,
+      dimensions: image.dimensions,
+    },
+    caption:
+      caption.provider === 'jina'
+        ? {
+            provider: caption.provider,
+            endpoint: image.endpoint,
+            model: caption.model,
+            dimensions: caption.dimensions,
+          }
+        : {
+            provider: caption.provider,
+            model: CAPTION_TEXT_MODEL,
+          },
+    captionVectorSearchEnabled: isCaptionVectorSearchEnabled(env),
+  });
+};
+
 async function generateCaptionQueryEmbedding(
   env: Env,
-  query: string
+  query: string,
+  schedule?: ScheduleBackgroundWork
 ): Promise<number[]> {
   const captionConfig = getCaptionConfig(env);
   if (captionConfig.provider === 'jina') {
-    if (!env.JINA_API_KEY) {
-      throw new Error('JINA_API_KEY is required for Jina caption search');
+    const queryConfig = getJinaConfig(env);
+    if (!queryConfig.apiKey) {
+      throw new Error(
+        'A query embedding API token is required for caption search'
+      );
     }
 
-    return generateJinaQueryEmbedding(
-      env.JINA_API_KEY,
+    return getCachedJinaQueryEmbedding(
+      env,
       query,
+      queryConfig,
       captionConfig.model,
-      captionConfig.dimensions
+      captionConfig.dimensions,
+      schedule
     );
   }
 
@@ -553,25 +1354,31 @@ async function generateCaptionQueryEmbedding(
 }
 
 async function searchJinaTextVectors(
+  env: Env,
   vectorize: Vectorize | undefined,
   config: ReturnType<typeof getJinaConfig>,
   orgId: string | undefined,
+  provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints,
+  schedule?: ScheduleBackgroundWork
 ): Promise<CaptionVectorMatch[]> {
   if (!vectorize || !config.apiKey) {
     return [];
   }
 
-  const queryEmbedding = await generateJinaQueryEmbedding(
-    config.apiKey,
+  const queryEmbedding = await getCachedJinaQueryEmbedding(
+    env,
     query,
+    config,
     config.model,
-    config.dimensions
+    config.dimensions,
+    schedule
   );
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    filter: orgId ? { galleryId: orgId } : undefined,
+    filter: getVectorFilter(orgId, provider, structuredConstraints),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -589,17 +1396,24 @@ async function searchCaptionVectors(
   env: Env,
   vectorize: Vectorize | undefined,
   orgId: string | undefined,
+  provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints,
+  schedule?: ScheduleBackgroundWork
 ): Promise<CaptionVectorMatch[]> {
   if (!vectorize || !isCaptionVectorSearchEnabled(env)) {
     return [];
   }
 
-  const queryEmbedding = await generateCaptionQueryEmbedding(env, query);
+  const queryEmbedding = await generateCaptionQueryEmbedding(
+    env,
+    query,
+    schedule
+  );
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK * 4, 20), MAX_SEARCH_RESULTS),
-    filter: orgId ? { galleryId: orgId } : undefined,
+    filter: getVectorFilter(orgId, provider, structuredConstraints),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -630,9 +1444,11 @@ async function searchJinaImageVectors(
   vectorize: Vectorize,
   config: ReturnType<typeof getJinaConfig>,
   orgId: string | undefined,
+  provider: string | undefined,
   imageBuffer: ArrayBuffer,
   topK: number,
-  minScore: number
+  minScore: number,
+  structuredConstraints?: PublicSearchConstraints
 ): Promise<CaptionVectorMatch[]> {
   if (!config.apiKey) {
     throw new Error('JINA_API_KEY is required for image search');
@@ -644,11 +1460,13 @@ async function searchJinaImageVectors(
       image: arrayBufferToBase64(imageBuffer),
     },
     config.model,
-    config.dimensions
+    config.dimensions,
+    config.endpoint,
+    { timeoutMs: config.timeoutMs }
   );
   const result = await vectorize.query(queryEmbedding, {
     topK: Math.min(Math.max(topK, 1), MAX_SEARCH_RESULTS),
-    filter: orgId ? { galleryId: orgId } : undefined,
+    filter: getVectorFilter(orgId, provider, structuredConstraints),
     returnValues: false,
     returnMetadata: VECTORIZE_QUERY_METADATA,
   });
@@ -667,7 +1485,8 @@ async function searchJinaImageVectors(
 async function getArtworksByIds(
   db: D1Database,
   ids: string[],
-  orgId?: string
+  orgId?: string,
+  provider?: string
 ): Promise<Map<string, ArtworkSearchRow>> {
   if (ids.length === 0) {
     return new Map();
@@ -679,6 +1498,7 @@ async function getArtworksByIds(
     const chunk = ids.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
     const orgFilter = orgId ? 'AND org_id = ?' : '';
+    const providerFilter = providerSearchSql(provider);
     const { results } = await db
       .prepare(
         `
@@ -688,9 +1508,15 @@ async function getArtworksByIds(
         title,
         artist,
         year,
+        year_start,
+        year_end,
         date_text,
         medium,
+        medium_family,
         classification,
+        subclassification,
+        visual_classification,
+        primary_artist_id,
         culture,
         origin,
         dimensions_height,
@@ -717,10 +1543,15 @@ async function getArtworksByIds(
       WHERE id IN (${placeholders})
         AND deleted_at IS NULL
         ${orgFilter}
+        ${providerFilter}
         ${backableSearchSql(orgId)}
       `
       )
-      .bind(...chunk, ...(orgId ? [orgId] : []))
+      .bind(
+        ...chunk,
+        ...(orgId ? [orgId] : []),
+        ...(provider ? [provider] : [])
+      )
       .all<ArtworkSearchRow>();
 
     artworks.push(...results);
@@ -729,32 +1560,312 @@ async function getArtworksByIds(
   return new Map(artworks.map((artwork) => [artwork.id, artwork]));
 }
 
+export type NgaAttributionSearchScope = {
+  orgId?: string;
+  provider: 'nga';
+};
+
+export async function searchNgaAttributionMatches(
+  db: D1Database,
+  scope: NgaAttributionSearchScope,
+  intent: NgaAttributionIntent,
+  constraints: PublicSearchConstraints | undefined,
+  topK: number
+): Promise<ArtworkSearchResult[]> {
+  const targetTokens = unicodeSearchQueryTokens(intent.targetText).slice(0, 8);
+  if (!targetTokens.length) return [];
+
+  const artistText = `coalesce(artist, '')`;
+  const relationshipsJson = `(CASE
+      WHEN json_valid(custom_metadata)
+        AND json_type(custom_metadata, '$.ngaArtists.relationships') = 'array'
+        THEN json_extract(custom_metadata, '$.ngaArtists.relationships')
+      ELSE '[]'
+    END)`;
+  const relationshipNameSql = (path: string) => `(CASE
+      WHEN json_valid(nga_relationship.value)
+        THEN coalesce(json_extract(nga_relationship.value, '${path}'), '')
+      ELSE ''
+    END)`;
+  const alternativeNamesJson = `(CASE
+      WHEN json_valid(nga_relationship.value)
+        AND json_type(nga_relationship.value, '$.alternativeNames') = 'array'
+        THEN json_extract(nga_relationship.value, '$.alternativeNames')
+      ELSE '[]'
+    END)`;
+  // D1 caps LIKE/GLOB pattern bytes. Candidate probes therefore use the most
+  // selective accent-aware character classes that fit below that bound, then
+  // hydrated catalogue evidence performs the authoritative full-name proof.
+  const targetQueries = targetTokens.map(unicodeSqlCandidatePatterns);
+  if (targetQueries.some((queries) => !queries.length)) return [];
+  const buildTokenCandidateSql = (tokenIndex: number) => `EXISTS (
+      SELECT 1
+      FROM attribution_probes AS nga_probe
+      WHERE nga_probe.token_index = ${tokenIndex}
+        AND (
+          (
+            json_array_length(${relationshipsJson}) = 0
+            AND ${artistText} GLOB nga_probe.pattern
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM json_each(${relationshipsJson}) AS nga_relationship
+            WHERE ${relationshipNameSql('$.preferredDisplayName')} GLOB nga_probe.pattern
+              OR ${relationshipNameSql('$.forwardDisplayName')} GLOB nga_probe.pattern
+              OR EXISTS (
+                SELECT 1
+                FROM json_each(${alternativeNamesJson}) AS nga_alternative
+                WHERE cast(nga_alternative.value AS TEXT) GLOB nga_probe.pattern
+              )
+          )
+        )
+    )`;
+  const tokenWhereSql = targetQueries
+    .map((_, index) => buildTokenCandidateSql(index))
+    .join(' AND ');
+  const tokenScore = targetQueries.length * 10;
+  const attributionProbesJson = JSON.stringify(targetQueries);
+  const orgFilter = scope.orgId ? 'AND org_id = ?' : '';
+  const providerFilter = providerSearchSql(scope.provider);
+  const structuredFilter = buildStructuredConstraintSql(constraints);
+  const approved: ArtworkSearchResult[] = [];
+  const pageSize = Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS);
+  let offset = 0;
+
+  while (approved.length < topK) {
+    const { results } = await db
+      .prepare(
+        `
+      WITH attribution_probes AS (
+        SELECT
+          cast(nga_token.key AS INTEGER) AS token_index,
+          nga_pattern.value AS pattern
+        FROM json_each(?) AS nga_token
+        JOIN json_each(nga_token.value) AS nga_pattern
+      )
+      SELECT
+        id,
+        org_id,
+        title,
+        artist,
+        year,
+        year_start,
+        year_end,
+        date_text,
+        medium,
+        medium_family,
+        classification,
+        subclassification,
+        visual_classification,
+        primary_artist_id,
+        culture,
+        origin,
+        dimensions_height,
+        dimensions_width,
+        dimensions_depth,
+        dimensions_unit,
+        description,
+        provenance,
+        credit_line,
+        rights,
+        accession_number,
+        source_url,
+        source_institution,
+        source_collection,
+        source_record_id,
+        field_sources,
+        dominant_colors,
+        color_palette,
+        citation,
+        image_url,
+        thumbnail_url,
+        custom_metadata,
+        ${tokenScore} AS match_score
+      FROM artworks
+      WHERE deleted_at IS NULL
+        ${orgFilter}
+        ${providerFilter}
+        ${backableSearchSql(scope.orgId)}
+        ${structuredFilter.sql}
+        AND ${tokenWhereSql}
+      ORDER BY match_score DESC, title COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?
+      `
+      )
+      .bind(
+        attributionProbesJson,
+        ...(scope.orgId ? [scope.orgId] : []),
+        ...(scope.provider ? [scope.provider] : []),
+        ...structuredFilter.params,
+        pageSize,
+        offset
+      )
+      .all<ArtworkMetadataSearchRow>();
+
+    if (!results.length) break;
+
+    for (const [index, artwork] of results.entries()) {
+      const similarity = Math.min(
+        Math.max(artwork.match_score / tokenScore, 0.01),
+        1
+      );
+      const mapped = mapSearchRow(artwork, similarity, [
+        {
+          channel: 'metadata',
+          label: 'NGA catalogue artist',
+          source:
+            'artworks.artist and custom_metadata.ngaArtists.relationships',
+          weight: 1,
+          rank: offset + index + 1,
+          score: similarity,
+        },
+      ]);
+      if (
+        constraints &&
+        !searchResultMatchesStructuredConstraints(mapped, constraints)
+      ) {
+        continue;
+      }
+      if (
+        !matchesNgaAttributionEvidence(
+          {
+            artist: mapped.artist,
+            primaryArtistId: mapped.metadata?.primaryArtistId,
+            ngaArtists: mapped.metadata?.ngaArtists,
+          },
+          intent
+        )
+      ) {
+        continue;
+      }
+      approved.push({
+        ...mapped,
+        metadata: {
+          ...(mapped.metadata || {}),
+          relationEvidence: {
+            verified: true,
+            source: 'catalogue_artist',
+          },
+        },
+      });
+      if (approved.length === topK) break;
+    }
+
+    offset += results.length;
+    if (results.length < pageSize) break;
+  }
+
+  return approved;
+}
+
 async function searchArtworksHybrid(
   env: Env,
   orgId: string | undefined,
+  provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  forcedIntent?: 'artist_exact',
+  schedule?: ScheduleBackgroundWork,
+  degradedChannels?: Set<SearchDegradedChannel>,
+  structuredConstraints?: PublicSearchConstraints,
+  ngaPlanMode?: NgaSearchPlan['mode']
 ): Promise<ArtworkSearchResult[]> {
   const fusionMode = getSearchFusionMode(env, orgId);
   if (fusionMode === 'legacy' || fusionMode === 'metadata') {
-    return searchArtworksByMetadata(env.DB, orgId, query, topK);
+    const metadataResults = await searchArtworksByMetadata(
+      env.DB,
+      orgId,
+      provider,
+      query,
+      structuredConstraints ? MAX_SEARCH_RESULTS : topK,
+      structuredConstraints
+    );
+    return structuredConstraints
+      ? metadataResults
+          .filter((result) =>
+            matchesNgaSearchConstraints(
+              {
+                year: result.year,
+                yearStart:
+                  typeof result.metadata?.yearStart === 'number'
+                    ? result.metadata.yearStart
+                    : null,
+                yearEnd:
+                  typeof result.metadata?.yearEnd === 'number'
+                    ? result.metadata.yearEnd
+                    : null,
+                dateText:
+                  typeof result.metadata?.dateText === 'string'
+                    ? result.metadata.dateText
+                    : null,
+                classification:
+                  typeof result.metadata?.classification === 'string'
+                    ? result.metadata.classification
+                    : null,
+                visualClassification:
+                  typeof result.metadata?.visualClassification === 'string'
+                    ? result.metadata.visualClassification
+                    : null,
+                medium:
+                  typeof result.metadata?.medium === 'string'
+                    ? result.metadata.medium
+                    : null,
+                mediumFamily:
+                  typeof result.metadata?.mediumFamily === 'string'
+                    ? result.metadata.mediumFamily
+                    : null,
+                primaryArtistId:
+                  typeof result.metadata?.primaryArtistId === 'string'
+                    ? result.metadata.primaryArtistId
+                    : null,
+              },
+              structuredConstraints
+            )
+          )
+          .slice(0, topK)
+      : metadataResults;
   }
 
-  const route = buildRoutedSearchPlan(query);
-  const metadataQuery = route.metadataQuery || query;
+  const routedPlan = buildRoutedSearchPlan(query, forcedIntent, ngaPlanMode);
+  const initialRoute = structuredConstraints?.artistIds?.length
+    ? {
+        ...routedPlan,
+        weights: { ...routedPlan.weights, caption: 0 },
+      }
+    : routedPlan;
+  const metadataQuery = initialRoute.metadataQuery || query;
   const temporalFilter = parseTemporalFilter(metadataQuery);
   const jinaConfig = getJinaConfig(env);
   const imageVectorize = getImageVectorize(env);
   const captionVectorize = getCaptionVectorize(env);
+  const captionConfig = getCaptionConfig(env);
+  const imageChannelAvailable = Boolean(imageVectorize && jinaConfig.apiKey);
+  const captionChannelAvailable = Boolean(
+    captionVectorize &&
+      isCaptionVectorSearchEnabled(env) &&
+      (captionConfig.provider !== 'jina' || jinaConfig.apiKey) &&
+      (captionConfig.provider === 'jina' || env.AI)
+  );
+  if (initialRoute.weights.jinaImage > 0 && !imageChannelAvailable) {
+    degradedChannels?.add('image_embedding');
+  }
+  if (initialRoute.weights.caption > 0 && !captionChannelAvailable) {
+    degradedChannels?.add('caption_embedding');
+  }
   const jinaMatchesPromise =
-    route.weights.jinaImage > 0
+    initialRoute.weights.jinaImage > 0 && imageChannelAvailable
       ? searchJinaTextVectors(
+          env,
           imageVectorize,
           jinaConfig,
           orgId,
+          provider,
           query,
-          topK
+          topK,
+          structuredConstraints,
+          schedule
         ).catch((error) => {
+          degradedChannels?.add('image_embedding');
           console.warn(
             'Jina text query embedding failed; falling back to caption search',
             error
@@ -765,16 +1876,45 @@ async function searchArtworksHybrid(
 
   const [jinaMatches, captionMatches, metadataMatches] = await Promise.all([
     jinaMatchesPromise,
-    route.weights.caption > 0
-      ? searchCaptionVectors(env, captionVectorize, orgId, query, topK)
-      : Promise.resolve([] as CaptionVectorMatch[]),
-    route.weights.metadata > 0
-      ? searchArtworksByMetadata(
-          env.DB,
+    initialRoute.weights.caption > 0 && captionChannelAvailable
+      ? searchCaptionVectors(
+          env,
+          captionVectorize,
           orgId,
-          metadataQuery,
-          Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS)
+          provider,
+          query,
+          topK,
+          structuredConstraints,
+          schedule
         ).catch((error) => {
+          degradedChannels?.add('caption_embedding');
+          console.warn(
+            'Caption query embedding failed; continuing without caption vectors',
+            error
+          );
+          return [] as CaptionVectorMatch[];
+        })
+      : Promise.resolve([] as CaptionVectorMatch[]),
+    initialRoute.weights.metadata > 0
+      ? (forcedIntent === 'artist_exact'
+          ? searchArtworksByArtistFacet(
+              env.DB,
+              orgId,
+              provider,
+              query,
+              topK,
+              structuredConstraints
+            )
+          : searchArtworksByMetadata(
+              env.DB,
+              orgId,
+              provider,
+              metadataQuery,
+              Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS),
+              structuredConstraints
+            )
+        ).catch((error) => {
+          degradedChannels?.add('metadata');
           console.warn(
             'Metadata search failed during hybrid search; continuing with vector channels',
             error
@@ -783,6 +1923,20 @@ async function searchArtworksHybrid(
         })
       : Promise.resolve([] as ArtworkSearchResult[]),
   ]);
+  const route =
+    ngaPlanMode === 'relational'
+      ? initialRoute
+      : refineRoutedSearchPlan(initialRoute, query, metadataMatches);
+  const artistCandidateIds =
+    forcedIntent === 'artist_exact'
+      ? new Set(metadataMatches.map((match) => match.id))
+      : null;
+  const eligibleJinaMatches = artistCandidateIds
+    ? jinaMatches.filter((match) => artistCandidateIds.has(match.id))
+    : jinaMatches;
+  const eligibleCaptionMatches = artistCandidateIds
+    ? captionMatches.filter((match) => artistCandidateIds.has(match.id))
+    : captionMatches;
 
   const scores = new Map<
     string,
@@ -801,10 +1955,20 @@ async function searchArtworksHybrid(
       metadata?: Record<string, unknown>;
     }>,
     weight: number,
-    source: Omit<
-      SearchSourceContribution,
-      'weight' | 'rank' | 'score' | 'model' | 'embeddingVersion'
-    >
+    source:
+      | Omit<
+          SearchSourceContribution,
+          'weight' | 'rank' | 'score' | 'model' | 'embeddingVersion'
+        >
+      | ((match: {
+          id: string;
+          score?: number;
+          similarity?: number;
+          metadata?: Record<string, unknown>;
+        }) => Omit<
+          SearchSourceContribution,
+          'weight' | 'rank' | 'score' | 'model' | 'embeddingVersion'
+        >)
   ) => {
     if (weight <= 0) return;
 
@@ -824,13 +1988,15 @@ async function searchArtworksHybrid(
         typeof match.metadata?.embeddingVersion === 'string'
           ? match.metadata.embeddingVersion
           : undefined;
+      const resolvedSource =
+        typeof source === 'function' ? source(match) : source;
       scores.set(match.id, {
         score: (existing?.score || 0) + weight / (RRF_K + index + 1),
         vectorScore: existing?.vectorScore ?? match.score,
         searchSources: [
           ...(existing?.searchSources || []),
           compactObject({
-            ...source,
+            ...resolvedSource,
             weight,
             rank: index + 1,
             score,
@@ -842,15 +2008,28 @@ async function searchArtworksHybrid(
     });
   };
 
-  addRankedMatches(jinaMatches, route.weights.jinaImage, {
+  addRankedMatches(eligibleJinaMatches, route.weights.jinaImage, {
     channel: 'image_embedding',
     label: 'Image embedding',
     source: 'image_url',
   });
-  addRankedMatches(captionMatches, route.weights.caption, {
-    channel: 'generated_caption_embedding',
-    label: 'Generated caption embedding',
-    source: 'custom_metadata.generated_caption.text',
+  addRankedMatches(eligibleCaptionMatches, route.weights.caption, (match) => {
+    const institutionCaption =
+      match.metadata?.sourceKind === 'institution_caption_embedding';
+    return {
+      channel: institutionCaption
+        ? 'institution_caption_embedding'
+        : 'generated_caption_embedding',
+      label: institutionCaption
+        ? 'Institution caption embedding'
+        : 'Generated caption embedding',
+      source:
+        typeof match.metadata?.sourceField === 'string'
+          ? match.metadata.sourceField
+          : institutionCaption
+            ? 'description'
+            : 'custom_metadata.generated_caption.text',
+    };
   });
   addRankedMatches(metadataMatches, route.weights.metadata, {
     channel: 'metadata',
@@ -858,18 +2037,42 @@ async function searchArtworksHybrid(
     source: 'artworks metadata fields',
   });
 
-  const rankedCandidateIds = [...scores.entries()]
-    .sort(([, a], [, b]) => b.score - a.score)
-    .map(([id]) => id);
-  const rankedIds = temporalFilter
-    ? rankedCandidateIds
-    : rankedCandidateIds.slice(0, topK);
-
-  const artworkById = await getArtworksByIds(env.DB, rankedIds, orgId);
-  const maxScore = Math.max(
-    ...[...scores.values()].map((value) => value.score),
-    0.001
+  const exactFieldPriorityById = new Map(
+    metadataMatches.map((match) => [
+      canonicalArtworkId(match.id),
+      Math.max(
+        exactMetadataMatchPriority(query, match),
+        route.intent === 'medium_exact'
+          ? exactMediumMatchPriority(query, match)
+          : 0
+      ),
+    ])
   );
+  const rankingScoreById = new Map(
+    [...scores.entries()].map(([id, value]) => [
+      id,
+      value.score +
+        (exactFieldPriorityById.get(id) || 0) * EXACT_METADATA_PRIORITY_BONUS,
+    ])
+  );
+  const rankedCandidateIds = [...scores.entries()]
+    .sort(
+      ([idA], [idB]) =>
+        (rankingScoreById.get(idB) || 0) - (rankingScoreById.get(idA) || 0)
+    )
+    .map(([id]) => id);
+  const rankedIds =
+    temporalFilter || structuredConstraints
+      ? rankedCandidateIds
+      : rankedCandidateIds.slice(0, topK);
+
+  const artworkById = await getArtworksByIds(
+    env.DB,
+    rankedIds,
+    orgId,
+    provider
+  );
+  const maxScore = Math.max(...rankingScoreById.values(), 0.001);
 
   const results = rankedIds.flatMap((id) => {
     const artwork = artworkById.get(id);
@@ -882,10 +2085,16 @@ async function searchArtworksHybrid(
     ) {
       return [];
     }
+    if (
+      structuredConstraints &&
+      !artworkMatchesStructuredConstraints(artwork, structuredConstraints)
+    ) {
+      return [];
+    }
 
     return mapSearchRow(
       artwork,
-      Math.min(fused.score / maxScore, 1),
+      Math.min((rankingScoreById.get(id) || fused.score) / maxScore, 1),
       fused.searchSources
     );
   });
@@ -896,14 +2105,16 @@ async function searchArtworksHybrid(
 async function searchArtworksByMetadata(
   db: D1Database,
   orgId: string | undefined,
+  provider: string | undefined,
   query: string,
-  topK: number
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
   const normalizedWordQuery = normalizeSearchWords(query);
   const temporalFilter = parseTemporalFilter(query);
   const likeQuery = `%${escapeLike(normalizedWordQuery || normalizedQuery)}%`;
-  const tokens = searchQueryTokens(query).slice(0, 5);
+  const tokens = searchQueryTokens(query).slice(0, 8);
   const phraseQuery =
     tokens.length === 1
       ? `% ${escapeLike(tokens[0] as string)} %`
@@ -956,12 +2167,16 @@ async function searchArtworksByMetadata(
   ];
 
   const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const providerFilter = providerSearchSql(provider);
+  const structuredFilter = buildStructuredConstraintSql(structuredConstraints);
   const whereSql = temporalFilter
     ? `AND (${temporalWhereSql} OR (${tokenWhereSql}))`
     : `AND (${tokenWhereSql})`;
   const params = [
     ...scoreParams,
     ...(orgId ? [orgId] : []),
+    ...(provider ? [provider] : []),
+    ...structuredFilter.params,
     ...(temporalFilter && temporalLikeQuery
       ? [temporalFilter.startYear, temporalFilter.endYear, temporalLikeQuery]
       : []),
@@ -978,9 +2193,15 @@ async function searchArtworksByMetadata(
       title,
       artist,
       year,
+      year_start,
+      year_end,
       date_text,
       medium,
+      medium_family,
       classification,
+      subclassification,
+      visual_classification,
+      primary_artist_id,
       culture,
       origin,
       dimensions_height,
@@ -1017,7 +2238,9 @@ async function searchArtworksByMetadata(
     FROM artworks
     WHERE deleted_at IS NULL
       ${orgFilter}
+      ${providerFilter}
       ${backableSearchSql(orgId)}
+      ${structuredFilter.sql}
       ${whereSql}
     ORDER BY match_score DESC, title COLLATE NOCASE ASC
     LIMIT ?
@@ -1034,6 +2257,295 @@ async function searchArtworksByMetadata(
   );
 }
 
+async function searchArtworksByArtistFacet(
+  db: D1Database,
+  orgId: string | undefined,
+  provider: string | undefined,
+  query: string,
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints
+): Promise<ArtworkSearchResult[]> {
+  const normalizedQuery = normalizeArtistFacetQuery(query);
+  const tokens = artistFacetTokens(query);
+  if (!normalizedQuery || tokens.length === 0) {
+    return [];
+  }
+
+  const artistText = normalizedTextSql('artist');
+  const phraseQuery = `% ${escapeLike(normalizedQuery)} %`;
+  const tokenQueries = tokens.map((token) => `% ${escapeLike(token)} %`);
+  const tokenScoreSql = tokenQueries
+    .map(() => `CASE WHEN ${artistText} LIKE ? ESCAPE '\\' THEN 6 ELSE 0 END`)
+    .join(' + ');
+  const tokenWhereSql = tokenQueries
+    .map(() => `${artistText} LIKE ? ESCAPE '\\'`)
+    .join(' AND ');
+  const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const providerFilter = providerSearchSql(provider);
+  const structuredFilter = buildFacetStructuredConstraintSql(
+    structuredConstraints
+  );
+  const whereSql = `AND (${artistText} LIKE ? ESCAPE '\\' OR (${tokenWhereSql}))`;
+  const baseParams = [
+    normalizedQuery,
+    phraseQuery,
+    ...tokenQueries,
+    ...(orgId ? [orgId] : []),
+    ...(provider ? [provider] : []),
+    ...structuredFilter.params,
+    phraseQuery,
+    ...tokenQueries,
+  ];
+  const approvedResults: ArtworkSearchResult[] = [];
+  let offset = 0;
+
+  while (approvedResults.length < topK) {
+    const { results } = await db
+      .prepare(
+        `
+    SELECT
+      id,
+      org_id,
+      title,
+      artist,
+      year,
+      year_start,
+      year_end,
+      date_text,
+      medium,
+      medium_family,
+      classification,
+      subclassification,
+      visual_classification,
+      primary_artist_id,
+      culture,
+      origin,
+      dimensions_height,
+      dimensions_width,
+      dimensions_depth,
+      dimensions_unit,
+      description,
+      provenance,
+      credit_line,
+      rights,
+      accession_number,
+      source_url,
+      source_institution,
+      source_collection,
+      source_record_id,
+      field_sources,
+      dominant_colors,
+      color_palette,
+      citation,
+      image_url,
+      thumbnail_url,
+      custom_metadata,
+      (
+        CASE WHEN lower(trim(coalesce(artist, ''))) = ? THEN 120 ELSE 0 END +
+        CASE WHEN ${artistText} LIKE ? ESCAPE '\\' THEN 100 ELSE 0 END +
+        ${tokenScoreSql}
+      ) AS match_score
+    FROM artworks
+    WHERE deleted_at IS NULL
+      AND artist IS NOT NULL
+      AND trim(artist) <> ''
+      ${orgFilter}
+      ${providerFilter}
+      ${backableSearchSql(orgId)}
+      ${structuredFilter.sql}
+      ${whereSql}
+    ORDER BY match_score DESC, artist COLLATE NOCASE ASC, year ASC, title COLLATE NOCASE ASC, id ASC
+    LIMIT ? OFFSET ?
+    `
+      )
+      .bind(...baseParams, topK, offset)
+      .all<ArtworkMetadataSearchRow>();
+
+    if (!results.length) break;
+
+    for (const [index, artwork] of results.entries()) {
+      const similarity = Math.min(Math.max(artwork.match_score / 120, 0.01), 1);
+      const mapped = mapSearchRow(artwork, similarity, [
+        {
+          channel: 'metadata',
+          label: 'Artist',
+          source: 'artworks.artist',
+          weight: 1,
+          rank: offset + index + 1,
+          score: similarity,
+        },
+      ]);
+      if (
+        !structuredConstraints ||
+        searchResultMatchesStructuredConstraints(mapped, structuredConstraints)
+      ) {
+        approvedResults.push(mapped);
+        if (approvedResults.length === topK) break;
+      }
+    }
+
+    offset += results.length;
+    if (results.length < topK) break;
+  }
+
+  return approvedResults;
+}
+
+async function searchArtworksByClassificationFacet(
+  db: D1Database,
+  orgId: string | undefined,
+  provider: string | undefined,
+  query: string,
+  topK: number,
+  structuredConstraints?: PublicSearchConstraints
+): Promise<ArtworkSearchResult[]> {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const providerFilter = providerSearchSql(provider);
+  const structuredFilter = buildFacetStructuredConstraintSql(
+    structuredConstraints
+  );
+  const baseParams = [
+    ...(orgId ? [orgId] : []),
+    ...(provider ? [provider] : []),
+    ...structuredFilter.params,
+    normalizedQuery,
+  ];
+  const approvedResults: ArtworkSearchResult[] = [];
+  let offset = 0;
+
+  while (approvedResults.length < topK) {
+    const { results } = await db
+      .prepare(
+        `
+    SELECT
+      id,
+      org_id,
+      title,
+      artist,
+      year,
+      year_start,
+      year_end,
+      date_text,
+      medium,
+      medium_family,
+      classification,
+      subclassification,
+      visual_classification,
+      primary_artist_id,
+      culture,
+      origin,
+      dimensions_height,
+      dimensions_width,
+      dimensions_depth,
+      dimensions_unit,
+      description,
+      provenance,
+      credit_line,
+      rights,
+      accession_number,
+      source_url,
+      source_institution,
+      source_collection,
+      source_record_id,
+      field_sources,
+      dominant_colors,
+      color_palette,
+      citation,
+      image_url,
+      thumbnail_url,
+      custom_metadata,
+      100 AS match_score
+    FROM artworks
+    WHERE deleted_at IS NULL
+      AND classification IS NOT NULL
+      AND trim(classification) <> ''
+      ${orgFilter}
+      ${providerFilter}
+      ${backableSearchSql(orgId)}
+      ${structuredFilter.sql}
+      AND lower(trim(classification)) = ?
+    ORDER BY year ASC, title COLLATE NOCASE ASC, id ASC
+    LIMIT ? OFFSET ?
+    `
+      )
+      .bind(...baseParams, topK, offset)
+      .all<ArtworkMetadataSearchRow>();
+
+    if (!results.length) break;
+
+    for (const [index, artwork] of results.entries()) {
+      const mapped = mapSearchRow(artwork, 1, [
+        {
+          channel: 'metadata',
+          label: 'Classification',
+          source: 'artworks.classification',
+          weight: 1,
+          rank: offset + index + 1,
+          score: 1,
+        },
+      ]);
+      if (
+        !structuredConstraints ||
+        searchResultMatchesStructuredConstraints(mapped, structuredConstraints)
+      ) {
+        approvedResults.push(mapped);
+        if (approvedResults.length === topK) break;
+      }
+    }
+
+    offset += results.length;
+    if (results.length < topK) break;
+  }
+
+  return approvedResults;
+}
+
+async function hasExactArtistFacetMatch(
+  db: D1Database,
+  orgId: string | undefined,
+  provider: string | undefined,
+  query: string
+) {
+  const normalizedQuery = normalizeArtistFacetQuery(query);
+  const tokens = artistFacetTokens(query);
+  if (!normalizedQuery || tokens.length < 2) {
+    return false;
+  }
+
+  const artistText = normalizedTextSql('artist');
+  const orgFilter = orgId ? 'AND org_id = ?' : '';
+  const providerFilter = providerSearchSql(provider);
+  const params = [
+    ...(orgId ? [orgId] : []),
+    ...(provider ? [provider] : []),
+    normalizedQuery,
+  ];
+  const { results } = await db
+    .prepare(
+      `
+    SELECT id
+    FROM artworks
+    WHERE deleted_at IS NULL
+      AND artist IS NOT NULL
+      AND trim(artist) <> ''
+      ${orgFilter}
+      ${providerFilter}
+      ${backableSearchSql(orgId)}
+      AND trim(${artistText}) = ?
+    LIMIT 1
+    `
+    )
+    .bind(...params)
+    .all<{ id: string }>();
+
+  return results.length > 0;
+}
+
 // Validation schemas
 const textSearchSchema = z.object({
   query: z.string().min(1, 'Query cannot be empty').max(500),
@@ -1045,9 +2557,64 @@ const textSearchSchema = z.object({
     .optional()
     .default(10),
   minScore: z.number().min(0).max(1).optional().default(0.7),
+  facet: z.enum(['artist', 'classification']).optional(),
+  visualRefinement: z.string().trim().min(1).max(100).optional(),
+  constraints: z
+    .object({
+      dateRange: z
+        .object({ startYear: z.number().int(), endYear: z.number().int() })
+        .optional(),
+      classifications: z.array(z.string().min(1)).max(8).optional(),
+      mediumFamilies: z.array(z.string().min(1)).max(8).optional(),
+      artistIds: z.array(z.string().min(1)).max(8).optional(),
+    })
+    .strict()
+    .optional(),
 });
 
+class InvalidImageSearchRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidImageSearchRequestError';
+  }
+}
+
+const parseImageSearchConstraints = (
+  value: File | string | null
+): PublicSearchConstraints | undefined => {
+  if (value === null) return undefined;
+  if (typeof value !== 'string') {
+    throw new InvalidImageSearchRequestError(
+      'Constraints must be a JSON object'
+    );
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(value);
+  } catch {
+    throw new InvalidImageSearchRequestError(
+      'Constraints must contain valid JSON'
+    );
+  }
+
+  try {
+    return parsePublicSearchConstraints(decoded);
+  } catch (error) {
+    throw new InvalidImageSearchRequestError(
+      error instanceof Error
+        ? error.message
+        : 'Constraints do not match the public search contract'
+    );
+  }
+};
+
 export const searchRoutes = new Hono<{ Bindings: Env }>();
+
+searchRoutes.use('/search/image', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
 
 searchRoutes.use(
   '/search/*',
@@ -1064,10 +2631,25 @@ searchRoutes.post('/search/text', async (c) => {
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
-    const orgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const isPublicSearchPrincipal = getAuth(c as any).scopes.includes(
+      'public_search'
     );
+    if (
+      isPublicSearchPrincipal &&
+      !isAllowedPublicSearchRouteScope(requestedOrgId)
+    ) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SEARCH_SCOPE_NOT_ALLOWED',
+            message: 'This organization is not available to public search',
+          },
+        },
+        403
+      );
+    }
 
     // Parse and validate request body
     const body = await c.req.json();
@@ -1087,31 +2669,303 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
 
-    const { query, topK, minScore } = validation.data;
+    const { query, topK, minScore, facet, visualRefinement, constraints } =
+      validation.data;
+    if (
+      isPublicSearchPrincipal &&
+      (topK !== MAX_SEARCH_RESULTS ||
+        minScore !== 0 ||
+        visualRefinement !== undefined)
+    ) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_PUBLIC_SEARCH_REQUEST',
+            message:
+              'Public search requires topK=100, minScore=0, and no visual refinement',
+          },
+        },
+        400
+      );
+    }
 
-    const enrichedResults = await searchArtworksHybrid(
-      c.env,
-      orgId,
-      query,
-      topK
-    );
+    const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const structuredSearchEnabled =
+      provider === 'nga' &&
+      (c.env as Env & { NGA_STRUCTURED_SEARCH_ENABLED?: string })
+        .NGA_STRUCTURED_SEARCH_ENABLED !== 'false';
+    const compiledNgaPlan = structuredSearchEnabled
+      ? compileNgaSearchPlan(query, constraints)
+      : undefined;
+    const ngaPlan = compiledNgaPlan?.relation
+      ? {
+          ...compiledNgaPlan,
+          relationEvidence: {
+            policy:
+              compiledNgaPlan.relation.kind === 'derived_from'
+                ? ('catalogue_derivation' as const)
+                : ('visible_subject' as const),
+            status: 'candidate' as const,
+          },
+        }
+      : compiledNgaPlan;
+    const parsedInterpretation = structuredSearchEnabled
+      ? parseNgaSearchIntent(query, constraints)
+      : undefined;
+    const interpretation =
+      parsedInterpretation && ngaPlan
+        ? {
+            ...parsedInterpretation,
+            constraints: ngaPlan.constraints,
+            ...(ngaPlan.relation
+              ? { relation: ngaPlan.relation }
+              : { relation: undefined }),
+            ...(ngaPlan.relationEvidence
+              ? { relationEvidence: ngaPlan.relationEvidence }
+              : { relationEvidence: undefined }),
+          }
+        : undefined;
+    const constraintError = interpretation
+      ? validateNgaSearchConstraints(interpretation.constraints)
+      : null;
+    if (constraintError) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_SEARCH_CONSTRAINTS',
+            message: constraintError,
+          },
+        },
+        400
+      );
+    }
+    const structuredConstraints = ngaPlan?.constraints;
+    // A facet query is itself the selected facet value (for example,
+    // "Painting") and must not be replaced by the residual free-text plan.
+    // Non-facet searches use the compiled residual so stale structured chip
+    // words cannot leak back into semantic or metadata retrieval.
+    const retrievalQuery = facet ? query : ngaPlan?.retrievalQuery || query;
+    const degradedChannels = new Set<SearchDegradedChannel>();
+    const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
+      try {
+        c.executionCtx.waitUntil(work);
+      } catch {
+        // The promise has already started; local/test runtimes may not expose
+        // a Worker execution context.
+      }
+    };
+    let resolvedFacet = facet;
+    const executeSearch = async (): Promise<SearchResponse> => {
+      const exactFreeTextArtist =
+        ngaPlan?.mode !== 'relational' &&
+        ngaPlan?.mode !== 'attribution' &&
+        !facet &&
+        (await hasExactArtistFacetMatch(
+          c.env.DB,
+          orgId,
+          provider,
+          retrievalQuery
+        ));
+      resolvedFacet = exactFreeTextArtist ? 'artist' : facet;
+      const retrievalTopK =
+        ngaPlan?.mode === 'relational' ? MAX_SEARCH_RESULTS : topK;
 
-    const queryTime = performance.now() - startTime;
+      const baseResults =
+        ngaPlan?.mode === 'attribution' && ngaPlan.attribution
+          ? await searchNgaAttributionMatches(
+              c.env.DB,
+              { orgId, provider: 'nga' },
+              ngaPlan.attribution,
+              structuredConstraints,
+              topK
+            )
+          : facet === 'artist'
+            ? await searchArtworksByArtistFacet(
+                c.env.DB,
+                orgId,
+                provider,
+                retrievalQuery,
+                retrievalTopK,
+                structuredConstraints
+              )
+            : facet === 'classification'
+              ? await searchArtworksByClassificationFacet(
+                  c.env.DB,
+                  orgId,
+                  provider,
+                  retrievalQuery,
+                  retrievalTopK,
+                  structuredConstraints
+                )
+              : await searchArtworksHybrid(
+                  c.env,
+                  orgId,
+                  provider,
+                  retrievalQuery,
+                  retrievalTopK,
+                  exactFreeTextArtist ? 'artist_exact' : undefined,
+                  scheduleBackgroundWork,
+                  degradedChannels,
+                  structuredConstraints,
+                  ngaPlan?.mode
+                );
+      const constrainedResults = structuredConstraints
+        ? baseResults.filter((result) =>
+            searchResultMatchesStructuredConstraints(
+              result,
+              structuredConstraints
+            )
+          )
+        : baseResults;
+      const enrichedResults = visualRefinement
+        ? await rerankByVisualRefinement(
+            c.env,
+            constrainedResults,
+            visualRefinement,
+            scheduleBackgroundWork,
+            degradedChannels
+          )
+        : constrainedResults;
+      const hydratedResults = structuredConstraints
+        ? enrichedResults.filter((result) =>
+            searchResultMatchesStructuredConstraints(
+              result,
+              structuredConstraints
+            )
+          )
+        : enrichedResults;
+      const finalResults = (
+        ngaPlan?.relation
+          ? filterNgaRelationEvidence(hydratedResults, ngaPlan)
+          : hydratedResults
+      ).slice(0, topK);
+      const responseInterpretation = interpretation
+        ? {
+            ...interpretation,
+            ...(ngaPlan?.relationEvidence
+              ? {
+                  relationEvidence: {
+                    ...ngaPlan.relationEvidence,
+                    status: finalResults.length
+                      ? ('verified' as const)
+                      : ('unverified' as const),
+                  },
+                }
+              : {}),
+          }
+        : undefined;
+
+      return {
+        results: finalResults,
+        count: finalResults.length,
+        queryTime: performance.now() - startTime,
+        ...(responseInterpretation
+          ? { interpretation: responseInterpretation }
+          : {}),
+      };
+    };
+
+    let cacheHeader = 'BYPASS';
+    let responseCacheable = true;
+    let searchResponse: SearchResponse;
+
+    if (isPublicSearchPrincipal) {
+      const cached = await getOrLoadPublicSearchResult({
+        cache: c.env.CACHE,
+        query: retrievalQuery,
+        orgId,
+        provider,
+        facet,
+        visualRefinement,
+        topK,
+        minScore,
+        embeddingIndexVersion: getEmbeddingIndexVersion(c.env),
+        fusionMode: getSearchFusionMode(c.env, orgId),
+        modelIdentity: getSearchResultModelIdentity(c.env),
+        parserVersion: interpretation?.parserVersion,
+        constraints: structuredConstraints,
+        ngaPlan,
+        schedule: scheduleBackgroundWork,
+        load: async () => {
+          await enforcePublicSearchColdMissRateLimit({
+            cache: c.env.CACHE,
+            clientAddress: getPublicSearchClientAddress(
+              c.req.header('CF-Connecting-IP'),
+              c.req.header('X-Forwarded-For')
+            ),
+            searchIdentity: JSON.stringify({
+              contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
+              query: normalizePublicSearchText(retrievalQuery),
+              orgId,
+              provider: provider || null,
+              facet: facet || null,
+              parserVersion: interpretation?.parserVersion || null,
+              constraints: structuredConstraints || null,
+              ngaPlan: ngaPlan
+                ? {
+                    version: ngaPlan.version,
+                    mode: ngaPlan.mode,
+                    relation: ngaPlan.relation || null,
+                    relationEvidencePolicy:
+                      ngaPlan.relationEvidence?.policy || null,
+                  }
+                : null,
+            }),
+            countRepeatedRequests: true,
+            limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
+          });
+          const response = await executeSearch();
+          return {
+            response,
+            cacheable: degradedChannels.size === 0,
+          };
+        },
+      });
+      const cachedRelationEvidence =
+        cached.response.interpretation?.relationEvidence;
+      searchResponse = {
+        ...cached.response,
+        ...(interpretation
+          ? {
+              interpretation: {
+                ...interpretation,
+                ...(cachedRelationEvidence
+                  ? { relationEvidence: cachedRelationEvidence }
+                  : {}),
+              },
+            }
+          : {}),
+      };
+      cacheHeader = cached.disposition.toUpperCase();
+      // A coalesced follower cannot observe the leader's degradation set, so
+      // keep it out of downstream caches conservatively.
+      responseCacheable =
+        cached.disposition !== 'coalesced' && degradedChannels.size === 0;
+    } else {
+      searchResponse = await executeSearch();
+      responseCacheable = degradedChannels.size === 0;
+    }
+    c.header('X-Paillette-Search-Cache', cacheHeader);
 
     await annotateUsageEvent(c as any, {
       search: {
         mode: 'text',
         query,
+        visualRefinement,
+        facet: resolvedFacet,
         topK,
         minScore,
-        resultCount: enrichedResults.length,
-        queryTime,
+        resultCount: searchResponse.count,
+        queryTime: searchResponse.queryTime,
       },
     });
 
     await recordArtworkResults(
       c as any,
-      enrichedResults.map((result, index) => ({
+      searchResponse.results.map((result, index) => ({
         artworkId: result.id,
         galleryId: result.orgId || result.galleryId,
         rank: index + 1,
@@ -1121,16 +2975,32 @@ searchRoutes.post('/search/text', async (c) => {
 
     return c.json<ApiResponse<SearchResponse>>({
       success: true,
-      data: {
-        results: enrichedResults,
-        count: enrichedResults.length,
-        queryTime,
-      },
+      data: searchResponse,
       meta: {
         timestamp: new Date().toISOString(),
+        search: {
+          cacheable: responseCacheable,
+          degradedChannels: SEARCH_DEGRADED_CHANNEL_ORDER.filter((channel) =>
+            degradedChannels.has(channel)
+          ),
+        },
       },
     });
   } catch (error) {
+    if (error instanceof PublicSearchColdMissRateLimitError) {
+      c.header('Retry-After', String(error.retryAfterSeconds));
+      c.header('X-Paillette-Search-Cache', 'MISS');
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED',
+            message: 'Too many unique public searches; try again shortly',
+          },
+        },
+        429
+      );
+    }
     console.error('Text search error:', error);
     return c.json<ApiResponse>(
       {
@@ -1155,41 +3025,80 @@ searchRoutes.post('/search/image', async (c) => {
 
   try {
     // Use orgId for new routes; galleryId is accepted for legacy mounts.
-    const orgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const isPublicSearchPrincipal = getAuth(c as any).scopes.includes(
+      'public_search'
     );
-
-    // Parse multipart form data
-    const formData = await c.req.formData();
-    const imageFile = formData.get('image') as File | string | null;
-
-    if (!imageFile || typeof imageFile === 'string') {
+    if (
+      isPublicSearchPrincipal &&
+      !isAllowedPublicSearchRouteScope(requestedOrgId)
+    ) {
       return c.json<ApiResponse>(
         {
           success: false,
           error: {
-            code: 'INVALID_INPUT',
-            message: 'Image file is required',
+            code: 'PUBLIC_SEARCH_SCOPE_NOT_ALLOWED',
+            message: 'This organization is not available to public search',
           },
         },
-        400
+        403
+      );
+    }
+    const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+
+    let formData: FormData;
+    try {
+      formData = await c.req.formData();
+    } catch {
+      throw new InvalidImageSearchRequestError('Malformed multipart form data');
+    }
+
+    const imageEntries = formData.getAll('image') as unknown as Array<
+      File | string
+    >;
+    const imageFile = imageEntries[0];
+    if (
+      imageEntries.length !== 1 ||
+      !imageFile ||
+      typeof imageFile === 'string'
+    ) {
+      throw new InvalidImageSearchRequestError(
+        'Exactly one image file is required'
+      );
+    }
+    if (imageFile.size === 0) {
+      throw new InvalidImageSearchRequestError('Image file must not be empty');
+    }
+    if (!IMAGE_SEARCH_MIME_TYPES.has(imageFile.type)) {
+      throw new InvalidImageSearchRequestError(
+        'Image must be a JPEG, PNG, or WebP file'
+      );
+    }
+    if (imageFile.size > MAX_IMAGE_SEARCH_BYTES) {
+      throw new InvalidImageSearchRequestError(
+        'Image must be 10 MB or smaller'
       );
     }
 
-    // Validate image format
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-    if (!allowedTypes.includes(imageFile.type)) {
-      return c.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'INVALID_INPUT',
-            message: `Invalid image format. Allowed: ${allowedTypes.join(', ')}`,
-          },
-        },
-        400
+    const constraintEntries = formData.getAll(
+      'constraints'
+    ) as unknown as Array<File | string>;
+    if (constraintEntries.length > 1) {
+      throw new InvalidImageSearchRequestError(
+        'Constraints must be provided at most once'
       );
+    }
+    const constraints = parseImageSearchConstraints(
+      constraintEntries[0] ?? null
+    );
+
+    for (const field of ['topK', 'minScore'] as const) {
+      if (formData.getAll(field).length > 1) {
+        throw new InvalidImageSearchRequestError(
+          `${field} must be provided at most once`
+        );
+      }
     }
 
     // Get optional parameters from form data
@@ -1232,13 +3141,55 @@ searchRoutes.post('/search/image', async (c) => {
       );
     }
 
+    if (isPublicSearchPrincipal) {
+      const imageDigest = Array.from(
+        new Uint8Array(await crypto.subtle.digest('SHA-256', imageBuffer)),
+        (byte) => byte.toString(16).padStart(2, '0')
+      ).join('');
+      await enforcePublicSearchColdMissRateLimit({
+        cache: c.env.CACHE,
+        clientAddress: getPublicSearchClientAddress(
+          c.req.header('CF-Connecting-IP'),
+          c.req.header('X-Forwarded-For')
+        ),
+        searchIdentity: buildPublicImageSearchIdentity({
+          version: 'public-image-search-v1',
+          contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
+          mode: 'image',
+          imageDigest,
+          orgId,
+          provider: provider || null,
+          index: {
+            version: getEmbeddingIndexVersion(c.env),
+            binding:
+              getEmbeddingIndexVersion(c.env) === 'v2'
+                ? 'VECTORIZE_V2'
+                : 'VECTORIZE',
+          },
+          embedding: {
+            provider: 'jina',
+            endpoint: jinaConfig.endpoint,
+            model: jinaConfig.model,
+            dimensions: jinaConfig.dimensions,
+          },
+          constraints,
+          topK,
+          minScore,
+        }),
+        countRepeatedRequests: true,
+        limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
+      });
+    }
+
     const vectorResults = await searchJinaImageVectors(
       imageVectorize,
       jinaConfig,
       orgId,
+      provider,
       imageBuffer,
       topK,
-      minScore
+      minScore,
+      constraints
     );
 
     // If no results found, return empty response
@@ -1254,6 +3205,7 @@ searchRoutes.post('/search/image', async (c) => {
           },
           topK,
           minScore,
+          ...(constraints !== undefined ? { constraints } : {}),
           resultCount: 0,
           queryTime,
         },
@@ -1268,72 +3220,29 @@ searchRoutes.post('/search/image', async (c) => {
       });
     }
 
-    // Fetch artwork details from database
+    // Fetch artwork details from database using the same route provider scope.
     const artworkIds = vectorResults.map((r) => r.id);
-    const placeholders = artworkIds.map(() => '?').join(',');
-
-    const { results: artworks } = await c.env.DB.prepare(
-      `
-      SELECT
-        id,
-        org_id,
-        title,
-        artist,
-        year,
-        date_text,
-        medium,
-        classification,
-        culture,
-        origin,
-        dimensions_height,
-        dimensions_width,
-        dimensions_depth,
-        dimensions_unit,
-        description,
-        provenance,
-        credit_line,
-        rights,
-        accession_number,
-        source_url,
-        source_institution,
-        source_collection,
-        source_record_id,
-        field_sources,
-        dominant_colors,
-        color_palette,
-        citation,
-        image_url,
-        thumbnail_url,
-        custom_metadata
-      FROM artworks
-      WHERE id IN (${placeholders})
-        AND deleted_at IS NULL
-        ${backableSearchSql(orgId)}
-      `
-    )
-      .bind(...artworkIds)
-      .all<ArtworkSearchRow>();
+    const artworkById = await getArtworksByIds(
+      c.env.DB,
+      artworkIds,
+      orgId,
+      provider
+    );
 
     // Combine vector results with artwork details
     const enrichedResults: ArtworkSearchResult[] = vectorResults.flatMap(
       (vectorResult) => {
-        const artwork = artworks.find((a) => a.id === vectorResult.id);
+        const artwork = artworkById.get(vectorResult.id);
         if (!artwork) return [];
 
-        return [
-          {
-            id: artwork.id,
-            orgId: artwork.org_id,
-            galleryId: artwork.org_id,
-            title: artwork.title || undefined,
-            artist: artwork.artist || undefined,
-            year: artwork.year || undefined,
-            imageUrl: artwork.image_url,
-            thumbnailUrl: artwork.thumbnail_url,
-            similarity: vectorResult.score,
-            metadata: mapSearchRow(artwork, vectorResult.score).metadata,
-          },
-        ];
+        const result = mapSearchRow(artwork, vectorResult.score);
+        if (
+          constraints !== undefined &&
+          !searchResultMatchesStructuredConstraints(result, constraints)
+        ) {
+          return [];
+        }
+        return [result];
       }
     );
 
@@ -1349,6 +3258,7 @@ searchRoutes.post('/search/image', async (c) => {
         },
         topK,
         minScore,
+        ...(constraints !== undefined ? { constraints } : {}),
         resultCount: enrichedResults.length,
         queryTime,
       },
@@ -1376,6 +3286,28 @@ searchRoutes.post('/search/image', async (c) => {
       },
     });
   } catch (error) {
+    if (error instanceof InvalidImageSearchRequestError) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: error.message },
+        },
+        400
+      );
+    }
+    if (error instanceof PublicSearchColdMissRateLimitError) {
+      c.header('Retry-After', String(error.retryAfterSeconds));
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED',
+            message: 'Too many public image searches; try again shortly',
+          },
+        },
+        429
+      );
+    }
     console.error('Image search error:', error);
     const message =
       error instanceof Error ? error.message : 'Failed to perform search';

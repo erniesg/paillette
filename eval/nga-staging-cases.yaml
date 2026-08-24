@@ -1,0 +1,613 @@
+{
+  "schemaVersion": "nga-staging-gate-v1",
+  "expectedVersions": {
+    "parser": "nga-v7",
+    "plan": "nga-plan-v2",
+    "contract": "32",
+    "apiResultCache": "v11"
+  },
+  "pilot": {
+    "textCaseIds": [
+      "relation-active-depicts",
+      "relation-passive-depicts",
+      "classification-list",
+      "combined-oil-ships-date"
+    ],
+    "imageCaseIds": [
+      "image-artist",
+      "image-artist-wrong-primary",
+      "image-artist-secondary-control"
+    ]
+  },
+  "textCases": [
+    {
+      "id": "relation-active-depicts",
+      "category": "relation-direction",
+      "query": "painting showing a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-passive-depicts",
+      "category": "relation-direction",
+      "query": "sculpture depicted in a painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "classification-list",
+      "category": "relation-ambiguity",
+      "query": "paintings and sculptures",
+      "expected": {"constraints": {"classifications": ["Painting", "Sculpture"]}, "relation": null}
+    },
+    {
+      "id": "combined-oil-ships-date",
+      "category": "combined-hard-constraints",
+      "query": "oil paintings of ships before 1800",
+      "expected": {
+        "constraints": {
+          "dateRange": {"startYear": 1000, "endYear": 1799},
+          "classifications": ["Painting"],
+          "mediumFamilies": ["oil"]
+        }
+      }
+    },
+    {
+      "id": "relation-active-features",
+      "category": "relation-direction",
+      "query": "painting with sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting featuring sculpture",
+        "relation": {"kind": "features", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-passive-features",
+      "category": "relation-direction",
+      "query": "sculpture featured in painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting featuring sculpture",
+        "relation": {"kind": "features", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-active-derived",
+      "category": "relation-direction",
+      "query": "drawing based on photograph",
+      "expected": {
+        "constraints": {"classifications": ["Drawing"]},
+        "semanticQuery": "drawing based on photograph",
+        "relation": {"kind": "derived_from", "workClassification": "Drawing", "sourceClassification": "Photograph"}
+      },
+      "expectedVerifiedEmpty": true
+    },
+    {
+      "id": "relation-passive-derived",
+      "category": "relation-direction",
+      "query": "photograph used as basis for drawing",
+      "expected": {
+        "constraints": {"classifications": ["Drawing"]},
+        "semanticQuery": "drawing based on photograph",
+        "relation": {"kind": "derived_from", "workClassification": "Drawing", "sourceClassification": "Photograph"}
+      },
+      "expectedVerifiedEmpty": true
+    },
+    {
+      "id": "relation-after-classification",
+      "category": "relation-direction",
+      "query": "painting after photograph",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting based on photograph",
+        "relation": {"kind": "derived_from", "workClassification": "Painting", "sourceClassification": "Photograph"}
+      },
+      "expectedVerifiedEmpty": true
+    },
+    {
+      "id": "relation-work-medium",
+      "category": "combined-hard-constraints",
+      "query": "oil painting showing a bronze sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"], "mediumFamilies": ["oil"]},
+        "semanticQuery": "painting depicting bronze sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-passive-work-medium",
+      "category": "combined-hard-constraints",
+      "query": "bronze sculpture shown in an oil painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"], "mediumFamilies": ["oil"]},
+        "semanticQuery": "painting depicting bronze sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-work-subject-dates",
+      "category": "displayed-date",
+      "query": "18th century painting showing a 20th century sculpture",
+      "expected": {
+        "constraints": {"dateRange": {"startYear": 1700, "endYear": 1799}, "classifications": ["Painting"]},
+        "semanticQuery": "painting depicting 20th century sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-passive-work-subject-dates",
+      "category": "displayed-date",
+      "query": "20th century sculpture shown in an 18th century painting",
+      "expected": {
+        "constraints": {"dateRange": {"startYear": 1700, "endYear": 1799}, "classifications": ["Painting"]},
+        "semanticQuery": "painting depicting 20th century sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "relation-work-boundary",
+      "category": "displayed-date",
+      "query": "painting after 1800 showing sculpture",
+      "expected": {
+        "constraints": {"dateRange": {"startYear": 1801, "endYear": 2100}, "classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "classification-list-three-and",
+      "category": "relation-ambiguity",
+      "query": "paintings, drawings, and sculptures",
+      "expected": {"constraints": {"classifications": ["Drawing", "Painting", "Sculpture"]}, "relation": null}
+    },
+    {
+      "id": "classification-list-three-or",
+      "category": "relation-ambiguity",
+      "query": "paintings, drawings, or sculptures",
+      "expected": {"constraints": {"classifications": ["Drawing", "Painting", "Sculpture"]}, "relation": null}
+    },
+    {
+      "id": "unsupported-relation-near",
+      "category": "relation-ambiguity",
+      "query": "painting near sculpture",
+      "expected": {"constraints": {}, "relation": null, "unresolved": true}
+    },
+    {
+      "id": "unsupported-relation-compound",
+      "category": "relation-ambiguity",
+      "query": "paintings and sculptures depicting drawings",
+      "expected": {"constraints": {}, "relation": null, "unresolved": true}
+    },
+    {
+      "id": "negated-relation-active",
+      "category": "relation-negation",
+      "query": "painting not depicting a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-without",
+      "category": "relation-negation",
+      "query": "painting without a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not featuring sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-passive-no",
+      "category": "relation-negation",
+      "query": "no sculpture shown in a painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-modified-derived",
+      "category": "relation-negation",
+      "query": "painting not at all based on drawing",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not based on drawing",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "negated-relation-passive-modifier",
+      "category": "relation-negation",
+      "query": "sculpture not really depicted in a painting",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "affirmative-not-only-relation",
+      "category": "relation-negation-scope",
+      "query": "painting does not only depict a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      }
+    },
+    {
+      "id": "unrelated-negative-qualifier",
+      "category": "relation-negation-scope",
+      "query": "painting without a frame depicting a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "without frame painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      }
+    },
+    {
+      "id": "negated-work-classification",
+      "category": "relation-negation-scope",
+      "query": "no painting depicting a sculpture",
+      "expected": {
+        "constraints": {},
+        "semanticQuery": "no painting depicting a sculpture",
+        "relation": null,
+        "unresolved": true
+      }
+    },
+    {
+      "id": "negated-relation-target-no",
+      "category": "relation-negation-scope",
+      "query": "painting depicting no sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting not depicting sculpture",
+        "relation": null,
+        "unresolved": true
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "attribution-after-person",
+      "category": "artist-attribution",
+      "query": "painting after Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "after rembrandt attribution",
+        "relation": null,
+        "attribution": {"relationship": "after", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "attribution-academic",
+      "category": "artist-attribution",
+      "query": "drawings attributed to Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Drawing"]},
+        "semanticQuery": "rembrandt",
+        "relation": null,
+        "attribution": {"relationship": "attributed_to", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-direct-multiword",
+      "category": "artist-multiword",
+      "query": "paintings by Lavinia Fontana",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "lavinia fontana",
+        "attribution": {"relationship": "direct", "targetText": "Lavinia Fontana"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-direct-case-punctuation",
+      "category": "artist-case-punctuation-dash",
+      "query": "PAINTINGS BY LAVINIA FONTANA!",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "lavinia fontana",
+        "attribution": {"relationship": "direct", "targetText": "LAVINIA FONTANA"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-direct-dash-combined",
+      "category": "artist-combined-constraints",
+      "query": "paintings by Lavinia Fontana—before 1700",
+      "expected": {
+        "constraints": {
+          "dateRange": {"startYear": 1000, "endYear": 1699},
+          "classifications": ["Painting"]
+        },
+        "semanticQuery": "lavinia fontana",
+        "attribution": {"relationship": "direct", "targetText": "Lavinia Fontana"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-after-accented-multiword",
+      "category": "artist-multiword",
+      "query": "painting after José de Ribera",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "after jose de ribera attribution",
+        "attribution": {"relationship": "after", "targetText": "José de Ribera"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-workshop-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the workshop of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "workshop_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-studio-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the studio of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "studio_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-circle-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the circle of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "circle_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-school-role",
+      "category": "artist-attribution-role",
+      "query": "paintings from the school of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "school_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-follower-role",
+      "category": "artist-attribution-role",
+      "query": "paintings by a follower of Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt",
+        "attribution": {"relationship": "follower_of", "targetText": "Rembrandt"}
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-negated-control",
+      "category": "artist-ambiguity-control",
+      "query": "paintings not by Rembrandt",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "not rembrandt",
+        "attribution": null
+      },
+      "minimumResults": 1
+    },
+    {
+      "id": "artist-multiple-target-control",
+      "category": "artist-ambiguity-control",
+      "query": "paintings by Rembrandt or Frans Hals",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "rembrandt or frans hals",
+        "attribution": {"relationship": "direct", "targetText": "Rembrandt or Frans Hals"}
+      },
+      "expectedZeroResults": true
+    },
+    {
+      "id": "visible-relation-strong-tail",
+      "category": "visible-relation-weak-tail",
+      "query": "painting showing a sculpture",
+      "expected": {
+        "constraints": {"classifications": ["Painting"]},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "academic-user-phrasing",
+      "category": "academic-user",
+      "query": "show me examples of Italian Renaissance drawings",
+      "expected": {"constraints": {"classifications": ["Drawing"]}}
+    },
+    {
+      "id": "academic-survey",
+      "category": "academic-user",
+      "query": "survey of photographic portraiture after 1900",
+      "expected": {"constraints": {"dateRange": {"startYear": 1901, "endYear": 2100}, "classifications": ["Photograph"]}}
+    },
+    {
+      "id": "case-punctuation",
+      "category": "casing-punctuation-dash",
+      "query": "LANDSCAPE PAINTINGS, FROM 18TH CENTURY!",
+      "expected": {"constraints": {"dateRange": {"startYear": 1700, "endYear": 1799}, "classifications": ["Painting"]}}
+    },
+    {
+      "id": "em-dash-watercolor",
+      "category": "casing-punctuation-dash",
+      "query": "Watercolour—drawings; early twentieth century",
+      "expected": {"constraints": {"dateRange": {"startYear": 1900, "endYear": 1933}, "classifications": ["Drawing"], "mediumFamilies": ["watercolor"]}}
+    },
+    {
+      "id": "en-dash-range",
+      "category": "casing-punctuation-dash",
+      "query": "oil paintings from 1700–1725",
+      "expected": {"constraints": {"dateRange": {"startYear": 1700, "endYear": 1725}, "classifications": ["Painting"], "mediumFamilies": ["oil"]}}
+    },
+    {
+      "id": "safe-typo-combined",
+      "category": "safe-typo",
+      "query": "landscpae paintngs from 18th centry",
+      "expected": {"constraints": {"dateRange": {"startYear": 1700, "endYear": 1799}, "classifications": ["Painting"]}, "semanticQuery": "landscape"}
+    },
+    {
+      "id": "safe-typo-medium",
+      "category": "safe-typo",
+      "query": "watercolur drawngs from 19th century",
+      "expected": {"constraints": {"dateRange": {"startYear": 1800, "endYear": 1899}, "classifications": ["Drawing"], "mediumFamilies": ["watercolor"]}}
+    },
+    {
+      "id": "explicit-constraint-override",
+      "category": "explicit-constraint",
+      "query": "landscape",
+      "request": {"constraints": {"dateRange": {"startYear": 1700, "endYear": 1799}}},
+      "expected": {"constraints": {"dateRange": {"startYear": 1700, "endYear": 1799}}, "semanticQuery": "landscape"}
+    },
+    {
+      "id": "explicit-empty-retains-relation",
+      "category": "explicit-constraint",
+      "query": "painting showing sculpture",
+      "request": {"constraints": {}},
+      "expected": {
+        "constraints": {},
+        "semanticQuery": "painting depicting sculpture",
+        "relation": {"kind": "depicts", "workClassification": "Painting", "subjectClassification": "Sculpture"}
+      },
+      "manualGradeTop": 10
+    },
+    {
+      "id": "displayed-date-quarter",
+      "category": "displayed-date",
+      "query": "drawings from third quarter 19th century",
+      "expected": {"constraints": {"dateRange": {"startYear": 1850, "endYear": 1874}, "classifications": ["Drawing"]}}
+    },
+    {
+      "id": "combined-charcoal-range",
+      "category": "combined-hard-constraints",
+      "query": "charcoal drawings between 1800 and 1850",
+      "expected": {"constraints": {"dateRange": {"startYear": 1800, "endYear": 1850}, "classifications": ["Drawing"], "mediumFamilies": ["charcoal"]}}
+    },
+    {
+      "id": "cache-identity-oil",
+      "category": "cache-identity",
+      "query": "validation cache oil paintings after 1700 before 1800",
+      "expected": {"constraints": {"dateRange": {"startYear": 1701, "endYear": 1799}, "classifications": ["Painting"], "mediumFamilies": ["oil"]}}
+    },
+    {
+      "id": "cache-identity-drawing",
+      "category": "cache-identity",
+      "query": "validation cache oil paintings after 1700 before 1800",
+      "request": {"constraints": {"classifications": ["Drawing"]}},
+      "expected": {"constraints": {"classifications": ["Drawing"]}}
+    }
+  ],
+  "imageCases": [
+    {
+      "id": "image-pilot-painting-date",
+      "category": "image-combined-hard-constraints",
+      "fixtureId": "open-access-art:nga:110821",
+      "filename": "nga-query.jpg",
+      "constraints": {"dateRange": {"startYear": 1500, "endYear": 1799}, "classifications": ["Painting"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "excluded"}
+    },
+    {
+      "id": "image-self-compatible",
+      "category": "image-self-retrieval",
+      "fixtureId": "open-access-art:nga:110821",
+      "filename": "nga-query.jpg",
+      "constraints": {"dateRange": {"startYear": 1500, "endYear": 1799}, "classifications": ["Print"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "required", "maxRank": 3}
+    },
+    {
+      "id": "image-classification",
+      "category": "image-classification",
+      "fixtureId": "open-access-art:nga:131994",
+      "filename": "same-name.jpg",
+      "constraints": {"classifications": ["Painting"]}
+    },
+    {
+      "id": "image-date",
+      "category": "image-date",
+      "fixtureId": "open-access-art:nga:11236",
+      "filename": "same-name.jpg",
+      "constraints": {"dateRange": {"startYear": 1800, "endYear": 1999}}
+    },
+    {
+      "id": "image-medium",
+      "category": "image-medium",
+      "fixtureId": "open-access-art:nga:110821",
+      "filename": "nga-query.jpg",
+      "constraints": {"mediumFamilies": ["oil"]}
+    },
+    {
+      "id": "image-artist",
+      "category": "image-artist",
+      "fixtureId": "open-access-art:nga:131994",
+      "filename": "nga-query.jpg",
+      "constraints": {"artistIds": ["1364"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "required", "maxRank": 3}
+    },
+    {
+      "id": "image-artist-wrong-primary",
+      "category": "image-artist-primary-control",
+      "fixtureId": "open-access-art:nga:131994",
+      "filename": "nga-query.jpg",
+      "constraints": {"artistIds": ["1974"]},
+      "minimumResults": 1,
+      "targetExpectation": {"policy": "excluded"}
+    },
+    {
+      "id": "image-artist-secondary-control",
+      "category": "image-artist-secondary-control",
+      "fixtureId": "open-access-art:nga:110821",
+      "filename": "nga-query.jpg",
+      "constraints": {"artistIds": ["2402"]},
+      "targetExpectation": {"policy": "excluded"}
+    }
+  ]
+}

@@ -61,10 +61,10 @@ describe('SourceIndicator', () => {
         'Generated visual description used for search and discovery.'
       )
     ).toBeInTheDocument();
+    expect(screen.getByText('Model')).toBeInTheDocument();
     expect(
       screen.getByText('mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit')
     ).toBeInTheDocument();
-    expect(screen.getByText('Model')).toBeInTheDocument();
   });
 
   it('keeps catalogue provenance available from the pill', () => {

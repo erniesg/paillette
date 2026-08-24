@@ -68,6 +68,21 @@ describe('getSafeSearchReturnPath', () => {
     expect(
       getSafeSearchReturnPath('/ngs/search?q=chung+cheng#results', 'ngs')
     ).toBe('/ngs/search?q=chung+cheng#results');
+    expect(
+      getSafeSearchReturnPath(
+        '/nga/search?q=blue+jugs#results',
+        '/nga'
+      )
+    ).toBe('/nga/search?q=blue+jugs#results');
+  });
+
+  it('keeps search query state for collection route bases', () => {
+    expect(
+      getSafeSearchReturnPath(
+        '/collections/nga/search?q=blue+ceramic+jugs#results',
+        '/collections/nga'
+      )
+    ).toBe('/collections/nga/search?q=blue+ceramic+jugs#results');
   });
 
   it('rejects external or cross-gallery return paths', () => {

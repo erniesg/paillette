@@ -11,6 +11,11 @@
     "test:coverage": "turbo run test:coverage",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "open:dry-run": "node scripts/open-access-art-dry-run.mjs",
+    "open:apply": "node scripts/open-access-art-apply.mjs",
+    "open:assets": "node scripts/open-access-art-assets.mjs",
+    "open:gate": "node scripts/open-access-art-cost-gate.mjs",
+    "open:queue": "node scripts/open-access-art-queue.mjs",
     "ngs:backfill-colors": "node scripts/backfill-ngs-colors.mjs",
     "ngs:backfill-reviewed-crops": "node scripts/backfill-ngs-reviewed-crops.mjs",
     "typecheck": "turbo run typecheck",
@@ -46,6 +51,7 @@
     ]
   },
   "dependencies": {
+    "@paillette/types": "workspace:*",
     "@types/papaparse": "^5.3.14",
     "papaparse": "^5.4.1",
     "zod": "^4.1.12"

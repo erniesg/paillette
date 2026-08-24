@@ -115,9 +115,15 @@ CREATE TABLE IF NOT EXISTS artworks (
   title TEXT NOT NULL,
   artist TEXT,
   year INTEGER,
+  year_start INTEGER,
+  year_end INTEGER,
   date_text TEXT,
   medium TEXT,
+  medium_family TEXT,
   classification TEXT,
+  subclassification TEXT,
+  visual_classification TEXT,
+  primary_artist_id TEXT,
   culture TEXT,
   origin TEXT,
   dimensions_height REAL,
@@ -167,6 +173,10 @@ CREATE INDEX idx_artworks_org_id ON artworks(org_id);
 CREATE INDEX idx_artworks_collection_id ON artworks(collection_id);
 CREATE INDEX idx_artworks_artist ON artworks(artist);
 CREATE INDEX idx_artworks_year ON artworks(year);
+CREATE INDEX idx_artworks_org_year_range ON artworks(org_id, year_start, year_end) WHERE deleted_at IS NULL;
+CREATE INDEX idx_artworks_org_visual_classification ON artworks(org_id, visual_classification) WHERE deleted_at IS NULL;
+CREATE INDEX idx_artworks_org_medium_family ON artworks(org_id, medium_family) WHERE deleted_at IS NULL;
+CREATE INDEX idx_artworks_org_primary_artist ON artworks(org_id, primary_artist_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_artworks_accession_number ON artworks(accession_number);
 CREATE INDEX idx_artworks_image_hash ON artworks(image_hash) WHERE image_hash IS NOT NULL;
 CREATE INDEX idx_artworks_created_at ON artworks(created_at DESC);
@@ -206,6 +216,34 @@ CREATE INDEX idx_assets_artwork_id ON assets(artwork_id);
 CREATE INDEX idx_assets_org_id ON assets(org_id);
 CREATE INDEX idx_assets_role ON assets(artwork_id, role);
 CREATE INDEX idx_assets_object_key ON assets(object_key);
+
+-- ============================================================================
+-- Open Access Asset Ingest Ledger
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS open_access_asset_ingest (
+  asset_id TEXT PRIMARY KEY,
+  artwork_id TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  role TEXT CHECK(role IN ('web', 'thumb', 'original', 'processed', 'mask', 'metadata', 'other')) NOT NULL,
+  source_url TEXT NOT NULL,
+  object_key TEXT NOT NULL,
+  content_type TEXT,
+  status TEXT CHECK(status IN ('pending', 'queued', 'uploading', 'uploaded', 'failed')) NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  size_bytes INTEGER,
+  sha256 TEXT,
+  queued_at TEXT,
+  uploaded_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_open_access_asset_ingest_status ON open_access_asset_ingest(status, provider);
+CREATE INDEX idx_open_access_asset_ingest_artwork ON open_access_asset_ingest(artwork_id);
+CREATE INDEX idx_open_access_asset_ingest_object_key ON open_access_asset_ingest(object_key);
 
 -- ============================================================================
 -- Collection Artworks (M:M relationship)
@@ -512,6 +550,13 @@ AFTER UPDATE ON assets
 FOR EACH ROW
 BEGIN
   UPDATE assets SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_open_access_asset_ingest_timestamp
+AFTER UPDATE ON open_access_asset_ingest
+FOR EACH ROW
+BEGIN
+  UPDATE open_access_asset_ingest SET updated_at = datetime('now') WHERE asset_id = NEW.asset_id;
 END;
 
 CREATE TRIGGER update_extract_jobs_timestamp

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSuggestionPool,
-  getSuggestionPrefetchQueries,
   normalizeSearchQuery,
 } from '../search-suggestions';
 import type { HolidaySearchSuggestion } from '../singapore-holidays.server';
@@ -22,7 +21,7 @@ const holiday = (
 });
 
 describe('buildSuggestionPool', () => {
-  it('starts with the evergreen keyword copy', () => {
+  it('starts with the evergreen keyword', () => {
     const suggestions = buildSuggestionPool([]);
 
     expect(suggestions[0]).toMatchObject({
@@ -30,6 +29,77 @@ describe('buildSuggestionPool', () => {
       label: 'tropical fruit and flowers',
       query: 'a still life of tropical fruit and flowers',
     });
+  });
+
+  it('uses NGA-specific suggestions for the NGA route', () => {
+    const suggestions = buildSuggestionPool([], {
+      routeId: 'nga',
+      source: 'nga',
+      institutionName: 'National Gallery of Art, Washington',
+    });
+
+    expect(suggestions[0]).toMatchObject({
+      type: 'motif',
+      label: 'stormy seas and ships',
+      query: 'a stormy sea with ships',
+    });
+    expect(suggestions[1]).toMatchObject({
+      type: 'metadata',
+      label: 'paintings across the collection',
+      query: 'Painting',
+      facet: 'classification',
+    });
+    expect(suggestions.map((suggestion) => suggestion.label)).toContain(
+      "Ginevra de' Benci"
+    );
+    expect(suggestions.map((suggestion) => suggestion.label)).toContain(
+      'The Annunciation'
+    );
+    expect(
+      suggestions.find(
+        (suggestion) => suggestion.label === 'blue painted ornament'
+      )
+    ).toMatchObject({
+      type: 'colour',
+      query: 'blue painted ornament',
+      colourId: 'custom:#4c78a8',
+    });
+    expect(suggestions.map((suggestion) => suggestion.label)).not.toContain(
+      'Nanyang style'
+    );
+  });
+
+  it('does not mix Singapore holiday suggestions into the NGA route', () => {
+    const suggestions = buildSuggestionPool(
+      [
+        holiday({
+          label: 'National Day',
+          query: 'National Day',
+          isToday: false,
+        }),
+      ],
+      { routeId: 'nga' }
+    );
+
+    expect(suggestions[0]).toMatchObject({
+      type: 'motif',
+      label: 'stormy seas and ships',
+    });
+    expect(suggestions[1]).toMatchObject({
+      type: 'metadata',
+      label: 'paintings across the collection',
+    });
+    expect(suggestions[2]).toMatchObject({
+      type: 'metadata',
+      label: "Ginevra de' Benci",
+    });
+    expect(suggestions[3]).toMatchObject({
+      type: 'metadata',
+      label: 'The Annunciation',
+    });
+    expect(suggestions.map((suggestion) => suggestion.label)).not.toContain(
+      'National Day'
+    );
   });
 
   it('keeps the serene mood showcase query', () => {
@@ -55,12 +125,18 @@ describe('buildSuggestionPool', () => {
       (suggestion) => suggestion.type === 'keyword'
     );
 
-    expect(keywordSuggestions).toEqual([
-      expect.objectContaining({
-        label: 'tropical fruit and flowers',
-        query: 'a still life of tropical fruit and flowers',
-      }),
-    ]);
+    expect(keywordSuggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'tropical fruit and flowers',
+          query: 'a still life of tropical fruit and flowers',
+        }),
+        expect.objectContaining({
+          label: 'wet markets and hawkers',
+          query: 'a crowded wet market with hawker stalls',
+        }),
+      ])
+    );
   });
 
   it('uses a same-day public holiday as the first showcase suggestion', () => {
@@ -97,6 +173,13 @@ describe('buildSuggestionPool', () => {
       label: 'Vesak Day',
       isToday: false,
     });
+    expect(suggestions[2]).toMatchObject({
+      type: 'motif',
+      label: 'fishing boats and sampans',
+    });
+    expect(suggestions.map((suggestion) => suggestion.label)).toContain(
+      'batik textile pattern'
+    );
   });
 
   it('does not include hardcoded festival suggestions when holidays are unavailable', () => {
@@ -132,38 +215,12 @@ describe('buildSuggestionPool', () => {
     const occasionDots = suggestions
       .filter((suggestion) => suggestion.type === 'occasion')
       .map((suggestion) => suggestion.dot);
-    const keywordDot = suggestions.find(
-      (suggestion) => suggestion.type === 'keyword'
+    const tropicalKeywordDot = suggestions.find(
+      (suggestion) => suggestion.label === 'tropical fruit and flowers'
     )?.dot;
 
     expect(new Set(occasionDots)).toEqual(new Set(['#365f9c']));
-    expect(keywordDot).toBe('#cda636');
-  });
-
-  it('returns distinct suggestion queries for try-query cache prefetching', () => {
-    const suggestions = buildSuggestionPool([
-      holiday({
-        label: 'Vesak Day',
-        query: 'Vesak Day',
-        isToday: false,
-      }),
-      holiday({
-        label: 'Duplicate Vesak',
-        query: '  Vesak Day  ',
-        isToday: false,
-      }),
-    ]);
-
-    expect(getSuggestionPrefetchQueries(suggestions)).toEqual([
-      'a still life of tropical fruit and flowers',
-      'Vesak Day',
-      'batik or songket textile pattern',
-      'serene, still and contemplative',
-      'Nanyang-style fusion of Chinese and Southeast Asian',
-      'watercolour painting',
-      'artworks made in the 1950s',
-      'muted sage green',
-    ]);
+    expect(tropicalKeywordDot).toBe('#cda636');
   });
 });
 

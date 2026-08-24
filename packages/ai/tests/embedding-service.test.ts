@@ -70,24 +70,26 @@ describe('EmbeddingService', () => {
       // Arrange
       const mockImageData = new Uint8Array([1, 2, 3]).buffer;
       const mockEmbedding = new Array(1024).fill(0.5);
+      const nowSpy = vi
+        .spyOn(performance, 'now')
+        .mockReturnValueOnce(1_000)
+        .mockReturnValueOnce(1_100);
 
-      vi.mocked(mockAi.run).mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(() => {
-              resolve({ data: [mockEmbedding] });
-            }, 100); // Simulate 100ms processing time
-          })
-      );
+      vi.mocked(mockAi.run).mockResolvedValue({
+        data: [mockEmbedding],
+      });
 
-      // Act
-      const result = await embeddingService.generateImageEmbedding(
-        mockImageData
-      );
+      try {
+        // Act
+        const result = await embeddingService.generateImageEmbedding(
+          mockImageData
+        );
 
-      // Assert
-      expect(result.durationMs).toBeGreaterThanOrEqual(100);
-      expect(result.durationMs).toBeLessThan(200); // Should not be too much overhead
+        // Assert
+        expect(result.durationMs).toBe(100);
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
   });
 

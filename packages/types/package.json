@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./nga-date-range": "./src/nga-date-range.mjs",
+    "./public-search": "./src/public-search.ts",
+    "./public-search-core": "./src/public-search-core.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

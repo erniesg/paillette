@@ -19,6 +19,15 @@ export interface ResponseMeta {
   timestamp: string;
   requestId?: string;
   duration?: number;
+  search?: {
+    cacheable: boolean;
+    degradedChannels: Array<
+      | 'image_embedding'
+      | 'caption_embedding'
+      | 'metadata'
+      | 'visual_refinement'
+    >;
+  };
 }
 
 export interface Org {
@@ -49,6 +58,8 @@ export interface GallerySettings {
   enableEmbeddingProjector?: boolean;
   defaultLanguage?: string;
   supportedLanguages?: string[];
+  source?: string;
+  rightsNote?: string;
 }
 
 export interface CreateOrgInput {
@@ -167,18 +178,23 @@ export interface SearchResponse {
   results: ArtworkSearchResult[];
   count: number;
   queryTime: number;
+  interpretation?: import('@paillette/types/public-search-core').PublicSearchInterpretation;
 }
 
 export interface SearchTextRequest {
   query: string;
   topK?: number;
   minScore?: number;
+  constraints?: import('@paillette/types/public-search-core').PublicSearchConstraints;
+  facet?: 'artist' | 'classification';
+  visualRefinement?: string;
 }
 
 export interface SearchImageRequest {
   image: File;
   topK?: number;
   minScore?: number;
+  constraints?: import('@paillette/types/public-search-core').PublicSearchConstraints;
 }
 
 // Translation types

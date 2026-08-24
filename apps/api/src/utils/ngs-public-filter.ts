@@ -1,6 +1,10 @@
 const ROOTS_URL_PATTERN = "https://www.roots.gov.sg/%";
 
 export const HIDDEN_ROOTS_ONLY_NGS_ACCESSIONS = [
+  '1993-01334',
+  '1993-01352',
+  '1995-01559',
+  '1995-01786',
   '2013-00591',
   '2013-00592',
   '2013-00593',

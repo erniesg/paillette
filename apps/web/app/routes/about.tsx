@@ -4,12 +4,13 @@ import type {
   MetaFunction,
 } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
-import { Form, Link, useActionData, useNavigation } from '@remix-run/react';
+import { Form, useActionData, useNavigation } from '@remix-run/react';
 import { useEffect, useId, useRef, useState } from 'react';
 import {
   PublicSiteFooter,
   PublicSiteHeader,
 } from '~/components/site/public-shell';
+import { SystemArchitectureDiagram } from '~/components/technical/system-architecture-diagram';
 import { getServerEnv } from '~/lib/public-search.server';
 
 export const meta: MetaFunction = () => {
@@ -67,9 +68,6 @@ const ABOUT_CACHE_CONTROL =
 export const ABOUT_BODY_GROUP_CLASS_NAME = 'mt-5 w-full space-y-5';
 export const ABOUT_MAIN_CLASS_NAME =
   'mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20';
-export const TECHNICAL_DETAILS_HREF = '/technical';
-export const TECHNICAL_DETAILS_CTA =
-  'See architecture, retrieval flow, and performance evidence';
 const inputClassName =
   'w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/28 focus:border-cyan-200/40 focus:bg-white/[0.065] focus:ring-2 focus:ring-cyan-200/20';
 const fieldLabelClassName =
@@ -355,14 +353,15 @@ function MermaidDiagram({ chart }: { chart: string }) {
         );
         if (isMounted && containerRef.current) {
           containerRef.current.innerHTML = svg;
-          const svgElement = containerRef.current.querySelector('svg');
-          if (svgElement) {
-            svgElement.setAttribute('width', '100%');
-            svgElement.removeAttribute('height');
-            svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            svgElement.style.display = 'block';
-            svgElement.style.height = 'auto';
-            svgElement.style.maxWidth = '100%';
+          const renderedSvg = containerRef.current.querySelector('svg');
+          if (renderedSvg) {
+            renderedSvg.removeAttribute('width');
+            renderedSvg.removeAttribute('height');
+            renderedSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            renderedSvg.style.display = 'block';
+            renderedSvg.style.width = '100%';
+            renderedSvg.style.maxWidth = '100%';
+            renderedSvg.style.height = 'auto';
           }
           setRenderError(false);
         }
@@ -392,7 +391,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
       ) : (
         <div
           ref={containerRef}
-          className="min-h-[260px] w-full [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+          className="min-h-[220px] w-full [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:w-full [&_svg]:max-w-full"
         />
       )}
     </div>
@@ -460,6 +459,18 @@ export default function AboutPage() {
           </div>
         </section>
 
+        <section id="technical-details" className={sectionClassName}>
+          <h2 className={headingClassName}>System architecture</h2>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
+            <p className={bodyClassName}>
+              From browser request to ranked result.
+            </p>
+          </div>
+          <div className="mt-8">
+            <SystemArchitectureDiagram />
+          </div>
+        </section>
+
         <section className={sectionClassName}>
           <h2 className={headingClassName}>Approach</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
@@ -479,13 +490,6 @@ export default function AboutPage() {
           </div>
 
           <MermaidDiagram chart={searchFlowDiagram} />
-          <Link
-            to={TECHNICAL_DETAILS_HREF}
-            className="mt-7 inline-flex items-center gap-2 border-b border-cyan-100/25 pb-1 text-sm text-cyan-50/80"
-          >
-            {TECHNICAL_DETAILS_CTA}
-            <span aria-hidden="true">→</span>
-          </Link>
         </section>
 
         <section className={sectionClassName}>

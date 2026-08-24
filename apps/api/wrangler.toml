@@ -56,6 +56,17 @@ queue = "paillette-embedding-jobs"
 binding = "TRANSLATION_QUEUE"
 queue = "paillette-translation-jobs"
 
+[[queues.producers]]
+binding = "OPEN_ACCESS_ASSET_QUEUE"
+queue = "paillette-open-access-assets"
+
+[[queues.consumers]]
+queue = "paillette-open-access-assets"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "paillette-open-access-assets-dlq"
+
 # Environment variables (use .dev.vars for local development)
 [vars]
 ENVIRONMENT = "production"
@@ -79,13 +90,14 @@ JINA_TEXT_EMBEDDING_DIMENSIONS = "1024"
 [env.staging]
 name = "paillette-api-stg"
 routes = [{ pattern = "paillette-api-stg.berlayar.ai", custom_domain = true }]
-vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EXTRACT_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024" }
+vars = { ENVIRONMENT = "staging", API_VERSION = "v1", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EXTRACT_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024", QUERY_EMBEDDING_API_URL = "https://embeddings.129-150-32-215.sslip.io/v1/embeddings" }
 
 # Staging resources (separate from production)
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "paillette-db-stg"
 database_id = "ebe8ae51-30bb-40e4-9532-5b1c9bd748d3"
+migrations_dir = "../../packages/database/migrations"
 
 [[env.staging.r2_buckets]]
 binding = "IMAGES"
@@ -119,6 +131,17 @@ binding = "AI"
 [[env.staging.queues.producers]]
 binding = "EMBEDDING_QUEUE"
 queue = "paillette-embedding-jobs-stg"
+
+[[env.staging.queues.producers]]
+binding = "OPEN_ACCESS_ASSET_QUEUE"
+queue = "paillette-open-access-assets-stg"
+
+[[env.staging.queues.consumers]]
+queue = "paillette-open-access-assets-stg"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "paillette-open-access-assets-dlq-stg"
 
 # Production environment (deploy from 'master' branch)
 [env.production]
@@ -167,3 +190,14 @@ queue = "paillette-embedding-jobs"
 [[env.production.queues.producers]]
 binding = "TRANSLATION_QUEUE"
 queue = "paillette-translation-jobs"
+
+[[env.production.queues.producers]]
+binding = "OPEN_ACCESS_ASSET_QUEUE"
+queue = "paillette-open-access-assets"
+
+[[env.production.queues.consumers]]
+queue = "paillette-open-access-assets"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "paillette-open-access-assets-dlq"

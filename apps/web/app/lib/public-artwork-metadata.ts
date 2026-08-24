@@ -576,7 +576,31 @@ const getExplicitNgsThumbnailUrl = (artwork: PublicArtwork) => {
   );
 };
 
+const getExplicitRootsImageUrl = (artwork: PublicArtwork) => {
+  if (shouldSuppressRootsRecord(artwork)) return null;
+
+  const meta = getPublicMetadata(artwork);
+  const sourceRecords = getSourceRecords(artwork);
+  const rootsRecord = asRecord(sourceRecords.roots);
+
+  return firstMatchingText(
+    isRootsUrl,
+    meta.roots_image_url,
+    meta.rootsImageUrl,
+    rootsRecord.imageUrl,
+    rootsRecord.image_url,
+    rootsRecord.thumbnailUrl,
+    rootsRecord.thumbnail_url,
+    rootsRecord.img
+  );
+};
+
+const getExplicitRootsThumbnailUrl = (artwork: PublicArtwork) =>
+  getExplicitRootsImageUrl(artwork);
+
 export const getPublicImageUrl = (artwork: PublicArtwork) => {
+  const rootsImageUrl = getExplicitRootsImageUrl(artwork);
+
   if (hasKnownNgsNoImagePlaceholder(artwork)) {
     return null;
   }
@@ -585,10 +609,16 @@ export const getPublicImageUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsImageUrl(artwork);
   }
 
-  return getStandardImageUrl(artwork) || getExplicitNgsImageUrl(artwork);
+  return (
+    getStandardImageUrl(artwork) ||
+    getExplicitNgsImageUrl(artwork) ||
+    rootsImageUrl
+  );
 };
 
 export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
+  const rootsThumbnailUrl = getExplicitRootsThumbnailUrl(artwork);
+
   if (hasKnownNgsNoImagePlaceholder(artwork)) {
     return null;
   }
@@ -597,7 +627,11 @@ export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
     return getExplicitNgsThumbnailUrl(artwork);
   }
 
-  return getStandardThumbnailUrl(artwork) || getExplicitNgsThumbnailUrl(artwork);
+  return (
+    getStandardThumbnailUrl(artwork) ||
+    getExplicitNgsThumbnailUrl(artwork) ||
+    rootsThumbnailUrl
+  );
 };
 
 const getPublicMediumText = (artwork: PublicArtwork) => {
@@ -827,10 +861,15 @@ export const getGeneratedCaptionText = (artwork: PublicArtwork) => {
   const caption = meta.generated_caption || meta.generatedCaption;
   const fieldSources = getPublicFieldSources(artwork);
   const captionSource = getFieldSourceLabel(fieldSources, 'caption');
+  const captionRecord = getGeneratedCaptionRecord(artwork);
 
   if (typeof caption === 'string') return caption.trim() || null;
   return (
-    asText(getGeneratedCaptionRecord(artwork).text) ||
+    asText(captionRecord.text) ||
+    asText(captionRecord.caption) ||
+    asText(captionRecord.description) ||
+    asText(captionRecord.generated_text) ||
+    asText(captionRecord.generatedText) ||
     (isAiSourceLabel(captionSource) ? asText(meta.caption) : null)
   );
 };
@@ -1713,6 +1752,13 @@ export const getPublicCatalogueRows = (
   const meta = getPublicMetadata(artwork);
   const fieldSources = getPublicFieldSources(artwork);
   const inferredRecordSource = getInferredCatalogueSourceLabel(artwork);
+  const sourceRecord =
+    meta.source && typeof meta.source === 'object'
+      ? (meta.source as Record<string, unknown>)
+      : {};
+  const isNgaRecord =
+    firstPublicCatalogueText(meta.provider, sourceRecord.provider)
+      ?.toLowerCase() === 'nga';
 
   if (shouldPreferRootsRecord(artwork)) {
     const rootsYearPeriod = getRootsRecordText(
@@ -1816,6 +1862,25 @@ export const getPublicCatalogueRows = (
       value: getPublicMediumText(artwork),
       sourceLabel: getFieldSourceLabel(fieldSources, 'medium'),
     },
+    ...(isNgaRecord
+      ? [
+          {
+            label: 'Classification',
+            value: firstPublicCatalogueText(
+              artwork.classification,
+              meta.visualClassification,
+              meta.visual_classification,
+              meta.classification
+            ),
+            sourceLabel: getFieldSourceLabel(
+              fieldSources,
+              'classification',
+              'visual_classification',
+              'visualClassification'
+            ),
+          },
+        ]
+      : []),
     {
       label: 'Geographic association',
       value: getGeographicAssociation(artwork),

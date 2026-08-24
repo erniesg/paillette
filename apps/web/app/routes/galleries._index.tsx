@@ -4,7 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { apiClient } from '~/lib/api';
+import {
+  apiClient,
+  getPreferredOrgRouteId,
+  getPublicOrgRouteBasePath,
+} from '~/lib/api';
 import { Button } from '~/components/ui/button';
 import {
   Card,
@@ -165,7 +169,16 @@ export default function GalleriesIndex() {
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto"
           >
             {galleries.map((gallery, index) => {
-              const galleryRouteId = gallery.slug || gallery.id;
+              const preferredRouteId = getPreferredOrgRouteId(
+                gallery.id,
+                gallery.slug
+              );
+              const galleryRouteBasePath = getPublicOrgRouteBasePath({
+                requestedOrgId: gallery.id,
+                preferredRouteId,
+                canonicalSlug: gallery.slug,
+                routeScope: 'org',
+              });
 
               return (
                 <motion.div
@@ -208,7 +221,7 @@ export default function GalleriesIndex() {
                           className="w-full"
                           size="sm"
                         >
-                          <Link to={`/${galleryRouteId}/search`}>
+                          <Link to={`${galleryRouteBasePath}/search`}>
                             Search collection
                           </Link>
                         </Button>

@@ -56,6 +56,9 @@ const options = {
   decisions: args.values.get('decisions')
     ? resolve(args.values.get('decisions'))
     : null,
+  preparedPlan: args.values.get('plan')
+    ? resolve(args.values.get('plan'))
+    : null,
   rows: args.values.get('rows') ? resolve(args.values.get('rows')) : null,
   sourceRows: args.values.get('source-rows')
     ? resolve(args.values.get('source-rows'))
@@ -94,8 +97,20 @@ mkdirSync(options.outDir, { recursive: true });
 const decisionsPath =
   options.decisions || resolve(options.reviewDir, 'review-decisions.json');
 const rowsPath = options.rows || resolve(options.reviewDir, 'rows.json');
-const decisionsPayload = readJson(decisionsPath);
-const reviewRows = readJson(rowsPath);
+const preparedPlanPayload = options.preparedPlan
+  ? readJson(options.preparedPlan)
+  : null;
+const decisionsPayload = preparedPlanPayload ? null : readJson(decisionsPath);
+const shouldReadRowsPath =
+  !preparedPlanPayload && (options.rows || existsSync(rowsPath));
+const reviewRows =
+  preparedPlanPayload
+    ? []
+    : shouldReadRowsPath
+    ? readJson(rowsPath)
+    : Array.isArray(decisionsPayload?.rows)
+      ? decisionsPayload.rows
+      : [];
 const sourceRowsById = new Map(
   (options.sourceRows ? readJson(options.sourceRows) : []).map((row) => [
     String(row.id),
@@ -108,14 +123,22 @@ const selected = selectReviewedCropsForBackfill({
   rows: reviewRows,
 }).slice(0, options.limit > 0 ? options.limit : undefined);
 
-const plan = options.skipPrepare
-  ? selected.map(planRowWithoutPrepare)
-  : await mapLimit(selected, options.concurrency, prepareRow);
+const preparedPlanRows = Array.isArray(preparedPlanPayload?.rows)
+  ? preparedPlanPayload.rows
+  : Array.isArray(preparedPlanPayload)
+    ? preparedPlanPayload
+    : null;
+const plan = preparedPlanRows
+  ? preparedPlanRows.slice(0, options.limit > 0 ? options.limit : undefined)
+  : options.skipPrepare
+    ? selected.map(planRowWithoutPrepare)
+    : await mapLimit(selected, options.concurrency, prepareRow);
 
 writeJson(resolve(options.outDir, 'backfill-plan.json'), {
   generatedAt: new Date().toISOString(),
   reviewDir: options.reviewDir,
   decisionsPath,
+  preparedPlanPath: options.preparedPlan,
   rowsPath,
   sourceRowsPath: options.sourceRows,
   orgId: options.orgId,
@@ -1231,6 +1254,7 @@ Usage:
 Options:
   --review-dir <path>        Review directory. Default: ${DEFAULT_REVIEW_DIR}
   --decisions <path>         Decisions JSON. Default: <review-dir>/review-decisions.json
+  --plan <path>              Reuse an existing prepared backfill-plan.json for upload/D1/embedding.
   --rows <path>              Review rows JSON. Default: <review-dir>/rows.json
   --source-rows <path>       Optional DB rows with ngs_image_url/roots_listing_url for native source upgrades.
   --out-dir <path>           Output directory. Default: tmp/ngs-reviewed-crops-backfill

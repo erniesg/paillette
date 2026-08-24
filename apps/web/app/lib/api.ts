@@ -71,24 +71,184 @@ const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const LEGACY_NGS_ORG_ID = '00000000-0000-4000-8000-000000000101';
 const NGS_ORG_SLUG = 'national-gallery-singapore';
 const NGS_ORG_KEY = 'ngs';
+const NGS_DISPLAY_NAME = 'National Gallery Singapore';
+const OPEN_ACCESS_ORG_SLUG = 'open-access-art';
+const OPEN_ACCESS_ORG_KEY = 'open';
+const OPEN_ACCESS_ART_ORG_KEY = 'nga';
+const OPEN_ACCESS_ART_ORG_SLUG = OPEN_ACCESS_ORG_SLUG;
+const LEGACY_OPEN_ACCESS_ART_ORG_KEY = OPEN_ACCESS_ORG_KEY;
+const NGA_DISPLAY_NAME = 'National Gallery of Art, Washington';
+const NGA_DISPLAY_DESCRIPTION =
+  'Open-access artworks from the National Gallery of Art, Washington.';
+const NGA_DISPLAY_WEBSITE = 'https://www.nga.gov/open-access-images.html';
 
 const ORG_ID_ALIASES: Record<string, string> = {
   [NGS_ORG_KEY]: NGS_ORG_ID,
   [NGS_ORG_SLUG]: NGS_ORG_ID,
   [LEGACY_NGS_ORG_ID]: NGS_ORG_ID,
+  [OPEN_ACCESS_ART_ORG_KEY]: OPEN_ACCESS_ART_ORG_SLUG,
+  [LEGACY_OPEN_ACCESS_ART_ORG_KEY]: OPEN_ACCESS_ART_ORG_SLUG,
+  [OPEN_ACCESS_ART_ORG_SLUG]: OPEN_ACCESS_ART_ORG_SLUG,
 };
 
+const normalizeOrgIdentifier = (value: string) => value.trim().toLowerCase();
+
 export const resolveOrgIdentifier = (orgId: string) =>
-  ORG_ID_ALIASES[orgId.toLowerCase()] || orgId;
+  ORG_ID_ALIASES[normalizeOrgIdentifier(orgId)] || orgId;
+
+export const isOpenAccessArtPublicOrg = (
+  requestedOrgId: string,
+  canonicalSlug?: string | null
+) => {
+  const requested = normalizeOrgIdentifier(requestedOrgId);
+  const canonical = canonicalSlug ? normalizeOrgIdentifier(canonicalSlug) : '';
+
+  return (
+    ORG_ID_ALIASES[requested] === OPEN_ACCESS_ART_ORG_SLUG ||
+    canonical === OPEN_ACCESS_ART_ORG_SLUG
+  );
+};
+
+export const getKnownPublicOrg = (
+  requestedOrgId: string
+): (Pick<Org, 'id' | 'name' | 'slug'> & Partial<Org>) | null => {
+  const resolvedOrgId = resolveOrgIdentifier(requestedOrgId);
+
+  if (resolvedOrgId === NGS_ORG_ID) {
+    return {
+      id: NGS_ORG_ID,
+      name: NGS_DISPLAY_NAME,
+      slug: NGS_ORG_SLUG,
+      isPublic: true,
+      settings: {
+        allowPublicAccess: true,
+        source: NGS_ORG_KEY,
+      },
+    };
+  }
+
+  if (resolvedOrgId === OPEN_ACCESS_ORG_SLUG) {
+    return {
+      id: OPEN_ACCESS_ORG_SLUG,
+      name: 'Open Access Art',
+      slug: OPEN_ACCESS_ORG_SLUG,
+      isPublic: true,
+      settings: {
+        allowPublicAccess: true,
+      },
+    };
+  }
+
+  return null;
+};
+
+export const isOpenAccessNgaAlias = (orgId: string) =>
+  [
+    LEGACY_OPEN_ACCESS_ART_ORG_KEY,
+    OPEN_ACCESS_ART_ORG_KEY,
+    OPEN_ACCESS_ART_ORG_SLUG,
+  ].includes(normalizeOrgIdentifier(orgId));
+
+export const isLegacyOpenAccessRoute = (orgId: string) =>
+  [LEGACY_OPEN_ACCESS_ART_ORG_KEY, OPEN_ACCESS_ART_ORG_SLUG].includes(
+    normalizeOrgIdentifier(orgId)
+  );
+
+export const getPublicSearchRouteId = (
+  requestedOrgId: string,
+  canonicalOrgId: string
+) =>
+  normalizeOrgIdentifier(requestedOrgId) === OPEN_ACCESS_ART_ORG_KEY
+    ? OPEN_ACCESS_ART_ORG_KEY
+    : canonicalOrgId;
 
 export const getPreferredOrgRouteId = (
   requestedOrgId: string,
   canonicalSlug?: string | null
 ) => {
-  const requested = requestedOrgId.toLowerCase();
-  return ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID
-    ? NGS_ORG_KEY
-    : canonicalSlug || requestedOrgId;
+  const requested = normalizeOrgIdentifier(requestedOrgId);
+  if (ORG_ID_ALIASES[requested] === NGS_ORG_ID || requested === NGS_ORG_ID) {
+    return NGS_ORG_KEY;
+  }
+
+  if (isOpenAccessArtPublicOrg(requestedOrgId, canonicalSlug)) {
+    return OPEN_ACCESS_ART_ORG_KEY;
+  }
+
+  return canonicalSlug || requestedOrgId;
+};
+
+export const getPublicOrgRouteBasePath = ({
+  requestedOrgId,
+  preferredRouteId,
+  canonicalSlug,
+  routeScope,
+}: {
+  requestedOrgId: string;
+  preferredRouteId: string;
+  canonicalSlug?: string | null;
+  routeScope: 'org' | 'collection';
+}) => {
+  const encodedRouteId = encodeURIComponent(preferredRouteId);
+  if (
+    routeScope === 'collection' ||
+    isOpenAccessArtPublicOrg(requestedOrgId, canonicalSlug)
+  ) {
+    return `/collections/${encodedRouteId}`;
+  }
+
+  return `/${encodedRouteId}`;
+};
+
+export const getPreferredOrgRouteBasePath = (
+  requestedOrgId: string,
+  canonicalSlug?: string | null
+) => {
+  const preferredRouteId = getPreferredOrgRouteId(
+    requestedOrgId,
+    canonicalSlug
+  );
+  return getPublicOrgRouteBasePath({
+    requestedOrgId,
+    preferredRouteId,
+    canonicalSlug,
+    routeScope: 'org',
+  });
+};
+
+export const isOpenAccessNgaRoute = (
+  requestedOrgId: string,
+  canonicalSlug?: string | null
+) =>
+  getPreferredOrgRouteId(requestedOrgId, canonicalSlug) ===
+  OPEN_ACCESS_ART_ORG_KEY;
+
+export const getPublicOrgDisplay = <
+  T extends Pick<Org, 'name' | 'slug'> & Partial<Org>,
+>(
+  org: T,
+  requestedOrgId: string
+): T => {
+  if (!isOpenAccessNgaRoute(requestedOrgId, org.slug)) {
+    return org;
+  }
+
+  return {
+    ...org,
+    name: NGA_DISPLAY_NAME,
+    description: NGA_DISPLAY_DESCRIPTION,
+    location: {
+      country: 'United States',
+      city: 'Washington, D.C.',
+    },
+    website: NGA_DISPLAY_WEBSITE,
+    settings: {
+      ...org.settings,
+      source: OPEN_ACCESS_ART_ORG_KEY,
+      rightsNote:
+        'NGA open-access records are public-domain/open-access source records from the National Gallery of Art, Washington.',
+    },
+  };
 };
 
 const sanitizeGeneratedCaptionRecord = (record: unknown) => {
@@ -96,8 +256,7 @@ const sanitizeGeneratedCaptionRecord = (record: unknown) => {
     return record;
   }
 
-  const { model: _model, ...caption } = record as Record<string, unknown>;
-  return caption;
+  return { ...(record as Record<string, unknown>) };
 };
 
 const sanitizeArtworkMetadata = (metadata: Record<string, any>) => {

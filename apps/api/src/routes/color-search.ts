@@ -9,17 +9,27 @@ import {
 } from '@paillette/color-extraction';
 import {
   enforceDailyQuota,
+  getAuth,
   recordArtworkResults,
   requireAuthOrApiKey,
 } from '../middleware/auth';
 import type { ApiResponse } from '../types';
 import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
-import { isNgsPublicOrg, resolveOrgIdentifier } from '../utils/orgs';
+import {
+  isNgsPublicOrg,
+  resolveOpenAccessProviderScope,
+  resolveOrgIdentifier,
+} from '../utils/orgs';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
 
 const backableColorSearchSql = (orgId: string | undefined) =>
   isNgsPublicOrg(orgId) ? BACKABLE_NGS_PUBLIC_ARTWORK_SQL : '';
+
+const providerColorSearchSql = (provider: string | undefined) =>
+  provider
+    ? "AND json_valid(custom_metadata) AND json_extract(custom_metadata, '$.provider') = ?"
+    : '';
 
 colorSearchRoutes.use(
   '/search/*',
@@ -35,10 +45,22 @@ colorSearchRoutes.post('/search/color', async (c) => {
   const startTime = performance.now();
 
   try {
-    const orgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
-    );
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    if (getAuth(c as any).scopes.includes('public_search')) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SEARCH_ENDPOINT_NOT_ALLOWED',
+            message:
+              'Public color refinement is performed locally on cached text results',
+          },
+        },
+        403
+      );
+    }
+    const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
 
     // Parse and validate request body
     const body = await c.req.json();
@@ -75,10 +97,11 @@ colorSearchRoutes.post('/search/color', async (c) => {
         AND dominant_colors IS NOT NULL
         AND image_url IS NOT NULL
         AND deleted_at IS NULL
+        ${providerColorSearchSql(provider)}
         ${backableColorSearchSql(orgId)}
       `
     )
-      .bind(orgId)
+      .bind(orgId, ...(provider ? [provider] : []))
       .all();
 
     if (!artworks.success || !artworks.results) {
@@ -206,10 +229,9 @@ colorSearchRoutes.post('/search/color', async (c) => {
  */
 colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
   try {
-    const orgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
-    );
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
     const artworkId = c.req.param('artworkId');
 
     const artwork = await c.env.DB.prepare(
@@ -224,10 +246,11 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
       WHERE id = ?
         AND org_id = ?
         AND deleted_at IS NULL
+        ${providerColorSearchSql(provider)}
         ${backableColorSearchSql(orgId)}
       `
     )
-      .bind(artworkId, orgId)
+      .bind(artworkId, orgId, ...(provider ? [provider] : []))
       .first();
 
     if (!artwork) {
@@ -278,10 +301,9 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
  */
 colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
   try {
-    const orgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
-    );
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
     const artworkId = c.req.param('artworkId');
 
     // Verify artwork exists
@@ -293,9 +315,10 @@ colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
         AND org_id = ?
         AND image_url IS NOT NULL
         AND deleted_at IS NULL
+        ${providerColorSearchSql(provider)}
       `
     )
-      .bind(artworkId, orgId)
+      .bind(artworkId, orgId, ...(provider ? [provider] : []))
       .first();
 
     if (!artwork) {
@@ -347,10 +370,9 @@ colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
  */
 colorSearchRoutes.post('/artworks/batch-extract-colors', async (c) => {
   try {
-    const orgId = await resolveOrgIdentifier(
-      c.env.DB,
-      c.req.param('orgId') || c.req.param('galleryId')
-    );
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const provider = resolveOpenAccessProviderScope(requestedOrgId);
+    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
 
     // Get all artworks without color data
     const artworks = await c.env.DB.prepare(
@@ -361,9 +383,10 @@ colorSearchRoutes.post('/artworks/batch-extract-colors', async (c) => {
         AND (dominant_colors IS NULL OR dominant_colors = '')
         AND image_url IS NOT NULL
         AND deleted_at IS NULL
+        ${providerColorSearchSql(provider)}
       `
     )
-      .bind(orgId)
+      .bind(orgId, ...(provider ? [provider] : []))
       .all();
 
     if (!artworks.success || !artworks.results) {

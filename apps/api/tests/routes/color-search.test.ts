@@ -10,7 +10,7 @@ describe('Color Search API', () => {
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
     'Content-Type': 'application/json',
-    'X-User-Id': 'public-search-web',
+    'X-User-Id': 'test-user',
   };
 
   const request = (path: string, init?: RequestInit) =>
@@ -49,7 +49,9 @@ describe('Color Search API', () => {
               if (sql.includes('dominant_colors IS NULL')) {
                 return {
                   success: true,
-                  results: [{ id: 'needs-colors', image_url: artwork.image_url }],
+                  results: [
+                    { id: 'needs-colors', image_url: artwork.image_url },
+                  ],
                 };
               }
 
@@ -76,7 +78,9 @@ describe('Color Search API', () => {
       VECTORIZE: {} as any,
       IMAGES: {} as R2Bucket,
       CACHE: {} as KVNamespace,
-      EMBEDDING_QUEUE: { send: vi.fn(async () => undefined) } as unknown as Queue,
+      EMBEDDING_QUEUE: {
+        send: vi.fn(async () => undefined),
+      } as unknown as Queue,
       ENVIRONMENT: 'test',
       API_VERSION: 'v1',
       DAILY_FREE_QUERY_LIMIT: '100',
@@ -87,21 +91,38 @@ describe('Color Search API', () => {
   });
 
   describe('POST /search/color', () => {
+    it('rejects direct access from the public search principal', async () => {
+      const res = await request('/galleries/ngs/search/color', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'public-search-web',
+        },
+        body: JSON.stringify({ colors: ['#FF5733'] }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(403);
+      expect(body.error.code).toBe('PUBLIC_SEARCH_ENDPOINT_NOT_ALLOWED');
+      expect(
+        (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
+          sql.includes('dominant_colors IS NOT NULL')
+        )
+      ).toBe(false);
+    });
+
     it('should search by single color', async () => {
       const searchColor = '#FF5733'; // Orange-red
 
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: [searchColor],
-            threshold: 10,
-            limit: 20,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: [searchColor],
+          threshold: 10,
+          limit: 20,
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -139,20 +160,39 @@ describe('Color Search API', () => {
       );
     });
 
-    it('should search by multiple colors (ANY mode)', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF0000', '#00FF00'],
-            matchMode: 'any',
-            threshold: 15,
-            limit: 20,
-          }),
-        }
+    it('scopes the NGA color route to NGA provider rows', async () => {
+      testGalleryId = 'open-access-art';
+
+      const res = await request('/galleries/nga/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+          threshold: 10,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const colorSql = (mockEnv.DB.prepare as any).mock.calls
+        .map(([sql]: [string]) => sql)
+        .find((sql: string) => sql.includes('dominant_colors IS NOT NULL'));
+
+      expect(colorSql).toContain(
+        "json_extract(custom_metadata, '$.provider') = ?"
       );
+    });
+
+    it('should search by multiple colors (ANY mode)', async () => {
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF0000', '#00FF00'],
+          matchMode: 'any',
+          threshold: 15,
+          limit: 20,
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -162,19 +202,16 @@ describe('Color Search API', () => {
     });
 
     it('should search by multiple colors (ALL mode)', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF0000', '#00FF00'],
-            matchMode: 'all',
-            threshold: 15,
-            limit: 20,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF0000', '#00FF00'],
+          matchMode: 'all',
+          threshold: 15,
+          limit: 20,
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -184,18 +221,15 @@ describe('Color Search API', () => {
     });
 
     it('should return results sorted by average distance', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF5733'],
-            threshold: 20,
-            limit: 10,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+          threshold: 20,
+          limit: 10,
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -210,17 +244,14 @@ describe('Color Search API', () => {
     });
 
     it('should reject invalid hex colors', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['invalid-color'],
-            threshold: 10,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['invalid-color'],
+          threshold: 10,
+        }),
+      });
 
       expect(res.status).toBe(400);
       const body = await res.json();
@@ -230,17 +261,14 @@ describe('Color Search API', () => {
     });
 
     it('should reject empty colors array', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: [],
-            threshold: 10,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: [],
+          threshold: 10,
+        }),
+      });
 
       expect(res.status).toBe(400);
       const body = await res.json();
@@ -251,18 +279,15 @@ describe('Color Search API', () => {
     it('should limit results to requested limit', async () => {
       const limit = 5;
 
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF5733'],
-            threshold: 20,
-            limit,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+          threshold: 20,
+          limit,
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -271,16 +296,13 @@ describe('Color Search API', () => {
     });
 
     it('should use default values for optional parameters', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF5733'],
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -291,17 +313,14 @@ describe('Color Search API', () => {
     });
 
     it('should include matched colors in results', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF5733'],
-            threshold: 15,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+          threshold: 15,
+        }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -320,33 +339,34 @@ describe('Color Search API', () => {
     });
 
     it('should reject threshold above 30', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF5733'],
-            threshold: 35, // Too high
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: ['#FF5733'],
+          threshold: 35, // Too high
+        }),
+      });
 
       expect(res.status).toBe(400);
     });
 
     it('should reject more than 5 colors', async () => {
-      const res = await request(
-        `/galleries/${testGalleryId}/search/color`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            colors: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'],
-            threshold: 10,
-          }),
-        }
-      );
+      const res = await request(`/galleries/${testGalleryId}/search/color`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          colors: [
+            '#FF0000',
+            '#00FF00',
+            '#0000FF',
+            '#FFFF00',
+            '#FF00FF',
+            '#00FFFF',
+          ],
+          threshold: 10,
+        }),
+      });
 
       expect(res.status).toBe(400);
     });

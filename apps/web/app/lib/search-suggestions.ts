@@ -1,6 +1,12 @@
 import type { HolidaySearchSuggestion } from './singapore-holidays.server';
+import { NGA_SPOTLIGHT_DEFINITIONS } from './nga-spotlight-definitions';
 
 const OCCASION_DOT = '#365f9c';
+
+export const CHUNG_CHENG_FEATURE_LABEL = 'Zhong Zheng Ren (中正人)';
+export const CHUNG_CHENG_FEATURE_QUERY =
+  'Zhong Zheng Ren 中正人 Yeo Hwee Bin Chung Cheng High School sculpture';
+export const CHUNG_CHENG_FEATURE_ACCESSION = '2019-00754';
 
 export type EvalSuggestion = {
   type:
@@ -20,14 +26,40 @@ export type EvalSuggestion = {
   isToday?: boolean;
   colourId?: string;
   source?: HolidaySearchSuggestion['source'];
+  facet?: 'artist' | 'classification';
+  spotlightId?: string;
 };
 
-const EVAL_SUGGESTIONS: EvalSuggestion[] = [
+export type SuggestionContext = {
+  routeId?: string | null;
+  source?: string | null;
+  institutionName?: string | null;
+};
+
+const NGS_SUGGESTIONS: EvalSuggestion[] = [
   {
     type: 'keyword',
     label: 'tropical fruit and flowers',
     query: 'a still life of tropical fruit and flowers',
     dot: '#cda636',
+  },
+  {
+    type: 'motif',
+    label: 'fishing boats and sampans',
+    query: 'fishing boats and sampans by the shore',
+    dot: '#4c78a8',
+  },
+  {
+    type: 'keyword',
+    label: 'wet markets and hawkers',
+    query: 'a crowded wet market with hawker stalls',
+    dot: '#bf5631',
+  },
+  {
+    type: 'motif',
+    label: 'mother and child',
+    query: 'a mother holding a child',
+    dot: '#8a9a7a',
   },
   {
     type: 'motif',
@@ -68,6 +100,29 @@ const EVAL_SUGGESTIONS: EvalSuggestion[] = [
   },
 ];
 
+const NGA_SUGGESTIONS: EvalSuggestion[] = NGA_SPOTLIGHT_DEFINITIONS.map(
+  ({ id, ...suggestion }) => ({ ...suggestion, spotlightId: id })
+);
+
+const normalizeContextKey = (context?: SuggestionContext) => {
+  const routeId = context?.routeId?.trim().toLowerCase();
+  const source = context?.source?.trim().toLowerCase();
+  const institutionName = context?.institutionName?.trim().toLowerCase();
+
+  if (
+    routeId === 'nga' ||
+    source === 'nga' ||
+    institutionName?.includes('national gallery of art')
+  ) {
+    return 'nga';
+  }
+
+  return 'ngs';
+};
+
+const getBaseSuggestions = (context?: SuggestionContext) =>
+  normalizeContextKey(context) === 'nga' ? NGA_SUGGESTIONS : NGS_SUGGESTIONS;
+
 const toEvalHolidaySuggestion = (
   suggestion: HolidaySearchSuggestion
 ): EvalSuggestion => ({
@@ -82,20 +137,27 @@ const toEvalHolidaySuggestion = (
 });
 
 export const buildSuggestionPool = (
-  holidaySuggestions: HolidaySearchSuggestion[]
+  holidaySuggestions: HolidaySearchSuggestion[],
+  context?: SuggestionContext
 ): EvalSuggestion[] => {
-  const [firstSuggestion, ...remainingSuggestions] = EVAL_SUGGESTIONS;
+  const contextKey = normalizeContextKey(context);
+  const baseSuggestions = getBaseSuggestions(context);
+  const [firstSuggestion, ...remainingSuggestions] = baseSuggestions;
   const leadingSuggestions = firstSuggestion ? [firstSuggestion] : [];
   const holidayEvalSuggestions = holidaySuggestions.map(
     toEvalHolidaySuggestion
   );
 
+  if (contextKey === 'nga') {
+    return baseSuggestions;
+  }
+
   if (!holidayEvalSuggestions.length) {
-    return EVAL_SUGGESTIONS;
+    return baseSuggestions;
   }
 
   if (holidayEvalSuggestions.some((suggestion) => suggestion.isToday)) {
-    return [...holidayEvalSuggestions, ...EVAL_SUGGESTIONS];
+    return [...holidayEvalSuggestions, ...baseSuggestions];
   }
 
   return [
@@ -113,21 +175,4 @@ export const normalizeSearchQuery = (query: string) => {
   if (!trimmed) return '';
 
   return trimmed;
-};
-
-export const getSuggestionPrefetchQueries = (
-  suggestions: EvalSuggestion[]
-) => {
-  const queries: string[] = [];
-  const seen = new Set<string>();
-
-  for (const suggestion of suggestions) {
-    const query = normalizeSearchQuery(suggestion.query);
-    if (!query || seen.has(query)) continue;
-
-    queries.push(query);
-    seen.add(query);
-  }
-
-  return queries;
 };
