@@ -22,6 +22,7 @@ import type {
   CreatedPailletteApiKey,
   DailyUsageSummary,
 } from '../types';
+import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
 
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
@@ -427,7 +428,8 @@ class ApiClient {
   async searchText(
     orgId: string,
     request: SearchTextRequest,
-    getAccessToken?: AccessTokenProvider
+    getAccessToken?: AccessTokenProvider,
+    signal?: AbortSignal
   ): Promise<SearchResponse> {
     const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/text`, {
       method: 'POST',
@@ -436,12 +438,34 @@ class ApiClient {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
+      signal,
     });
 
     const data: ApiResponse<SearchResponse> = await response.json();
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Search failed');
+    }
+
+    return data.data;
+  }
+
+  async getSearchSpotlightBundle(
+    path: string,
+    getAccessToken: AccessTokenProvider,
+    signal?: AbortSignal
+  ): Promise<PublicSearchSpotlightBundle> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      headers: await this.getAuthHeaders(getAccessToken),
+      signal,
+    });
+    const data: ApiResponse<PublicSearchSpotlightBundle> =
+      await response.json();
+
+    if (!response.ok || !data.success || !data.data) {
+      throw new Error(
+        data.error?.message || 'Failed to load cached search results'
+      );
     }
 
     return data.data;

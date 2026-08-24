@@ -1,0 +1,75 @@
+export const NGS_SPOTLIGHT_DEFINITIONS = [
+  {
+    id: 'tropical-fruit-flowers',
+    type: 'keyword',
+    label: 'tropical fruit and flowers',
+    query: 'a still life of tropical fruit and flowers',
+    dot: '#cda636',
+  },
+  {
+    id: 'fishing-boats-sampans',
+    type: 'motif',
+    label: 'fishing boats and sampans',
+    query: 'fishing boats and sampans by the shore',
+    dot: '#4c78a8',
+  },
+  {
+    id: 'wet-markets-hawkers',
+    type: 'keyword',
+    label: 'wet markets and hawkers',
+    query: 'a crowded wet market with hawker stalls',
+    dot: '#bf5631',
+  },
+  {
+    id: 'mother-child',
+    type: 'motif',
+    label: 'mother and child',
+    query: 'a mother holding a child',
+    dot: '#8a9a7a',
+  },
+  {
+    id: 'batik-textile-pattern',
+    type: 'motif',
+    label: 'batik textile pattern',
+    query: 'batik or songket textile pattern',
+    dot: '#bf5631',
+  },
+  {
+    id: 'serene-contemplative',
+    type: 'mood',
+    label: 'serene and contemplative',
+    query: 'serene, still and contemplative',
+    dot: '#8a9a7a',
+  },
+  {
+    id: 'nanyang-style',
+    type: 'style',
+    label: 'Nanyang style',
+    query: 'Nanyang-style fusion of Chinese and Southeast Asian',
+    dot: '#365f9c',
+  },
+  {
+    id: 'watercolour-painting',
+    type: 'medium',
+    label: 'watercolour painting',
+    query: 'watercolour painting',
+    dot: '#6e8ea8',
+  },
+  {
+    id: 'works-1950s',
+    type: 'metadata',
+    label: '1950s works',
+    query: 'artworks made in the 1950s',
+    dot: '#6a5238',
+  },
+  {
+    id: 'muted-sage-green',
+    type: 'colour',
+    label: 'muted sage green',
+    query: 'muted sage green',
+    dot: '#8a9a7a',
+    colourId: 'sage',
+  },
+] as const;
+
+export type NgsSpotlightDefinition = (typeof NGS_SPOTLIGHT_DEFINITIONS)[number];

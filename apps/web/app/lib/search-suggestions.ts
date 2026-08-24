@@ -1,5 +1,6 @@
 import type { HolidaySearchSuggestion } from './singapore-holidays.server';
 import { NGA_SPOTLIGHT_DEFINITIONS } from './nga-spotlight-definitions';
+import { NGS_SPOTLIGHT_DEFINITIONS } from './ngs-spotlight-definitions';
 
 const OCCASION_DOT = '#365f9c';
 
@@ -36,69 +37,9 @@ export type SuggestionContext = {
   institutionName?: string | null;
 };
 
-const NGS_SUGGESTIONS: EvalSuggestion[] = [
-  {
-    type: 'keyword',
-    label: 'tropical fruit and flowers',
-    query: 'a still life of tropical fruit and flowers',
-    dot: '#cda636',
-  },
-  {
-    type: 'motif',
-    label: 'fishing boats and sampans',
-    query: 'fishing boats and sampans by the shore',
-    dot: '#4c78a8',
-  },
-  {
-    type: 'keyword',
-    label: 'wet markets and hawkers',
-    query: 'a crowded wet market with hawker stalls',
-    dot: '#bf5631',
-  },
-  {
-    type: 'motif',
-    label: 'mother and child',
-    query: 'a mother holding a child',
-    dot: '#8a9a7a',
-  },
-  {
-    type: 'motif',
-    label: 'batik textile pattern',
-    query: 'batik or songket textile pattern',
-    dot: '#bf5631',
-  },
-  {
-    type: 'mood',
-    label: 'serene and contemplative',
-    query: 'serene, still and contemplative',
-    dot: '#8a9a7a',
-  },
-  {
-    type: 'style',
-    label: 'Nanyang style',
-    query: 'Nanyang-style fusion of Chinese and Southeast Asian',
-    dot: '#365f9c',
-  },
-  {
-    type: 'medium',
-    label: 'watercolour painting',
-    query: 'watercolour painting',
-    dot: '#6e8ea8',
-  },
-  {
-    type: 'metadata',
-    label: '1950s works',
-    query: 'artworks made in the 1950s',
-    dot: '#6a5238',
-  },
-  {
-    type: 'colour',
-    label: 'muted sage green',
-    query: 'muted sage green',
-    dot: '#8a9a7a',
-    colourId: 'sage',
-  },
-];
+const NGS_SUGGESTIONS: EvalSuggestion[] = NGS_SPOTLIGHT_DEFINITIONS.map(
+  ({ id, ...suggestion }) => ({ ...suggestion, spotlightId: id })
+);
 
 const NGA_SUGGESTIONS: EvalSuggestion[] = NGA_SPOTLIGHT_DEFINITIONS.map(
   ({ id, ...suggestion }) => ({ ...suggestion, spotlightId: id })

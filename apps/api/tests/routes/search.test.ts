@@ -9,6 +9,7 @@ import * as searchRouteExports from '../../src/routes/search';
 import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
 import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/public-search-cold-miss-rate-limit';
 import type { Env } from '../../src/index';
+import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
 
 const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 
@@ -844,6 +845,73 @@ const imageSearch = (
     env
   );
 };
+
+const ngsSearchSpotlights = (
+  app: Hono<{ Bindings: Env }>,
+  env: Env,
+  headers?: HeadersInit,
+  routeOrgId = 'ngs',
+  revision = NGS_SEARCH_SPOTLIGHT_ASSET_REVISION
+) =>
+  app.request(
+    `/api/v1/orgs/${routeOrgId}/search-spotlights/${revision}`,
+    { headers },
+    env
+  );
+
+describe('NGS search spotlight cache', () => {
+  it('requires authentication before returning the private cached results', async () => {
+    const response = await ngsSearchSpotlights(
+      makeApp(),
+      makeEnv(new FakeSearchDb())
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it('returns every NGS Try result set from the immutable private cache', async () => {
+    const response = await ngsSearchSpotlights(
+      makeApp(),
+      makeEnv(new FakeSearchDb()),
+      { 'X-User-Id': 'user-1' }
+    );
+    const payload = (await response.json()) as {
+      success: boolean;
+      data: {
+        provider: string;
+        suggestions: Array<{
+          artworks: Array<{ imageUrl?: string; thumbnailUrl?: string }>;
+        }>;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'private, max-age=31536000, immutable'
+    );
+    expect(response.headers.get('Vary')).toBe('Authorization');
+    expect(payload.success).toBe(true);
+    expect(payload.data.provider).toBe('ngs');
+    expect(payload.data.suggestions).toHaveLength(10);
+    expect(
+      payload.data.suggestions.map((suggestion) => suggestion.artworks.length)
+    ).toEqual([30, 28, 28, 30, 26, 26, 28, 30, 30, 29]);
+    expect(payload.data.suggestions[0]?.artworks[0]?.thumbnailUrl).toMatch(
+      /^http:\/\/localhost\/api\/v1\/assets\//
+    );
+  });
+
+  it('does not serve the private NGS cache under another org route', async () => {
+    const response = await ngsSearchSpotlights(
+      makeApp(),
+      makeEnv(new FakeSearchDb()),
+      { 'X-User-Id': 'user-1' },
+      'nga'
+    );
+
+    expect(response.status).toBe(404);
+  });
+});
 
 const makeImageSearchForm = (
   file: File = new File([new Uint8Array([1, 2, 3, 4])], 'query.png', {

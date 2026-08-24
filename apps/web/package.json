@@ -15,6 +15,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "spotlights:nga": "tsx ../../scripts/generate-nga-search-spotlights.ts",
+    "spotlights:ngs": "tsx ../../scripts/generate-ngs-search-spotlights.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "clean": "rm -rf build .cache"
