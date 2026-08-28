@@ -38,7 +38,7 @@ class FakeStatement {
   }
 
   first<T>() {
-    return this.db.first<T>();
+    return this.db.first<T>(this.sql);
   }
 
   all<T>() {
@@ -138,7 +138,10 @@ class FakeUsageDb {
     return { success: true, meta: { changes: 1 } };
   }
 
-  async first<T>() {
+  async first<T>(sql: string) {
+    if (sql.includes("WHERE id = ? AND role = 'admin'")) {
+      return { allowed: 1 } as T;
+    }
     return null as T | null;
   }
 
@@ -177,7 +180,7 @@ describe('Usage event API', () => {
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'vitest-usage/1.0',
-          'X-User-Id': 'public-search-web',
+          'X-User-Id': 'admin',
         },
         body: JSON.stringify({
           eventType: 'artwork_interaction',

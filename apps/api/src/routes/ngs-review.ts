@@ -1,11 +1,14 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
+import { requireGlobalMutationAccess, requireUser } from '../middleware/auth';
 import {
   ngsReviewImageAllowlist,
   type NgsReviewImageRole,
 } from '../generated/ngs-review-image-allowlist';
 
 const ngsReviewRoutes = new Hono<{ Bindings: Env }>();
+
+ngsReviewRoutes.use('*', requireUser as any);
 
 const reviewEndpointEnabled = (env: Env) =>
   env.ENVIRONMENT !== 'production' || env.ENABLE_NGS_REVIEW === 'true';
@@ -22,6 +25,8 @@ const isImageRole = (role: string): role is NgsReviewImageRole =>
   role === 'thumb' || role === 'original';
 
 ngsReviewRoutes.get('/stale-assets/:staleId/:role', async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   if (!reviewEndpointEnabled(c.env)) {
     return c.json(
       {
@@ -94,7 +99,9 @@ ngsReviewRoutes.get('/stale-assets/:staleId/:role', async (c) => {
   return new Response(object.body, { headers });
 });
 
-ngsReviewRoutes.get('/summary', (c) => {
+ngsReviewRoutes.get('/summary', async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   if (!reviewEndpointEnabled(c.env)) {
     return c.json(
       {

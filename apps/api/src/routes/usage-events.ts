@@ -5,6 +5,7 @@ import {
   recordApiUsageEvent,
   recordArtworkUsageEvents,
   requireAuthOrApiKey,
+  requireGlobalMutationAccess,
   type ArtworkUsageInteraction,
 } from '../middleware/auth';
 import type { ApiResponse } from '../types';
@@ -131,6 +132,8 @@ const usageEventRoutes = new Hono<{ Bindings: Env }>();
 usageEventRoutes.use('*', requireAuthOrApiKey as any);
 
 usageEventRoutes.post('/', async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await c.req.json();

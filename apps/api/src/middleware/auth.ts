@@ -888,6 +888,27 @@ const getTestPrincipal = (c: Context<AppBindings>): AuthPrincipal | null => {
 };
 
 export const requireUser = async (c: Context<AppBindings>, next: Next) => {
+  // API-wide authentication may already have verified a bearer token or a
+  // narrow internal MCP capability. Re-verifying would discard that principal
+  // before route-local authorization can make its deliberate 403 decision.
+  const existingAuth = c.get('auth');
+  if (existingAuth) {
+    if (existingAuth.kind === 'user') {
+      await next();
+      return;
+    }
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Sign-in required',
+        },
+      },
+      401
+    );
+  }
+
   try {
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const auth = bearerToken

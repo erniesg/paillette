@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
-import { requireUser } from '../middleware/auth';
+import { requireGlobalMutationAccess, requireUser } from '../middleware/auth';
 
 const impactRoutes = new Hono<{ Bindings: Env }>();
 
@@ -20,6 +20,8 @@ impactRoutes.get(
     })
   ),
   async (c) => {
+    const denied = await requireGlobalMutationAccess(c as any);
+    if (denied) return denied;
     const query = c.req.valid('query');
     const days = Math.min(
       Math.max(Number.parseInt(query.days, 10) || 30, 1),

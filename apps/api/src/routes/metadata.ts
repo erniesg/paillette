@@ -7,6 +7,11 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import type { Env } from '../index';
 import { CSVParser, BatchMetadataProcessor } from '@paillette/metadata';
+import {
+  getAuth,
+  requireGlobalMutationAccess,
+  requireUser,
+} from '../middleware/auth';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -14,7 +19,9 @@ const app = new Hono<{ Bindings: Env }>();
  * POST /api/v1/metadata/upload
  * Upload CSV file with artwork metadata for batch processing
  */
-app.post('/upload', async (c) => {
+app.post('/upload', requireUser as any, async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   try {
     // Parse multipart form data
     const formData = await c.req.formData();
@@ -98,8 +105,7 @@ app.post('/upload', async (c) => {
       );
     }
 
-    // Get user ID from auth context (mock for now)
-    const userId = 'system'; // TODO: Get from auth middleware
+    const userId = getAuth(c as any).userId;
 
     // Create upload job record
     const jobId = randomUUID();
@@ -184,7 +190,9 @@ app.post('/upload', async (c) => {
  * Validate CSV file without processing
  * Returns preview of first few rows and validation errors
  */
-app.post('/validate', async (c) => {
+app.post('/validate', requireUser as any, async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   try {
     const formData = await c.req.formData();
     const file = formData.get('csv') as File | null;

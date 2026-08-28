@@ -1,8 +1,14 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
-import { createApiKey, getAuth, requireUser } from '../middleware/auth';
+import {
+  createApiKey,
+  getAuth,
+  requireGlobalMutationAccess,
+  requireUser,
+} from '../middleware/auth';
 import { generateId } from '../utils/crypto';
 import { parseSearchAccessMode } from '../auth/search-access';
 
@@ -11,6 +17,15 @@ type Variables = {
 };
 
 const apiKeys = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+const requireGlobalAdmin: MiddlewareHandler<{
+  Bindings: Env;
+  Variables: Variables;
+}> = async (c, next) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
+  await next();
+};
 
 const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(80).optional().default('Default key'),
@@ -31,7 +46,7 @@ apiKeys.get('/access', async (c) => {
   });
 });
 
-apiKeys.get('/api-keys', async (c) => {
+apiKeys.get('/api-keys', requireGlobalAdmin, async (c) => {
   const auth = getAuth(c as any);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -68,7 +83,7 @@ apiKeys.get('/api-keys', async (c) => {
   });
 });
 
-apiKeys.post('/api-keys', zValidator('json', createApiKeySchema), async (c) => {
+apiKeys.post('/api-keys', requireGlobalAdmin, zValidator('json', createApiKeySchema), async (c) => {
   const auth = getAuth(c as any);
   const body = c.req.valid('json');
 
@@ -124,7 +139,7 @@ apiKeys.post('/api-keys', zValidator('json', createApiKeySchema), async (c) => {
   );
 });
 
-apiKeys.delete('/api-keys/:id', async (c) => {
+apiKeys.delete('/api-keys/:id', requireGlobalAdmin, async (c) => {
   const auth = getAuth(c as any);
   const id = c.req.param('id');
 
