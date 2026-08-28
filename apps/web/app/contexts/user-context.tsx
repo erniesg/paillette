@@ -1,16 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  type ReactNode,
-} from 'react';
-import { useLogto, type UserInfoResponse } from '@logto/react';
-import {
-  getLogtoPostSignInUri,
-  getLogtoPostSignOutUri,
-  getLogtoRedirectUri,
-} from '~/lib/logto';
+import { createContext, useContext, type ReactNode } from 'react';
 
 interface User {
   id: string;
@@ -19,9 +7,7 @@ interface User {
   avatar?: string;
 }
 
-type AuthRedirectOptions = {
-  returnTo?: string;
-};
+type AuthRedirectOptions = { returnTo?: string };
 
 interface UserContextType {
   user: User | null;
@@ -31,133 +17,93 @@ interface UserContextType {
   resetPassword: (options?: AuthRedirectOptions) => Promise<void>;
   signup: (options?: AuthRedirectOptions) => Promise<void>;
   isAuthenticated: boolean;
-  isLogtoConfigured: boolean;
-  getAccessToken: (resource?: string) => Promise<string | undefined>;
+  isWorkOSConfigured: boolean;
+  searchAccess: 'anonymous' | 'pending' | 'approved';
+  getAccessToken: () => Promise<string | undefined>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-const buildUser = (profile: UserInfoResponse): User => {
-  const email = profile.email ?? '';
-  const name =
-    profile.name ??
-    profile.username ??
-    (email ? email.split('@')[0] : undefined) ??
-    profile.sub;
-
-  return {
-    id: profile.sub,
-    email,
-    name,
-    avatar: profile.picture ?? undefined,
-  };
-};
-
 export function UserProvider({
   children,
-  isLogtoConfigured,
-  apiResource,
+  initialUser,
+  isWorkOSConfigured,
+  searchAccess,
 }: {
   children: ReactNode;
-  isLogtoConfigured: boolean;
-  apiResource?: string;
+  initialUser: {
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    profilePictureUrl?: string | null;
+  } | null;
+  isWorkOSConfigured: boolean;
+  searchAccess: 'anonymous' | 'pending' | 'approved';
 }) {
-  const {
-    fetchUserInfo,
-    getAccessToken,
-    isAuthenticated,
-    isLoading: isLogtoLoading,
-    signIn,
-    signOut,
-  } = useLogto();
-  const [user, setUser] = useState<User | null>(null);
-  const [isProfileLoading, setIsProfileLoading] = useState(false);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setUser(null);
-      return;
-    }
-
-    let isMounted = true;
-    setIsProfileLoading(true);
-
-    void fetchUserInfo()
-      .then((profile) => {
-        if (isMounted && profile) {
-          setUser(buildUser(profile));
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to fetch Logto user profile:', error);
-        if (isMounted) {
-          setUser(null);
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsProfileLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [fetchUserInfo, isAuthenticated]);
+  const user: User | null = initialUser
+    ? {
+        id: initialUser.id,
+        email: initialUser.email,
+        name:
+          [initialUser.firstName, initialUser.lastName]
+            .filter(Boolean)
+            .join(' ') ||
+          initialUser.email.split('@')[0] ||
+          initialUser.id,
+        avatar: initialUser.profilePictureUrl ?? undefined,
+      }
+    : null;
 
   const ensureConfigured = () => {
-    if (!isLogtoConfigured) {
-      throw new Error('Logto is not configured for this environment.');
+    if (!isWorkOSConfigured) {
+      throw new Error('WorkOS is not configured for this environment.');
     }
+  };
+
+  const startAuth = (screen: 'sign-in' | 'sign-up', returnTo?: string) => {
+    ensureConfigured();
+    const params = new URLSearchParams({ screen });
+    if (returnTo) params.set('returnTo', returnTo);
+    window.location.assign(`/auth/start?${params.toString()}`);
   };
 
   const login = async (options: AuthRedirectOptions = {}) => {
-    ensureConfigured();
-    await signIn({
-      redirectUri: getLogtoRedirectUri(),
-      postRedirectUri: getLogtoPostSignInUri(options.returnTo),
-    });
+    startAuth('sign-in', options.returnTo);
   };
 
   const logout = async () => {
     ensureConfigured();
-    await signOut(getLogtoPostSignOutUri());
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = '/auth/logout';
+    document.body.appendChild(form);
+    form.submit();
   };
 
   const signup = async (options: AuthRedirectOptions = {}) => {
-    ensureConfigured();
-    await signIn({
-      redirectUri: getLogtoRedirectUri(),
-      postRedirectUri: getLogtoPostSignInUri(options.returnTo),
-      firstScreen: 'register',
-    });
+    startAuth('sign-up', options.returnTo);
   };
 
   const resetPassword = async (options: AuthRedirectOptions = {}) => {
-    ensureConfigured();
-    await signIn({
-      redirectUri: getLogtoRedirectUri(),
-      postRedirectUri: getLogtoPostSignInUri(options.returnTo),
-      firstScreen: 'reset_password',
-      identifiers: ['email'],
-    });
+    startAuth('sign-in', options.returnTo);
   };
-
-  const getConfiguredAccessToken = (resource?: string) =>
-    getAccessToken(resource || apiResource || undefined);
 
   return (
     <UserContext.Provider
       value={{
         user,
-        isLoading: isLogtoLoading || isProfileLoading,
+        isLoading: false,
         login,
         logout,
         resetPassword,
         signup,
-        isAuthenticated,
-        isLogtoConfigured,
-        getAccessToken: getConfiguredAccessToken,
+        isAuthenticated: Boolean(user),
+        isWorkOSConfigured,
+        searchAccess,
+        // Browser requests use a same-origin proxy; tokens never reach JS.
+        getAccessToken: async () =>
+          user ? 'same-origin-workos-session' : undefined,
       }}
     >
       {children}
