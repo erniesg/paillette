@@ -12,7 +12,14 @@ const makeArtwork = (provider: 'nga' | 'artic') => ({
   collection_id: null,
   image_url: `https://example.com/${provider}.jpg`,
   thumbnail_url: `https://example.com/${provider}-thumb.jpg`,
-  original_filename: null,
+  original_filename: 'private-ingest-filename.tiff',
+  image_hash: 'internal-image-hash',
+  image_url_processed: 'https://internal.example/processed.jpg',
+  processing_status: 'completed' as const,
+  frame_removal_confidence: 0.99,
+  processed_at: '2026-07-11T00:01:00.000Z',
+  processing_error: 'internal processing error',
+  embedding_id: 'internal-embedding-id',
   title: `${provider.toUpperCase()} artwork`,
   artist: null,
   year: null,
@@ -38,7 +45,11 @@ const makeArtwork = (provider: 'nga' | 'artic') => ({
   translations: '{}',
   dominant_colors: null,
   color_palette: null,
-  custom_metadata: JSON.stringify({ provider }),
+  custom_metadata: JSON.stringify({
+    provider,
+    ingest_token: 'never-public',
+    processing_job_id: 'never-public-job',
+  }),
   citation: null,
   created_at: '2026-07-11T00:00:00.000Z',
   updated_at: '2026-07-11T00:00:00.000Z',
@@ -145,6 +156,62 @@ describe('NGA artwork provider scope', () => {
           sql.includes("json_extract(custom_metadata, '$.provider') = ?")
         )
     ).toBe(true);
+  });
+
+  it('does not serialize internal ingestion fields in anonymous NGA lists', async () => {
+    const response = await app.request(
+      '/api/v1/orgs/nga/artworks?public_only=true',
+      {},
+      env
+    );
+    const body = (await response.json()) as any;
+    const artwork = body.data[0];
+
+    expect(response.status).toBe(200);
+    expect(artwork).toMatchObject({
+      id: 'open-access-art:nga:1',
+      title: 'NGA artwork',
+      source_record_id: '1',
+      custom_metadata: { provider: 'nga' },
+    });
+    expect(JSON.stringify(artwork)).not.toContain('private-ingest-filename');
+    expect(JSON.stringify(artwork)).not.toContain('internal-image-hash');
+    expect(JSON.stringify(artwork)).not.toContain('internal-embedding-id');
+    expect(JSON.stringify(artwork)).not.toContain('never-public');
+    expect(artwork).not.toHaveProperty('uploaded_by');
+    expect(artwork).not.toHaveProperty('original_filename');
+    expect(artwork).not.toHaveProperty('image_hash');
+    expect(artwork).not.toHaveProperty('image_url_processed');
+    expect(artwork).not.toHaveProperty('processing_status');
+    expect(artwork).not.toHaveProperty('embedding_id');
+  });
+
+  it('does not serialize internal ingestion fields in anonymous NGA details', async () => {
+    const response = await app.request(
+      '/api/v1/orgs/nga/artworks/open-access-art:nga:1',
+      {},
+      env
+    );
+    const body = (await response.json()) as any;
+    const artwork = body.data;
+
+    expect(response.status).toBe(200);
+    expect(artwork).toMatchObject({
+      id: 'open-access-art:nga:1',
+      title: 'NGA artwork',
+      source_record_id: '1',
+      custom_metadata: { provider: 'nga' },
+    });
+    expect(JSON.stringify(artwork)).not.toContain('private-ingest-filename');
+    expect(JSON.stringify(artwork)).not.toContain('internal-image-hash');
+    expect(JSON.stringify(artwork)).not.toContain('internal-embedding-id');
+    expect(JSON.stringify(artwork)).not.toContain('never-public');
+    expect(artwork).not.toHaveProperty('uploaded_by');
+    expect(artwork).not.toHaveProperty('original_filename');
+    expect(artwork).not.toHaveProperty('image_hash');
+    expect(artwork).not.toHaveProperty('image_url_processed');
+    expect(artwork).not.toHaveProperty('processing_status');
+    expect(artwork).not.toHaveProperty('embedding_id');
   });
 
   it('rejects a public browse request for a non-public route scope', async () => {

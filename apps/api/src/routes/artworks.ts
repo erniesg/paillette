@@ -13,7 +13,6 @@ import {
   ArtworkQuerySchema,
   type ArtworkRow,
   type ArtworkResponse,
-  type ArtworkListResponse,
   type ArtworkUploadResponse,
 } from '../types/artwork';
 import {
@@ -403,6 +402,38 @@ function mapArtworkRowToResponse(row: ArtworkRow): ArtworkResponse {
     created_at: row.created_at,
     updated_at: row.updated_at,
     uploaded_by: row.uploaded_by,
+  };
+}
+
+// Anonymous NGA reads deliberately use an allow-listed representation. The
+// source row also carries ingestion and processing state (including uploader
+// identity, hashes, and arbitrary importer metadata) that must not become
+// part of the public API contract.
+function mapPublicNgaArtworkRowToResponse(row: ArtworkRow) {
+  const artwork = mapArtworkRowToResponse(row);
+  const metadata = artwork.custom_metadata;
+  const publicMetadata: Record<string, unknown> = {};
+
+  if (typeof metadata.provider === 'string') {
+    publicMetadata.provider = metadata.provider;
+  }
+  if (typeof metadata.openAccess === 'boolean') {
+    publicMetadata.openAccess = metadata.openAccess;
+  }
+  if (typeof metadata.open_access === 'boolean') {
+    publicMetadata.open_access = metadata.open_access;
+  }
+
+  const {
+    uploaded_by: _uploadedBy,
+    original_filename: _originalFilename,
+    custom_metadata: _customMetadata,
+    ...publicArtwork
+  } = artwork;
+
+  return {
+    ...publicArtwork,
+    custom_metadata: publicMetadata,
   };
 }
 
@@ -962,9 +993,13 @@ app.get('/', requireArtworkReadAccess as any, async (c) => {
       .bind(...params)
       .all<ArtworkRow>();
 
-    const artworks = result.results.map(mapArtworkRowToResponse);
+    const artworks = result.results.map(
+      isPublicNgaArtworkRead(c)
+        ? mapPublicNgaArtworkRowToResponse
+        : mapArtworkRowToResponse
+    );
 
-    const response: ArtworkListResponse = {
+    const response = {
       success: true,
       data: artworks,
       pagination: {
@@ -1023,7 +1058,9 @@ app.get('/:id', requireArtworkReadAccess as any, async (c) => {
 
     return c.json({
       success: true,
-      data: mapArtworkRowToResponse(artwork),
+      data: isPublicNgaArtworkRead(c)
+        ? mapPublicNgaArtworkRowToResponse(artwork)
+        : mapArtworkRowToResponse(artwork),
     });
   } catch (error) {
     console.error('Get error:', error);
