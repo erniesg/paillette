@@ -32,20 +32,15 @@ const serverBuild = {
   routes: build.routes,
 } as unknown as ServerBuild;
 
-const PUBLIC_PAGE_CACHE_CONTROL =
-  'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
-const PUBLIC_SEARCH_HTML_PATHS = ['/ngs/search', '/nga/search'];
-
-const getPublicHtmlCacheControl = (pathname: string) => {
-  if (pathname === '/about') {
-    return PUBLIC_PAGE_CACHE_CONTROL;
-  }
-
-  if (PUBLIC_SEARCH_HTML_PATHS.includes(pathname)) {
-    return PUBLIC_PAGE_CACHE_CONTROL;
-  }
-
-  return null;
+// Remix document responses include the root-loader payload. That payload can
+// include a WorkOS session marker and search-access state, so it must never be
+// put in a shared cache. Static assets do not advertise `text/html` and remain
+// on the platform's normal asset-cache path.
+export const getDocumentCacheControl = (request: Request) => {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return null;
+  return request.headers.get('Accept')?.includes('text/html')
+    ? 'private, no-store'
+    : null;
 };
 
 const handleRemixRequest = createRequestHandler(serverBuild, 'production');
@@ -56,9 +51,8 @@ export default {
       cloudflare: { env, context },
     });
 
-    const requestUrl = new URL(request.url);
-    const cacheControl = getPublicHtmlCacheControl(requestUrl.pathname);
-    if (cacheControl && request.method === 'GET') {
+    const cacheControl = getDocumentCacheControl(request);
+    if (cacheControl) {
       response.headers.set('Cache-Control', cacheControl);
     }
 

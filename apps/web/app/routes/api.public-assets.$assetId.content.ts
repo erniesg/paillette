@@ -20,7 +20,6 @@ const RESPONSE_HEADERS = [
   'Content-Type',
   'ETag',
   'Last-Modified',
-  'Set-Cookie',
 ] as const;
 const privateNoStore = { 'Cache-Control': 'private, no-store' };
 
@@ -86,9 +85,6 @@ const handleAssetContent = async (
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
   }
-  if (upstream.status >= 400)
-    responseHeaders.set('Cache-Control', 'private, no-store');
-
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,

@@ -74,6 +74,9 @@ describe('WorkOS authenticated resource proxies', () => {
             'X-NGS-Search-Limit': '1000',
             'X-NGS-Search-Used': '1000',
             'X-NGS-Search-Remaining': '0',
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': '1000',
+            'X-NGA-Search-Remaining': '0',
             'Set-Cookie': 'upstream-refresh=1; HttpOnly; Secure',
           },
         }
@@ -96,7 +99,9 @@ describe('WorkOS authenticated resource proxies', () => {
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('60');
     expect(response.headers.get('X-NGS-Search-Remaining')).toBe('0');
-    expect(response.headers.get('Set-Cookie')).toContain('upstream-refresh=1');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('0');
+    expect(response.headers.get('Set-Cookie')).toBeNull();
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED' },
     });
@@ -143,6 +148,8 @@ describe('WorkOS authenticated resource proxies', () => {
           'Content-Type': 'image/jpeg',
           'Content-Length': String(image.byteLength),
           ETag: '"asset-etag"',
+          'Cache-Control': 'public, max-age=86400',
+          'Set-Cookie': 'upstream-refresh=1; HttpOnly; Secure',
           'X-Internal-Debug': 'never-forward',
         },
       })
@@ -159,6 +166,7 @@ describe('WorkOS authenticated resource proxies', () => {
       'Bearer workos-access-token'
     );
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('Set-Cookie')).toBeNull();
     expect(response.headers.get('X-Internal-Debug')).toBeNull();
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(image);
   });

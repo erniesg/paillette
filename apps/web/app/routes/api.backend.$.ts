@@ -23,10 +23,12 @@ const RESPONSE_HEADERS = [
   'X-NGS-Search-Limit',
   'X-NGS-Search-Used',
   'X-NGS-Search-Remaining',
+  'X-NGA-Search-Limit',
+  'X-NGA-Search-Used',
+  'X-NGA-Search-Remaining',
   'X-Paillette-Search-Cache',
   'ETag',
   'Last-Modified',
-  'Set-Cookie',
 ] as const;
 
 const privateNoStore = { 'Cache-Control': 'private, no-store' };
@@ -113,10 +115,6 @@ const proxyAuthenticatedRequest = async (
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
   }
-  const upstreamCacheControl = upstream.headers.get('Cache-Control');
-  if (upstreamCacheControl)
-    responseHeaders.set('Cache-Control', upstreamCacheControl);
-
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
