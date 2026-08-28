@@ -6,6 +6,10 @@ const wranglerToml = readFileSync(
   new URL('../wrangler.toml', import.meta.url),
   'utf8'
 );
+const apiIndexSource = readFileSync(
+  new URL('../src/index.ts', import.meta.url),
+  'utf8'
+);
 
 const requiredProductionSearchVars = {
   EMBEDDING_INDEX_VERSION: 'v2',
@@ -48,7 +52,36 @@ describe('wrangler production search config', () => {
     expect(extractProductionEnvVars()).toContain(
       'SEARCH_ACCESS_MODE = "authenticated"'
     );
-    expect(wranglerToml).not.toContain('LOGTO_');
+    for (const secretName of [
+      'AUTH_CLIENT_ID',
+      'AUTH_ISSUER',
+      'AUTH_JWKS_URI',
+    ]) {
+      expect(apiIndexSource).toContain(`${secretName}?:`);
+      expect(wranglerToml).not.toContain(`${secretName} =`);
+    }
+  });
+
+  it('keeps non-secret MCP protected-resource metadata in each environment', () => {
+    expect(extractTopLevelVarsBlock()).toContain(
+      'LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"'
+    );
+    expect(extractTopLevelVarsBlock()).toContain(
+      'LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai"'
+    );
+    expect(extractStagingEnvVars()).toContain(
+      'LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"'
+    );
+    expect(extractStagingEnvVars()).toContain(
+      'LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai"'
+    );
+    expect(extractProductionEnvVars()).toContain(
+      'LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"'
+    );
+    expect(extractProductionEnvVars()).toContain(
+      'LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai"'
+    );
+    expect(wranglerToml).not.toContain('LOGTO_JWKS_URI');
   });
 
   it('keeps the default production worker on v2 hybrid search', () => {
