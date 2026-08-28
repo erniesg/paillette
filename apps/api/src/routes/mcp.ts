@@ -653,12 +653,23 @@ const callApi = async (
     payload = undefined;
   }
 
-  if (
-    !response.ok ||
-    !payload ||
-    typeof payload !== 'object' ||
-    payload.success === false
-  ) {
+  const isSuccessfulEnvelope =
+    payload !== null &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    payload.success === true &&
+    Object.prototype.hasOwnProperty.call(payload, 'data');
+
+  if (!response.ok || !isSuccessfulEnvelope) {
+    // Only a declared API failure envelope is trusted on a successful HTTP
+    // response. A 2xx diagnostic, array, or malformed object must not become
+    // MCP tool data or leak arbitrary upstream fields.
+    const declaredFailure =
+      payload !== null &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      payload.success === false;
+    const errorPayload = !response.ok || declaredFailure ? payload : undefined;
     const quota = getNgaQuotaFromHeaders(response.headers);
     const retryAfterSeconds = getRetryAfterSeconds(response.headers);
     const headers = Object.fromEntries([
@@ -675,17 +686,17 @@ const callApi = async (
     ]);
     throw new McpRestError(
       response.ok ? 502 : response.status,
-      payload?.error?.code || 'API_CALL_FAILED',
-      payload?.error?.message ||
+      errorPayload?.error?.code || 'API_CALL_FAILED',
+      errorPayload?.error?.message ||
         `API call failed: ${response.ok ? 502 : response.status}`,
-      payload?.error?.details,
+      errorPayload?.error?.details,
       headers,
       quota,
       retryAfterSeconds
     );
   }
 
-  return payload.data ?? payload;
+  return payload.data;
 };
 
 const asToolContent = (data: unknown) => ({

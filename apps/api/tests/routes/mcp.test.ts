@@ -121,6 +121,49 @@ const callTool = (
 describe('MCP downstream REST errors', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it.each([
+    ['empty object', {}],
+    ['array', [{ success: true, data: { leaked: true } }]],
+    ['diagnostic object', { diagnostic: 'private upstream detail' }],
+    ['success envelope without data', { success: true }],
+  ])(
+    'rejects a 2xx downstream %s without exposing its payload',
+    async (_label, downstreamPayload) => {
+      const downstream = vi.fn(async () =>
+        new Response(JSON.stringify(downstreamPayload), {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': '17',
+            'X-NGA-Search-Remaining': '983',
+            'Retry-After': '30',
+          },
+        })
+      );
+      vi.stubGlobal('fetch', downstream);
+
+      const response = await callTool('search_artworks', 'open');
+      const payload = (await response.json()) as any;
+
+      expect(response.status).toBe(502);
+      expect(downstream).toHaveBeenCalledOnce();
+      expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+      expect(response.headers.get('X-NGA-Search-Used')).toBe('17');
+      expect(response.headers.get('X-NGA-Search-Remaining')).toBe('983');
+      expect(response.headers.get('Retry-After')).toBe('30');
+      expect(payload).toMatchObject({
+        error: {
+          code: -32000,
+          message: 'API call failed: 502',
+          data: { httpStatus: 502, code: 'API_CALL_FAILED' },
+        },
+      });
+      expect(payload.error.data).not.toHaveProperty('details');
+      expect(JSON.stringify(payload)).not.toContain('private upstream detail');
+      expect(JSON.stringify(payload)).not.toContain('leaked');
+    }
+  );
+
   it('fails closed with a stable 503 when its internal capability secret is missing', async () => {
     const app = new Hono<{ Bindings: Env }>();
     app.route('/api/v1/mcp', mcpRoutes);
