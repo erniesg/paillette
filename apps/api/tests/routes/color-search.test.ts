@@ -18,6 +18,7 @@ describe('Color Search API', () => {
   let dailyQuotaChargeUpdates: number;
   let failUsageEventUpdates: boolean;
   let failUsageEventInserts: boolean;
+  let failColorSearchMessage: string | null;
   let mutationAuthorizedUserIds: Set<string>;
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
@@ -35,6 +36,7 @@ describe('Color Search API', () => {
     dailyQuotaChargeUpdates = 0;
     failUsageEventUpdates = false;
     failUsageEventInserts = false;
+    failColorSearchMessage = null;
     mutationAuthorizedUserIds = new Set(['test-user']);
     const artwork = {
       id: 'test-artwork-123',
@@ -62,6 +64,9 @@ describe('Color Search API', () => {
             },
             all: vi.fn(async () => {
               if (sql.includes('dominant_colors IS NOT NULL')) {
+                if (failColorSearchMessage) {
+                  throw new Error(failColorSearchMessage);
+                }
                 return { success: true, results: [artwork] };
               }
 
@@ -180,6 +185,27 @@ describe('Color Search API', () => {
   });
 
   describe('POST /search/color', () => {
+    it('does not disclose an internal color-search failure through the public NGA route', async () => {
+      testGalleryId = 'open-access-art';
+      failColorSearchMessage = 'INTERNAL_COLOR_SEARCH_SENTINEL';
+
+      const res = await request('/galleries/nga/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ colors: ['#FF5733'] }),
+      });
+      const payload = await res.text();
+
+      expect(res.status).toBe(500);
+      expect(payload).not.toContain('INTERNAL_COLOR_SEARCH_SENTINEL');
+      expect(JSON.parse(payload)).toMatchObject({
+        error: {
+          code: 'PUBLIC_SEARCH_UNAVAILABLE',
+          message: 'Public search is temporarily unavailable',
+        },
+      });
+    });
+
     it('charges an NGS color search once when mounted with the generic search router', async () => {
       const integratedApp = new Hono<{ Bindings: Env }>();
       integratedApp.route('/galleries/:galleryId', searchRoutes);

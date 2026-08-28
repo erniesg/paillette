@@ -296,6 +296,23 @@ colorSearchRoutes.post('/search/color', async (c) => {
   } catch (error) {
     console.error('Color search error:', error);
 
+    if (
+      resolveOpenAccessProviderScope(
+        c.req.param('orgId') || c.req.param('galleryId')
+      ) === 'nga'
+    ) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SEARCH_UNAVAILABLE',
+            message: 'Public search is temporarily unavailable',
+          },
+        },
+        500
+      );
+    }
+
     return c.json<ApiResponse>(
       {
         success: false,

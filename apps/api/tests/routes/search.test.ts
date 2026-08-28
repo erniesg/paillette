@@ -243,6 +243,7 @@ class FakeSearchDb {
   failUsageEventInserts = false;
   failUsageEventUpdates = false;
   failNgaPublicSearchQuota = false;
+  failSearchReadMessage: string | null = null;
   apiKeyRow: {
     id: string;
     user_id: string;
@@ -521,6 +522,10 @@ class FakeSearchDb {
   }
 
   async all<T>(sql: string, params: unknown[]) {
+    if (this.failSearchReadMessage && sql.includes('FROM artworks')) {
+      throw new Error(this.failSearchReadMessage);
+    }
+
     const applyProviderScope = (rows: typeof this.rows) => {
       if (!sql.includes("json_extract(custom_metadata, '$.provider') = ?")) {
         return rows;
@@ -1003,6 +1008,62 @@ describe('NGA search spotlight cache', () => {
 });
 
 describe('NGA public search quota', () => {
+  it('does not disclose an internal text-search failure through the public NGA route', async () => {
+    const db = new FakeSearchDb([makeNgaArtworkRow()]);
+    db.failSearchReadMessage = 'INTERNAL_TEXT_SEARCH_SENTINEL';
+
+    const response = await textSearch(
+      makeApp(),
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      { query: 'quiet shore', topK: 1 },
+      'nga'
+    );
+    const payload = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(payload).not.toContain('INTERNAL_TEXT_SEARCH_SENTINEL');
+    expect(JSON.parse(payload)).toMatchObject({
+      error: {
+        code: 'PUBLIC_SEARCH_UNAVAILABLE',
+        message: 'Public search is temporarily unavailable',
+      },
+    });
+  });
+
+  it('does not disclose an internal image-search failure through the public NGA route', async () => {
+    const db = new FakeSearchDb([makeNgaArtworkRow()]);
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new Error('INTERNAL_IMAGE_SEARCH_SENTINEL');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const env = {
+      ...makeEnv(db),
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      JINA_API_KEY: 'jina-test-key',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+      VECTORIZE: { query: vi.fn() } as unknown as Vectorize,
+    } as Env;
+
+    const response = await imageSearch(
+      makeApp(),
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      'nga'
+    );
+    const payload = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(payload).not.toContain('INTERNAL_IMAGE_SEARCH_SENTINEL');
+    expect(JSON.parse(payload)).toMatchObject({
+      error: {
+        code: 'PUBLIC_SEARCH_UNAVAILABLE',
+        message: 'Public search is temporarily unavailable',
+      },
+    });
+  });
+
   it('returns the visible lifetime quota without consuming it', async () => {
     const db = new FakeSearchDb();
     const response = await makeApp().request(
