@@ -311,13 +311,12 @@ orgs.post(
         location_city: input.location?.city || null,
         location_address: input.location?.address || null,
         website: input.website || null,
-        api_key: apiKey,
         api_key_hash: apiKeyHash,
         owner_id: userId,
         settings: settingsObj,
       };
 
-      const query = orgQueries.create(org as any);
+      const query = orgQueries.create(org);
       await c.env.DB.prepare(query.sql)
         .bind(...query.params)
         .run();

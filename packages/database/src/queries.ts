@@ -88,7 +88,9 @@ export const orgQueries = {
   }),
 
   create: (
-    org: Omit<OrgRow, 'created_at'> & { settings?: Record<string, any> }
+    org: Omit<OrgRow, 'created_at' | 'api_key' | 'settings'> & {
+      settings?: Record<string, any>;
+    }
   ) => ({
     sql: `INSERT INTO orgs (
       id, name, slug, description, location_country, location_city,
@@ -104,7 +106,7 @@ export const orgQueries = {
       org.location_address || null,
       org.website || null,
       org.settings ? JSON.stringify(org.settings) : '{}',
-      org.api_key,
+      `retired-org-key:${org.id}`,
       org.api_key_hash,
       org.owner_id,
     ],

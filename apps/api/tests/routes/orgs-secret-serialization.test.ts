@@ -186,7 +186,9 @@ describe('organization read credential serialization', () => {
     const body = await response.json();
     const persistedHash = db.createdOrg?.api_key_hash;
     expect(persistedHash).toEqual(expect.any(String));
-    expect(body.data.api_key).toEqual(db.createdOrg?.api_key);
+    expect(body.data.api_key).toEqual(expect.any(String));
+    expect(db.createdOrg?.api_key).toEqual(`retired-org-key:${body.data.id}`);
+    expect(db.createdOrg?.api_key).not.toEqual(body.data.api_key);
     expect(JSON.stringify(body)).not.toContain(String(persistedHash));
     expect(body.data).not.toHaveProperty('api_key_hash');
     expect(body.data).toMatchObject({
