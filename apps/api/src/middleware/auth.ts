@@ -836,9 +836,6 @@ const verifyConfiguredIdentityToken = async (
     { issuer, clientId },
     getJwks(issuer, jwksUri)
   );
-  if (!identity.emailVerified) {
-    throw new Error('WorkOS email is not verified');
-  }
 
   const decision = await resolveSearchAccess(
     new D1SearchAccessRepository(c.env.DB),

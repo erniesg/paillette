@@ -88,23 +88,50 @@ describe('verifyIdentityToken', () => {
     ).rejects.toThrow('Invalid authentication token');
   });
 
-  it('requires the JWT-template email claims', async () => {
+  it('accepts a default AuthKit token without optional email claims', async () => {
     const token = await signToken({
       [PAILLETTE_EMAIL_CLAIM]: undefined,
       [PAILLETTE_EMAIL_VERIFIED_CLAIM]: undefined,
     });
     await expect(
       verifyIdentityToken(token, { issuer, clientId }, jwks)
-    ).rejects.toThrow('Invalid authentication token');
+    ).resolves.toMatchObject({
+      provider: 'workos',
+      issuer,
+      subject: 'user_ernie',
+      email: expect.stringMatching(
+        /^workos-[A-Za-z0-9_-]+@identity\.paillette\.invalid$/
+      ),
+      emailVerified: false,
+    });
   });
 
-  it('rejects an identity whose email is not verified', async () => {
+  it('does not trust an unverified optional email claim', async () => {
     const token = await signToken({
       [PAILLETTE_EMAIL_VERIFIED_CLAIM]: false,
     });
     await expect(
       verifyIdentityToken(token, { issuer, clientId }, jwks)
-    ).rejects.toThrow('Invalid authentication token');
+    ).resolves.toMatchObject({
+      email: expect.stringMatching(
+        /^workos-[A-Za-z0-9_-]+@identity\.paillette\.invalid$/
+      ),
+      emailVerified: false,
+    });
+  });
+
+  it('does not trust a verified malformed optional email claim', async () => {
+    const token = await signToken({
+      [PAILLETTE_EMAIL_CLAIM]: 'not-an-email',
+    });
+    await expect(
+      verifyIdentityToken(token, { issuer, clientId }, jwks)
+    ).resolves.toMatchObject({
+      email: expect.stringMatching(
+        /^workos-[A-Za-z0-9_-]+@identity\.paillette\.invalid$/
+      ),
+      emailVerified: false,
+    });
   });
 
   it('rejects a token signed by an unknown key', async () => {

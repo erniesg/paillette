@@ -17,6 +17,7 @@ class MemorySearchAccessRepository implements SearchAccessRepository {
   ]);
   approvals = new Set<string>([BOOTSTRAP_USER_ID]);
   nextUser = 1;
+  emailLookupCount = 0;
 
   private key(identity: Pick<ExternalIdentity, 'issuer' | 'subject'>) {
     return `${identity.issuer}|${identity.subject}`;
@@ -29,6 +30,7 @@ class MemorySearchAccessRepository implements SearchAccessRepository {
   }
 
   async findUserIdByEmail(email: string) {
+    this.emailLookupCount += 1;
     return this.usersByEmail.get(email) ?? null;
   }
 
@@ -145,6 +147,31 @@ describe('resolveSearchAccess', () => {
     });
   });
 
+  it('keeps an existing issuer and subject binding when a default token has no verified email', async () => {
+    const repository = new MemorySearchAccessRepository();
+    repository.identities.set(
+      'https://api.workos.com|user_ernie',
+      BOOTSTRAP_USER_ID
+    );
+
+    await expect(
+      resolveSearchAccess(
+        repository,
+        identity({
+          email: 'workos-user_ernie@identity.paillette.invalid',
+          emailVerified: false,
+        }),
+        'allowlist',
+        BOOTSTRAP_EMAIL
+      )
+    ).resolves.toEqual({
+      granted: true,
+      internalUserId: BOOTSTRAP_USER_ID,
+      reason: 'approved',
+    });
+    expect(repository.emailLookupCount).toBe(0);
+  });
+
   it('does not bootstrap an unverified email', async () => {
     const repository = new MemorySearchAccessRepository();
 
@@ -203,5 +230,52 @@ describe('resolveSearchAccess', () => {
       internalUserId: 'user-1',
       reason: 'authenticated',
     });
+  });
+
+  it('provisions a nonprivileged viewer for a default token in authenticated mode', async () => {
+    const repository = new MemorySearchAccessRepository();
+
+    await expect(
+      resolveSearchAccess(
+        repository,
+        identity({
+          subject: 'user_default_authkit',
+          email: 'workos-user_default_authkit@identity.paillette.invalid',
+          emailVerified: false,
+        }),
+        'authenticated',
+        BOOTSTRAP_EMAIL
+      )
+    ).resolves.toEqual({
+      granted: true,
+      internalUserId: 'user-1',
+      reason: 'authenticated',
+    });
+    expect(repository.emailLookupCount).toBe(0);
+  });
+
+  it('never bootstraps a default token into the configured email account', async () => {
+    const repository = new MemorySearchAccessRepository();
+
+    await expect(
+      resolveSearchAccess(
+        repository,
+        identity({
+          subject: 'user_default_authkit',
+          email: 'workos-user_default_authkit@identity.paillette.invalid',
+          emailVerified: false,
+        }),
+        'allowlist',
+        BOOTSTRAP_EMAIL
+      )
+    ).resolves.toMatchObject({
+      granted: false,
+      status: 403,
+      code: 'ACCESS_PENDING',
+    });
+    expect(repository.emailLookupCount).toBe(0);
+    expect(repository.identities.get('https://api.workos.com|user_default_authkit')).not.toBe(
+      BOOTSTRAP_USER_ID
+    );
   });
 });
