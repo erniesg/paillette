@@ -111,6 +111,14 @@ const getCookies = (config: WorkOSRuntimeConfig) => ({
   }),
 });
 
+const clearWorkOSSessionCookie = () =>
+  createCookie('paillette-session', {
+    httpOnly: true,
+    path: '/',
+    sameSite: 'lax',
+    secure: true,
+  }).serialize('', { maxAge: 0 });
+
 export const createAuthorizationRequest = async (
   context: unknown,
   screenHint: 'sign-in' | 'sign-up',
@@ -307,10 +315,10 @@ export const handleWorkOSSignOut = async (args: LoaderFunctionArgs) => {
   if (!isSameOriginFormPost(args.request)) {
     return new Response('Invalid logout request', { status: 403 });
   }
+  const clearSession = await clearWorkOSSessionCookie();
   const config = getWorkOSRuntimeConfig(args.context);
-  if (!config) return redirect('/');
+  if (!config) return redirect('/', { headers: { 'Set-Cookie': clearSession } });
   const { session } = getCookies(config);
-  const clearSession = await session.serialize('', { maxAge: 0 });
   const sessionData = await session.parse(args.request.headers.get('Cookie'));
 
   if (typeof sessionData !== 'string' || !sessionData) {

@@ -213,6 +213,59 @@ describe('WorkOS callback', () => {
     expect(response.status).toBe(403);
   });
 
+  it('clears the fixed local session when WorkOS configuration is unavailable', async () => {
+    const started = await startWorkOSAuthorization(
+      authArgs(new Request('https://paillette.test/auth/start')),
+      'sign-in'
+    );
+    const callback = await handleWorkOSCallback(
+      authArgs(
+        new Request('https://paillette.test/callback?code=code&state=expected-state', {
+          headers: { Cookie: started.headers.get('Set-Cookie')! },
+        })
+      )
+    );
+    const sessionCookie = callback.headers
+      .get('Set-Cookie')!
+      .match(/paillette-session=[^;]+/)![0];
+    const response = await handleWorkOSSignOut({
+      context: { cloudflare: { env: {} } },
+      params: {},
+      request: new Request('https://paillette.test/auth/logout', {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+          Origin: 'https://paillette.test',
+        },
+      }),
+    } as any);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/');
+    expect(response.headers.get('Set-Cookie')).toEqual(
+      expect.stringContaining('paillette-session=;')
+    );
+    expect(response.headers.get('Set-Cookie')).toEqual(expect.stringContaining('Max-Age=0'));
+    expect(response.headers.get('Set-Cookie')).toEqual(expect.stringContaining('HttpOnly'));
+    expect(response.headers.get('Set-Cookie')).toEqual(expect.stringContaining('Secure'));
+    expect(response.headers.get('Set-Cookie')).toEqual(expect.stringContaining('SameSite=Lax'));
+    expect(response.headers.get('Set-Cookie')).toEqual(expect.stringContaining('Path=/'));
+    expect(workos.loadSealedSession).not.toHaveBeenCalled();
+
+    const clearedCookie = response.headers.get('Set-Cookie')!.match(/paillette-session=[^;]*/)!;
+    const restored = await withWorkOSSession(
+      authArgs(
+        new Request('https://paillette.test/nga/search', {
+          headers: { Cookie: clearedCookie[0] },
+        })
+      ),
+      (session) => Response.json(session)
+    );
+
+    expect(await restored.json()).toEqual({ accessToken: null, user: null });
+    expect(workos.authenticateWithSessionCookie).not.toHaveBeenCalled();
+  });
+
   it('terminates the WorkOS session before redirecting and clears the local session', async () => {
     const started = await startWorkOSAuthorization(
       authArgs(new Request('https://paillette.test/auth/start')),
