@@ -61,7 +61,7 @@ function toPublicOrg(org: OrgReadRow, options: { includeKey?: boolean } = {}) {
   return {
     key: isNgsPublicOrg(org.id as string)
       ? NGS_ORG_KEY
-      : isOpenAccessPublicOrg(org.slug as string)
+      : isOpenAccessPublicOrg(org.id as string)
         ? OPEN_ACCESS_ART_ORG_KEY
         : (org.slug as string) || (org.id as string),
     ...data,

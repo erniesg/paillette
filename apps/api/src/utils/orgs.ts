@@ -30,7 +30,7 @@ export const isNgsPublicOrg = (value: string | null | undefined) => {
   );
 };
 
-export const isOpenAccessPublicOrg = (value: string | null | undefined) => {
+const isOpenAccessNgaAlias = (value: string | null | undefined) => {
   const key = String(value || '')
     .trim()
     .toLowerCase();
@@ -40,6 +40,12 @@ export const isOpenAccessPublicOrg = (value: string | null | undefined) => {
     key === OPEN_ACCESS_ORG_SLUG
   );
 };
+
+// Public NGA classification is deliberately tied to the immutable organisation
+// ID. Slugs are mutable user-facing identifiers, so they may be accepted as
+// input aliases but must never grant public access on their own.
+export const isOpenAccessPublicOrg = (value: string | null | undefined) =>
+  String(value || '').trim().toLowerCase() === OPEN_ACCESS_ORG_ID;
 
 export const resolveOpenAccessProviderScope = (
   value: string | null | undefined
@@ -54,7 +60,7 @@ export const resolveOpenAccessProviderScope = (
     // Keep the raw route value; resolveOrgIdentifier will handle invalid input.
   }
 
-  return isOpenAccessPublicOrg(key) || key === OPEN_ACCESS_ORG_ID
+  return isOpenAccessNgaAlias(key) || isOpenAccessPublicOrg(key)
     ? 'nga'
     : undefined;
 };
@@ -100,17 +106,8 @@ export async function resolveOrgIdentifier(
     }
   }
 
-  if (isOpenAccessPublicOrg(key)) {
-    try {
-      const org = await db
-        .prepare('SELECT id FROM orgs WHERE lower(slug) = lower(?) LIMIT 1')
-        .bind(OPEN_ACCESS_ORG_SLUG)
-        .first<{ id: string }>();
-
-      return org?.id || OPEN_ACCESS_ORG_SLUG;
-    } catch {
-      return OPEN_ACCESS_ORG_SLUG;
-    }
+  if (isOpenAccessNgaAlias(key)) {
+    return OPEN_ACCESS_ORG_ID;
   }
 
   if (UUID_RE.test(decoded)) {

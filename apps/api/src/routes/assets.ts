@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
 import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
-import { isNgsPublicOrg, isOpenAccessPublicOrg } from '../utils/orgs';
+import {
+  OPEN_ACCESS_ORG_ID,
+  isNgsPublicOrg,
+} from '../utils/orgs';
 
 interface AssetRow {
   id: string;
@@ -11,6 +14,7 @@ interface AssetRow {
   mime_type: string | null;
   org_id: string;
   org_slug: string | null;
+  artwork_provider: string | null;
 }
 
 const assets = new Hono<{ Bindings: Env }>();
@@ -42,7 +46,7 @@ const canReadAsset = async (
 };
 
 const isPublicNgaAsset = (asset: AssetRow) =>
-  isOpenAccessPublicOrg(asset.org_slug) || isOpenAccessPublicOrg(asset.org_id);
+  asset.org_id === OPEN_ACCESS_ORG_ID && asset.artwork_provider === 'nga';
 
 const isNgsAsset = (asset: AssetRow) =>
   isNgsPublicOrg(asset.org_slug) || isNgsPublicOrg(asset.org_id);
@@ -53,9 +57,14 @@ assets.get('/:assetId/content', async (c) => {
   const asset = await c.env.DB.prepare(
     `
     SELECT a.id, a.storage_provider, a.object_key, a.url, a.mime_type,
-           a.org_id, o.slug AS org_slug
+           a.org_id, o.slug AS org_slug,
+           CASE
+             WHEN json_valid(artwork.custom_metadata)
+             THEN json_extract(artwork.custom_metadata, '$.provider')
+           END AS artwork_provider
     FROM assets a
     LEFT JOIN orgs o ON o.id = a.org_id
+    LEFT JOIN artworks artwork ON artwork.id = a.artwork_id
     WHERE a.id = ?
     `
   )

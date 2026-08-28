@@ -12,9 +12,9 @@ import {
   resolveOrgIdentifier,
 } from '../../src/utils/orgs';
 
-const RESOLVED_OPEN_ACCESS_ORG_ID = 'open-access-art-org-id';
+const PRIVATE_ORG_ID = '11111111-1111-4111-8111-111111111111';
 
-const mockDb = (id: string | null = RESOLVED_OPEN_ACCESS_ORG_ID) =>
+const mockDb = (id: string | null = PRIVATE_ORG_ID) =>
   ({
     prepare: vi.fn((sql: string) => ({
       bind: vi.fn((...params: unknown[]) => ({
@@ -23,10 +23,7 @@ const mockDb = (id: string | null = RESOLVED_OPEN_ACCESS_ORG_ID) =>
             return { id: NGS_ORG_ID };
           }
 
-          if (
-            sql.includes('lower(slug)') &&
-            params[0] === OPEN_ACCESS_ORG_SLUG
-          ) {
+          if (sql.includes('lower(slug)') && params[0] === 'private-gallery') {
             return id ? { id } : null;
           }
 
@@ -37,28 +34,29 @@ const mockDb = (id: string | null = RESOLVED_OPEN_ACCESS_ORG_ID) =>
   }) as unknown as D1Database;
 
 describe('resolveOrgIdentifier', () => {
-  it('resolves Open Access Art aliases through the Open Access Art slug', async () => {
+  it('pins public NGA aliases to the canonical NGA organisation ID even when its slug changes', async () => {
     const db = mockDb();
 
-    await expect(resolveOrgIdentifier(db, 'nga')).resolves.toBe(
-      RESOLVED_OPEN_ACCESS_ORG_ID
-    );
-    await expect(resolveOrgIdentifier(db, 'open')).resolves.toBe(
-      RESOLVED_OPEN_ACCESS_ORG_ID
-    );
+    await expect(resolveOrgIdentifier(db, 'nga')).resolves.toBe(OPEN_ACCESS_ORG_ID);
+    await expect(resolveOrgIdentifier(db, 'open')).resolves.toBe(OPEN_ACCESS_ORG_ID);
     await expect(resolveOrgIdentifier(db, 'open-access-art')).resolves.toBe(
-      RESOLVED_OPEN_ACCESS_ORG_ID
+      OPEN_ACCESS_ORG_ID
     );
   });
 
-  it('falls back to the Open Access Art slug when the org row is absent', async () => {
-    const db = mockDb(null);
+  it('does not resolve an attacker-owned NGA slug as the public organisation', async () => {
+    const db = mockDb(PRIVATE_ORG_ID);
 
-    await expect(resolveOrgIdentifier(db, 'nga')).resolves.toBe(
-      OPEN_ACCESS_ORG_SLUG
+    await expect(resolveOrgIdentifier(db, OPEN_ACCESS_ORG_SLUG)).resolves.toBe(
+      OPEN_ACCESS_ORG_ID
     );
-    await expect(resolveOrgIdentifier(db, 'open')).resolves.toBe(
-      OPEN_ACCESS_ORG_SLUG
+  });
+
+  it('continues to resolve non-public organisation slugs through the database', async () => {
+    const db = mockDb(PRIVATE_ORG_ID);
+
+    await expect(resolveOrgIdentifier(db, 'private-gallery')).resolves.toBe(
+      PRIVATE_ORG_ID
     );
   });
 
@@ -70,11 +68,12 @@ describe('resolveOrgIdentifier', () => {
     expect(isOpenAccessPublicOrg('ngs')).toBe(false);
   });
 
-  it('recognizes only Open Access Art public aliases as NGA aliases', () => {
-    expect(isOpenAccessPublicOrg('nga')).toBe(true);
-    expect(isOpenAccessPublicOrg('open')).toBe(true);
-    expect(isOpenAccessPublicOrg('open-access-art')).toBe(true);
-    expect(isOpenAccessArtPublicOrg('nga')).toBe(true);
+  it('classifies only the canonical NGA organisation ID as public', () => {
+    expect(isOpenAccessPublicOrg(OPEN_ACCESS_ORG_ID)).toBe(true);
+    expect(isOpenAccessPublicOrg('nga')).toBe(false);
+    expect(isOpenAccessPublicOrg('open')).toBe(false);
+    expect(isOpenAccessPublicOrg('open-access-art')).toBe(false);
+    expect(isOpenAccessArtPublicOrg(OPEN_ACCESS_ORG_ID)).toBe(true);
     expect(isOpenAccessArtPublicOrg('national-gallery-singapore')).toBe(false);
   });
 });
