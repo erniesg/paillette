@@ -118,6 +118,55 @@ describe('NGS search quota presentation', () => {
     queryClient.clear();
   });
 
+  it('does not let an older counted search response increase remaining quota', async () => {
+    const queryClient = new QueryClient();
+
+    await reconcileNgsSearchQuota(queryClient, 'ngs', {
+      limit: 1000,
+      used: 1000,
+      remaining: 0,
+    });
+    await reconcileNgsSearchQuota(queryClient, 'ngs', {
+      limit: 1000,
+      used: 999,
+      remaining: 1,
+    });
+
+    expect(queryClient.getQueryData(['ngs-search-quota', 'ngs'])).toEqual({
+      limit: 1000,
+      used: 1000,
+      remaining: 0,
+    });
+    queryClient.clear();
+  });
+
+  it('accepts a first, equal, or lower remaining quota from a counted search', async () => {
+    const queryClient = new QueryClient();
+
+    await reconcileNgsSearchQuota(queryClient, 'ngs', {
+      limit: 1000,
+      used: 1,
+      remaining: 999,
+    });
+    await reconcileNgsSearchQuota(queryClient, 'ngs', {
+      limit: 1000,
+      used: 1,
+      remaining: 999,
+    });
+    await reconcileNgsSearchQuota(queryClient, 'ngs', {
+      limit: 1000,
+      used: 2,
+      remaining: 998,
+    });
+
+    expect(queryClient.getQueryData(['ngs-search-quota', 'ngs'])).toEqual({
+      limit: 1000,
+      used: 2,
+      remaining: 998,
+    });
+    queryClient.clear();
+  });
+
   it('suppresses retry when the quota is exhausted even for a non-quota error', () => {
     expect(canRetryNgsSearch(true)).toBe(false);
     expect(canRetryNgsSearch(false)).toBe(true);

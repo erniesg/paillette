@@ -38,6 +38,8 @@ export const reconcileNgsSearchQuota = async (
 ) => {
   const queryKey = getNgsSearchQuotaQueryKey(orgId);
   await queryClient.cancelQueries({ queryKey });
+  const currentQuota = queryClient.getQueryData<NgsSearchQuota>(queryKey);
+  if (currentQuota && quota.remaining > currentQuota.remaining) return;
   queryClient.setQueryData(queryKey, quota);
 };
 
