@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import mcpRoutes from '../../src/routes/mcp';
 import type { Env } from '../../src/index';
-import { requireAuthOrApiKey } from '../../src/middleware/auth';
+import {
+  canMutateOrg,
+  requireAuthOrApiKey,
+  type AuthPrincipal,
+} from '../../src/middleware/auth';
 
 const makeEnv = (): Env =>
   ({
@@ -28,6 +32,57 @@ const makeEnv = (): Env =>
   }) as Env;
 
 const quota = { limit: 1000, used: 1000, remaining: 0 };
+const ORG_ID = '11111111-1111-4111-8111-111111111111';
+
+const principal = (
+  userId: string,
+  scopes: string[],
+  kind: AuthPrincipal['kind'] = 'user'
+): AuthPrincipal => ({ kind, userId, scopes });
+
+const makeAuthorizedApp = (auth: AuthPrincipal, db: D1Database) => {
+  const app = new Hono<any>();
+  app.use('*', async (c, next) => {
+    c.set('auth', auth);
+    await next();
+  });
+  app.route('/api/v1/mcp', mcpRoutes);
+  return { app, env: { ...makeEnv(), DB: db } };
+};
+
+const authorizationDb = (allowed: {
+  global?: boolean;
+  orgs?: string[];
+}) =>
+  ({
+    prepare: (sql: string) => {
+      const statement = {
+        bind: (...params: unknown[]) => {
+          (statement as any).params = params;
+          return statement;
+        },
+        first: async () => {
+          const params = (statement as any).params as unknown[] | undefined;
+          if (sql.includes('lower(slug)')) {
+            return params?.[0] === 'test-org' ? { id: ORG_ID } : null;
+          }
+          if (sql.includes('FROM users') && sql.includes("role = 'admin'")) {
+            if (allowed.global) return { allowed: 1 };
+            if (allowed.orgs?.includes(params?.[1] as string)) return { allowed: 1 };
+          }
+          return null;
+        },
+      };
+      return statement;
+    },
+  }) as unknown as D1Database;
+
+const mcpRequest = (method: 'tools/list' | 'tools/call', params?: unknown) =>
+  new Request('http://localhost/api/v1/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
 
 const callTool = (
   name: 'search_artworks' | 'colour_search' | 'lookup_artwork'
@@ -65,7 +120,7 @@ describe('MCP downstream REST errors', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it.each(['search_artworks', 'colour_search'] as const)(
-    'preserves an exhausted NGS quota from %s without repeating the request',
+    'preserves an exhausted NGA quota from %s without repeating the request',
     async (name) => {
       let debits = 0;
       const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,7 +136,7 @@ describe('MCP downstream REST errors', () => {
             success: false,
             error: {
               code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
-              message: 'NGS public search quota has been exhausted',
+              message: 'NGA public search quota has been exhausted',
               details: { quota },
             },
           }),
@@ -116,6 +171,103 @@ describe('MCP downstream REST errors', () => {
       });
     }
   );
+});
+
+describe('MCP role and key authorization', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('only exposes read tools to a fresh viewer and their personal API key', async () => {
+    for (const auth of [
+      principal('viewer', ['mcp:read']),
+      principal('viewer', [], 'api_key'),
+    ]) {
+      const { app, env } = makeAuthorizedApp(auth, authorizationDb({}));
+      const listed = await app.fetch(mcpRequest('tools/list'), env);
+      const names = ((await listed.json()) as any).result.tools.map(
+        (tool: { name: string }) => tool.name
+      );
+      expect(names).toContain('search_artworks');
+      expect(names).toContain('lookup_artwork');
+      expect(names).not.toContain('upsert_artwork_record');
+      expect(names).not.toContain('translate_text');
+
+      const downstream = vi.fn();
+      vi.stubGlobal('fetch', downstream);
+      const write = await app.fetch(
+        mcpRequest('tools/call', {
+          name: 'upsert_artwork_record',
+          arguments: { collection: 'test-org', title: 'Denied' },
+        }),
+        env
+      );
+      expect(write.status).toBe(403);
+      expect((await write.json()) as any).toMatchObject({
+        error: { code: -32001 },
+      });
+      expect(downstream).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('permits a scoped curator only for an owned or member org', async () => {
+    const db = authorizationDb({ orgs: [ORG_ID] });
+    await expect(
+      canMutateOrg(db, principal('curator', ['mcp:write']), ORG_ID)
+    ).resolves.toBe(true);
+    const { app, env } = makeAuthorizedApp(
+      principal('curator', ['mcp:write']),
+      db
+    );
+    const downstream = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: { written: true } }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', downstream);
+
+    const denied = await app.fetch(
+      mcpRequest('tools/call', {
+        name: 'upsert_collection',
+        arguments: { collection: 'other-org', name: 'Denied' },
+      }),
+      env
+    );
+    expect(denied.status).toBe(403);
+    expect(downstream).not.toHaveBeenCalled();
+
+    const allowed = await app.fetch(
+      mcpRequest('tools/call', {
+        name: 'upsert_collection',
+        arguments: { collection: 'test-org', name: 'Allowed' },
+      }),
+      env
+    );
+    expect(allowed.status).toBe(200);
+    expect(downstream).toHaveBeenCalledTimes(1);
+  });
+
+  it('permits globally scoped MCP writes only to an administrator', async () => {
+    const { app, env } = makeAuthorizedApp(
+      principal('admin', ['mcp:write']),
+      authorizationDb({ global: true })
+    );
+    const downstream = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: { translated: true } }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', downstream);
+
+    const response = await app.fetch(
+      mcpRequest('tools/call', {
+        name: 'translate_text',
+        arguments: { text: 'Hello', targetLang: 'zh' },
+      }),
+      env
+    );
+    expect(response.status).toBe(200);
+    expect(downstream).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('MCP internal REST handoff', () => {

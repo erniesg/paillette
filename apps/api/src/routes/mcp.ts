@@ -2,13 +2,15 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../index';
 import {
+  canMutateGlobally,
+  canMutateOrg,
   createMcpInternalCapability,
   getAuth,
   requireAuthOrApiKey,
   type AuthPrincipal,
   MCP_INTERNAL_CAPABILITY_HEADER,
 } from '../middleware/auth';
-import { NGS_ORG_KEY } from '../utils/orgs';
+import { NGS_ORG_KEY, resolveOrgIdentifier } from '../utils/orgs';
 
 type Variables = {
   auth: AuthPrincipal;
@@ -169,7 +171,16 @@ const CollectionArtworkArgsSchema = z.object({
   position: z.number().int().min(0).optional().default(0),
 });
 
-const tools = [
+type McpTool = {
+  name: string;
+  title: string;
+  requiredScopeGroups: string[][];
+  description: string;
+  inputSchema: Record<string, unknown>;
+  mutation?: 'org' | 'global';
+};
+
+const tools: McpTool[] = [
   {
     name: 'list_orgs',
     title: 'List orgs',
@@ -324,6 +335,7 @@ const tools = [
     name: 'upsert_collection',
     title: 'Upsert collection',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [COLLECTIONS_WRITE_SCOPE]],
+    mutation: 'org',
     description:
       'Create or update a collection inside an org. Provide collectionId to make the operation idempotent.',
     inputSchema: {
@@ -347,6 +359,7 @@ const tools = [
     name: 'upsert_artwork_record',
     title: 'Upsert artwork record',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [ARTWORKS_WRITE_SCOPE]],
+    mutation: 'org',
     description:
       'Create or update an artwork metadata record by id, source record id, or accession number.',
     inputSchema: {
@@ -381,6 +394,7 @@ const tools = [
     name: 'add_artwork_to_collection',
     title: 'Add artwork to collection',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [COLLECTIONS_WRITE_SCOPE]],
+    mutation: 'org',
     description:
       'Attach an artwork record to a collection within the same org.',
     inputSchema: {
@@ -403,6 +417,7 @@ const tools = [
     name: 'remove_artwork_from_collection',
     title: 'Remove artwork from collection',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [COLLECTIONS_WRITE_SCOPE]],
+    mutation: 'org',
     description:
       'Detach an artwork record from a collection within the same org.',
     inputSchema: {
@@ -424,6 +439,7 @@ const tools = [
     name: 'translate_text',
     title: 'Translate text',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [TRANSLATIONS_CREATE_SCOPE]],
+    mutation: 'global',
     description:
       'Translate English gallery text into Chinese, Malay, or Tamil. Counts against the authenticated user lifetime translation allowance.',
     inputSchema: {
@@ -451,6 +467,7 @@ const tools = [
     name: 'extract_images',
     title: 'Extract images',
     requiredScopeGroups: [[MCP_WRITE_SCOPE], [EXTRACT_CREATE_SCOPE]],
+    mutation: 'global',
     description:
       'Create an extract job from image URLs. Defaults to target=object so mounted artwork objects, scrolls, and visible supports are preserved. Counts against the authenticated user lifetime extract allowance.',
     inputSchema: {
@@ -501,6 +518,12 @@ class McpAuthorizationError extends Error {
         .map((group) => group.join(' '))
         .join(' or ')}`
     );
+  }
+}
+
+class McpMutationAuthorizationError extends Error {
+  constructor() {
+    super('Organisation or administrator write access is required');
   }
 }
 
@@ -615,7 +638,7 @@ const serializeTool = ({
   title,
   description,
   inputSchema,
-}: (typeof tools)[number]) => ({
+}: McpTool) => ({
   name,
   title,
   description,
@@ -623,16 +646,16 @@ const serializeTool = ({
 });
 
 const hasMcpScopes = (auth: AuthPrincipal, requiredScopeGroups: string[][]) => {
-  if (auth.kind === 'api_key' || auth.scopes.includes('dev')) {
-    return true;
-  }
+  // Personal API keys are deliberately read-only in MCP. They identify an
+  // owning user but have no independently grantable write scope.
+  const scopes = auth.kind === 'api_key' ? [MCP_READ_SCOPE] : auth.scopes;
 
-  if (auth.scopes.includes(MCP_ALL_SCOPE)) {
+  if (scopes.includes(MCP_ALL_SCOPE)) {
     return true;
   }
 
   return requiredScopeGroups.some((group) =>
-    group.every((scope) => auth.scopes.includes(scope))
+    group.every((scope) => scopes.includes(scope))
   );
 };
 
@@ -649,6 +672,22 @@ const requireMcpScopes = (
 
   if (!hasMcpScopes(auth, requiredScopeGroups)) {
     throw new McpAuthorizationError(requiredScopeGroups);
+  }
+};
+
+const requireOrgMutationAccess = async (
+  c: Context<AppBindings>,
+  requestedOrgId: string
+) => {
+  const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+  if (!orgId || !(await canMutateOrg(c.env.DB, getAuth(c), orgId))) {
+    throw new McpMutationAuthorizationError();
+  }
+};
+
+const requireGlobalMutationAccess = async (c: Context<AppBindings>) => {
+  if (!(await canMutateGlobally(c.env.DB, getAuth(c)))) {
+    throw new McpMutationAuthorizationError();
   }
 };
 
@@ -735,6 +774,7 @@ const callTool = async (
   if (name === 'upsert_collection') {
     const input = UpsertCollectionArgsSchema.parse(args ?? {});
     const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    await requireOrgMutationAccess(c, collection);
     const data = await callApi(
       c,
       `/orgs/${encodeURIComponent(collection)}/collections/upsert`,
@@ -755,6 +795,7 @@ const callTool = async (
   if (name === 'upsert_artwork_record') {
     const input = UpsertArtworkRecordArgsSchema.parse(args ?? {});
     const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    await requireOrgMutationAccess(c, collection);
     const data = await callApi(
       c,
       `/orgs/${encodeURIComponent(collection)}/artworks/upsert`,
@@ -787,6 +828,7 @@ const callTool = async (
   if (name === 'add_artwork_to_collection') {
     const input = CollectionArtworkArgsSchema.parse(args ?? {});
     const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    await requireOrgMutationAccess(c, collection);
     const data = await callApi(
       c,
       `/orgs/${encodeURIComponent(collection)}/collections/${encodeURIComponent(
@@ -807,6 +849,7 @@ const callTool = async (
   if (name === 'remove_artwork_from_collection') {
     const input = CollectionArtworkArgsSchema.parse(args ?? {});
     const collection = input.collection || input.orgId || NGS_ORG_KEY;
+    await requireOrgMutationAccess(c, collection);
     const data = await callApi(
       c,
       `/orgs/${encodeURIComponent(collection)}/collections/${encodeURIComponent(
@@ -821,6 +864,7 @@ const callTool = async (
 
   if (name === 'translate_text') {
     const input = TranslateTextArgsSchema.parse(args ?? {});
+    await requireGlobalMutationAccess(c);
     const data = await callApi(c, '/translate/text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -831,6 +875,7 @@ const callTool = async (
 
   if (name === 'extract_images') {
     const input = ExtractImagesArgsSchema.parse(args ?? {});
+    await requireGlobalMutationAccess(c);
     const data = await callApi(c, '/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -927,6 +972,10 @@ mcpRoutes.post('/', async (c) => {
         }),
         403
       );
+    }
+
+    if (error instanceof McpMutationAuthorizationError) {
+      return c.json(jsonRpcError(parsed.id, -32001, error.message), 403);
     }
 
     if (error instanceof McpRestError) {
