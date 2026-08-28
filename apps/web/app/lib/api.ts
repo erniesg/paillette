@@ -629,7 +629,7 @@ class ApiClient {
   /**
    * Create a new org
    */
-  async createOrg(input: CreateOrgInput): Promise<Org & { api_key: string }> {
+  async createOrg(input: CreateOrgInput): Promise<Org> {
     const response = await fetch(`${this.baseUrl}/orgs`, {
       method: 'POST',
       headers: {
@@ -638,7 +638,7 @@ class ApiClient {
       body: JSON.stringify(input),
     });
 
-    const data: ApiResponse<Org & { api_key: string }> = await response.json();
+    const data: ApiResponse<Org> = await response.json();
 
     if (!data.success || !data.data) {
       throw new Error(data.error?.message || 'Failed to create org');
@@ -650,7 +650,7 @@ class ApiClient {
   /** @deprecated Use createOrg. */
   async createGallery(
     input: CreateOrgInput
-  ): Promise<Gallery & { api_key: string }> {
+  ): Promise<Gallery> {
     return this.createOrg(input);
   }
 

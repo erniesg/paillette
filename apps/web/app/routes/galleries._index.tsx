@@ -9,6 +9,7 @@ import {
   getPreferredOrgRouteId,
   getPublicOrgRouteBasePath,
 } from '~/lib/api';
+import type { Gallery } from '~/types';
 import { Button } from '~/components/ui/button';
 import {
   Card,
@@ -36,7 +37,7 @@ export default function GalleriesIndex() {
     country: '',
     city: '',
   });
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [createdGallery, setCreatedGallery] = useState<Gallery | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -76,7 +77,7 @@ export default function GalleriesIndex() {
       });
     },
     onSuccess: (data) => {
-      setApiKey(data.api_key);
+      setCreatedGallery(data);
       queryClient.invalidateQueries({ queryKey: ['galleries'] });
       setFormData({
         name: '',
@@ -96,7 +97,7 @@ export default function GalleriesIndex() {
 
   const handleCloseModal = () => {
     setIsCreateModalOpen(false);
-    setApiKey(null);
+    setCreatedGallery(null);
     createMutation.reset();
   };
 
@@ -274,8 +275,8 @@ export default function GalleriesIndex() {
                         Create New Gallery
                       </CardTitle>
                       <CardDescription>
-                        {apiKey
-                          ? 'Save your API key - it will only be shown once!'
+                        {createdGallery
+                          ? 'Your gallery is ready to explore.'
                           : 'Set up your art gallery on Paillette'}
                       </CardDescription>
                     </div>
@@ -288,33 +289,40 @@ export default function GalleriesIndex() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {apiKey ? (
-                    /* API Key Display */
+                  {createdGallery ? (
+                    /* Creation confirmation */
                     <div className="space-y-4">
                       <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/30">
                         <p className="text-sm text-green-300 mb-2 font-semibold">
                           Gallery created successfully!
                         </p>
                         <p className="text-sm text-neutral-300 mb-4">
-                          Save this API key securely. You won't be able to see
-                          it again.
+                          Personal API keys are managed separately for
+                          authorized users.
                         </p>
-                        <div className="bg-neutral-900 rounded-lg p-3 font-mono text-sm break-all border border-neutral-700">
-                          {apiKey}
-                        </div>
                       </div>
                       <div className="flex gap-3">
                         <Button
-                          onClick={() => {
-                            navigator.clipboard.writeText(apiKey);
-                          }}
                           variant="outline"
                           className="flex-1"
+                          asChild
                         >
-                          Copy API Key
+                          <Link to="/account/settings">Manage API keys</Link>
                         </Button>
-                        <Button onClick={handleCloseModal} className="flex-1">
-                          Done
+                        <Button asChild className="flex-1">
+                          <Link
+                            to={`${getPublicOrgRouteBasePath({
+                              requestedOrgId: createdGallery.id,
+                              preferredRouteId: getPreferredOrgRouteId(
+                                createdGallery.id,
+                                createdGallery.slug
+                              ),
+                              canonicalSlug: createdGallery.slug,
+                              routeScope: 'org',
+                            })}/search`}
+                          >
+                            Search {createdGallery.name}
+                          </Link>
                         </Button>
                       </div>
                     </div>

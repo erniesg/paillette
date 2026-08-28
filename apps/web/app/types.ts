@@ -38,7 +38,7 @@ export interface Org {
     address?: string;
   };
   website?: string;
-  apiKey: string;
+  apiKey?: string;
   apiKeyHash?: string;
   isPublic: boolean;
   settings?: GallerySettings;

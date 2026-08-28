@@ -228,14 +228,13 @@ export class MockApiClient {
 
   async createGallery(
     input: CreateOrgInput
-  ): Promise<Gallery & { api_key: string }> {
+  ): Promise<Gallery> {
     return {
       ...mockGallery,
       ...input,
       id: 'created-gallery-123',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      api_key: 'test-created-api-key',
     };
   }
 
