@@ -38,6 +38,19 @@ const extractStagingEnvVars = () => {
 };
 
 describe('wrangler production search config', () => {
+  it('uses WorkOS authenticated search access in every deployment environment', () => {
+    expect(extractTopLevelVarsBlock()).toContain(
+      'SEARCH_ACCESS_MODE = "authenticated"'
+    );
+    expect(extractStagingEnvVars()).toContain(
+      'SEARCH_ACCESS_MODE = "authenticated"'
+    );
+    expect(extractProductionEnvVars()).toContain(
+      'SEARCH_ACCESS_MODE = "authenticated"'
+    );
+    expect(wranglerToml).not.toContain('LOGTO_');
+  });
+
   it('keeps the default production worker on v2 hybrid search', () => {
     const varsBlock = extractTopLevelVarsBlock();
 
