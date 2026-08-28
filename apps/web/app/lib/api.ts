@@ -23,6 +23,7 @@ import type {
   DailyUsageSummary,
 } from '../types';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
+import type { NgsSearchQuota } from './ngs-search-quota';
 
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
@@ -351,6 +352,19 @@ class ApiClient {
     }
   }
 
+  private createApiError(
+    error?: ApiResponse['error'],
+    fallback = 'Request failed'
+  ) {
+    const apiError = new Error(error?.message || fallback) as Error & {
+      code?: string;
+      details?: Record<string, any>;
+    };
+    apiError.code = error?.code;
+    apiError.details = error?.details;
+    return apiError;
+  }
+
   async listApiKeys(
     getAccessToken: AccessTokenProvider
   ): Promise<PailletteApiKeyList> {
@@ -422,6 +436,22 @@ class ApiClient {
     return data.data;
   }
 
+  async getNgsSearchQuota(
+    orgId: string,
+    getAccessToken: AccessTokenProvider
+  ): Promise<NgsSearchQuota> {
+    const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/quota`, {
+      headers: await this.getAuthHeaders(getAccessToken),
+    });
+    const data: ApiResponse<NgsSearchQuota> = await response.json();
+
+    if (!response.ok || !data.success || !data.data) {
+      throw this.createApiError(data.error, 'Failed to fetch search quota');
+    }
+
+    return data.data;
+  }
+
   /**
    * Search artworks using text query
    */
@@ -443,8 +473,8 @@ class ApiClient {
 
     const data: ApiResponse<SearchResponse> = await response.json();
 
-    if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Search failed');
+    if (!response.ok || !data.success || !data.data) {
+      throw this.createApiError(data.error, 'Search failed');
     }
 
     return data.data;
@@ -493,8 +523,8 @@ class ApiClient {
 
     const data: ApiResponse<SearchResponse> = await response.json();
 
-    if (!data.success || !data.data) {
-      throw new Error(data.error?.message || 'Search failed');
+    if (!response.ok || !data.success || !data.data) {
+      throw this.createApiError(data.error, 'Search failed');
     }
 
     return data.data;

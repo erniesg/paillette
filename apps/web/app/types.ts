@@ -22,10 +22,7 @@ export interface ResponseMeta {
   search?: {
     cacheable: boolean;
     degradedChannels: Array<
-      | 'image_embedding'
-      | 'caption_embedding'
-      | 'metadata'
-      | 'visual_refinement'
+      'image_embedding' | 'caption_embedding' | 'metadata' | 'visual_refinement'
     >;
   };
 }
@@ -178,6 +175,7 @@ export interface SearchResponse {
   results: ArtworkSearchResult[];
   count: number;
   queryTime: number;
+  quota?: import('@paillette/types/public-search').PublicSearchQuota;
   interpretation?: import('@paillette/types/public-search-core').PublicSearchInterpretation;
 }
 
