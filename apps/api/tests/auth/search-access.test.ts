@@ -9,6 +9,7 @@ import {
 
 const BOOTSTRAP_EMAIL = 'hello@ernie.sg';
 const BOOTSTRAP_USER_ID = 'user-bootstrap-hello-ernie-sg';
+const BOOTSTRAP_SUBJECT = 'user_ernie';
 
 class MemorySearchAccessRepository implements SearchAccessRepository {
   identities = new Map<string, string>();
@@ -109,11 +110,20 @@ describe('resolveSearchAccess', () => {
     });
   });
 
-  it('binds the verified bootstrap email to the immutable provider subject', async () => {
+  it('binds the configured immutable bootstrap subject without an email claim', async () => {
     const repository = new MemorySearchAccessRepository();
 
     await expect(
-      resolveSearchAccess(repository, identity(), 'allowlist', BOOTSTRAP_EMAIL)
+      resolveSearchAccess(
+        repository,
+        identity({
+          email: 'workos-user_ernie@identity.paillette.invalid',
+          emailVerified: false,
+        }),
+        'allowlist',
+        BOOTSTRAP_EMAIL,
+        BOOTSTRAP_SUBJECT
+      )
     ).resolves.toEqual({
       granted: true,
       internalUserId: BOOTSTRAP_USER_ID,
@@ -124,13 +134,14 @@ describe('resolveSearchAccess', () => {
     );
   });
 
-  it('keeps approval after the bound identity changes email', async () => {
+  it('keeps approval after the bound bootstrap identity changes profile email', async () => {
     const repository = new MemorySearchAccessRepository();
     await resolveSearchAccess(
       repository,
       identity(),
       'allowlist',
-      BOOTSTRAP_EMAIL
+      BOOTSTRAP_EMAIL,
+      BOOTSTRAP_SUBJECT
     );
 
     await expect(
@@ -138,7 +149,8 @@ describe('resolveSearchAccess', () => {
         repository,
         identity({ email: 'new-address@ernie.sg' }),
         'allowlist',
-        BOOTSTRAP_EMAIL
+        BOOTSTRAP_EMAIL,
+        BOOTSTRAP_SUBJECT
       )
     ).resolves.toEqual({
       granted: true,
@@ -172,33 +184,35 @@ describe('resolveSearchAccess', () => {
     expect(repository.emailLookupCount).toBe(0);
   });
 
-  it('does not bootstrap an unverified email', async () => {
+  it('provisions a viewer when the bootstrap subject is missing or mismatched', async () => {
     const repository = new MemorySearchAccessRepository();
 
     await expect(
       resolveSearchAccess(
         repository,
-        identity({ emailVerified: false }),
+        identity({ subject: 'user-not-bootstrap', emailVerified: false }),
         'allowlist',
-        BOOTSTRAP_EMAIL
+        BOOTSTRAP_EMAIL,
+        BOOTSTRAP_SUBJECT
       )
     ).resolves.toMatchObject({
       granted: false,
       status: 403,
       code: 'ACCESS_PENDING',
     });
-    expect(repository.identities.has('https://api.workos.com|user_ernie')).toBe(
+    expect(repository.identities.has('https://api.workos.com|user-not-bootstrap')).toBe(
       true
     );
   });
 
-  it('rejects a second subject that attempts to claim the bound bootstrap email', async () => {
+  it('does not grant bootstrap access to a second subject claiming the bootstrap email', async () => {
     const repository = new MemorySearchAccessRepository();
     await resolveSearchAccess(
       repository,
       identity(),
       'allowlist',
-      BOOTSTRAP_EMAIL
+      BOOTSTRAP_EMAIL,
+      BOOTSTRAP_SUBJECT
     );
 
     await expect(
@@ -206,12 +220,13 @@ describe('resolveSearchAccess', () => {
         repository,
         identity({ subject: 'user_impostor' }),
         'allowlist',
-        BOOTSTRAP_EMAIL
+        BOOTSTRAP_EMAIL,
+        BOOTSTRAP_SUBJECT
       )
     ).resolves.toEqual({
       granted: false,
       status: 403,
-      code: 'IDENTITY_BINDING_REQUIRED',
+      code: 'ACCESS_PENDING',
     });
   });
 

@@ -56,8 +56,18 @@ WHERE NOT EXISTS (
   SELECT 1 FROM users WHERE lower(email) = 'hello@ernie.sg'
 );
 
+-- Keep the designated bootstrap account recoverable when an older install
+-- already has this email but was provisioned as a viewer. This exact-email
+-- repair deliberately cannot affect other accounts.
+UPDATE users
+SET role = 'admin'
+WHERE lower(email) = 'hello@ernie.sg';
+
 INSERT INTO search_access_approvals (user_id, status, approved_by)
 SELECT id, 'active', 'bootstrap:hello@ernie.sg'
 FROM users
 WHERE lower(email) = 'hello@ernie.sg'
-ON CONFLICT(user_id) DO NOTHING;
+ON CONFLICT(user_id) DO UPDATE SET
+  status = 'active',
+  revoked_at = NULL,
+  updated_at = datetime('now');

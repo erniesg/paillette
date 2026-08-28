@@ -52,6 +52,8 @@ export interface Env {
   AUTH_CLIENT_ID?: string;
   SEARCH_ACCESS_MODE?: string;
   SEARCH_ACCESS_BOOTSTRAP_EMAIL?: string;
+  /** Immutable WorkOS subject for the one bootstrap administrator. */
+  WORKOS_BOOTSTRAP_SUBJECT?: string;
   API_KEY_PEPPER?: string;
   /** Dedicated HMAC key for the internal MCP-to-REST handoff. It must never
    * be reused as a personal API-key hashing pepper. */

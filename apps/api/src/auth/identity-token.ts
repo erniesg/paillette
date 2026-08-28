@@ -27,10 +27,18 @@ const base64Url = (bytes: Uint8Array) => {
 // identities usable without treating profile data as an identity key. The
 // IANA-reserved .invalid domain makes this subject-bound placeholder
 // non-routable and prevents it from matching a real account email.
-const subjectPlaceholderEmail = async (issuer: string, subject: string) => {
+export const externalSubjectPlaceholderEmail = async (
+  provider: string,
+  issuer: string,
+  subject: string
+) => {
   const material = new TextEncoder().encode(`${issuer}\u0000${subject}`);
   const digest = await crypto.subtle.digest('SHA-256', material);
-  return `workos-${base64Url(new Uint8Array(digest))}@identity.paillette.invalid`;
+  const normalizedProvider = provider
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-') || 'external';
+  return `${normalizedProvider}-${base64Url(new Uint8Array(digest))}@identity.paillette.invalid`;
 };
 
 export const verifyIdentityToken = async (
@@ -43,6 +51,8 @@ export const verifyIdentityToken = async (
     const { payload } = await jwtVerify(token, jwks, {
       ...options,
       issuer: config.issuer,
+      algorithms: ['RS256'],
+      requiredClaims: ['sid', 'jti', 'exp', 'iat'],
     });
     const clientId = payload.client_id;
     const email = payload[PAILLETTE_EMAIL_CLAIM];
@@ -51,7 +61,17 @@ export const verifyIdentityToken = async (
     if (
       clientId !== config.clientId ||
       typeof payload.sub !== 'string' ||
-      !payload.sub
+      !payload.sub ||
+      typeof payload.sid !== 'string' ||
+      !payload.sid ||
+      typeof payload.jti !== 'string' ||
+      !payload.jti ||
+      typeof payload.iat !== 'number' ||
+      !Number.isFinite(payload.iat) ||
+      typeof payload.exp !== 'number' ||
+      !Number.isFinite(payload.exp) ||
+      payload.iat > Date.now() / 1000 ||
+      payload.exp <= Date.now() / 1000
     ) {
       throw new Error('Token claims are incomplete');
     }
@@ -64,7 +84,11 @@ export const verifyIdentityToken = async (
       subject: payload.sub,
       email: hasVerifiedEmail
         ? email.trim().toLowerCase()
-        : await subjectPlaceholderEmail(config.issuer, payload.sub),
+        : await externalSubjectPlaceholderEmail(
+            'workos',
+            config.issuer,
+            payload.sub
+          ),
       emailVerified: hasVerifiedEmail,
       name: typeof payload.name === 'string' ? payload.name : undefined,
     };

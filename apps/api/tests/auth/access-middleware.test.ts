@@ -188,7 +188,16 @@ describe('MCP OAuth verifier dispatch', () => {
       .sign(pair.privateKey);
     const app = new Hono<any>();
     app.use('*', requireAuthOrApiKey as any);
-    app.get('*', (c) => c.json({ scopes: c.get('auth').scopes }));
+    app.get('*', (c) => c.json({
+      scopes: c.get('auth').scopes,
+      userId: c.get('auth').userId,
+      externalIssuer: c.get('auth').externalIssuer,
+    }));
+    const users = new Map<string, { email: string; name: string }>([
+      ['oauth-user', { email: 'admin@example.test', name: 'Admin' }],
+    ]);
+    const identities = new Map<string, string>();
+    const directUserWrites: string[] = [];
     const env = {
       ENVIRONMENT: 'staging',
       SEARCH_ACCESS_MODE: 'authenticated',
@@ -196,12 +205,40 @@ describe('MCP OAuth verifier dispatch', () => {
       LOGTO_JWKS_URI: jwksUri,
       LOGTO_API_RESOURCE: audience,
       DB: {
-        prepare: () => {
+        prepare: (sql: string) => {
           const statement = {
-            bind: () => statement,
-            run: async () => ({ success: true, meta: { changes: 1 } }),
+            bind: (...values: string[]) => {
+              statement.values = values;
+              return statement;
+            },
+            values: [] as string[],
+            first: async () => {
+              if (sql.includes('FROM auth_identities')) {
+                return identities.get(`${statement.values[0]}|${statement.values[1]}`)
+                  ? { user_id: identities.get(`${statement.values[0]}|${statement.values[1]}`) }
+                  : null;
+              }
+              if (sql.includes('FROM users WHERE lower(email)')) return null;
+              return null;
+            },
+            all: async () => ({ success: true, results: [] }),
+            run: async () => {
+              if (sql.includes('INSERT INTO users')) {
+                directUserWrites.push(statement.values[0] ?? '');
+              }
+              return { success: true, meta: { changes: 1 } };
+            },
           };
           return statement;
+        },
+        batch: async (statements: Array<{ values: string[] }>) => {
+          const [user, binding] = statements;
+          const userId = user.values[0];
+          const issuerValue = binding.values[1];
+          const subject = binding.values[2];
+          users.set(userId, { email: user.values[1], name: user.values[3] });
+          identities.set(`${issuerValue}|${subject}`, userId);
+          return [];
         },
       },
     };
@@ -209,7 +246,14 @@ describe('MCP OAuth verifier dispatch', () => {
 
     const mcp = await app.request('/api/v1/mcp', { headers }, env as any);
     expect(mcp.status).toBe(200);
-    await expect(mcp.json()).resolves.toEqual({ scopes: ['mcp:read'] });
+    const mcpBody = await mcp.json();
+    expect(mcpBody).toMatchObject({
+      scopes: ['mcp:read'],
+      externalIssuer: issuer,
+    });
+    expect(mcpBody.userId).not.toBe('oauth-user');
+    expect(users.has('oauth-user')).toBe(true);
+    expect(directUserWrites).not.toContain('oauth-user');
 
     const search = await app.request(
       '/api/v1/orgs/ngs/search/text',
@@ -312,6 +356,47 @@ describe('MCP internal REST capability', () => {
       apiKeyId: 'key-123',
       scopes: [],
     });
+  });
+
+  it('does not provision or overwrite an identity carried by an internal MCP capability', async () => {
+    const capability = await createMcpInternalCapability(
+      env as any,
+      {
+        kind: 'user',
+        userId: 'existing-mcp-user',
+        email: 'existing@example.test',
+        name: 'Existing profile',
+        scopes: ['mcp:read'],
+      },
+      'POST',
+      '/api/v1/orgs/nga/search/text'
+    );
+    const noProvisionEnv = {
+      ...env,
+      DB: {
+        prepare: (sql: string) => {
+          if (sql.includes('INSERT INTO users')) {
+            throw new Error('internal MCP must not provision users');
+          }
+          const statement = {
+            bind: () => statement,
+            run: async () => ({ success: true, meta: { changes: 1 } }),
+          };
+          return statement;
+        },
+      },
+    };
+
+    const response = await restApp().request(
+      '/api/v1/orgs/nga/search/text',
+      {
+        method: 'POST',
+        headers: { [MCP_INTERNAL_CAPABILITY_HEADER]: capability },
+      },
+      noProvisionEnv as any
+    );
+
+    expect(response.status).toBe(200);
   });
 
   it('refuses to mint malformed provenance combinations', async () => {

@@ -29,20 +29,33 @@ beforeAll(async () => {
 
 const signToken = async (
   claims: Record<string, unknown> = {},
-  options: { tokenIssuer?: string; expiresIn?: string } = {}
-) =>
-  new SignJWT({
+  options: {
+    tokenIssuer?: string;
+    expiresIn?: string;
+    issuedAt?: number;
+    omitIssuedAt?: boolean;
+    omitExpiration?: boolean;
+  } = {}
+) => {
+  const jwt = new SignJWT({
     client_id: clientId,
+    sid: 'session_ernie',
+    jti: 'token_ernie',
     [PAILLETTE_EMAIL_CLAIM]: 'hello@ernie.sg',
     [PAILLETTE_EMAIL_VERIFIED_CLAIM]: true,
     ...claims,
   })
     .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
     .setIssuer(options.tokenIssuer ?? issuer)
-    .setSubject('user_ernie')
-    .setIssuedAt()
-    .setExpirationTime(options.expiresIn ?? '5m')
-    .sign(privateKey);
+    .setSubject('user_ernie');
+  if (!options.omitIssuedAt && !Object.hasOwn(claims, 'iat')) {
+    jwt.setIssuedAt(options.issuedAt);
+  }
+  if (!options.omitExpiration && !Object.hasOwn(claims, 'exp')) {
+    jwt.setExpirationTime(options.expiresIn ?? '5m');
+  }
+  return jwt.sign(privateKey);
+};
 
 describe('verifyIdentityToken', () => {
   it('returns a normalized WorkOS external identity', async () => {
@@ -83,6 +96,37 @@ describe('verifyIdentityToken', () => {
 
   it('rejects expired tokens', async () => {
     const token = await signToken({}, { expiresIn: '-1s' });
+    await expect(
+      verifyIdentityToken(token, { issuer, clientId }, jwks)
+    ).rejects.toThrow('Invalid authentication token');
+  });
+
+  it.each([
+    ['sid', { sid: undefined }],
+    ['jti', { jti: undefined }],
+    ['iat', {} as Record<string, unknown>, { omitIssuedAt: true }],
+    ['exp', {} as Record<string, unknown>, { omitExpiration: true }],
+  ])('rejects a token without required %s claim', async (_claim, claims, options = {}) => {
+    const token = await signToken(claims, options);
+    await expect(
+      verifyIdentityToken(token, { issuer, clientId }, jwks)
+    ).rejects.toThrow('Invalid authentication token');
+  });
+
+  it.each([
+    ['sid', { sid: 42 }],
+    ['jti', { jti: 42 }],
+    ['iat', { iat: 'now' }],
+    ['exp', { exp: 'later' }],
+  ])('rejects a token with malformed %s claim', async (_claim, claims) => {
+    const token = await signToken(claims);
+    await expect(
+      verifyIdentityToken(token, { issuer, clientId }, jwks)
+    ).rejects.toThrow('Invalid authentication token');
+  });
+
+  it('rejects a token with a future issued-at timestamp', async () => {
+    const token = await signToken({}, { issuedAt: Math.floor(Date.now() / 1000) + 120 });
     await expect(
       verifyIdentityToken(token, { issuer, clientId }, jwks)
     ).rejects.toThrow('Invalid authentication token');
@@ -149,6 +193,29 @@ describe('verifyIdentityToken', () => {
 
     await expect(
       verifyIdentityToken(token, { issuer, clientId }, jwks)
+    ).rejects.toThrow('Invalid authentication token');
+  });
+
+  it('rejects a non-RS256 token even when its key is otherwise trusted', async () => {
+    const pssPair = await generateKeyPair('PS256', { extractable: true });
+    const publicJwk = (await exportJWK(pssPair.publicKey)) as JWK;
+    publicJwk.kid = 'pss-key';
+    publicJwk.alg = 'PS256';
+    const pssJwks = createLocalJWKSet({ keys: [publicJwk] });
+    const token = await new SignJWT({
+      client_id: clientId,
+      sid: 'session_ernie',
+      jti: 'token_ernie',
+    })
+      .setProtectedHeader({ alg: 'PS256', kid: 'pss-key' })
+      .setIssuer(issuer)
+      .setSubject('user_ernie')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(pssPair.privateKey);
+
+    await expect(
+      verifyIdentityToken(token, { issuer, clientId }, pssJwks)
     ).rejects.toThrow('Invalid authentication token');
   });
 });

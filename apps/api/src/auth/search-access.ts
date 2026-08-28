@@ -89,7 +89,8 @@ export const resolveSearchAccess = async (
   repository: SearchAccessRepository,
   rawIdentity: ExternalIdentity | null,
   mode: SearchAccessMode,
-  bootstrapEmail: string
+  bootstrapEmail: string,
+  bootstrapSubject = ''
 ): Promise<SearchAccessDecision> => {
   if (mode === 'public') {
     return { granted: true, internalUserId: null, reason: 'public' };
@@ -110,10 +111,12 @@ export const resolveSearchAccess = async (
   }
 
   const normalizedBootstrapEmail = normalizeEmail(bootstrapEmail);
+  const normalizedBootstrapSubject = bootstrapSubject.trim();
   if (
-    identity.emailVerified &&
     normalizedBootstrapEmail &&
-    identity.email === normalizedBootstrapEmail
+    normalizedBootstrapSubject &&
+    identity.provider === 'workos' &&
+    identity.subject === normalizedBootstrapSubject
   ) {
     const bootstrapUserId = await repository.findUserIdByEmail(
       normalizedBootstrapEmail

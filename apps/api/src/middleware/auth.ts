@@ -13,7 +13,10 @@ import {
   OPEN_ACCESS_ORG_ID,
   resolveOpenAccessProviderScope,
 } from '../utils/orgs';
-import { verifyIdentityToken } from '../auth/identity-token';
+import {
+  externalSubjectPlaceholderEmail,
+  verifyIdentityToken,
+} from '../auth/identity-token';
 import {
   D1SearchAccessRepository,
   parseSearchAccessMode,
@@ -780,12 +783,30 @@ const verifyMcpOAuthToken = async (
     throw new Error('Missing subject in MCP OAuth token');
   }
 
+  // Legacy MCP OAuth subjects are external identifiers, never primary keys in
+  // users. Resolve them through the same issuer+subject binding table as
+  // WorkOS, under a distinct provider, so an attacker-controlled `sub` equal
+  // to an existing internal ID cannot inherit that account's privileges.
+  const identity = {
+    provider: 'logto-mcp',
+    issuer,
+    subject: payload.sub,
+    email: await externalSubjectPlaceholderEmail('logto-mcp', issuer, payload.sub),
+    emailVerified: false,
+    name: typeof payload.name === 'string' ? payload.name : undefined,
+  };
+  const userId = await new D1SearchAccessRepository(
+    c.env.DB
+  ).ensureIdentityUser(identity);
+
   return {
     kind: 'user',
-    userId: payload.sub,
-    email: typeof payload.email === 'string' ? payload.email : undefined,
-    name: typeof payload.name === 'string' ? payload.name : undefined,
+    userId,
+    email: identity.email,
+    name: identity.name,
     scopes: getScopes(payload),
+    externalIssuer: issuer,
+    externalSubject: payload.sub,
   };
 };
 
@@ -841,7 +862,8 @@ const verifyConfiguredIdentityToken = async (
     new D1SearchAccessRepository(c.env.DB),
     identity,
     parseSearchAccessMode(c.env.SEARCH_ACCESS_MODE),
-    c.env.SEARCH_ACCESS_BOOTSTRAP_EMAIL || ''
+    c.env.SEARCH_ACCESS_BOOTSTRAP_EMAIL || '',
+    c.env.WORKOS_BOOTSTRAP_SUBJECT || ''
   );
   requireGrantedDecision(decision);
 
@@ -1153,6 +1175,7 @@ export const requireAuthOrApiKey = async (
     if (
       auth.kind === 'user' &&
       !auth.externalSubject &&
+      !auth.internalMcp &&
       !auth.scopes.includes('public_search')
     ) {
       await ensureUser(c, auth);

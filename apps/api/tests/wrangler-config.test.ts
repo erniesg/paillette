@@ -52,10 +52,18 @@ describe('wrangler production search config', () => {
     expect(extractProductionEnvVars()).toContain(
       'SEARCH_ACCESS_MODE = "authenticated"'
     );
+    for (const vars of [
+      extractTopLevelVarsBlock(),
+      extractStagingEnvVars(),
+      extractProductionEnvVars(),
+    ]) {
+      expect(vars).toContain('SEARCH_ACCESS_BOOTSTRAP_EMAIL = "hello@ernie.sg"');
+    }
     for (const secretName of [
       'AUTH_CLIENT_ID',
       'AUTH_ISSUER',
       'AUTH_JWKS_URI',
+      'WORKOS_BOOTSTRAP_SUBJECT',
       'MCP_INTERNAL_CAPABILITY_SECRET',
     ]) {
       expect(apiIndexSource).toContain(`${secretName}?:`);
