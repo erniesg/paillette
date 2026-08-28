@@ -42,6 +42,7 @@ class FakeStatement {
 
 class FakeTranslationDb {
   usage = new Map<string, TranslationUsage>();
+  admins = new Set(['user-1']);
 
   prepare(sql: string) {
     return new FakeStatement(this, sql);
@@ -84,6 +85,9 @@ class FakeTranslationDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM users WHERE id = ? AND role = 'admin'")) {
+      return (this.admins.has(String(params[0])) ? { allowed: 1 } : null) as T | null;
+    }
     if (sql.includes('FROM translation_usage_lifetime')) {
       const [userId] = params as [string];
       return (this.usage.get(userId) ?? null) as T | null;
@@ -191,5 +195,22 @@ describe('translation quota', () => {
     expect(res.status).toBe(500);
     expect(data.error.code).toBe('TRANSLATION_FAILED');
     expect(db.usage.get('user-1')?.used).toBe(0);
+  });
+
+  it('denies a viewer document job before it writes to object storage', async () => {
+    const db = new FakeTranslationDb();
+    db.admins.clear();
+    const put = vi.fn();
+    const env = makeEnv(db);
+    env.IMAGES = { put } as unknown as R2Bucket;
+
+    const response = await makeApp().request(
+      '/api/v1/translate/document',
+      { method: 'POST', headers: { 'X-User-Id': 'viewer-1' } },
+      env
+    );
+
+    expect(response.status).toBe(403);
+    expect(put).not.toHaveBeenCalled();
   });
 });

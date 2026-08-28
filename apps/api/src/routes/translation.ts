@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Env } from '../index';
 import {
   getAuth,
+  requireGlobalMutationAccess,
   requireAuthOrApiKey,
   type AuthPrincipal,
 } from '../middleware/auth';
@@ -133,6 +134,8 @@ const translation = new Hono<AppBindings>();
 
 translation.use('/text', requireAuthOrApiKey as any);
 translation.use('/usage', requireAuthOrApiKey as any);
+translation.use('/document', requireAuthOrApiKey as any);
+translation.use('/document/*', requireAuthOrApiKey as any);
 
 /**
  * GET /api/v1/translate/usage
@@ -154,6 +157,8 @@ translation.get('/usage', async (c) => {
  * Translate plain text instantly
  */
 translation.post('/text', zValidator('json', TranslateTextSchema), async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   const { text, sourceLang, targetLang } = c.req.valid('json');
   const start = Date.now();
   const auth = getAuth(c as any);
@@ -286,6 +291,9 @@ translation.post(
  * Upload document for translation (queued processing)
  */
 translation.post('/document', async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
+
   try {
     const body = await c.req.parseBody();
     const file = body['file'] as File;
@@ -410,6 +418,8 @@ translation.post('/document', async (c) => {
  * Check translation job status
  */
 translation.get('/document/:jobId', async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   const jobId = c.req.param('jobId');
 
   try {
@@ -479,6 +489,8 @@ translation.get('/document/:jobId', async (c) => {
  * Download translated document
  */
 translation.get('/document/:jobId/download', async (c) => {
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   const jobId = c.req.param('jobId');
 
   try {

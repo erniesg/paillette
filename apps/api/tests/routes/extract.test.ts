@@ -33,6 +33,7 @@ class FakeExtractDb {
   jobs = new Map<string, any>();
   items: any[] = [];
   usage = new Map<string, { used: number; quota: number }>();
+  admins = new Set(['user-1']);
 
   prepare(sql: string) {
     return new FakeStatement(this, sql);
@@ -189,6 +190,9 @@ class FakeExtractDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM users WHERE id = ? AND role = 'admin'")) {
+      return (this.admins.has(String(params[0])) ? { allowed: 1 } : null) as T | null;
+    }
     if (sql.includes('FROM extract_usage_lifetime')) {
       return (this.usage.get(String(params[0])) ?? null) as T | null;
     }
@@ -345,6 +349,30 @@ describe('extract routes', () => {
         }),
       ],
     });
+  });
+
+  it('denies a viewer before dispatching an extract job', async () => {
+    const db = new FakeExtractDb();
+    db.admins.clear();
+    const dispatch = vi.fn();
+    vi.stubGlobal('fetch', dispatch);
+
+    const response = await makeApp().request(
+      '/api/v1/extract',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'viewer-1',
+        },
+        body: JSON.stringify({ imageUrls: ['https://example.com/artwork.jpg'] }),
+      },
+      makeEnv(db, { EXTRACT_WORKER_URL: 'https://worker.example/jobs' })
+    );
+
+    expect(response.status).toBe(403);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(db.jobs.size).toBe(0);
   });
 
   it('records jobs without dispatch when no worker is configured', async () => {

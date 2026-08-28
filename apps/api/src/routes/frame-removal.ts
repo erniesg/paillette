@@ -11,8 +11,14 @@ import {
   enqueueFrameRemoval,
   batchEnqueueFrameRemoval,
 } from '../queues/frame-removal-queue';
+import {
+  requireAuthOrApiKey,
+  requireOrgMutationAccess,
+} from '../middleware/auth';
 
 const frameRemoval = new Hono<{ Bindings: Env }>();
+
+frameRemoval.use('*', requireAuthOrApiKey as any);
 
 // ============================================================================
 // Validation Schemas
@@ -70,6 +76,9 @@ frameRemoval.post(
           404
         );
       }
+
+      const denied = await requireOrgMutationAccess(c as any, artwork.org_id);
+      if (denied) return denied;
 
       if (!artwork.image_url) {
         return c.json(
@@ -163,6 +172,9 @@ frameRemoval.post(
         400
       );
     }
+
+    const denied = await requireOrgMutationAccess(c as any, orgId);
+    if (denied) return denied;
 
     try {
       // Build query based on input

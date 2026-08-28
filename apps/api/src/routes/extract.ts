@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Env } from '../index';
 import {
   getAuth,
+  requireGlobalMutationAccess,
   requireAuthOrApiKey,
   type AuthPrincipal,
 } from '../middleware/auth';
@@ -1411,6 +1412,8 @@ extractRoutes.get('/usage', async (c) => {
 
 extractRoutes.post('/', async (c) => {
   const auth = getAuth(c as any);
+  const denied = await requireGlobalMutationAccess(c as any);
+  if (denied) return denied;
   const contentType = c.req.header('content-type') ?? '';
   const jobId = generateId();
   const outputZipKey = `${EXTRACT_PREFIX}/${jobId}/output.zip`;
