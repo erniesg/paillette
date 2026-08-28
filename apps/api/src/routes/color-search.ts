@@ -14,6 +14,7 @@ import {
   recordApiUsageEvent,
   recordArtworkResults,
   requireAuthOrApiKey,
+  requireOrgMutationAccess,
 } from '../middleware/auth';
 import type { ApiResponse } from '../types';
 import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
@@ -387,12 +388,18 @@ colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
  * POST /orgs/:orgId/artworks/:artworkId/extract-colors
  * Trigger color extraction for a specific artwork
  */
-colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
+colorSearchRoutes.post(
+  '/artworks/:artworkId/extract-colors',
+  requireAuthOrApiKey as any,
+  async (c) => {
   try {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
     const artworkId = c.req.param('artworkId');
+
+    const denied = await requireOrgMutationAccess(c as any, orgId);
+    if (denied) return denied;
 
     // Verify artwork exists
     const artwork = await c.env.DB.prepare(
@@ -450,17 +457,24 @@ colorSearchRoutes.post('/artworks/:artworkId/extract-colors', async (c) => {
       500
     );
   }
-});
+  }
+);
 
 /**
  * POST /orgs/:orgId/artworks/batch-extract-colors
  * Trigger batch color extraction for all artworks in an org
  */
-colorSearchRoutes.post('/artworks/batch-extract-colors', async (c) => {
+colorSearchRoutes.post(
+  '/artworks/batch-extract-colors',
+  requireAuthOrApiKey as any,
+  async (c) => {
   try {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+
+    const denied = await requireOrgMutationAccess(c as any, orgId);
+    if (denied) return denied;
 
     // Get all artworks without color data
     const artworks = await c.env.DB.prepare(
@@ -527,4 +541,5 @@ colorSearchRoutes.post('/artworks/batch-extract-colors', async (c) => {
       500
     );
   }
-});
+  }
+);

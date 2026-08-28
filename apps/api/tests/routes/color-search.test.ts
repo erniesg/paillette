@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { colorSearchRoutes } from '../../src/routes/color-search';
 import type { Env } from '../../src/index';
+import {
+  createMcpInternalCapability,
+  MCP_INTERNAL_CAPABILITY_HEADER,
+  type AuthPrincipal,
+} from '../../src/middleware/auth';
 
 describe('Color Search API', () => {
   let app: Hono<{ Bindings: Env }>;
@@ -10,6 +15,7 @@ describe('Color Search API', () => {
   let ngsQuota: { used: number; hard_limit: number };
   let usageEventInserts: number;
   let failUsageEventUpdates: boolean;
+  let mutationAuthorizedUserIds: Set<string>;
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
     'Content-Type': 'application/json',
@@ -24,6 +30,7 @@ describe('Color Search API', () => {
     ngsQuota = { used: 0, hard_limit: 1000 };
     usageEventInserts = 0;
     failUsageEventUpdates = false;
+    mutationAuthorizedUserIds = new Set(['test-user']);
     const artwork = {
       id: 'test-artwork-123',
       title: 'Test Artwork',
@@ -71,6 +78,11 @@ describe('Color Search API', () => {
                 }
                 return ngsQuota;
               }
+              if (sql.includes('SELECT 1 AS allowed')) {
+                return mutationAuthorizedUserIds.has(params[0] as string)
+                  ? { allowed: 1 }
+                  : null;
+              }
               if (sql.includes('FROM orgs')) {
                 return { id: testGalleryId };
               }
@@ -108,6 +120,7 @@ describe('Color Search API', () => {
       ENVIRONMENT: 'test',
       API_VERSION: 'v1',
       DAILY_FREE_QUERY_LIMIT: '100',
+      API_KEY_PEPPER: 'test-only-mcp-capability-key',
     };
 
     app = new Hono<{ Bindings: Env }>();
@@ -478,6 +491,7 @@ describe('Color Search API', () => {
         `/galleries/${testGalleryId}/artworks/${artworkId}/extract-colors`,
         {
           method: 'POST',
+          headers: authHeaders,
         }
       );
 
@@ -487,14 +501,103 @@ describe('Color Search API', () => {
       expect(body.success).toBe(true);
       expect(body.data).toHaveProperty('artworkId', artworkId);
     });
+
+    it.each([
+      ['viewer', { 'X-User-Id': 'viewer' }],
+      ['public search key', { 'X-User-Id': 'public-search-web' }],
+      [
+        'forged internal MCP capability',
+        {
+          'X-User-Id': 'viewer',
+          [MCP_INTERNAL_CAPABILITY_HEADER]: 'v1.forged.invalid',
+        },
+      ],
+    ])('denies %s before reading artwork or enqueueing', async (_name, headers) => {
+      const res = await request(
+        `/galleries/${testGalleryId}/artworks/test-artwork-123/extract-colors`,
+        { method: 'POST', headers }
+      );
+
+      expect(res.status).toBe(403);
+      expect(mockEnv.EMBEDDING_QUEUE.send).not.toHaveBeenCalled();
+      expect(
+        (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
+          sql.includes('FROM artworks')
+        )
+      ).toBe(false);
+    });
+
+    it('denies a signed internal MCP handoff without an organisation role', async () => {
+      const capability = await createMcpInternalCapability(
+        mockEnv,
+        {
+          kind: 'user',
+          userId: 'mcp-viewer',
+          scopes: ['mcp:read'],
+        } satisfies AuthPrincipal,
+        'POST',
+        `/galleries/${testGalleryId}/artworks/test-artwork-123/extract-colors`
+      );
+
+      const res = await request(
+        `/galleries/${testGalleryId}/artworks/test-artwork-123/extract-colors`,
+        {
+          method: 'POST',
+          headers: { [MCP_INTERNAL_CAPABILITY_HEADER]: capability },
+        }
+      );
+
+      expect(res.status).toBe(403);
+      expect(mockEnv.EMBEDDING_QUEUE.send).not.toHaveBeenCalled();
+      expect(
+        (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
+          sql.includes('FROM artworks')
+        )
+      ).toBe(false);
+    });
+
+    it('requires a global admin to extract NGA colors', async () => {
+      testGalleryId = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac';
+      mutationAuthorizedUserIds = new Set(['global-admin']);
+
+      const curator = await request(
+        '/galleries/nga/artworks/test-artwork-123/extract-colors',
+        { method: 'POST', headers: { 'X-User-Id': 'curator' } }
+      );
+      expect(curator.status).toBe(403);
+      expect(mockEnv.EMBEDDING_QUEUE.send).not.toHaveBeenCalled();
+
+      const globalAdmin = await request(
+        '/galleries/nga/artworks/test-artwork-123/extract-colors',
+        { method: 'POST', headers: { 'X-User-Id': 'global-admin' } }
+      );
+      expect(globalAdmin.status).toBe(200);
+      expect(mockEnv.EMBEDDING_QUEUE.send).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('POST /artworks/batch-extract-colors', () => {
+    it('denies a viewer before reading artworks or enqueueing', async () => {
+      const res = await request(
+        `/galleries/${testGalleryId}/artworks/batch-extract-colors`,
+        { method: 'POST', headers: { 'X-User-Id': 'viewer' } }
+      );
+
+      expect(res.status).toBe(403);
+      expect(mockEnv.EMBEDDING_QUEUE.send).not.toHaveBeenCalled();
+      expect(
+        (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
+          sql.includes('FROM artworks')
+        )
+      ).toBe(false);
+    });
+
     it('should trigger batch color extraction', async () => {
       const res = await request(
         `/galleries/${testGalleryId}/artworks/batch-extract-colors`,
         {
           method: 'POST',
+          headers: authHeaders,
         }
       );
 
