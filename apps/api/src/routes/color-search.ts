@@ -44,6 +44,17 @@ const setNgsSearchQuotaHeaders = (
   c.header('X-NGS-Search-Remaining', String(quota.remaining));
 };
 
+const annotateAcceptedColorSearchUsage = async (
+  c: any,
+  metadata: Parameters<typeof annotateUsageEvent>[1]
+) => {
+  try {
+    await annotateUsageEvent(c, metadata);
+  } catch (error) {
+    console.warn('Accepted color search usage annotation failed:', error);
+  }
+};
+
 colorSearchRoutes.use(
   '/search/*',
   requireAuthOrApiKey as any,
@@ -259,7 +270,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
       }))
     );
 
-    await annotateUsageEvent(c as any, {
+    await annotateAcceptedColorSearchUsage(c as any, {
       search: {
         mode: 'color',
         cacheDisposition: 'BYPASS',

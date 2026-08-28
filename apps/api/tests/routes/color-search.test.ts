@@ -9,6 +9,7 @@ describe('Color Search API', () => {
   let testGalleryId: string;
   let ngsQuota: { used: number; hard_limit: number };
   let usageEventInserts: number;
+  let failUsageEventUpdates: boolean;
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
     'Content-Type': 'application/json',
@@ -22,6 +23,7 @@ describe('Color Search API', () => {
     testGalleryId = 'test-gallery-123';
     ngsQuota = { used: 0, hard_limit: 1000 };
     usageEventInserts = 0;
+    failUsageEventUpdates = false;
     const artwork = {
       id: 'test-artwork-123',
       title: 'Test Artwork',
@@ -82,6 +84,12 @@ describe('Color Search API', () => {
             run: vi.fn(async () => {
               if (sql.includes('INSERT INTO api_usage_events')) {
                 usageEventInserts += 1;
+              }
+              if (
+                sql.includes('UPDATE api_usage_events SET metadata') &&
+                failUsageEventUpdates
+              ) {
+                throw new Error('usage telemetry update unavailable');
               }
               return { success: true, meta: { changes: 1 } };
             }),
@@ -202,6 +210,20 @@ describe('Color Search API', () => {
           sql.includes('api_usage_daily')
         )
       ).toBe(false);
+    });
+
+    it('keeps an admitted NGS color search successful when telemetry annotation fails', async () => {
+      testGalleryId = ngsOrgId;
+      failUsageEventUpdates = true;
+      const res = await request('/galleries/ngs/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ colors: ['#FF5733'], threshold: 10 }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(ngsQuota.used).toBe(1);
+      expect(usageEventInserts).toBe(1);
     });
 
     it('scopes the NGA color route to NGA provider rows', async () => {

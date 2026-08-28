@@ -2738,6 +2738,17 @@ const recordNgsAcceptedSearchUsage = async (
   }
 };
 
+const annotateAcceptedSearchUsage = async (
+  c: any,
+  metadata: Parameters<typeof annotateUsageEvent>[1]
+) => {
+  try {
+    await annotateUsageEvent(c, metadata);
+  } catch (error) {
+    console.warn('Accepted search usage annotation failed:', error);
+  }
+};
+
 searchRoutes.get(
   '/search-spotlights/:revision',
   requireAuthOrApiKey as any,
@@ -2769,8 +2780,12 @@ searchRoutes.get(
   }
 );
 
+searchRoutes.use('/search/quota', async (c, next) => {
+  c.header('Cache-Control', 'private, no-store');
+  await next();
+});
+
 searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
-  c.header('Cache-Control', 'no-store');
   const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
   if (!isNgsPublicOrg(requestedOrgId)) {
     return c.json<ApiResponse>(
@@ -2886,6 +2901,38 @@ searchRoutes.post('/search/text', async (c) => {
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
     const isNgsPublicSearch = isNgsPublicOrg(orgId);
+    const normalizedNgsQuery = isNgsPublicSearch
+      ? normalizePublicSearchText(query)
+      : query;
+    if (isNgsPublicSearch && !normalizedNgsQuery) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'Invalid search parameters',
+          },
+        },
+        400
+      );
+    }
+    let canonicalNgsConstraints: PublicSearchConstraints | undefined;
+    if (isNgsPublicSearch && constraints !== undefined) {
+      try {
+        canonicalNgsConstraints = parsePublicSearchConstraints(constraints);
+      } catch {
+        return c.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'INVALID_SEARCH_CONSTRAINTS',
+              message: 'Constraints do not match the public search contract',
+            },
+          },
+          400
+        );
+      }
+    }
     let ngsQuota: PublicSearchQuota | undefined;
     if (isNgsPublicSearch) {
       try {
@@ -2979,12 +3026,15 @@ searchRoutes.post('/search/text', async (c) => {
         400
       );
     }
-    const structuredConstraints = ngaPlan?.constraints;
+    const structuredConstraints =
+      ngaPlan?.constraints ?? canonicalNgsConstraints;
     // A facet query is itself the selected facet value (for example,
     // "Painting") and must not be replaced by the residual free-text plan.
     // Non-facet searches use the compiled residual so stale structured chip
     // words cannot leak back into semantic or metadata retrieval.
-    const retrievalQuery = facet ? query : ngaPlan?.retrievalQuery || query;
+    const retrievalQuery = facet
+      ? normalizedNgsQuery
+      : ngaPlan?.retrievalQuery || normalizedNgsQuery;
     const degradedChannels = new Set<SearchDegradedChannel>();
     const scheduleBackgroundWork: ScheduleBackgroundWork = (work) => {
       try {
@@ -3109,15 +3159,18 @@ searchRoutes.post('/search/text', async (c) => {
     let responseCacheable = true;
     let searchResponse: SearchResponse;
 
-    const spotlightSearchResponse = isNgsPublicSearch
-      ? getNgsSpotlightSearchResponse(
-          query,
-          new URL(c.req.url).origin,
-          facet,
-          topK,
-          minScore
-        )
-      : undefined;
+    const spotlightSearchResponse =
+      isNgsPublicSearch &&
+      visualRefinement === undefined &&
+      constraints === undefined
+        ? getNgsSpotlightSearchResponse(
+            normalizedNgsQuery,
+            new URL(c.req.url).origin,
+            facet,
+            topK,
+            minScore
+          )
+        : undefined;
 
     if (spotlightSearchResponse) {
       searchResponse = spotlightSearchResponse;
@@ -3207,7 +3260,7 @@ searchRoutes.post('/search/text', async (c) => {
     }
     c.header('X-Paillette-Search-Cache', cacheHeader);
 
-    await annotateUsageEvent(c as any, {
+    await annotateAcceptedSearchUsage(c as any, {
       search: {
         mode: 'text',
         query,
@@ -3499,7 +3552,7 @@ searchRoutes.post('/search/image', async (c) => {
     // If no results found, return empty response
     if (vectorResults.length === 0) {
       const queryTime = performance.now() - startTime;
-      await annotateUsageEvent(c as any, {
+      await annotateAcceptedSearchUsage(c as any, {
         search: {
           mode: 'image',
           image: {
@@ -3555,7 +3608,7 @@ searchRoutes.post('/search/image', async (c) => {
 
     const queryTime = performance.now() - startTime;
 
-    await annotateUsageEvent(c as any, {
+    await annotateAcceptedSearchUsage(c as any, {
       search: {
         mode: 'image',
         image: {

@@ -530,6 +530,36 @@ const copyHeader = (source: Headers, target: Headers, name: string) => {
   }
 };
 
+const NGS_QUOTA_HEADER_NAMES = [
+  'X-NGS-Search-Limit',
+  'X-NGS-Search-Used',
+  'X-NGS-Search-Remaining',
+] as const;
+
+class McpRestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly details: unknown,
+    readonly headers: Record<string, string>
+  ) {
+    super(message);
+    this.name = 'McpRestError';
+  }
+
+  get quota() {
+    if (
+      this.details &&
+      typeof this.details === 'object' &&
+      'quota' in this.details
+    ) {
+      return (this.details as { quota?: unknown }).quota;
+    }
+    return undefined;
+  }
+}
+
 const callApi = async (
   c: Context<AppBindings>,
   path: string,
@@ -552,8 +582,18 @@ const callApi = async (
   const payload = (await response.json()) as any;
 
   if (!response.ok || payload.success === false) {
-    throw new Error(
-      payload.error?.message || `API call failed: ${response.status}`
+    const headers = Object.fromEntries(
+      NGS_QUOTA_HEADER_NAMES.flatMap((name) => {
+        const value = response.headers.get(name);
+        return value ? [[name, value]] : [];
+      })
+    );
+    throw new McpRestError(
+      response.status,
+      payload.error?.code || 'API_CALL_FAILED',
+      payload.error?.message || `API call failed: ${response.status}`,
+      payload.error?.details,
+      headers
     );
   }
 
@@ -886,6 +926,21 @@ mcpRoutes.post('/', async (c) => {
           requiredScopeGroups: error.requiredScopeGroups,
         }),
         403
+      );
+    }
+
+    if (error instanceof McpRestError) {
+      for (const [name, value] of Object.entries(error.headers)) {
+        c.header(name, value);
+      }
+      return c.json(
+        jsonRpcError(parsed.id, -32000, error.message, {
+          httpStatus: error.status,
+          code: error.code,
+          ...(error.details === undefined ? {} : { details: error.details }),
+          ...(error.quota === undefined ? {} : { quota: error.quota }),
+        }),
+        error.status as any
       );
     }
 
