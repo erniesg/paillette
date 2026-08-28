@@ -441,6 +441,73 @@ describe('MCP downstream REST errors', () => {
   });
 });
 
+describe('MCP client error sanitization', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('returns allowlisted invalid-parameter issues without exposing malformed argument values', async () => {
+    const app = new Hono<{ Bindings: Env }>();
+    app.route('/api/v1/mcp', mcpRoutes);
+    const response = await app.request(
+      '/api/v1/mcp',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'mcp-user',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 7,
+          method: 'tools/call',
+          params: {
+            name: 'colour_search',
+            arguments: {
+              colors: ['MCP_INVALID_PARAMS_SENTINEL'],
+            },
+          },
+        }),
+      },
+      makeEnv()
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({
+      jsonrpc: '2.0',
+      id: 7,
+      error: {
+        code: -32602,
+        message: 'Invalid params',
+        data: {
+          issues: [{ path: ['colors', 0], message: 'Invalid string' }],
+        },
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain('ZodError');
+    expect(JSON.stringify(payload)).not.toContain('MCP_INVALID_PARAMS_SENTINEL');
+  });
+
+  it('returns a stable internal error when a downstream request throws', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('MCP_UNEXPECTED_SENTINEL');
+    }));
+
+    const response = await callTool('search_artworks', 'open');
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual({
+      jsonrpc: '2.0',
+      id: 7,
+      error: {
+        code: -32603,
+        message: 'Internal error',
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain('MCP_UNEXPECTED_SENTINEL');
+  });
+});
+
 describe('MCP NGA aliases', () => {
   afterEach(() => vi.unstubAllGlobals());
 

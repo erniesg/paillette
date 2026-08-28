@@ -549,6 +549,49 @@ const jsonRpcError = (
   },
 });
 
+const SAFE_ZOD_PATH_SEGMENTS = new Set([
+  'jsonrpc', 'id', 'method', 'params', 'name', 'arguments', 'orgId',
+  'collection', 'query', 'topK', 'minScore', 'artworkId', 'colors',
+  'matchMode', 'threshold', 'limit', 'collectionId', 'title', 'description',
+  'thumbnailArtworkId', 'artist', 'year', 'medium', 'accessionNumber',
+  'sourceInstitution', 'sourceCollection', 'sourceRecordId', 'sourceUrl',
+  'imageUrl', 'thumbnailUrl', 'fieldSources', 'customMetadata', 'position',
+  'text', 'sourceLang', 'targetLang', 'imageUrls', 'target',
+  'preserveFilenames', 'filenamePrefix', 'filenameSuffix', 'returnPreview',
+]);
+
+const getSafeZodIssueMessage = (issue: z.ZodIssue) => {
+  switch (issue.code) {
+    case z.ZodIssueCode.invalid_type:
+      return issue.received === 'undefined' ? 'Required' : 'Invalid type';
+    case z.ZodIssueCode.too_small:
+      return 'Value is too small';
+    case z.ZodIssueCode.too_big:
+      return 'Value is too large';
+    case z.ZodIssueCode.invalid_string:
+      return 'Invalid string';
+    case z.ZodIssueCode.unrecognized_keys:
+      return 'Unrecognized key';
+    default:
+      return 'Invalid value';
+  }
+};
+
+const getSafeZodIssuePath = (path: (string | number)[]) =>
+  path.every(
+    (segment) => typeof segment === 'number' || SAFE_ZOD_PATH_SEGMENTS.has(segment)
+  )
+    ? path
+    : [];
+
+const jsonRpcInvalidParamsError = (id: JsonRpcId | undefined, error: z.ZodError) =>
+  jsonRpcError(id, -32602, 'Invalid params', {
+    issues: error.issues.map((issue) => ({
+      path: getSafeZodIssuePath(issue.path),
+      message: getSafeZodIssueMessage(issue),
+    })),
+  });
+
 const NGA_QUOTA_HEADER_NAMES = [
   'X-NGA-Search-Limit',
   'X-NGA-Search-Used',
@@ -1014,9 +1057,9 @@ mcpRoutes.post('/', async (c) => {
 
   try {
     parsed = JsonRpcRequestSchema.parse(await c.req.json());
-  } catch (error) {
+  } catch {
     return c.json(
-      jsonRpcError(null, -32700, 'Invalid JSON-RPC request', error),
+      jsonRpcError(null, -32700, 'Invalid JSON-RPC request'),
       400
     );
   }
@@ -1060,6 +1103,10 @@ mcpRoutes.post('/', async (c) => {
 
     return c.json(jsonRpcError(parsed.id, -32601, 'Method not found'), 404);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json(jsonRpcInvalidParamsError(parsed.id, error), 400);
+    }
+
     if (error instanceof McpInternalCapabilityConfigurationError) {
       return c.json(
         jsonRpcError(parsed.id, -32000, error.message, {
@@ -1101,14 +1148,7 @@ mcpRoutes.post('/', async (c) => {
       );
     }
 
-    return c.json(
-      jsonRpcError(
-        parsed.id,
-        -32603,
-        error instanceof Error ? error.message : 'MCP tool call failed'
-      ),
-      500
-    );
+    return c.json(jsonRpcError(parsed.id, -32603, 'Internal error'), 500);
   }
 });
 
