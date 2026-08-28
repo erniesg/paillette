@@ -106,3 +106,9 @@ export type PublicSearchSpotlightSuggestion = z.infer<
 export type PublicSearchSpotlightBundle = z.infer<
   typeof PublicSearchSpotlightBundleSchema
 >;
+
+export type PublicSearchQuota = {
+  limit: number;
+  used: number;
+  remaining: number;
+};
