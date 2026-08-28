@@ -18,6 +18,12 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX idx_users_email ON users(email);
 
+-- The users.email UNIQUE constraint is case-sensitive in SQLite. Keep this
+-- expression index in fresh schemas so external identity binding cannot be
+-- made ambiguous by case-only email variants.
+CREATE UNIQUE INDEX uq_users_email_casefold
+  ON users(lower(email));
+
 -- ============================================================================
 -- WorkOS External Identities and Search Access Approvals
 -- ============================================================================
@@ -497,6 +503,19 @@ CREATE TABLE IF NOT EXISTS nga_public_search_quota (
 
 INSERT OR IGNORE INTO nga_public_search_quota (scope, used, hard_limit)
 VALUES ('nga-public-search', 0, 1000);
+
+-- Atomic fixed-window abuse guard for accepted NGA public searches. The
+-- client hash is derived in the API; raw client identifiers are not stored.
+CREATE TABLE IF NOT EXISTS nga_public_search_request_rate_limits (
+  client_hash TEXT NOT NULL,
+  window_start INTEGER NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (client_hash, window_start)
+);
+
+CREATE INDEX idx_nga_public_search_rate_limits_window
+  ON nga_public_search_request_rate_limits (window_start);
 
 -- ============================================================================
 -- Translation Jobs
