@@ -1075,6 +1075,91 @@ export const requireAuthOrApiKey = async (
 
 export const getAuth = (c: Context<AppBindings>) => c.get('auth');
 
+/**
+ * Database-backed write authorization. Authentication and search access are
+ * deliberately insufficient: a freshly provisioned WorkOS identity is a
+ * viewer until an administrator grants an organisation role.
+ */
+export const canMutateOrg = async (
+  db: D1Database,
+  auth: AuthPrincipal,
+  orgId: string | null | undefined
+) => {
+  if (!orgId || auth.scopes.includes('public_search') || auth.internalMcp) {
+    return false;
+  }
+
+  try {
+    const allowed = await db
+      .prepare(
+        `
+          SELECT 1 AS allowed
+          FROM users
+          WHERE id = ? AND role = 'admin'
+          UNION ALL
+          SELECT 1 AS allowed
+          FROM orgs
+          WHERE id = ? AND owner_id = ?
+          UNION ALL
+          SELECT 1 AS allowed
+          FROM org_users
+          WHERE org_id = ? AND user_id = ? AND role IN ('admin', 'curator')
+          LIMIT 1
+        `
+      )
+      .bind(auth.userId, orgId, auth.userId, orgId, auth.userId)
+      .first<{ allowed: 1 }>();
+    return Boolean(allowed?.allowed);
+  } catch (error) {
+    console.error('Organisation write authorization failed:', error);
+    return false;
+  }
+};
+
+export const canMutateGlobally = async (
+  db: D1Database,
+  auth: AuthPrincipal
+) => {
+  if (auth.scopes.includes('public_search') || auth.internalMcp) return false;
+  try {
+    const row = await db
+      .prepare(`SELECT 1 AS allowed FROM users WHERE id = ? AND role = 'admin'`)
+      .bind(auth.userId)
+      .first<{ allowed: 1 }>();
+    return Boolean(row?.allowed);
+  } catch (error) {
+    console.error('Global write authorization failed:', error);
+    return false;
+  }
+};
+
+export const requireOrgMutationAccess = async (
+  c: Context<AppBindings>,
+  orgId: string | null | undefined
+) => {
+  const auth = getAuth(c);
+  if (auth && (await canMutateOrg(c.env.DB, auth, orgId))) return null;
+  return c.json(
+    {
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Organisation write access is required' },
+    },
+    403
+  );
+};
+
+export const requireGlobalMutationAccess = async (c: Context<AppBindings>) => {
+  const auth = getAuth(c);
+  if (auth && (await canMutateGlobally(c.env.DB, auth))) return null;
+  return c.json(
+    {
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Administrator access is required' },
+    },
+    403
+  );
+};
+
 export type ArtworkUsageInteraction =
   | 'result'
   | 'view'

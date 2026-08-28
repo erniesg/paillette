@@ -44,7 +44,10 @@ export interface SearchAccessRepository {
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
-const normalizeIssuer = (issuer: string) => issuer.trim().replace(/\/+$/, '');
+// Issuer is an identity boundary, not a URL to canonicalise. JWT validation
+// already checks it exactly; collapsing trailing slashes here could bind two
+// distinct issuers to one internal account.
+const normalizeIssuer = (issuer: string) => issuer.trim();
 
 const normalizeIdentity = (identity: ExternalIdentity): ExternalIdentity => ({
   ...identity,
