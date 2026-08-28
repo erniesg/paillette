@@ -17,7 +17,7 @@ describe('API Health Check', () => {
     expect(data.environment).toBe('test');
   });
 
-  it('exposes NGS quota headers to browser search clients', async () => {
+  it('exposes NGA quota headers to browser search clients', async () => {
     const req = new Request('http://localhost/health', {
       headers: { Origin: 'http://localhost:5173' },
     });
@@ -26,9 +26,9 @@ describe('API Health Check', () => {
     const res = await app.fetch(req, env);
     const exposed = res.headers.get('Access-Control-Expose-Headers') || '';
 
-    expect(exposed).toContain('X-NGS-Search-Limit');
-    expect(exposed).toContain('X-NGS-Search-Used');
-    expect(exposed).toContain('X-NGS-Search-Remaining');
+    expect(exposed).toContain('X-NGA-Search-Limit');
+    expect(exposed).toContain('X-NGA-Search-Used');
+    expect(exposed).toContain('X-NGA-Search-Remaining');
   });
 
   it('does not allow browser clients to send synthetic identity headers', async () => {

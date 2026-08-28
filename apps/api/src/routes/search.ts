@@ -37,9 +37,9 @@ import {
   NGS_SEARCH_SPOTLIGHT_BUNDLE,
 } from '../generated/ngs-search-spotlight-asset';
 import {
-  getNgsPublicSearchQuota,
-  reserveNgsPublicSearchQuota,
-} from '../utils/ngs-search-quota';
+  getNgaPublicSearchQuota,
+  reserveNgaPublicSearchQuota,
+} from '../utils/nga-search-quota';
 import type { PublicSearchQuota } from '@paillette/types';
 import {
   matchesNgaSearchConstraints,
@@ -2718,23 +2718,23 @@ const getNgsSpotlightSearchResponse = (
   };
 };
 
-const setNgsSearchQuotaHeaders = (
+const setNgaSearchQuotaHeaders = (
   c: { header: (name: string, value: string) => void },
   quota: PublicSearchQuota
 ) => {
-  c.header('X-NGS-Search-Limit', String(quota.limit));
-  c.header('X-NGS-Search-Used', String(quota.used));
-  c.header('X-NGS-Search-Remaining', String(quota.remaining));
+  c.header('X-NGA-Search-Limit', String(quota.limit));
+  c.header('X-NGA-Search-Used', String(quota.used));
+  c.header('X-NGA-Search-Remaining', String(quota.remaining));
 };
 
-const recordNgsAcceptedSearchUsage = async (
+const recordNgaAcceptedSearchUsage = async (
   c: any,
   options: Parameters<typeof recordApiUsageEvent>[1]
 ) => {
   try {
     await recordApiUsageEvent(c, options);
   } catch (error) {
-    console.warn('NGS accepted search usage telemetry failed:', error);
+    console.warn('NGA accepted search usage telemetry failed:', error);
   }
 };
 
@@ -2787,13 +2787,13 @@ searchRoutes.use('/search/quota', async (c, next) => {
 
 searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
   const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
-  if (!isNgsPublicOrg(requestedOrgId)) {
+  if (resolveOpenAccessProviderScope(requestedOrgId) !== 'nga') {
     return c.json<ApiResponse>(
       {
         success: false,
         error: {
           code: 'NOT_FOUND',
-          message: 'NGS public search quota not found',
+          message: 'NGA public search quota not found',
         },
       },
       404
@@ -2801,17 +2801,17 @@ searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
   }
 
   try {
-    const quota = await getNgsPublicSearchQuota(c.env.DB);
-    setNgsSearchQuotaHeaders(c, quota);
+    const quota = await getNgaPublicSearchQuota(c.env.DB);
+    setNgaSearchQuotaHeaders(c, quota);
     return c.json({ success: true, data: quota });
   } catch (error) {
-    console.error('NGS public search quota read failed:', error);
+    console.error('NGA public search quota read failed:', error);
     return c.json<ApiResponse>(
       {
         success: false,
         error: {
-          code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
-          message: 'NGS public search quota is temporarily unavailable',
+          code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+          message: 'NGA public search quota is temporarily unavailable',
         },
       },
       503
@@ -2933,33 +2933,34 @@ searchRoutes.post('/search/text', async (c) => {
         );
       }
     }
-    let ngsQuota: PublicSearchQuota | undefined;
-    if (isNgsPublicSearch) {
+    const isNgaPublicSearch = provider === 'nga';
+    let ngaQuota: PublicSearchQuota | undefined;
+    if (isNgaPublicSearch) {
       try {
-        const reservation = await reserveNgsPublicSearchQuota(c.env.DB);
-        setNgsSearchQuotaHeaders(c, reservation.quota);
+        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
             {
               success: false,
               error: {
-                code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
-                message: 'NGS public search quota has been exhausted',
+                code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGA public search quota has been exhausted',
                 details: { quota: reservation.quota },
               },
             },
             429
           );
         }
-        ngsQuota = reservation.quota;
+        ngaQuota = reservation.quota;
       } catch (error) {
-        console.error('NGS public search quota reservation failed:', error);
+        console.error('NGA public search quota reservation failed:', error);
         return c.json<ApiResponse>(
           {
             success: false,
             error: {
-              code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
-              message: 'NGS public search quota is temporarily unavailable',
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGA public search quota is temporarily unavailable',
             },
           },
           503
@@ -2967,11 +2968,11 @@ searchRoutes.post('/search/text', async (c) => {
       }
 
       if (!(c as any).get('usageEventId')) {
-        await recordNgsAcceptedSearchUsage(c as any, {
+        await recordNgaAcceptedSearchUsage(c as any, {
           queryType: 'vector_search',
           orgId: orgId || null,
           metadata: {
-            search: { mode: 'text', query, quotaRemaining: ngsQuota.remaining },
+            search: { mode: 'text', query, quotaRemaining: ngaQuota.remaining },
           },
         });
       }
@@ -3175,7 +3176,7 @@ searchRoutes.post('/search/text', async (c) => {
     if (spotlightSearchResponse) {
       searchResponse = spotlightSearchResponse;
       cacheHeader = 'SPOTLIGHT';
-    } else if (isPublicSearchPrincipal || isNgsPublicSearch) {
+    } else if (isPublicSearchPrincipal || isNgsPublicSearch || isNgaPublicSearch) {
       const cached = await getOrLoadPublicSearchResult({
         cache: c.env.CACHE,
         query: retrievalQuery,
@@ -3255,8 +3256,8 @@ searchRoutes.post('/search/text', async (c) => {
       searchResponse = await executeSearch();
       responseCacheable = degradedChannels.size === 0;
     }
-    if (ngsQuota) {
-      searchResponse = { ...searchResponse, quota: ngsQuota };
+    if (ngaQuota) {
+      searchResponse = { ...searchResponse, quota: ngaQuota };
     }
     c.header('X-Paillette-Search-Cache', cacheHeader);
 
@@ -3271,7 +3272,7 @@ searchRoutes.post('/search/text', async (c) => {
         resultCount: searchResponse.count,
         queryTime: searchResponse.queryTime,
         cacheDisposition: cacheHeader,
-        ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
+        ...(ngaQuota ? { quotaRemaining: ngaQuota.remaining } : {}),
       },
     });
 
@@ -3423,34 +3424,34 @@ searchRoutes.post('/search/image', async (c) => {
       ? Math.min(Math.max(requestedMinScore, 0), 1)
       : 0.7;
 
-    const isNgsPublicSearch = isNgsPublicOrg(orgId);
-    let ngsQuota: PublicSearchQuota | undefined;
-    if (isNgsPublicSearch) {
+    const isNgaPublicSearch = provider === 'nga';
+    let ngaQuota: PublicSearchQuota | undefined;
+    if (isNgaPublicSearch) {
       try {
-        const reservation = await reserveNgsPublicSearchQuota(c.env.DB);
-        setNgsSearchQuotaHeaders(c, reservation.quota);
+        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
             {
               success: false,
               error: {
-                code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
-                message: 'NGS public search quota has been exhausted',
+                code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGA public search quota has been exhausted',
                 details: { quota: reservation.quota },
               },
             },
             429
           );
         }
-        ngsQuota = reservation.quota;
+        ngaQuota = reservation.quota;
       } catch (error) {
-        console.error('NGS public search quota reservation failed:', error);
+        console.error('NGA public search quota reservation failed:', error);
         return c.json<ApiResponse>(
           {
             success: false,
             error: {
-              code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
-              message: 'NGS public search quota is temporarily unavailable',
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGA public search quota is temporarily unavailable',
             },
           },
           503
@@ -3458,11 +3459,11 @@ searchRoutes.post('/search/image', async (c) => {
       }
 
       if (!(c as any).get('usageEventId')) {
-        await recordNgsAcceptedSearchUsage(c as any, {
+        await recordNgaAcceptedSearchUsage(c as any, {
           queryType: 'vector_search',
           orgId: orgId || null,
           metadata: {
-            search: { mode: 'image', quotaRemaining: ngsQuota.remaining },
+            search: { mode: 'image', quotaRemaining: ngaQuota.remaining },
           },
         });
       }
@@ -3566,7 +3567,7 @@ searchRoutes.post('/search/image', async (c) => {
           resultCount: 0,
           queryTime,
           cacheDisposition: 'BYPASS',
-          ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
+          ...(ngaQuota ? { quotaRemaining: ngaQuota.remaining } : {}),
         },
       });
       return c.json<ApiResponse<SearchResponse>>({
@@ -3575,7 +3576,7 @@ searchRoutes.post('/search/image', async (c) => {
           results: [],
           count: 0,
           queryTime,
-          ...(ngsQuota ? { quota: ngsQuota } : {}),
+          ...(ngaQuota ? { quota: ngaQuota } : {}),
         },
       });
     }
@@ -3622,7 +3623,7 @@ searchRoutes.post('/search/image', async (c) => {
         resultCount: enrichedResults.length,
         queryTime,
         cacheDisposition: 'BYPASS',
-        ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
+        ...(ngaQuota ? { quotaRemaining: ngaQuota.remaining } : {}),
       },
     });
 
@@ -3642,7 +3643,7 @@ searchRoutes.post('/search/image', async (c) => {
         results: enrichedResults,
         count: enrichedResults.length,
         queryTime,
-        ...(ngsQuota ? { quota: ngsQuota } : {}),
+        ...(ngaQuota ? { quota: ngaQuota } : {}),
       },
       meta: {
         timestamp: new Date().toISOString(),

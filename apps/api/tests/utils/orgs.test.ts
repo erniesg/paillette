@@ -86,22 +86,19 @@ describe('resolveOpenAccessProviderScope', () => {
 });
 
 describe('isAllowedPublicSearchRouteScope', () => {
-  it('allows only NGS public aliases and the dedicated NGA provider route', () => {
-    expect(isAllowedPublicSearchRouteScope('ngs')).toBe(true);
-    expect(isAllowedPublicSearchRouteScope('national-gallery-singapore')).toBe(
-      true
-    );
-    expect(
-      isAllowedPublicSearchRouteScope('cf98791d-f3cc-4f9f-b40c-a350efadbd05')
-    ).toBe(true);
-    expect(
-      isAllowedPublicSearchRouteScope('00000000-0000-4000-8000-000000000101')
-    ).toBe(true);
+  it('allows only the dedicated NGA provider route', () => {
     expect(isAllowedPublicSearchRouteScope('nga')).toBe(true);
     expect(isAllowedPublicSearchRouteScope('NGA')).toBe(true);
   });
 
-  it('rejects generic open-access and arbitrary org scopes', () => {
+  it('rejects NGS, generic open-access, and arbitrary org scopes', () => {
+    expect(isAllowedPublicSearchRouteScope('ngs')).toBe(false);
+    expect(isAllowedPublicSearchRouteScope('national-gallery-singapore')).toBe(
+      false
+    );
+    expect(
+      isAllowedPublicSearchRouteScope('cf98791d-f3cc-4f9f-b40c-a350efadbd05')
+    ).toBe(false);
     expect(isAllowedPublicSearchRouteScope('open')).toBe(false);
     expect(isAllowedPublicSearchRouteScope('open-access-art')).toBe(false);
     expect(

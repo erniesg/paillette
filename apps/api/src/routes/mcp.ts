@@ -531,9 +531,9 @@ const copyHeader = (source: Headers, target: Headers, name: string) => {
 };
 
 const NGS_QUOTA_HEADER_NAMES = [
-  'X-NGS-Search-Limit',
-  'X-NGS-Search-Used',
-  'X-NGS-Search-Remaining',
+  'X-NGA-Search-Limit',
+  'X-NGA-Search-Used',
+  'X-NGA-Search-Remaining',
 ] as const;
 
 class McpRestError extends Error {

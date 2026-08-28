@@ -22,7 +22,7 @@ import {
   resolveOpenAccessProviderScope,
   resolveOrgIdentifier,
 } from '../utils/orgs';
-import { reserveNgsPublicSearchQuota } from '../utils/ngs-search-quota';
+import { reserveNgaPublicSearchQuota } from '../utils/nga-search-quota';
 import type { PublicSearchQuota } from '@paillette/types';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
@@ -35,13 +35,13 @@ const providerColorSearchSql = (provider: string | undefined) =>
     ? "AND json_valid(custom_metadata) AND json_extract(custom_metadata, '$.provider') = ?"
     : '';
 
-const setNgsSearchQuotaHeaders = (
+const setNgaSearchQuotaHeaders = (
   c: { header: (name: string, value: string) => void },
   quota: PublicSearchQuota
 ) => {
-  c.header('X-NGS-Search-Limit', String(quota.limit));
-  c.header('X-NGS-Search-Used', String(quota.used));
-  c.header('X-NGS-Search-Remaining', String(quota.remaining));
+  c.header('X-NGA-Search-Limit', String(quota.limit));
+  c.header('X-NGA-Search-Used', String(quota.used));
+  c.header('X-NGA-Search-Remaining', String(quota.remaining));
 };
 
 const annotateAcceptedColorSearchUsage = async (
@@ -72,7 +72,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
     if (
       getAuth(c as any).scopes.includes('public_search') &&
-      !isNgsPublicOrg(requestedOrgId)
+      resolveOpenAccessProviderScope(requestedOrgId) !== 'nga'
     ) {
       return c.json<ApiResponse>(
         {
@@ -80,7 +80,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
           error: {
             code: 'PUBLIC_SEARCH_ENDPOINT_NOT_ALLOWED',
             message:
-              'Public color refinement is performed locally on cached text results',
+              'Public color search is available only for National Gallery of Art',
           },
         },
         403
@@ -108,33 +108,33 @@ colorSearchRoutes.post('/search/color', async (c) => {
     }
 
     const query = validation.data;
-    let ngsQuota: PublicSearchQuota | undefined;
-    if (isNgsPublicOrg(orgId)) {
+    let ngaQuota: PublicSearchQuota | undefined;
+    if (provider === 'nga') {
       try {
-        const reservation = await reserveNgsPublicSearchQuota(c.env.DB);
-        setNgsSearchQuotaHeaders(c, reservation.quota);
+        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
             {
               success: false,
               error: {
-                code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
-                message: 'NGS public search quota has been exhausted',
+                code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGA public search quota has been exhausted',
                 details: { quota: reservation.quota },
               },
             },
             429
           );
         }
-        ngsQuota = reservation.quota;
+        ngaQuota = reservation.quota;
       } catch (error) {
-        console.error('NGS public search quota reservation failed:', error);
+        console.error('NGA public search quota reservation failed:', error);
         return c.json<ApiResponse>(
           {
             success: false,
             error: {
-              code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
-              message: 'NGS public search quota is temporarily unavailable',
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGA public search quota is temporarily unavailable',
             },
           },
           503
@@ -147,12 +147,12 @@ colorSearchRoutes.post('/search/color', async (c) => {
             queryType: 'color_search',
             orgId: orgId || null,
             metadata: {
-              search: { mode: 'color', quotaRemaining: ngsQuota.remaining },
+              search: { mode: 'color', quotaRemaining: ngaQuota.remaining },
             },
           });
         } catch (error) {
           console.warn(
-            'NGS accepted color search usage telemetry failed:',
+            'NGA accepted color search usage telemetry failed:',
             error
           );
         }
@@ -274,7 +274,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
       search: {
         mode: 'color',
         cacheDisposition: 'BYPASS',
-        ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
+        ...(ngaQuota ? { quotaRemaining: ngaQuota.remaining } : {}),
       },
     });
 
@@ -287,7 +287,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
         query,
         totalResults: limitedResults.length,
         took: performance.now() - startTime,
-        ...(ngsQuota ? { quota: ngsQuota } : {}),
+        ...(ngaQuota ? { quota: ngaQuota } : {}),
       },
     };
 

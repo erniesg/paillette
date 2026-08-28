@@ -249,9 +249,9 @@ class FakeSearchDb {
   }
 
   async run(sql: string, params: unknown[]) {
-    if (sql.includes('ngs_public_search_quota')) {
+    if (sql.includes('nga_public_search_quota')) {
       if (this.failNgsPublicSearchQuota) {
-        throw new Error('NGS quota storage unavailable');
+        throw new Error('NGA quota storage unavailable');
       }
       return { success: true, meta: { changes: 1 } };
     }
@@ -439,11 +439,11 @@ class FakeSearchDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
-    if (sql.includes('ngs_public_search_quota')) {
+    if (sql.includes('nga_public_search_quota')) {
       if (this.failNgsPublicSearchQuota) {
-        throw new Error('NGS quota storage unavailable');
+        throw new Error('NGA quota storage unavailable');
       }
-      if (sql.includes('UPDATE ngs_public_search_quota')) {
+      if (sql.includes('UPDATE nga_public_search_quota')) {
         if (
           this.ngsPublicSearchQuota.used >= this.ngsPublicSearchQuota.hard_limit
         ) {
@@ -899,7 +899,7 @@ const ngsSearchSpotlights = (
     env
   );
 
-describe('NGS search spotlight cache', () => {
+describe('NGA search spotlight cache', () => {
   it('requires authentication before returning the private cached results', async () => {
     const response = await ngsSearchSpotlights(
       makeApp(),
@@ -953,11 +953,11 @@ describe('NGS search spotlight cache', () => {
   });
 });
 
-describe('NGS public search quota', () => {
+describe('NGA public search quota', () => {
   it('returns the visible lifetime quota without consuming it', async () => {
     const db = new FakeSearchDb();
     const response = await makeApp().request(
-      '/api/v1/orgs/ngs/search/quota',
+      '/api/v1/orgs/nga/search/quota',
       { headers: { 'X-User-Id': 'user-1' } },
       makeEnv(db)
     );
@@ -965,9 +965,9 @@ describe('NGS public search quota', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     const payload = (await response.json()) as any;
-    expect(response.headers.get('X-NGS-Search-Limit')).toBe('1000');
-    expect(response.headers.get('X-NGS-Search-Used')).toBe('0');
-    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('1000');
+    expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+    expect(response.headers.get('X-NGA-Search-Used')).toBe('0');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('1000');
     expect(payload.data).toEqual({ limit: 1000, used: 0, remaining: 1000 });
     expect(db.usageEvents).toHaveLength(0);
   });
@@ -976,13 +976,13 @@ describe('NGS public search quota', () => {
     {
       name: 'requires authentication',
       headers: undefined,
-      routeOrgId: 'ngs',
+      routeOrgId: ORG_ID,
       status: 401,
     },
     {
       name: 'hides the counter from other orgs',
       headers: { 'X-User-Id': 'user-1' },
-      routeOrgId: 'nga',
+      routeOrgId: ORG_ID,
       status: 404,
     },
   ])(
@@ -1006,7 +1006,7 @@ describe('NGS public search quota', () => {
     const db = new FakeSearchDb();
     db.failNgsPublicSearchQuota = true;
     const response = await makeApp().request(
-      '/api/v1/orgs/ngs/search/quota',
+      '/api/v1/orgs/nga/search/quota',
       { headers: { 'X-User-Id': 'user-1' } },
       makeEnv(db)
     );
@@ -1017,7 +1017,7 @@ describe('NGS public search quota', () => {
     expect(db.usageEvents).toHaveLength(0);
   });
 
-  it('charges and logs an exact NGS Try term served from the spotlight bundle', async () => {
+  it('charges and logs an NGA cached Try query', async () => {
     const db = new FakeSearchDb();
     const response = await textSearch(
       makeApp(),
@@ -1028,28 +1028,20 @@ describe('NGS public search quota', () => {
         topK: 1,
         minScore: 0.99,
       },
-      'ngs'
+      'nga'
     );
     const payload = (await response.json()) as any;
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('SPOTLIGHT');
-    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
     expect(payload.data.quota).toEqual({
       limit: 1000,
       used: 1,
       remaining: 999,
     });
-    expect(payload.data.results[0]?.id).toBe('P-0811');
     expect(payload.data.results).toHaveLength(1);
-    expect(payload.data.results[0]?.metadata).toMatchObject({
-      provider: 'ngs',
-      sourceInstitution: 'National Gallery Singapore',
-      sourceRecordId: 'P-0811',
-      accessionNumber: 'P-0811',
-      dominantColors: expect.any(Array),
-    });
-    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(db.metadataSearchSql).toHaveLength(1);
     expect(db.ngsPublicSearchQuota.used).toBe(1);
     expect(db.usageEvents).toHaveLength(1);
     expect(
@@ -1057,12 +1049,12 @@ describe('NGS public search quota', () => {
     ).toMatchObject({
       mode: 'text',
       query: '  A STILL LIFE of tropical fruit and flowers  ',
-      cacheDisposition: 'SPOTLIGHT',
+      cacheDisposition: 'MISS',
       quotaRemaining: 999,
     });
   });
 
-  it('charges authenticated NGS cache hits from the shared lifetime pool', async () => {
+  it('charges authenticated NGA cache hits from the shared lifetime pool', async () => {
     const db = new FakeSearchDb();
     const cache = makeEmbeddingCache();
     const env = { ...makeEnv(db), CACHE: cache };
@@ -1074,14 +1066,14 @@ describe('NGS public search quota', () => {
       env,
       { 'X-User-Id': 'user-1' },
       body,
-      'ngs'
+      'nga'
     );
     const second = await textSearch(
       app,
       env,
       { 'X-User-Id': 'user-2' },
       body,
-      'ngs'
+      'nga'
     );
     const secondPayload = (await second.json()) as any;
 
@@ -1105,7 +1097,7 @@ describe('NGS public search quota', () => {
     });
   });
 
-  it('charges valid NGS image searches before embedding work', async () => {
+  it('charges valid NGA image searches before embedding work', async () => {
     const db = new FakeSearchDb();
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
@@ -1125,12 +1117,12 @@ describe('NGS public search quota', () => {
       makeApp(),
       env,
       { 'X-User-Id': 'user-1' },
-      'ngs'
+      'nga'
     );
     const payload = (await response.json()) as any;
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
     expect(payload.data.quota).toEqual({
       limit: 1000,
       used: 1,
@@ -1147,30 +1139,30 @@ describe('NGS public search quota', () => {
     });
   });
 
-  it('uses the NGS lifetime pool instead of daily quota for a valid image request', async () => {
+  it('uses the NGA lifetime pool instead of daily quota for a valid image request', async () => {
     const db = new FakeSearchDb();
     const response = await imageSearch(
       makeApp(),
       makeEnv(db, 0),
       { 'X-User-Id': 'user-1' },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(501);
-    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
     expect(db.ngsPublicSearchQuota.used).toBe(1);
     expect(db.daily.size).toBe(0);
     expect(db.usageEvents).toHaveLength(1);
   });
 
-  it('does not reserve the NGS lifetime pool for invalid input', async () => {
+  it('does not reserve the NGA lifetime pool for invalid input', async () => {
     const db = new FakeSearchDb();
     const response = await textSearch(
       makeApp(),
       makeEnv(db),
       { 'X-User-Id': 'user-1' },
       { query: '' },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(400);
@@ -1197,7 +1189,7 @@ describe('NGS public search quota', () => {
         makeEnv(db),
         { 'X-User-Id': 'user-1' },
         body,
-        'ngs'
+        'nga'
       );
 
       expect(response.status).toBe(400);
@@ -1218,7 +1210,7 @@ describe('NGS public search quota', () => {
         topK: 1,
         constraints: { classifications: ['Painting'] },
       },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(200);
@@ -1240,7 +1232,7 @@ describe('NGS public search quota', () => {
         topK: 1,
         visualRefinement: 'more dramatic lighting',
       },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(200);
@@ -1251,7 +1243,7 @@ describe('NGS public search quota', () => {
     expect(db.ngsPublicSearchQuota.used).toBe(1);
   });
 
-  it('keeps an admitted NGS text search successful when telemetry annotation fails', async () => {
+  it('keeps an admitted NGA text search successful when telemetry annotation fails', async () => {
     const db = new FakeSearchDb();
     db.failUsageEventUpdates = true;
     const response = await textSearch(
@@ -1259,7 +1251,7 @@ describe('NGS public search quota', () => {
       makeEnv(db),
       { 'X-User-Id': 'user-1' },
       { query: 'a still life of tropical fruit and flowers', topK: 1 },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(200);
@@ -1267,7 +1259,7 @@ describe('NGS public search quota', () => {
     expect(db.usageEvents).toHaveLength(1);
   });
 
-  it('keeps an admitted NGS image search successful when telemetry annotation fails', async () => {
+  it('keeps an admitted NGA image search successful when telemetry annotation fails', async () => {
     const db = new FakeSearchDb();
     db.failUsageEventUpdates = true;
     const fetchMock = vi.fn().mockResolvedValue(
@@ -1287,7 +1279,7 @@ describe('NGS public search quota', () => {
         } as unknown as Vectorize,
       },
       { 'X-User-Id': 'user-1' },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(200);
@@ -1295,22 +1287,22 @@ describe('NGS public search quota', () => {
     expect(db.usageEvents).toHaveLength(1);
   });
 
-  it('does not reserve the NGS lifetime pool for non-NGS searches', async () => {
+  it('does not reserve the NGA lifetime pool for non-NGA searches', async () => {
     const db = new FakeSearchDb();
     const response = await textSearch(
       makeApp(),
       makeEnv(db),
       { 'X-User-Id': 'user-1' },
       { query: 'mangrove shore', topK: 1 },
-      'nga'
+      'ngs'
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('X-NGS-Search-Remaining')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
     expect(db.ngsPublicSearchQuota.used).toBe(0);
   });
 
-  it('lets an authenticated NGS user pass the old daily boundary without touching daily usage', async () => {
+  it('uses the NGA lifetime pool without creating daily usage', async () => {
     const db = new FakeSearchDb();
     const env = makeEnv(db, 1);
     const app = makeApp();
@@ -1320,7 +1312,7 @@ describe('NGS public search quota', () => {
       env,
       { 'X-User-Id': 'user-1' },
       { query: 'mangrove shore', topK: 1 },
-      'ngs'
+      'nga'
     );
     const second = await textSearch(
       app,
@@ -1332,8 +1324,8 @@ describe('NGS public search quota', () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(db.ngsPublicSearchQuota.used).toBe(2);
-    expect(db.daily.size).toBe(0);
+    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.daily.size).toBe(1);
     expect(db.usageEvents).toHaveLength(2);
   });
 
@@ -1345,17 +1337,17 @@ describe('NGS public search quota', () => {
       makeEnv(db),
       { 'X-User-Id': 'user-1' },
       { query: 'mangrove shore', topK: 1 },
-      'ngs'
+      'nga'
     );
     const payload = (await response.json()) as any;
 
     expect(response.status).toBe(503);
-    expect(payload.error.code).toBe('NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE');
+    expect(payload.error.code).toBe('NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE');
     expect(db.metadataSearchSql).toHaveLength(0);
     expect(db.usageEvents).toHaveLength(0);
   });
 
-  it('shares the final NGS slot across authenticated users and the public API key', async () => {
+  it('shares the final NGA slot across authenticated users and the public API key', async () => {
     const db = new FakeSearchDb();
     db.ngsPublicSearchQuota.used = 999;
     const cache = makeEmbeddingCache();
@@ -1372,13 +1364,13 @@ describe('NGS public search quota', () => {
     };
 
     const responses = await Promise.all([
-      textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'ngs'),
+      textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'nga'),
       textSearch(
         app,
         env,
         { 'X-API-Key': 'public-search-secret' },
         body,
-        'ngs'
+        'nga'
       ),
     ]);
     const statuses = responses.map((response) => response.status).sort();
@@ -1387,11 +1379,11 @@ describe('NGS public search quota', () => {
     const exhausted = responses.find((response) => response.status === 429)!;
     const exhaustedPayload = (await exhausted.json()) as any;
     expect(db.ngsPublicSearchQuota.used).toBe(1000);
-    expect(exhausted.headers.get('X-NGS-Search-Limit')).toBe('1000');
-    expect(exhausted.headers.get('X-NGS-Search-Used')).toBe('1000');
-    expect(exhausted.headers.get('X-NGS-Search-Remaining')).toBe('0');
+    expect(exhausted.headers.get('X-NGA-Search-Limit')).toBe('1000');
+    expect(exhausted.headers.get('X-NGA-Search-Used')).toBe('1000');
+    expect(exhausted.headers.get('X-NGA-Search-Remaining')).toBe('0');
     expect(exhaustedPayload.error).toMatchObject({
-      code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+      code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
       details: { quota: { limit: 1000, used: 1000, remaining: 0 } },
     });
     expect(db.usageEvents).toHaveLength(1);
@@ -1399,7 +1391,7 @@ describe('NGS public search quota', () => {
     expect(cache.get).not.toHaveBeenCalled();
   });
 
-  it('keeps an admitted public NGS search available when usage telemetry fails', async () => {
+  it('keeps an admitted public NGA search available when usage telemetry fails', async () => {
     const db = new FakeSearchDb();
     db.failUsageEventInserts = true;
     const env = {
@@ -1417,11 +1409,11 @@ describe('NGS public search quota', () => {
         topK: 100,
         minScore: 0,
       },
-      'ngs'
+      'nga'
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
     expect(db.ngsPublicSearchQuota.used).toBe(1);
   });
 });
@@ -1800,7 +1792,7 @@ describe('Search API auth and quota behavior', () => {
     );
   });
 
-  it('returns Roots caption provenance instead of stripping it from NGS search results', async () => {
+  it('returns Roots caption provenance instead of stripping it from NGA search results', async () => {
     db = new FakeSearchDb([
       {
         ...artworkRow,

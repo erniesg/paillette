@@ -64,8 +64,8 @@ describe('Color Search API', () => {
               return { success: true, results: [] };
             }),
             first: vi.fn(async () => {
-              if (sql.includes('ngs_public_search_quota')) {
-                if (sql.includes('UPDATE ngs_public_search_quota')) {
+              if (sql.includes('nga_public_search_quota')) {
+                if (sql.includes('UPDATE nga_public_search_quota')) {
                   if (ngsQuota.used >= ngsQuota.hard_limit) return null;
                   ngsQuota.used += 1;
                 }
@@ -115,9 +115,9 @@ describe('Color Search API', () => {
   });
 
   describe('POST /search/color', () => {
-    it('logs an accepted NGS color search from the public search principal', async () => {
-      testGalleryId = ngsOrgId;
-      const res = await request('/galleries/ngs/search/color', {
+    it('logs an accepted NGA color search from the public search principal', async () => {
+      testGalleryId = 'open-access-art';
+      const res = await request('/galleries/nga/search/color', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -128,7 +128,7 @@ describe('Color Search API', () => {
       const body = await res.json();
 
       expect(res.status).toBe(200);
-      expect(res.headers.get('X-NGS-Search-Remaining')).toBe('999');
+      expect(res.headers.get('X-NGA-Search-Remaining')).toBe('999');
       expect(ngsQuota.used).toBe(1);
       expect(usageEventInserts).toBe(1);
       expect(
@@ -192,9 +192,9 @@ describe('Color Search API', () => {
       );
     });
 
-    it('charges a valid authenticated NGS color search once', async () => {
-      testGalleryId = ngsOrgId;
-      const res = await request('/galleries/ngs/search/color', {
+    it('charges a valid authenticated NGA color search once', async () => {
+      testGalleryId = 'open-access-art';
+      const res = await request('/galleries/nga/search/color', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ colors: ['#FF5733'], threshold: 10 }),
@@ -202,7 +202,7 @@ describe('Color Search API', () => {
       const body = await res.json();
 
       expect(res.status).toBe(200);
-      expect(res.headers.get('X-NGS-Search-Remaining')).toBe('999');
+      expect(res.headers.get('X-NGA-Search-Remaining')).toBe('999');
       expect(ngsQuota.used).toBe(1);
       expect(body.success).toBe(true);
       expect(
@@ -212,10 +212,10 @@ describe('Color Search API', () => {
       ).toBe(false);
     });
 
-    it('keeps an admitted NGS color search successful when telemetry annotation fails', async () => {
-      testGalleryId = ngsOrgId;
+    it('keeps an admitted NGA color search successful when telemetry annotation fails', async () => {
+      testGalleryId = 'open-access-art';
       failUsageEventUpdates = true;
-      const res = await request('/galleries/ngs/search/color', {
+      const res = await request('/galleries/nga/search/color', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ colors: ['#FF5733'], threshold: 10 }),

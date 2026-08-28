@@ -7,7 +7,7 @@ import {
 } from 'jose';
 import type { Env } from '../index';
 import { generateId, generateToken, hashApiKey } from '../utils/crypto';
-import { isNgsPublicOrg } from '../utils/orgs';
+import { resolveOpenAccessProviderScope } from '../utils/orgs';
 import { verifyIdentityToken } from '../auth/identity-token';
 import {
   D1SearchAccessRepository,
@@ -857,7 +857,7 @@ export const requireApprovedDataAccess = async (
 };
 
 const isPublicSearchApiRoute = (c: Context<AppBindings>) =>
-  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/[^/]+\/search\/(?:text|image|color)$/.test(
+  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/nga\/search\/(?:text|image|color|quota)$/.test(
     c.req.path
   );
 
@@ -903,7 +903,7 @@ export const requireAuthOrApiKey = async (
           success: false,
           error: {
             code: 'FORBIDDEN',
-            message: 'This API key is restricted to NGS public search',
+            message: 'This API key is restricted to NGA public search',
           },
         },
         403
@@ -957,7 +957,7 @@ export const enforceDailyQuota = (options: {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
     if (
       auth.scopes.includes('public_search') ||
-      isNgsPublicOrg(requestedOrgId)
+      resolveOpenAccessProviderScope(requestedOrgId) === 'nga'
     ) {
       await next();
       return;

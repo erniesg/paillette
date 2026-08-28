@@ -61,7 +61,7 @@ export const isAllowedPublicSearchRouteScope = (
 
   try {
     const key = decodeURIComponent(raw).toLowerCase();
-    return isNgsPublicOrg(key) || key === OPEN_ACCESS_NGA_KEY;
+    return key === OPEN_ACCESS_NGA_KEY;
   } catch {
     return false;
   }

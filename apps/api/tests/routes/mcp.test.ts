@@ -68,7 +68,7 @@ describe('MCP downstream REST errors', () => {
           JSON.stringify({
             success: false,
             error: {
-              code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
               message: 'NGS public search quota has been exhausted',
               details: { quota },
             },
@@ -77,9 +77,9 @@ describe('MCP downstream REST errors', () => {
             status: 429,
             headers: {
               'Content-Type': 'application/json',
-              'X-NGS-Search-Limit': '1000',
-              'X-NGS-Search-Used': '1000',
-              'X-NGS-Search-Remaining': '0',
+              'X-NGA-Search-Limit': '1000',
+              'X-NGA-Search-Used': '1000',
+              'X-NGA-Search-Remaining': '0',
             },
           }
         );
@@ -91,13 +91,13 @@ describe('MCP downstream REST errors', () => {
 
       expect(response.status).toBe(429);
       expect(debits).toBe(1);
-      expect(response.headers.get('X-NGS-Search-Limit')).toBe('1000');
-      expect(response.headers.get('X-NGS-Search-Remaining')).toBe('0');
+      expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+      expect(response.headers.get('X-NGA-Search-Remaining')).toBe('0');
       expect(payload.error).toMatchObject({
         code: -32000,
         data: {
           httpStatus: 429,
-          code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+          code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
           details: { quota },
           quota,
         },
