@@ -63,6 +63,13 @@ export const MCP_INTERNAL_CAPABILITY_HEADER =
 
 const MCP_INTERNAL_CAPABILITY_TTL_MS = 15_000;
 
+export class McpInternalCapabilityConfigurationError extends Error {
+  constructor() {
+    super('MCP internal capability is unavailable');
+    this.name = 'McpInternalCapabilityConfigurationError';
+  }
+}
+
 type McpInternalCapabilityPayload = {
   v: 1;
   exp: number;
@@ -92,8 +99,8 @@ const decodeBase64Url = (value: string) => {
 };
 
 const getMcpCapabilityKey = async (env: Env) => {
-  const secret = env.API_KEY_PEPPER?.trim();
-  if (!secret) throw new Error('MCP internal capability is not configured');
+  const secret = env.MCP_INTERNAL_CAPABILITY_SECRET?.trim();
+  if (!secret) throw new McpInternalCapabilityConfigurationError();
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
@@ -1086,6 +1093,18 @@ export const requireAuthOrApiKey = async (
   } catch (error) {
     if (error instanceof AccessDecisionError) {
       return accessErrorResponse(c, error);
+    }
+    if (error instanceof McpInternalCapabilityConfigurationError) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'MCP_INTERNAL_CAPABILITY_UNAVAILABLE',
+            message: 'MCP internal capability is unavailable',
+          },
+        },
+        503
+      );
     }
     console.error('Auth error:', error);
     return c.json(

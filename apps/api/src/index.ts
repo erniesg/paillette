@@ -53,6 +53,9 @@ export interface Env {
   SEARCH_ACCESS_MODE?: string;
   SEARCH_ACCESS_BOOTSTRAP_EMAIL?: string;
   API_KEY_PEPPER?: string;
+  /** Dedicated HMAC key for the internal MCP-to-REST handoff. It must never
+   * be reused as a personal API-key hashing pepper. */
+  MCP_INTERNAL_CAPABILITY_SECRET?: string;
   PAILLETTE_PUBLIC_SEARCH_API_KEY?: string;
   DAILY_FREE_QUERY_LIMIT?: string;
   PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE?: string;

@@ -121,6 +121,7 @@ describe('Color Search API', () => {
       API_VERSION: 'v1',
       DAILY_FREE_QUERY_LIMIT: '100',
       API_KEY_PEPPER: 'test-only-mcp-capability-key',
+      MCP_INTERNAL_CAPABILITY_SECRET: 'test-only-mcp-capability-key',
     };
 
     app = new Hono<{ Bindings: Env }>();

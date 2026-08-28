@@ -56,6 +56,7 @@ describe('wrangler production search config', () => {
       'AUTH_CLIENT_ID',
       'AUTH_ISSUER',
       'AUTH_JWKS_URI',
+      'MCP_INTERNAL_CAPABILITY_SECRET',
     ]) {
       expect(apiIndexSource).toContain(`${secretName}?:`);
       expect(wranglerToml).not.toContain(`${secretName} =`);

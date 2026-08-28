@@ -9,6 +9,7 @@ import {
   requireApprovedDataAccess,
   type AuthPrincipal,
 } from '../../src/middleware/auth';
+import { hashApiKey } from '../../src/utils/crypto';
 
 const makeDb = (approvedUserIds: string[]) => ({
   prepare: vi.fn((sql: string) => ({
@@ -115,6 +116,47 @@ describe('API key and test-principal boundaries', () => {
       request('/api/v1/orgs/nga/search/text', publicHeaders, env)
     ).resolves.toMatchObject({ status: 200 });
   });
+
+  it('keeps personal API-key hashes bound only to API_KEY_PEPPER', async () => {
+    const apiKey = 'plt_existing-personal-key';
+    const apiKeyPepper = 'existing-api-key-pepper';
+    const expectedHash = await hashApiKey(`${apiKeyPepper}.${apiKey}`);
+    let receivedHash: string | undefined;
+    const app = new Hono<any>();
+    app.use('*', requireAuthOrApiKey as any);
+    app.get('*', (c) => c.json({ success: true }));
+
+    const response = await app.request(
+      '/api/v1/orgs/nga/search/text',
+      { headers: { 'X-API-Key': apiKey } },
+      {
+        ENVIRONMENT: 'staging',
+        API_KEY_PEPPER: apiKeyPepper,
+        MCP_INTERNAL_CAPABILITY_SECRET: 'independent-mcp-secret',
+        DB: {
+          prepare: (sql: string) => {
+            const statement = {
+              bind: (keyHash: string) => {
+                if (sql.includes('FROM api_keys')) receivedHash = keyHash;
+                return statement;
+              },
+              first: async () => ({
+                id: 'key-1',
+                user_id: 'user-1',
+                email: 'user@example.test',
+                name: 'User',
+              }),
+              run: async () => ({ success: true, meta: { changes: 1 } }),
+            };
+            return statement;
+          },
+        },
+      } as any
+    );
+
+    expect(response.status).toBe(200);
+    expect(receivedHash).toBe(expectedHash);
+  });
 });
 
 describe('MCP OAuth verifier dispatch', () => {
@@ -182,7 +224,7 @@ describe('MCP internal REST capability', () => {
   const env = {
     ENVIRONMENT: 'staging',
     SEARCH_ACCESS_MODE: 'authenticated',
-    API_KEY_PEPPER: 'test-only-mcp-capability-secret',
+    MCP_INTERNAL_CAPABILITY_SECRET: 'test-only-mcp-capability-secret',
     DB: {
       prepare: () => {
         const statement = {
@@ -264,5 +306,26 @@ describe('MCP internal REST capability', () => {
       );
       expect(response.status).toBe(401);
     }
+  });
+
+  it('fails closed with a stable 503 when the internal capability secret is missing', async () => {
+    const response = await restApp().request(
+      '/api/v1/orgs/nga/search/text',
+      {
+        method: 'POST',
+        headers: {
+          [MCP_INTERNAL_CAPABILITY_HEADER]: 'v1.ZXhh.AA',
+        },
+      },
+      { ...env, MCP_INTERNAL_CAPABILITY_SECRET: undefined } as any
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'MCP_INTERNAL_CAPABILITY_UNAVAILABLE',
+        message: 'MCP internal capability is unavailable',
+      },
+    });
   });
 });
