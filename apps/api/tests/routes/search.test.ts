@@ -252,6 +252,7 @@ class FakeSearchDb {
     email: string;
     name: string;
   } | null = null;
+  resolvedOrgSlugs = new Map<string, string>();
 
   constructor(private readonly rows = [artworkRow]) {}
 
@@ -516,6 +517,14 @@ class FakeSearchDb {
 
     if (sql.includes('FROM api_keys ak')) {
       return this.apiKeyRow as T | null;
+    }
+
+    if (
+      sql.toLowerCase().includes('from orgs') &&
+      sql.toLowerCase().includes('lower(slug)')
+    ) {
+      const id = this.resolvedOrgSlugs.get(String(params[0]).toLowerCase());
+      return (id ? { id } : null) as T | null;
     }
 
     if (sql.includes('FROM api_usage_daily')) {
@@ -1174,18 +1183,24 @@ describe('NGA public search quota', () => {
     });
   });
 
-  it('charges and provider-scopes the canonical NGA organization UUID', async () => {
+  it('charges and provider-scopes a renamed canonical NGA slug', async () => {
     const db = new FakeSearchDb([makeNgaArtworkRow()]);
+    db.resolvedOrgSlugs.set(
+      'national-gallery-of-art',
+      'eabbf000-708e-4d4c-8ac8-966b59d4fcac'
+    );
     const response = await textSearch(
       makeApp(),
       makeEnv(db),
       { 'X-User-Id': 'user-1' },
       { query: 'mangrove shore', topK: 1 },
-      'eabbf000-708e-4d4c-8ac8-966b59d4fcac'
+      'national-gallery-of-art'
     );
 
     expect(response.status).toBe(200);
     expect(db.ngaPublicSearchQuota.used).toBe(1);
+    expect(db.daily).toHaveLength(0);
+    expect(db.usageEvents).toHaveLength(1);
     expect(db.metadataSearchSql[0]).toContain(
       "json_extract(custom_metadata, '$.provider') = ?"
     );
@@ -1297,8 +1312,12 @@ describe('NGA public search quota', () => {
     expect(stale.headers.get('X-Paillette-Search-Cache')).toBe('KV-STALE');
   });
 
-  it('charges and provider-scopes an NGA image search through the open-access alias', async () => {
+  it('charges and provider-scopes an NGA image search through a renamed slug', async () => {
     const db = new FakeSearchDb();
+    db.resolvedOrgSlugs.set(
+      'national-gallery-of-art',
+      'eabbf000-708e-4d4c-8ac8-966b59d4fcac'
+    );
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
         status: 200,
@@ -1317,7 +1336,7 @@ describe('NGA public search quota', () => {
       makeApp(),
       env,
       { 'X-User-Id': 'user-1' },
-      'open-access-art'
+      'national-gallery-of-art'
     );
     const payload = (await response.json()) as any;
 

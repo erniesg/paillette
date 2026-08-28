@@ -380,9 +380,9 @@ describe('Color Search API', () => {
       );
     });
 
-    it('charges and provider-scopes an NGA color search through the open alias', async () => {
-      testGalleryId = 'open-access-art';
-      const res = await request('/galleries/open/search/color', {
+    it('charges and provider-scopes an NGA color search through a renamed slug', async () => {
+      testGalleryId = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac';
+      const res = await request('/galleries/national-gallery-of-art/search/color', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ colors: ['#FF5733'], threshold: 10 }),

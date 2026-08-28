@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   canMutateGlobally,
   canMutateOrg,
+  enforceDailyQuota,
   type AuthPrincipal,
 } from './auth';
+import { OPEN_ACCESS_ORG_ID } from '../utils/orgs';
 import { resolveSearchAccess, type SearchAccessRepository } from '../auth/search-access';
 
 const principal = (userId: string): AuthPrincipal => ({
@@ -118,5 +120,40 @@ describe('canMutateOrg', () => {
         orgId
       )
     ).resolves.toBe(true);
+  });
+});
+
+describe('NGA daily quota exemption', () => {
+  it('does not debit daily quota when a renamed slug resolves to canonical NGA', async () => {
+    const sql: string[] = [];
+    const db = {
+      prepare: (statement: string) => {
+        sql.push(statement);
+        return {
+          bind: () => ({
+            first: async () => ({ id: OPEN_ACCESS_ORG_ID }),
+            run: async () => ({ meta: { changes: 1 } }),
+          }),
+        };
+      },
+    } as unknown as D1Database;
+    const auth = principal('viewer');
+    const context = {
+      env: { DB: db },
+      req: { param: (name: string) => (name === 'orgId' ? 'renamed-nga' : undefined) },
+      get: (name: string) => (name === 'auth' ? auth : undefined),
+      set: () => undefined,
+      header: () => undefined,
+    } as any;
+    let reachedHandler = false;
+
+    await enforceDailyQuota({ queryType: 'vector_search' })(context, async () => {
+      reachedHandler = true;
+    });
+
+    expect(reachedHandler).toBe(true);
+    expect(sql.some((statement) => statement.includes('api_usage_daily'))).toBe(
+      false
+    );
   });
 });

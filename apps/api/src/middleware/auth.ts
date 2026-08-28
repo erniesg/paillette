@@ -11,7 +11,7 @@ import {
   LEGACY_NGS_ORG_ID,
   NGS_ORG_ID,
   OPEN_ACCESS_ORG_ID,
-  resolveOpenAccessProviderScope,
+  resolveOrgSearchScope,
 } from '../utils/orgs';
 import {
   externalSubjectPlaceholderEmail,
@@ -1330,7 +1330,8 @@ export const enforceDailyQuota = (options: {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
     if (
       auth.scopes.includes('public_search') ||
-      resolveOpenAccessProviderScope(requestedOrgId) === 'nga'
+      (await resolveOrgSearchScope(c.env.DB, requestedOrgId)).provider ===
+        'nga'
     ) {
       await next();
       return;

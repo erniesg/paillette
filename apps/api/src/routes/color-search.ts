@@ -19,9 +19,9 @@ import {
 import type { ApiResponse } from '../types';
 import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import {
+  isAllowedPublicSearchRouteScope,
   isNgsPublicOrg,
-  resolveOpenAccessProviderScope,
-  resolveOrgIdentifier,
+  resolveOrgSearchScope,
 } from '../utils/orgs';
 import {
   getNgaPublicSearchQuota,
@@ -83,7 +83,7 @@ colorSearchRoutes.post('/search/color', async (c) => {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
     if (
       getAuth(c as any).scopes.includes('public_search') &&
-      resolveOpenAccessProviderScope(requestedOrgId) !== 'nga'
+      !isAllowedPublicSearchRouteScope(requestedOrgId)
     ) {
       return c.json<ApiResponse>(
         {
@@ -97,8 +97,10 @@ colorSearchRoutes.post('/search/color', async (c) => {
         403
       );
     }
-    const provider = resolveOpenAccessProviderScope(requestedOrgId);
-    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
 
     // Parse and validate request body
     const body = await c.req.json();
@@ -364,9 +366,10 @@ colorSearchRoutes.post('/search/color', async (c) => {
     console.error('Color search error:', error);
 
     if (
-      resolveOpenAccessProviderScope(
+      (await resolveOrgSearchScope(
+        c.env.DB,
         c.req.param('orgId') || c.req.param('galleryId')
-      ) === 'nga'
+      )).provider === 'nga'
     ) {
       return c.json<ApiResponse>(
         {
@@ -403,8 +406,10 @@ colorSearchRoutes.post('/search/color', async (c) => {
 colorSearchRoutes.get('/artworks/:artworkId/colors', async (c) => {
   try {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
-    const provider = resolveOpenAccessProviderScope(requestedOrgId);
-    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
     const artworkId = c.req.param('artworkId');
 
     const artwork = await c.env.DB.prepare(
@@ -478,8 +483,10 @@ colorSearchRoutes.post(
   async (c) => {
   try {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
-    const provider = resolveOpenAccessProviderScope(requestedOrgId);
-    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
     const artworkId = c.req.param('artworkId');
 
     const denied = await requireOrgMutationAccess(c as any, orgId);
@@ -554,8 +561,10 @@ colorSearchRoutes.post(
   async (c) => {
   try {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
-    const provider = resolveOpenAccessProviderScope(requestedOrgId);
-    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
 
     const denied = await requireOrgMutationAccess(c as any, orgId);
     if (denied) return denied;

@@ -65,6 +65,22 @@ export const resolveOpenAccessProviderScope = (
     : undefined;
 };
 
+/**
+ * Resolve an organisation before assigning provider scope. Route aliases and
+ * slugs are mutable, but the NGA public-search contract belongs solely to the
+ * durable canonical organisation ID.
+ */
+export const resolveOrgSearchScope = async (
+  db: D1Database,
+  value: string | null | undefined
+) => {
+  const orgId = await resolveOrgIdentifier(db, value);
+  return {
+    orgId,
+    provider: isOpenAccessPublicOrg(orgId) ? ('nga' as const) : undefined,
+  };
+};
+
 export const isAllowedPublicSearchRouteScope = (
   value: string | null | undefined
 ) => {

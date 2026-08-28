@@ -59,8 +59,7 @@ import {
 import {
   isAllowedPublicSearchRouteScope,
   isNgsPublicOrg,
-  resolveOpenAccessProviderScope,
-  resolveOrgIdentifier,
+  resolveOrgSearchScope,
 } from '../utils/orgs';
 
 interface ArtworkSearchRow {
@@ -2951,7 +2950,7 @@ searchRoutes.use('/search/quota', async (c, next) => {
 
 searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
   const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
-  if (resolveOpenAccessProviderScope(requestedOrgId) !== 'nga') {
+  if ((await resolveOrgSearchScope(c.env.DB, requestedOrgId)).provider !== 'nga') {
     return c.json<ApiResponse>(
       {
         success: false,
@@ -3068,8 +3067,10 @@ searchRoutes.post('/search/text', async (c) => {
       );
     }
 
-    const provider = resolveOpenAccessProviderScope(requestedOrgId);
-    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
     const isNgsPublicSearch = isNgsPublicOrg(orgId);
     const normalizedNgsQuery = isNgsPublicSearch
       ? normalizePublicSearchText(query)
@@ -3473,9 +3474,10 @@ searchRoutes.post('/search/text', async (c) => {
     }
     console.error('Text search error:', error);
     if (
-      resolveOpenAccessProviderScope(
+      (await resolveOrgSearchScope(
+        c.env.DB,
         c.req.param('orgId') || c.req.param('galleryId')
-      ) === 'nga'
+      )).provider === 'nga'
     ) {
       return c.json<ApiResponse>(
         {
@@ -3530,8 +3532,10 @@ searchRoutes.post('/search/image', async (c) => {
         403
       );
     }
-    const provider = resolveOpenAccessProviderScope(requestedOrgId);
-    const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
 
     let formData: FormData;
     try {
@@ -3820,9 +3824,10 @@ searchRoutes.post('/search/image', async (c) => {
     }
     console.error('Image search error:', error);
     if (
-      resolveOpenAccessProviderScope(
+      (await resolveOrgSearchScope(
+        c.env.DB,
         c.req.param('orgId') || c.req.param('galleryId')
-      ) === 'nga'
+      )).provider === 'nga'
     ) {
       return c.json<ApiResponse>(
         {

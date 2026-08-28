@@ -10,6 +10,7 @@ import {
   isOpenAccessPublicOrg,
   resolveOpenAccessProviderScope,
   resolveOrgIdentifier,
+  resolveOrgSearchScope,
 } from '../../src/utils/orgs';
 
 const PRIVATE_ORG_ID = '11111111-1111-4111-8111-111111111111';
@@ -86,6 +87,23 @@ describe('resolveOpenAccessProviderScope', () => {
     expect(resolveOpenAccessProviderScope('open')).toBe('nga');
     expect(resolveOpenAccessProviderScope(OPEN_ACCESS_ORG_ID)).toBe('nga');
     expect(resolveOpenAccessProviderScope('ngs')).toBeUndefined();
+  });
+});
+
+describe('resolveOrgSearchScope', () => {
+  it('derives NGA provider scope from a renamed slug\'s resolved canonical ID', async () => {
+    const db = {
+      prepare: () => ({
+        bind: () => ({
+          first: async () => ({ id: OPEN_ACCESS_ORG_ID }),
+        }),
+      }),
+    } as unknown as D1Database;
+
+    await expect(resolveOrgSearchScope(db, 'national-gallery-of-art')).resolves.toEqual({
+      orgId: OPEN_ACCESS_ORG_ID,
+      provider: 'nga',
+    });
   });
 });
 
