@@ -66,11 +66,14 @@ export const loader = (args: LoaderFunctionArgs) =>
       }
     }
 
-    return json({
-      sessionUser: session.user,
-      searchAccess,
-      isWorkOSConfigured: Boolean(getWorkOSRuntimeConfig(args.context)),
-    });
+    return json(
+      {
+        sessionUser: session.user,
+        searchAccess,
+        isWorkOSConfigured: Boolean(getWorkOSRuntimeConfig(args.context)),
+      },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    );
   });
 
 export function Layout({ children }: { children: React.ReactNode }) {
