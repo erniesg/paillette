@@ -962,6 +962,112 @@ const compactObject = <T extends Record<string, unknown>>(value: T) =>
     )
   ) as Partial<T>;
 
+const NGA_PUBLIC_SEARCH_METADATA_KEYS = [
+  'provider',
+  'openAccess',
+  'open_access',
+  'dimensions_text',
+  'ngaArtists',
+  'medium',
+  'mediumFamily',
+  'dateText',
+  'date_text',
+  'yearStart',
+  'yearEnd',
+  'classification',
+  'subclassification',
+  'visualClassification',
+  'primaryArtistId',
+  'culture',
+  'origin',
+  'dimensions',
+  'description',
+  'provenance',
+  'creditLine',
+  'credit_line',
+  'rights',
+  'accessionNumber',
+  'accession_number',
+  'sourceUrl',
+  'source_url',
+  'sourceInstitution',
+  'source_institution',
+  'sourceCollection',
+  'source_collection',
+  'sourceRecordId',
+  'source_record_id',
+  'fieldSources',
+  'field_sources',
+  'dominantColors',
+  'dominant_colors',
+  'colorPalette',
+  'color_palette',
+  'citation',
+  'searchSources',
+  'search_sources',
+  'relationEvidence',
+  'visual_refinement',
+] as const;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const projectNgaArtistRelationships = (value: unknown) => {
+  if (!isRecord(value) || !Array.isArray(value.relationships)) {
+    return undefined;
+  }
+
+  return {
+    relationships: value.relationships.flatMap((relationship) => {
+      if (!isRecord(relationship)) return [];
+      return [
+        {
+          constituentId: relationship.constituentId,
+          displayOrder: relationship.displayOrder,
+          roleType: relationship.roleType,
+          role: relationship.role,
+          prefix: relationship.prefix,
+          suffix: relationship.suffix,
+          preferredDisplayName: relationship.preferredDisplayName,
+          forwardDisplayName: relationship.forwardDisplayName,
+          alternativeNames: relationship.alternativeNames,
+        },
+      ];
+    }),
+  };
+};
+
+// NGA search responses share a seven-day public KV cache. Project every NGA
+// result at this boundary so importer and processing metadata cannot be
+// serialized on a cold miss or replayed from entries written before this rule.
+const projectPublicNgaSearchMetadata = (
+  metadata: Record<string, unknown> | undefined
+) => {
+  if (!metadata) return undefined;
+
+  const projected: Record<string, unknown> = {};
+  for (const key of NGA_PUBLIC_SEARCH_METADATA_KEYS) {
+    if (key === 'ngaArtists') {
+      const relationships = projectNgaArtistRelationships(metadata[key]);
+      if (relationships) projected[key] = relationships;
+      continue;
+    }
+    if (metadata[key] !== undefined) projected[key] = metadata[key];
+  }
+
+  return Object.keys(projected).length ? projected : undefined;
+};
+
+const projectPublicNgaSearchResponse = (response: SearchResponse): SearchResponse => ({
+  ...response,
+  results: response.results.map((result) => ({
+    ...result,
+    ...(projectPublicNgaSearchMetadata(result.metadata)
+      ? { metadata: projectPublicNgaSearchMetadata(result.metadata) }
+      : { metadata: undefined }),
+  })),
+});
+
 const buildDimensions = (artwork: ArtworkSearchRow) => {
   const dimensions = compactObject({
     height: artwork.dimensions_height,
@@ -1001,6 +1107,47 @@ const mapSearchRow = (
   const citation = parseJsonObject(artwork.citation);
   const dimensions = buildDimensions(artwork);
 
+  const metadata = compactObject({
+    ...sanitized.customMetadata,
+    medium: artwork.medium,
+    mediumFamily: structured.medium_family,
+    dateText: artwork.date_text,
+    date_text: artwork.date_text,
+    yearStart: structured.year_start,
+    yearEnd: structured.year_end,
+    classification: artwork.classification,
+    subclassification: structured.subclassification,
+    visualClassification: structured.visual_classification,
+    primaryArtistId: structured.primary_artist_id,
+    culture: artwork.culture,
+    origin: artwork.origin,
+    dimensions,
+    description: sanitized.description,
+    provenance: artwork.provenance,
+    creditLine: artwork.credit_line,
+    credit_line: artwork.credit_line,
+    rights: artwork.rights,
+    accessionNumber: artwork.accession_number,
+    accession_number: artwork.accession_number,
+    sourceUrl: artwork.source_url,
+    source_url: artwork.source_url,
+    sourceInstitution: artwork.source_institution,
+    source_institution: artwork.source_institution,
+    sourceCollection: artwork.source_collection,
+    source_collection: artwork.source_collection,
+    sourceRecordId: artwork.source_record_id,
+    source_record_id: artwork.source_record_id,
+    fieldSources: sanitized.fieldSources,
+    field_sources: sanitized.fieldSources,
+    dominantColors,
+    dominant_colors: dominantColors,
+    colorPalette,
+    color_palette: colorPalette,
+    citation,
+    searchSources,
+    search_sources: searchSources,
+  });
+
   return {
     id: artwork.id,
     orgId: artwork.org_id,
@@ -1011,46 +1158,10 @@ const mapSearchRow = (
     imageUrl: artwork.image_url,
     thumbnailUrl: artwork.thumbnail_url,
     similarity,
-    metadata: compactObject({
-      ...sanitized.customMetadata,
-      medium: artwork.medium,
-      mediumFamily: structured.medium_family,
-      dateText: artwork.date_text,
-      date_text: artwork.date_text,
-      yearStart: structured.year_start,
-      yearEnd: structured.year_end,
-      classification: artwork.classification,
-      subclassification: structured.subclassification,
-      visualClassification: structured.visual_classification,
-      primaryArtistId: structured.primary_artist_id,
-      culture: artwork.culture,
-      origin: artwork.origin,
-      dimensions,
-      description: sanitized.description,
-      provenance: artwork.provenance,
-      creditLine: artwork.credit_line,
-      credit_line: artwork.credit_line,
-      rights: artwork.rights,
-      accessionNumber: artwork.accession_number,
-      accession_number: artwork.accession_number,
-      sourceUrl: artwork.source_url,
-      source_url: artwork.source_url,
-      sourceInstitution: artwork.source_institution,
-      source_institution: artwork.source_institution,
-      sourceCollection: artwork.source_collection,
-      source_collection: artwork.source_collection,
-      sourceRecordId: artwork.source_record_id,
-      source_record_id: artwork.source_record_id,
-      fieldSources: sanitized.fieldSources,
-      field_sources: sanitized.fieldSources,
-      dominantColors,
-      dominant_colors: dominantColors,
-      colorPalette,
-      color_palette: colorPalette,
-      citation,
-      searchSources,
-      search_sources: searchSources,
-    }),
+    metadata:
+      customMetadata.provider === 'nga'
+        ? projectPublicNgaSearchMetadata(metadata)
+        : metadata,
   };
 };
 
@@ -3234,10 +3345,13 @@ searchRoutes.post('/search/text', async (c) => {
           };
         },
       });
+      const cachedResponse = isNgaPublicSearch
+        ? projectPublicNgaSearchResponse(cached.response)
+        : cached.response;
       const cachedRelationEvidence =
-        cached.response.interpretation?.relationEvidence;
+        cachedResponse.interpretation?.relationEvidence;
       searchResponse = {
-        ...cached.response,
+        ...cachedResponse,
         ...(interpretation
           ? {
               interpretation: {

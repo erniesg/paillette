@@ -8,6 +8,7 @@ import {
 import * as searchRouteExports from '../../src/routes/search';
 import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
 import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/public-search-cold-miss-rate-limit';
+import { PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS } from '../../src/utils/public-search-result-cache';
 import type { Env } from '../../src/index';
 import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
 
@@ -833,12 +834,12 @@ const makeEnv = (db: FakeSearchDb, quota = 100): Env =>
 
 const makeEmbeddingCache = () => {
   const values = new Map<string, unknown>();
-  return {
+  return Object.assign({
     get: vi.fn(async (key: string) => values.get(key) ?? null),
     put: vi.fn(async (key: string, value: string) => {
       values.set(key, JSON.parse(value) as unknown);
     }),
-  } as unknown as KVNamespace;
+  }, { values }) as unknown as KVNamespace & { values: Map<string, unknown> };
 };
 
 const textSearch = (
@@ -1126,6 +1127,68 @@ describe('NGA public search quota', () => {
     });
   });
 
+  it('projects NGA text results before returning or retaining fresh and stale shared-cache entries', async () => {
+    const db = new FakeSearchDb([
+      makeNgaArtworkRow({
+        custom_metadata: JSON.stringify({
+          provider: 'nga',
+          dimensions_text: '49 x 39 cm',
+          ngaArtists: {
+            relationships: [
+              {
+                constituentId: '1',
+                displayOrder: 1,
+                roleType: 'artist',
+                role: 'artist',
+                prefix: null,
+                suffix: null,
+                preferredDisplayName: 'Artist, Public',
+                forwardDisplayName: 'Public Artist',
+                alternativeNames: [],
+                importer_token: 'never-public',
+              },
+            ],
+            internal_import_batch: 'never-public',
+          },
+          ingest_token: 'never-public',
+          processing_job_id: 'never-public',
+          uploaded_by: 'never-public',
+          image_hash: 'never-public',
+        }),
+      }),
+    ]);
+    const cache = makeEmbeddingCache();
+    const env = { ...makeEnv(db), CACHE: cache };
+    const app = makeApp();
+    const body = { query: 'mangrove shore', topK: 1 };
+
+    const cold = await textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'nga');
+    const fresh = await textSearch(app, env, { 'X-User-Id': 'user-2' }, body, 'nga');
+    const cachedEntry = [...cache.values.values()].find(
+      (value: any) => value?.schemaVersion === 2
+    ) as { storedAt: number; results: Array<{ metadata?: Record<string, unknown> }> };
+    expect(JSON.stringify(cachedEntry)).not.toContain('never-public');
+    const cachedMetadata = cachedEntry.results[0]?.metadata;
+    if (cachedMetadata) {
+      cachedMetadata.historical_import_token = 'never-public';
+    }
+    cachedEntry.storedAt = Date.now() - PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS - 1;
+    const stale = await textSearch(app, env, { 'X-User-Id': 'user-3' }, body, 'nga');
+
+    for (const response of [cold, fresh, stale]) {
+      const payload = (await response.json()) as any;
+      const metadata = payload.data.results[0].metadata;
+      expect(metadata).toMatchObject({
+        provider: 'nga',
+        dimensions_text: '49 x 39 cm',
+        ngaArtists: { relationships: [expect.objectContaining({ constituentId: '1' })] },
+      });
+      expect(JSON.stringify(metadata)).not.toContain('never-public');
+    }
+    expect(fresh.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(stale.headers.get('X-Paillette-Search-Cache')).toBe('KV-STALE');
+  });
+
   it('charges and provider-scopes an NGA image search through the open-access alias', async () => {
     const db = new FakeSearchDb();
     const fetchMock = vi.fn().mockResolvedValue(
@@ -1172,6 +1235,53 @@ describe('NGA public search quota', () => {
       mode: 'image',
       quotaRemaining: 999,
     });
+  });
+
+  it('projects NGA image-search metadata without changing its web result shape', async () => {
+    const db = new FakeSearchDb([
+      makeNgaArtworkRow({
+        custom_metadata: JSON.stringify({
+          provider: 'nga',
+          openAccess: true,
+          dimensions_text: '49 x 39 cm',
+          import_secret: 'never-public',
+          processing_error: 'never-public',
+        }),
+      }),
+    ]);
+    const vectorize = {
+      query: vi.fn().mockResolvedValue({
+        matches: [{ id: artworkRow.id, score: 0.9, metadata: {} }],
+      }),
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(Response.json({ data: [{ embedding: [0.1, 0.2] }] }))
+    );
+    const response = await imageSearch(
+      makeApp(),
+      {
+        ...makeEnv(db),
+        JINA_API_KEY: 'jina-test-key',
+        JINA_EMBEDDING_DIMENSIONS: '2',
+        VECTORIZE: vectorize as unknown as Vectorize,
+      },
+      { 'X-User-Id': 'user-1' },
+      'nga'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results[0]).toMatchObject({
+      id: artworkRow.id,
+      imageUrl: artworkRow.image_url,
+      metadata: {
+        provider: 'nga',
+        openAccess: true,
+        dimensions_text: '49 x 39 cm',
+      },
+    });
+    expect(JSON.stringify(payload.data.results[0])).not.toContain('never-public');
   });
 
   it('uses the NGA lifetime pool instead of daily quota for a valid image request', async () => {
