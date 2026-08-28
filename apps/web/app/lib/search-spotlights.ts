@@ -31,6 +31,31 @@ class SearchSpotlightValidationError extends Error {
   }
 }
 
+const normalizeDisplayIdentityPart = (value: string) =>
+  value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+
+const getDisplayIdentity = (artwork: ArtworkSearchResult) => {
+  const title = artwork.title && normalizeDisplayIdentityPart(artwork.title);
+  const artist = artwork.artist && normalizeDisplayIdentityPart(artwork.artist);
+  const year = artwork.year;
+
+  if (!title || !artist || !Number.isFinite(year)) return `id:${artwork.id}`;
+
+  return `display:${title}:${artist}:${year}`;
+};
+
+const dedupeSpotlightArtworks = (artworks: ArtworkSearchResult[]) => {
+  const seenIdentities = new Set<string>();
+
+  return artworks.filter((artwork) => {
+    const identity = getDisplayIdentity(artwork);
+    if (seenIdentities.has(identity)) return false;
+
+    seenIdentities.add(identity);
+    return true;
+  });
+};
+
 const hasExpectedNgaSuggestions = (bundle: PublicSearchSpotlightBundle) => {
   if (bundle.suggestions.length !== NGA_SPOTLIGHT_DEFINITIONS.length) {
     return false;
@@ -176,26 +201,28 @@ export const getSpotlightArtworks = (
   );
   if (!suggestion) return [];
 
-  return suggestion.artworks.map((artwork) => ({
-    id: artwork.id,
-    orgId: artwork.orgId,
-    galleryId: artwork.orgId,
-    title: artwork.title,
-    artist: artwork.artist,
-    year: artwork.year,
-    imageUrl: artwork.imageUrl ?? null,
-    thumbnailUrl: artwork.thumbnailUrl ?? null,
-    similarity: artwork.similarity,
-    metadata: {
-      provider: artwork.source.provider,
-      sourceInstitution: artwork.source.institution,
-      sourceUrl: artwork.source.url,
-      sourceRecordId: artwork.source.recordId,
-      accessionNumber: artwork.source.accessionNumber,
-      rights: artwork.source.rights,
-      dominantColors: artwork.palette,
-    },
-  }));
+  return dedupeSpotlightArtworks(
+    suggestion.artworks.map((artwork) => ({
+      id: artwork.id,
+      orgId: artwork.orgId,
+      galleryId: artwork.orgId,
+      title: artwork.title,
+      artist: artwork.artist,
+      year: artwork.year,
+      imageUrl: artwork.imageUrl ?? null,
+      thumbnailUrl: artwork.thumbnailUrl ?? null,
+      similarity: artwork.similarity,
+      metadata: {
+        provider: artwork.source.provider,
+        sourceInstitution: artwork.source.institution,
+        sourceUrl: artwork.source.url,
+        sourceRecordId: artwork.source.recordId,
+        accessionNumber: artwork.source.accessionNumber,
+        rights: artwork.source.rights,
+        dominantColors: artwork.palette,
+      },
+    }))
+  );
 };
 
 export const getSpotlightSearchPlaceholder = (

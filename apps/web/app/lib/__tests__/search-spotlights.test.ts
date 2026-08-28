@@ -162,6 +162,38 @@ describe('search spotlight loading', () => {
     ).toBe(301);
   });
 
+  it('shows the Whistler mother-and-child artwork once from the real cached NGA bundle', async () => {
+    const assetPath = getSearchSpotlightPath('nga');
+    const current = JSON.parse(
+      await readFile(
+        resolve(process.cwd(), 'public', assetPath.slice(1)),
+        'utf8'
+      )
+    ) as PublicSearchSpotlightBundle;
+
+    const cachedWhistlers = current.suggestions
+      .find((suggestion) => suggestion.id === 'mother-child')
+      ?.artworks.filter(
+        (candidate) =>
+          candidate.title === 'Mother and Child, No. 1' &&
+          candidate.artist === 'James McNeill Whistler' &&
+          candidate.year === 1891
+      );
+    const displayedWhistlers = getSpotlightArtworks(
+      current,
+      'mother-child'
+    ).filter(
+      (candidate) =>
+        candidate.title === 'Mother and Child, No. 1' &&
+        candidate.artist === 'James McNeill Whistler' &&
+        candidate.year === 1891
+    );
+
+    expect(cachedWhistlers).toHaveLength(2);
+    expect(displayedWhistlers).toHaveLength(1);
+    expect(displayedWhistlers[0]?.id).toBe('open-access-art:nga:11236');
+  });
+
   it.each([
     ['malformed JSON', () => responseFor('{nope')],
     [
