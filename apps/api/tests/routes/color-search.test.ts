@@ -16,6 +16,7 @@ describe('Color Search API', () => {
   let ngsQuota: { used: number; hard_limit: number };
   let usageEventInserts: number;
   let dailyQuotaChargeUpdates: number;
+  let requestRateLimitUsed: number;
   let failUsageEventUpdates: boolean;
   let failUsageEventInserts: boolean;
   let failColorSearchMessage: string | null;
@@ -34,6 +35,7 @@ describe('Color Search API', () => {
     ngsQuota = { used: 0, hard_limit: 1000 };
     usageEventInserts = 0;
     dailyQuotaChargeUpdates = 0;
+    requestRateLimitUsed = 0;
     failUsageEventUpdates = false;
     failUsageEventInserts = false;
     failColorSearchMessage = null;
@@ -82,6 +84,12 @@ describe('Color Search API', () => {
               return { success: true, results: [] };
             }),
             first: vi.fn(async () => {
+              if (sql.includes('nga_public_search_request_rate_limits')) {
+                const limit = Number(params[2]);
+                if (requestRateLimitUsed >= limit) return null;
+                requestRateLimitUsed += 1;
+                return { used: requestRateLimitUsed };
+              }
               if (sql.includes('nga_public_search_quota')) {
                 if (sql.includes('UPDATE nga_public_search_quota')) {
                   if (ngsQuota.used >= ngsQuota.hard_limit) return null;
@@ -169,7 +177,10 @@ describe('Color Search API', () => {
       AI: {} as any,
       VECTORIZE: {} as any,
       IMAGES: {} as R2Bucket,
-      CACHE: {} as KVNamespace,
+      CACHE: {
+        get: vi.fn(async () => null),
+        put: vi.fn(async () => undefined),
+      } as unknown as KVNamespace,
       EMBEDDING_QUEUE: {
         send: vi.fn(async () => undefined),
       } as unknown as Queue,
@@ -233,6 +244,7 @@ describe('Color Search API', () => {
         headers: {
           'Content-Type': 'application/json',
           'X-User-Id': 'public-search-web',
+          'CF-Connecting-IP': '203.0.113.42',
         },
         body: JSON.stringify({ colors: ['#FF5733'] }),
       }, mockEnv);
@@ -253,6 +265,44 @@ describe('Color Search API', () => {
         used: 1,
         remaining: 999,
       });
+    });
+
+    it('rejects an over-limit NGA color search before quota and telemetry', async () => {
+      testGalleryId = 'open-access-art';
+      const integratedApp = new Hono<{ Bindings: Env }>();
+      integratedApp.route('/galleries/:galleryId', searchRoutes);
+      integratedApp.route('/galleries/:galleryId', colorSearchRoutes);
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-User-Id': 'public-search-web',
+        'CF-Connecting-IP': '203.0.113.42',
+      };
+
+      for (let index = 0; index < 10; index += 1) {
+        expect(
+          (
+            await integratedApp.request('/galleries/nga/search/color', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ colors: ['#FF5733'] }),
+            }, mockEnv)
+          ).status
+        ).toBe(200);
+      }
+      const limited = await integratedApp.request('/galleries/nga/search/color', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ colors: ['#FF5733'] }),
+      }, mockEnv);
+
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/);
+      expect((await limited.json()).error).toMatchObject({
+        code: 'NGA_PUBLIC_SEARCH_RATE_LIMITED',
+        details: { quota: { used: 10, remaining: 990 } },
+      });
+      expect(ngsQuota.used).toBe(10);
+      expect(usageEventInserts).toBe(10);
     });
 
     it('fails closed without a quota debit when NGA usage logging fails', async () => {

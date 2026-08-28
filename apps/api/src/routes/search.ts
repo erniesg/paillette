@@ -19,7 +19,9 @@ import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { getOrCreateQueryEmbedding } from '../utils/query-embedding-cache';
 import {
   PublicSearchColdMissRateLimitError,
-  enforcePublicSearchColdMissRateLimit,
+  PublicSearchRequestRateLimitUnavailableError,
+  enforcePublicSearchRequestRateLimit,
+  getPublicSearchRequestClientIdentity,
 } from '../utils/public-search-cold-miss-rate-limit';
 import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
 import {
@@ -143,10 +145,71 @@ const SEARCH_DEGRADED_CHANNEL_ORDER: SearchDegradedChannel[] = [
   'visual_refinement',
 ];
 
-const getPublicSearchClientAddress = (
-  connectingIp: string | undefined,
-  forwardedFor: string | undefined
-) => connectingIp?.trim() || forwardedFor?.split(',')[0]?.trim();
+const enforceNgaPublicSearchRequestLimit = async (
+  c: any,
+  isPublicSearchPrincipal: boolean
+) => {
+  const auth = getAuth(c);
+  return enforcePublicSearchRequestRateLimit({
+    db: c.env.DB,
+    clientIdentity: getPublicSearchRequestClientIdentity({
+      isPublicSearchPrincipal,
+      kind: auth.kind,
+      userId: auth.userId,
+      apiKeyId: auth.apiKeyId,
+      connectingIp: c.req.header('CF-Connecting-IP'),
+      // Intentionally passed only to document that it is ignored: public
+      // traffic must never be partitioned by a caller-controlled XFF value.
+      forwardedFor: c.req.header('X-Forwarded-For'),
+    }),
+    limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
+  });
+};
+
+const ngaRateLimitedResponse = async (c: any, error: Error) => {
+  if (error instanceof PublicSearchColdMissRateLimitError) {
+    c.header('Retry-After', String(error.retryAfterSeconds));
+    try {
+      const quota = await getNgaPublicSearchQuota(c.env.DB);
+      setNgaSearchQuotaHeaders(c, quota);
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'NGA_PUBLIC_SEARCH_RATE_LIMITED',
+            message: 'Too many NGA public searches; try again shortly',
+            details: { quota },
+          },
+        },
+        429
+      );
+    } catch {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'NGA_PUBLIC_SEARCH_RATE_LIMITED',
+            message: 'Too many NGA public searches; try again shortly',
+          },
+        },
+        429
+      );
+    }
+  }
+  if (error instanceof PublicSearchRequestRateLimitUnavailableError) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'NGA_PUBLIC_SEARCH_RATE_LIMIT_UNAVAILABLE',
+          message: 'NGA public search is temporarily unavailable',
+        },
+      },
+      503
+    );
+  }
+  throw error;
+};
 
 type EmbeddingIndexVersion = 'v1' | 'v2';
 type ScheduleBackgroundWork = (work: Promise<void>) => void;
@@ -3093,6 +3156,13 @@ searchRoutes.post('/search/text', async (c) => {
         400
       );
     }
+    if (isNgaPublicSearch) {
+      try {
+        await enforceNgaPublicSearchRequestLimit(c, isPublicSearchPrincipal);
+      } catch (error) {
+        return ngaRateLimitedResponse(c, error as Error);
+      }
+    }
     let ngaQuota: PublicSearchQuota | undefined;
     if (isNgaPublicSearch) {
       try {
@@ -3309,37 +3379,6 @@ searchRoutes.post('/search/text', async (c) => {
         ngaPlan,
         schedule: scheduleBackgroundWork,
         load: async () => {
-          if (isPublicSearchPrincipal) {
-            await enforcePublicSearchColdMissRateLimit({
-              cache: c.env.CACHE,
-              clientAddress: getPublicSearchClientAddress(
-                c.req.header('CF-Connecting-IP'),
-                c.req.header('X-Forwarded-For')
-              ),
-              searchIdentity: JSON.stringify({
-                contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-                query: normalizePublicSearchText(retrievalQuery),
-                orgId,
-                provider: provider || null,
-                facet: facet || null,
-                parserVersion: interpretation?.parserVersion || null,
-                constraints: structuredConstraints || null,
-                ngaPlan: ngaPlan
-                  ? {
-                      version: ngaPlan.version,
-                      mode: ngaPlan.mode,
-                      relation: ngaPlan.relation || null,
-                      relationEvidencePolicy:
-                        ngaPlan.relationEvidence?.policy || null,
-                    }
-                  : null,
-              }),
-              countRepeatedRequests: true,
-              limit: Number(
-                c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''
-              ),
-            });
-          }
           const response = await executeSearch();
           return {
             response,
@@ -3559,6 +3598,13 @@ searchRoutes.post('/search/image', async (c) => {
       : 0.7;
 
     const isNgaPublicSearch = provider === 'nga';
+    if (isNgaPublicSearch) {
+      try {
+        await enforceNgaPublicSearchRequestLimit(c, isPublicSearchPrincipal);
+      } catch (error) {
+        return ngaRateLimitedResponse(c, error as Error);
+      }
+    }
     let ngaQuota: PublicSearchQuota | undefined;
     if (isNgaPublicSearch) {
       try {
@@ -3637,46 +3683,6 @@ searchRoutes.post('/search/image', async (c) => {
         },
         501
       );
-    }
-
-    if (isPublicSearchPrincipal) {
-      const imageDigest = Array.from(
-        new Uint8Array(await crypto.subtle.digest('SHA-256', imageBuffer)),
-        (byte) => byte.toString(16).padStart(2, '0')
-      ).join('');
-      await enforcePublicSearchColdMissRateLimit({
-        cache: c.env.CACHE,
-        clientAddress: getPublicSearchClientAddress(
-          c.req.header('CF-Connecting-IP'),
-          c.req.header('X-Forwarded-For')
-        ),
-        searchIdentity: buildPublicImageSearchIdentity({
-          version: 'public-image-search-v1',
-          contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-          mode: 'image',
-          imageDigest,
-          orgId,
-          provider: provider || null,
-          index: {
-            version: getEmbeddingIndexVersion(c.env),
-            binding:
-              getEmbeddingIndexVersion(c.env) === 'v2'
-                ? 'VECTORIZE_V2'
-                : 'VECTORIZE',
-          },
-          embedding: {
-            provider: 'jina',
-            endpoint: jinaConfig.endpoint,
-            model: jinaConfig.model,
-            dimensions: jinaConfig.dimensions,
-          },
-          constraints,
-          topK,
-          minScore,
-        }),
-        countRepeatedRequests: true,
-        limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
-      });
     }
 
     const vectorResults = await searchJinaImageVectors(

@@ -20,6 +20,24 @@ export interface PublicSearchColdMissRateLimitOptions {
   now?: () => number;
 }
 
+export interface PublicSearchRequestRateLimitOptions {
+  db?: D1Database;
+  /** A server-derived principal id, never a user supplied header value. */
+  clientIdentity?: string;
+  limit?: number;
+  now?: () => number;
+}
+
+export interface PublicSearchRequestClientIdentityInput {
+  isPublicSearchPrincipal: boolean;
+  kind: 'user' | 'api_key';
+  userId: string;
+  apiKeyId?: string;
+  /** Set by Cloudflare at the edge; do not substitute X-Forwarded-For. */
+  connectingIp?: string;
+  forwardedFor?: string;
+}
+
 type StoredBucket = {
   schemaVersion: typeof PUBLIC_SEARCH_COLD_MISS_KEY_VERSION;
   minuteBucket: number;
@@ -38,6 +56,17 @@ export class PublicSearchColdMissRateLimitError extends Error {
   }
 }
 
+/**
+ * The lifetime NGA quota is shared.  Do not debit it when the request limiter
+ * cannot safely decide whether the caller is over its short window limit.
+ */
+export class PublicSearchRequestRateLimitUnavailableError extends Error {
+  constructor() {
+    super('Public search request limiting is temporarily unavailable');
+    this.name = 'PublicSearchRequestRateLimitUnavailableError';
+  }
+}
+
 const toHex = (value: ArrayBuffer): string =>
   Array.from(new Uint8Array(value), (byte) =>
     byte.toString(16).padStart(2, '0')
@@ -50,6 +79,32 @@ const normalizedLimit = (value: number | undefined) =>
   Number.isInteger(value) && Number(value) > 0
     ? Math.min(Number(value), 100)
     : PUBLIC_SEARCH_COLD_MISS_DEFAULT_LIMIT;
+
+const isTrustedEdgeAddress = (value: string | undefined) => {
+  const candidate = value?.trim();
+  if (!candidate || candidate.length > 45) return false;
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(candidate) ||
+    /^[0-9a-fA-F:]+$/.test(candidate);
+};
+
+/**
+ * The web proxy shares one public API key, so only Cloudflare's injected
+ * connecting address can separate visitors. Direct callers are already
+ * authenticated and therefore use their durable API-key or user identifier.
+ */
+export const getPublicSearchRequestClientIdentity = (
+  input: PublicSearchRequestClientIdentityInput
+): string | undefined => {
+  if (input.isPublicSearchPrincipal) {
+    return isTrustedEdgeAddress(input.connectingIp)
+      ? `public-edge:${input.connectingIp!.trim()}`
+      : undefined;
+  }
+  if (input.kind === 'api_key' && input.apiKeyId?.trim()) {
+    return `api-key:${input.apiKeyId.trim()}`;
+  }
+  return input.userId.trim() ? `user:${input.userId.trim()}` : undefined;
+};
 
 const retryAfterSeconds = (now: number) =>
   Math.max(
@@ -196,6 +251,60 @@ export const enforcePublicSearchColdMissRateLimit = async (
     minuteBucket,
     fingerprints: [...combined],
   });
+};
+
+/**
+ * Applies to every accepted NGA submission, including result-cache hits. The
+ * guarded D1 upsert admits a fixed window atomically. This deliberately fails closed:
+ * accepting a request while rate-limit state is unavailable would spend a
+ * non-refundable shared lifetime slot without an abuse decision.
+ */
+export const enforcePublicSearchRequestRateLimit = async (
+  options: PublicSearchRequestRateLimitOptions
+): Promise<void> => {
+  const clientIdentity = options.clientIdentity?.trim();
+  if (!clientIdentity || !options.db) {
+    throw new PublicSearchRequestRateLimitUnavailableError();
+  }
+
+  const now = (options.now || Date.now)();
+  const limit = normalizedLimit(options.limit);
+  const minuteBucket = Math.floor(now / PUBLIC_SEARCH_COLD_MISS_WINDOW_MS);
+  const clientHash = await sha256(clientIdentity);
+  try {
+    const reserved = await options.db
+      .prepare(
+        `
+        INSERT INTO nga_public_search_request_rate_limits (
+          client_hash, window_start, used, updated_at
+        ) VALUES (?, ?, 1, datetime('now'))
+        ON CONFLICT(client_hash, window_start) DO UPDATE SET
+          used = used + 1,
+          updated_at = datetime('now')
+        WHERE used < ?
+        RETURNING used
+        `
+      )
+      .bind(clientHash, minuteBucket, limit)
+      .first<{ used: number }>();
+    if (!reserved) {
+      throw new PublicSearchColdMissRateLimitError(retryAfterSeconds(now));
+    }
+    // Limit cleanup cost to one attempt per hour of request windows. It is
+    // best-effort only and never changes the admission decision above.
+    if (minuteBucket % 60 === 0) {
+      void options.db
+        .prepare(
+          'DELETE FROM nga_public_search_request_rate_limits WHERE window_start < ?'
+        )
+        .bind(minuteBucket - 60)
+        .run()
+        .catch(() => undefined);
+    }
+  } catch (error) {
+    if (error instanceof PublicSearchColdMissRateLimitError) throw error;
+    throw new PublicSearchRequestRateLimitUnavailableError();
+  }
 };
 
 export const resetPublicSearchColdMissRateLimitForTests = () => {

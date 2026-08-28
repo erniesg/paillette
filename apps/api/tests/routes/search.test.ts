@@ -234,6 +234,7 @@ class FakeSearchDb {
     used: 0,
     hard_limit: 1000,
   };
+  ngaPublicSearchRateLimits = new Map<string, number>();
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
   metadataSearchSql: string[] = [];
@@ -489,6 +490,14 @@ class FakeSearchDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes('nga_public_search_request_rate_limits')) {
+      const [clientHash, windowStart, limit] = params as [string, number, number];
+      const key = `${clientHash}:${windowStart}`;
+      const used = this.ngaPublicSearchRateLimits.get(key) || 0;
+      if (used >= limit) return null;
+      this.ngaPublicSearchRateLimits.set(key, used + 1);
+      return { used: used + 1 } as T;
+    }
     if (sql.includes('nga_public_search_quota')) {
       if (this.failNgaPublicSearchQuota) {
         throw new Error('NGA quota storage unavailable');
@@ -4242,9 +4251,10 @@ describe('Search API auth and quota behavior', () => {
 
     expect(limited.status).toBe(429);
     expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/);
-    expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
+    expect(payload.error.code).toBe('NGA_PUBLIC_SEARCH_RATE_LIMITED');
     expect(fetchMock).toHaveBeenCalledTimes(10);
     expect(imageVectorize.query).toHaveBeenCalledTimes(10);
+    expect(db.ngaPublicSearchQuota.used).toBe(10);
   });
 
   it('reuses a canonical public search result from KV without rerunning retrieval', async () => {
@@ -4283,13 +4293,6 @@ describe('Search API auth and quota behavior', () => {
     expect(db.exactArtistPreflightSql).toHaveLength(1);
     expect(
       vi
-        .mocked(cache.get)
-        .mock.calls.filter(([key]) =>
-          String(key).startsWith('public-search-cold-miss:')
-        )
-    ).toHaveLength(1);
-    expect(
-      vi
         .mocked(cache.put)
         .mock.calls.filter(([key]) =>
           String(key).startsWith('public-search-result:')
@@ -4297,7 +4300,7 @@ describe('Search API auth and quota behavior', () => {
     ).toHaveLength(1);
   });
 
-  it('rate limits the eleventh unique public cold miss without charging hits', async () => {
+  it('rate limits a cached public text replay before quota reservation', async () => {
     const cache = makeEmbeddingCache();
     env = {
       ...makeEnv(db),
@@ -4328,18 +4331,17 @@ describe('Search API auth and quota behavior', () => {
     }, NGA_ROUTE_ID);
     const payload = (await limited.json()) as any;
 
-    expect(cachedHit.status).toBe(200);
-    expect(cachedHit.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(cachedHit.status).toBe(429);
     expect(limited.status).toBe(429);
     expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/);
     expect(limited.headers.get('X-NGA-Search-Limit')).toBe('1000');
-    // The 10 cold misses, one cached intentional search, and the rejected
-    // eleventh cold miss each consume exactly one NGA lifetime slot.
-    expect(limited.headers.get('X-NGA-Search-Used')).toBe('12');
-    expect(limited.headers.get('X-NGA-Search-Remaining')).toBe('988');
-    expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
+    // The cache replay and later miss are rejected before either can debit
+    // the shared lifetime quota or write accepted-search telemetry.
+    expect(limited.headers.get('X-NGA-Search-Used')).toBe('10');
+    expect(limited.headers.get('X-NGA-Search-Remaining')).toBe('990');
+    expect(payload.error.code).toBe('NGA_PUBLIC_SEARCH_RATE_LIMITED');
     expect(db.metadataSearchSql).toHaveLength(10);
-    expect(db.ngaPublicSearchQuota.used).toBe(12);
+    expect(db.ngaPublicSearchQuota.used).toBe(10);
   });
 
   it('caches authenticated NGS searches without drawing from the NGA pool', async () => {

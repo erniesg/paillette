@@ -4,7 +4,10 @@ import {
   PUBLIC_SEARCH_COLD_MISS_KV_TTL_SECONDS,
   PUBLIC_SEARCH_COLD_MISS_WRITE_TIMEOUT_MS,
   PublicSearchColdMissRateLimitError,
+  PublicSearchRequestRateLimitUnavailableError,
   enforcePublicSearchColdMissRateLimit,
+  enforcePublicSearchRequestRateLimit,
+  getPublicSearchRequestClientIdentity,
   resetPublicSearchColdMissRateLimitForTests,
 } from './public-search-cold-miss-rate-limit';
 
@@ -19,6 +22,34 @@ const createCache = () => {
         void values.set(key, JSON.parse(value) as unknown)
     ),
   } as unknown as KVNamespace;
+};
+
+const createRequestLimiterDb = () => {
+  const buckets = new Map<string, number>();
+  return {
+    prepare: vi.fn((sql: string) => {
+      let params: unknown[] = [];
+      const statement = {
+        bind: (...values: unknown[]) => {
+          params = values;
+          return statement;
+        },
+        first: vi.fn(async () => {
+          if (!sql.includes('nga_public_search_request_rate_limits')) {
+            return null;
+          }
+          const [clientHash, windowStart, limit] = params as [string, number, number];
+          const key = `${clientHash}:${windowStart}`;
+          const used = buckets.get(key) || 0;
+          if (used >= limit) return null;
+          buckets.set(key, used + 1);
+          return { used: used + 1 };
+        }),
+        run: vi.fn(async () => ({ success: true })),
+      };
+      return statement;
+    }),
+  } as unknown as D1Database;
 };
 
 describe('enforcePublicSearchColdMissRateLimit', () => {
@@ -234,5 +265,119 @@ describe('enforcePublicSearchColdMissRateLimit', () => {
     expect(new PublicSearchColdMissRateLimitError(20)).toMatchObject({
       retryAfterSeconds: 20,
     });
+  });
+});
+
+describe('enforcePublicSearchRequestRateLimit', () => {
+  beforeEach(() => {
+    resetPublicSearchColdMissRateLimitForTests();
+  });
+
+  it('counts cached replays per client and rejects before an eleventh request', async () => {
+    const db = createRequestLimiterDb();
+    const options = {
+      db,
+      clientIdentity: 'public:203.0.113.42',
+      limit: 2,
+      now: () => NOW,
+    };
+
+    await expect(enforcePublicSearchRequestRateLimit(options)).resolves.toBeUndefined();
+    await expect(enforcePublicSearchRequestRateLimit(options)).resolves.toBeUndefined();
+    await expect(enforcePublicSearchRequestRateLimit(options)).rejects.toMatchObject({
+      name: 'PublicSearchColdMissRateLimitError',
+      retryAfterSeconds: 40,
+    });
+  });
+
+  it('keeps independently identified clients in separate request buckets', async () => {
+    const db = createRequestLimiterDb();
+
+    await enforcePublicSearchRequestRateLimit({
+      db,
+      clientIdentity: 'public:203.0.113.43',
+      limit: 1,
+      now: () => NOW,
+    });
+    await expect(
+      enforcePublicSearchRequestRateLimit({
+        db,
+        clientIdentity: 'api-key:key-2',
+        limit: 1,
+        now: () => NOW,
+      })
+    ).resolves.toBeUndefined();
+  });
+
+  it('admits no more than the configured limit under concurrent attempts', async () => {
+    const db = createRequestLimiterDb();
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        enforcePublicSearchRequestRateLimit({
+          db,
+          clientIdentity: 'public:203.0.113.46',
+          limit: 2,
+          now: () => NOW,
+        })
+      )
+    );
+
+    expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(2);
+    expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(3);
+  });
+
+  it('fails closed when distributed request-limit state is unavailable', async () => {
+    await expect(
+      enforcePublicSearchRequestRateLimit({
+        db: undefined,
+        clientIdentity: 'public:203.0.113.44',
+        now: () => NOW,
+      })
+    ).rejects.toBeInstanceOf(PublicSearchRequestRateLimitUnavailableError);
+  });
+});
+
+describe('getPublicSearchRequestClientIdentity', () => {
+  it('uses only Cloudflare’s connecting address for the shared public proxy key', () => {
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: true,
+        kind: 'api_key',
+        userId: 'public-search-web',
+        apiKeyId: 'shared-key',
+        connectingIp: '203.0.113.45',
+        forwardedFor: '198.51.100.99',
+      })
+    ).toBe('public-edge:203.0.113.45');
+  });
+
+  it('uses the authenticated key or user identity for direct API callers', () => {
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: false,
+        kind: 'api_key',
+        userId: 'user-1',
+        apiKeyId: 'key-1',
+      })
+    ).toBe('api-key:key-1');
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: false,
+        kind: 'user',
+        userId: 'user-2',
+      })
+    ).toBe('user:user-2');
+  });
+
+  it('rejects missing or untrusted public client addresses', () => {
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: true,
+        kind: 'api_key',
+        userId: 'public-search-web',
+        apiKeyId: 'shared-key',
+        forwardedFor: '198.51.100.99',
+      })
+    ).toBeUndefined();
   });
 });

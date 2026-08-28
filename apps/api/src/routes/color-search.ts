@@ -24,9 +24,16 @@ import {
   resolveOrgIdentifier,
 } from '../utils/orgs';
 import {
+  getNgaPublicSearchQuota,
   reserveNgaPublicSearchQuota,
   reserveNgaPublicSearchQuotaWithUsageEvent,
 } from '../utils/nga-search-quota';
+import {
+  PublicSearchColdMissRateLimitError,
+  PublicSearchRequestRateLimitUnavailableError,
+  enforcePublicSearchRequestRateLimit,
+  getPublicSearchRequestClientIdentity,
+} from '../utils/public-search-cold-miss-rate-limit';
 import type { PublicSearchQuota } from '@paillette/types';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
@@ -112,6 +119,66 @@ colorSearchRoutes.post('/search/color', async (c) => {
     }
 
     const query = validation.data;
+    if (provider === 'nga') {
+      try {
+        const auth = getAuth(c as any);
+        await enforcePublicSearchRequestRateLimit({
+          db: c.env.DB,
+          clientIdentity: getPublicSearchRequestClientIdentity({
+            isPublicSearchPrincipal: auth.scopes.includes('public_search'),
+            kind: auth.kind,
+            userId: auth.userId,
+            apiKeyId: auth.apiKeyId,
+            connectingIp: c.req.header('CF-Connecting-IP'),
+            forwardedFor: c.req.header('X-Forwarded-For'),
+          }),
+          limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
+        });
+      } catch (error) {
+        if (error instanceof PublicSearchColdMissRateLimitError) {
+          c.header('Retry-After', String(error.retryAfterSeconds));
+          try {
+            const quota = await getNgaPublicSearchQuota(c.env.DB);
+            setNgaSearchQuotaHeaders(c, quota);
+            return c.json<ApiResponse>(
+              {
+                success: false,
+                error: {
+                  code: 'NGA_PUBLIC_SEARCH_RATE_LIMITED',
+                  message: 'Too many NGA public searches; try again shortly',
+                  details: { quota },
+                },
+              },
+              429
+            );
+          } catch {
+            return c.json<ApiResponse>(
+              {
+                success: false,
+                error: {
+                  code: 'NGA_PUBLIC_SEARCH_RATE_LIMITED',
+                  message: 'Too many NGA public searches; try again shortly',
+                },
+              },
+              429
+            );
+          }
+        }
+        if (error instanceof PublicSearchRequestRateLimitUnavailableError) {
+          return c.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'NGA_PUBLIC_SEARCH_RATE_LIMIT_UNAVAILABLE',
+                message: 'NGA public search is temporarily unavailable',
+              },
+            },
+            503
+          );
+        }
+        throw error;
+      }
+    }
     let ngaQuota: PublicSearchQuota | undefined;
     if (provider === 'nga') {
       try {
