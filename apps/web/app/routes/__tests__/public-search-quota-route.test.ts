@@ -132,6 +132,57 @@ describe('public NGA search quota proxy', () => {
     );
   });
 
+  it('returns a safe no-store 502 when the upstream fetch rejects', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>().mockRejectedValue(
+        new Error('INTERNAL_NETWORK_SENTINEL')
+      )
+    );
+
+    const response = await loader({
+      context: {},
+      params: { orgId: 'nga' },
+      request: new Request('https://paillette.test/api/public-search/nga/quota'),
+    } as any);
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Retry-After')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Limit')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Used')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: {
+        code: 'PUBLIC_SEARCH_QUOTA_UPSTREAM_ERROR',
+        message: 'Search quota is temporarily unavailable.',
+      },
+    });
+  });
+
+  it('rethrows a caller abort instead of converting it to upstream failure', async () => {
+    const abortError = new DOMException('caller cancelled', 'AbortError');
+    const controller = new AbortController();
+    controller.abort(abortError);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>().mockRejectedValue(abortError)
+    );
+
+    const request = new Request(
+      'https://paillette.test/api/public-search/nga/quota'
+    );
+    Object.defineProperty(request, 'signal', { value: controller.signal });
+    const pending = loader({
+      context: {},
+      params: { orgId: 'nga' },
+      request,
+    } as any);
+
+    await expect(pending).rejects.toBe(abortError);
+  });
+
   it('only retains coherent quota headers and Retry-After on upstream errors', async () => {
     vi.stubGlobal(
       'fetch',

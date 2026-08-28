@@ -131,10 +131,23 @@ export const loader = async ({
     return response;
   }
 
-  const response = await fetch(
-    `${getApiBaseUrl(env)}/orgs/${resolvePublicSearchOrgId(orgId)}/search/quota`,
-    { method: 'GET', headers, signal: request.signal }
-  );
+  let response: Response;
+  try {
+    response = await fetch(
+      `${getApiBaseUrl(env)}/orgs/${resolvePublicSearchOrgId(orgId)}/search/quota`,
+      { method: 'GET', headers, signal: request.signal }
+    );
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      error.name === 'AbortError'
+    ) {
+      throw error;
+    }
+    return upstreamQuotaError();
+  }
   let payload: unknown;
   try {
     payload = await response.json();

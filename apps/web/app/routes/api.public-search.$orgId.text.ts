@@ -144,15 +144,37 @@ export const action = async ({
   const resolvedOrgId = resolvePublicSearchOrgId(orgId);
   const apiBaseUrl = getApiBaseUrl(env);
 
-  const response = await fetch(
-    `${apiBaseUrl}/orgs/${resolvedOrgId}/search/text`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(canonicalSearchPayload),
-      signal: request.signal,
+  let response: Response;
+  try {
+    response = await fetch(
+      `${apiBaseUrl}/orgs/${resolvedOrgId}/search/text`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(canonicalSearchPayload),
+        signal: request.signal,
+      }
+    );
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      error.name === 'AbortError'
+    ) {
+      throw error;
     }
-  );
+    return json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'PUBLIC_TEXT_SEARCH_UPSTREAM_UNAVAILABLE',
+          message: 'Public text search is temporarily unavailable.',
+        },
+      },
+      { status: 502, headers: new Headers({ 'Cache-Control': 'no-store' }) }
+    );
+  }
 
   let responsePayload: ApiResponse<SearchResponse>;
   try {

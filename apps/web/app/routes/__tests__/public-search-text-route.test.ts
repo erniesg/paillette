@@ -208,6 +208,55 @@ describe('public text search route quota reservation', () => {
     });
   });
 
+  it('returns a safe no-store 502 when the upstream fetch rejects', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>().mockRejectedValue(
+        new Error('INTERNAL_NETWORK_SENTINEL')
+      )
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'quiet shore' }),
+    } as any);
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Retry-After')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Limit')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Used')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: {
+        code: 'PUBLIC_TEXT_SEARCH_UPSTREAM_UNAVAILABLE',
+        message: 'Public text search is temporarily unavailable.',
+      },
+    });
+  });
+
+  it('rethrows a caller abort instead of converting it to upstream unavailability', async () => {
+    const abortError = new DOMException('caller cancelled', 'AbortError');
+    const controller = new AbortController();
+    controller.abort(abortError);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>().mockRejectedValue(abortError)
+    );
+
+    const request = makeRequest({ query: 'quiet shore' });
+    Object.defineProperty(request, 'signal', { value: controller.signal });
+    const pending = action({
+      context: {},
+      params: { orgId: 'nga' },
+      request,
+    } as any);
+
+    await expect(pending).rejects.toBe(abortError);
+  });
+
   it('omits incomplete quota headers from a non-JSON upstream error', async () => {
     vi.stubGlobal(
       'fetch',
