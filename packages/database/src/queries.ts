@@ -50,24 +50,40 @@ export const userQueries = {
 /**
  * Org queries
  */
+// Keep credential material out of read queries. API-key issuance has a
+// dedicated creation response; ordinary org reads must never load it.
+export const PUBLIC_ORG_COLUMNS = [
+  'id',
+  'name',
+  'slug',
+  'description',
+  'location_country',
+  'location_city',
+  'location_address',
+  'website',
+  'settings',
+  'owner_id',
+  'created_at',
+].join(', ');
+
 export const orgQueries = {
   findById: (id: string) => ({
-    sql: 'SELECT * FROM orgs WHERE id = ?',
+    sql: `SELECT ${PUBLIC_ORG_COLUMNS} FROM orgs WHERE id = ?`,
     params: [id],
   }),
 
   findBySlug: (slug: string) => ({
-    sql: 'SELECT * FROM orgs WHERE slug = ?',
+    sql: `SELECT ${PUBLIC_ORG_COLUMNS} FROM orgs WHERE slug = ?`,
     params: [slug],
   }),
 
   findByOwner: (ownerId: string) => ({
-    sql: 'SELECT * FROM orgs WHERE owner_id = ? ORDER BY created_at DESC',
+    sql: `SELECT ${PUBLIC_ORG_COLUMNS} FROM orgs WHERE owner_id = ? ORDER BY created_at DESC`,
     params: [ownerId],
   }),
 
   list: (limit = 50, offset = 0) => ({
-    sql: 'SELECT * FROM orgs ORDER BY created_at DESC LIMIT ? OFFSET ?',
+    sql: `SELECT ${PUBLIC_ORG_COLUMNS} FROM orgs ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     params: [limit, offset],
   }),
 

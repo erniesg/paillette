@@ -23,6 +23,40 @@ const orgs = new Hono<{ Bindings: Env }>();
 
 const CreateOrgRequestSchema = CreateOrgInputSchema.omit({ ownerId: true });
 
+type OrgReadRow = Record<string, unknown>;
+
+/**
+ * A defense-in-depth response DTO for organization reads. The query layer
+ * deliberately excludes credentials too, but this keeps an accidental DB
+ * projection change from putting credentials back into a public response.
+ */
+function toPublicOrg(org: OrgReadRow, options: { includeKey?: boolean } = {}) {
+  const data = {
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    description: org.description,
+    location_country: org.location_country,
+    location_city: org.location_city,
+    location_address: org.location_address,
+    website: org.website,
+    settings: org.settings ? JSON.parse(org.settings as string) : {},
+    owner_id: org.owner_id,
+    created_at: org.created_at,
+  };
+
+  if (!options.includeKey) return data;
+
+  return {
+    key: isNgsPublicOrg(org.id as string)
+      ? NGS_ORG_KEY
+      : isOpenAccessPublicOrg(org.slug as string)
+        ? OPEN_ACCESS_ART_ORG_KEY
+        : (org.slug as string) || (org.id as string),
+    ...data,
+  };
+}
+
 /**
  * GET /orgs
  * List all orgs (with pagination)
@@ -55,14 +89,9 @@ orgs.get(
 
       return c.json({
         success: true,
-        data: result.results.map((org: any) => ({
-          key: isNgsPublicOrg(org.id)
-            ? NGS_ORG_KEY
-            : isOpenAccessPublicOrg(org.slug)
-              ? OPEN_ACCESS_ART_ORG_KEY
-              : org.slug || org.id,
-          ...org,
-        })),
+        data: result.results.map((org) =>
+          toPublicOrg(org as OrgReadRow, { includeKey: true })
+        ),
         metadata: {
           page: pageNum,
           pageSize: limitNum,
@@ -138,16 +167,7 @@ orgs.get('/:id', async (c) => {
       );
     }
 
-    // Parse JSON fields
-    const orgData = {
-      key: isNgsPublicOrg((org as any).id)
-        ? NGS_ORG_KEY
-        : isOpenAccessPublicOrg((org as any).slug)
-          ? OPEN_ACCESS_ART_ORG_KEY
-          : (org as any).slug || id,
-      ...org,
-      settings: org.settings ? JSON.parse(org.settings as string) : {},
-    };
+    const orgData = toPublicOrg(org as OrgReadRow, { includeKey: true });
 
     return c.json({
       success: true,
@@ -194,11 +214,7 @@ orgs.get('/slug/:slug', async (c) => {
       );
     }
 
-    // Parse JSON fields
-    const orgData = {
-      ...org,
-      settings: org.settings ? JSON.parse(org.settings as string) : {},
-    };
+    const orgData = toPublicOrg(org as OrgReadRow);
 
     return c.json({
       success: true,
@@ -374,12 +390,7 @@ orgs.patch(
 
       return c.json({
         success: true,
-        data: {
-          ...updatedOrg,
-          settings: updatedOrg.settings
-            ? JSON.parse(updatedOrg.settings as string)
-            : {},
-        },
+        data: toPublicOrg(updatedOrg as OrgReadRow),
       });
     } catch (error: any) {
       console.error('Error updating org:', error);
