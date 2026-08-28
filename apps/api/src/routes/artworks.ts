@@ -149,6 +149,18 @@ const isPublicNgaArtworkRead = (c: Context<{ Bindings: Env }>) =>
     c.req.path
   );
 
+const publicArtworkValidationError = (error: z.ZodError) => ({
+  success: false,
+  error: {
+    code: 'VALIDATION_ERROR',
+    message: 'Invalid artwork query',
+    details: error.issues.map((issue) => ({
+      field: issue.path.join('.') || 'request',
+      code: issue.code,
+    })),
+  },
+});
+
 // Let explicitly requested public browsing reach the route's scope check so
 // invalid public orgs receive the intended PUBLIC_SCOPE_FORBIDDEN response.
 // This does not grant access: the handler returns before it queries artworks.
@@ -1013,6 +1025,21 @@ app.get('/', requireArtworkReadAccess as any, async (c) => {
     return c.json(response);
   } catch (error) {
     console.error('List error:', error);
+    if (isPublicNgaArtworkRead(c)) {
+      if (error instanceof z.ZodError) {
+        return c.json(publicArtworkValidationError(error), 400);
+      }
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'QUERY_FAILED',
+            message: 'Unable to load artworks',
+          },
+        },
+        500
+      );
+    }
     return c.json(
       {
         success: false,
@@ -1064,6 +1091,18 @@ app.get('/:id', requireArtworkReadAccess as any, async (c) => {
     });
   } catch (error) {
     console.error('Get error:', error);
+    if (isPublicNgaArtworkRead(c)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'QUERY_FAILED',
+            message: 'Unable to load artwork',
+          },
+        },
+        500
+      );
+    }
     return c.json(
       {
         success: false,

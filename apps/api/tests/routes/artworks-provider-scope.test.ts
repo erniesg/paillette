@@ -81,6 +81,7 @@ class FakeStatement {
 
 class FakeDb {
   readonly sql: string[] = [];
+  failArtworkQueries = false;
   private readonly rows = [makeArtwork('nga'), makeArtwork('artic')];
 
   prepare(sql: string) {
@@ -108,6 +109,9 @@ class FakeDb {
     }
 
     if (sql.includes('FROM artworks')) {
+      if (this.failArtworkQueries) {
+        throw new Error('database connection string: sentinel-private-dsn');
+      }
       const id = params[0];
       return (this.scopedRows(sql, params).find((row) => row.id === id) ||
         null) as T | null;
@@ -117,6 +121,9 @@ class FakeDb {
   }
 
   async all<T>(sql: string, params: unknown[]) {
+    if (this.failArtworkQueries) {
+      throw new Error('database connection string: sentinel-private-dsn');
+    }
     return {
       success: true,
       results: this.scopedRows(sql, params),
@@ -212,6 +219,68 @@ describe('NGA artwork provider scope', () => {
     expect(artwork).not.toHaveProperty('image_url_processed');
     expect(artwork).not.toHaveProperty('processing_status');
     expect(artwork).not.toHaveProperty('embedding_id');
+  });
+
+  it('returns a stable validation error for an invalid anonymous NGA browse query', async () => {
+    const response = await app.request(
+      '/api/v1/orgs/nga/artworks?limit=not-a-number',
+      {},
+      env
+    );
+    const body = (await response.json()) as any;
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid artwork query',
+        details: [{ field: 'limit', code: 'invalid_type' }],
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('Expected number');
+  });
+
+  it('does not disclose a database failure from an anonymous NGA browse', async () => {
+    db.failArtworkQueries = true;
+
+    const response = await app.request(
+      '/api/v1/orgs/nga/artworks?public_only=true',
+      {},
+      env
+    );
+    const body = (await response.json()) as any;
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      success: false,
+      error: {
+        code: 'QUERY_FAILED',
+        message: 'Unable to load artworks',
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('sentinel-private-dsn');
+  });
+
+  it('does not disclose a database failure from an anonymous NGA detail', async () => {
+    db.failArtworkQueries = true;
+
+    const response = await app.request(
+      '/api/v1/orgs/nga/artworks/open-access-art:nga:1',
+      {},
+      env
+    );
+    const body = (await response.json()) as any;
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      success: false,
+      error: {
+        code: 'QUERY_FAILED',
+        message: 'Unable to load artwork',
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('sentinel-private-dsn');
   });
 
   it('rejects a public browse request for a non-public route scope', async () => {
