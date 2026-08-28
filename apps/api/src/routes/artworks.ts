@@ -16,7 +16,12 @@ import {
   type ArtworkListResponse,
   type ArtworkUploadResponse,
 } from '../types/artwork';
-import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
+import {
+  getAuth,
+  requireAuthOrApiKey,
+  requireGlobalMutationAccess,
+  requireOrgMutationAccess,
+} from '../middleware/auth';
 import { uploadImage, deleteImage } from '../utils/r2';
 import {
   validateImage,
@@ -27,6 +32,8 @@ import {
 import { PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import {
   isAllowedPublicSearchRouteScope,
+  isNgsPublicOrg,
+  isOpenAccessPublicOrg,
   resolveOpenAccessProviderScope,
   resolveOrgIdentifier,
 } from '../utils/orgs';
@@ -134,6 +141,14 @@ const getRouteProvider = (c: Context<{ Bindings: Env }>) =>
   resolveOpenAccessProviderScope(
     c.req.param('orgId') || c.req.param('galleryId')
   );
+
+const requireArtworkWriteAccess = async (
+  c: Context<{ Bindings: Env }>,
+  orgId: string
+) =>
+  isNgsPublicOrg(orgId) || isOpenAccessPublicOrg(orgId)
+    ? requireGlobalMutationAccess(c as any)
+    : requireOrgMutationAccess(c as any, orgId);
 
 const getScopedArtwork = async (
   db: D1Database,
@@ -428,7 +443,22 @@ app.post('/upload', requireAuthOrApiKey as any, async (c) => {
     }
 
     const uploadData = validationResult.data;
-    const orgId = uploadData.org_id || uploadData.gallery_id!;
+    const orgId = await resolveOrgIdentifier(
+      c.env.DB,
+      uploadData.org_id || uploadData.gallery_id
+    );
+    if (!orgId) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'Org ID is required' },
+        },
+        400
+      );
+    }
+
+    const access = await requireArtworkWriteAccess(c, orgId);
+    if (access) return access;
 
     // Validate image file
     const imageValidation = validateImage(file);
@@ -690,6 +720,9 @@ app.post('/upsert', requireAuthOrApiKey as any, async (c) => {
         400
       );
     }
+
+    const access = await requireArtworkWriteAccess(c, orgId);
+    if (access) return access;
 
     const validation = UpsertArtworkSchema.safeParse(await c.req.json());
     if (!validation.success) {
@@ -986,6 +1019,20 @@ app.get('/:id', requireAuthOrApiKey as any, async (c) => {
 app.patch('/:id', requireAuthOrApiKey as any, async (c) => {
   try {
     const id = c.req.param('id');
+    const orgId = await getRouteOrgId(c);
+    if (!orgId) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'Org ID is required' },
+        },
+        400
+      );
+    }
+
+    const access = await requireArtworkWriteAccess(c, orgId);
+    if (access) return access;
+
     const body = await c.req.json();
 
     // Validate update data
@@ -1007,7 +1054,6 @@ app.patch('/:id', requireAuthOrApiKey as any, async (c) => {
     const updateData = validationResult.data;
 
     // Check if artwork exists
-    const orgId = await getRouteOrgId(c);
     const existing = await getScopedArtwork(c.env.DB, id, orgId);
 
     if (!existing) {
@@ -1094,6 +1140,19 @@ app.delete('/:id', requireAuthOrApiKey as any, async (c) => {
 
     // Get artwork to delete images
     const orgId = await getRouteOrgId(c);
+    if (!orgId) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'Org ID is required' },
+        },
+        400
+      );
+    }
+
+    const access = await requireArtworkWriteAccess(c, orgId);
+    if (access) return access;
+
     const artwork = await getScopedArtwork(c.env.DB, id, orgId);
 
     if (!artwork) {

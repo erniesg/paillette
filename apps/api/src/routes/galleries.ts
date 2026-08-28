@@ -4,7 +4,12 @@ import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
 import { orgQueries } from '@paillette/database';
 import { CreateOrgInputSchema } from '@paillette/types';
-import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
+import {
+  getAuth,
+  requireAuthOrApiKey,
+  requireGlobalMutationAccess,
+  requireOrgMutationAccess,
+} from '../middleware/auth';
 import {
   generateId,
   generateSlug,
@@ -24,6 +29,14 @@ const orgs = new Hono<{ Bindings: Env }>();
 const CreateOrgRequestSchema = CreateOrgInputSchema.omit({ ownerId: true });
 
 type OrgReadRow = Record<string, unknown>;
+
+const requireOrgWriteAccess = async (
+  c: { env: Env },
+  orgId: string
+) =>
+  isNgsPublicOrg(orgId) || isOpenAccessPublicOrg(orgId)
+    ? requireGlobalMutationAccess(c as any)
+    : requireOrgMutationAccess(c as any, orgId);
 
 /**
  * A defense-in-depth response DTO for organization reads. The query layer
@@ -242,6 +255,7 @@ orgs.get('/slug/:slug', async (c) => {
 orgs.post(
   '/',
   requireAuthOrApiKey as any,
+  requireGlobalMutationAccess as any,
   zValidator('json', CreateOrgRequestSchema),
   async (c) => {
     const input = c.req.valid('json');
@@ -321,8 +335,21 @@ orgs.patch(
   requireAuthOrApiKey as any,
   zValidator('json', CreateOrgInputSchema.partial().omit({ ownerId: true })),
   async (c) => {
-    const id = c.req.param('id');
+    const id = await resolveOrgIdentifier(c.env.DB, c.req.param('id'));
     const updates = c.req.valid('json');
+
+    if (!id) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'Org ID is required' },
+        },
+        400
+      );
+    }
+
+    const access = await requireOrgWriteAccess(c, id);
+    if (access) return access;
 
     try {
       // Check if org exists
@@ -414,7 +441,20 @@ orgs.patch(
  * Delete an org
  */
 orgs.delete('/:id', requireAuthOrApiKey as any, async (c) => {
-  const id = c.req.param('id');
+  const id = await resolveOrgIdentifier(c.env.DB, c.req.param('id'));
+
+  if (!id) {
+    return c.json(
+      {
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'Org ID is required' },
+      },
+      400
+    );
+  }
+
+  const access = await requireOrgWriteAccess(c, id);
+  if (access) return access;
 
   try {
     // Check if org exists

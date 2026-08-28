@@ -2,8 +2,17 @@ import { Hono, type Context } from 'hono';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import type { Env } from '../index';
-import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
-import { resolveOrgIdentifier } from '../utils/orgs';
+import {
+  getAuth,
+  requireAuthOrApiKey,
+  requireGlobalMutationAccess,
+  requireOrgMutationAccess,
+} from '../middleware/auth';
+import {
+  isNgsPublicOrg,
+  isOpenAccessPublicOrg,
+  resolveOrgIdentifier,
+} from '../utils/orgs';
 
 type CollectionRow = {
   id: string;
@@ -43,6 +52,14 @@ const routeOrgId = async (c: Context<{ Bindings: Env }>) =>
     c.env.DB,
     c.req.param('orgId') || c.req.param('galleryId')
   );
+
+const requireCollectionWriteAccess = async (
+  c: Context<{ Bindings: Env }>,
+  orgId: string
+) =>
+  isNgsPublicOrg(orgId) || isOpenAccessPublicOrg(orgId)
+    ? requireGlobalMutationAccess(c as any)
+    : requireOrgMutationAccess(c as any, orgId);
 
 const collectionResponse = (row: CollectionRow) => ({
   id: row.id,
@@ -120,6 +137,9 @@ collections.post('/', requireAuthOrApiKey as any, async (c) => {
     );
   }
 
+  const access = await requireCollectionWriteAccess(c, orgId);
+  if (access) return access;
+
   const validation = CreateCollectionSchema.safeParse(await c.req.json());
   if (!validation.success) {
     return c.json(
@@ -186,6 +206,9 @@ collections.post('/upsert', requireAuthOrApiKey as any, async (c) => {
       400
     );
   }
+
+  const access = await requireCollectionWriteAccess(c, orgId);
+  if (access) return access;
 
   const validation = UpsertCollectionSchema.safeParse(await c.req.json());
   if (!validation.success) {
@@ -301,6 +324,9 @@ collections.patch('/:collectionId', requireAuthOrApiKey as any, async (c) => {
     );
   }
 
+  const access = await requireCollectionWriteAccess(c, orgId);
+  if (access) return access;
+
   const existing = await getCollection(c.env.DB, orgId, collectionId);
   if (!existing) {
     return c.json(
@@ -372,6 +398,9 @@ collections.delete('/:collectionId', requireAuthOrApiKey as any, async (c) => {
     );
   }
 
+  const access = await requireCollectionWriteAccess(c, orgId);
+  if (access) return access;
+
   const result = await c.env.DB.prepare(
     'DELETE FROM collections WHERE id = ? AND org_id = ?'
   )
@@ -409,6 +438,9 @@ collections.post(
         400
       );
     }
+
+    const access = await requireCollectionWriteAccess(c, orgId);
+    if (access) return access;
 
     const validation = AddArtworkSchema.safeParse(await c.req.json());
     if (!validation.success) {
@@ -482,6 +514,9 @@ collections.delete(
         400
       );
     }
+
+    const access = await requireCollectionWriteAccess(c, orgId);
+    if (access) return access;
 
     const { collection, artwork } = await ensureCollectionAndArtwork(
       c.env.DB,

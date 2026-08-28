@@ -1106,7 +1106,7 @@ export const canMutateOrg = async (
   auth: AuthPrincipal,
   orgId: string | null | undefined
 ) => {
-  if (!orgId || auth.scopes.includes('public_search') || auth.internalMcp) {
+  if (!orgId || auth.scopes.includes('public_search')) {
     return false;
   }
 
@@ -1120,11 +1120,23 @@ export const canMutateOrg = async (
           UNION ALL
           SELECT 1 AS allowed
           FROM orgs
-          WHERE id = ? AND owner_id = ?
+          WHERE id = ?
+            AND owner_id = ?
+            AND lower(COALESCE(slug, '')) NOT IN (
+              'open-access-art',
+              'national-gallery-singapore'
+            )
           UNION ALL
           SELECT 1 AS allowed
           FROM org_users
-          WHERE org_id = ? AND user_id = ? AND role IN ('admin', 'curator')
+          JOIN orgs ON orgs.id = org_users.org_id
+          WHERE org_users.org_id = ?
+            AND org_users.user_id = ?
+            AND org_users.role IN ('admin', 'curator')
+            AND lower(COALESCE(orgs.slug, '')) NOT IN (
+              'open-access-art',
+              'national-gallery-singapore'
+            )
           LIMIT 1
         `
       )
@@ -1141,7 +1153,7 @@ export const canMutateGlobally = async (
   db: D1Database,
   auth: AuthPrincipal
 ) => {
-  if (auth.scopes.includes('public_search') || auth.internalMcp) return false;
+  if (auth.scopes.includes('public_search')) return false;
   try {
     const row = await db
       .prepare(`SELECT 1 AS allowed FROM users WHERE id = ? AND role = 'admin'`)
