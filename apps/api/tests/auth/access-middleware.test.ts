@@ -248,12 +248,12 @@ describe('MCP internal REST capability', () => {
       '/api/v1/orgs/nga/search/text',
       Date.now() - 1
     );
+    const [version, payload, signature] = valid.split('.');
+    const forgedSignature = `${signature?.startsWith('A') ? 'B' : 'A'}${signature?.slice(1) ?? ''}`;
+    const forged = `${version}.${payload}.${forgedSignature}`;
 
     for (const [method, capability] of [
-      [
-        'POST',
-        `${valid.slice(0, -1)}${valid.endsWith('a') ? 'b' : 'a'}`,
-      ],
+      ['POST', forged],
       ['POST', expired],
       ['GET', valid],
     ] as const) {
