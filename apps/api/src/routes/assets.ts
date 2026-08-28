@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
 import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
-import { isOpenAccessPublicOrg } from '../utils/orgs';
+import { isNgsPublicOrg, isOpenAccessPublicOrg } from '../utils/orgs';
 
 interface AssetRow {
   id: string;
@@ -43,6 +43,9 @@ const canReadAsset = async (
 
 const isPublicNgaAsset = (asset: AssetRow) =>
   isOpenAccessPublicOrg(asset.org_slug) || isOpenAccessPublicOrg(asset.org_id);
+
+const isNgsAsset = (asset: AssetRow) =>
+  isNgsPublicOrg(asset.org_slug) || isNgsPublicOrg(asset.org_id);
 
 assets.get('/:assetId/content', async (c) => {
   const assetId = c.req.param('assetId');
@@ -87,7 +90,13 @@ assets.get('/:assetId/content', async (c) => {
     const authResult = await requireAuthOrApiKey(c as any, async () => undefined);
     if (authResult) return authResult;
     const auth = getAuth(c as any);
-    if (!auth || !(await canReadAsset(c.env, auth.userId, asset.org_id))) {
+    const canRead =
+      Boolean(auth?.searchAccess?.granted) && isNgsAsset(asset)
+        ? true
+        : auth
+          ? await canReadAsset(c.env, auth.userId, asset.org_id)
+          : false;
+    if (!canRead) {
       return c.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Asset not found' } },
         404

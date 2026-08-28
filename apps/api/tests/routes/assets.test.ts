@@ -2,10 +2,17 @@ import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 
 import type { Env } from '../../src/index';
+import type { AuthPrincipal } from '../../src/middleware/auth';
 import assets from '../../src/routes/assets';
 
-const makeApp = () => {
-  const app = new Hono<{ Bindings: Env }>();
+const makeApp = (principal?: AuthPrincipal) => {
+  const app = new Hono<any>();
+  if (principal) {
+    app.use('*', async (c, next) => {
+      c.set('auth', principal);
+      await next();
+    });
+  }
   app.route('/api/v1/assets', assets as any);
   return app;
 };
@@ -68,5 +75,44 @@ describe('asset authorization', () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it('allows a WorkOS search viewer to read a gated NGS asset', async () => {
+    const response = await makeApp({
+      kind: 'user',
+      userId: 'viewer-1',
+      scopes: [],
+      searchAccess: {
+        granted: true,
+        internalUserId: 'viewer-1',
+        reason: 'authenticated',
+      },
+    }).request(
+      '/api/v1/assets/asset-1/content',
+      { headers: { Authorization: 'Bearer test-token' } },
+      { DB: makeDb(asset('national-gallery-singapore')) } as unknown as Env
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it('does not grant a search viewer access to another private org asset', async () => {
+    const response = await makeApp({
+      kind: 'user',
+      userId: 'viewer-1',
+      scopes: [],
+      searchAccess: {
+        granted: true,
+        internalUserId: 'viewer-1',
+        reason: 'authenticated',
+      },
+    }).request(
+      '/api/v1/assets/asset-1/content',
+      { headers: { Authorization: 'Bearer test-token' } },
+      { DB: makeDb(asset('another-private-org')) } as unknown as Env
+    );
+
+    expect(response.status).toBe(404);
   });
 });
