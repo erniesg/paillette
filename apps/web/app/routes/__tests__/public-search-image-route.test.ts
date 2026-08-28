@@ -278,6 +278,8 @@ describe('public image search proxy', () => {
           status,
           headers: {
             ...(retryAfter ? { 'Retry-After': retryAfter } : {}),
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': '1000',
             'X-NGA-Search-Remaining': '0',
           },
         }
@@ -294,6 +296,8 @@ describe('public image search proxy', () => {
     expect(response.status).toBe(status);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('Retry-After')).toBe(retryAfter);
+    expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+    expect(response.headers.get('X-NGA-Search-Used')).toBe('1000');
     expect(response.headers.get('X-NGA-Search-Remaining')).toBe('0');
   });
 
@@ -306,7 +310,7 @@ describe('public image search proxy', () => {
     ],
     [501, '41', 'text/plain', 'INTERNAL_TEXT_SENTINEL: provider stack'],
   ])(
-    'synthesizes safe JSON for non-JSON upstream %i without disclosing its body',
+    'synthesizes safe JSON and preserves counted quota for non-JSON upstream %i without disclosing its body',
     async (status, retryAfter, contentType, upstreamBody) => {
       vi.stubGlobal(
         'fetch',
@@ -316,6 +320,9 @@ describe('public image search proxy', () => {
             headers: {
               'Content-Type': contentType,
               'Retry-After': retryAfter,
+              'X-NGA-Search-Limit': '1000',
+              'X-NGA-Search-Used': '1',
+              'X-NGA-Search-Remaining': '999',
             },
           })
         )
@@ -330,6 +337,9 @@ describe('public image search proxy', () => {
       expect(response.status).toBe(status);
       expect(response.headers.get('Cache-Control')).toBe('no-store');
       expect(response.headers.get('Retry-After')).toBe(retryAfter);
+      expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+      expect(response.headers.get('X-NGA-Search-Used')).toBe('1');
+      expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
       expect(response.headers.get('Content-Type')).toContain(
         'application/json'
       );
@@ -344,6 +354,33 @@ describe('public image search proxy', () => {
       });
     }
   );
+
+  it('omits incomplete or malformed quota headers from a non-JSON upstream error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        new Response('INTERNAL_UPSTREAM_SENTINEL', {
+          status: 503,
+          headers: {
+            'Content-Type': 'text/plain',
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': 'invalid',
+          },
+        })
+      )
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest(makeForm()),
+    } as any);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('X-NGA-Search-Limit')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Used')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
+  });
 
   it('rethrows a caller abort instead of converting it to upstream unavailability', async () => {
     const abortError = new DOMException('caller cancelled', 'AbortError');

@@ -4,6 +4,7 @@ import { normalizePublicSearchText } from '@paillette/types/public-search-core';
 import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
 import {
   buildPublicSearchHeaders,
+  copyPublicSearchResponseHeaders,
   filterPublicTextSearchResponse,
   getApiBaseUrl,
   getCanonicalPublicTextSearchRequest,
@@ -28,16 +29,9 @@ const PUBLIC_TEXT_SEARCH_FACETS = new Set(['artist', 'classification']);
 
 const buildDynamicSearchHeaders = (response: Response) => {
   const headers = new Headers({ 'Cache-Control': 'no-store' });
-  for (const header of [
-    'Retry-After',
-    'X-Paillette-Search-Cache',
-    'X-NGA-Search-Limit',
-    'X-NGA-Search-Used',
-    'X-NGA-Search-Remaining',
-  ]) {
-    const value = response.headers.get(header);
-    if (value) headers.set(header, value);
-  }
+  copyPublicSearchResponseHeaders(response, headers);
+  const cacheStatus = response.headers.get('X-Paillette-Search-Cache');
+  if (cacheStatus) headers.set('X-Paillette-Search-Cache', cacheStatus);
   return headers;
 };
 
@@ -160,8 +154,26 @@ export const action = async ({
     }
   );
 
-  const responsePayload =
-    (await response.json()) as ApiResponse<SearchResponse>;
+  let responsePayload: ApiResponse<SearchResponse>;
+  try {
+    responsePayload = (await response.json()) as ApiResponse<SearchResponse>;
+  } catch {
+    const status = response.ok ? 502 : response.status;
+    return json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: response.ok
+            ? 'PUBLIC_TEXT_SEARCH_UPSTREAM_UNAVAILABLE'
+            : 'PUBLIC_TEXT_SEARCH_UPSTREAM_ERROR',
+          message: response.ok
+            ? 'Public text search returned an invalid response.'
+            : 'Public text search request failed.',
+        },
+      },
+      { status, headers: buildDynamicSearchHeaders(response) }
+    );
+  }
   if (responsePayload.success && responsePayload.data) {
     const results = responsePayload.data.results.filter(
       (artwork) => !isHiddenPublicNgsArtwork(artwork as any)

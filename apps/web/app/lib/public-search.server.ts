@@ -308,6 +308,50 @@ export const buildPublicSearchHeaders = (
   return headers;
 };
 
+const isValidNgaSearchQuota = (headers: Headers) => {
+  const rawLimit = headers.get('X-NGA-Search-Limit');
+  const rawUsed = headers.get('X-NGA-Search-Used');
+  const rawRemaining = headers.get('X-NGA-Search-Remaining');
+  if (!rawLimit?.trim() || !rawUsed?.trim() || !rawRemaining?.trim()) {
+    return false;
+  }
+
+  const limit = Number(rawLimit);
+  const used = Number(rawUsed);
+  const remaining = Number(rawRemaining);
+  return (
+    Number.isSafeInteger(limit) &&
+    Number.isSafeInteger(used) &&
+    Number.isSafeInteger(remaining) &&
+    limit >= 0 &&
+    used >= 0 &&
+    remaining >= 0 &&
+    used + remaining === limit
+  );
+};
+
+export const copyPublicSearchResponseHeaders = (
+  response: Response,
+  headers: Headers
+) => {
+  const retryAfter = response.headers.get('Retry-After');
+  if (retryAfter) {
+    headers.set('Retry-After', retryAfter);
+  }
+
+  if (!isValidNgaSearchQuota(response.headers)) {
+    return;
+  }
+
+  for (const header of [
+    'X-NGA-Search-Limit',
+    'X-NGA-Search-Used',
+    'X-NGA-Search-Remaining',
+  ]) {
+    headers.set(header, response.headers.get(header)!);
+  }
+};
+
 export const proxyJsonResponse = async <T>(response: Response) => {
   const payload = (await response.json()) as ApiResponse<T>;
   const headers = new Headers();

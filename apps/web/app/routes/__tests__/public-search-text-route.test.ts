@@ -169,6 +169,72 @@ describe('public text search route quota reservation', () => {
     expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
   });
 
+  it('synthesizes a safe error while preserving a valid counted quota from a non-JSON upstream response', async () => {
+    const upstreamBody = '<html>INTERNAL_UPSTREAM_SENTINEL</html>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        new Response(upstreamBody, {
+          status: 502,
+          headers: {
+            'Content-Type': 'text/html',
+            'Retry-After': '17',
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': '1',
+            'X-NGA-Search-Remaining': '999',
+          },
+        })
+      )
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'quiet shore' }),
+    } as any);
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Retry-After')).toBe('17');
+    expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+    expect(response.headers.get('X-NGA-Search-Used')).toBe('1');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: {
+        code: 'PUBLIC_TEXT_SEARCH_UPSTREAM_ERROR',
+        message: 'Public text search request failed.',
+      },
+    });
+  });
+
+  it('omits incomplete quota headers from a non-JSON upstream error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        new Response('INTERNAL_UPSTREAM_SENTINEL', {
+          status: 503,
+          headers: {
+            'Content-Type': 'text/plain',
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': '1',
+          },
+        })
+      )
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'quiet shore' }),
+    } as any);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('X-NGA-Search-Limit')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Used')).toBeNull();
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
+  });
+
   it('does not cache a successful response with a degraded search channel', async () => {
     const cache = {
       match: vi.fn(async () => undefined),

@@ -3,6 +3,7 @@ import { json } from '@remix-run/cloudflare';
 import type { ApiResponse, SearchResponse } from '~/types';
 import {
   buildPublicSearchHeaders,
+  copyPublicSearchResponseHeaders,
   getApiBaseUrl,
   getServerEnv,
   isAllowedPublicSearchRouteId,
@@ -187,8 +188,7 @@ export const action = async ({
   } catch {
     if (!response.ok) {
       const responseHeaders = new Headers();
-      const retryAfter = response.headers.get('Retry-After');
-      if (retryAfter) responseHeaders.set('Retry-After', retryAfter);
+      copyPublicSearchResponseHeaders(response, responseHeaders);
       return noStoreJson<ApiResponse>(
         {
           success: false,
@@ -225,14 +225,6 @@ export const action = async ({
   }
 
   const responseHeaders = new Headers();
-  for (const header of [
-    'Retry-After',
-    'X-NGA-Search-Limit',
-    'X-NGA-Search-Used',
-    'X-NGA-Search-Remaining',
-  ]) {
-    const value = response.headers.get(header);
-    if (value) responseHeaders.set(header, value);
-  }
+  copyPublicSearchResponseHeaders(response, responseHeaders);
   return noStoreJson(payload, response.status, responseHeaders);
 };
