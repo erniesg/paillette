@@ -264,3 +264,15 @@ export const getSpotlightSearchPlaceholder = (
     queryTime: 0,
   };
 };
+
+/**
+ * Featured results are display-only until a visitor submits the matching Try
+ * term. Keeping them as placeholder data lets the submitted query run through
+ * the API (and its quota/telemetry boundary) while the cached cards stay
+ * visible during that request.
+ */
+export const getSpotlightSearchSubmissionOptions = (
+  placeholder: SearchResponse | undefined
+) => ({
+  placeholderData: placeholder,
+});

@@ -131,6 +131,7 @@ import {
 import {
   getSpotlightArtworks,
   getSpotlightSearchPlaceholder,
+  getSpotlightSearchSubmissionOptions,
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
@@ -1495,7 +1496,7 @@ export default function SearchPage() {
     retry: false,
     staleTime: isNgsSearch ? 0 : PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    initialData: spotlightSearchPlaceholder,
+    ...getSpotlightSearchSubmissionOptions(spotlightSearchPlaceholder),
     refetchOnMount: Boolean(submittedSearch),
   });
 

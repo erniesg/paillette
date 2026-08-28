@@ -11,8 +11,10 @@ import {
   getSearchSpotlightPath,
   getSpotlightArtworks,
   getSpotlightSearchPlaceholder,
+  getSpotlightSearchSubmissionOptions,
   loadSearchSpotlightBundle,
 } from '../search-spotlights';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { NGA_SPOTLIGHT_DEFINITIONS } from '../nga-spotlight-definitions';
 import { NGS_SPOTLIGHT_DEFINITIONS } from '../ngs-spotlight-definitions';
 
@@ -336,5 +338,48 @@ describe('search spotlight loading', () => {
         })
       ).toMatchObject({ count: 4, queryTime: 0 });
     }
+  });
+
+  it('shows a featured Try result immediately while still fetching its submitted search once', async () => {
+    const placeholder = getSpotlightSearchPlaceholder(validBundle, {
+      query: NGA_SPOTLIGHT_DEFINITIONS[0].query,
+      topK: 30,
+      minScore: 0.2,
+    });
+    const queryClient = new QueryClient();
+    let resolveSearch: ((value: { source: 'api' }) => void) | undefined;
+    const search = vi.fn(
+      () =>
+        new Promise<{ source: 'api' }>((resolve) => {
+          resolveSearch = resolve;
+        })
+    );
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['nga', 'try-submission'],
+      queryFn: search,
+      staleTime: Infinity,
+      ...getSpotlightSearchSubmissionOptions(placeholder),
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1));
+    expect(observer.getCurrentResult()).toMatchObject({
+      data: placeholder,
+      isPlaceholderData: true,
+    });
+
+    resolveSearch?.({ source: 'api' });
+    await vi.waitFor(() =>
+      expect(observer.getCurrentResult().data).toEqual({ source: 'api' })
+    );
+    unsubscribe();
+  });
+
+  it('does not turn passive featured cards into a search query', () => {
+    const queryClient = new QueryClient();
+
+    getSpotlightArtworks(validBundle, NGA_SPOTLIGHT_DEFINITIONS[0].id);
+
+    expect(queryClient.getQueryCache().getAll()).toEqual([]);
   });
 });
