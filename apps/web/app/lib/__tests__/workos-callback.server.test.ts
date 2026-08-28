@@ -200,6 +200,96 @@ describe('WorkOS callback', () => {
     });
   });
 
+  it('propagates a handler error once for a valid WorkOS session', async () => {
+    const started = await startWorkOSAuthorization(
+      authArgs(new Request('https://paillette.test/auth/start')),
+      'sign-in'
+    );
+    const callback = await handleWorkOSCallback(
+      authArgs(
+        new Request('https://paillette.test/callback?code=code&state=expected-state', {
+          headers: { Cookie: started.headers.get('Set-Cookie')! },
+        })
+      )
+    );
+    const sessionCookie = callback.headers
+      .get('Set-Cookie')!
+      .match(/paillette-session=[^;]+/)![0];
+    const handler = vi.fn(() => {
+      throw new Error('upstream mutation aborted');
+    });
+    workos.authenticateWithSessionCookie.mockResolvedValue({
+      authenticated: true,
+      accessToken: 'valid-token',
+      user: { id: 'user_01', email: 'ada@example.com' },
+    });
+
+    await expect(
+      withWorkOSSession(
+        authArgs(
+          new Request('https://paillette.test/api/backend/orgs/ngs/search', {
+            headers: { Cookie: sessionCookie },
+          })
+        ),
+        handler
+      )
+    ).rejects.toThrow('upstream mutation aborted');
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({
+      accessToken: 'valid-token',
+      user: { id: 'user_01', email: 'ada@example.com' },
+    });
+  });
+
+  it('propagates an upstream abort once after refreshing an expiring WorkOS session', async () => {
+    const started = await startWorkOSAuthorization(
+      authArgs(new Request('https://paillette.test/auth/start')),
+      'sign-in'
+    );
+    const callback = await handleWorkOSCallback(
+      authArgs(
+        new Request('https://paillette.test/callback?code=code&state=expected-state', {
+          headers: { Cookie: started.headers.get('Set-Cookie')! },
+        })
+      )
+    );
+    const sessionCookie = callback.headers
+      .get('Set-Cookie')!
+      .match(/paillette-session=[^;]+/)![0];
+    const expiringToken = `header.${btoa(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 60 })
+    )}.signature`;
+    const upstreamFetch = vi.fn(async () => {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    });
+    workos.authenticateWithSessionCookie.mockResolvedValue({
+      authenticated: true,
+      accessToken: expiringToken,
+      user: { id: 'user_01', email: 'ada@example.com' },
+    });
+    workos.getSessionFromCookie.mockResolvedValue({ refreshToken: 'refresh' });
+    workos.authenticateWithRefreshToken.mockResolvedValue({
+      accessToken: 'refreshed-token',
+      sealedSession: 'refreshed-session',
+      user: { id: 'user_01', email: 'ada@example.com' },
+    });
+
+    await expect(
+      withWorkOSSession(
+        authArgs(
+          new Request('https://paillette.test/api/backend/orgs/ngs/search', {
+            headers: { Cookie: sessionCookie },
+          })
+        ),
+        async () => upstreamFetch()
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(upstreamFetch).toHaveBeenCalledOnce();
+    expect(workos.authenticateWithRefreshToken).toHaveBeenCalledOnce();
+  });
+
   it('rejects a cross-site logout POST', async () => {
     const response = await handleWorkOSSignOut(
       authArgs(

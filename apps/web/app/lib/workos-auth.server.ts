@@ -257,39 +257,44 @@ export const withWorkOSSession = async <T>(
   }
 
   const workos = getWorkOS(config);
+  let current: WorkOSSession = { accessToken: null, user: null };
+  let refreshedSession: string | null = null;
   try {
     const authenticated = await workos.userManagement.authenticateWithSessionCookie({
       sessionData,
       cookiePassword: config.cookiePassword,
     });
-    if (!authenticated.authenticated) {
-      return handler({ accessToken: null, user: null });
-    }
+    if (authenticated.authenticated) current = toSession(authenticated);
+  } catch {
+    // A failed session check is anonymous, but must not replay the handler.
+  }
 
-    const current = toSession(authenticated);
-    if (!isAccessTokenExpiringSoon(authenticated.accessToken)) return handler(current);
-
+  if (current.accessToken && isAccessTokenExpiringSoon(current.accessToken)) {
     try {
       const sealed = await workos.userManagement.getSessionFromCookie({
         sessionData,
         cookiePassword: config.cookiePassword,
       });
-      if (!sealed?.refreshToken) return handler(current);
-      const refreshed = await workos.userManagement.authenticateWithRefreshToken({
-        clientId: config.clientId,
-        refreshToken: sealed.refreshToken,
-        session: { cookiePassword: config.cookiePassword, sealSession: true },
-      });
-      if (!refreshed.sealedSession) return handler(current);
-      const response = await handler(toSession(refreshed));
-      return appendSessionCookie(response, await sessionCookie.serialize(refreshed.sealedSession));
+      if (sealed?.refreshToken) {
+        const refreshed = await workos.userManagement.authenticateWithRefreshToken({
+          clientId: config.clientId,
+          refreshToken: sealed.refreshToken,
+          session: { cookiePassword: config.cookiePassword, sealSession: true },
+        });
+        if (refreshed.sealedSession) {
+          current = toSession(refreshed);
+          refreshedSession = refreshed.sealedSession;
+        }
+      }
     } catch {
       // A temporary WorkOS outage must not discard an otherwise verified session.
-      return handler(current);
     }
-  } catch {
-    return handler({ accessToken: null, user: null });
   }
+
+  const response = await handler(current);
+  return refreshedSession
+    ? appendSessionCookie(response, await sessionCookie.serialize(refreshedSession))
+    : response;
 };
 
 const appendSessionCookie = <T>(result: T, cookie: string): T => {
