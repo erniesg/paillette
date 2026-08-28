@@ -551,6 +551,26 @@ describe('management API', () => {
     expect(response.status).toBe(401);
   });
 
+  it('rejects an unauthorized org creation before validating the body', async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/api/v1/orgs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'viewer-user',
+          'X-User-Email': 'viewer@example.com',
+        },
+        body: JSON.stringify({}),
+      }),
+      env
+    );
+
+    expect(response.status).toBe(403);
+    expect((await response.json()) as any).toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+  });
+
   it('creates orgs from the authenticated principal without ownerId in the body', async () => {
     const response = await app.fetch(
       new Request('http://localhost/api/v1/orgs', {
