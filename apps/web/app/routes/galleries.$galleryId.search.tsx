@@ -144,6 +144,7 @@ import {
   isNgaSearchQuotaExhausted,
   NGA_SEARCH_QUOTA_QUERY_OPTIONS,
   reconcileNgaSearchQuota,
+  withNgaSearchQuotaFromHeaders,
 } from '~/lib/nga-search-quota';
 import {
   trackPublicUsageEvent,
@@ -884,11 +885,17 @@ const sortResults = (
 const readSearchResponse = async (response: Response) => {
   const payload = (await response.json()) as ApiResponse<SearchResponse>;
   if (!payload.success || !payload.data) {
+    const details = withNgaSearchQuotaFromHeaders(
+      payload.error?.details && typeof payload.error.details === 'object'
+        ? payload.error.details
+        : undefined,
+      response.headers
+    );
     throw new PublicSearchRequestError(
       payload.error?.message || 'Search failed',
       response.status,
       payload.error?.code,
-      payload.error?.details
+      details
     );
   }
 
@@ -1647,12 +1654,12 @@ export default function SearchPage() {
     }
   }, [currentQuery.data?.quota, isNgaSearch, queryClient]);
   useEffect(() => {
-    if (!isNgaSearch || !isNgaQuotaError) return;
+    if (!isNgaSearch) return;
     const quota = getNgaSearchQuotaFromError(error);
     if (quota) {
       void reconcileNgaSearchQuota(queryClient, quota);
     }
-  }, [error, isNgaQuotaError, isNgaSearch, queryClient]);
+  }, [error, isNgaSearch, queryClient]);
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;

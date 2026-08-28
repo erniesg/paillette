@@ -4091,8 +4091,14 @@ describe('Search API auth and quota behavior', () => {
     expect(cachedHit.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
     expect(limited.status).toBe(429);
     expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(limited.headers.get('X-NGA-Search-Limit')).toBe('1000');
+    // The 10 cold misses, one cached intentional search, and the rejected
+    // eleventh cold miss each consume exactly one NGA lifetime slot.
+    expect(limited.headers.get('X-NGA-Search-Used')).toBe('12');
+    expect(limited.headers.get('X-NGA-Search-Remaining')).toBe('988');
     expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
     expect(db.metadataSearchSql).toHaveLength(10);
+    expect(db.ngaPublicSearchQuota.used).toBe(12);
   });
 
   it('caches authenticated NGS searches without drawing from the NGA pool', async () => {

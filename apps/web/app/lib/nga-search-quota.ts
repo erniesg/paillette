@@ -16,6 +16,35 @@ const isNgaSearchQuota = (value: unknown): value is NgaSearchQuota => {
 export const getNgaSearchQuota = (value: unknown) =>
   isNgaSearchQuota(value) ? value : null;
 
+export const getNgaSearchQuotaFromHeaders = (headers: Headers) => {
+  const limit = Number(headers.get('X-NGA-Search-Limit'));
+  const used = Number(headers.get('X-NGA-Search-Used'));
+  const remaining = Number(headers.get('X-NGA-Search-Remaining'));
+  const quota = { limit, used, remaining };
+
+  if (
+    !Number.isSafeInteger(limit) ||
+    !Number.isSafeInteger(used) ||
+    !Number.isSafeInteger(remaining) ||
+    limit < 0 ||
+    used < 0 ||
+    remaining < 0 ||
+    used + remaining !== limit
+  ) {
+    return null;
+  }
+
+  return quota;
+};
+
+export const withNgaSearchQuotaFromHeaders = (
+  details: Record<string, unknown> | undefined,
+  headers: Headers
+) => {
+  const quota = getNgaSearchQuotaFromHeaders(headers);
+  return quota ? { ...details, quota } : details;
+};
+
 export const formatNgaSearchQuota = (quota: NgaSearchQuota) =>
   `${quota.remaining.toLocaleString()} free searches left`;
 

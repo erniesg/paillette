@@ -4,7 +4,9 @@ import {
   formatNgaSearchQuota,
   canRetryNgaSearch,
   getNgaSearchQuota,
+  getNgaSearchQuotaFromHeaders,
   getNgaSearchQuotaFromError,
+  withNgaSearchQuotaFromHeaders,
   isNgaSearchQuotaExhausted,
   NGA_SEARCH_QUOTA_QUERY_OPTIONS,
   reconcileNgaSearchQuota,
@@ -40,6 +42,40 @@ describe('NGA public search quota presentation', () => {
       used: 1000,
       remaining: 0,
     });
+  });
+
+  it('reads the counted quota from a post-reservation upstream error', async () => {
+    const quota = getNgaSearchQuotaFromHeaders(
+      new Headers({
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': '1',
+        'X-NGA-Search-Remaining': '999',
+      })
+    );
+    const queryClient = new QueryClient();
+
+    expect(quota).toEqual({ limit: 1000, used: 1, remaining: 999 });
+    await reconcileNgaSearchQuota(queryClient, quota!);
+    expect(queryClient.getQueryData(['nga-search-quota'])).toEqual(quota);
+    queryClient.clear();
+  });
+
+  it('attaches a post-reservation limiter quota to the client error details', () => {
+    const details = withNgaSearchQuotaFromHeaders(
+      { retryable: true },
+      new Headers({
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': '1',
+        'X-NGA-Search-Remaining': '999',
+      })
+    );
+
+    expect(
+      getNgaSearchQuotaFromError({
+        code: 'PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED',
+        details,
+      })
+    ).toEqual({ limit: 1000, used: 1, remaining: 999 });
   });
 
   it('does not mistake unrelated API errors for quota exhaustion', () => {
