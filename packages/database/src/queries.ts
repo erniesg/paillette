@@ -88,7 +88,7 @@ export const orgQueries = {
   }),
 
   create: (
-    org: Omit<OrgRow, 'created_at' | 'api_key' | 'settings'> & {
+    org: Omit<OrgRow, 'created_at' | 'api_key' | 'api_key_hash' | 'settings'> & {
       settings?: Record<string, any>;
     }
   ) => ({
@@ -107,7 +107,7 @@ export const orgQueries = {
       org.website || null,
       org.settings ? JSON.stringify(org.settings) : '{}',
       `retired-org-key:${org.id}`,
-      org.api_key_hash,
+      `retired-org-key-hash:${org.id}`,
       org.owner_id,
     ],
   }),

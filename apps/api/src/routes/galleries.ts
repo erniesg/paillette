@@ -13,8 +13,6 @@ import {
 import {
   generateId,
   generateSlug,
-  generateApiKey,
-  hashApiKey,
 } from '../utils/crypto';
 import {
   NGS_ORG_KEY,
@@ -71,11 +69,11 @@ function toPublicOrg(org: OrgReadRow, options: { includeKey?: boolean } = {}) {
 }
 
 /**
- * Creation is the only API response that includes the raw API key. Keep this
- * separate from the persistence object so hashes and future internal columns
- * cannot escape through an accidental object spread.
+ * Organization credentials are retired; personal API keys have their own
+ * issuance endpoint and storage. Keep this explicit response DTO separate
+ * from persistence so legacy credential columns can never leak.
  */
-function toCreatedOrg(org: OrgReadRow, apiKey: string) {
+function toCreatedOrg(org: OrgReadRow) {
   return {
     id: org.id,
     name: org.name,
@@ -87,7 +85,6 @@ function toCreatedOrg(org: OrgReadRow, apiKey: string) {
     website: org.website,
     owner_id: org.owner_id,
     settings: org.settings,
-    api_key: apiKey,
   };
 }
 
@@ -291,8 +288,6 @@ orgs.post(
       // Generate org data
       const orgId = generateId();
       const slug = input.slug || generateSlug(input.name);
-      const apiKey = generateApiKey();
-      const apiKeyHash = await hashApiKey(apiKey);
 
       // Transform input to database schema (flatten location object)
       const settingsObj = input.settings || {
@@ -311,7 +306,6 @@ orgs.post(
         location_city: input.location?.city || null,
         location_address: input.location?.address || null,
         website: input.website || null,
-        api_key_hash: apiKeyHash,
         owner_id: userId,
         settings: settingsObj,
       };
@@ -321,11 +315,10 @@ orgs.post(
         .bind(...query.params)
         .run();
 
-      // Return created org (with API key visible only on creation)
       return c.json(
         {
           success: true,
-          data: toCreatedOrg(org, apiKey),
+          data: toCreatedOrg(org),
         },
         201
       );

@@ -161,7 +161,7 @@ describe('organization read credential serialization', () => {
     );
   });
 
-  it('returns only the one-time API key when an admin creates an organization', async () => {
+  it('creates an organization without issuing a retired organization API credential', async () => {
     const db = new FakeOrgDb();
     const response = await makeAdminApp().request(
       '/orgs',
@@ -184,13 +184,13 @@ describe('organization read credential serialization', () => {
 
     expect(response.status).toBe(201);
     const body = await response.json();
-    const persistedHash = db.createdOrg?.api_key_hash;
-    expect(persistedHash).toEqual(expect.any(String));
-    expect(body.data.api_key).toEqual(expect.any(String));
-    expect(db.createdOrg?.api_key).toEqual(`retired-org-key:${body.data.id}`);
-    expect(db.createdOrg?.api_key).not.toEqual(body.data.api_key);
-    expect(JSON.stringify(body)).not.toContain(String(persistedHash));
+    expect(body.data).not.toHaveProperty('api_key');
     expect(body.data).not.toHaveProperty('api_key_hash');
+    expect(db.createdOrg?.api_key).toEqual(`retired-org-key:${body.data.id}`);
+    expect(db.createdOrg?.api_key_hash).toEqual(
+      `retired-org-key-hash:${body.data.id}`
+    );
+    expect(JSON.stringify(body)).not.toContain('retired-org-key-hash:');
     expect(body.data).toMatchObject({
       name: 'New Safe Org',
       slug: 'new-safe-org',
