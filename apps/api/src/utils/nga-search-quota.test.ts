@@ -14,19 +14,19 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
   DatabaseSync: typeof NodeDatabaseSync;
 };
 
+const readMigration = (name: string) =>
+  readFileSync(
+    new URL(`../../../../packages/database/migrations/${name}`, import.meta.url),
+    'utf8'
+  );
+
 const createD1 = () => {
   const sqlite = new DatabaseSync(':memory:');
   let batchTail: Promise<void> = Promise.resolve();
-  sqlite.exec(
-    readFileSync(
-      new URL(
-        '../../../../packages/database/migrations/0018_nga_public_search_quota.sql',
-        import.meta.url
-      ),
-      'utf8'
-    )
-  );
-  sqlite.exec('CREATE TABLE api_usage_events (id TEXT PRIMARY KEY)');
+  sqlite.exec('PRAGMA foreign_keys = ON');
+  sqlite.exec(readMigration('0001_initial_schema.sql'));
+  sqlite.exec(readMigration('0005_api_keys_usage.sql'));
+  sqlite.exec(readMigration('0018_nga_public_search_quota.sql'));
 
   const db = {
     prepare(sql: string) {
@@ -103,6 +103,46 @@ describe('NGA public search quota', () => {
     ).toEqual([
       { scope: 'nga-public-search', used: 0, hard_limit: 1000 },
     ]);
+    expect(
+      sqlite
+        .prepare('SELECT id, email, role FROM users WHERE id = ?')
+        .get('public-search-web')
+    ).toEqual({
+      id: 'public-search-web',
+      email: 'public-search-web@invalid.paillette.local',
+      role: 'viewer',
+    });
+    sqlite.close();
+  });
+
+  it('can be reapplied without changing the service principal or resetting the quota', async () => {
+    const { sqlite } = createD1();
+    sqlite
+      .prepare(
+        'UPDATE nga_public_search_quota SET used = 17 WHERE scope = ?'
+      )
+      .run(NGA_PUBLIC_SEARCH_QUOTA_SCOPE);
+    sqlite
+      .prepare('UPDATE users SET name = ? WHERE id = ?')
+      .run('Existing Service Principal', 'public-search-web');
+
+    sqlite.exec(readMigration('0018_nga_public_search_quota.sql'));
+
+    expect(
+      sqlite
+        .prepare('SELECT id, email, name, role FROM users WHERE id = ?')
+        .get('public-search-web')
+    ).toEqual({
+      id: 'public-search-web',
+      email: 'public-search-web@invalid.paillette.local',
+      name: 'Existing Service Principal',
+      role: 'viewer',
+    });
+    expect(
+      sqlite
+        .prepare('SELECT used, hard_limit FROM nga_public_search_quota WHERE scope = ?')
+        .get(NGA_PUBLIC_SEARCH_QUOTA_SCOPE)
+    ).toEqual({ used: 17, hard_limit: 1000 });
     sqlite.close();
   });
 
@@ -162,7 +202,16 @@ describe('NGA public search quota', () => {
       id: 'accepted-search',
       metadata: {},
       statement: db
-        .prepare('INSERT INTO api_usage_events (id) SELECT ? WHERE changes() = 1')
+        .prepare(
+          `
+          INSERT INTO api_usage_events (
+            id, user_id, usage_date, method, path, auth_kind, query_type
+          )
+          SELECT ?, 'public-search-web', '2026-08-28', 'POST',
+            '/api/v1/orgs/nga/search/text', 'api_key', 'text'
+          WHERE changes() = 1
+          `
+        )
         .bind('accepted-search'),
       markRecorded: () => {
         marked = true;
@@ -177,18 +226,106 @@ describe('NGA public search quota', () => {
     });
     expect(marked).toBe(true);
     expect(
-      sqlite.prepare('SELECT id FROM api_usage_events').all()
-    ).toEqual([{ id: 'accepted-search' }]);
+      sqlite.prepare('SELECT id, user_id, query_type FROM api_usage_events').all()
+    ).toEqual([
+      {
+        id: 'accepted-search',
+        user_id: 'public-search-web',
+        query_type: 'text',
+      },
+    ]);
+    sqlite.close();
+  });
+
+  it.each([
+    ['text', '/api/v1/orgs/nga/search/text'],
+    ['image', '/api/v1/orgs/nga/search/image'],
+    ['color', '/api/v1/orgs/nga/search/color'],
+  ])(
+    'atomically debits and logs a valid public %s search with foreign keys enabled',
+    async (queryType, path) => {
+      const { db, sqlite } = createD1();
+      const usageEvent = {
+        id: `accepted-${queryType}`,
+        metadata: {},
+        statement: db
+          .prepare(
+            `
+            INSERT INTO api_usage_events (
+              id, user_id, usage_date, method, path, auth_kind, query_type
+            )
+            SELECT ?, 'public-search-web', '2026-08-28', 'POST', ?, 'api_key', ?
+            WHERE changes() = 1
+            `
+          )
+          .bind(`accepted-${queryType}`, path, queryType),
+        markRecorded: () => undefined,
+      };
+
+      await expect(
+        reserveNgaPublicSearchQuotaWithUsageEvent(db, usageEvent)
+      ).resolves.toMatchObject({ admitted: true });
+      expect(
+        sqlite
+          .prepare('SELECT user_id, query_type FROM api_usage_events WHERE id = ?')
+          .get(`accepted-${queryType}`)
+      ).toEqual({ user_id: 'public-search-web', query_type: queryType });
+      sqlite.close();
+    }
+  );
+
+  it('rolls back the debit when the public search service user is missing', async () => {
+    const { db, sqlite } = createD1();
+    sqlite.prepare('DELETE FROM users WHERE id = ?').run('public-search-web');
+    const usageEvent = {
+      id: 'accepted-search',
+      metadata: {},
+      statement: db
+        .prepare(
+          `
+          INSERT INTO api_usage_events (
+            id, user_id, usage_date, method, path, auth_kind, query_type
+          )
+          SELECT ?, 'public-search-web', '2026-08-28', 'POST',
+            '/api/v1/orgs/nga/search/text', 'api_key', 'text'
+          WHERE changes() = 1
+          `
+        )
+        .bind('accepted-search'),
+      markRecorded: () => undefined,
+    };
+
+    await expect(
+      reserveNgaPublicSearchQuotaWithUsageEvent(db, usageEvent)
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+    await expect(getNgaPublicSearchQuota(db)).resolves.toMatchObject({ used: 0 });
+    expect(sqlite.prepare('SELECT id FROM api_usage_events').all()).toEqual([]);
     sqlite.close();
   });
 
   it('rolls back the quota debit when accepted-search logging fails', async () => {
     const { db, sqlite } = createD1();
-    sqlite.prepare('INSERT INTO api_usage_events (id) VALUES (?)').run('taken');
+    sqlite
+      .prepare(
+        `
+        INSERT INTO api_usage_events (
+          id, user_id, usage_date, method, path, auth_kind
+        ) VALUES (?, 'public-search-web', '2026-08-28', 'POST', '/test', 'api_key')
+        `
+      )
+      .run('taken');
     const usageEvent = {
       id: 'accepted-search',
       metadata: {},
-      statement: db.prepare('INSERT INTO api_usage_events (id) VALUES (?)').bind('taken'),
+      statement: db
+        .prepare(
+          `
+          INSERT INTO api_usage_events (
+            id, user_id, usage_date, method, path, auth_kind
+          ) VALUES (?, 'public-search-web', '2026-08-28', 'POST', '/test', 'api_key')
+          `
+        )
+        .bind('taken'),
       markRecorded: () => undefined,
     };
 
@@ -213,7 +350,15 @@ describe('NGA public search quota', () => {
       id,
       metadata: {},
       statement: db
-        .prepare('INSERT INTO api_usage_events (id) SELECT ? WHERE changes() = 1')
+        .prepare(
+          `
+          INSERT INTO api_usage_events (
+            id, user_id, usage_date, method, path, auth_kind
+          )
+          SELECT ?, 'public-search-web', '2026-08-28', 'POST', '/test', 'api_key'
+          WHERE changes() = 1
+          `
+        )
         .bind(id),
       markRecorded: () => undefined,
     });
