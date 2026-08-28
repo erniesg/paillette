@@ -9,7 +9,7 @@ describe('NGS search quota API client', () => {
     getAccessToken.mockClear();
   });
 
-  it('loads the authenticated quota without consuming a search', async () => {
+  it('loads quota through the same-origin session proxy without exposing a bearer', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -30,12 +30,13 @@ describe('NGS search quota API client', () => {
       remaining: 991,
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/orgs\/ngs\/search\/quota$/),
+      '/api/backend/orgs/ngs/search/quota',
       expect.objectContaining({
-        headers: { Authorization: 'Bearer access-token' },
+        headers: {},
         signal: controller.signal,
       })
     );
+    expect(getAccessToken).not.toHaveBeenCalled();
   });
 
   it('preserves exhausted search code and quota details for the UI', async () => {
@@ -62,5 +63,31 @@ describe('NGS search quota API client', () => {
       code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
       details: { quota: { limit: 1000, used: 1000, remaining: 0 } },
     });
+  });
+
+  it('uses the same-origin session proxy for authenticated NGS browsing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: [],
+          pagination: { total: 0 },
+        })
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      apiClient.listArtworks('ngs', {
+        limit: 60,
+        offset: 0,
+        sortBy: 'title',
+        sortOrder: 'asc',
+      })
+    ).resolves.toEqual({ artworks: [], total: 0 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backend/orgs/ngs/artworks?limit=60&sort_by=title&sort_order=asc&org_id=ngs'
+    );
   });
 });

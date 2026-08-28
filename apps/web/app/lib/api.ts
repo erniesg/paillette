@@ -61,6 +61,10 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 const API_BASE = `${API_URL}/api/v1`;
+// Browser requests use the same-origin WorkOS session proxy. The access token
+// remains in the server-side session; never attach it to a browser fetch.
+const SESSION_API_BASE =
+  typeof window === 'undefined' ? API_BASE : '/api/backend';
 
 export const getPublicApiBaseUrl = () => API_BASE;
 
@@ -318,14 +322,19 @@ const normalizeArtwork = (artwork: Artwork): Artwork => {
 
 class ApiClient {
   private baseUrl: string;
+  private readonly usesSessionProxy: boolean;
 
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
+    this.usesSessionProxy = baseUrl === '/api/backend';
   }
 
   private async getAuthHeaders(
     getAccessToken: AccessTokenProvider
   ): Promise<Record<string, string>> {
+    if (this.usesSessionProxy) {
+      return {};
+    }
     const token = await getAccessToken();
 
     if (!token) {
@@ -340,6 +349,9 @@ class ApiClient {
   private async getOptionalAuthHeaders(
     getAccessToken?: AccessTokenProvider
   ): Promise<Record<string, string>> {
+    if (this.usesSessionProxy) {
+      return {};
+    }
     if (!getAccessToken) {
       return {};
     }
@@ -709,11 +721,18 @@ class ApiClient {
    */
   async listArtworks(
     orgId: string,
-    options?: { limit?: number; offset?: number }
+    options?: {
+      limit?: number;
+      offset?: number;
+      sortBy?: 'title' | 'artist' | 'year' | 'created_at' | 'updated_at';
+      sortOrder?: 'asc' | 'desc';
+    }
   ): Promise<{ artworks: Artwork[]; total: number }> {
     const params = new URLSearchParams();
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
+    if (options?.sortBy) params.append('sort_by', options.sortBy);
+    if (options?.sortOrder) params.append('sort_order', options.sortOrder);
 
     params.append('org_id', orgId);
 
@@ -1211,7 +1230,9 @@ const isE2ETest =
   (process.env.E2E_TEST_MODE === 'true' ||
     process.env.PLAYWRIGHT_TEST_MODE === 'true');
 
-export const apiClient = isE2ETest ? new MockApiClient() : new ApiClient();
+export const apiClient = isE2ETest
+  ? new MockApiClient()
+  : new ApiClient(SESSION_API_BASE);
 
 export const getApiClientForRequest = (request: Request) =>
   isE2ETest

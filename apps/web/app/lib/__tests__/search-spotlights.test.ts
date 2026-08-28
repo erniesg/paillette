@@ -104,7 +104,7 @@ describe('search spotlight loading', () => {
     expect(assetPath.endsWith(`-${digest}.json`)).toBe(true);
   });
 
-  it('loads the content-addressed NGS cache with an access token', async () => {
+  it('loads the content-addressed NGS cache through the WorkOS session proxy', async () => {
     const fetcher = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
@@ -120,13 +120,13 @@ describe('search spotlight loading', () => {
       /^\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
     );
     expect(loaded).toEqual(validNgsBundle);
-    expect(getAccessToken).toHaveBeenCalledTimes(1);
+    expect(getAccessToken).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringMatching(
-        /\/api\/v1\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
+        /^\/api\/backend\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
       ),
       expect.objectContaining({
-        headers: { Authorization: 'Bearer ngs-token' },
+        headers: {},
       })
     );
 

@@ -69,6 +69,7 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
 import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
   buildSuggestionPool,
@@ -149,6 +150,7 @@ import {
 } from '~/lib/usage-events';
 import type {
   ApiResponse,
+  Artwork,
   ArtworkSearchResult,
   SearchImageRequest,
   SearchResponse,
@@ -972,6 +974,40 @@ const publicBrowseCollection = async (
   return readBrowseResponse(response);
 };
 
+const authenticatedBrowseCollection = async (
+  orgId: string,
+  request: {
+    limit: number;
+    offset: number;
+    sortBy: 'title' | 'artist' | 'year' | 'created_at' | 'updated_at';
+    sortOrder: 'asc' | 'desc';
+  }
+): Promise<BrowseCollectionResponse> => {
+  const { artworks, total } = await apiClient.listArtworks(orgId, request);
+  const results = artworks.map(
+    (artwork: Artwork): ArtworkSearchResult => ({
+      id: artwork.id,
+      orgId: artwork.orgId || artwork.galleryId || orgId,
+      galleryId: artwork.galleryId || artwork.orgId || orgId,
+      title: artwork.title,
+      artist: artwork.artist,
+      year: artwork.year,
+      imageUrl: artwork.imageUrl || artwork.image_url || null,
+      thumbnailUrl: artwork.thumbnailUrl || artwork.thumbnail_url || null,
+      similarity: 1,
+      metadata: artwork.metadata || {},
+    })
+  );
+  return {
+    results,
+    count: results.length,
+    total,
+    limit: request.limit,
+    offset: request.offset,
+    hasMore: request.offset + results.length < total,
+  };
+};
+
 const getBrowseSort = (
   sortMode: SortMode
 ): {
@@ -1000,10 +1036,11 @@ export default function SearchPage() {
   } = useLoaderData<typeof loader>();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthenticated, login, signup, getAccessToken } = useUser();
+  const { isAuthenticated, login, signup, getAccessToken, searchAccess } =
+    useUser();
   const queryClient = useQueryClient();
   const isNgsSearch = preferredRouteId === 'ngs';
-  const isNgsSearchLocked = isNgsSearch && !isAuthenticated;
+  const isNgsSearchLocked = isNgsSearch && searchAccess !== 'approved';
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
@@ -1276,7 +1313,7 @@ export default function SearchPage() {
   const shouldLoadSpotlights =
     hasMounted &&
     Boolean(spotlightProvider) &&
-    (spotlightProvider !== 'ngs' || isAuthenticated);
+    (spotlightProvider !== 'ngs' || searchAccess === 'approved');
   const spotlightBundleQuery = useQuery({
     queryKey: [
       'search-spotlights',
@@ -1301,7 +1338,7 @@ export default function SearchPage() {
     queryKey: getNgsSearchQuotaQueryKey(publicSearchOrgId),
     queryFn: ({ signal }) =>
       apiClient.getNgsSearchQuota(publicSearchOrgId, getAccessToken, signal),
-    enabled: hasMounted && isNgsSearch && isAuthenticated,
+    enabled: hasMounted && isNgsSearch && searchAccess === 'approved',
     ...NGS_SEARCH_QUOTA_QUERY_OPTIONS,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
@@ -1508,13 +1545,17 @@ export default function SearchPage() {
         ]
       : (['browse', 'locked', publicSearchOrgId] as const),
     initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      publicBrowseCollection(publicSearchOrgId, {
+    queryFn: ({ pageParam }) => {
+      const request = {
         limit: browsePageSize,
         offset: Number(pageParam),
         sortBy: browseSort.sortBy,
         sortOrder: browseSort.sortOrder,
-      }),
+      };
+      return isNgsSearch
+        ? authenticatedBrowseCollection(publicSearchOrgId, request)
+        : publicBrowseCollection(publicSearchOrgId, request);
+    },
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
     enabled: hasMounted && isBrowsingCollection && canSearchOnPage,
@@ -2382,24 +2423,30 @@ export default function SearchPage() {
               {isNgsSearchLocked ? (
                 <div className="rounded-lg border border-fuchsia-300/30 bg-fuchsia-300/10 px-4 py-3 text-center">
                   <p className="text-sm font-medium text-fuchsia-100">
-                    NGS search is private.
+                    {searchAccess === 'pending'
+                      ? 'NGS search access is pending.'
+                      : 'NGS search is private.'}
                   </p>
                   <p className="mt-1 text-xs text-white/70">
-                    Sign in to access National Gallery Singapore collections.
+                    {searchAccess === 'pending'
+                      ? 'Your account is signed in but awaiting approval. No search requests are being sent.'
+                      : 'Sign in to access National Gallery Singapore collections.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void login({ returnTo: getCurrentReturnTo() })
-                    }
-                    className="mt-2 inline-flex h-8 items-center rounded-md border border-white/20 bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/20"
-                  >
-                    Log in to continue
-                  </button>
+                  {searchAccess === 'anonymous' ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void login({ returnTo: getCurrentReturnTo() })
+                      }
+                      className="mt-2 inline-flex h-8 items-center rounded-md border border-white/20 bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/20"
+                    >
+                      Log in to continue
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 
-              {isNgsSearch && isAuthenticated && ngsSearchQuota ? (
+              {isNgsSearch && searchAccess === 'approved' && ngsSearchQuota ? (
                 <div
                   role="status"
                   aria-live="polite"
@@ -3490,6 +3537,22 @@ function SuggestionPicker({
 
 type ArtworkImageRole = 'thumbnail' | 'large';
 
+const NGS_ARTWORK_ORG_IDS = new Set([
+  'ngs',
+  'national-gallery-singapore',
+  'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+]);
+
+const getImageUrlForArtwork = (
+  artwork: ArtworkSearchResult,
+  value: string | null | undefined
+) =>
+  NGS_ARTWORK_ORG_IDS.has(
+    String(artwork.orgId || artwork.galleryId || '').toLowerCase()
+  )
+    ? getAuthenticatedAssetUrl(value)
+    : value || null;
+
 const getArtworkImageSources = (
   artwork: ArtworkSearchResult,
   role: ArtworkImageRole
@@ -3498,8 +3561,11 @@ const getArtworkImageSources = (
     image_url?: string | null;
     thumbnail_url?: string | null;
   };
-  const imageUrl = getPublicImageUrl(asset);
-  const thumbnailUrl = getPublicThumbnailUrl(asset);
+  const imageUrl = getImageUrlForArtwork(artwork, getPublicImageUrl(asset));
+  const thumbnailUrl = getImageUrlForArtwork(
+    artwork,
+    getPublicThumbnailUrl(asset)
+  );
 
   if (role === 'large') {
     return {
