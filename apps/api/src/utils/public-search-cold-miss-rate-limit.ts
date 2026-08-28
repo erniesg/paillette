@@ -5,6 +5,7 @@ export const PUBLIC_SEARCH_COLD_MISS_DEFAULT_LIMIT = 10;
 export const PUBLIC_SEARCH_COLD_MISS_KV_TTL_SECONDS = 120;
 export const PUBLIC_SEARCH_COLD_MISS_READ_TIMEOUT_MS = 100;
 export const PUBLIC_SEARCH_COLD_MISS_WRITE_TIMEOUT_MS = 100;
+const PUBLIC_SEARCH_REQUEST_RATE_LIMIT_RETENTION_WINDOWS = 60;
 
 type LocalBucket = {
   expiresAt: number;
@@ -272,7 +273,16 @@ export const enforcePublicSearchRequestRateLimit = async (
   const minuteBucket = Math.floor(now / PUBLIC_SEARCH_COLD_MISS_WINDOW_MS);
   const clientHash = await sha256(clientIdentity);
   try {
-    const reserved = await options.db
+    // Run expiry cleanup before the guarded upsert on every request. The
+    // window_start index keeps this bounded-range deletion cheap; if it fails,
+    // the catch below fails closed before any lifetime quota can be spent.
+    await options.db
+      .prepare(
+        'DELETE FROM nga_public_search_request_rate_limits WHERE window_start < ?'
+      )
+      .bind(minuteBucket - PUBLIC_SEARCH_REQUEST_RATE_LIMIT_RETENTION_WINDOWS)
+      .run();
+    const admitted = await options.db
       .prepare(
         `
         INSERT INTO nga_public_search_request_rate_limits (
@@ -287,19 +297,8 @@ export const enforcePublicSearchRequestRateLimit = async (
       )
       .bind(clientHash, minuteBucket, limit)
       .first<{ used: number }>();
-    if (!reserved) {
+    if (!admitted) {
       throw new PublicSearchColdMissRateLimitError(retryAfterSeconds(now));
-    }
-    // Limit cleanup cost to one attempt per hour of request windows. It is
-    // best-effort only and never changes the admission decision above.
-    if (minuteBucket % 60 === 0) {
-      void options.db
-        .prepare(
-          'DELETE FROM nga_public_search_request_rate_limits WHERE window_start < ?'
-        )
-        .bind(minuteBucket - 60)
-        .run()
-        .catch(() => undefined);
     }
   } catch (error) {
     if (error instanceof PublicSearchColdMissRateLimitError) throw error;

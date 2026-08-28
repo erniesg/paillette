@@ -26,30 +26,42 @@ const createCache = () => {
 
 const createRequestLimiterDb = () => {
   const buckets = new Map<string, number>();
-  return {
+  const deleteBefore = vi.fn((windowStart: number) => {
+    for (const key of buckets.keys()) {
+      const bucketStart = Number(key.slice(key.lastIndexOf(':') + 1));
+      if (bucketStart < windowStart) buckets.delete(key);
+    }
+  });
+  const db = {
     prepare: vi.fn((sql: string) => {
       let params: unknown[] = [];
+      const execute = () => {
+        if (sql.startsWith('DELETE FROM nga_public_search_request_rate_limits')) {
+          deleteBefore(params[0] as number);
+          return { success: true, results: [] };
+        }
+        if (!sql.includes('nga_public_search_request_rate_limits')) {
+          return { success: true, results: [] };
+        }
+        const [clientHash, windowStart, limit] = params as [string, number, number];
+        const key = `${clientHash}:${windowStart}`;
+        const used = buckets.get(key) || 0;
+        if (used >= limit) return { success: true, results: [] };
+        buckets.set(key, used + 1);
+        return { success: true, results: [{ used: used + 1 }] };
+      };
       const statement = {
         bind: (...values: unknown[]) => {
           params = values;
           return statement;
         },
-        first: vi.fn(async () => {
-          if (!sql.includes('nga_public_search_request_rate_limits')) {
-            return null;
-          }
-          const [clientHash, windowStart, limit] = params as [string, number, number];
-          const key = `${clientHash}:${windowStart}`;
-          const used = buckets.get(key) || 0;
-          if (used >= limit) return null;
-          buckets.set(key, used + 1);
-          return { used: used + 1 };
-        }),
-        run: vi.fn(async () => ({ success: true })),
+        first: vi.fn(async () => execute().results[0] ?? null),
+        run: vi.fn(async () => execute()),
       };
       return statement;
     }),
   } as unknown as D1Database;
+  return { db, buckets, deleteBefore };
 };
 
 describe('enforcePublicSearchColdMissRateLimit', () => {
@@ -274,7 +286,7 @@ describe('enforcePublicSearchRequestRateLimit', () => {
   });
 
   it('counts cached replays per client and rejects before an eleventh request', async () => {
-    const db = createRequestLimiterDb();
+    const { db } = createRequestLimiterDb();
     const options = {
       db,
       clientIdentity: 'public:203.0.113.42',
@@ -291,7 +303,7 @@ describe('enforcePublicSearchRequestRateLimit', () => {
   });
 
   it('keeps independently identified clients in separate request buckets', async () => {
-    const db = createRequestLimiterDb();
+    const { db } = createRequestLimiterDb();
 
     await enforcePublicSearchRequestRateLimit({
       db,
@@ -310,7 +322,7 @@ describe('enforcePublicSearchRequestRateLimit', () => {
   });
 
   it('admits no more than the configured limit under concurrent attempts', async () => {
-    const db = createRequestLimiterDb();
+    const { db } = createRequestLimiterDb();
     const attempts = await Promise.allSettled(
       Array.from({ length: 5 }, () =>
         enforcePublicSearchRequestRateLimit({
@@ -324,6 +336,30 @@ describe('enforcePublicSearchRequestRateLimit', () => {
 
     expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(2);
     expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(3);
+  });
+
+  it('removes expired buckets after skipped cleanup boundaries without affecting admission', async () => {
+    const { db, buckets, deleteBefore } = createRequestLimiterDb();
+    const clientIdentity = 'public:203.0.113.47';
+
+    await enforcePublicSearchRequestRateLimit({
+      db,
+      clientIdentity,
+      limit: 2,
+      now: () => NOW,
+    });
+    await enforcePublicSearchRequestRateLimit({
+      db,
+      clientIdentity,
+      limit: 2,
+      now: () => NOW + 61 * 60_000,
+    });
+
+    expect(deleteBefore).toHaveBeenCalledWith(
+      Math.floor((NOW + 61 * 60_000) / 60_000) - 60
+    );
+    expect(buckets).toHaveLength(1);
+    expect([...buckets.values()]).toEqual([1]);
   });
 
   it('fails closed when distributed request-limit state is unavailable', async () => {
