@@ -29,6 +29,9 @@ export interface AuthPrincipal {
   externalIssuer?: string;
   externalSubject?: string;
   searchAccess?: GrantedSearchAccessDecision;
+  /** A short-lived, signed handoff created by the MCP route for an internal
+   * REST call. Never accepted from a bearer token. */
+  internalMcp?: true;
 }
 
 type Variables = {
@@ -53,6 +56,136 @@ const getBearerToken = (authorization: string | undefined) => {
   }
 
   return authorization.slice(prefix.length).trim();
+};
+
+export const MCP_INTERNAL_CAPABILITY_HEADER =
+  'X-Paillette-MCP-Internal-Capability';
+
+const MCP_INTERNAL_CAPABILITY_TTL_MS = 15_000;
+
+type McpInternalCapabilityPayload = {
+  v: 1;
+  exp: number;
+  method: string;
+  path: string;
+  userId: string;
+  email?: string;
+  name?: string;
+  scopes: string[];
+};
+
+const encodeBase64Url = (value: Uint8Array) => {
+  let binary = '';
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+};
+
+const decodeBase64Url = (value: string) => {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) return null;
+  try {
+    const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '==='.slice((value.length + 3) % 4);
+    const binary = atob(padded);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  } catch {
+    return null;
+  }
+};
+
+const getMcpCapabilityKey = async (env: Env) => {
+  const secret = env.API_KEY_PEPPER?.trim();
+  if (!secret) throw new Error('MCP internal capability is not configured');
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify']
+  );
+};
+
+/**
+ * Creates a narrow internal-only credential for an MCP tool's single REST
+ * call. It binds the authenticated MCP identity to one HTTP method and path;
+ * it deliberately does not carry or forward the caller's OAuth bearer token.
+ */
+export const createMcpInternalCapability = async (
+  env: Env,
+  auth: AuthPrincipal,
+  method: string,
+  path: string,
+  expiresAt = Date.now() + MCP_INTERNAL_CAPABILITY_TTL_MS
+) => {
+  const payload: McpInternalCapabilityPayload = {
+    v: 1,
+    exp: expiresAt,
+    method: method.toUpperCase(),
+    path,
+    userId: auth.userId,
+    ...(auth.email ? { email: auth.email } : {}),
+    ...(auth.name ? { name: auth.name } : {}),
+    scopes: auth.scopes,
+  };
+  const encodedPayload = encodeBase64Url(
+    new TextEncoder().encode(JSON.stringify(payload))
+  );
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await getMcpCapabilityKey(env),
+    new TextEncoder().encode(encodedPayload)
+  );
+  return `v1.${encodedPayload}.${encodeBase64Url(new Uint8Array(signature))}`;
+};
+
+const verifyMcpInternalCapability = async (
+  c: Context<AppBindings>
+): Promise<AuthPrincipal | null> => {
+  const capability = c.req.header(MCP_INTERNAL_CAPABILITY_HEADER);
+  if (!capability) return null;
+
+  const [version, encodedPayload, encodedSignature, ...extra] = capability.split('.');
+  if (version !== 'v1' || !encodedPayload || !encodedSignature || extra.length) {
+    return null;
+  }
+  const payloadBytes = decodeBase64Url(encodedPayload);
+  const signature = decodeBase64Url(encodedSignature);
+  if (!payloadBytes || !signature) return null;
+
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    await getMcpCapabilityKey(c.env),
+    signature,
+    new TextEncoder().encode(encodedPayload)
+  );
+  if (!valid) return null;
+
+  let payload: McpInternalCapabilityPayload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+  } catch {
+    return null;
+  }
+  if (
+    payload.v !== 1 ||
+    !Number.isFinite(payload.exp) ||
+    payload.exp <= Date.now() ||
+    payload.method !== c.req.method.toUpperCase() ||
+    payload.path !== new URL(c.req.url).pathname ||
+    typeof payload.userId !== 'string' ||
+    !payload.userId ||
+    !Array.isArray(payload.scopes) ||
+    !payload.scopes.every((scope) => typeof scope === 'string')
+  ) {
+    return null;
+  }
+
+  return {
+    kind: 'user',
+    userId: payload.userId,
+    email: payload.email,
+    name: payload.name,
+    scopes: payload.scopes,
+    internalMcp: true,
+  } satisfies AuthPrincipal;
 };
 
 const getJwks = (issuer: string, explicitJwksUri?: string) => {
@@ -873,10 +1006,12 @@ export const requireAuthOrApiKey = async (
       await next();
       return;
     }
+    const internalMcpAuth = await verifyMcpInternalCapability(c);
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const apiKey = getApiKeyFromRequest(c, bearerToken);
 
     const auth =
+      internalMcpAuth ||
       (apiKey ? verifyPublicSearchApiKey(c, apiKey) : null) ||
       (apiKey ? await verifyPersonalApiKey(c, apiKey) : null) ||
       (bearerToken && !bearerToken.startsWith('plt_')

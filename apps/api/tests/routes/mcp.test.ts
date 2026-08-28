@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import mcpRoutes from '../../src/routes/mcp';
 import type { Env } from '../../src/index';
+import { requireAuthOrApiKey } from '../../src/middleware/auth';
 
 const makeEnv = (): Env =>
   ({
@@ -23,11 +24,14 @@ const makeEnv = (): Env =>
     BUCKET: {} as R2Bucket,
     ENVIRONMENT: 'test',
     API_VERSION: 'v1',
+    API_KEY_PEPPER: 'test-only-mcp-capability-secret',
   }) as Env;
 
 const quota = { limit: 1000, used: 1000, remaining: 0 };
 
-const callTool = (name: 'search_artworks' | 'colour_search') => {
+const callTool = (
+  name: 'search_artworks' | 'colour_search' | 'lookup_artwork'
+) => {
   const app = new Hono<{ Bindings: Env }>();
   app.route('/api/v1/mcp', mcpRoutes);
   return app.request(
@@ -47,7 +51,9 @@ const callTool = (name: 'search_artworks' | 'colour_search') => {
           arguments:
             name === 'search_artworks'
               ? { query: 'mangrove shore', collection: 'ngs' }
-              : { colors: ['#112233'], collection: 'ngs' },
+              : name === 'colour_search'
+                ? { colors: ['#112233'], collection: 'ngs' }
+                : { artworkId: 'nga-1', collection: 'ngs' },
         },
       }),
     },
@@ -62,8 +68,14 @@ describe('MCP downstream REST errors', () => {
     'preserves an exhausted NGS quota from %s without repeating the request',
     async (name) => {
       let debits = 0;
-      const fetchMock = vi.fn(async () => {
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         debits += 1;
+        const headers = new Headers(init?.headers);
+        expect(headers.get('Authorization')).toBeNull();
+        expect(headers.get('X-API-Key')).toBeNull();
+        expect(headers.get('X-Paillette-MCP-Internal-Capability')).toMatch(
+          /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
+        );
         return new Response(
           JSON.stringify({
             success: false,
@@ -100,6 +112,41 @@ describe('MCP downstream REST errors', () => {
           code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
           details: { quota },
           quota,
+        },
+      });
+    }
+  );
+});
+
+describe('MCP internal REST handoff', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['search_artworks', 'colour_search', 'lookup_artwork'] as const)(
+    'executes %s through exactly one authenticated internal REST request',
+    async (name) => {
+      const downstream = new Hono<{ Bindings: Env }>();
+      let debits = 0;
+      downstream.use('*', requireAuthOrApiKey as any);
+      downstream.all('/api/v1/*', async (c) => {
+        debits += 1;
+        return c.json({
+          success: true,
+          data: { source: 'internal-rest', userId: c.get('auth').userId },
+        });
+      });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+          downstream.request(input, init, makeEnv())
+        )
+      );
+
+      const response = await callTool(name);
+      expect(response.status).toBe(200);
+      expect(debits).toBe(1);
+      await expect(response.json()).resolves.toMatchObject({
+        result: {
+          structuredContent: { source: 'internal-rest', userId: 'mcp-user' },
         },
       });
     }

@@ -2,9 +2,11 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../index';
 import {
+  createMcpInternalCapability,
   getAuth,
   requireAuthOrApiKey,
   type AuthPrincipal,
+  MCP_INTERNAL_CAPABILITY_HEADER,
 } from '../middleware/auth';
 import { NGS_ORG_KEY } from '../utils/orgs';
 
@@ -523,13 +525,6 @@ const jsonRpcError = (
   },
 });
 
-const copyHeader = (source: Headers, target: Headers, name: string) => {
-  const value = source.get(name);
-  if (value) {
-    target.set(name, value);
-  }
-};
-
 const NGS_QUOTA_HEADER_NAMES = [
   'X-NGA-Search-Limit',
   'X-NGA-Search-Used',
@@ -567,15 +562,18 @@ const callApi = async (
 ) => {
   const url = new URL(`/api/v1${path}`, c.req.url);
   const headers = new Headers(init.headers);
-  const incoming = c.req.raw.headers;
-
-  copyHeader(incoming, headers, 'Authorization');
-  copyHeader(incoming, headers, 'X-API-Key');
-  if (c.env.ENVIRONMENT === 'test') {
-    copyHeader(incoming, headers, 'X-User-Id');
-    copyHeader(incoming, headers, 'X-User-Email');
-    copyHeader(incoming, headers, 'X-User-Name');
-  }
+  // Do not replay an OAuth bearer or personal API key to the REST surface.
+  // The tool call has already been authorized; this one-use, short-lived
+  // capability is constrained to the exact downstream method and pathname.
+  headers.set(
+    MCP_INTERNAL_CAPABILITY_HEADER,
+    await createMcpInternalCapability(
+      c.env,
+      getAuth(c),
+      init.method || 'GET',
+      url.pathname
+    )
+  );
 
   const response = await fetch(url, {
     ...init,

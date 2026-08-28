@@ -3,6 +3,8 @@ import { SignJWT, exportJWK, generateKeyPair, type JWK } from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createMcpInternalCapability,
+  MCP_INTERNAL_CAPABILITY_HEADER,
   requireAuthOrApiKey,
   requireApprovedDataAccess,
   type AuthPrincipal,
@@ -110,7 +112,7 @@ describe('API key and test-principal boundaries', () => {
       request('/api/v1/assets/asset-1/content', publicHeaders, env)
     ).resolves.toMatchObject({ status: 403 });
     await expect(
-      request('/api/v1/orgs/ngs/search/text', publicHeaders, env)
+      request('/api/v1/orgs/nga/search/text', publicHeaders, env)
     ).resolves.toMatchObject({ status: 200 });
   });
 });
@@ -173,5 +175,94 @@ describe('MCP OAuth verifier dispatch', () => {
       env as any
     );
     expect(search.status).toBe(401);
+  });
+});
+
+describe('MCP internal REST capability', () => {
+  const env = {
+    ENVIRONMENT: 'staging',
+    SEARCH_ACCESS_MODE: 'authenticated',
+    API_KEY_PEPPER: 'test-only-mcp-capability-secret',
+    DB: {
+      prepare: () => {
+        const statement = {
+          bind: () => statement,
+          run: async () => ({ success: true, meta: { changes: 1 } }),
+        };
+        return statement;
+      },
+    },
+  };
+
+  const restApp = () => {
+    const app = new Hono<any>();
+    app.use('*', requireAuthOrApiKey as any);
+    app.post('/api/v1/orgs/nga/search/text', (c) =>
+      c.json({ userId: c.get('auth').userId, scopes: c.get('auth').scopes })
+    );
+    return app;
+  };
+
+  const mcpPrincipal: AuthPrincipal = {
+    kind: 'user',
+    userId: 'legacy-mcp-user',
+    email: 'legacy@example.test',
+    scopes: ['mcp:read'],
+  };
+
+  it('accepts only a signed, unexpired capability for its exact REST call', async () => {
+    const capability = await createMcpInternalCapability(
+      env as any,
+      mcpPrincipal,
+      'POST',
+      '/api/v1/orgs/nga/search/text'
+    );
+
+    const response = await restApp().request(
+      '/api/v1/orgs/nga/search/text',
+      {
+        method: 'POST',
+        headers: { [MCP_INTERNAL_CAPABILITY_HEADER]: capability },
+      },
+      env as any
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      userId: 'legacy-mcp-user',
+      scopes: ['mcp:read'],
+    });
+  });
+
+  it('rejects forged, expired, or wrong-method MCP capabilities', async () => {
+    const valid = await createMcpInternalCapability(
+      env as any,
+      mcpPrincipal,
+      'POST',
+      '/api/v1/orgs/nga/search/text'
+    );
+    const expired = await createMcpInternalCapability(
+      env as any,
+      mcpPrincipal,
+      'POST',
+      '/api/v1/orgs/nga/search/text',
+      Date.now() - 1
+    );
+
+    for (const [method, capability] of [
+      [
+        'POST',
+        `${valid.slice(0, -1)}${valid.endsWith('a') ? 'b' : 'a'}`,
+      ],
+      ['POST', expired],
+      ['GET', valid],
+    ] as const) {
+      const response = await restApp().request(
+        '/api/v1/orgs/nga/search/text',
+        { method, headers: { [MCP_INTERNAL_CAPABILITY_HEADER]: capability } },
+        env as any
+      );
+      expect(response.status).toBe(401);
+    }
   });
 });
