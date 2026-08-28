@@ -571,9 +571,11 @@ const callApi = async (
 
   copyHeader(incoming, headers, 'Authorization');
   copyHeader(incoming, headers, 'X-API-Key');
-  copyHeader(incoming, headers, 'X-User-Id');
-  copyHeader(incoming, headers, 'X-User-Email');
-  copyHeader(incoming, headers, 'X-User-Name');
+  if (c.env.ENVIRONMENT === 'test') {
+    copyHeader(incoming, headers, 'X-User-Id');
+    copyHeader(incoming, headers, 'X-User-Email');
+    copyHeader(incoming, headers, 'X-User-Name');
+  }
 
   const response = await fetch(url, {
     ...init,

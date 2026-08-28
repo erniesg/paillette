@@ -67,6 +67,13 @@ describe('verifyIdentityToken', () => {
     ).rejects.toThrow('Invalid authentication token');
   });
 
+  it('does not normalize an issuer trailing slash during verification', async () => {
+    const token = await signToken();
+    await expect(
+      verifyIdentityToken(token, { issuer: `${issuer}/`, clientId }, jwks)
+    ).rejects.toThrow('Invalid authentication token');
+  });
+
   it('rejects a token issued for a different WorkOS application', async () => {
     const token = await signToken({ client_id: 'client_other' });
     await expect(

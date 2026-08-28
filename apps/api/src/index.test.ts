@@ -31,6 +31,21 @@ describe('API Health Check', () => {
     expect(exposed).toContain('X-NGS-Search-Remaining');
   });
 
+  it('does not allow browser clients to send synthetic identity headers', async () => {
+    const req = new Request('http://localhost/health', {
+      headers: {
+        Origin: 'http://localhost:5173',
+        'Access-Control-Request-Headers': 'X-User-Id',
+      },
+    });
+    const env = { ENVIRONMENT: 'test', API_VERSION: 'v1' } as any;
+
+    const res = await app.fetch(req, env);
+    expect(res.headers.get('Access-Control-Allow-Headers') || '').not.toContain(
+      'X-User-Id'
+    );
+  });
+
   it('should return 404 for unknown routes', async () => {
     const req = new Request('http://localhost/unknown');
     const env = {} as any;

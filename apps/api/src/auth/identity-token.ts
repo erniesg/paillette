@@ -40,7 +40,7 @@ export const verifyIdentityToken = async (
 
     return {
       provider: 'workos',
-      issuer: config.issuer.replace(/\/+$/, ''),
+      issuer: config.issuer,
       subject: payload.sub,
       email: email.trim().toLowerCase(),
       emailVerified,

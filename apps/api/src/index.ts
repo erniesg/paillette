@@ -89,14 +89,7 @@ app.use(
       'https://paillette-stg.berlayar.ai',
     ],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-API-Key',
-      'X-User-Id',
-      'X-User-Email',
-      'X-User-Name',
-    ],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
     exposeHeaders: [
       'Content-Length',
       'WWW-Authenticate',

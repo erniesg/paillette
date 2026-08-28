@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
-import { requireLogtoUser } from '../middleware/auth';
+import { requireUser } from '../middleware/auth';
 
 const impactRoutes = new Hono<{ Bindings: Env }>();
 
-impactRoutes.use('*', requireLogtoUser as any);
+impactRoutes.use('*', requireUser as any);
 
 impactRoutes.get(
   '/artworks',

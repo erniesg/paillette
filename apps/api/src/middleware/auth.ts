@@ -1,5 +1,10 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import {
+  createRemoteJWKSet,
+  decodeJwt,
+  jwtVerify,
+  type JWTPayload,
+} from 'jose';
 import type { Env } from '../index';
 import { generateId, generateToken, hashApiKey } from '../utils/crypto';
 import { isNgsPublicOrg } from '../utils/orgs';
@@ -532,6 +537,59 @@ const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
 };
 
 /**
+ * MCP's advertised OAuth authorization server is distinct from WorkOS
+ * AuthKit. Accept those access tokens only on the MCP resource and only with
+ * the exact configured issuer, JWKS URI, and resource audience.
+ */
+const verifyMcpOAuthToken = async (
+  c: Context<AppBindings>,
+  token: string
+): Promise<AuthPrincipal> => {
+  const issuer = c.env.LOGTO_ISSUER;
+  const jwksUri = c.env.LOGTO_JWKS_URI;
+  const audience = c.env.LOGTO_API_RESOURCE;
+  if (
+    !issuer ||
+    !jwksUri ||
+    !audience ||
+    issuer !== issuer.trim() ||
+    jwksUri !== jwksUri.trim() ||
+    audience !== audience.trim()
+  ) {
+    throw new Error('MCP OAuth is not configured');
+  }
+
+  const { payload } = await jwtVerify(token, getJwks(issuer, jwksUri), {
+    issuer,
+    audience,
+  });
+  if (typeof payload.sub !== 'string' || !payload.sub) {
+    throw new Error('Missing subject in MCP OAuth token');
+  }
+
+  return {
+    kind: 'user',
+    userId: payload.sub,
+    email: typeof payload.email === 'string' ? payload.email : undefined,
+    name: typeof payload.name === 'string' ? payload.name : undefined,
+    scopes: getScopes(payload),
+  };
+};
+
+const isMcpRequest = (c: Context<AppBindings>) =>
+  /(?:^|\/)api\/v1\/mcp(?:\/|$)|(?:^|\/)mcp(?:\/|$)/.test(c.req.path);
+
+const verifyBearerForRoute = async (c: Context<AppBindings>, token: string) => {
+  // Decode solely to select the dedicated verifier. Each verifier still
+  // verifies signature, issuer, expiry, and its own audience independently.
+  const tokenIssuer = decodeJwt(token).iss;
+  if (isMcpRequest(c) && tokenIssuer === c.env.LOGTO_ISSUER) {
+    return verifyMcpOAuthToken(c, token);
+  }
+  return verifyConfiguredIdentityToken(c, token);
+};
+
+/**
  * Verifies a WorkOS AuthKit session token and binds it to the single internal
  * user identified by its immutable issuer + subject pair. Email is profile
  * data only; it is never used as an identity key.
@@ -540,24 +598,30 @@ const verifyConfiguredIdentityToken = async (
   c: Context<AppBindings>,
   token: string
 ): Promise<AuthPrincipal> => {
-  const clientId = c.env.AUTH_CLIENT_ID?.trim();
-  const issuer = c.env.AUTH_ISSUER?.trim();
-  const jwksUri = c.env.AUTH_JWKS_URI?.trim();
+  const clientId = c.env.AUTH_CLIENT_ID;
+  const issuer = c.env.AUTH_ISSUER;
+  const jwksUri = c.env.AUTH_JWKS_URI;
 
   // Keep the existing local Logto test/dev path only while WorkOS has not
   // been configured. Deployed environments must always configure WorkOS.
-  if (!clientId || !issuer || !jwksUri) {
+  if (
+    !clientId ||
+    !issuer ||
+    !jwksUri ||
+    clientId !== clientId.trim() ||
+    issuer !== issuer.trim() ||
+    jwksUri !== jwksUri.trim()
+  ) {
     if (allowsIssuerOnlyLogtoFallback(c.env)) {
       return verifyLogtoToken(c, token);
     }
     throw new Error('Authentication is not configured');
   }
 
-  const normalizedIssuer = trimTrailingSlash(issuer);
   const identity = await verifyIdentityToken(
     token,
-    { issuer: normalizedIssuer, clientId },
-    getJwks(normalizedIssuer, jwksUri)
+    { issuer, clientId },
+    getJwks(issuer, jwksUri)
   );
   if (!identity.emailVerified) {
     throw new Error('WorkOS email is not verified');
@@ -682,15 +746,19 @@ const getTestPrincipal = (c: Context<AppBindings>): AuthPrincipal | null => {
     userId,
     email: c.req.header('X-User-Email') || `${userId}@test.local`,
     name: c.req.header('X-User-Name') || userId,
-    scopes: isPublicSearchProxy ? ['test', 'public_search'] : ['test'],
+    scopes: isPublicSearchProxy
+      ? ['test', 'public_search']
+      : userId === 'mcp-user'
+        ? ['test', 'mcp:read']
+        : ['test'],
   } satisfies AuthPrincipal;
 };
 
-export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
+export const requireUser = async (c: Context<AppBindings>, next: Next) => {
   try {
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const auth = bearerToken
-      ? await verifyConfiguredIdentityToken(c, bearerToken)
+      ? await verifyBearerForRoute(c, bearerToken)
       : getTestPrincipal(c);
 
     if (!auth || auth.kind !== 'user') {
@@ -699,7 +767,7 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
           success: false,
           error: {
             code: 'UNAUTHORIZED',
-            message: 'Logto sign-in required',
+            message: 'Sign-in required',
           },
         },
         401
@@ -728,11 +796,6 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
     );
   }
 };
-
-// Backwards-compatible export for route modules. The configured identity
-// provider is WorkOS; the old name is retained only to avoid a public import
-// break while callers migrate.
-export const requireUser = requireLogtoUser;
 
 export const requireApprovedDataAccess = async (
   c: Context<AppBindings>,
@@ -817,7 +880,7 @@ export const requireAuthOrApiKey = async (
       (apiKey ? verifyPublicSearchApiKey(c, apiKey) : null) ||
       (apiKey ? await verifyPersonalApiKey(c, apiKey) : null) ||
       (bearerToken && !bearerToken.startsWith('plt_')
-        ? await verifyConfiguredIdentityToken(c, bearerToken)
+        ? await verifyBearerForRoute(c, bearerToken)
         : null) ||
       getTestPrincipal(c);
 
@@ -847,7 +910,11 @@ export const requireAuthOrApiKey = async (
       );
     }
 
-    if (auth.kind === 'user' && !auth.externalSubject) {
+    if (
+      auth.kind === 'user' &&
+      !auth.externalSubject &&
+      !auth.scopes.includes('public_search')
+    ) {
       await ensureUser(c, auth);
     }
 

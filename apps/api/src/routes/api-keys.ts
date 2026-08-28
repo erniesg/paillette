@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
-import { createApiKey, getAuth, requireLogtoUser } from '../middleware/auth';
+import { createApiKey, getAuth, requireUser } from '../middleware/auth';
 import { generateId } from '../utils/crypto';
 import { parseSearchAccessMode } from '../auth/search-access';
 
@@ -16,7 +16,7 @@ const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(80).optional().default('Default key'),
 });
 
-apiKeys.use('*', requireLogtoUser);
+apiKeys.use('*', requireUser);
 
 apiKeys.get('/access', async (c) => {
   const auth = getAuth(c as any);
