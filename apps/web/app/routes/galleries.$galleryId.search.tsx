@@ -135,15 +135,14 @@ import {
 } from '~/lib/search-spotlights';
 import { apiClient } from '~/lib/api';
 import {
-  canRetryNgsSearch,
-  formatNgsSearchQuota,
-  getNgsSearchQuotaQueryKey,
-  getNgsSearchQuotaFromError,
-  isNgsSearchQuotaExhausted,
-  NGS_SEARCH_QUERY_OPTIONS,
-  NGS_SEARCH_QUOTA_QUERY_OPTIONS,
-  reconcileNgsSearchQuota,
-} from '~/lib/ngs-search-quota';
+  canRetryNgaSearch,
+  formatNgaSearchQuota,
+  getNgaSearchQuotaQueryKey,
+  getNgaSearchQuotaFromError,
+  isNgaSearchQuotaExhausted,
+  NGA_SEARCH_QUOTA_QUERY_OPTIONS,
+  reconcileNgaSearchQuota,
+} from '~/lib/nga-search-quota';
 import {
   trackPublicUsageEvent,
   type PublicArtworkInteractionType,
@@ -874,7 +873,8 @@ const readSearchResponse = async (response: Response) => {
     throw new PublicSearchRequestError(
       payload.error?.message || 'Search failed',
       response.status,
-      payload.error?.code
+      payload.error?.code,
+      payload.error?.details
     );
   }
 
@@ -885,7 +885,8 @@ class PublicSearchRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    readonly details?: Record<string, unknown>
   ) {
     super(message);
     this.name = 'PublicSearchRequestError';
@@ -1040,6 +1041,7 @@ export default function SearchPage() {
     useUser();
   const queryClient = useQueryClient();
   const isNgsSearch = preferredRouteId === 'ngs';
+  const isNgaSearch = preferredRouteId === 'nga';
   const isNgsSearchLocked = isNgsSearch && searchAccess !== 'approved';
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
@@ -1080,7 +1082,7 @@ export default function SearchPage() {
     useState<PublicImageSearchPlan | null>(null);
   const [imageExecutionId, setImageExecutionId] = useState(0);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
-  const [ngsTextSearchExecutionId, setNgsTextSearchExecutionId] = useState(0);
+  const [textSearchExecutionId, setTextSearchExecutionId] = useState(0);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [searchColours, setSearchColours] = useState<string[]>(
     urlSearchColour ? [urlSearchColour] : []
@@ -1334,19 +1336,19 @@ export default function SearchPage() {
   });
   const spotlightBundle = isNgsSearchLocked ? null : spotlightBundleQuery.data;
 
-  const ngsSearchQuotaQuery = useQuery({
-    queryKey: getNgsSearchQuotaQueryKey(publicSearchOrgId),
-    queryFn: ({ signal }) =>
-      apiClient.getNgsSearchQuota(publicSearchOrgId, getAccessToken, signal),
-    enabled: hasMounted && isNgsSearch && searchAccess === 'approved',
-    ...NGS_SEARCH_QUOTA_QUERY_OPTIONS,
+  const ngaSearchQuotaQuery = useQuery({
+    queryKey: getNgaSearchQuotaQueryKey(),
+    queryFn: ({ signal }) => apiClient.getNgaPublicSearchQuota(signal),
+    enabled: hasMounted && isNgaSearch,
+    ...NGA_SEARCH_QUOTA_QUERY_OPTIONS,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
   });
-  const ngsSearchQuota = ngsSearchQuotaQuery.data ?? null;
-  const hasExhaustedNgsSearchQuota = ngsSearchQuota?.remaining === 0;
-  const isNgsSearchDisabled = isNgsSearchLocked || hasExhaustedNgsSearchQuota;
-  const canSearchOnPage = !isNgsSearchDisabled;
+  const ngaSearchQuota = isNgaSearch ? ngaSearchQuotaQuery.data ?? null : null;
+  const hasExhaustedNgaSearchQuota =
+    isNgaSearch && ngaSearchQuota?.remaining === 0;
+  const isSearchDisabled = isNgsSearchLocked || hasExhaustedNgaSearchQuota;
+  const canSearchOnPage = !isSearchDisabled;
 
   const spotlightSearchPlaceholder = useMemo(
     () =>
@@ -1453,18 +1455,15 @@ export default function SearchPage() {
 
   const textSearchQuery = useQuery({
     queryKey: canSearchOnPage
-      ? (isNgsSearch
-          ? [
-              ...(textSearchPlan?.queryKey || [
-                'search',
-                'text',
-                'disabled',
-                publicSearchOrgId,
-              ]),
-              ngsTextSearchExecutionId,
-            ]
-          : textSearchPlan?.queryKey) ||
-        (['search', 'text', 'disabled', publicSearchOrgId] as const)
+      ? [
+          ...(textSearchPlan?.queryKey || [
+            'search',
+            'text',
+            'disabled',
+            publicSearchOrgId,
+          ]),
+          textSearchExecutionId,
+        ]
       : (['search', 'text', 'locked', publicSearchOrgId] as const),
     queryFn: async ({ signal }) => {
       if (!textSearchPlan) return null;
@@ -1493,11 +1492,10 @@ export default function SearchPage() {
       Boolean(textSearchPlan) &&
       canSearchOnPage,
     retry: false,
-    ...(isNgsSearch
-      ? NGS_SEARCH_QUERY_OPTIONS
-      : { staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME }),
+    staleTime: isNgsSearch ? 0 : PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     initialData: spotlightSearchPlaceholder,
+    refetchOnMount: Boolean(submittedSearch),
   });
 
   const imageQueryExecution = buildImageQueryExecution({
@@ -1613,21 +1611,21 @@ export default function SearchPage() {
     rankedError: currentQuery.error,
   });
   const error = displayedSearchError?.error || null;
-  const isNgsQuotaError = isNgsSearchQuotaExhausted(error);
+  const isNgaQuotaError = isNgaSearchQuotaExhausted(error);
   useEffect(() => {
-    if (!isNgsSearch) return;
+    if (!isNgaSearch) return;
     const quota = currentQuery.data?.quota;
     if (quota) {
-      void reconcileNgsSearchQuota(queryClient, publicSearchOrgId, quota);
+      void reconcileNgaSearchQuota(queryClient, quota);
     }
-  }, [currentQuery.data?.quota, isNgsSearch, publicSearchOrgId, queryClient]);
+  }, [currentQuery.data?.quota, isNgaSearch, queryClient]);
   useEffect(() => {
-    if (!isNgsSearch || !isNgsQuotaError) return;
-    const quota = getNgsSearchQuotaFromError(error);
+    if (!isNgaSearch || !isNgaQuotaError) return;
+    const quota = getNgaSearchQuotaFromError(error);
     if (quota) {
-      void reconcileNgsSearchQuota(queryClient, publicSearchOrgId, quota);
+      void reconcileNgaSearchQuota(queryClient, quota);
     }
-  }, [error, isNgsQuotaError, isNgsSearch, publicSearchOrgId, queryClient]);
+  }, [error, isNgaQuotaError, isNgaSearch, queryClient]);
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
@@ -1791,7 +1789,7 @@ export default function SearchPage() {
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
-      if (isNgsSearchDisabled || isPreparingImage) return;
+      if (isSearchDisabled || isPreparingImage) return;
       const validation = validateImageSelection(acceptedFiles);
       if (!validation.ok) {
         rejectImageSelection(validation.message);
@@ -1854,7 +1852,7 @@ export default function SearchPage() {
     [
       applyImagePreviewTransition,
       imageDraftConstraints,
-      isNgsSearchDisabled,
+      isSearchDisabled,
       isPreparingImage,
       minScore,
       publicSearchOrgId,
@@ -1883,7 +1881,7 @@ export default function SearchPage() {
         rejectImageSelection('Image must be a JPEG, PNG, or WebP file.');
       }
     },
-    disabled: isNgsSearchDisabled || isPreparingImage,
+    disabled: isSearchDisabled || isPreparingImage,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
@@ -1899,7 +1897,7 @@ export default function SearchPage() {
     query = textQuery,
     facet: SearchFacet | null = null
   ) => {
-    if (isNgsSearchDisabled) return;
+    if (isSearchDisabled) return;
 
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -1924,7 +1922,7 @@ export default function SearchPage() {
       facet,
     });
     setSubmittedImagePlan(null);
-    if (isNgsSearch) setNgsTextSearchExecutionId((value) => value + 1);
+    setTextSearchExecutionId((value) => value + 1);
     setShouldSearch(true);
     updateSearchUrl(normalized, facet);
   };
@@ -1994,7 +1992,7 @@ export default function SearchPage() {
   };
 
   const selectColourSearch = (selection: string) => {
-    if (isNgsSearchDisabled) return;
+    if (isSearchDisabled) return;
     if (!getColourSearchText(selection)) return;
 
     supersedePendingSearchIntent();
@@ -2017,7 +2015,7 @@ export default function SearchPage() {
       refinement: 'local-palette',
     });
     setShouldSearch(true);
-    if (isNgsSearch) setNgsTextSearchExecutionId((value) => value + 1);
+    setTextSearchExecutionId((value) => value + 1);
     updateSearchUrl(normalizedCommittedTextQuery, searchFacet, selection);
   };
 
@@ -2061,7 +2059,7 @@ export default function SearchPage() {
   };
 
   const runColourSearch = (selection: string) => {
-    if (isNgsSearchDisabled) return;
+    if (isSearchDisabled) return;
     const active = editorMode === 'colour' && searchColours.includes(selection);
     if (active) {
       clearColourSearch();
@@ -2111,7 +2109,7 @@ export default function SearchPage() {
   const colourRailIsSearch = editorMode === 'colour';
 
   const runEvalSearch = (suggestion: EvalSuggestion) => {
-    if (isNgsSearchDisabled) return;
+    if (isSearchDisabled) return;
 
     const suggestionFacet = suggestion.facet || null;
     const suggestionColour =
@@ -2156,7 +2154,7 @@ export default function SearchPage() {
         refinement: 'local-palette',
       });
       setShouldSearch(true);
-      if (isNgsSearch) setNgsTextSearchExecutionId((value) => value + 1);
+      setTextSearchExecutionId((value) => value + 1);
       updateSearchUrl(normalized, suggestionFacet, suggestionColour);
       return;
     }
@@ -2171,7 +2169,7 @@ export default function SearchPage() {
     if (
       submittedSearch?.kind !== 'image' ||
       isPreparingImage ||
-      isNgsSearchDisabled
+      isSearchDisabled
     )
       return;
     const intentToken = beginSearchIntent(searchIntentGateRef.current);
@@ -2324,7 +2322,6 @@ export default function SearchPage() {
   );
   const ownershipNotice = searchPresentation.ownershipNotice;
   const interpretation = textSearchQuery.data?.interpretation;
-  const isNgaSearch = preferredRouteId === 'nga';
   const interpretationChips = isNgaSearch
     ? getInterpretationChips(interpretation)
     : [];
@@ -2337,7 +2334,7 @@ export default function SearchPage() {
     ? getSelectedColour(sortColours[0])
     : null;
   const retryCurrentSearch = () => {
-    if (!canRetryNgsSearch(hasExhaustedNgsSearchQuota)) return;
+    if (!canRetryNgaSearch(hasExhaustedNgaSearchQuota)) return;
     const retryTarget = displayedSearchError?.retryTarget || null;
     if (retryTarget === 'browse') {
       void browseQuery.refetch();
@@ -2446,16 +2443,16 @@ export default function SearchPage() {
                 </div>
               ) : null}
 
-              {isNgsSearch && searchAccess === 'approved' && ngsSearchQuota ? (
+              {isNgaSearch && ngaSearchQuota ? (
                 <div
                   role="status"
                   aria-live="polite"
                   className="mx-auto w-fit rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-fuchsia-100"
                 >
-                  {formatNgsSearchQuota(ngsSearchQuota)}
+                  {formatNgaSearchQuota(ngaSearchQuota)}
                 </div>
               ) : null}
-              {hasExhaustedNgsSearchQuota ? (
+              {hasExhaustedNgaSearchQuota ? (
                 <p role="alert" className="text-center text-sm text-amber-100">
                   No free searches remain. This allowance does not reset
                   automatically.
@@ -2468,7 +2465,7 @@ export default function SearchPage() {
                     active={editorMode === 'text'}
                     icon={Search}
                     label="Text"
-                    disabled={isNgsSearchDisabled}
+                    disabled={isSearchDisabled}
                     onClick={() => {
                       supersedePendingSearchIntent();
                       setEditorMode(getEditorModeUpdate('text').editorMode);
@@ -2478,7 +2475,7 @@ export default function SearchPage() {
                     active={editorMode === 'image'}
                     icon={ImageIcon}
                     label="Image"
-                    disabled={isNgsSearchDisabled}
+                    disabled={isSearchDisabled}
                     onClick={() => {
                       supersedePendingSearchIntent();
                       setEditorMode(getEditorModeUpdate('image').editorMode);
@@ -2498,7 +2495,7 @@ export default function SearchPage() {
                     active={editorMode === 'colour'}
                     icon={Palette}
                     label="Colour"
-                    disabled={isNgsSearchDisabled}
+                    disabled={isSearchDisabled}
                     onClick={() => {
                       supersedePendingSearchIntent();
                       setEditorMode(getEditorModeUpdate('colour').editorMode);
@@ -2522,12 +2519,12 @@ export default function SearchPage() {
                     onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
-                    disabled={isNgsSearchDisabled}
+                    disabled={isSearchDisabled}
                     className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
                   />
                   <button
                     type="submit"
-                    disabled={isNgsSearchDisabled || !canSubmitTextSearch}
+                    disabled={isSearchDisabled || !canSubmitTextSearch}
                     className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
                     aria-label="Search text"
                   >
@@ -2580,7 +2577,7 @@ export default function SearchPage() {
                     } ${
                       isDragActive
                         ? 'border-fuchsia-300 bg-fuchsia-300/10'
-                        : isNgsSearchDisabled
+                        : isSearchDisabled
                           ? 'border-white/10 bg-white/[0.015] opacity-45'
                           : 'border-white/15 bg-white/[0.025] hover:border-white/30'
                     }`}
@@ -2614,7 +2611,7 @@ export default function SearchPage() {
                           <button
                             ref={uploaderActionRef}
                             type="button"
-                            disabled={isPreparingImage || isNgsSearchDisabled}
+                            disabled={isPreparingImage || isSearchDisabled}
                             onClick={openImagePicker}
                             aria-label="Replace image"
                             className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white disabled:cursor-wait disabled:opacity-45"
@@ -2638,7 +2635,7 @@ export default function SearchPage() {
                         <button
                           ref={uploaderActionRef}
                           type="button"
-                          disabled={isPreparingImage || isNgsSearchDisabled}
+                          disabled={isPreparingImage || isSearchDisabled}
                           onClick={openImagePicker}
                           className="mt-3 inline-flex h-10 items-center rounded-md border border-fuchsia-300/30 bg-fuchsia-300/10 px-4 text-sm font-medium text-fuchsia-100 transition-colors hover:bg-fuchsia-300/20 disabled:cursor-not-allowed disabled:opacity-45"
                         >
@@ -2687,7 +2684,7 @@ export default function SearchPage() {
                     displaySuggestion={displayIdleSuggestion}
                     onSelect={runEvalSearch}
                     onPreviewChange={setIdleSuggestion}
-                    disabled={isNgsSearchDisabled}
+                    disabled={isSearchDisabled}
                   />
                 )}
                 {!hasActiveSearch && editorMode === 'colour' && (
@@ -2697,7 +2694,7 @@ export default function SearchPage() {
                       selected={searchColours}
                       activeSort={sortMode === 'colour'}
                       customColour={customColour}
-                      disabled={isNgsSearchDisabled}
+                      disabled={isSearchDisabled}
                       onSelect={runColourSearch}
                       onCustomChange={updateCustomColour}
                       onClear={clearColourSearch}
@@ -3123,7 +3120,7 @@ export default function SearchPage() {
                   selected={colourRailIsSearch ? searchColours : sortColours}
                   activeSort={sortMode === 'colour'}
                   customColour={customColour}
-                  disabled={isNgsSearchDisabled}
+                  disabled={isSearchDisabled}
                   onSelect={
                     colourRailIsSearch ? runColourSearch : runTargetColourSort
                   }
@@ -3156,7 +3153,7 @@ export default function SearchPage() {
             {error && (
               <div role="alert" className="py-16 text-center">
                 <p className="text-sm font-medium text-red-300">
-                  {isNgsQuotaError
+                  {isNgaQuotaError
                     ? 'No free searches remain. This allowance does not reset automatically.'
                     : getPublicSearchErrorCopy(
                         error,
@@ -3166,8 +3163,8 @@ export default function SearchPage() {
                           : 'text'
                       )}
                 </p>
-                {!isNgsQuotaError &&
-                  canRetryNgsSearch(hasExhaustedNgsSearchQuota) && (
+                {!isNgaQuotaError &&
+                  canRetryNgaSearch(hasExhaustedNgaSearchQuota) && (
                     <div className="mt-3 flex flex-wrap justify-center gap-2">
                       <button
                         type="button"

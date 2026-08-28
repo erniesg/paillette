@@ -32,7 +32,7 @@ const countUpstreamSearchCalls = (mockFetch: ReturnType<typeof vi.fn>) =>
     String(input).includes('/search/text')
   ).length;
 
-describe('public text search route caching', () => {
+describe('public text search route quota reservation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -71,7 +71,7 @@ describe('public text search route caching', () => {
     expect(upstreamInit?.signal).toBe(request.signal);
   });
 
-  it('caches one broad result set per query and serves requested slices from it', async () => {
+  it('reserves every intentional NGA search at the API even when the presentation cache has a match', async () => {
     let cachedResponse: Response | undefined;
     const cache = {
       match: vi.fn(async () => cachedResponse?.clone()),
@@ -118,7 +118,7 @@ describe('public text search route caching', () => {
       'strong',
     ]);
     expect(firstPayload.data?.count).toBe(1);
-    expect(firstResponse.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(firstResponse.headers.get('X-Paillette-Search-Cache')).toBeNull();
 
     const secondResponse = await action({
       context: {},
@@ -133,14 +133,40 @@ describe('public text search route caching', () => {
     const secondPayload =
       (await secondResponse.json()) as ApiResponse<SearchResponse>;
 
-    expect(countUpstreamSearchCalls(mockFetch)).toBe(1);
-    expect(cache.match).toHaveBeenCalledTimes(2);
-    expect(cache.put).toHaveBeenCalledTimes(1);
+    expect(countUpstreamSearchCalls(mockFetch)).toBe(2);
+    expect(cache.match).not.toHaveBeenCalled();
+    expect(cache.put).not.toHaveBeenCalled();
     expect(secondPayload.data?.results.map((artwork) => artwork.id)).toEqual([
       'strong',
     ]);
     expect(secondPayload.data?.count).toBe(1);
-    expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBe('HIT');
+    expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBeNull();
+  });
+
+  it('preserves NGA quota headers and prevents caching a quota-bearing response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        new Response(JSON.stringify(searchPayload), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-NGA-Search-Limit': '1000',
+            'X-NGA-Search-Used': '1',
+            'X-NGA-Search-Remaining': '999',
+          },
+        })
+      )
+    );
+
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'quiet shore' }),
+    } as any);
+
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
   });
 
   it('does not cache a successful response with a degraded search channel', async () => {
@@ -186,7 +212,7 @@ describe('public text search route caching', () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('BYPASS');
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBeNull();
     expect(countUpstreamSearchCalls(mockFetch)).toBe(2);
     expect(cache.put).not.toHaveBeenCalled();
   });
@@ -214,14 +240,10 @@ describe('public text search route caching', () => {
     expect(response.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
   });
 
-  it('schedules cache persistence without delaying the search response', async () => {
-    let finishPut!: () => void;
-    const slowPut = new Promise<void>((resolve) => {
-      finishPut = resolve;
-    });
+  it('does not schedule a second web-side cache or usage write', async () => {
     const cache = {
       match: vi.fn(async () => undefined),
-      put: vi.fn(() => slowPut),
+      put: vi.fn(async () => undefined),
     };
     const waitUntil = vi.fn();
     vi.stubGlobal('caches', { default: cache });
@@ -235,7 +257,7 @@ describe('public text search route caching', () => {
       )
     );
 
-    const pendingResponse = action({
+    const response = await action({
       context: { cloudflare: { context: { waitUntil } } },
       params: { orgId: 'nga' },
       request: makeRequest({
@@ -243,20 +265,12 @@ describe('public text search route caching', () => {
         usageContext: { auto: true },
       }),
     } as any);
-    const raced = await Promise.race([
-      pendingResponse,
-      new Promise<'blocked'>((resolve) =>
-        setTimeout(() => resolve('blocked'), 50)
-      ),
-    ]);
-    finishPut();
-    const response = await pendingResponse;
-
-    expect(raced).toBe(response);
-    expect(waitUntil).toHaveBeenCalledTimes(2);
+    expect(response.status).toBe(200);
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(cache.put).not.toHaveBeenCalled();
   });
 
-  it('does not let caller-controlled auto metadata suppress usage logging', async () => {
+  it('does not duplicate accepted-search logging in the web proxy', async () => {
     const scheduled: Promise<unknown>[] = [];
     const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const url = String(input);
@@ -294,7 +308,7 @@ describe('public text search route caching', () => {
       mockFetch.mock.calls.some(([input]) =>
         String(input).endsWith('/usage-events')
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('defaults public text searches to a broader 20 percent threshold', async () => {

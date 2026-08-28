@@ -1,16 +1,14 @@
 import type { ActionFunctionArgs } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
-import type { ApiResponse, ArtworkSearchResult, SearchResponse } from '~/types';
+import type { ApiResponse, SearchResponse } from '~/types';
 import {
   buildPublicSearchHeaders,
   getApiBaseUrl,
   getServerEnv,
   isAllowedPublicSearchRouteId,
   isHiddenPublicNgsArtwork,
-  logPublicUsageEvent,
   publicSearchConfigError,
   resolvePublicSearchOrgId,
-  schedulePublicSearchWork,
 } from '~/lib/public-search.server';
 import { parsePublicImageSearchConstraints } from '~/lib/public-image-search-plan';
 
@@ -54,26 +52,6 @@ const clamp = (
   }
 
   return Math.min(Math.max(number, min), max);
-};
-
-const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
-  const metadata = artwork.metadata || {};
-
-  return {
-    artworkId: artwork.id,
-    orgId: artwork.orgId || artwork.galleryId,
-    rank: index + 1,
-    score: artwork.similarity,
-    metadata: {
-      title: artwork.title || metadata.title || null,
-      artist: artwork.artist || metadata.artist || null,
-      accessionNumber:
-        metadata.accessionNumber || metadata.accession_number || null,
-      sourceUrl: metadata.sourceUrl || metadata.source_url || null,
-      sourceInstitution:
-        metadata.sourceInstitution || metadata.source_institution || null,
-    },
-  };
 };
 
 export const action = async ({
@@ -235,7 +213,6 @@ export const action = async ({
     );
   }
   if (payload.success && payload.data) {
-    const rawResultCount = payload.data.results.length;
     const results = payload.data.results.filter(
       (artwork) => !isHiddenPublicNgsArtwork(artwork as any)
     );
@@ -245,38 +222,17 @@ export const action = async ({
       count: results.length,
     };
 
-    schedulePublicSearchWork(
-      context,
-      logPublicUsageEvent(request, env, {
-        eventType: 'search',
-        queryType: 'public_image_search',
-        orgId: resolvedOrgId,
-        search: {
-          mode: 'image',
-          image: {
-            name: image.name || null,
-            type: image.type || null,
-            size: image.size,
-            lastModified: image.lastModified || null,
-          },
-          topK,
-          minScore,
-          ...(constraints !== undefined ? { constraints } : {}),
-          rawResultCount,
-          resultCount: results.length,
-          hiddenFilteredCount: rawResultCount - results.length,
-          queryTime: payload.data.queryTime,
-        },
-        results: results.map(getUsageResult),
-        metadata: {
-          routeOrgId: orgId,
-        },
-      })
-    );
   }
 
   const responseHeaders = new Headers();
-  const retryAfter = response.headers.get('Retry-After');
-  if (retryAfter) responseHeaders.set('Retry-After', retryAfter);
+  for (const header of [
+    'Retry-After',
+    'X-NGA-Search-Limit',
+    'X-NGA-Search-Used',
+    'X-NGA-Search-Remaining',
+  ]) {
+    const value = response.headers.get(header);
+    if (value) responseHeaders.set(header, value);
+  }
   return noStoreJson(payload, response.status, responseHeaders);
 };

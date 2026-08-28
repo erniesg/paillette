@@ -15,7 +15,7 @@ import type {
   DailyUsageSummary,
 } from '../types';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
-import type { NgsSearchQuota } from './ngs-search-quota';
+import type { NgaSearchQuota } from './nga-search-quota';
 
 // Mock data
 const mockGallery: Gallery = {
@@ -96,11 +96,9 @@ export class MockApiClient {
     this.baseUrl = baseUrl;
   }
 
-  async getNgsSearchQuota(
-    _orgId: string,
-    _getAccessToken: () => Promise<string | undefined>,
+  async getNgaPublicSearchQuota(
     _signal?: AbortSignal
-  ): Promise<NgsSearchQuota> {
+  ): Promise<NgaSearchQuota> {
     return { limit: 1000, used: 0, remaining: 1000 };
   }
 

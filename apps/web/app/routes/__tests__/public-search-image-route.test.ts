@@ -267,7 +267,7 @@ describe('public image search proxy', () => {
   it.each([
     [429, '17'],
     [501, null],
-  ])('preserves upstream %i with no-store and Retry-After', async (status, retryAfter) => {
+  ])('preserves upstream %i with no-store, quota headers, and Retry-After', async (status, retryAfter) => {
     const fetcher = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json(
         {
@@ -276,7 +276,10 @@ describe('public image search proxy', () => {
         },
         {
           status,
-          headers: retryAfter ? { 'Retry-After': retryAfter } : undefined,
+          headers: {
+            ...(retryAfter ? { 'Retry-After': retryAfter } : {}),
+            'X-NGA-Search-Remaining': '0',
+          },
         }
       )
     );
@@ -291,6 +294,7 @@ describe('public image search proxy', () => {
     expect(response.status).toBe(status);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('Retry-After')).toBe(retryAfter);
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('0');
   });
 
   it.each([

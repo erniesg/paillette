@@ -3,8 +3,6 @@ import { json } from '@remix-run/cloudflare';
 import { normalizePublicSearchText } from '@paillette/types/public-search-core';
 import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
 import {
-  buildPublicSearchCacheHeaders,
-  buildPublicTextSearchCacheKey,
   buildPublicSearchHeaders,
   filterPublicTextSearchResponse,
   getApiBaseUrl,
@@ -12,14 +10,9 @@ import {
   getServerEnv,
   isAllowedPublicSearchRouteId,
   isHiddenPublicNgsArtwork,
-  logPublicUsageEvent,
   publicSearchConfigError,
-  readPublicTextSearchCache,
   resolvePublicSearchOrgId,
-  schedulePublicSearchWork,
-  writePublicTextSearchCache,
 } from '~/lib/public-search.server';
-import type { ArtworkSearchResult } from '~/types';
 
 const clamp = (value: unknown, min: number, max: number, fallback: number) => {
   const number = Number(value);
@@ -33,29 +26,19 @@ const clamp = (value: unknown, min: number, max: number, fallback: number) => {
 const DEFAULT_PUBLIC_TEXT_MIN_SCORE = 0.2;
 const PUBLIC_TEXT_SEARCH_FACETS = new Set(['artist', 'classification']);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-
-const getUsageResult = (artwork: ArtworkSearchResult, index: number) => {
-  const metadata = artwork.metadata || {};
-
-  return {
-    artworkId: artwork.id,
-    orgId: artwork.orgId || artwork.galleryId,
-    rank: index + 1,
-    score: artwork.similarity,
-    metadata: {
-      title: artwork.title || metadata.title || null,
-      artist: artwork.artist || metadata.artist || null,
-      accessionNumber:
-        metadata.accessionNumber || metadata.accession_number || null,
-      sourceUrl: metadata.sourceUrl || metadata.source_url || null,
-      sourceInstitution:
-        metadata.sourceInstitution || metadata.source_institution || null,
-    },
-  };
+const buildDynamicSearchHeaders = (response: Response) => {
+  const headers = new Headers({ 'Cache-Control': 'no-store' });
+  for (const header of [
+    'Retry-After',
+    'X-Paillette-Search-Cache',
+    'X-NGA-Search-Limit',
+    'X-NGA-Search-Used',
+    'X-NGA-Search-Remaining',
+  ]) {
+    const value = response.headers.get(header);
+    if (value) headers.set(header, value);
+  }
+  return headers;
 };
 
 export const action = async ({
@@ -161,68 +144,11 @@ export const action = async ({
         ? (body.constraints as SearchTextRequest['constraints'])
         : undefined,
   };
-  const searchPayload: SearchTextRequest = requestedSearchPayload;
   const canonicalSearchPayload = getCanonicalPublicTextSearchRequest(
     requestedSearchPayload
   );
-  const usageContext = asRecord(body.usageContext);
   const resolvedOrgId = resolvePublicSearchOrgId(orgId);
   const apiBaseUrl = getApiBaseUrl(env);
-  const cacheKey = buildPublicTextSearchCacheKey({
-    apiBaseUrl,
-    facet: requestedSearchPayload.facet,
-    orgId: resolvedOrgId,
-    query,
-    visualRefinement: requestedSearchPayload.visualRefinement,
-    constraints: requestedSearchPayload.constraints,
-  });
-
-  const cachedPayload = await readPublicTextSearchCache(cacheKey);
-  if (cachedPayload) {
-    const responsePayload = filterPublicTextSearchResponse(
-      cachedPayload,
-      requestedSearchPayload
-    );
-
-    if (responsePayload.success && responsePayload.data) {
-      const results = responsePayload.data.results;
-      schedulePublicSearchWork(
-        context,
-        logPublicUsageEvent(request, env, {
-          eventType: 'search',
-          queryType: `public_${usageContext.mode === 'colour' ? 'colour' : 'text'}_search`,
-          orgId: resolvedOrgId,
-          search: {
-            mode: usageContext.mode === 'colour' ? 'colour' : 'text',
-            query,
-            visualRefinement: requestedSearchPayload.visualRefinement,
-            topK: searchPayload.topK,
-            minScore: searchPayload.minScore,
-            facet: requestedSearchPayload.facet,
-            rawResultCount:
-              cachedPayload.data?.results.length ?? results.length,
-            resultCount: results.length,
-            hiddenFilteredCount: 0,
-            queryTime: responsePayload.data.queryTime,
-            colours: Array.isArray(usageContext.colours)
-              ? usageContext.colours
-              : undefined,
-            cache: 'hit',
-          },
-          results: results.map(getUsageResult),
-          metadata: {
-            routeOrgId: orgId,
-            usageContext,
-          },
-        })
-      );
-    }
-
-    return json(responsePayload, {
-      status: 200,
-      headers: buildPublicSearchCacheHeaders('HIT', responsePayload),
-    });
-  }
 
   const response = await fetch(
     `${apiBaseUrl}/orgs/${resolvedOrgId}/search/text`,
@@ -237,7 +163,6 @@ export const action = async ({
   const responsePayload =
     (await response.json()) as ApiResponse<SearchResponse>;
   if (responsePayload.success && responsePayload.data) {
-    const rawResultCount = responsePayload.data.results.length;
     const results = responsePayload.data.results.filter(
       (artwork) => !isHiddenPublicNgsArtwork(artwork as any)
     );
@@ -247,69 +172,18 @@ export const action = async ({
       count: results.length,
     };
 
-    schedulePublicSearchWork(
-      context,
-      writePublicTextSearchCache(cacheKey, responsePayload, response.status)
-    );
-
     const requestedResponsePayload = filterPublicTextSearchResponse(
       responsePayload,
       requestedSearchPayload
     );
-    const upstreamCacheStatus = response.headers.get(
-      'X-Paillette-Search-Cache'
-    );
-    const cacheStatus =
-      responsePayload.meta?.search?.cacheable === false
-        ? 'BYPASS'
-        : upstreamCacheStatus === 'KV-FRESH' ||
-            upstreamCacheStatus === 'KV-STALE' ||
-            upstreamCacheStatus === 'COALESCED'
-          ? upstreamCacheStatus
-          : 'MISS';
-
-    const requestedResults = requestedResponsePayload.data?.results || [];
-    schedulePublicSearchWork(
-      context,
-      logPublicUsageEvent(request, env, {
-        eventType: 'search',
-        queryType: `public_${usageContext.mode === 'colour' ? 'colour' : 'text'}_search`,
-        orgId: resolvedOrgId,
-        search: {
-          mode: usageContext.mode === 'colour' ? 'colour' : 'text',
-          query,
-          visualRefinement: requestedSearchPayload.visualRefinement,
-          topK: searchPayload.topK,
-          minScore: searchPayload.minScore,
-          facet: requestedSearchPayload.facet,
-          rawResultCount,
-          resultCount: requestedResults.length,
-          hiddenFilteredCount: rawResultCount - results.length,
-          queryTime: requestedResponsePayload.data?.queryTime,
-          colours: Array.isArray(usageContext.colours)
-            ? usageContext.colours
-            : undefined,
-          cache: 'miss',
-        },
-        results: requestedResults.map(getUsageResult),
-        metadata: {
-          routeOrgId: orgId,
-          usageContext,
-        },
-      })
-    );
-
     return json(requestedResponsePayload, {
       status: response.status,
-      headers: buildPublicSearchCacheHeaders(
-        cacheStatus,
-        requestedResponsePayload
-      ),
+      headers: buildDynamicSearchHeaders(response),
     });
   }
 
   return json(responsePayload, {
     status: response.status,
-    headers: buildPublicSearchCacheHeaders('BYPASS', responsePayload),
+    headers: buildDynamicSearchHeaders(response),
   });
 };

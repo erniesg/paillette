@@ -1,9 +1,9 @@
 import type { PublicSearchQuota } from '@paillette/types/public-search';
 import type { QueryClient } from '@tanstack/react-query';
 
-export type NgsSearchQuota = PublicSearchQuota;
+export type NgaSearchQuota = PublicSearchQuota;
 
-const isNgsSearchQuota = (value: unknown): value is NgsSearchQuota => {
+const isNgaSearchQuota = (value: unknown): value is NgaSearchQuota => {
   if (!value || typeof value !== 'object') return false;
   const quota = value as Record<string, unknown>;
   return (
@@ -13,50 +13,46 @@ const isNgsSearchQuota = (value: unknown): value is NgsSearchQuota => {
   );
 };
 
-export const getNgsSearchQuota = (value: unknown) =>
-  isNgsSearchQuota(value) ? value : null;
+export const getNgaSearchQuota = (value: unknown) =>
+  isNgaSearchQuota(value) ? value : null;
 
-export const formatNgsSearchQuota = (quota: NgsSearchQuota) =>
+export const formatNgaSearchQuota = (quota: NgaSearchQuota) =>
   `${quota.remaining.toLocaleString()} free searches left`;
 
-export const NGS_SEARCH_QUERY_OPTIONS = { staleTime: 0 } as const;
-
-export const NGS_SEARCH_QUOTA_QUERY_OPTIONS = {
+export const NGA_SEARCH_QUOTA_QUERY_OPTIONS = {
   staleTime: 5_000,
   refetchOnWindowFocus: true,
   refetchInterval: 30_000,
   refetchIntervalInBackground: false,
 } as const;
 
-export const getNgsSearchQuotaQueryKey = (orgId: string) =>
-  ['ngs-search-quota', orgId] as const;
+export const getNgaSearchQuotaQueryKey = () => ['nga-search-quota'] as const;
 
-export const reconcileNgsSearchQuota = async (
+export const reconcileNgaSearchQuota = async (
   queryClient: QueryClient,
-  orgId: string,
-  quota: NgsSearchQuota
+  quota: NgaSearchQuota
 ) => {
-  const queryKey = getNgsSearchQuotaQueryKey(orgId);
+  const queryKey = getNgaSearchQuotaQueryKey();
   await queryClient.cancelQueries({ queryKey });
-  const currentQuota = queryClient.getQueryData<NgsSearchQuota>(queryKey);
+  const currentQuota = queryClient.getQueryData<NgaSearchQuota>(queryKey);
   if (currentQuota && quota.remaining > currentQuota.remaining) return;
   queryClient.setQueryData(queryKey, quota);
 };
 
-export const canRetryNgsSearch = (hasExhaustedQuota: boolean) =>
+export const canRetryNgaSearch = (hasExhaustedQuota: boolean) =>
   !hasExhaustedQuota;
 
-export const isNgsSearchQuotaExhausted = (error: unknown) =>
+export const isNgaSearchQuotaExhausted = (error: unknown) =>
   Boolean(
     error &&
       typeof error === 'object' &&
-      (error as { code?: unknown }).code === 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED'
+      (error as { code?: unknown }).code === 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED'
   );
 
-export const getNgsSearchQuotaFromError = (error: unknown) => {
+export const getNgaSearchQuotaFromError = (error: unknown) => {
   if (!error || typeof error !== 'object') return null;
   const details = (error as { details?: unknown }).details;
   if (!details || typeof details !== 'object') return null;
   const quota = (details as { quota?: unknown }).quota;
-  return getNgsSearchQuota(quota);
+  return getNgaSearchQuota(quota);
 };

@@ -23,7 +23,7 @@ import type {
   DailyUsageSummary,
 } from '../types';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
-import type { NgsSearchQuota } from './ngs-search-quota';
+import type { NgaSearchQuota } from './nga-search-quota';
 
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
@@ -448,16 +448,11 @@ class ApiClient {
     return data.data;
   }
 
-  async getNgsSearchQuota(
-    orgId: string,
-    getAccessToken: AccessTokenProvider,
+  async getNgaPublicSearchQuota(
     signal?: AbortSignal
-  ): Promise<NgsSearchQuota> {
-    const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/quota`, {
-      headers: await this.getAuthHeaders(getAccessToken),
-      signal,
-    });
-    const data: ApiResponse<NgsSearchQuota> = await response.json();
+  ): Promise<NgaSearchQuota> {
+    const response = await fetch('/api/public-search/nga/quota', { signal });
+    const data: ApiResponse<NgaSearchQuota> = await response.json();
 
     if (!response.ok || !data.success || !data.data) {
       throw this.createApiError(data.error, 'Failed to fetch search quota');
