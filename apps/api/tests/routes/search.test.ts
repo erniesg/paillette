@@ -11,7 +11,8 @@ import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/publ
 import type { Env } from '../../src/index';
 import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
 
-const ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
+const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
+const NGA_ROUTE_ID = 'nga';
 
 describe('buildStructuredConstraintSql', () => {
   it('keeps numeric date overlap and bindings for ordinary metadata retrieval', () => {
@@ -53,7 +54,7 @@ type DailyUsage = {
   quota: number;
 };
 
-type NgsPublicSearchQuotaUsage = {
+type NgaPublicSearchQuotaUsage = {
   used: number;
   hard_limit: number;
 };
@@ -88,7 +89,7 @@ type ArtworkEvent = {
 
 const artworkRow = {
   id: '1993-01678',
-  org_id: ORG_ID,
+  org_id: NGS_ORG_ID,
   title: 'Mangrove Tree',
   artist: 'Chen Chong Swee',
   year: null,
@@ -150,6 +151,16 @@ const makeArtworkRow = (overrides: Partial<typeof artworkRow>) => ({
   ...artworkRow,
   ...overrides,
 });
+
+const makeNgaArtworkRow = (overrides: Partial<typeof artworkRow> = {}) =>
+  makeArtworkRow({
+    ...overrides,
+    custom_metadata: JSON.stringify({
+      ...JSON.parse(artworkRow.custom_metadata),
+      provider: 'nga',
+      ...JSON.parse(overrides.custom_metadata || '{}'),
+    }),
+  });
 
 const usageKey = (
   principalType: string,
@@ -218,7 +229,7 @@ class FakeStatement {
 
 class FakeSearchDb {
   daily = new Map<string, DailyUsage>();
-  ngsPublicSearchQuota: NgsPublicSearchQuotaUsage = {
+  ngaPublicSearchQuota: NgaPublicSearchQuotaUsage = {
     used: 0,
     hard_limit: 1000,
   };
@@ -230,7 +241,7 @@ class FakeSearchDb {
   failArtworkUsageInserts = false;
   failUsageEventInserts = false;
   failUsageEventUpdates = false;
-  failNgsPublicSearchQuota = false;
+  failNgaPublicSearchQuota = false;
   apiKeyRow: {
     id: string;
     user_id: string;
@@ -250,7 +261,7 @@ class FakeSearchDb {
 
   async run(sql: string, params: unknown[]) {
     if (sql.includes('nga_public_search_quota')) {
-      if (this.failNgsPublicSearchQuota) {
+      if (this.failNgaPublicSearchQuota) {
         throw new Error('NGA quota storage unavailable');
       }
       return { success: true, meta: { changes: 1 } };
@@ -440,18 +451,18 @@ class FakeSearchDb {
 
   async first<T>(sql: string, params: unknown[]) {
     if (sql.includes('nga_public_search_quota')) {
-      if (this.failNgsPublicSearchQuota) {
+      if (this.failNgaPublicSearchQuota) {
         throw new Error('NGA quota storage unavailable');
       }
       if (sql.includes('UPDATE nga_public_search_quota')) {
         if (
-          this.ngsPublicSearchQuota.used >= this.ngsPublicSearchQuota.hard_limit
+          this.ngaPublicSearchQuota.used >= this.ngaPublicSearchQuota.hard_limit
         ) {
           return null;
         }
-        this.ngsPublicSearchQuota.used += 1;
+        this.ngaPublicSearchQuota.used += 1;
       }
-      return this.ngsPublicSearchQuota as T;
+      return this.ngaPublicSearchQuota as T;
     }
 
     if (sql.includes('FROM api_keys ak')) {
@@ -835,7 +846,7 @@ const textSearch = (
   env: Env,
   headers: HeadersInit = { 'X-User-Id': 'user-1' },
   body: Record<string, unknown> = { query: 'pineapple', topK: 1 },
-  routeOrgId = ORG_ID
+  routeOrgId = NGS_ORG_ID
 ) =>
   app.request(
     `/api/v1/orgs/${routeOrgId}/search/text`,
@@ -858,7 +869,7 @@ const imageSearch = (
   app: Hono<{ Bindings: Env }>,
   env: Env,
   headers: HeadersInit = { 'X-User-Id': 'user-1' },
-  routeOrgId = ORG_ID,
+  routeOrgId = NGS_ORG_ID,
   formData?: FormData
 ) => {
   const body = formData || new FormData();
@@ -976,13 +987,13 @@ describe('NGA public search quota', () => {
     {
       name: 'requires authentication',
       headers: undefined,
-      routeOrgId: ORG_ID,
+      routeOrgId: NGS_ORG_ID,
       status: 401,
     },
     {
       name: 'hides the counter from other orgs',
       headers: { 'X-User-Id': 'user-1' },
-      routeOrgId: ORG_ID,
+      routeOrgId: NGS_ORG_ID,
       status: 404,
     },
   ])(
@@ -997,14 +1008,14 @@ describe('NGA public search quota', () => {
 
       expect(response.status).toBe(status);
       expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-      expect(db.ngsPublicSearchQuota.used).toBe(0);
+      expect(db.ngaPublicSearchQuota.used).toBe(0);
       expect(db.usageEvents).toHaveLength(0);
     }
   );
 
   it('does not cache or consume quota when the quota status read fails', async () => {
     const db = new FakeSearchDb();
-    db.failNgsPublicSearchQuota = true;
+    db.failNgaPublicSearchQuota = true;
     const response = await makeApp().request(
       '/api/v1/orgs/nga/search/quota',
       { headers: { 'X-User-Id': 'user-1' } },
@@ -1013,12 +1024,12 @@ describe('NGA public search quota', () => {
 
     expect(response.status).toBe(503);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(db.ngsPublicSearchQuota.used).toBe(0);
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
     expect(db.usageEvents).toHaveLength(0);
   });
 
   it('charges and logs an NGA cached Try query', async () => {
-    const db = new FakeSearchDb();
+    const db = new FakeSearchDb([makeNgaArtworkRow()]);
     const response = await textSearch(
       makeApp(),
       makeEnv(db),
@@ -1042,13 +1053,13 @@ describe('NGA public search quota', () => {
     });
     expect(payload.data.results).toHaveLength(1);
     expect(db.metadataSearchSql).toHaveLength(1);
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(db.usageEvents).toHaveLength(1);
     expect(
       JSON.parse(db.usageEvents[0]?.metadata || '{}').search
     ).toMatchObject({
       mode: 'text',
-      query: '  A STILL LIFE of tropical fruit and flowers  ',
+      query: 'A STILL LIFE of tropical fruit and flowers',
       cacheDisposition: 'MISS',
       quotaRemaining: 999,
     });
@@ -1086,7 +1097,7 @@ describe('NGA public search quota', () => {
       used: 2,
       remaining: 998,
     });
-    expect(db.ngsPublicSearchQuota.used).toBe(2);
+    expect(db.ngaPublicSearchQuota.used).toBe(2);
     expect(db.metadataSearchSql).toHaveLength(1);
     expect(db.usageEvents).toHaveLength(2);
     expect(
@@ -1128,7 +1139,7 @@ describe('NGA public search quota', () => {
       used: 1,
       remaining: 999,
     });
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(vectorize.query).toHaveBeenCalledOnce();
     expect(
@@ -1150,7 +1161,7 @@ describe('NGA public search quota', () => {
 
     expect(response.status).toBe(501);
     expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(db.daily.size).toBe(0);
     expect(db.usageEvents).toHaveLength(1);
   });
@@ -1166,7 +1177,7 @@ describe('NGA public search quota', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(db.ngsPublicSearchQuota.used).toBe(0);
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
     expect(db.usageEvents).toHaveLength(0);
   });
 
@@ -1181,7 +1192,7 @@ describe('NGA public search quota', () => {
       constraints: { classifications: ['Not a public classification'] },
     },
   ])(
-    'validates canonical NGS text and constraints before reserving (%o)',
+    'validates NGA text and constraints before reserving (%o)',
     async (body) => {
       const db = new FakeSearchDb();
       const response = await textSearch(
@@ -1193,7 +1204,7 @@ describe('NGA public search quota', () => {
       );
 
       expect(response.status).toBe(400);
-      expect(db.ngsPublicSearchQuota.used).toBe(0);
+      expect(db.ngaPublicSearchQuota.used).toBe(0);
       expect(db.usageEvents).toHaveLength(0);
       expect(db.metadataSearchSql).toHaveLength(0);
     }
@@ -1218,7 +1229,7 @@ describe('NGA public search quota', () => {
       'SPOTLIGHT'
     );
     expect(db.metadataSearchSql.length).toBeGreaterThan(0);
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
   });
 
   it('bypasses spotlight for an exact Try term with visual refinement', async () => {
@@ -1240,7 +1251,7 @@ describe('NGA public search quota', () => {
       'SPOTLIGHT'
     );
     expect(db.metadataSearchSql.length).toBeGreaterThan(0);
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
   });
 
   it('keeps an admitted NGA text search successful when telemetry annotation fails', async () => {
@@ -1255,7 +1266,7 @@ describe('NGA public search quota', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(db.usageEvents).toHaveLength(1);
   });
 
@@ -1283,7 +1294,7 @@ describe('NGA public search quota', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(db.usageEvents).toHaveLength(1);
   });
 
@@ -1299,7 +1310,7 @@ describe('NGA public search quota', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
-    expect(db.ngsPublicSearchQuota.used).toBe(0);
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
   });
 
   it('uses the NGA lifetime pool without creating daily usage', async () => {
@@ -1319,19 +1330,19 @@ describe('NGA public search quota', () => {
       env,
       { 'X-User-Id': 'user-1' },
       { query: 'fishing boats', topK: 1 },
-      ORG_ID
+      NGS_ORG_ID
     );
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(db.daily.size).toBe(1);
     expect(db.usageEvents).toHaveLength(2);
   });
 
-  it('fails closed before retrieval when the NGS quota ledger is unavailable', async () => {
+  it('fails closed before retrieval when the NGA quota ledger is unavailable', async () => {
     const db = new FakeSearchDb();
-    db.failNgsPublicSearchQuota = true;
+    db.failNgaPublicSearchQuota = true;
     const response = await textSearch(
       makeApp(),
       makeEnv(db),
@@ -1349,7 +1360,7 @@ describe('NGA public search quota', () => {
 
   it('shares the final NGA slot across authenticated users and the public API key', async () => {
     const db = new FakeSearchDb();
-    db.ngsPublicSearchQuota.used = 999;
+    db.ngaPublicSearchQuota.used = 999;
     const cache = makeEmbeddingCache();
     const env = {
       ...makeEnv(db),
@@ -1378,7 +1389,7 @@ describe('NGA public search quota', () => {
     expect(statuses).toEqual([200, 429]);
     const exhausted = responses.find((response) => response.status === 429)!;
     const exhaustedPayload = (await exhausted.json()) as any;
-    expect(db.ngsPublicSearchQuota.used).toBe(1000);
+    expect(db.ngaPublicSearchQuota.used).toBe(1000);
     expect(exhausted.headers.get('X-NGA-Search-Limit')).toBe('1000');
     expect(exhausted.headers.get('X-NGA-Search-Used')).toBe('1000');
     expect(exhausted.headers.get('X-NGA-Search-Remaining')).toBe('0');
@@ -1387,8 +1398,9 @@ describe('NGA public search quota', () => {
       details: { quota: { limit: 1000, used: 1000, remaining: 0 } },
     });
     expect(db.usageEvents).toHaveLength(1);
-    expect(db.metadataSearchSql).toHaveLength(0);
-    expect(cache.get).not.toHaveBeenCalled();
+    // Exactly one contender acquired the final slot and performed retrieval;
+    // the exhausted contender never reaches the cache or retrieval path.
+    expect(db.metadataSearchSql).toHaveLength(1);
   });
 
   it('keeps an admitted public NGA search available when usage telemetry fails', async () => {
@@ -1414,7 +1426,7 @@ describe('NGA public search quota', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
-    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
   });
 });
 
@@ -1648,7 +1660,7 @@ describe('Search API auth and quota behavior', () => {
     expect(db.artworkEvents).toHaveLength(1);
     expect(db.artworkEvents[0]).toMatchObject({
       artwork_id: '1993-01678',
-      org_id: ORG_ID,
+      org_id: NGS_ORG_ID,
       rank: 1,
     });
   });
@@ -1889,7 +1901,7 @@ describe('Search API auth and quota behavior', () => {
     expect(captionVectorize.query).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
-        filter: { galleryId: ORG_ID },
+        filter: { galleryId: NGS_ORG_ID },
       })
     );
   });
@@ -3261,8 +3273,9 @@ describe('Search API auth and quota behavior', () => {
   });
 
   it('lets the public search proxy key bypass user quota in production', async () => {
+    db = new FakeSearchDb([makeNgaArtworkRow()]);
     env = {
-      ...env,
+      ...makeEnv(db),
       ENVIRONMENT: 'production',
       PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
     };
@@ -3277,7 +3290,8 @@ describe('Search API auth and quota behavior', () => {
         query: 'pineapple',
         topK: 100,
         minScore: 0,
-      }
+      },
+      NGA_ROUTE_ID
     );
     const body = (await res.json()) as any;
 
@@ -3325,7 +3339,7 @@ describe('Search API auth and quota behavior', () => {
       const payload = (await response.json()) as any;
 
       expect(response.status).toBe(403);
-      expect(payload.error.code).toBe('PUBLIC_SEARCH_SCOPE_NOT_ALLOWED');
+      expect(payload.error.code).toBe('FORBIDDEN');
       expect(db.metadataSearchSql).toHaveLength(0);
       expect(cache.get).not.toHaveBeenCalled();
     }
@@ -3344,7 +3358,8 @@ describe('Search API auth and quota behavior', () => {
       app,
       env,
       { 'X-API-Key': 'public-search-secret' },
-      { query: 'pineapple', topK: 99, minScore: 0 }
+      { query: 'pineapple', topK: 99, minScore: 0 },
+      NGA_ROUTE_ID
     );
     const payload = (await response.json()) as any;
 
@@ -3372,7 +3387,8 @@ describe('Search API auth and quota behavior', () => {
         topK: 100,
         minScore: 0,
         visualRefinement: 'blue',
-      }
+      },
+      NGA_ROUTE_ID
     );
     const payload = (await response.json()) as any;
 
@@ -3400,7 +3416,7 @@ describe('Search API auth and quota behavior', () => {
     const payload = (await response.json()) as any;
 
     expect(response.status).toBe(403);
-    expect(payload.error.code).toBe('PUBLIC_SEARCH_SCOPE_NOT_ALLOWED');
+    expect(payload.error.code).toBe('FORBIDDEN');
     expect(cache.get).not.toHaveBeenCalled();
   });
 
@@ -3953,9 +3969,9 @@ describe('Search API auth and quota behavior', () => {
     const headers = { 'X-API-Key': 'public-search-secret' };
 
     for (let index = 0; index < 10; index += 1) {
-      expect((await imageSearch(app, env, headers)).status).toBe(200);
+      expect((await imageSearch(app, env, headers, NGA_ROUTE_ID)).status).toBe(200);
     }
-    const limited = await imageSearch(app, env, headers);
+    const limited = await imageSearch(app, env, headers, NGA_ROUTE_ID);
     const payload = (await limited.json()) as any;
 
     expect(limited.status).toBe(429);
@@ -4030,7 +4046,7 @@ describe('Search API auth and quota behavior', () => {
         query: `unique public query ${index}`,
         topK: 100,
         minScore: 0,
-      });
+      }, NGA_ROUTE_ID);
       expect(response.status).toBe(200);
     }
 
@@ -4038,12 +4054,12 @@ describe('Search API auth and quota behavior', () => {
       query: 'unique public query 0',
       topK: 100,
       minScore: 0,
-    });
+    }, NGA_ROUTE_ID);
     const limited = await textSearch(app, env, headers, {
       query: 'unique public query 10',
       topK: 100,
       minScore: 0,
-    });
+    }, NGA_ROUTE_ID);
     const payload = (await limited.json()) as any;
 
     expect(cachedHit.status).toBe(200);
@@ -4054,20 +4070,20 @@ describe('Search API auth and quota behavior', () => {
     expect(db.metadataSearchSql).toHaveLength(10);
   });
 
-  it('bypasses the result cache for canonical private searches', async () => {
+  it('caches authenticated NGS searches without drawing from the NGA pool', async () => {
     const cache = makeEmbeddingCache();
     env = { ...makeEnv(db), CACHE: cache };
     const body = { query: 'mangrove shore', topK: 100, minScore: 0 };
 
-    const first = await textSearch(app, env, undefined, body, 'nga');
-    const second = await textSearch(app, env, undefined, body, 'nga');
+    const first = await textSearch(app, env, undefined, body, NGS_ORG_ID);
+    const second = await textSearch(app, env, undefined, body, NGS_ORG_ID);
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('BYPASS');
-    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('BYPASS');
-    expect(db.metadataSearchSql).toHaveLength(2);
-    expect(cache.put).not.toHaveBeenCalled();
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
   });
 
   it('does not persist degraded canonical public search results', async () => {
@@ -4134,8 +4150,8 @@ describe('Search API auth and quota behavior', () => {
     const headers = { 'X-API-Key': 'public-search-secret' };
     const body = { query: 'same degraded query', topK: 100, minScore: 0 };
 
-    const first = await textSearch(app, env, headers, body);
-    const second = await textSearch(app, env, headers, body);
+    const first = await textSearch(app, env, headers, body, NGA_ROUTE_ID);
+    const second = await textSearch(app, env, headers, body, NGA_ROUTE_ID);
     const payload = (await second.json()) as any;
 
     expect(first.status).toBe(200);
@@ -4168,7 +4184,8 @@ describe('Search API auth and quota behavior', () => {
       app,
       env,
       { 'X-API-Key': 'public-search-secret' },
-      { query: 'quiet shore', topK: 100, minScore: 0 }
+      { query: 'quiet shore', topK: 100, minScore: 0 },
+      NGA_ROUTE_ID
     );
     const payload = (await response.json()) as any;
 

@@ -2559,7 +2559,7 @@ async function hasExactArtistFacetMatch(
 
 // Validation schemas
 const textSearchSchema = z.object({
-  query: z.string().min(1, 'Query cannot be empty').max(500),
+  query: z.string().trim().min(1, 'Query cannot be empty').max(500),
   topK: z
     .number()
     .int()
@@ -2934,53 +2934,12 @@ searchRoutes.post('/search/text', async (c) => {
       }
     }
     const isNgaPublicSearch = provider === 'nga';
-    let ngaQuota: PublicSearchQuota | undefined;
-    if (isNgaPublicSearch) {
-      try {
-        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
-        setNgaSearchQuotaHeaders(c, reservation.quota);
-        if (!reservation.admitted) {
-          return c.json<ApiResponse>(
-            {
-              success: false,
-              error: {
-                code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
-                message: 'NGA public search quota has been exhausted',
-                details: { quota: reservation.quota },
-              },
-            },
-            429
-          );
-        }
-        ngaQuota = reservation.quota;
-      } catch (error) {
-        console.error('NGA public search quota reservation failed:', error);
-        return c.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
-              message: 'NGA public search quota is temporarily unavailable',
-            },
-          },
-          503
-        );
-      }
-
-      if (!(c as any).get('usageEventId')) {
-        await recordNgaAcceptedSearchUsage(c as any, {
-          queryType: 'vector_search',
-          orgId: orgId || null,
-          metadata: {
-            search: { mode: 'text', query, quotaRemaining: ngaQuota.remaining },
-          },
-        });
-      }
-    }
     const structuredSearchEnabled =
-      provider === 'nga' &&
+      isNgaPublicSearch &&
       (c.env as Env & { NGA_STRUCTURED_SEARCH_ENABLED?: string })
         .NGA_STRUCTURED_SEARCH_ENABLED !== 'false';
+    // Validate and compile NGA's public-search plan before taking a
+    // non-refundable slot from the shared lifetime quota.
     const compiledNgaPlan = structuredSearchEnabled
       ? compileNgaSearchPlan(query, constraints)
       : undefined;
@@ -3026,6 +2985,49 @@ searchRoutes.post('/search/text', async (c) => {
         },
         400
       );
+    }
+    let ngaQuota: PublicSearchQuota | undefined;
+    if (isNgaPublicSearch) {
+      try {
+        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        setNgaSearchQuotaHeaders(c, reservation.quota);
+        if (!reservation.admitted) {
+          return c.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGA public search quota has been exhausted',
+                details: { quota: reservation.quota },
+              },
+            },
+            429
+          );
+        }
+        ngaQuota = reservation.quota;
+      } catch (error) {
+        console.error('NGA public search quota reservation failed:', error);
+        return c.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGA public search quota is temporarily unavailable',
+            },
+          },
+          503
+        );
+      }
+
+      if (!(c as any).get('usageEventId')) {
+        await recordNgaAcceptedSearchUsage(c as any, {
+          queryType: 'vector_search',
+          orgId: orgId || null,
+          metadata: {
+            search: { mode: 'text', query, quotaRemaining: ngaQuota.remaining },
+          },
+        });
+      }
     }
     const structuredConstraints =
       ngaPlan?.constraints ?? canonicalNgsConstraints;
