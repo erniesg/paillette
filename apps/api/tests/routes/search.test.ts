@@ -11,6 +11,7 @@ import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/publ
 import { PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS } from '../../src/utils/public-search-result-cache';
 import type { Env } from '../../src/index';
 import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
+import { OPEN_ACCESS_ORG_ID } from '../../src/utils/orgs';
 
 const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const NGA_ROUTE_ID = 'nga';
@@ -2234,7 +2235,7 @@ describe('Search API auth and quota behavior', () => {
     expect(captionVectorize.query).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
-        filter: { galleryId: 'open-access-art', provider: 'nga' },
+        filter: { galleryId: OPEN_ACCESS_ORG_ID, provider: 'nga' },
       })
     );
     expect(db.metadataSearchSql[0]).toContain(
@@ -3810,7 +3811,7 @@ describe('Search API auth and quota behavior', () => {
       expect.objectContaining({
         topK: 30,
         filter: {
-          galleryId: 'open-access-art',
+          galleryId: OPEN_ACCESS_ORG_ID,
           provider: 'nga',
           yearStart: { $lte: 1800 },
           yearEnd: { $gte: 1700 },
@@ -3880,7 +3881,7 @@ describe('Search API auth and quota behavior', () => {
     expect(imageVectorize.query).toHaveBeenCalledWith(
       [0.6, 0.8],
       expect.objectContaining({
-        filter: { galleryId: 'open-access-art', provider: 'nga' },
+        filter: { galleryId: OPEN_ACCESS_ORG_ID, provider: 'nga' },
       })
     );
     expect(payload.data.results.map((result: any) => result.id)).toEqual([
@@ -4407,7 +4408,7 @@ describe('Search API auth and quota behavior', () => {
     ).toHaveLength(0);
   });
 
-  it('charges repeated degraded text misses even when the query is identical', async () => {
+  it('rejects a repeated degraded text submission before a second quota debit', async () => {
     const captionVectorize = { query: vi.fn() };
     const cache = makeEmbeddingCache();
     const run = vi.fn().mockRejectedValue(new Error('embedding unavailable'));
@@ -4430,7 +4431,12 @@ describe('Search API auth and quota behavior', () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(429);
-    expect(payload.error.code).toBe('PUBLIC_SEARCH_COLD_MISS_RATE_LIMITED');
+    expect(payload.error).toMatchObject({
+      code: 'NGA_PUBLIC_SEARCH_RATE_LIMITED',
+      details: { quota: { used: 1, remaining: 999 } },
+    });
+    expect(second.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(run).toHaveBeenCalledOnce();
     expect(captionVectorize.query).not.toHaveBeenCalled();
   });
@@ -4962,7 +4968,7 @@ describe('Search API auth and quota behavior', () => {
       expect.any(Array),
       expect.objectContaining({
         filter: {
-          galleryId: 'open-access-art',
+          galleryId: OPEN_ACCESS_ORG_ID,
           provider: 'nga',
           yearStart: { $lte: 1499 },
           yearEnd: { $gte: 1400 },
@@ -5217,7 +5223,7 @@ describe('Search API auth and quota behavior', () => {
       expect.any(Array),
       expect.objectContaining({
         filter: {
-          galleryId: 'open-access-art',
+          galleryId: OPEN_ACCESS_ORG_ID,
           provider: 'nga',
           yearStart: { $lte: 1799 },
           yearEnd: { $gte: 1700 },
