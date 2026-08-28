@@ -207,7 +207,7 @@ class FakeStatement {
 
   constructor(
     private readonly db: FakeSearchDb,
-    private readonly sql: string
+    readonly sql: string
   ) {}
 
   bind(...params: unknown[]) {
@@ -257,7 +257,31 @@ class FakeSearchDb {
   }
 
   async batch(statements: FakeStatement[]) {
-    return Promise.all(statements.map((statement) => statement.run()));
+    const quotaBefore = { ...this.ngaPublicSearchQuota };
+    const usageEventsBefore = [...this.usageEvents];
+    const results: any[] = [];
+    let previousChanges = 0;
+
+    try {
+      for (const statement of statements) {
+        if (
+          statement.sql.includes('INSERT INTO api_usage_events') &&
+          statement.sql.includes('WHERE changes() = 1') &&
+          previousChanges !== 1
+        ) {
+          results.push({ success: true, meta: { changes: 0 }, results: [] });
+          continue;
+        }
+        const result = await statement.run();
+        previousChanges = result.meta.changes;
+        results.push(result);
+      }
+      return results;
+    } catch (error) {
+      this.ngaPublicSearchQuota = quotaBefore;
+      this.usageEvents = usageEventsBefore;
+      throw error;
+    }
   }
 
   async run(sql: string, params: unknown[]) {
@@ -265,7 +289,20 @@ class FakeSearchDb {
       if (this.failNgaPublicSearchQuota) {
         throw new Error('NGA quota storage unavailable');
       }
-      return { success: true, meta: { changes: 1 } };
+      if (sql.includes('UPDATE nga_public_search_quota')) {
+        if (
+          this.ngaPublicSearchQuota.used >= this.ngaPublicSearchQuota.hard_limit
+        ) {
+          return { success: true, meta: { changes: 0 }, results: [] };
+        }
+        this.ngaPublicSearchQuota.used += 1;
+        return {
+          success: true,
+          meta: { changes: 1 },
+          results: [this.ngaPublicSearchQuota],
+        };
+      }
+      return { success: true, meta: { changes: 1 }, results: [] };
     }
 
     if (sql.includes('INSERT INTO api_usage_daily')) {
@@ -1300,6 +1337,34 @@ describe('NGA public search quota', () => {
     expect(db.usageEvents).toHaveLength(1);
   });
 
+  it('rolls back an NGA image reservation before provider retrieval when logging fails', async () => {
+    const db = new FakeSearchDb();
+    db.failUsageEventInserts = true;
+    const fetchMock = vi.fn();
+    const vectorize = { query: vi.fn() };
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await imageSearch(
+      makeApp(),
+      {
+        ...makeEnv(db),
+        JINA_API_KEY: 'jina-test-key',
+        VECTORIZE: vectorize as unknown as Vectorize,
+      },
+      { 'X-User-Id': 'user-1' },
+      'nga'
+    );
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe(
+      'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE'
+    );
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
+    expect(db.usageEvents).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(vectorize.query).not.toHaveBeenCalled();
+  });
+
   it('does not reserve the NGA lifetime pool for invalid input', async () => {
     const db = new FakeSearchDb();
     const response = await textSearch(
@@ -1537,7 +1602,7 @@ describe('NGA public search quota', () => {
     expect(db.metadataSearchSql).toHaveLength(1);
   });
 
-  it('keeps an admitted public NGA search available when usage telemetry fails', async () => {
+  it('rolls back an NGA quota reservation when durable usage logging fails', async () => {
     const db = new FakeSearchDb();
     db.failUsageEventInserts = true;
     const env = {
@@ -1558,9 +1623,14 @@ describe('NGA public search quota', () => {
       'nga'
     );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get('X-NGA-Search-Remaining')).toBe('999');
-    expect(db.ngaPublicSearchQuota.used).toBe(1);
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe(
+      'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE'
+    );
+    expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
+    expect(db.usageEvents).toHaveLength(0);
+    expect(db.metadataSearchSql).toHaveLength(0);
   });
 });
 

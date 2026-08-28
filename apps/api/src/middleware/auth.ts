@@ -487,13 +487,22 @@ const parseUsageMetadata = (metadata: string | null | undefined) => {
   }
 };
 
-export const recordApiUsageEvent = async (
+export type PreparedApiUsageEvent = {
+  id: string;
+  metadata: Record<string, unknown>;
+  statement: D1PreparedStatement;
+  markRecorded: () => void;
+};
+
+export const prepareApiUsageEvent = (
   c: Context<AppBindings>,
   options: {
     queryType?: string | null;
     orgId?: string | null;
     collectionId?: string | null;
     metadata?: Record<string, unknown>;
+    /** Use only in a D1 batch immediately after a guarded mutation. */
+    onlyWhenPreviousStatementChanged?: boolean;
   }
 ) => {
   const auth = getAuth(c);
@@ -505,7 +514,7 @@ export const recordApiUsageEvent = async (
     ...(options.metadata ?? {}),
   };
 
-  await c.env.DB.prepare(
+  const statement = c.env.DB.prepare(
     `
     INSERT INTO api_usage_events (
       id, user_id, api_key_id, usage_date, method, path, route, query_type,
@@ -517,7 +526,12 @@ export const recordApiUsageEvent = async (
       referer, origin, accept_language, content_type,
       sec_ch_ua, sec_ch_ua_platform, sec_ch_ua_mobile, metadata
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ${
+      options.onlyWhenPreviousStatementChanged
+        ? `SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE changes() = 1`
+        : 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    }
     `
   )
     .bind(
@@ -564,13 +578,33 @@ export const recordApiUsageEvent = async (
       requestMetadata.secChUaPlatform,
       requestMetadata.secChUaMobile,
       JSON.stringify(mergedMetadata)
-    )
-    .run();
+    );
 
-  c.set('usageEventId', usageEventId);
-  c.set('usageEventMetadata', mergedMetadata);
+  return {
+    id: usageEventId,
+    metadata: mergedMetadata,
+    statement,
+    markRecorded: () => {
+      c.set('usageEventId', usageEventId);
+      c.set('usageEventMetadata', mergedMetadata);
+    },
+  };
+};
 
-  return usageEventId;
+export const recordApiUsageEvent = async (
+  c: Context<AppBindings>,
+  options: {
+    queryType?: string | null;
+    orgId?: string | null;
+    collectionId?: string | null;
+    metadata?: Record<string, unknown>;
+    onlyWhenPreviousStatementChanged?: boolean;
+  }
+) => {
+  const usageEvent = prepareApiUsageEvent(c, options);
+  await usageEvent.statement.run();
+  usageEvent.markRecorded();
+  return usageEvent.id;
 };
 
 export const annotateUsageEvent = async (

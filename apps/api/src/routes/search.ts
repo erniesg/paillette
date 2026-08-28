@@ -5,7 +5,7 @@ import {
   annotateUsageEvent,
   enforceDailyQuota,
   getAuth,
-  recordApiUsageEvent,
+  prepareApiUsageEvent,
   recordArtworkResults,
   requireAuthOrApiKey,
 } from '../middleware/auth';
@@ -39,6 +39,7 @@ import {
 import {
   getNgaPublicSearchQuota,
   reserveNgaPublicSearchQuota,
+  reserveNgaPublicSearchQuotaWithUsageEvent,
 } from '../utils/nga-search-quota';
 import type { PublicSearchQuota } from '@paillette/types';
 import {
@@ -2838,17 +2839,6 @@ const setNgaSearchQuotaHeaders = (
   c.header('X-NGA-Search-Remaining', String(quota.remaining));
 };
 
-const recordNgaAcceptedSearchUsage = async (
-  c: any,
-  options: Parameters<typeof recordApiUsageEvent>[1]
-) => {
-  try {
-    await recordApiUsageEvent(c, options);
-  } catch (error) {
-    console.warn('NGA accepted search usage telemetry failed:', error);
-  }
-};
-
 const annotateAcceptedSearchUsage = async (
   c: any,
   metadata: Parameters<typeof annotateUsageEvent>[1]
@@ -3106,7 +3096,22 @@ searchRoutes.post('/search/text', async (c) => {
     let ngaQuota: PublicSearchQuota | undefined;
     if (isNgaPublicSearch) {
       try {
-        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        const usageEvent = (c as any).get('usageEventId')
+          ? undefined
+          : prepareApiUsageEvent(c as any, {
+              queryType: 'vector_search',
+              orgId: orgId || null,
+              metadata: {
+                search: { mode: 'text', query },
+              },
+              onlyWhenPreviousStatementChanged: true,
+            });
+        const reservation = usageEvent
+          ? await reserveNgaPublicSearchQuotaWithUsageEvent(
+              c.env.DB,
+              usageEvent
+            )
+          : await reserveNgaPublicSearchQuota(c.env.DB);
         setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
@@ -3136,15 +3141,6 @@ searchRoutes.post('/search/text', async (c) => {
         );
       }
 
-      if (!(c as any).get('usageEventId')) {
-        await recordNgaAcceptedSearchUsage(c as any, {
-          queryType: 'vector_search',
-          orgId: orgId || null,
-          metadata: {
-            search: { mode: 'text', query, quotaRemaining: ngaQuota.remaining },
-          },
-        });
-      }
     }
     const structuredConstraints =
       ngaPlan?.constraints ?? canonicalNgsConstraints;
@@ -3550,7 +3546,22 @@ searchRoutes.post('/search/image', async (c) => {
     let ngaQuota: PublicSearchQuota | undefined;
     if (isNgaPublicSearch) {
       try {
-        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        const usageEvent = (c as any).get('usageEventId')
+          ? undefined
+          : prepareApiUsageEvent(c as any, {
+              queryType: 'vector_search',
+              orgId: orgId || null,
+              metadata: {
+                search: { mode: 'image' },
+              },
+              onlyWhenPreviousStatementChanged: true,
+            });
+        const reservation = usageEvent
+          ? await reserveNgaPublicSearchQuotaWithUsageEvent(
+              c.env.DB,
+              usageEvent
+            )
+          : await reserveNgaPublicSearchQuota(c.env.DB);
         setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
@@ -3580,15 +3591,6 @@ searchRoutes.post('/search/image', async (c) => {
         );
       }
 
-      if (!(c as any).get('usageEventId')) {
-        await recordNgaAcceptedSearchUsage(c as any, {
-          queryType: 'vector_search',
-          orgId: orgId || null,
-          metadata: {
-            search: { mode: 'image', quotaRemaining: ngaQuota.remaining },
-          },
-        });
-      }
     }
 
     // Convert image to ArrayBuffer

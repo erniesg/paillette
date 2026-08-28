@@ -7,6 +7,7 @@ import {
   NGA_PUBLIC_SEARCH_QUOTA_SCOPE,
   getNgaPublicSearchQuota,
   reserveNgaPublicSearchQuota,
+  reserveNgaPublicSearchQuotaWithUsageEvent,
 } from './nga-search-quota';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
@@ -15,6 +16,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
 
 const createD1 = () => {
   const sqlite = new DatabaseSync(':memory:');
+  let batchTail: Promise<void> = Promise.resolve();
   sqlite.exec(
     readFileSync(
       new URL(
@@ -24,6 +26,7 @@ const createD1 = () => {
       'utf8'
     )
   );
+  sqlite.exec('CREATE TABLE api_usage_events (id TEXT PRIMARY KEY)');
 
   const db = {
     prepare(sql: string) {
@@ -37,7 +40,47 @@ const createD1 = () => {
         async first<T>() {
           return (statement.get(...(params as never[])) as T | undefined) ?? null;
         },
+        async run<T>() {
+          const results = statement.all(...(params as never[])) as T[];
+          return {
+            success: true,
+            meta: {
+              changes: (
+                sqlite.prepare('SELECT changes() AS count').get() as {
+                  count: number;
+                }
+              ).count,
+            },
+            results,
+          };
+        },
+        all<T>() {
+          return Promise.resolve({
+            success: true,
+            results: statement.all(...(params as never[])) as T[],
+          });
+        },
       };
+    },
+    batch(statements: Array<{ run: () => Promise<unknown> }>) {
+      const runBatch = async () => {
+        sqlite.exec('BEGIN');
+        try {
+          const results = [];
+          for (const statement of statements) results.push(await statement.run());
+          sqlite.exec('COMMIT');
+          return results;
+        } catch (error) {
+          sqlite.exec('ROLLBACK');
+          throw error;
+        }
+      };
+      const result = batchTail.then(runBatch, runBatch);
+      batchTail = result.then(
+        () => undefined,
+        () => undefined
+      );
+      return result;
     },
   } as unknown as D1Database;
 
@@ -109,6 +152,79 @@ describe('NGA public search quota', () => {
     await expect(reserveNgaPublicSearchQuota(db)).rejects.toThrow(
       'NGA public search quota row is missing'
     );
+    sqlite.close();
+  });
+
+  it('commits the quota debit and accepted-search event together', async () => {
+    const { db, sqlite } = createD1();
+    let marked = false;
+    const usageEvent = {
+      id: 'accepted-search',
+      metadata: {},
+      statement: db
+        .prepare('INSERT INTO api_usage_events (id) SELECT ? WHERE changes() = 1')
+        .bind('accepted-search'),
+      markRecorded: () => {
+        marked = true;
+      },
+    };
+
+    await expect(
+      reserveNgaPublicSearchQuotaWithUsageEvent(db, usageEvent)
+    ).resolves.toMatchObject({
+      admitted: true,
+      quota: { used: 1, remaining: 999 },
+    });
+    expect(marked).toBe(true);
+    expect(
+      sqlite.prepare('SELECT id FROM api_usage_events').all()
+    ).toEqual([{ id: 'accepted-search' }]);
+    sqlite.close();
+  });
+
+  it('rolls back the quota debit when accepted-search logging fails', async () => {
+    const { db, sqlite } = createD1();
+    sqlite.prepare('INSERT INTO api_usage_events (id) VALUES (?)').run('taken');
+    const usageEvent = {
+      id: 'accepted-search',
+      metadata: {},
+      statement: db.prepare('INSERT INTO api_usage_events (id) VALUES (?)').bind('taken'),
+      markRecorded: () => undefined,
+    };
+
+    await expect(
+      reserveNgaPublicSearchQuotaWithUsageEvent(db, usageEvent)
+    ).rejects.toThrow();
+    await expect(getNgaPublicSearchQuota(db)).resolves.toMatchObject({ used: 0 });
+    expect(sqlite.prepare('SELECT id FROM api_usage_events').all()).toEqual([
+      { id: 'taken' },
+    ]);
+    sqlite.close();
+  });
+
+  it('admits one concurrent final-slot request and creates one event', async () => {
+    const { db, sqlite } = createD1();
+    sqlite
+      .prepare(
+        'UPDATE nga_public_search_quota SET used = hard_limit - 1 WHERE scope = ?'
+      )
+      .run(NGA_PUBLIC_SEARCH_QUOTA_SCOPE);
+    const event = (id: string) => ({
+      id,
+      metadata: {},
+      statement: db
+        .prepare('INSERT INTO api_usage_events (id) SELECT ? WHERE changes() = 1')
+        .bind(id),
+      markRecorded: () => undefined,
+    });
+
+    const reservations = await Promise.all([
+      reserveNgaPublicSearchQuotaWithUsageEvent(db, event('first')),
+      reserveNgaPublicSearchQuotaWithUsageEvent(db, event('second')),
+    ]);
+
+    expect(reservations.filter(({ admitted }) => admitted)).toHaveLength(1);
+    expect(sqlite.prepare('SELECT id FROM api_usage_events').all()).toHaveLength(1);
     sqlite.close();
   });
 });

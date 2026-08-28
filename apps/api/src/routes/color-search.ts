@@ -11,7 +11,7 @@ import {
   annotateUsageEvent,
   enforceDailyQuota,
   getAuth,
-  recordApiUsageEvent,
+  prepareApiUsageEvent,
   recordArtworkResults,
   requireAuthOrApiKey,
   requireOrgMutationAccess,
@@ -23,7 +23,10 @@ import {
   resolveOpenAccessProviderScope,
   resolveOrgIdentifier,
 } from '../utils/orgs';
-import { reserveNgaPublicSearchQuota } from '../utils/nga-search-quota';
+import {
+  reserveNgaPublicSearchQuota,
+  reserveNgaPublicSearchQuotaWithUsageEvent,
+} from '../utils/nga-search-quota';
 import type { PublicSearchQuota } from '@paillette/types';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
@@ -112,7 +115,20 @@ colorSearchRoutes.post('/search/color', async (c) => {
     let ngaQuota: PublicSearchQuota | undefined;
     if (provider === 'nga') {
       try {
-        const reservation = await reserveNgaPublicSearchQuota(c.env.DB);
+        const usageEvent = (c as any).get('usageEventId')
+          ? undefined
+          : prepareApiUsageEvent(c as any, {
+              queryType: 'color_search',
+              orgId: orgId || null,
+              metadata: { search: { mode: 'color' } },
+              onlyWhenPreviousStatementChanged: true,
+            });
+        const reservation = usageEvent
+          ? await reserveNgaPublicSearchQuotaWithUsageEvent(
+              c.env.DB,
+              usageEvent
+            )
+          : await reserveNgaPublicSearchQuota(c.env.DB);
         setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
@@ -142,22 +158,6 @@ colorSearchRoutes.post('/search/color', async (c) => {
         );
       }
 
-      if (!(c as any).get('usageEventId')) {
-        try {
-          await recordApiUsageEvent(c as any, {
-            queryType: 'color_search',
-            orgId: orgId || null,
-            metadata: {
-              search: { mode: 'color', quotaRemaining: ngaQuota.remaining },
-            },
-          });
-        } catch (error) {
-          console.warn(
-            'NGA accepted color search usage telemetry failed:',
-            error
-          );
-        }
-      }
     }
 
     // Query artworks with color data

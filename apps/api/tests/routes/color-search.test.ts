@@ -17,6 +17,7 @@ describe('Color Search API', () => {
   let usageEventInserts: number;
   let dailyQuotaChargeUpdates: number;
   let failUsageEventUpdates: boolean;
+  let failUsageEventInserts: boolean;
   let mutationAuthorizedUserIds: Set<string>;
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
@@ -33,6 +34,7 @@ describe('Color Search API', () => {
     usageEventInserts = 0;
     dailyQuotaChargeUpdates = 0;
     failUsageEventUpdates = false;
+    failUsageEventInserts = false;
     mutationAuthorizedUserIds = new Set(['test-user']);
     const artwork = {
       id: 'test-artwork-123',
@@ -53,6 +55,7 @@ describe('Color Search API', () => {
         prepare: vi.fn((sql: string) => {
           let params: unknown[] = [];
           const statement = {
+            sql,
             bind: (...values: unknown[]) => {
               params = values;
               return statement;
@@ -97,6 +100,17 @@ describe('Color Search API', () => {
               return artwork;
             }),
             run: vi.fn(async () => {
+              if (sql.includes('UPDATE nga_public_search_quota')) {
+                if (ngsQuota.used >= ngsQuota.hard_limit) {
+                  return { success: true, meta: { changes: 0 }, results: [] };
+                }
+                ngsQuota.used += 1;
+                return {
+                  success: true,
+                  meta: { changes: 1 },
+                  results: [ngsQuota],
+                };
+              }
               if (
                 sql.includes('UPDATE api_usage_daily') &&
                 sql.includes('used = used + ?')
@@ -104,6 +118,9 @@ describe('Color Search API', () => {
                 dailyQuotaChargeUpdates += 1;
               }
               if (sql.includes('INSERT INTO api_usage_events')) {
+                if (failUsageEventInserts) {
+                  throw new Error('usage telemetry unavailable');
+                }
                 usageEventInserts += 1;
               }
               if (
@@ -117,7 +134,32 @@ describe('Color Search API', () => {
           };
           return statement;
         }),
-        batch: vi.fn(async () => []),
+        batch: vi.fn(async (statements: Array<any>) => {
+          const quotaBefore = { ...ngsQuota };
+          const usageBefore = usageEventInserts;
+          let previousChanges = 0;
+          try {
+            const results = [];
+            for (const statement of statements) {
+              if (
+                statement.sql.includes('INSERT INTO api_usage_events') &&
+                statement.sql.includes('WHERE changes() = 1') &&
+                previousChanges !== 1
+              ) {
+                results.push({ success: true, meta: { changes: 0 }, results: [] });
+                continue;
+              }
+              const result = await statement.run();
+              previousChanges = result.meta.changes;
+              results.push(result);
+            }
+            return results;
+          } catch (error) {
+            ngsQuota = quotaBefore;
+            usageEventInserts = usageBefore;
+            throw error;
+          }
+        }),
       } as unknown as D1Database,
       AI: {} as any,
       VECTORIZE: {} as any,
@@ -185,6 +227,32 @@ describe('Color Search API', () => {
         used: 1,
         remaining: 999,
       });
+    });
+
+    it('fails closed without a quota debit when NGA usage logging fails', async () => {
+      testGalleryId = 'open-access-art';
+      failUsageEventInserts = true;
+      const integratedApp = new Hono<{ Bindings: Env }>();
+      integratedApp.route('/galleries/:galleryId', searchRoutes);
+      integratedApp.route('/galleries/:galleryId', colorSearchRoutes);
+
+      const res = await integratedApp.request('/galleries/nga/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ colors: ['#FF5733'] }),
+      }, mockEnv);
+
+      expect(res.status).toBe(503);
+      expect((await res.json()).error.code).toBe(
+        'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE'
+      );
+      expect(ngsQuota.used).toBe(0);
+      expect(usageEventInserts).toBe(0);
+      expect(
+        (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
+          sql.includes('dominant_colors IS NOT NULL')
+        )
+      ).toBe(false);
     });
 
     it('should search by single color', async () => {
