@@ -34,7 +34,15 @@ class FakeStatement {
 }
 
 class FakeManagementDb {
-  users: Row[] = [];
+  users: Row[] = [
+    {
+      id: USER_ID,
+      email: 'curator@example.com',
+      name: 'Test Global Admin',
+      role: 'admin',
+    },
+  ];
+  orgUsers: Row[] = [];
   orgs: Row[] = [
     {
       id: ORG_ID,
@@ -138,6 +146,25 @@ class FakeManagementDb {
   }
 
   async first<T>(sql: string, params: unknown[]): Promise<T | null> {
+    if (sql.includes('FROM users')) {
+      const [userId] = params as [string];
+      const user = this.users.find((candidate) => candidate.id === userId);
+      if (!user) return null;
+      if (sql.includes("role = 'admin'")) {
+        return (user.role === 'admin' ? { allowed: 1 } : null) as T | null;
+      }
+      return user as T;
+    }
+
+    if (sql.includes('FROM org_users')) {
+      const [orgId, userId] = params as [string, string];
+      const membership = this.orgUsers.find(
+        (candidate) =>
+          candidate.org_id === orgId && candidate.user_id === userId
+      );
+      return (membership ? { allowed: 1, ...membership } : null) as T | null;
+    }
+
     if (sql.includes('SELECT id FROM orgs WHERE lower(slug)')) {
       const [slug] = params as [string];
       return (
@@ -474,6 +501,11 @@ const authHeaders = {
   'X-User-Email': 'curator@example.com',
 };
 
+const mcpAdminHeaders = {
+  ...authHeaders,
+  'X-User-Scopes': 'mcp:write',
+};
+
 describe('management API', () => {
   let db: FakeManagementDb;
   let env: Env;
@@ -720,7 +752,7 @@ describe('management API', () => {
     const response = await app.fetch(
       new Request('http://localhost/api/v1/mcp', {
         method: 'POST',
-        headers: authHeaders,
+        headers: mcpAdminHeaders,
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
