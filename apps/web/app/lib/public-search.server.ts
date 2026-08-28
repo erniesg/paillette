@@ -292,10 +292,6 @@ export const buildPublicSearchHeaders = (
     'Origin',
     'Referer',
     'User-Agent',
-    'X-Forwarded-For',
-    'CF-Connecting-IP',
-    'CF-IPCountry',
-    'CF-Ray',
   ];
 
   for (const header of forwardedHeaders) {

@@ -1,11 +1,46 @@
 import { describe, expect, it } from 'vitest';
 import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
+  buildPublicSearchHeaders,
   buildPublicTextSearchCacheKey,
   isAllowedPublicSearchRouteId,
   isHiddenPublicNgsArtwork,
   resolvePublicSearchOrgId,
 } from '../public-search.server';
+
+describe('buildPublicSearchHeaders', () => {
+  it('does not relay caller-controlled client identity or auth headers', () => {
+    const headers = buildPublicSearchHeaders(
+      new Request('https://paillette.test/api/public-search/nga/text', {
+        headers: {
+          Accept: 'application/json',
+          'Accept-Language': 'en-SG',
+          Authorization: 'Bearer forged-browser-token',
+          Cookie: 'session=forged',
+          'CF-Connecting-IP': '203.0.113.10',
+          'True-Client-IP': '203.0.113.11',
+          'X-Forwarded-For': '203.0.113.12',
+          'X-Real-IP': '203.0.113.13',
+          'X-User-Id': 'forged-user',
+        },
+      }),
+      { PAILLETTE_PUBLIC_SEARCH_API_KEY: 'test-public-service-key' },
+      'application/json'
+    );
+
+    expect(headers?.get('X-API-Key')).toBe('test-public-service-key');
+    expect(headers?.get('Content-Type')).toBe('application/json');
+    expect(headers?.get('Accept')).toBe('application/json');
+    expect(headers?.get('Accept-Language')).toBe('en-SG');
+    expect(headers?.get('Authorization')).toBeNull();
+    expect(headers?.get('Cookie')).toBeNull();
+    expect(headers?.get('CF-Connecting-IP')).toBeNull();
+    expect(headers?.get('True-Client-IP')).toBeNull();
+    expect(headers?.get('X-Forwarded-For')).toBeNull();
+    expect(headers?.get('X-Real-IP')).toBeNull();
+    expect(headers?.get('X-User-Id')).toBeNull();
+  });
+});
 
 describe('isHiddenPublicNgsArtwork', () => {
   it('hides Roots-only museum accessions when they point at Roots records', () => {
