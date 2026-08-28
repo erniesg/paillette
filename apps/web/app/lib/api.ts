@@ -438,10 +438,12 @@ class ApiClient {
 
   async getNgsSearchQuota(
     orgId: string,
-    getAccessToken: AccessTokenProvider
+    getAccessToken: AccessTokenProvider,
+    signal?: AbortSignal
   ): Promise<NgsSearchQuota> {
     const response = await fetch(`${this.baseUrl}/orgs/${orgId}/search/quota`, {
       headers: await this.getAuthHeaders(getAccessToken),
+      signal,
     });
     const data: ApiResponse<NgsSearchQuota> = await response.json();
 

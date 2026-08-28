@@ -15,7 +15,11 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search-core';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -130,12 +134,14 @@ import {
 } from '~/lib/search-spotlights';
 import { apiClient } from '~/lib/api';
 import {
+  canRetryNgsSearch,
   formatNgsSearchQuota,
+  getNgsSearchQuotaQueryKey,
   getNgsSearchQuotaFromError,
   isNgsSearchQuotaExhausted,
   NGS_SEARCH_QUERY_OPTIONS,
   NGS_SEARCH_QUOTA_QUERY_OPTIONS,
-  type NgsSearchQuota,
+  reconcileNgsSearchQuota,
 } from '~/lib/ngs-search-quota';
 import {
   trackPublicUsageEvent,
@@ -995,14 +1001,9 @@ export default function SearchPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, login, signup, getAccessToken } = useUser();
+  const queryClient = useQueryClient();
   const isNgsSearch = preferredRouteId === 'ngs';
   const isNgsSearchLocked = isNgsSearch && !isAuthenticated;
-  const [ngsSearchQuota, setNgsSearchQuota] = useState<NgsSearchQuota | null>(
-    null
-  );
-  const hasExhaustedNgsSearchQuota = ngsSearchQuota?.remaining === 0;
-  const isNgsSearchDisabled = isNgsSearchLocked || hasExhaustedNgsSearchQuota;
-  const canSearchOnPage = !isNgsSearchDisabled;
   const urlQuery = searchParams.get('q') || '';
   const normalizedUrlQuery = normalizeSearchQuery(urlQuery);
   const urlSearchFacet = getSearchFacet(searchParams.get('field'));
@@ -1290,25 +1291,25 @@ export default function SearchPage() {
       });
     },
     enabled: shouldLoadSpotlights,
-    ...NGS_SEARCH_QUOTA_QUERY_OPTIONS,
+    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
   });
   const spotlightBundle = isNgsSearchLocked ? null : spotlightBundleQuery.data;
 
   const ngsSearchQuotaQuery = useQuery({
-    queryKey: ['ngs-search-quota', publicSearchOrgId] as const,
-    queryFn: () =>
-      apiClient.getNgsSearchQuota(publicSearchOrgId, getAccessToken),
+    queryKey: getNgsSearchQuotaQueryKey(publicSearchOrgId),
+    queryFn: ({ signal }) =>
+      apiClient.getNgsSearchQuota(publicSearchOrgId, getAccessToken, signal),
     enabled: hasMounted && isNgsSearch && isAuthenticated,
-    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    ...NGS_SEARCH_QUOTA_QUERY_OPTIONS,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
   });
-
-  useEffect(() => {
-    if (ngsSearchQuotaQuery.data) setNgsSearchQuota(ngsSearchQuotaQuery.data);
-  }, [ngsSearchQuotaQuery.data]);
+  const ngsSearchQuota = ngsSearchQuotaQuery.data ?? null;
+  const hasExhaustedNgsSearchQuota = ngsSearchQuota?.remaining === 0;
+  const isNgsSearchDisabled = isNgsSearchLocked || hasExhaustedNgsSearchQuota;
+  const canSearchOnPage = !isNgsSearchDisabled;
 
   const spotlightSearchPlaceholder = useMemo(
     () =>
@@ -1575,13 +1576,17 @@ export default function SearchPage() {
   useEffect(() => {
     if (!isNgsSearch) return;
     const quota = currentQuery.data?.quota;
-    if (quota) setNgsSearchQuota(quota);
-  }, [currentQuery.data?.quota, isNgsSearch]);
+    if (quota) {
+      void reconcileNgsSearchQuota(queryClient, publicSearchOrgId, quota);
+    }
+  }, [currentQuery.data?.quota, isNgsSearch, publicSearchOrgId, queryClient]);
   useEffect(() => {
     if (!isNgsSearch || !isNgsQuotaError) return;
     const quota = getNgsSearchQuotaFromError(error);
-    if (quota) setNgsSearchQuota(quota);
-  }, [error, isNgsQuotaError, isNgsSearch]);
+    if (quota) {
+      void reconcileNgsSearchQuota(queryClient, publicSearchOrgId, quota);
+    }
+  }, [error, isNgsQuotaError, isNgsSearch, publicSearchOrgId, queryClient]);
   const hasMoreResults = isBrowsingCollection
     ? Boolean(browseQuery.hasNextPage)
     : visibleCount < results.length;
@@ -2291,6 +2296,7 @@ export default function SearchPage() {
     ? getSelectedColour(sortColours[0])
     : null;
   const retryCurrentSearch = () => {
+    if (!canRetryNgsSearch(hasExhaustedNgsSearchQuota)) return;
     const retryTarget = displayedSearchError?.retryTarget || null;
     if (retryTarget === 'browse') {
       void browseQuery.refetch();
@@ -2404,7 +2410,8 @@ export default function SearchPage() {
               ) : null}
               {hasExhaustedNgsSearchQuota ? (
                 <p role="alert" className="text-center text-sm text-amber-100">
-                  No free searches remain. NGS search is paused for now.
+                  No free searches remain. This allowance does not reset
+                  automatically.
                 </p>
               ) : null}
 
@@ -3103,7 +3110,7 @@ export default function SearchPage() {
               <div role="alert" className="py-16 text-center">
                 <p className="text-sm font-medium text-red-300">
                   {isNgsQuotaError
-                    ? 'No free searches remain. NGS search is paused for now.'
+                    ? 'No free searches remain. This allowance does not reset automatically.'
                     : getPublicSearchErrorCopy(
                         error,
                         displayedSearchError?.source === 'ranked' &&
@@ -3112,26 +3119,27 @@ export default function SearchPage() {
                           : 'text'
                       )}
                 </p>
-                {!isNgsQuotaError && (
-                  <div className="mt-3 flex flex-wrap justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={retryCurrentSearch}
-                      className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
-                    >
-                      Try again
-                    </button>
-                    {submittedSearch?.kind === 'image' && (
+                {!isNgsQuotaError &&
+                  canRetryNgsSearch(hasExhaustedNgsSearchQuota) && (
+                    <div className="mt-3 flex flex-wrap justify-center gap-2">
                       <button
                         type="button"
-                        onClick={chooseReplacementImage}
-                        className="inline-flex h-9 items-center rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white"
+                        onClick={retryCurrentSearch}
+                        className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
                       >
-                        Replace image
+                        Try again
                       </button>
-                    )}
-                  </div>
-                )}
+                      {submittedSearch?.kind === 'image' && (
+                        <button
+                          type="button"
+                          onClick={chooseReplacementImage}
+                          className="inline-flex h-9 items-center rounded-md px-3 text-xs font-medium text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white"
+                        >
+                          Replace image
+                        </button>
+                      )}
+                    </div>
+                  )}
               </div>
             )}
 

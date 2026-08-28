@@ -20,9 +20,10 @@ describe('NGS search quota API client', () => {
       )
     );
     vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
 
     await expect(
-      apiClient.getNgsSearchQuota('ngs', getAccessToken)
+      apiClient.getNgsSearchQuota('ngs', getAccessToken, controller.signal)
     ).resolves.toEqual({
       limit: 1000,
       used: 9,
@@ -32,6 +33,7 @@ describe('NGS search quota API client', () => {
       expect.stringMatching(/\/orgs\/ngs\/search\/quota$/),
       expect.objectContaining({
         headers: { Authorization: 'Bearer access-token' },
+        signal: controller.signal,
       })
     );
   });

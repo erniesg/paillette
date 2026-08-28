@@ -1,4 +1,5 @@
 import type { PublicSearchQuota } from '@paillette/types/public-search';
+import type { QueryClient } from '@tanstack/react-query';
 
 export type NgsSearchQuota = PublicSearchQuota;
 
@@ -26,6 +27,22 @@ export const NGS_SEARCH_QUOTA_QUERY_OPTIONS = {
   refetchInterval: 30_000,
   refetchIntervalInBackground: false,
 } as const;
+
+export const getNgsSearchQuotaQueryKey = (orgId: string) =>
+  ['ngs-search-quota', orgId] as const;
+
+export const reconcileNgsSearchQuota = async (
+  queryClient: QueryClient,
+  orgId: string,
+  quota: NgsSearchQuota
+) => {
+  const queryKey = getNgsSearchQuotaQueryKey(orgId);
+  await queryClient.cancelQueries({ queryKey });
+  queryClient.setQueryData(queryKey, quota);
+};
+
+export const canRetryNgsSearch = (hasExhaustedQuota: boolean) =>
+  !hasExhaustedQuota;
 
 export const isNgsSearchQuotaExhausted = (error: unknown) =>
   Boolean(

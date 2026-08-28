@@ -98,7 +98,8 @@ export class MockApiClient {
 
   async getNgsSearchQuota(
     _orgId: string,
-    _getAccessToken: () => Promise<string | undefined>
+    _getAccessToken: () => Promise<string | undefined>,
+    _signal?: AbortSignal
   ): Promise<NgsSearchQuota> {
     return { limit: 1000, used: 0, remaining: 1000 };
   }
