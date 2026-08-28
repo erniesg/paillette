@@ -59,6 +59,29 @@ CREATE TABLE IF NOT EXISTS search_access_approvals (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Fresh installs receive the same durable identities as migrations 0017 and
+-- 0018. The public principal is deliberately a non-privileged service user:
+-- accepted NGA-search telemetry references users under foreign-key checks.
+INSERT OR IGNORE INTO users (id, email, password_hash, name, role)
+VALUES
+  (
+    'user-bootstrap-hello-ernie-sg',
+    'hello@ernie.sg',
+    'external-identity',
+    'Ernie',
+    'admin'
+  ),
+  (
+    'public-search-web',
+    'public-search-web@invalid.paillette.local',
+    'service-account-no-login',
+    'NGA Public Search',
+    'viewer'
+  );
+
+INSERT OR IGNORE INTO search_access_approvals (user_id, status, approved_by)
+VALUES ('user-bootstrap-hello-ernie-sg', 'active', 'bootstrap:hello@ernie.sg');
+
 -- ============================================================================
 -- Orgs Table
 -- ============================================================================

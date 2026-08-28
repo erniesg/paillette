@@ -2,7 +2,8 @@
 --
 -- This migration is intentionally additive. The objects may already exist in
 -- staging and production from the historical 0015 migration, so every DDL
--- statement is idempotent and the bootstrap rows are never updated or rebound.
+-- statement is idempotent. The bootstrap may repair a legacy active account
+-- once, but must never undo an operator's explicit revoked approval.
 
 CREATE TABLE IF NOT EXISTS auth_identities (
   provider TEXT NOT NULL,
@@ -56,18 +57,24 @@ WHERE NOT EXISTS (
   SELECT 1 FROM users WHERE lower(email) = 'hello@ernie.sg'
 );
 
--- Keep the designated bootstrap account recoverable when an older install
--- already has this email but was provisioned as a viewer. This exact-email
--- repair deliberately cannot affect other accounts.
-UPDATE users
-SET role = 'admin'
-WHERE lower(email) = 'hello@ernie.sg';
-
+-- Seed the approval only when it is absent. In particular, preserve an
+-- existing revoked record: a migration replay must not re-grant access that
+-- an operator intentionally removed.
 INSERT INTO search_access_approvals (user_id, status, approved_by)
 SELECT id, 'active', 'bootstrap:hello@ernie.sg'
 FROM users
 WHERE lower(email) = 'hello@ernie.sg'
-ON CONFLICT(user_id) DO UPDATE SET
-  status = 'active',
-  revoked_at = NULL,
-  updated_at = datetime('now');
+ON CONFLICT(user_id) DO NOTHING;
+
+-- Recover only the designated bootstrap account when its approval is active.
+-- This upgrades a pre-existing legacy viewer on the first migration run, but
+-- a later operator revocation plus demotion remains intact on reapplication.
+UPDATE users
+SET role = 'admin'
+WHERE lower(email) = 'hello@ernie.sg'
+  AND EXISTS (
+    SELECT 1
+    FROM search_access_approvals
+    WHERE search_access_approvals.user_id = users.id
+      AND search_access_approvals.status = 'active'
+  );

@@ -25,7 +25,7 @@ const migration = readFileSync(
 );
 
 describe('WorkOS auth migration', () => {
-  it('repairs only the intended bootstrap user to admin and active approval', () => {
+  it('repairs only the intended legacy bootstrap viewer when no approval exists', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(`
       CREATE TABLE users (
@@ -40,7 +40,57 @@ describe('WorkOS auth migration', () => {
         ('bootstrap-existing', 'hello@ernie.sg', 'x', 'Existing Ernie', 'viewer'),
         ('other-user', 'other@example.test', 'x', 'Other', 'viewer');
     `);
+    db.exec(migration);
+
+    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('bootstrap-existing')).toEqual({ role: 'admin' });
+    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('other-user')).toEqual({ role: 'viewer' });
+    expect(db.prepare('SELECT status, approved_by FROM search_access_approvals WHERE user_id = ?').get('bootstrap-existing')).toEqual({
+      status: 'active',
+      approved_by: 'bootstrap:hello@ernie.sg',
+    });
+    db.close();
+  });
+
+  it('preserves a revoked bootstrap approval and its operator demotion on reapplication', () => {
+    const db = new DatabaseSync(':memory:');
     db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL
+      );
+      INSERT INTO users (id, email, password_hash, name, role)
+      VALUES ('bootstrap-existing', 'hello@ernie.sg', 'x', 'Existing Ernie', 'viewer');
+    `);
+
+    db.exec(migration);
+    db.exec(`
+      UPDATE users SET role = 'viewer' WHERE id = 'bootstrap-existing';
+      UPDATE search_access_approvals
+      SET status = 'revoked', approved_by = 'operator', revoked_at = datetime('now')
+      WHERE user_id = 'bootstrap-existing';
+    `);
+    db.exec(migration);
+
+    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('bootstrap-existing')).toEqual({ role: 'viewer' });
+    expect(
+      db.prepare('SELECT status, approved_by FROM search_access_approvals WHERE user_id = ?').get('bootstrap-existing')
+    ).toEqual({ status: 'revoked', approved_by: 'operator' });
+    db.close();
+  });
+
+  it('does not promote a legacy bootstrap account with an existing revoked approval', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL
+      );
       CREATE TABLE search_access_approvals (
         user_id TEXT PRIMARY KEY,
         status TEXT NOT NULL,
@@ -50,17 +100,52 @@ describe('WorkOS auth migration', () => {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      INSERT INTO users (id, email, password_hash, name, role)
+      VALUES ('bootstrap-existing', 'hello@ernie.sg', 'x', 'Existing Ernie', 'viewer');
       INSERT INTO search_access_approvals (user_id, status, approved_by, revoked_at)
       VALUES ('bootstrap-existing', 'revoked', 'operator', datetime('now'));
     `);
 
     db.exec(migration);
 
-    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('bootstrap-existing')).toEqual({ role: 'admin' });
-    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('other-user')).toEqual({ role: 'viewer' });
+    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('bootstrap-existing')).toEqual({ role: 'viewer' });
     expect(
-      db.prepare('SELECT status, revoked_at FROM search_access_approvals WHERE user_id = ?').get('bootstrap-existing')
-    ).toEqual({ status: 'active', revoked_at: null });
+      db.prepare('SELECT status, approved_by FROM search_access_approvals WHERE user_id = ?').get('bootstrap-existing')
+    ).toEqual({ status: 'revoked', approved_by: 'operator' });
+    db.close();
+  });
+
+  it('repairs a legacy bootstrap viewer when its existing approval is active', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL
+      );
+      CREATE TABLE search_access_approvals (
+        user_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        approved_by TEXT NOT NULL,
+        approved_at TEXT NOT NULL DEFAULT (datetime('now')),
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO users (id, email, password_hash, name, role)
+      VALUES ('bootstrap-existing', 'hello@ernie.sg', 'x', 'Existing Ernie', 'viewer');
+      INSERT INTO search_access_approvals (user_id, status, approved_by)
+      VALUES ('bootstrap-existing', 'active', 'operator');
+    `);
+
+    db.exec(migration);
+
+    expect(db.prepare('SELECT role FROM users WHERE id = ?').get('bootstrap-existing')).toEqual({ role: 'admin' });
+    expect(
+      db.prepare('SELECT status, approved_by FROM search_access_approvals WHERE user_id = ?').get('bootstrap-existing')
+    ).toEqual({ status: 'active', approved_by: 'operator' });
     db.close();
   });
 
