@@ -2,7 +2,13 @@ import type { LoaderFunctionArgs } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
 import type { ApiResponse } from '~/types';
 import {
+  getNgaSearchQuota,
+  getNgaSearchQuotaFromHeaders,
+  type NgaSearchQuota,
+} from '~/lib/nga-search-quota';
+import {
   buildPublicSearchHeaders,
+  copyPublicSearchResponseHeaders,
   getApiBaseUrl,
   getServerEnv,
   isAllowedPublicSearchRouteId,
@@ -13,18 +19,33 @@ import {
 const noStore = <T>(payload: T, status: number, upstream?: Response) => {
   const headers = new Headers({ 'Cache-Control': 'no-store' });
   if (upstream) {
-    for (const header of [
-      'Retry-After',
-      'X-NGA-Search-Limit',
-      'X-NGA-Search-Used',
-      'X-NGA-Search-Remaining',
-    ]) {
-      const value = upstream.headers.get(header);
-      if (value) headers.set(header, value);
-    }
+    copyPublicSearchResponseHeaders(upstream, headers);
   }
   return json(payload, { status, headers });
 };
+
+const upstreamQuotaError = () =>
+  noStore<ApiResponse>(
+    {
+      success: false,
+      error: {
+        code: 'PUBLIC_SEARCH_QUOTA_UPSTREAM_ERROR',
+        message: 'Search quota is temporarily unavailable.',
+      },
+    },
+    502
+  );
+
+const getSuccessfulQuota = (payload: unknown): NgaSearchQuota | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const envelope = payload as { success?: unknown; data?: unknown };
+  return envelope.success === true ? getNgaSearchQuota(envelope.data) : null;
+};
+
+const isSameQuota = (left: NgaSearchQuota, right: NgaSearchQuota) =>
+  left.limit === right.limit &&
+  left.used === right.used &&
+  left.remaining === right.remaining;
 
 export const loader = async ({
   context,
@@ -63,17 +84,38 @@ export const loader = async ({
     `${getApiBaseUrl(env)}/orgs/${resolvePublicSearchOrgId(orgId)}/search/quota`,
     { method: 'GET', headers, signal: request.signal }
   );
-  let payload: ApiResponse;
+  let payload: unknown;
   try {
-    payload = (await response.json()) as ApiResponse;
+    payload = await response.json();
   } catch {
-    payload = {
-      success: false,
-      error: {
-        code: 'PUBLIC_SEARCH_QUOTA_UPSTREAM_ERROR',
-        message: 'Search quota is temporarily unavailable.',
-      },
-    };
+    return response.ok
+      ? upstreamQuotaError()
+      : noStore<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PUBLIC_SEARCH_QUOTA_UPSTREAM_ERROR',
+              message: 'Search quota is temporarily unavailable.',
+            },
+          },
+          response.status,
+          response
+        );
   }
-  return noStore(payload, response.status, response);
+
+  if (!response.ok) {
+    return noStore(payload as ApiResponse, response.status, response);
+  }
+
+  const bodyQuota = getSuccessfulQuota(payload);
+  const headerQuota = getNgaSearchQuotaFromHeaders(response.headers);
+  if (!bodyQuota || !headerQuota || !isSameQuota(bodyQuota, headerQuota)) {
+    return upstreamQuotaError();
+  }
+
+  return noStore<ApiResponse<NgaSearchQuota>>(
+    { success: true, data: bodyQuota },
+    response.status,
+    response
+  );
 };
