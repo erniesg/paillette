@@ -33,6 +33,15 @@ const RESPONSE_HEADERS = [
 
 const privateNoStore = { 'Cache-Control': 'private, no-store' };
 
+const isSafeMutationRequest = (request: Request) => {
+  if (request.method === 'GET' || request.method === 'HEAD') return true;
+
+  const origin = request.headers.get('Origin');
+  if (origin !== null) return origin === new URL(request.url).origin;
+
+  return request.headers.get('Sec-Fetch-Site') === 'same-origin';
+};
+
 const proxyError = (status: number, code: string, message: string) =>
   json(
     { success: false, error: { code, message } },
@@ -122,10 +131,19 @@ const proxyAuthenticatedRequest = async (
   });
 };
 
-const handle = (args: ProxyArgs) =>
-  withWorkOSSession(args as any, (session) =>
+const handle = (args: ProxyArgs) => {
+  if (!isSafeMutationRequest(args.request)) {
+    return proxyError(
+      403,
+      'CSRF_VALIDATION_FAILED',
+      'This request must originate from the application.'
+    );
+  }
+
+  return withWorkOSSession(args as any, (session) =>
     proxyAuthenticatedRequest(args, session)
   );
+};
 
 export const loader = handle;
 export const action = handle;

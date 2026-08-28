@@ -8,7 +8,10 @@ vi.mock('~/lib/workos-auth.server', () => ({
   withWorkOSSession: withWorkOSSessionMock,
 }));
 
-import { loader as backendLoader } from '../api.backend.$';
+import {
+  action as backendAction,
+  loader as backendLoader,
+} from '../api.backend.$';
 import { loader as assetLoader } from '../api.public-assets.$assetId.content';
 
 const session = {
@@ -16,7 +19,10 @@ const session = {
   user: { id: 'user_approved', email: 'hello@example.test' },
 };
 
-const backendArgs = (path = 'orgs/ngs/search/quota') =>
+const backendArgs = (
+  path = 'orgs/ngs/search/quota',
+  init: RequestInit = {}
+) =>
   ({
     context: {
       cloudflare: {
@@ -25,7 +31,8 @@ const backendArgs = (path = 'orgs/ngs/search/quota') =>
     },
     params: { '*': path },
     request: new Request(
-      `https://paillette-stg.berlayar.ai/api/backend/${path}`
+      `https://paillette-stg.berlayar.ai/api/backend/${path}`,
+      init
     ),
   }) as any;
 
@@ -119,6 +126,76 @@ describe('WorkOS authenticated resource proxies', () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'a hostile sibling origin',
+      { Origin: 'https://evil.berlayar.ai', 'Sec-Fetch-Site': 'same-site' },
+    ],
+    [
+      'a cross-site origin',
+      { Origin: 'https://example.test', 'Sec-Fetch-Site': 'cross-site' },
+    ],
+    ['no browser provenance headers', {}],
+  ])('rejects a mutation from %s before loading a session or contacting the API', async (_label, headers) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await backendAction(
+      backendArgs('orgs/ngs/search', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query: 'mother and child' }),
+      })
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'CSRF_VALIDATION_FAILED' },
+    });
+    expect(withWorkOSSessionMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards a same-origin mutation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await backendAction(
+      backendArgs('orgs/ngs/search', {
+        method: 'POST',
+        headers: { Origin: 'https://paillette-stg.berlayar.ai' },
+        body: JSON.stringify({ query: 'mother and child' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(withWorkOSSessionMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('does not let Sec-Fetch-Site override a hostile Origin', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await backendAction(
+      backendArgs('orgs/ngs/search', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://evil.berlayar.ai',
+          'Sec-Fetch-Site': 'same-origin',
+        },
+        body: JSON.stringify({ query: 'mother and child' }),
+      })
+    );
+
+    expect(response.status).toBe(403);
+    expect(withWorkOSSessionMock).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
