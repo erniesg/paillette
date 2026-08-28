@@ -38,6 +38,25 @@ describe('NGA public search quota API client', () => {
     expect(getAccessToken).not.toHaveBeenCalled();
   });
 
+  it('rejects a malformed NGA quota response body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: { limit: 1000, used: 1, remaining: 1000 },
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    await expect(apiClient.getNgaPublicSearchQuota()).rejects.toMatchObject({
+      message: 'Failed to fetch search quota',
+    });
+  });
+
   it('uses the same-origin session proxy for authenticated NGS browsing', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

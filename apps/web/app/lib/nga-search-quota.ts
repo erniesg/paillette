@@ -3,18 +3,24 @@ import type { QueryClient } from '@tanstack/react-query';
 
 export type NgaSearchQuota = PublicSearchQuota;
 
-const isNgaSearchQuota = (value: unknown): value is NgaSearchQuota => {
+const isValidNgaSearchQuota = (value: unknown): value is NgaSearchQuota => {
   if (!value || typeof value !== 'object') return false;
   const quota = value as Record<string, unknown>;
-  return (
-    typeof quota.limit === 'number' &&
-    typeof quota.used === 'number' &&
-    typeof quota.remaining === 'number'
-  );
+  const { limit, used, remaining } = quota;
+  return typeof limit === 'number' &&
+    typeof used === 'number' &&
+    typeof remaining === 'number' &&
+    Number.isSafeInteger(limit) &&
+    Number.isSafeInteger(used) &&
+    Number.isSafeInteger(remaining) &&
+    limit >= 0 &&
+    used >= 0 &&
+    remaining >= 0 &&
+    used + remaining === limit;
 };
 
 export const getNgaSearchQuota = (value: unknown) =>
-  isNgaSearchQuota(value) ? value : null;
+  isValidNgaSearchQuota(value) ? value : null;
 
 export const getNgaSearchQuotaFromHeaders = (headers: Headers) => {
   const rawLimit = headers.get('X-NGA-Search-Limit');
@@ -33,19 +39,7 @@ export const getNgaSearchQuotaFromHeaders = (headers: Headers) => {
   const remaining = Number(rawRemaining);
   const quota = { limit, used, remaining };
 
-  if (
-    !Number.isSafeInteger(limit) ||
-    !Number.isSafeInteger(used) ||
-    !Number.isSafeInteger(remaining) ||
-    limit < 0 ||
-    used < 0 ||
-    remaining < 0 ||
-    used + remaining !== limit
-  ) {
-    return null;
-  }
-
-  return quota;
+  return getNgaSearchQuota(quota);
 };
 
 export const withNgaSearchQuotaFromHeaders = (
@@ -73,10 +67,12 @@ export const reconcileNgaSearchQuota = async (
   quota: NgaSearchQuota
 ) => {
   const queryKey = getNgaSearchQuotaQueryKey();
+  const validatedQuota = getNgaSearchQuota(quota);
+  if (!validatedQuota) return;
   await queryClient.cancelQueries({ queryKey });
   const currentQuota = queryClient.getQueryData<NgaSearchQuota>(queryKey);
-  if (currentQuota && quota.remaining > currentQuota.remaining) return;
-  queryClient.setQueryData(queryKey, quota);
+  if (currentQuota && validatedQuota.remaining > currentQuota.remaining) return;
+  queryClient.setQueryData(queryKey, validatedQuota);
 };
 
 export const canRetryNgaSearch = (hasExhaustedQuota: boolean) =>

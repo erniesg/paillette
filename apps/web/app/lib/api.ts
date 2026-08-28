@@ -23,7 +23,7 @@ import type {
   DailyUsageSummary,
 } from '../types';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
-import type { NgaSearchQuota } from './nga-search-quota';
+import { getNgaSearchQuota, type NgaSearchQuota } from './nga-search-quota';
 
 // Get API URL from environment or use default
 // In local dev, use localhost:8787 (wrangler dev default port)
@@ -454,11 +454,12 @@ class ApiClient {
     const response = await fetch('/api/public-search/nga/quota', { signal });
     const data: ApiResponse<NgaSearchQuota> = await response.json();
 
-    if (!response.ok || !data.success || !data.data) {
+    const quota = getNgaSearchQuota(data.data);
+    if (!response.ok || !data.success || !quota) {
       throw this.createApiError(data.error, 'Failed to fetch search quota');
     }
 
-    return data.data;
+    return quota;
   }
 
   /**

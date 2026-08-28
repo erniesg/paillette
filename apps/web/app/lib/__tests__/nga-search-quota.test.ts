@@ -27,6 +27,22 @@ describe('NGA public search quota presentation', () => {
     ).toBe('999 free searches left');
   });
 
+  it.each([
+    ['negative', { limit: 1000, used: -1, remaining: 1001 }],
+    ['fractional', { limit: 1000, used: 0.5, remaining: 999.5 }],
+    ['inconsistent', { limit: 1000, used: 1, remaining: 1000 }],
+    ['missing', { limit: 1000, used: 1 }],
+  ])('rejects a %s quota response body', (_kind, quota) => {
+    expect(getNgaSearchQuota(quota)).toBeNull();
+  });
+
+  it.each([
+    { limit: 1000, used: 0, remaining: 1000 },
+    { limit: 1000, used: 1000, remaining: 0 },
+  ])('accepts valid boundary quota response bodies', (quota) => {
+    expect(getNgaSearchQuota(quota)).toEqual(quota);
+  });
+
   it('recognises an exhausted quota error and uses its quota details', () => {
     const error = {
       code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
@@ -76,6 +92,37 @@ describe('NGA public search quota presentation', () => {
     expect(withNgaSearchQuotaFromHeaders({ retryable: true }, headers)).toEqual({
       retryable: true,
     });
+  });
+
+  it.each([
+    ['negative', '-1', '1001'],
+    ['fractional', '0.5', '999.5'],
+    ['inconsistent', '1', '1000'],
+  ])('rejects %s quota headers with the same contract as bodies', (_kind, used, remaining) => {
+    expect(
+      getNgaSearchQuotaFromHeaders(
+        new Headers({
+          'X-NGA-Search-Limit': '1000',
+          'X-NGA-Search-Used': used,
+          'X-NGA-Search-Remaining': remaining,
+        })
+      )
+    ).toBeNull();
+  });
+
+  it.each([
+    ['0', '1000'],
+    ['1000', '0'],
+  ])('accepts valid boundary quota headers', (used, remaining) => {
+    expect(
+      getNgaSearchQuotaFromHeaders(
+        new Headers({
+          'X-NGA-Search-Limit': '1000',
+          'X-NGA-Search-Used': used,
+          'X-NGA-Search-Remaining': remaining,
+        })
+      )
+    ).toEqual({ limit: 1000, used: Number(used), remaining: Number(remaining) });
   });
 
   it('attaches a post-reservation limiter quota to the client error details', () => {
@@ -145,6 +192,28 @@ describe('NGA public search quota presentation', () => {
       remaining: 999,
     });
     unsubscribe();
+    queryClient.clear();
+  });
+
+  it('does not reconcile a malformed search quota response', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['nga-search-quota'], {
+      limit: 1000,
+      used: 1,
+      remaining: 999,
+    });
+
+    await reconcileNgaSearchQuota(queryClient, {
+      limit: 1000,
+      used: -1,
+      remaining: 1001,
+    } as never);
+
+    expect(queryClient.getQueryData(['nga-search-quota'])).toEqual({
+      limit: 1000,
+      used: 1,
+      remaining: 999,
+    });
     queryClient.clear();
   });
 
