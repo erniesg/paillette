@@ -94,8 +94,10 @@ describe('canMutateOrg', () => {
         prepare: (sql: string) => ({
           bind: (...params: unknown[]) => ({
             first: async () => {
-              expect(sql).toContain("lower(COALESCE(slug, ''))");
-              expect(params).toContain(orgId);
+              // A renamed or null system slug must not reach the owner/member
+              // branch: canonical IDs are protected before any slug lookup.
+              expect(sql).toContain("FROM users WHERE id = ? AND role = 'admin'");
+              expect(params).toEqual([userId]);
               return userId === 'global-admin' ? { allowed: 1 } : null;
             },
           }),

@@ -240,7 +240,12 @@ describe('MCP internal REST capability', () => {
     const app = new Hono<any>();
     app.use('*', requireAuthOrApiKey as any);
     app.post('/api/v1/orgs/nga/search/text', (c) =>
-      c.json({ userId: c.get('auth').userId, scopes: c.get('auth').scopes })
+      c.json({
+        kind: c.get('auth').kind,
+        userId: c.get('auth').userId,
+        apiKeyId: c.get('auth').apiKeyId,
+        scopes: c.get('auth').scopes,
+      })
     );
     return app;
   };
@@ -271,9 +276,67 @@ describe('MCP internal REST capability', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
+      kind: 'user',
       userId: 'legacy-mcp-user',
+      apiKeyId: undefined,
       scopes: ['mcp:read'],
     });
+  });
+
+  it('preserves personal-key provenance for downstream usage attribution', async () => {
+    const capability = await createMcpInternalCapability(
+      env as any,
+      {
+        kind: 'api_key',
+        userId: 'key-owner',
+        apiKeyId: 'key-123',
+        scopes: [],
+      },
+      'POST',
+      '/api/v1/orgs/nga/search/text'
+    );
+
+    const response = await restApp().request(
+      '/api/v1/orgs/nga/search/text',
+      {
+        method: 'POST',
+        headers: { [MCP_INTERNAL_CAPABILITY_HEADER]: capability },
+      },
+      env as any
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      kind: 'api_key',
+      userId: 'key-owner',
+      apiKeyId: 'key-123',
+      scopes: [],
+    });
+  });
+
+  it('refuses to mint malformed provenance combinations', async () => {
+    await expect(
+      createMcpInternalCapability(
+        env as any,
+        { kind: 'api_key', userId: 'key-owner', scopes: [] },
+        'POST',
+        '/api/v1/orgs/nga/search/text'
+      )
+    ).rejects.toThrow('Invalid MCP internal capability principal or target');
+
+    await expect(
+      createMcpInternalCapability(
+        env as any,
+        {
+          kind: 'user',
+          userId: 'user',
+          apiKeyId: 'must-not-be-present',
+          scopes: ['mcp:read'],
+        },
+        'POST',
+        '/api/v1/orgs/nga/search/text'
+      )
+    ).rejects.toThrow('Invalid MCP internal capability principal or target');
   });
 
   it('rejects forged, expired, or wrong-method MCP capabilities', async () => {
@@ -293,9 +356,11 @@ describe('MCP internal REST capability', () => {
     const [version, payload, signature] = valid.split('.');
     const forgedSignature = `${signature?.startsWith('A') ? 'B' : 'A'}${signature?.slice(1) ?? ''}`;
     const forged = `${version}.${payload}.${forgedSignature}`;
+    const legacyVersion = `v1.${payload}.${signature}`;
 
     for (const [method, capability] of [
       ['POST', forged],
+      ['POST', legacyVersion],
       ['POST', expired],
       ['GET', valid],
     ] as const) {
@@ -314,7 +379,7 @@ describe('MCP internal REST capability', () => {
       {
         method: 'POST',
         headers: {
-          [MCP_INTERNAL_CAPABILITY_HEADER]: 'v1.ZXhh.AA',
+          [MCP_INTERNAL_CAPABILITY_HEADER]: 'v2.ZXhh.AA',
         },
       },
       { ...env, MCP_INTERNAL_CAPABILITY_SECRET: undefined } as any

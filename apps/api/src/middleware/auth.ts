@@ -7,7 +7,12 @@ import {
 } from 'jose';
 import type { Env } from '../index';
 import { generateId, generateToken, hashApiKey } from '../utils/crypto';
-import { resolveOpenAccessProviderScope } from '../utils/orgs';
+import {
+  LEGACY_NGS_ORG_ID,
+  NGS_ORG_ID,
+  OPEN_ACCESS_ORG_ID,
+  resolveOpenAccessProviderScope,
+} from '../utils/orgs';
 import { verifyIdentityToken } from '../auth/identity-token';
 import {
   D1SearchAccessRepository,
@@ -71,11 +76,14 @@ export class McpInternalCapabilityConfigurationError extends Error {
 }
 
 type McpInternalCapabilityPayload = {
-  v: 1;
+  v: 2;
   exp: number;
   method: string;
   path: string;
+  kind: PrincipalKind;
   userId: string;
+  /** Present if and only if the original MCP caller authenticated by key. */
+  apiKeyId?: string;
   email?: string;
   name?: string;
   scopes: string[];
@@ -122,12 +130,23 @@ export const createMcpInternalCapability = async (
   path: string,
   expiresAt = Date.now() + MCP_INTERNAL_CAPABILITY_TTL_MS
 ) => {
+  if (
+    !isValidMcpCapabilityPrincipal(auth) ||
+    !Number.isSafeInteger(expiresAt) ||
+    !method.trim() ||
+    !path.startsWith('/')
+  ) {
+    throw new Error('Invalid MCP internal capability principal or target');
+  }
+
   const payload: McpInternalCapabilityPayload = {
-    v: 1,
+    v: 2,
     exp: expiresAt,
     method: method.toUpperCase(),
     path,
+    kind: auth.kind,
     userId: auth.userId,
+    ...(auth.kind === 'api_key' ? { apiKeyId: auth.apiKeyId } : {}),
     ...(auth.email ? { email: auth.email } : {}),
     ...(auth.name ? { name: auth.name } : {}),
     scopes: auth.scopes,
@@ -140,7 +159,29 @@ export const createMcpInternalCapability = async (
     await getMcpCapabilityKey(env),
     new TextEncoder().encode(encodedPayload)
   );
-  return `v1.${encodedPayload}.${encodeBase64Url(new Uint8Array(signature))}`;
+  return `v2.${encodedPayload}.${encodeBase64Url(new Uint8Array(signature))}`;
+};
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0;
+
+const isValidMcpCapabilityPrincipal = (
+  auth: Pick<AuthPrincipal, 'kind' | 'userId' | 'apiKeyId' | 'email' | 'name' | 'scopes'>
+) => {
+  if (
+    (auth.kind !== 'user' && auth.kind !== 'api_key') ||
+    !isNonEmptyString(auth.userId) ||
+    !Array.isArray(auth.scopes) ||
+    !auth.scopes.every(isNonEmptyString) ||
+    (auth.email !== undefined && typeof auth.email !== 'string') ||
+    (auth.name !== undefined && typeof auth.name !== 'string')
+  ) {
+    return false;
+  }
+
+  return auth.kind === 'api_key'
+    ? isNonEmptyString(auth.apiKeyId)
+    : auth.apiKeyId === undefined;
 };
 
 const verifyMcpInternalCapability = async (
@@ -150,7 +191,7 @@ const verifyMcpInternalCapability = async (
   if (!capability) return null;
 
   const [version, encodedPayload, encodedSignature, ...extra] = capability.split('.');
-  if (version !== 'v1' || !encodedPayload || !encodedSignature || extra.length) {
+  if (version !== 'v2' || !encodedPayload || !encodedSignature || extra.length) {
     return null;
   }
   const payloadBytes = decodeBase64Url(encodedPayload);
@@ -172,22 +213,20 @@ const verifyMcpInternalCapability = async (
     return null;
   }
   if (
-    payload.v !== 1 ||
-    !Number.isFinite(payload.exp) ||
+    payload.v !== 2 ||
+    !Number.isSafeInteger(payload.exp) ||
     payload.exp <= Date.now() ||
     payload.method !== c.req.method.toUpperCase() ||
     payload.path !== new URL(c.req.url).pathname ||
-    typeof payload.userId !== 'string' ||
-    !payload.userId ||
-    !Array.isArray(payload.scopes) ||
-    !payload.scopes.every((scope) => typeof scope === 'string')
+    !isValidMcpCapabilityPrincipal(payload)
   ) {
     return null;
   }
 
   return {
-    kind: 'user',
+    kind: payload.kind,
     userId: payload.userId,
+    ...(payload.kind === 'api_key' ? { apiKeyId: payload.apiKeyId } : {}),
     email: payload.email,
     name: payload.name,
     scopes: payload.scopes,
@@ -1170,6 +1209,15 @@ export const canMutateOrg = async (
     return false;
   }
 
+  // These are durable system organisation IDs. Slugs are display metadata and
+  // can be renamed or cleared, so never let an owner/member role bypass the
+  // global-admin requirement by changing a slug.
+  if (
+    [OPEN_ACCESS_ORG_ID, NGS_ORG_ID, LEGACY_NGS_ORG_ID].includes(orgId)
+  ) {
+    return canMutateGlobally(db, auth);
+  }
+
   try {
     const allowed = await db
       .prepare(
@@ -1182,10 +1230,6 @@ export const canMutateOrg = async (
           FROM orgs
           WHERE id = ?
             AND owner_id = ?
-            AND lower(COALESCE(slug, '')) NOT IN (
-              'open-access-art',
-              'national-gallery-singapore'
-            )
           UNION ALL
           SELECT 1 AS allowed
           FROM org_users
@@ -1193,10 +1237,6 @@ export const canMutateOrg = async (
           WHERE org_users.org_id = ?
             AND org_users.user_id = ?
             AND org_users.role IN ('admin', 'curator')
-            AND lower(COALESCE(orgs.slug, '')) NOT IN (
-              'open-access-art',
-              'national-gallery-singapore'
-            )
           LIMIT 1
         `
       )
