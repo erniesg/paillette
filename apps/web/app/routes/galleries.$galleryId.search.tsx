@@ -167,6 +167,18 @@ const MAX_SEARCH_RESULTS = 100;
 const PUBLIC_SEARCH_QUERY_STALE_TIME = Infinity;
 const PUBLIC_SEARCH_QUERY_GC_TIME = Infinity;
 const MASONRY_COLUMN_END_ROOT_MARGIN = '1200px 0px 1600px';
+let nextUrlDrivenTextSearchExecutionId = 0;
+
+const allocateUrlDrivenTextSearchExecutionId = () => {
+  nextUrlDrivenTextSearchExecutionId += 1;
+  return nextUrlDrivenTextSearchExecutionId;
+};
+
+export const getNextUrlDrivenTextSearchExecutionId = (
+  currentExecutionId: number,
+  allocatedExecutionId: number
+) => Math.max(currentExecutionId + 1, allocatedExecutionId);
+
 export const MASONRY_IMAGE_CLASS_NAME =
   'h-full w-full object-contain transition-opacity duration-300 group-hover:opacity-90';
 export const IMAGE_SEARCH_COMPOSER_CLASS_NAME = 'mx-auto max-w-2xl space-y-2';
@@ -1084,7 +1096,11 @@ export default function SearchPage() {
     useState<PublicImageSearchPlan | null>(null);
   const [imageExecutionId, setImageExecutionId] = useState(0);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
-  const [textSearchExecutionId, setTextSearchExecutionId] = useState(0);
+  const [textSearchExecutionId, setTextSearchExecutionId] = useState(() =>
+    normalizedUrlQuery || urlSearchColour
+      ? allocateUrlDrivenTextSearchExecutionId()
+      : 0
+  );
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [searchColours, setSearchColours] = useState<string[]>(
     urlSearchColour ? [urlSearchColour] : []
@@ -1397,6 +1413,15 @@ export default function SearchPage() {
 
     supersedePendingSearchIntent();
     previousUrlSearchStateRef.current = urlSearchState;
+    if (normalizedUrlQuery || urlSearchColour) {
+      const allocatedExecutionId = allocateUrlDrivenTextSearchExecutionId();
+      setTextSearchExecutionId((currentExecutionId) =>
+        getNextUrlDrivenTextSearchExecutionId(
+          currentExecutionId,
+          allocatedExecutionId
+        )
+      );
+    }
     setSelectedArtwork(null);
     setTextQuery(normalizedUrlQuery);
     setCommittedTextQuery(normalizedUrlQuery);

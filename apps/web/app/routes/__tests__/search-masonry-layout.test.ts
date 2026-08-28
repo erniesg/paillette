@@ -1,14 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   IMAGE_SEARCH_COMPOSER_CLASS_NAME,
   IMAGE_SEARCH_PREVIEW_CLASS_NAME,
   MASONRY_IMAGE_CLASS_NAME,
+  getNextUrlDrivenTextSearchExecutionId,
   getSearchParamsForQuery,
   getMasonryImageFrameStyle,
   collectPalette,
   shouldObserveMasonryColumnEnds,
 } from '../galleries.$galleryId.search';
+import { QueryClient } from '@tanstack/react-query';
 import type { ArtworkSearchResult } from '~/types';
 import {
   createSearchComposerState,
@@ -165,5 +167,33 @@ describe('progressive search layout state', () => {
     expect(IMAGE_SEARCH_COMPOSER_CLASS_NAME).not.toContain('min-h-');
     expect(IMAGE_SEARCH_PREVIEW_CLASS_NAME).toContain('sm:flex-row');
     expect(IMAGE_SEARCH_PREVIEW_CLASS_NAME).not.toContain('min-h-');
+  });
+});
+
+describe('URL-driven text search execution', () => {
+  it('refetches a restored URL search even when its prior execution is cached', async () => {
+    const queryClient = new QueryClient();
+    const canonicalKey = ['search', 'text', 'nga', 'quiet shore'] as const;
+    const cachedExecutionId = 4;
+    const restoredExecutionId = getNextUrlDrivenTextSearchExecutionId(
+      cachedExecutionId,
+      5
+    );
+    const cachedKey = [...canonicalKey, cachedExecutionId];
+    const restoredKey = [...canonicalKey, restoredExecutionId];
+    const search = vi.fn(async () => ({ results: ['fresh result'] }));
+
+    queryClient.setQueryData(cachedKey, { results: ['cached result'] });
+
+    const result = await queryClient.fetchQuery({
+      queryKey: restoredKey,
+      queryFn: search,
+      staleTime: Infinity,
+    });
+
+    expect(restoredExecutionId).toBe(5);
+    expect(restoredKey).not.toEqual(cachedKey);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ results: ['fresh result'] });
   });
 });
