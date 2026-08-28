@@ -47,6 +47,57 @@ const isSameQuota = (left: NgaSearchQuota, right: NgaSearchQuota) =>
   left.used === right.used &&
   left.remaining === right.remaining;
 
+const PUBLIC_QUOTA_ERRORS = {
+  NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED:
+    'NGA public search quota has been exhausted.',
+  NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE:
+    'NGA public search quota is temporarily unavailable.',
+} as const;
+
+const sanitizeUpstreamQuotaError = (
+  payload: unknown,
+  headers: Headers
+): ApiResponse => {
+  const genericError: ApiResponse = {
+    success: false,
+    error: {
+      code: 'PUBLIC_SEARCH_QUOTA_UPSTREAM_ERROR',
+      message: 'Search quota is temporarily unavailable.',
+    },
+  };
+  if (!payload || typeof payload !== 'object') return genericError;
+
+  const error = (payload as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return genericError;
+  const code = (error as { code?: unknown }).code;
+  if (
+    typeof code !== 'string' ||
+    !(code in PUBLIC_QUOTA_ERRORS)
+  ) {
+    return genericError;
+  }
+
+  const sanitized: ApiResponse = {
+    success: false,
+    error: { code, message: PUBLIC_QUOTA_ERRORS[code as keyof typeof PUBLIC_QUOTA_ERRORS] },
+  };
+  if (code !== 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED') {
+    return sanitized;
+  }
+
+  const details = (error as { details?: unknown }).details;
+  const bodyQuota =
+    details && typeof details === 'object'
+      ? getNgaSearchQuota((details as { quota?: unknown }).quota)
+      : null;
+  const headerQuota = getNgaSearchQuotaFromHeaders(headers);
+  const quota = headerQuota ?? bodyQuota;
+  if (quota) {
+    sanitized.error!.details = { quota };
+  }
+  return sanitized;
+};
+
 export const loader = async ({
   context,
   params,
@@ -104,7 +155,11 @@ export const loader = async ({
   }
 
   if (!response.ok) {
-    return noStore(payload as ApiResponse, response.status, response);
+    return noStore(
+      sanitizeUpstreamQuotaError(payload, response.headers),
+      response.status,
+      response
+    );
   }
 
   const bodyQuota = getSuccessfulQuota(payload);

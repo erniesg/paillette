@@ -164,6 +164,131 @@ describe('public NGA search quota proxy', () => {
     expect(response.headers.get('Set-Cookie')).toBeNull();
   });
 
+  it.each([
+    [
+      'an internal JSON error',
+      Response.json(
+        {
+          success: false,
+          error: {
+            code: 'INTERNAL_SENTINEL',
+            message: 'INTERNAL_MESSAGE_SENTINEL',
+            details: { diagnostics: 'INTERNAL_DETAILS_SENTINEL' },
+          },
+        },
+        { status: 500 }
+      ),
+    ],
+    [
+      'a malformed JSON error envelope',
+      Response.json(
+        { success: false, error: { code: 123, details: 'INTERNAL_SENTINEL' } },
+        { status: 502 }
+      ),
+    ],
+    [
+      'a non-JSON error',
+      new Response('INTERNAL_NON_JSON_SENTINEL', { status: 503 }),
+    ],
+  ])('returns a stable public error for %s', async (_kind, upstream) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () => upstream)
+    );
+
+    const response = await loader({
+      context: {},
+      params: { orgId: 'nga' },
+      request: new Request('https://paillette.test/api/public-search/nga/quota'),
+    } as any);
+
+    expect(response.status).toBe(upstream.status);
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: {
+        code: 'PUBLIC_SEARCH_QUOTA_UPSTREAM_ERROR',
+        message: 'Search quota is temporarily unavailable.',
+      },
+    });
+  });
+
+  it('preserves a known quota exhaustion error with only validated quota details', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            success: false,
+            error: {
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+              message: 'INTERNAL_MESSAGE_SENTINEL',
+              details: {
+                quota: { limit: 1000, used: 1000, remaining: 0 },
+                diagnostics: 'INTERNAL_DETAILS_SENTINEL',
+              },
+            },
+          },
+          {
+            status: 429,
+            headers: {
+              'X-NGA-Search-Limit': '1000',
+              'X-NGA-Search-Used': '1000',
+              'X-NGA-Search-Remaining': '0',
+            },
+          }
+        )
+      )
+    );
+
+    const response = await loader({
+      context: {},
+      params: { orgId: 'nga' },
+      request: new Request('https://paillette.test/api/public-search/nga/quota'),
+    } as any);
+
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: {
+        code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+        message: 'NGA public search quota has been exhausted.',
+        details: { quota: { limit: 1000, used: 1000, remaining: 0 } },
+      },
+    });
+  });
+
+  it('preserves the known quota-unavailable code without upstream diagnostics', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            success: false,
+            error: {
+              code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'INTERNAL_MESSAGE_SENTINEL',
+              details: { diagnostics: 'INTERNAL_DETAILS_SENTINEL' },
+            },
+          },
+          { status: 503 }
+        )
+      )
+    );
+
+    const response = await loader({
+      context: {},
+      params: { orgId: 'nga' },
+      request: new Request('https://paillette.test/api/public-search/nga/quota'),
+    } as any);
+
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: {
+        code: 'NGA_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+        message: 'NGA public search quota is temporarily unavailable.',
+      },
+    });
+  });
+
   it('rejects non-NGA scopes before using the public service key', async () => {
     const fetcher = vi.fn<typeof globalThis.fetch>();
     vi.stubGlobal('fetch', fetcher);
