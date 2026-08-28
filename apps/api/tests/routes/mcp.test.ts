@@ -310,7 +310,7 @@ describe('MCP downstream REST errors', () => {
         expect(headers.get('Authorization')).toBeNull();
         expect(headers.get('X-API-Key')).toBeNull();
         expect(headers.get('X-Paillette-MCP-Internal-Capability')).toMatch(
-          /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
+          /^v2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
         );
         return new Response(
           JSON.stringify({
