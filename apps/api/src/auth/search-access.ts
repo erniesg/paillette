@@ -29,11 +29,13 @@ export type GrantedSearchAccessDecision = Extract<
   { granted: true }
 >;
 
+export type EmailUserLookup = string | null | 'ambiguous';
+
 export interface SearchAccessRepository {
   findIdentityUserId(
     identity: Pick<ExternalIdentity, 'issuer' | 'subject'>
   ): Promise<string | null>;
-  findUserIdByEmail(email: string): Promise<string | null>;
+  findUserIdByEmail(email: string): Promise<EmailUserLookup>;
   bindIdentity(
     identity: ExternalIdentity,
     userId: string
@@ -116,6 +118,13 @@ export const resolveSearchAccess = async (
     const bootstrapUserId = await repository.findUserIdByEmail(
       normalizedBootstrapEmail
     );
+    if (bootstrapUserId === 'ambiguous') {
+      return {
+        granted: false,
+        status: 403,
+        code: 'IDENTITY_BINDING_REQUIRED',
+      };
+    }
     if (bootstrapUserId) {
       const binding = await repository.bindIdentity(identity, bootstrapUserId);
       if (binding === 'conflict') {
@@ -152,11 +161,14 @@ export class D1SearchAccessRepository implements SearchAccessRepository {
   }
 
   async findUserIdByEmail(email: string) {
-    const row = await this.db
-      .prepare(`SELECT id AS user_id FROM users WHERE lower(email) = ?`)
+    const result = await this.db
+      .prepare(
+        `SELECT id AS user_id FROM users WHERE lower(email) = ? LIMIT 2`
+      )
       .bind(normalizeEmail(email))
-      .first<IdentityRow>();
-    return row?.user_id ?? null;
+      .all<IdentityRow>();
+    if (result.results.length > 1) return 'ambiguous' as const;
+    return result.results[0]?.user_id ?? null;
   }
 
   async bindIdentity(identity: ExternalIdentity, userId: string) {

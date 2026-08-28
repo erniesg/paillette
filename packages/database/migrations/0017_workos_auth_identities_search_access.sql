@@ -27,6 +27,13 @@ CREATE INDEX IF NOT EXISTS idx_auth_identities_user_provider
 CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_identities_user_provider
   ON auth_identities(user_id, provider);
 
+-- The historical users.email constraint is case-sensitive in SQLite. WorkOS
+-- identities normalize verified emails, so prevent a later case-only account
+-- variant from making bootstrap identity binding ambiguous. Preflight confirmed
+-- staging and production have no such existing variants before this migration.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_casefold
+  ON users(lower(email));
+
 CREATE TABLE IF NOT EXISTS search_access_approvals (
   user_id TEXT PRIMARY KEY,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
