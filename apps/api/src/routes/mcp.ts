@@ -561,17 +561,24 @@ type NgaSearchQuota = {
   remaining: number;
 };
 
-const asSafeNonNegativeInteger = (value: string | null) => {
-  if (!value || !/^(?:0|[1-9]\d*)$/.test(value)) return undefined;
+const asSafeNonNegativeInteger = (value: unknown) => {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  }
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)$/.test(value)) {
+    return undefined;
+  }
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
-const getNgaQuotaFromHeaders = (
-  headers: Headers
+const getNgaQuota = (
+  limitValue: unknown,
+  usedValue: unknown,
+  remainingValue: unknown
 ): NgaSearchQuota | undefined => {
-  const [limit, used, remaining] = NGA_QUOTA_HEADER_NAMES.map((name) =>
-    asSafeNonNegativeInteger(headers.get(name))
+  const [limit, used, remaining] = [limitValue, usedValue, remainingValue].map(
+    asSafeNonNegativeInteger
   );
 
   if (
@@ -586,6 +593,25 @@ const getNgaQuotaFromHeaders = (
   }
 
   return { limit, used, remaining };
+};
+
+const getNgaQuotaFromHeaders = (headers: Headers) =>
+  getNgaQuota(
+    headers.get(NGA_QUOTA_HEADER_NAMES[0]),
+    headers.get(NGA_QUOTA_HEADER_NAMES[1]),
+    headers.get(NGA_QUOTA_HEADER_NAMES[2])
+  );
+
+const getNgaQuotaFromErrorDetails = (details: unknown) => {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) {
+    return undefined;
+  }
+  const quota = (details as { quota?: unknown }).quota;
+  if (!quota || typeof quota !== 'object' || Array.isArray(quota)) {
+    return undefined;
+  }
+  const { limit, used, remaining } = quota as Partial<NgaSearchQuota>;
+  return getNgaQuota(limit, used, remaining);
 };
 
 const getRetryAfterSeconds = (headers: Headers) => {
@@ -611,14 +637,7 @@ class McpRestError extends Error {
 
   get quota() {
     if (this.headerQuota) return this.headerQuota;
-    if (
-      this.details &&
-      typeof this.details === 'object' &&
-      'quota' in this.details
-    ) {
-      return (this.details as { quota?: unknown }).quota;
-    }
-    return undefined;
+    return getNgaQuotaFromErrorDetails(this.details);
   }
 }
 

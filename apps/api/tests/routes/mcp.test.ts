@@ -352,6 +352,93 @@ describe('MCP downstream REST errors', () => {
       });
     }
   );
+
+  it.each([
+    ['negative', { limit: 1000, used: -1, remaining: 1001 }],
+    ['fractional', { limit: 1000, used: 1.5, remaining: 998.5 }],
+    ['inconsistent', { limit: 1000, used: 17, remaining: 982 }],
+    ['missing field', { limit: 1000, used: 17 }],
+    ['array', [{ limit: 1000, used: 17, remaining: 983 }]],
+  ])('does not expose a $label quota from a headerless error body', async (_label, bodyQuota) => {
+    const downstream = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'UPSTREAM_FAILED',
+            message: 'Upstream failed',
+            details: { quota: bodyQuota },
+          },
+        }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', downstream);
+
+    const response = await callTool('search_artworks', 'open');
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(502);
+    expect(downstream).toHaveBeenCalledOnce();
+    expect(payload.error.data).not.toHaveProperty('quota');
+  });
+
+  it('uses a valid headerless quota from an error body', async () => {
+    const downstream = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+            message: 'NGA public search quota has been exhausted',
+            details: { quota },
+          },
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', downstream);
+
+    const response = await callTool('search_artworks', 'open');
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(429);
+    expect(downstream).toHaveBeenCalledOnce();
+    expect(payload.error.data.quota).toEqual(quota);
+  });
+
+  it('prefers a valid quota header over a different error-body quota', async () => {
+    const headerQuota = { limit: 1000, used: 17, remaining: 983 };
+    const downstream = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'UPSTREAM_FAILED',
+            message: 'Upstream failed',
+            details: { quota },
+          },
+        }),
+        {
+          status: 502,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-NGA-Search-Limit': String(headerQuota.limit),
+            'X-NGA-Search-Used': String(headerQuota.used),
+            'X-NGA-Search-Remaining': String(headerQuota.remaining),
+          },
+        }
+      )
+    );
+    vi.stubGlobal('fetch', downstream);
+
+    const response = await callTool('search_artworks', 'open');
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(502);
+    expect(downstream).toHaveBeenCalledOnce();
+    expect(payload.error.data.quota).toEqual(headerQuota);
+  });
 });
 
 describe('MCP NGA aliases', () => {
