@@ -205,9 +205,9 @@ describe('Color Search API', () => {
       );
     });
 
-    it('charges a valid authenticated NGA color search once', async () => {
+    it('charges and provider-scopes an NGA color search through the open alias', async () => {
       testGalleryId = 'open-access-art';
-      const res = await request('/galleries/nga/search/color', {
+      const res = await request('/galleries/open/search/color', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ colors: ['#FF5733'], threshold: 10 }),
@@ -218,6 +218,12 @@ describe('Color Search API', () => {
       expect(res.headers.get('X-NGA-Search-Remaining')).toBe('999');
       expect(ngsQuota.used).toBe(1);
       expect(body.success).toBe(true);
+      const colorSql = (mockEnv.DB.prepare as any).mock.calls
+        .map(([sql]: [string]) => sql)
+        .find((sql: string) => sql.includes('dominant_colors IS NOT NULL'));
+      expect(colorSql).toContain(
+        "json_extract(custom_metadata, '$.provider') = ?"
+      );
       expect(
         (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
           sql.includes('api_usage_daily')

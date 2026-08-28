@@ -8,6 +8,10 @@ export const OPEN_ACCESS_ART_ORG_KEY = 'nga';
 export const OPEN_ACCESS_ART_ORG_SLUG = OPEN_ACCESS_ORG_SLUG;
 export const LEGACY_OPEN_ACCESS_ART_ORG_KEY = OPEN_ACCESS_ORG_KEY;
 export const OPEN_ACCESS_NGA_KEY = OPEN_ACCESS_ART_ORG_KEY;
+// The NGA imports are attached to this durable organisation row. Keep the
+// provider scope tied to every accepted identifier for that row so aliases
+// cannot bypass the NGA-only search filter or lifetime quota.
+export const OPEN_ACCESS_ORG_ID = 'eabbf000-708e-4d4c-8ac8-966b59d4fcac';
 
 export type OpenAccessProviderScope = 'nga';
 
@@ -50,7 +54,9 @@ export const resolveOpenAccessProviderScope = (
     // Keep the raw route value; resolveOrgIdentifier will handle invalid input.
   }
 
-  return key === OPEN_ACCESS_NGA_KEY ? 'nga' : undefined;
+  return isOpenAccessPublicOrg(key) || key === OPEN_ACCESS_ORG_ID
+    ? 'nga'
+    : undefined;
 };
 
 export const isAllowedPublicSearchRouteScope = (

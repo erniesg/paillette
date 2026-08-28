@@ -85,7 +85,8 @@ const mcpRequest = (method: 'tools/list' | 'tools/call', params?: unknown) =>
   });
 
 const callTool = (
-  name: 'search_artworks' | 'colour_search' | 'lookup_artwork'
+  name: 'search_artworks' | 'colour_search' | 'lookup_artwork',
+  collection = 'ngs'
 ) => {
   const app = new Hono<{ Bindings: Env }>();
   app.route('/api/v1/mcp', mcpRoutes);
@@ -105,10 +106,10 @@ const callTool = (
           name,
           arguments:
             name === 'search_artworks'
-              ? { query: 'mangrove shore', collection: 'ngs' }
+              ? { query: 'mangrove shore', collection }
               : name === 'colour_search'
-                ? { colors: ['#112233'], collection: 'ngs' }
-                : { artworkId: 'nga-1', collection: 'ngs' },
+                ? { colors: ['#112233'], collection }
+                : { artworkId: 'nga-1', collection },
         },
       }),
     },
@@ -169,6 +170,30 @@ describe('MCP downstream REST errors', () => {
           quota,
         },
       });
+    }
+  );
+});
+
+describe('MCP NGA aliases', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['search_artworks', 'colour_search'] as const)(
+    'forwards the open alias for %s exactly once to the NGA REST boundary',
+    async (name) => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toContain(
+          `/orgs/open/search/${name === 'search_artworks' ? 'text' : 'color'}`
+        );
+        return new Response(JSON.stringify({ success: true, data: {} }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const response = await callTool(name, 'open');
+
+      expect(response.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledOnce();
     }
   );
 });

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   NGS_ORG_ID,
+  OPEN_ACCESS_ORG_ID,
   OPEN_ACCESS_ORG_SLUG,
   isAllowedPublicSearchRouteScope,
   isNgsPublicOrg,
@@ -11,9 +12,9 @@ import {
   resolveOrgIdentifier,
 } from '../../src/utils/orgs';
 
-const OPEN_ACCESS_ORG_ID = 'open-access-art-org-id';
+const RESOLVED_OPEN_ACCESS_ORG_ID = 'open-access-art-org-id';
 
-const mockDb = (id: string | null = OPEN_ACCESS_ORG_ID) =>
+const mockDb = (id: string | null = RESOLVED_OPEN_ACCESS_ORG_ID) =>
   ({
     prepare: vi.fn((sql: string) => ({
       bind: vi.fn((...params: unknown[]) => ({
@@ -22,7 +23,10 @@ const mockDb = (id: string | null = OPEN_ACCESS_ORG_ID) =>
             return { id: NGS_ORG_ID };
           }
 
-          if (sql.includes('lower(slug)') && params[0] === OPEN_ACCESS_ORG_SLUG) {
+          if (
+            sql.includes('lower(slug)') &&
+            params[0] === OPEN_ACCESS_ORG_SLUG
+          ) {
             return id ? { id } : null;
           }
 
@@ -37,13 +41,13 @@ describe('resolveOrgIdentifier', () => {
     const db = mockDb();
 
     await expect(resolveOrgIdentifier(db, 'nga')).resolves.toBe(
-      OPEN_ACCESS_ORG_ID
+      RESOLVED_OPEN_ACCESS_ORG_ID
     );
     await expect(resolveOrgIdentifier(db, 'open')).resolves.toBe(
-      OPEN_ACCESS_ORG_ID
+      RESOLVED_OPEN_ACCESS_ORG_ID
     );
     await expect(resolveOrgIdentifier(db, 'open-access-art')).resolves.toBe(
-      OPEN_ACCESS_ORG_ID
+      RESOLVED_OPEN_ACCESS_ORG_ID
     );
   });
 
@@ -76,11 +80,12 @@ describe('resolveOrgIdentifier', () => {
 });
 
 describe('resolveOpenAccessProviderScope', () => {
-  it('scopes only the dedicated NGA route to the NGA provider', () => {
+  it('scopes every canonical NGA identifier to the NGA provider', () => {
     expect(resolveOpenAccessProviderScope('nga')).toBe('nga');
     expect(resolveOpenAccessProviderScope('NGA')).toBe('nga');
-    expect(resolveOpenAccessProviderScope('open-access-art')).toBeUndefined();
-    expect(resolveOpenAccessProviderScope('open')).toBeUndefined();
+    expect(resolveOpenAccessProviderScope('open-access-art')).toBe('nga');
+    expect(resolveOpenAccessProviderScope('open')).toBe('nga');
+    expect(resolveOpenAccessProviderScope(OPEN_ACCESS_ORG_ID)).toBe('nga');
     expect(resolveOpenAccessProviderScope('ngs')).toBeUndefined();
   });
 });

@@ -1065,6 +1065,24 @@ describe('NGA public search quota', () => {
     });
   });
 
+  it('charges and provider-scopes the canonical NGA organization UUID', async () => {
+    const db = new FakeSearchDb([makeNgaArtworkRow()]);
+    const response = await textSearch(
+      makeApp(),
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      { query: 'mangrove shore', topK: 1 },
+      'eabbf000-708e-4d4c-8ac8-966b59d4fcac'
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
+    expect(db.metadataSearchSql[0]).toContain(
+      "json_extract(custom_metadata, '$.provider') = ?"
+    );
+    expect(db.metadataSearchParams[0]).toContain('nga');
+  });
+
   it('charges authenticated NGA cache hits from the shared lifetime pool', async () => {
     const db = new FakeSearchDb();
     const cache = makeEmbeddingCache();
@@ -1108,7 +1126,7 @@ describe('NGA public search quota', () => {
     });
   });
 
-  it('charges valid NGA image searches before embedding work', async () => {
+  it('charges and provider-scopes an NGA image search through the open-access alias', async () => {
     const db = new FakeSearchDb();
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
@@ -1128,7 +1146,7 @@ describe('NGA public search quota', () => {
       makeApp(),
       env,
       { 'X-User-Id': 'user-1' },
-      'nga'
+      'open-access-art'
     );
     const payload = (await response.json()) as any;
 
@@ -1142,6 +1160,12 @@ describe('NGA public search quota', () => {
     expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(vectorize.query).toHaveBeenCalledOnce();
+    expect(vectorize.query).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        filter: expect.objectContaining({ provider: 'nga' }),
+      })
+    );
     expect(
       JSON.parse(db.usageEvents[0]?.metadata || '{}').search
     ).toMatchObject({
@@ -1906,7 +1930,7 @@ describe('Search API auth and quota behavior', () => {
     );
   });
 
-  it('isolates the NGA route across vector and D1 search channels', async () => {
+  it('charges and isolates the open alias across NGA vector and D1 search channels', async () => {
     const ngaArtwork = makeArtworkRow({
       id: 'open-access-art:nga:1',
       org_id: 'open-access-art',
@@ -1949,7 +1973,7 @@ describe('Search API auth and quota behavior', () => {
       env,
       { 'X-User-Id': 'user-1' },
       { query: 'annunciation', topK: 10 },
-      'nga'
+      'open'
     );
     const body = (await res.json()) as any;
 
@@ -1966,6 +1990,7 @@ describe('Search API auth and quota behavior', () => {
     expect(db.metadataSearchSql[0]).toContain(
       "json_extract(custom_metadata, '$.provider') = ?"
     );
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
   });
 
   it('keeps bare keywords semantic while contributing the balanced metadata channel', async () => {
