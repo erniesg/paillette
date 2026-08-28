@@ -17,6 +17,20 @@ describe('API Health Check', () => {
     expect(data.environment).toBe('test');
   });
 
+  it('exposes NGS quota headers to browser search clients', async () => {
+    const req = new Request('http://localhost/health', {
+      headers: { Origin: 'http://localhost:5173' },
+    });
+    const env = { ENVIRONMENT: 'test', API_VERSION: 'v1' } as any;
+
+    const res = await app.fetch(req, env);
+    const exposed = res.headers.get('Access-Control-Expose-Headers') || '';
+
+    expect(exposed).toContain('X-NGS-Search-Limit');
+    expect(exposed).toContain('X-NGS-Search-Used');
+    expect(exposed).toContain('X-NGS-Search-Remaining');
+  });
+
   it('should return 404 for unknown routes', async () => {
     const req = new Request('http://localhost/unknown');
     const env = {} as any;

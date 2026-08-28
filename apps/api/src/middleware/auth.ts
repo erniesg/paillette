@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler, Next } from 'hono';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import type { Env } from '../index';
 import { generateId, generateToken, hashApiKey } from '../utils/crypto';
+import { isNgsPublicOrg } from '../utils/orgs';
 
 export type PrincipalKind = 'user' | 'api_key';
 
@@ -676,7 +677,11 @@ export const enforceDailyQuota = (options: {
   return async (c, next) => {
     const auth = getAuth(c);
 
-    if (auth.scopes.includes('public_search')) {
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    if (
+      auth.scopes.includes('public_search') ||
+      isNgsPublicOrg(requestedOrgId)
+    ) {
       await next();
       return;
     }

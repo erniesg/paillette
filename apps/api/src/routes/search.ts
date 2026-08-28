@@ -5,6 +5,7 @@ import {
   annotateUsageEvent,
   enforceDailyQuota,
   getAuth,
+  recordApiUsageEvent,
   recordArtworkResults,
   requireAuthOrApiKey,
 } from '../middleware/auth';
@@ -35,6 +36,11 @@ import {
   NGS_SEARCH_SPOTLIGHT_ASSET_REVISION,
   NGS_SEARCH_SPOTLIGHT_BUNDLE,
 } from '../generated/ngs-search-spotlight-asset';
+import {
+  getNgsPublicSearchQuota,
+  reserveNgsPublicSearchQuota,
+} from '../utils/ngs-search-quota';
+import type { PublicSearchQuota } from '@paillette/types';
 import {
   matchesNgaSearchConstraints,
   compileNgaSearchPlan,
@@ -2663,6 +2669,75 @@ const getNgsSearchSpotlightBundle = (origin: string) => ({
   })),
 });
 
+const getNgsSpotlightSearchResponse = (
+  query: string,
+  origin: string,
+  facet: 'artist' | 'classification' | undefined,
+  topK: number,
+  minScore: number
+): SearchResponse | undefined => {
+  const bundle = getNgsSearchSpotlightBundle(origin);
+  const normalizedQuery =
+    normalizePublicSearchText(query).toLocaleLowerCase('en-US');
+  if (!normalizedQuery) return undefined;
+  const suggestion = bundle.suggestions.find(
+    (candidate) =>
+      normalizePublicSearchText(candidate.query).toLocaleLowerCase('en-US') ===
+        normalizedQuery && (candidate.facet || null) === (facet || null)
+  );
+  if (!suggestion) return undefined;
+
+  const results: ArtworkSearchResult[] = suggestion.artworks
+    .filter((artwork) => artwork.similarity >= minScore)
+    .slice(0, topK)
+    .map((artwork) => ({
+      id: artwork.id,
+      orgId: artwork.orgId,
+      galleryId: artwork.orgId,
+      title: artwork.title,
+      artist: artwork.artist,
+      ...(artwork.year !== undefined ? { year: artwork.year } : {}),
+      imageUrl: artwork.imageUrl || null,
+      thumbnailUrl: artwork.thumbnailUrl || null,
+      similarity: artwork.similarity,
+      metadata: {
+        provider: artwork.source.provider,
+        sourceInstitution: artwork.source.institution,
+        sourceUrl: artwork.source.url,
+        sourceRecordId: artwork.source.recordId,
+        accessionNumber: artwork.source.accessionNumber,
+        rights: artwork.source.rights,
+        dominantColors: artwork.palette,
+      },
+    }));
+
+  return {
+    results,
+    count: results.length,
+    queryTime: 0,
+  };
+};
+
+const setNgsSearchQuotaHeaders = (
+  c: { header: (name: string, value: string) => void },
+  quota: PublicSearchQuota
+) => {
+  c.header('X-NGS-Search-Limit', String(quota.limit));
+  c.header('X-NGS-Search-Used', String(quota.used));
+  c.header('X-NGS-Search-Remaining', String(quota.remaining));
+};
+
+const recordNgsAcceptedSearchUsage = async (
+  c: any,
+  options: Parameters<typeof recordApiUsageEvent>[1]
+) => {
+  try {
+    await recordApiUsageEvent(c, options);
+  } catch (error) {
+    console.warn('NGS accepted search usage telemetry failed:', error);
+  }
+};
+
 searchRoutes.get(
   '/search-spotlights/:revision',
   requireAuthOrApiKey as any,
@@ -2693,6 +2768,41 @@ searchRoutes.get(
     });
   }
 );
+
+searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+  if (!isNgsPublicOrg(requestedOrgId)) {
+    return c.json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'NGS public search quota not found',
+        },
+      },
+      404
+    );
+  }
+
+  try {
+    const quota = await getNgsPublicSearchQuota(c.env.DB);
+    setNgsSearchQuotaHeaders(c, quota);
+    return c.json({ success: true, data: quota });
+  } catch (error) {
+    console.error('NGS public search quota read failed:', error);
+    return c.json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+          message: 'NGS public search quota is temporarily unavailable',
+        },
+      },
+      503
+    );
+  }
+});
 
 searchRoutes.use('/search/image', async (c, next) => {
   c.header('Cache-Control', 'no-store');
@@ -2775,6 +2885,50 @@ searchRoutes.post('/search/text', async (c) => {
 
     const provider = resolveOpenAccessProviderScope(requestedOrgId);
     const orgId = await resolveOrgIdentifier(c.env.DB, requestedOrgId);
+    const isNgsPublicSearch = isNgsPublicOrg(orgId);
+    let ngsQuota: PublicSearchQuota | undefined;
+    if (isNgsPublicSearch) {
+      try {
+        const reservation = await reserveNgsPublicSearchQuota(c.env.DB);
+        setNgsSearchQuotaHeaders(c, reservation.quota);
+        if (!reservation.admitted) {
+          return c.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGS public search quota has been exhausted',
+                details: { quota: reservation.quota },
+              },
+            },
+            429
+          );
+        }
+        ngsQuota = reservation.quota;
+      } catch (error) {
+        console.error('NGS public search quota reservation failed:', error);
+        return c.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGS public search quota is temporarily unavailable',
+            },
+          },
+          503
+        );
+      }
+
+      if (!(c as any).get('usageEventId')) {
+        await recordNgsAcceptedSearchUsage(c as any, {
+          queryType: 'vector_search',
+          orgId: orgId || null,
+          metadata: {
+            search: { mode: 'text', query, quotaRemaining: ngsQuota.remaining },
+          },
+        });
+      }
+    }
     const structuredSearchEnabled =
       provider === 'nga' &&
       (c.env as Env & { NGA_STRUCTURED_SEARCH_ENABLED?: string })
@@ -2955,7 +3109,20 @@ searchRoutes.post('/search/text', async (c) => {
     let responseCacheable = true;
     let searchResponse: SearchResponse;
 
-    if (isPublicSearchPrincipal) {
+    const spotlightSearchResponse = isNgsPublicSearch
+      ? getNgsSpotlightSearchResponse(
+          query,
+          new URL(c.req.url).origin,
+          facet,
+          topK,
+          minScore
+        )
+      : undefined;
+
+    if (spotlightSearchResponse) {
+      searchResponse = spotlightSearchResponse;
+      cacheHeader = 'SPOTLIGHT';
+    } else if (isPublicSearchPrincipal || isNgsPublicSearch) {
       const cached = await getOrLoadPublicSearchResult({
         cache: c.env.CACHE,
         query: retrievalQuery,
@@ -2973,33 +3140,37 @@ searchRoutes.post('/search/text', async (c) => {
         ngaPlan,
         schedule: scheduleBackgroundWork,
         load: async () => {
-          await enforcePublicSearchColdMissRateLimit({
-            cache: c.env.CACHE,
-            clientAddress: getPublicSearchClientAddress(
-              c.req.header('CF-Connecting-IP'),
-              c.req.header('X-Forwarded-For')
-            ),
-            searchIdentity: JSON.stringify({
-              contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
-              query: normalizePublicSearchText(retrievalQuery),
-              orgId,
-              provider: provider || null,
-              facet: facet || null,
-              parserVersion: interpretation?.parserVersion || null,
-              constraints: structuredConstraints || null,
-              ngaPlan: ngaPlan
-                ? {
-                    version: ngaPlan.version,
-                    mode: ngaPlan.mode,
-                    relation: ngaPlan.relation || null,
-                    relationEvidencePolicy:
-                      ngaPlan.relationEvidence?.policy || null,
-                  }
-                : null,
-            }),
-            countRepeatedRequests: true,
-            limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
-          });
+          if (isPublicSearchPrincipal) {
+            await enforcePublicSearchColdMissRateLimit({
+              cache: c.env.CACHE,
+              clientAddress: getPublicSearchClientAddress(
+                c.req.header('CF-Connecting-IP'),
+                c.req.header('X-Forwarded-For')
+              ),
+              searchIdentity: JSON.stringify({
+                contractVersion: PUBLIC_SEARCH_CONTRACT_VERSION,
+                query: normalizePublicSearchText(retrievalQuery),
+                orgId,
+                provider: provider || null,
+                facet: facet || null,
+                parserVersion: interpretation?.parserVersion || null,
+                constraints: structuredConstraints || null,
+                ngaPlan: ngaPlan
+                  ? {
+                      version: ngaPlan.version,
+                      mode: ngaPlan.mode,
+                      relation: ngaPlan.relation || null,
+                      relationEvidencePolicy:
+                        ngaPlan.relationEvidence?.policy || null,
+                    }
+                  : null,
+              }),
+              countRepeatedRequests: true,
+              limit: Number(
+                c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''
+              ),
+            });
+          }
           const response = await executeSearch();
           return {
             response,
@@ -3031,6 +3202,9 @@ searchRoutes.post('/search/text', async (c) => {
       searchResponse = await executeSearch();
       responseCacheable = degradedChannels.size === 0;
     }
+    if (ngsQuota) {
+      searchResponse = { ...searchResponse, quota: ngsQuota };
+    }
     c.header('X-Paillette-Search-Cache', cacheHeader);
 
     await annotateUsageEvent(c as any, {
@@ -3043,6 +3217,8 @@ searchRoutes.post('/search/text', async (c) => {
         minScore,
         resultCount: searchResponse.count,
         queryTime: searchResponse.queryTime,
+        cacheDisposition: cacheHeader,
+        ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
       },
     });
 
@@ -3194,6 +3370,51 @@ searchRoutes.post('/search/image', async (c) => {
       ? Math.min(Math.max(requestedMinScore, 0), 1)
       : 0.7;
 
+    const isNgsPublicSearch = isNgsPublicOrg(orgId);
+    let ngsQuota: PublicSearchQuota | undefined;
+    if (isNgsPublicSearch) {
+      try {
+        const reservation = await reserveNgsPublicSearchQuota(c.env.DB);
+        setNgsSearchQuotaHeaders(c, reservation.quota);
+        if (!reservation.admitted) {
+          return c.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGS public search quota has been exhausted',
+                details: { quota: reservation.quota },
+              },
+            },
+            429
+          );
+        }
+        ngsQuota = reservation.quota;
+      } catch (error) {
+        console.error('NGS public search quota reservation failed:', error);
+        return c.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGS public search quota is temporarily unavailable',
+            },
+          },
+          503
+        );
+      }
+
+      if (!(c as any).get('usageEventId')) {
+        await recordNgsAcceptedSearchUsage(c as any, {
+          queryType: 'vector_search',
+          orgId: orgId || null,
+          metadata: {
+            search: { mode: 'image', quotaRemaining: ngsQuota.remaining },
+          },
+        });
+      }
+    }
+
     // Convert image to ArrayBuffer
     const imageBuffer = await imageFile.arrayBuffer();
 
@@ -3291,6 +3512,8 @@ searchRoutes.post('/search/image', async (c) => {
           ...(constraints !== undefined ? { constraints } : {}),
           resultCount: 0,
           queryTime,
+          cacheDisposition: 'BYPASS',
+          ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
         },
       });
       return c.json<ApiResponse<SearchResponse>>({
@@ -3299,6 +3522,7 @@ searchRoutes.post('/search/image', async (c) => {
           results: [],
           count: 0,
           queryTime,
+          ...(ngsQuota ? { quota: ngsQuota } : {}),
         },
       });
     }
@@ -3344,6 +3568,8 @@ searchRoutes.post('/search/image', async (c) => {
         ...(constraints !== undefined ? { constraints } : {}),
         resultCount: enrichedResults.length,
         queryTime,
+        cacheDisposition: 'BYPASS',
+        ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
       },
     });
 
@@ -3363,6 +3589,7 @@ searchRoutes.post('/search/image', async (c) => {
         results: enrichedResults,
         count: enrichedResults.length,
         queryTime,
+        ...(ngsQuota ? { quota: ngsQuota } : {}),
       },
       meta: {
         timestamp: new Date().toISOString(),

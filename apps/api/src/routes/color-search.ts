@@ -8,8 +8,10 @@ import {
   type ColorSearchResultItem,
 } from '@paillette/color-extraction';
 import {
+  annotateUsageEvent,
   enforceDailyQuota,
   getAuth,
+  recordApiUsageEvent,
   recordArtworkResults,
   requireAuthOrApiKey,
 } from '../middleware/auth';
@@ -20,6 +22,8 @@ import {
   resolveOpenAccessProviderScope,
   resolveOrgIdentifier,
 } from '../utils/orgs';
+import { reserveNgsPublicSearchQuota } from '../utils/ngs-search-quota';
+import type { PublicSearchQuota } from '@paillette/types';
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
 
@@ -30,6 +34,15 @@ const providerColorSearchSql = (provider: string | undefined) =>
   provider
     ? "AND json_valid(custom_metadata) AND json_extract(custom_metadata, '$.provider') = ?"
     : '';
+
+const setNgsSearchQuotaHeaders = (
+  c: { header: (name: string, value: string) => void },
+  quota: PublicSearchQuota
+) => {
+  c.header('X-NGS-Search-Limit', String(quota.limit));
+  c.header('X-NGS-Search-Used', String(quota.used));
+  c.header('X-NGS-Search-Remaining', String(quota.remaining));
+};
 
 colorSearchRoutes.use(
   '/search/*',
@@ -46,7 +59,10 @@ colorSearchRoutes.post('/search/color', async (c) => {
 
   try {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
-    if (getAuth(c as any).scopes.includes('public_search')) {
+    if (
+      getAuth(c as any).scopes.includes('public_search') &&
+      !isNgsPublicOrg(requestedOrgId)
+    ) {
       return c.json<ApiResponse>(
         {
           success: false,
@@ -81,6 +97,56 @@ colorSearchRoutes.post('/search/color', async (c) => {
     }
 
     const query = validation.data;
+    let ngsQuota: PublicSearchQuota | undefined;
+    if (isNgsPublicOrg(orgId)) {
+      try {
+        const reservation = await reserveNgsPublicSearchQuota(c.env.DB);
+        setNgsSearchQuotaHeaders(c, reservation.quota);
+        if (!reservation.admitted) {
+          return c.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+                message: 'NGS public search quota has been exhausted',
+                details: { quota: reservation.quota },
+              },
+            },
+            429
+          );
+        }
+        ngsQuota = reservation.quota;
+      } catch (error) {
+        console.error('NGS public search quota reservation failed:', error);
+        return c.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE',
+              message: 'NGS public search quota is temporarily unavailable',
+            },
+          },
+          503
+        );
+      }
+
+      if (!(c as any).get('usageEventId')) {
+        try {
+          await recordApiUsageEvent(c as any, {
+            queryType: 'color_search',
+            orgId: orgId || null,
+            metadata: {
+              search: { mode: 'color', quotaRemaining: ngsQuota.remaining },
+            },
+          });
+        } catch (error) {
+          console.warn(
+            'NGS accepted color search usage telemetry failed:',
+            error
+          );
+        }
+      }
+    }
 
     // Query artworks with color data
     const artworks = await c.env.DB.prepare(
@@ -193,13 +259,24 @@ colorSearchRoutes.post('/search/color', async (c) => {
       }))
     );
 
-    const response: ApiResponse<ColorSearchResult> = {
+    await annotateUsageEvent(c as any, {
+      search: {
+        mode: 'color',
+        cacheDisposition: 'BYPASS',
+        ...(ngsQuota ? { quotaRemaining: ngsQuota.remaining } : {}),
+      },
+    });
+
+    const response: ApiResponse<
+      ColorSearchResult & { quota?: PublicSearchQuota }
+    > = {
       success: true,
       data: {
         results: limitedResults,
         query,
         totalResults: limitedResults.length,
         took: performance.now() - startTime,
+        ...(ngsQuota ? { quota: ngsQuota } : {}),
       },
     };
 

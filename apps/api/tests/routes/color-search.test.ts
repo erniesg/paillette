@@ -7,6 +7,8 @@ describe('Color Search API', () => {
   let app: Hono<{ Bindings: Env }>;
   let mockEnv: Env;
   let testGalleryId: string;
+  let ngsQuota: { used: number; hard_limit: number };
+  let usageEventInserts: number;
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
   const authHeaders = {
     'Content-Type': 'application/json',
@@ -18,6 +20,8 @@ describe('Color Search API', () => {
 
   beforeEach(() => {
     testGalleryId = 'test-gallery-123';
+    ngsQuota = { used: 0, hard_limit: 1000 };
+    usageEventInserts = 0;
     const artwork = {
       id: 'test-artwork-123',
       title: 'Test Artwork',
@@ -58,6 +62,13 @@ describe('Color Search API', () => {
               return { success: true, results: [] };
             }),
             first: vi.fn(async () => {
+              if (sql.includes('ngs_public_search_quota')) {
+                if (sql.includes('UPDATE ngs_public_search_quota')) {
+                  if (ngsQuota.used >= ngsQuota.hard_limit) return null;
+                  ngsQuota.used += 1;
+                }
+                return ngsQuota;
+              }
               if (sql.includes('FROM orgs')) {
                 return { id: testGalleryId };
               }
@@ -68,7 +79,12 @@ describe('Color Search API', () => {
 
               return artwork;
             }),
-            run: vi.fn(async () => ({ success: true, meta: { changes: 1 } })),
+            run: vi.fn(async () => {
+              if (sql.includes('INSERT INTO api_usage_events')) {
+                usageEventInserts += 1;
+              }
+              return { success: true, meta: { changes: 1 } };
+            }),
           };
           return statement;
         }),
@@ -91,7 +107,8 @@ describe('Color Search API', () => {
   });
 
   describe('POST /search/color', () => {
-    it('rejects direct access from the public search principal', async () => {
+    it('logs an accepted NGS color search from the public search principal', async () => {
+      testGalleryId = ngsOrgId;
       const res = await request('/galleries/ngs/search/color', {
         method: 'POST',
         headers: {
@@ -102,13 +119,20 @@ describe('Color Search API', () => {
       });
       const body = await res.json();
 
-      expect(res.status).toBe(403);
-      expect(body.error.code).toBe('PUBLIC_SEARCH_ENDPOINT_NOT_ALLOWED');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('X-NGS-Search-Remaining')).toBe('999');
+      expect(ngsQuota.used).toBe(1);
+      expect(usageEventInserts).toBe(1);
       expect(
         (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
-          sql.includes('dominant_colors IS NOT NULL')
+          sql.includes('api_usage_daily')
         )
       ).toBe(false);
+      expect(body.data.quota).toEqual({
+        limit: 1000,
+        used: 1,
+        remaining: 999,
+      });
     });
 
     it('should search by single color', async () => {
@@ -158,6 +182,26 @@ describe('Color Search API', () => {
       expect(colorSql).toContain(
         "source_institution = 'National Gallery Singapore'"
       );
+    });
+
+    it('charges a valid authenticated NGS color search once', async () => {
+      testGalleryId = ngsOrgId;
+      const res = await request('/galleries/ngs/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ colors: ['#FF5733'], threshold: 10 }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('X-NGS-Search-Remaining')).toBe('999');
+      expect(ngsQuota.used).toBe(1);
+      expect(body.success).toBe(true);
+      expect(
+        (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>
+          sql.includes('api_usage_daily')
+        )
+      ).toBe(false);
     });
 
     it('scopes the NGA color route to NGA provider rows', async () => {

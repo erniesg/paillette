@@ -78,4 +78,5 @@ export interface SearchResponse {
   count: number;
   queryTime: number;
   interpretation?: import('@paillette/types/public-search').PublicSearchInterpretation;
+  quota?: import('@paillette/types').PublicSearchQuota;
 }

@@ -53,6 +53,11 @@ type DailyUsage = {
   quota: number;
 };
 
+type NgsPublicSearchQuotaUsage = {
+  used: number;
+  hard_limit: number;
+};
+
 type UsageEvent = {
   id: string;
   user_id: string;
@@ -213,12 +218,18 @@ class FakeStatement {
 
 class FakeSearchDb {
   daily = new Map<string, DailyUsage>();
+  ngsPublicSearchQuota: NgsPublicSearchQuotaUsage = {
+    used: 0,
+    hard_limit: 1000,
+  };
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
   metadataSearchSql: string[] = [];
   metadataSearchParams: unknown[][] = [];
   exactArtistPreflightSql: string[] = [];
   failArtworkUsageInserts = false;
+  failUsageEventInserts = false;
+  failNgsPublicSearchQuota = false;
   apiKeyRow: {
     id: string;
     user_id: string;
@@ -237,6 +248,13 @@ class FakeSearchDb {
   }
 
   async run(sql: string, params: unknown[]) {
+    if (sql.includes('ngs_public_search_quota')) {
+      if (this.failNgsPublicSearchQuota) {
+        throw new Error('NGS quota storage unavailable');
+      }
+      return { success: true, meta: { changes: 1 } };
+    }
+
     if (sql.includes('INSERT INTO api_usage_daily')) {
       const [principalType, principalId, usageDate, quota] = params as [
         string,
@@ -293,6 +311,9 @@ class FakeSearchDb {
     }
 
     if (sql.includes('INSERT INTO api_usage_events')) {
+      if (this.failUsageEventInserts) {
+        throw new Error('usage telemetry unavailable');
+      }
       const [
         id,
         user_id,
@@ -414,6 +435,21 @@ class FakeSearchDb {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes('ngs_public_search_quota')) {
+      if (this.failNgsPublicSearchQuota) {
+        throw new Error('NGS quota storage unavailable');
+      }
+      if (sql.includes('UPDATE ngs_public_search_quota')) {
+        if (
+          this.ngsPublicSearchQuota.used >= this.ngsPublicSearchQuota.hard_limit
+        ) {
+          return null;
+        }
+        this.ngsPublicSearchQuota.used += 1;
+      }
+      return this.ngsPublicSearchQuota as T;
+    }
+
     if (sql.includes('FROM api_keys ak')) {
       return this.apiKeyRow as T | null;
     }
@@ -913,6 +949,317 @@ describe('NGS search spotlight cache', () => {
   });
 });
 
+describe('NGS public search quota', () => {
+  it('returns the visible lifetime quota without consuming it', async () => {
+    const db = new FakeSearchDb();
+    const response = await makeApp().request(
+      '/api/v1/orgs/ngs/search/quota',
+      { headers: { 'X-User-Id': 'user-1' } },
+      makeEnv(db)
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    const payload = (await response.json()) as any;
+    expect(response.headers.get('X-NGS-Search-Limit')).toBe('1000');
+    expect(response.headers.get('X-NGS-Search-Used')).toBe('0');
+    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('1000');
+    expect(payload.data).toEqual({ limit: 1000, used: 0, remaining: 1000 });
+    expect(db.usageEvents).toHaveLength(0);
+  });
+
+  it('charges and logs an exact NGS Try term served from the spotlight bundle', async () => {
+    const db = new FakeSearchDb();
+    const response = await textSearch(
+      makeApp(),
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      {
+        query: '  A STILL LIFE of tropical fruit and flowers  ',
+        topK: 1,
+        minScore: 0.99,
+      },
+      'ngs'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('SPOTLIGHT');
+    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(payload.data.quota).toEqual({
+      limit: 1000,
+      used: 1,
+      remaining: 999,
+    });
+    expect(payload.data.results[0]?.id).toBe('P-0811');
+    expect(payload.data.results).toHaveLength(1);
+    expect(payload.data.results[0]?.metadata).toMatchObject({
+      provider: 'ngs',
+      sourceInstitution: 'National Gallery Singapore',
+      sourceRecordId: 'P-0811',
+      accessionNumber: 'P-0811',
+      dominantColors: expect.any(Array),
+    });
+    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.usageEvents).toHaveLength(1);
+    expect(
+      JSON.parse(db.usageEvents[0]?.metadata || '{}').search
+    ).toMatchObject({
+      mode: 'text',
+      query: '  A STILL LIFE of tropical fruit and flowers  ',
+      cacheDisposition: 'SPOTLIGHT',
+      quotaRemaining: 999,
+    });
+  });
+
+  it('charges authenticated NGS cache hits from the shared lifetime pool', async () => {
+    const db = new FakeSearchDb();
+    const cache = makeEmbeddingCache();
+    const env = { ...makeEnv(db), CACHE: cache };
+    const app = makeApp();
+    const body = { query: 'mangrove shore', topK: 1 };
+
+    const first = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      body,
+      'ngs'
+    );
+    const second = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-2' },
+      body,
+      'ngs'
+    );
+    const secondPayload = (await second.json()) as any;
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+    expect(second.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
+    expect(secondPayload.data.quota).toEqual({
+      limit: 1000,
+      used: 2,
+      remaining: 998,
+    });
+    expect(db.ngsPublicSearchQuota.used).toBe(2);
+    expect(db.metadataSearchSql).toHaveLength(1);
+    expect(db.usageEvents).toHaveLength(2);
+    expect(
+      JSON.parse(db.usageEvents[1]?.metadata || '{}').search
+    ).toMatchObject({
+      cacheDisposition: 'KV-FRESH',
+      quotaRemaining: 998,
+    });
+  });
+
+  it('charges valid NGS image searches before embedding work', async () => {
+    const db = new FakeSearchDb();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
+        status: 200,
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const vectorize = { query: vi.fn().mockResolvedValue({ matches: [] }) };
+    const env = {
+      ...makeEnv(db),
+      JINA_API_KEY: 'jina-test-key',
+      JINA_EMBEDDING_DIMENSIONS: '2',
+      VECTORIZE: vectorize as unknown as Vectorize,
+    };
+
+    const response = await imageSearch(
+      makeApp(),
+      env,
+      { 'X-User-Id': 'user-1' },
+      'ngs'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(payload.data.quota).toEqual({
+      limit: 1000,
+      used: 1,
+      remaining: 999,
+    });
+    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vectorize.query).toHaveBeenCalledOnce();
+    expect(
+      JSON.parse(db.usageEvents[0]?.metadata || '{}').search
+    ).toMatchObject({
+      mode: 'image',
+      quotaRemaining: 999,
+    });
+  });
+
+  it('uses the NGS lifetime pool instead of daily quota for a valid image request', async () => {
+    const db = new FakeSearchDb();
+    const response = await imageSearch(
+      makeApp(),
+      makeEnv(db, 0),
+      { 'X-User-Id': 'user-1' },
+      'ngs'
+    );
+
+    expect(response.status).toBe(501);
+    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(db.ngsPublicSearchQuota.used).toBe(1);
+    expect(db.daily.size).toBe(0);
+    expect(db.usageEvents).toHaveLength(1);
+  });
+
+  it('does not reserve the NGS lifetime pool for invalid input', async () => {
+    const db = new FakeSearchDb();
+    const response = await textSearch(
+      makeApp(),
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      { query: '' },
+      'ngs'
+    );
+
+    expect(response.status).toBe(400);
+    expect(db.ngsPublicSearchQuota.used).toBe(0);
+    expect(db.usageEvents).toHaveLength(0);
+  });
+
+  it('does not reserve the NGS lifetime pool for non-NGS searches', async () => {
+    const db = new FakeSearchDb();
+    const response = await textSearch(
+      makeApp(),
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      { query: 'mangrove shore', topK: 1 },
+      'nga'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-NGS-Search-Remaining')).toBeNull();
+    expect(db.ngsPublicSearchQuota.used).toBe(0);
+  });
+
+  it('lets an authenticated NGS user pass the old daily boundary without touching daily usage', async () => {
+    const db = new FakeSearchDb();
+    const env = makeEnv(db, 1);
+    const app = makeApp();
+
+    const first = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'mangrove shore', topK: 1 },
+      'ngs'
+    );
+    const second = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'fishing boats', topK: 1 },
+      ORG_ID
+    );
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(db.ngsPublicSearchQuota.used).toBe(2);
+    expect(db.daily.size).toBe(0);
+    expect(db.usageEvents).toHaveLength(2);
+  });
+
+  it('fails closed before retrieval when the NGS quota ledger is unavailable', async () => {
+    const db = new FakeSearchDb();
+    db.failNgsPublicSearchQuota = true;
+    const response = await textSearch(
+      makeApp(),
+      makeEnv(db),
+      { 'X-User-Id': 'user-1' },
+      { query: 'mangrove shore', topK: 1 },
+      'ngs'
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('NGS_PUBLIC_SEARCH_QUOTA_UNAVAILABLE');
+    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(db.usageEvents).toHaveLength(0);
+  });
+
+  it('shares the final NGS slot across authenticated users and the public API key', async () => {
+    const db = new FakeSearchDb();
+    db.ngsPublicSearchQuota.used = 999;
+    const cache = makeEmbeddingCache();
+    const env = {
+      ...makeEnv(db),
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      CACHE: cache,
+    };
+    const app = makeApp();
+    const body = {
+      query: 'a still life of tropical fruit and flowers',
+      topK: 100,
+      minScore: 0,
+    };
+
+    const responses = await Promise.all([
+      textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'ngs'),
+      textSearch(
+        app,
+        env,
+        { 'X-API-Key': 'public-search-secret' },
+        body,
+        'ngs'
+      ),
+    ]);
+    const statuses = responses.map((response) => response.status).sort();
+
+    expect(statuses).toEqual([200, 429]);
+    const exhausted = responses.find((response) => response.status === 429)!;
+    const exhaustedPayload = (await exhausted.json()) as any;
+    expect(db.ngsPublicSearchQuota.used).toBe(1000);
+    expect(exhausted.headers.get('X-NGS-Search-Limit')).toBe('1000');
+    expect(exhausted.headers.get('X-NGS-Search-Used')).toBe('1000');
+    expect(exhausted.headers.get('X-NGS-Search-Remaining')).toBe('0');
+    expect(exhaustedPayload.error).toMatchObject({
+      code: 'NGS_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
+      details: { quota: { limit: 1000, used: 1000, remaining: 0 } },
+    });
+    expect(db.usageEvents).toHaveLength(1);
+    expect(db.metadataSearchSql).toHaveLength(0);
+    expect(cache.get).not.toHaveBeenCalled();
+  });
+
+  it('keeps an admitted public NGS search available when usage telemetry fails', async () => {
+    const db = new FakeSearchDb();
+    db.failUsageEventInserts = true;
+    const env = {
+      ...makeEnv(db),
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      CACHE: makeEmbeddingCache(),
+    };
+
+    const response = await textSearch(
+      makeApp(),
+      env,
+      { 'X-API-Key': 'public-search-secret' },
+      {
+        query: 'a still life of tropical fruit and flowers',
+        topK: 100,
+        minScore: 0,
+      },
+      'ngs'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-NGS-Search-Remaining')).toBe('999');
+    expect(db.ngsPublicSearchQuota.used).toBe(1);
+  });
+});
+
 const makeImageSearchForm = (
   file: File = new File([new Uint8Array([1, 2, 3, 4])], 'query.png', {
     type: 'image/png',
@@ -1025,9 +1372,9 @@ describe('Search API auth and quota behavior', () => {
       },
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(imageVectorize.query).toHaveBeenCalledTimes(2);
-    expect(captionVectorize.query).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(embeddingCache.put)).toHaveBeenCalledTimes(2);
+    expect(imageVectorize.query).toHaveBeenCalledTimes(1);
+    expect(captionVectorize.query).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(embeddingCache.put)).toHaveBeenCalledTimes(3);
   });
 
   it('skips metadata search when the routed metadata weight is zero', async () => {
@@ -1080,14 +1427,20 @@ describe('Search API auth and quota behavior', () => {
   it('adds no-store before image quota enforcement can return 429', async () => {
     env = makeEnv(db, 0);
 
-    const response = await imageSearch(app, env);
+    const response = await imageSearch(app, env, undefined, 'private-gallery');
 
     expect(response.status).toBe(429);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 
   it('returns results, rate limit headers, and one usage record for a registered user', async () => {
-    const res = await textSearch(app, env);
+    const res = await textSearch(
+      app,
+      env,
+      undefined,
+      undefined,
+      'private-gallery'
+    );
     const body = (await res.json()) as any;
     const today = new Date().toISOString().slice(0, 10);
 
@@ -1117,9 +1470,9 @@ describe('Search API auth and quota behavior', () => {
     expect(db.usageEvents).toHaveLength(1);
     expect(db.usageEvents[0]).toMatchObject({
       method: 'POST',
-      path: `/api/v1/orgs/${ORG_ID}/search/text`,
+      path: '/api/v1/orgs/private-gallery/search/text',
       query_type: 'vector_search',
-      org_id: ORG_ID,
+      org_id: 'private-gallery',
       auth_kind: 'user',
       ip_address: '203.0.113.42',
       country: 'SG',
@@ -2726,7 +3079,13 @@ describe('Search API auth and quota behavior', () => {
       name: 'API User',
     };
 
-    const res = await textSearch(app, env, { 'X-API-Key': 'plt_stg_test' });
+    const res = await textSearch(
+      app,
+      env,
+      { 'X-API-Key': 'plt_stg_test' },
+      undefined,
+      'private-gallery'
+    );
     const body = (await res.json()) as any;
     const today = new Date().toISOString().slice(0, 10);
 
@@ -2770,8 +3129,16 @@ describe('Search API auth and quota behavior', () => {
     expect(body.success).toBe(true);
     expect(body.data.results).toHaveLength(1);
     expect(db.daily.size).toBe(0);
-    expect(db.usageEvents).toHaveLength(0);
-    expect(db.artworkEvents).toHaveLength(0);
+    expect(db.usageEvents).toHaveLength(1);
+    expect(db.artworkEvents).toHaveLength(1);
+    expect(
+      JSON.parse(db.usageEvents[0]?.metadata || '{}').search
+    ).toMatchObject({
+      mode: 'text',
+      query: 'pineapple',
+      cacheDisposition: 'MISS',
+      quotaRemaining: 999,
+    });
   });
 
   it.each([
@@ -3534,8 +3901,8 @@ describe('Search API auth and quota behavior', () => {
     env = { ...makeEnv(db), CACHE: cache };
     const body = { query: 'mangrove shore', topK: 100, minScore: 0 };
 
-    const first = await textSearch(app, env, undefined, body);
-    const second = await textSearch(app, env, undefined, body);
+    const first = await textSearch(app, env, undefined, body, 'nga');
+    const second = await textSearch(app, env, undefined, body, 'nga');
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
@@ -3668,7 +4035,8 @@ describe('Search API auth and quota behavior', () => {
       app,
       env,
       { 'X-User-Id': 'user-1' },
-      { query: '' }
+      { query: '' },
+      'private-gallery'
     );
     const today = new Date().toISOString().slice(0, 10);
 
@@ -3683,11 +4051,23 @@ describe('Search API auth and quota behavior', () => {
 
   it('returns 429 DAILY_QUOTA_EXCEEDED on the 101st query in the same UTC day', async () => {
     for (let i = 0; i < 100; i += 1) {
-      const res = await textSearch(app, env);
+      const res = await textSearch(
+        app,
+        env,
+        undefined,
+        undefined,
+        'private-gallery'
+      );
       expect(res.status).toBe(200);
     }
 
-    const res = await textSearch(app, env);
+    const res = await textSearch(
+      app,
+      env,
+      undefined,
+      undefined,
+      'private-gallery'
+    );
     const body = (await res.json()) as any;
     const today = new Date().toISOString().slice(0, 10);
 
@@ -3701,7 +4081,9 @@ describe('Search API auth and quota behavior', () => {
   });
 
   it('keeps concurrent 110 requests capped at the atomic daily quota', async () => {
-    const requests = Array.from({ length: 110 }, () => textSearch(app, env));
+    const requests = Array.from({ length: 110 }, () =>
+      textSearch(app, env, undefined, undefined, 'private-gallery')
+    );
     const responses = await Promise.all(requests);
     const statusCounts = responses.reduce<Record<number, number>>(
       (counts, response) => {
@@ -3724,11 +4106,20 @@ describe('Search API auth and quota behavior', () => {
     vi.setSystemTime(new Date('2026-05-22T23:59:58.000Z'));
     env = makeEnv(db, 1);
 
-    expect((await textSearch(app, env)).status).toBe(200);
-    expect((await textSearch(app, env)).status).toBe(429);
+    expect(
+      (await textSearch(app, env, undefined, undefined, 'private-gallery'))
+        .status
+    ).toBe(200);
+    expect(
+      (await textSearch(app, env, undefined, undefined, 'private-gallery'))
+        .status
+    ).toBe(429);
 
     vi.setSystemTime(new Date('2026-05-23T00:00:01.000Z'));
-    expect((await textSearch(app, env)).status).toBe(200);
+    expect(
+      (await textSearch(app, env, undefined, undefined, 'private-gallery'))
+        .status
+    ).toBe(200);
 
     expect(db.daily.get(usageKey('user', 'user-1', '2026-05-22'))).toEqual({
       used: 1,
