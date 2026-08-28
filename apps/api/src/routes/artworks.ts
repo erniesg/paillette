@@ -3,7 +3,7 @@
  * Handles artwork CRUD operations and image uploads
  */
 
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import type { Env } from '../index';
@@ -141,6 +141,35 @@ const getRouteProvider = (c: Context<{ Bindings: Env }>) =>
   resolveOpenAccessProviderScope(
     c.req.param('orgId') || c.req.param('galleryId')
   );
+
+// NGA is the only anonymous artwork collection. Keep this exact rather than
+// allowing an arbitrary public-looking org identifier or nested sub-route.
+const isPublicNgaArtworkRead = (c: Context<{ Bindings: Env }>) =>
+  c.req.method === 'GET' &&
+  /^\/api\/v1\/(?:orgs|galleries)\/nga\/artworks(?:\/[^/%]+)?$/.test(
+    c.req.path
+  );
+
+// Let explicitly requested public browsing reach the route's scope check so
+// invalid public orgs receive the intended PUBLIC_SCOPE_FORBIDDEN response.
+// This does not grant access: the handler returns before it queries artworks.
+const isPublicArtworkBrowseCandidate = (c: Context<{ Bindings: Env }>) =>
+  c.req.method === 'GET' &&
+  /^\/api\/v1\/(?:orgs|galleries)\/[^/%]+\/artworks$/.test(c.req.path) &&
+  !isNgsPublicOrg(c.req.param('orgId') || c.req.param('galleryId')) &&
+  (c.req.query('public_only') === 'true' || c.req.query('public_only') === '1');
+
+const requireArtworkReadAccess = async (
+  c: Context<{ Bindings: Env }>,
+  next: Next
+) => {
+  if (isPublicNgaArtworkRead(c) || isPublicArtworkBrowseCandidate(c)) {
+    await next();
+    return;
+  }
+
+  return requireAuthOrApiKey(c as any, next);
+};
 
 const requireArtworkWriteAccess = async (
   c: Context<{ Bindings: Env }>,
@@ -803,7 +832,7 @@ app.post('/upsert', requireAuthOrApiKey as any, async (c) => {
  * GET /api/v1/artworks
  * List artworks with filtering and pagination
  */
-app.get('/', requireAuthOrApiKey as any, async (c) => {
+app.get('/', requireArtworkReadAccess as any, async (c) => {
   try {
     const query = c.req.query();
     const routeIdentifier = c.req.param('orgId') || c.req.param('galleryId');
@@ -967,7 +996,7 @@ app.get('/', requireAuthOrApiKey as any, async (c) => {
  * GET /api/v1/artworks/:id
  * Get artwork by ID
  */
-app.get('/:id', requireAuthOrApiKey as any, async (c) => {
+app.get('/:id', requireArtworkReadAccess as any, async (c) => {
   try {
     const id = c.req.param('id');
 

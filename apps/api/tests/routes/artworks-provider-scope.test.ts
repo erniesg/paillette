@@ -182,4 +182,24 @@ describe('NGA artwork provider scope', () => {
 
     expect(response.status).toBe(404);
   });
+
+  it('requires authentication for an NGS artwork browse', async () => {
+    const response = await app.request(
+      '/api/v1/orgs/ngs/artworks?public_only=true',
+      {},
+      env
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it('requires authentication for a private artwork browse', async () => {
+    const response = await app.request(
+      '/api/v1/orgs/private-org/artworks',
+      {},
+      env
+    );
+
+    expect(response.status).toBe(401);
+  });
 });

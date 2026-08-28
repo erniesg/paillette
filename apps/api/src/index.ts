@@ -154,11 +154,24 @@ const api = new Hono<{ Bindings: Env }>();
 api.get('/.well-known/oauth-protected-resource', (c) =>
   c.json(getMcpProtectedResourceMetadata(c.req.url, c.env))
 );
+// NGA artwork browse is deliberately anonymous. The match is GET-only and
+// segment-exact so it cannot expose NGS/private reads, mutations, embeddings,
+// or arbitrary nested artwork endpoints.
+const isPublicNgaArtworkRead = (c: { req: { method: string; path: string } }) =>
+  c.req.method === 'GET' &&
+  /^\/api\/v1\/(?:orgs|galleries)\/nga\/artworks(?:\/[^/%]+)?$/.test(
+    c.req.path
+  );
+
 api.use('*', async (c, next) => {
   // MCP owns its OAuth challenge so clients still receive the required
   // resource metadata and scope hint. All other API data routes share this
   // authentication/access boundary before reaching route-local middleware.
   if (c.req.path.endsWith('/mcp')) {
+    await next();
+    return;
+  }
+  if (isPublicNgaArtworkRead(c)) {
     await next();
     return;
   }

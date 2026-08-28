@@ -10,6 +10,11 @@ import type { Env } from '../../src/index';
 describe('GET /api/v1/galleries/:id/embeddings', () => {
   let env: Env;
 
+  const authenticatedRequest = (path: string) =>
+    new Request(`http://localhost${path}`, {
+      headers: { 'X-User-Id': 'embedding-test-user' },
+    });
+
   const mockDatabase = ({
     galleryId,
     artworks = [],
@@ -24,6 +29,7 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
     (env.DB.prepare as any).mockImplementation((sql: string) => {
       const statement = {
         bind: vi.fn(() => statement),
+        run: vi.fn(async () => ({ success: true })),
         first: vi.fn(async () => {
           if (sql.includes('FROM orgs')) {
             return orgExists ? { id: galleryId } : null;
@@ -114,8 +120,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
     // Mock Vectorize query
     (env.VECTORIZE.getByIds as any).mockResolvedValue(mockEmbeddings);
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings`
     );
     const response = await app.fetch(request, env);
     const data = await response.json();
@@ -164,8 +170,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
 
     (env.VECTORIZE.getByIds as any).mockResolvedValue(mockEmbeddings);
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings`
     );
     const response = await app.fetch(request, env);
     const data = await response.json();
@@ -178,8 +184,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
   it('should support limit and offset parameters', async () => {
     const galleryId = 'test-gallery-123';
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings?limit=10&offset=20`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings?limit=10&offset=20`
     );
 
     mockDatabase({ galleryId, artworks: [] });
@@ -201,8 +207,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
 
     mockDatabase({ galleryId, orgExists: false });
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings`
     );
     const response = await app.fetch(request, env);
     const data = await response.json();
@@ -217,8 +223,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
 
     mockDatabase({ galleryId, rejectArtworkQuery: true });
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings`
     );
     const response = await app.fetch(request, env);
     const data = await response.json();
@@ -255,8 +261,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
 
     (env.VECTORIZE.getByIds as any).mockResolvedValue(mockEmbeddings);
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings`
     );
     const response = await app.fetch(request, env);
     const data = await response.json();
@@ -292,8 +298,8 @@ describe('GET /api/v1/galleries/:id/embeddings', () => {
       query: vi.fn(),
     } as any;
 
-    const request = new Request(
-      `http://localhost/api/v1/galleries/${galleryId}/embeddings?limit=45`
+    const request = authenticatedRequest(
+      `/api/v1/galleries/${galleryId}/embeddings?limit=45`
     );
     const response = await app.fetch(request, env);
     const data = await response.json();
