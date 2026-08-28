@@ -16,6 +16,7 @@ import usageEventRoutes from './routes/usage-events';
 import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
+import { requireAuthOrApiKey } from './middleware/auth';
 import {
   processOpenAccessAssetBatch,
   type OpenAccessAssetMessage,
@@ -46,6 +47,11 @@ export interface Env {
   LOGTO_ISSUER?: string;
   LOGTO_JWKS_URI?: string;
   LOGTO_API_RESOURCE?: string;
+  AUTH_ISSUER?: string;
+  AUTH_JWKS_URI?: string;
+  AUTH_CLIENT_ID?: string;
+  SEARCH_ACCESS_MODE?: string;
+  SEARCH_ACCESS_BOOTSTRAP_EMAIL?: string;
   API_KEY_PEPPER?: string;
   PAILLETTE_PUBLIC_SEARCH_API_KEY?: string;
   DAILY_FREE_QUERY_LIMIT?: string;
@@ -155,6 +161,16 @@ const api = new Hono<{ Bindings: Env }>();
 api.get('/.well-known/oauth-protected-resource', (c) =>
   c.json(getMcpProtectedResourceMetadata(c.req.url, c.env))
 );
+api.use('*', async (c, next) => {
+  // MCP owns its OAuth challenge so clients still receive the required
+  // resource metadata and scope hint. All other API data routes share this
+  // authentication/access boundary before reaching route-local middleware.
+  if (c.req.path.endsWith('/mcp')) {
+    await next();
+    return;
+  }
+  return requireAuthOrApiKey(c as any, next);
+});
 api.route('/me', apiKeyRoutes as any);
 api.route('/impact', impactRoutes as any);
 api.route('/usage-events', usageEventRoutes as any);

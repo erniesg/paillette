@@ -3,6 +3,14 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import type { Env } from '../index';
 import { generateId, generateToken, hashApiKey } from '../utils/crypto';
 import { isNgsPublicOrg } from '../utils/orgs';
+import { verifyIdentityToken } from '../auth/identity-token';
+import {
+  D1SearchAccessRepository,
+  parseSearchAccessMode,
+  resolveSearchAccess,
+  type GrantedSearchAccessDecision,
+  type SearchAccessDecision,
+} from '../auth/search-access';
 
 export type PrincipalKind = 'user' | 'api_key';
 
@@ -13,6 +21,9 @@ export interface AuthPrincipal {
   name?: string;
   apiKeyId?: string;
   scopes: string[];
+  externalIssuer?: string;
+  externalSubject?: string;
+  searchAccess?: GrantedSearchAccessDecision;
 }
 
 type Variables = {
@@ -56,6 +67,51 @@ const getScopes = (payload: JWTPayload) => {
   const scope = payload.scope;
   return typeof scope === 'string' ? scope.split(' ').filter(Boolean) : [];
 };
+
+class AccessDecisionError extends Error {
+  constructor(
+    readonly status: 401 | 403,
+    readonly code:
+      | 'AUTHENTICATION_REQUIRED'
+      | 'ACCESS_PENDING'
+      | 'IDENTITY_BINDING_REQUIRED',
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+const getAccessErrorMessage = (code: AccessDecisionError['code']) => {
+  if (code === 'ACCESS_PENDING') return 'This account is awaiting approval';
+  if (code === 'IDENTITY_BINDING_REQUIRED') {
+    return 'This account requires identity review';
+  }
+  return 'Authentication is required';
+};
+
+const accessErrorResponse = (
+  c: Context<AppBindings>,
+  error: AccessDecisionError
+) =>
+  c.json(
+    {
+      success: false,
+      error: { code: error.code, message: getAccessErrorMessage(error.code) },
+    },
+    error.status
+  );
+
+function requireGrantedDecision(
+  decision: SearchAccessDecision
+): asserts decision is GrantedSearchAccessDecision {
+  if (!decision.granted) {
+    throw new AccessDecisionError(
+      decision.status,
+      decision.code,
+      getAccessErrorMessage(decision.code)
+    );
+  }
+}
 
 const getUserInfoEndpoint = (issuer: string) =>
   `${trimTrailingSlash(issuer)}/me`;
@@ -475,10 +531,68 @@ const verifyLogtoToken = async (c: Context<AppBindings>, token: string) => {
   return auth;
 };
 
+/**
+ * Verifies a WorkOS AuthKit session token and binds it to the single internal
+ * user identified by its immutable issuer + subject pair. Email is profile
+ * data only; it is never used as an identity key.
+ */
+const verifyConfiguredIdentityToken = async (
+  c: Context<AppBindings>,
+  token: string
+): Promise<AuthPrincipal> => {
+  const clientId = c.env.AUTH_CLIENT_ID?.trim();
+  const issuer = c.env.AUTH_ISSUER?.trim();
+  const jwksUri = c.env.AUTH_JWKS_URI?.trim();
+
+  // Keep the existing local Logto test/dev path only while WorkOS has not
+  // been configured. Deployed environments must always configure WorkOS.
+  if (!clientId || !issuer || !jwksUri) {
+    if (allowsIssuerOnlyLogtoFallback(c.env)) {
+      return verifyLogtoToken(c, token);
+    }
+    throw new Error('Authentication is not configured');
+  }
+
+  const normalizedIssuer = trimTrailingSlash(issuer);
+  const identity = await verifyIdentityToken(
+    token,
+    { issuer: normalizedIssuer, clientId },
+    getJwks(normalizedIssuer, jwksUri)
+  );
+  if (!identity.emailVerified) {
+    throw new Error('WorkOS email is not verified');
+  }
+
+  const decision = await resolveSearchAccess(
+    new D1SearchAccessRepository(c.env.DB),
+    identity,
+    parseSearchAccessMode(c.env.SEARCH_ACCESS_MODE),
+    c.env.SEARCH_ACCESS_BOOTSTRAP_EMAIL || ''
+  );
+  requireGrantedDecision(decision);
+
+  if (!decision.internalUserId) {
+    throw new Error('Authenticated identity did not resolve to a user');
+  }
+
+  return {
+    kind: 'user',
+    userId: decision.internalUserId,
+    email: identity.email,
+    name: identity.name,
+    // AuthKit session tokens do not carry OAuth scopes. A verified user is
+    // granted the baseline MCP read scope; write scopes remain absent.
+    scopes: ['mcp:read'],
+    externalIssuer: identity.issuer,
+    externalSubject: identity.subject,
+    searchAccess: decision,
+  } satisfies AuthPrincipal;
+};
+
 const verifyPersonalApiKey = async (
   c: Context<AppBindings>,
   apiKey: string
-) => {
+): Promise<AuthPrincipal | null> => {
   const keyHash = await hashApiKey(getApiKeyHashInput(apiKey, c.env));
   const row = await c.env.DB.prepare(
     `
@@ -537,7 +651,10 @@ const getApiKeyFromRequest = (
   return null;
 };
 
-const verifyPublicSearchApiKey = (c: Context<AppBindings>, apiKey: string) => {
+const verifyPublicSearchApiKey = (
+  c: Context<AppBindings>,
+  apiKey: string
+): AuthPrincipal | null => {
   const configuredKey = c.env.PAILLETTE_PUBLIC_SEARCH_API_KEY?.trim();
   if (!configuredKey || apiKey !== configuredKey) {
     return null;
@@ -552,33 +669,29 @@ const verifyPublicSearchApiKey = (c: Context<AppBindings>, apiKey: string) => {
   } satisfies AuthPrincipal;
 };
 
-const getDevPrincipal = (c: Context<AppBindings>) => {
-  if (c.env.ENVIRONMENT === 'production') {
-    return null;
-  }
-
+// Route unit tests mount handlers without the application-wide WorkOS
+// boundary. Keep their synthetic principal behind the literal test runtime
+// marker; staging, production, and local workers never trust user headers.
+const getTestPrincipal = (c: Context<AppBindings>): AuthPrincipal | null => {
+  if (c.env.ENVIRONMENT !== 'test') return null;
   const userId = c.req.header('X-User-Id');
-  if (!userId) {
-    return null;
-  }
+  if (!userId) return null;
   const isPublicSearchProxy = userId === 'public-search-web';
-
   return {
     kind: 'user',
     userId,
-    email: c.req.header('X-User-Email') || `${userId}@dev.local`,
+    email: c.req.header('X-User-Email') || `${userId}@test.local`,
     name: c.req.header('X-User-Name') || userId,
-    scopes: isPublicSearchProxy ? ['dev', 'public_search'] : ['dev'],
+    scopes: isPublicSearchProxy ? ['test', 'public_search'] : ['test'],
   } satisfies AuthPrincipal;
 };
 
 export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
   try {
     const bearerToken = getBearerToken(c.req.header('Authorization'));
-    const devPrincipal = getDevPrincipal(c);
     const auth = bearerToken
-      ? await verifyLogtoToken(c, bearerToken)
-      : devPrincipal;
+      ? await verifyConfiguredIdentityToken(c, bearerToken)
+      : getTestPrincipal(c);
 
     if (!auth || auth.kind !== 'user') {
       return c.json(
@@ -593,10 +706,15 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
       );
     }
 
-    await ensureUser(c, auth);
+    if (!auth.externalSubject) {
+      await ensureUser(c, auth);
+    }
     c.set('auth', auth);
     await next();
   } catch (error) {
+    if (error instanceof AccessDecisionError) {
+      return accessErrorResponse(c, error);
+    }
     console.error('Auth error:', error);
     return c.json(
       {
@@ -611,11 +729,87 @@ export const requireLogtoUser = async (c: Context<AppBindings>, next: Next) => {
   }
 };
 
+// Backwards-compatible export for route modules. The configured identity
+// provider is WorkOS; the old name is retained only to avoid a public import
+// break while callers migrate.
+export const requireUser = requireLogtoUser;
+
+export const requireApprovedDataAccess = async (
+  c: Context<AppBindings>,
+  next: Next
+) => {
+  const mode = parseSearchAccessMode(c.env.SEARCH_ACCESS_MODE);
+  if (mode === 'public') {
+    await next();
+    return;
+  }
+
+  const auth = c.get('auth');
+  if (!auth) {
+    return accessErrorResponse(
+      c,
+      new AccessDecisionError(
+        401,
+        'AUTHENTICATION_REQUIRED',
+        'Authentication is required'
+      )
+    );
+  }
+
+  // Synthetic principals are only constructed for the literal unit-test
+  // runtime above; never consult this branch for deployed traffic.
+  if (c.env.ENVIRONMENT === 'test' && auth.scopes.includes('test')) {
+    await next();
+    return;
+  }
+
+  // Personal keys have already proved possession of a key owned by a known
+  // internal user. They remain usable in authenticated mode without a second
+  // WorkOS/allowlist check.
+  if (auth.kind === 'api_key' || auth.scopes.includes('public_search')) {
+    await next();
+    return;
+  }
+
+  if (mode === 'authenticated' || auth.searchAccess?.granted) {
+    await next();
+    return;
+  }
+
+  const approved = await new D1SearchAccessRepository(
+    c.env.DB
+  ).hasActiveApproval(auth.userId);
+  if (!approved) {
+    return accessErrorResponse(
+      c,
+      new AccessDecisionError(
+        403,
+        'ACCESS_PENDING',
+        'This account is awaiting approval'
+      )
+    );
+  }
+
+  await next();
+};
+
+const isPublicSearchApiRoute = (c: Context<AppBindings>) =>
+  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/[^/]+\/search\/(?:text|image|color)$/.test(
+    c.req.path
+  );
+
 export const requireAuthOrApiKey = async (
   c: Context<AppBindings>,
   next: Next
 ) => {
   try {
+    // Nested routes still apply this middleware when mounted independently.
+    // The API-wide boundary may already have set a principal, in which case
+    // do not reverify/rewrite usage or reserve quota twice.
+    if (c.get('auth')) {
+      await next();
+      return;
+    }
     const bearerToken = getBearerToken(c.req.header('Authorization'));
     const apiKey = getApiKeyFromRequest(c, bearerToken);
 
@@ -623,9 +817,9 @@ export const requireAuthOrApiKey = async (
       (apiKey ? verifyPublicSearchApiKey(c, apiKey) : null) ||
       (apiKey ? await verifyPersonalApiKey(c, apiKey) : null) ||
       (bearerToken && !bearerToken.startsWith('plt_')
-        ? await verifyLogtoToken(c, bearerToken)
+        ? await verifyConfiguredIdentityToken(c, bearerToken)
         : null) ||
-      getDevPrincipal(c);
+      getTestPrincipal(c);
 
     if (!auth) {
       return c.json(
@@ -640,13 +834,29 @@ export const requireAuthOrApiKey = async (
       );
     }
 
-    if (auth.kind === 'user') {
+    if (auth.scopes.includes('public_search') && !isPublicSearchApiRoute(c)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'This API key is restricted to NGS public search',
+          },
+        },
+        403
+      );
+    }
+
+    if (auth.kind === 'user' && !auth.externalSubject) {
       await ensureUser(c, auth);
     }
 
     c.set('auth', auth);
-    await next();
+    return requireApprovedDataAccess(c, next);
   } catch (error) {
+    if (error instanceof AccessDecisionError) {
+      return accessErrorResponse(c, error);
+    }
     console.error('Auth error:', error);
     return c.json(
       {

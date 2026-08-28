@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Env } from '../index';
 import type { ApiResponse } from '../types';
 import { resolveOrgIdentifier } from '../utils/orgs';
+import { requireAuthOrApiKey } from '../middleware/auth';
 
 // Validation schema
 const embeddingsQuerySchema = z.object({
@@ -55,6 +56,8 @@ const getVectorsByIds = async (vectorize: Vectorize, ids: string[]) => {
 };
 
 export const embeddingsRoutes = new Hono<{ Bindings: Env }>();
+
+embeddingsRoutes.use('*', requireAuthOrApiKey as any);
 
 /**
  * GET /orgs/:orgId/embeddings

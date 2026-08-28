@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../index';
 import { createApiKey, getAuth, requireLogtoUser } from '../middleware/auth';
 import { generateId } from '../utils/crypto';
+import { parseSearchAccessMode } from '../auth/search-access';
 
 type Variables = {
   auth: ReturnType<typeof getAuth>;
@@ -16,6 +17,19 @@ const createApiKeySchema = z.object({
 });
 
 apiKeys.use('*', requireLogtoUser);
+
+apiKeys.get('/access', async (c) => {
+  const auth = getAuth(c as any);
+  return c.json({
+    success: true,
+    data: {
+      authenticated: true,
+      access: 'approved',
+      mode: parseSearchAccessMode(c.env.SEARCH_ACCESS_MODE),
+      user: { id: auth.userId, email: auth.email, name: auth.name },
+    },
+  });
+});
 
 apiKeys.get('/api-keys', async (c) => {
   const auth = getAuth(c as any);
