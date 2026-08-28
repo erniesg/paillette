@@ -382,6 +382,56 @@ describe('public image search proxy', () => {
     expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
   });
 
+  it.each([
+    [
+      'coherent',
+      {
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': '2',
+        'X-NGA-Search-Remaining': '998',
+      },
+      '998',
+    ],
+    [
+      'malformed',
+      {
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': 'invalid',
+        'X-NGA-Search-Remaining': '998',
+      },
+      null,
+    ],
+  ])(
+    'preserves only %s quota headers when a successful upstream image response is malformed',
+    async (_kind, quotaHeaders, expectedRemaining) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof globalThis.fetch>(async () =>
+          new Response('INTERNAL_UPSTREAM_SENTINEL', {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/plain',
+              'Retry-After': '19',
+              ...quotaHeaders,
+            },
+          })
+        )
+      );
+
+      const response = await action({
+        context: {},
+        params: { orgId: 'nga' },
+        request: makeRequest(makeForm()),
+      } as any);
+
+      expect(response.status).toBe(502);
+      expect(response.headers.get('Retry-After')).toBe('19');
+      expect(response.headers.get('X-NGA-Search-Remaining')).toBe(
+        expectedRemaining
+      );
+    }
+  );
+
   it('rethrows a caller abort instead of converting it to upstream unavailability', async () => {
     const abortError = new DOMException('caller cancelled', 'AbortError');
     const controller = new AbortController();

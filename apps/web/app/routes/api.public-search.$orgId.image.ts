@@ -201,6 +201,8 @@ export const action = async ({
         responseHeaders
       );
     }
+    const responseHeaders = new Headers();
+    copyPublicSearchResponseHeaders(response, responseHeaders);
     return noStoreJson<ApiResponse>(
       {
         success: false,
@@ -209,7 +211,8 @@ export const action = async ({
           message: 'Public image search returned an invalid response.',
         },
       },
-      502
+      502,
+      responseHeaders
     );
   }
   if (payload.success && payload.data) {
