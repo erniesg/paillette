@@ -298,6 +298,11 @@ const isSameOriginFormPost = (request: Request) => {
   return request.headers.get('Sec-Fetch-Site') === 'same-origin';
 };
 
+const getConfiguredApplicationUrl = (config: WorkOSRuntimeConfig) => {
+  const redirectUri = new URL(config.redirectUri);
+  return `${redirectUri.origin}/`;
+};
+
 export const handleWorkOSSignOut = async (args: LoaderFunctionArgs) => {
   if (!isSameOriginFormPost(args.request)) {
     return new Response('Invalid logout request', { status: 403 });
@@ -305,7 +310,24 @@ export const handleWorkOSSignOut = async (args: LoaderFunctionArgs) => {
   const config = getWorkOSRuntimeConfig(args.context);
   if (!config) return redirect('/');
   const { session } = getCookies(config);
-  return redirect('/', {
-    headers: { 'Set-Cookie': await session.serialize('', { maxAge: 0 }) },
-  });
+  const clearSession = await session.serialize('', { maxAge: 0 });
+  const sessionData = await session.parse(args.request.headers.get('Cookie'));
+
+  if (typeof sessionData !== 'string' || !sessionData) {
+    return redirect('/', { headers: { 'Set-Cookie': clearSession } });
+  }
+
+  try {
+    const sealedSession = getWorkOS(config).userManagement.loadSealedSession({
+      sessionData,
+      cookiePassword: config.cookiePassword,
+    });
+    const logoutUrl = await sealedSession.getLogoutUrl({
+      returnTo: getConfiguredApplicationUrl(config),
+    });
+    return redirect(logoutUrl, { headers: { 'Set-Cookie': clearSession } });
+  } catch {
+    // Never retain the local session if WorkOS is temporarily unavailable.
+    return redirect('/', { headers: { 'Set-Cookie': clearSession } });
+  }
 };

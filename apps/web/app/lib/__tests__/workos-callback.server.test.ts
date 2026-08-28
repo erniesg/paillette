@@ -6,6 +6,7 @@ const workos = vi.hoisted(() => ({
   authenticateWithSessionCookie: vi.fn(),
   getSessionFromCookie: vi.fn(),
   getAuthorizationUrlWithPKCE: vi.fn(),
+  loadSealedSession: vi.fn(),
 }));
 
 vi.mock('@workos-inc/node', () => ({
@@ -46,6 +47,9 @@ describe('WorkOS callback', () => {
       accessToken: 'token',
       sealedSession: 'sealed-session',
       user: { id: 'user_01', email: 'ada@example.com' },
+    });
+    workos.loadSealedSession.mockReturnValue({
+      getLogoutUrl: vi.fn().mockResolvedValue('https://api.workos.com/user_management/logout'),
     });
   });
 
@@ -209,17 +213,80 @@ describe('WorkOS callback', () => {
     expect(response.status).toBe(403);
   });
 
-  it('accepts a same-origin logout POST and clears the session', async () => {
+  it('terminates the WorkOS session before redirecting and clears the local session', async () => {
+    const started = await startWorkOSAuthorization(
+      authArgs(new Request('https://paillette.test/auth/start')),
+      'sign-in'
+    );
+    const callback = await handleWorkOSCallback(
+      authArgs(
+        new Request('https://paillette.test/callback?code=code&state=expected-state', {
+          headers: { Cookie: started.headers.get('Set-Cookie')! },
+        })
+      )
+    );
+    const sessionCookie = callback.headers
+      .get('Set-Cookie')!
+      .match(/paillette-session=[^;]+/)![0];
+
     const response = await handleWorkOSSignOut(
       authArgs(
         new Request('https://paillette.test/auth/logout', {
           method: 'POST',
-          headers: { Origin: 'https://paillette.test' },
+          headers: {
+            Cookie: sessionCookie,
+            Origin: 'https://paillette.test',
+          },
         })
       )
     );
 
     expect(response.status).toBe(302);
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    expect(response.headers.get('Location')).toBe(
+      'https://api.workos.com/user_management/logout'
+    );
+    expect(workos.loadSealedSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cookiePassword: 'a'.repeat(32),
+        sessionData: 'sealed-session',
+      })
+    );
+    expect(workos.loadSealedSession.mock.results[0]?.value.getLogoutUrl).toHaveBeenCalledWith({
+      returnTo: 'https://paillette.test/',
+    });
+  });
+
+  it('clears the local session even when WorkOS logout generation fails', async () => {
+    workos.loadSealedSession.mockImplementation(() => {
+      throw new Error('WorkOS unavailable');
+    });
+    const started = await startWorkOSAuthorization(
+      authArgs(new Request('https://paillette.test/auth/start')),
+      'sign-in'
+    );
+    const callback = await handleWorkOSCallback(
+      authArgs(
+        new Request('https://paillette.test/callback?code=code&state=expected-state', {
+          headers: { Cookie: started.headers.get('Set-Cookie')! },
+        })
+      )
+    );
+    const sessionCookie = callback.headers
+      .get('Set-Cookie')!
+      .match(/paillette-session=[^;]+/)![0];
+
+    const response = await handleWorkOSSignOut(
+      authArgs(
+        new Request('https://paillette.test/auth/logout', {
+          method: 'POST',
+          headers: { Cookie: sessionCookie, Origin: 'https://paillette.test' },
+        })
+      )
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/');
     expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
   });
 });
