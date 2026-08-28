@@ -67,10 +67,16 @@ describe('wrangler production search config', () => {
       'LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"'
     );
     expect(extractTopLevelVarsBlock()).toContain(
+      'LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks"'
+    );
+    expect(extractTopLevelVarsBlock()).toContain(
       'LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai"'
     );
     expect(extractStagingEnvVars()).toContain(
       'LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"'
+    );
+    expect(extractStagingEnvVars()).toContain(
+      'LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks"'
     );
     expect(extractStagingEnvVars()).toContain(
       'LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai"'
@@ -79,9 +85,11 @@ describe('wrangler production search config', () => {
       'LOGTO_ISSUER = "https://m2fmae.logto.app/oidc"'
     );
     expect(extractProductionEnvVars()).toContain(
+      'LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks"'
+    );
+    expect(extractProductionEnvVars()).toContain(
       'LOGTO_API_RESOURCE = "https://paillette-api.berlayar.ai"'
     );
-    expect(wranglerToml).not.toContain('LOGTO_JWKS_URI');
   });
 
   it('keeps the default production worker on v2 hybrid search', () => {
