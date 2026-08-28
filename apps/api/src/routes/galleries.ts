@@ -71,6 +71,27 @@ function toPublicOrg(org: OrgReadRow, options: { includeKey?: boolean } = {}) {
 }
 
 /**
+ * Creation is the only API response that includes the raw API key. Keep this
+ * separate from the persistence object so hashes and future internal columns
+ * cannot escape through an accidental object spread.
+ */
+function toCreatedOrg(org: OrgReadRow, apiKey: string) {
+  return {
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    description: org.description,
+    location_country: org.location_country,
+    location_city: org.location_city,
+    location_address: org.location_address,
+    website: org.website,
+    owner_id: org.owner_id,
+    settings: org.settings,
+    api_key: apiKey,
+  };
+}
+
+/**
  * GET /orgs
  * List all orgs (with pagination)
  */
@@ -305,11 +326,7 @@ orgs.post(
       return c.json(
         {
           success: true,
-          data: {
-            ...org,
-            settings: settingsObj,
-            api_key: apiKey, // Only returned on creation
-          },
+          data: toCreatedOrg(org, apiKey),
         },
         201
       );
