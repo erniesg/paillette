@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { colorSearchRoutes } from '../../src/routes/color-search';
+import { searchRoutes } from '../../src/routes/search';
 import type { Env } from '../../src/index';
 import {
   createMcpInternalCapability,
@@ -14,6 +15,7 @@ describe('Color Search API', () => {
   let testGalleryId: string;
   let ngsQuota: { used: number; hard_limit: number };
   let usageEventInserts: number;
+  let dailyQuotaChargeUpdates: number;
   let failUsageEventUpdates: boolean;
   let mutationAuthorizedUserIds: Set<string>;
   const ngsOrgId = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
@@ -29,6 +31,7 @@ describe('Color Search API', () => {
     testGalleryId = 'test-gallery-123';
     ngsQuota = { used: 0, hard_limit: 1000 };
     usageEventInserts = 0;
+    dailyQuotaChargeUpdates = 0;
     failUsageEventUpdates = false;
     mutationAuthorizedUserIds = new Set(['test-user']);
     const artwork = {
@@ -94,6 +97,12 @@ describe('Color Search API', () => {
               return artwork;
             }),
             run: vi.fn(async () => {
+              if (
+                sql.includes('UPDATE api_usage_daily') &&
+                sql.includes('used = used + ?')
+              ) {
+                dailyQuotaChargeUpdates += 1;
+              }
               if (sql.includes('INSERT INTO api_usage_events')) {
                 usageEventInserts += 1;
               }
@@ -129,21 +138,42 @@ describe('Color Search API', () => {
   });
 
   describe('POST /search/color', () => {
+    it('charges an NGS color search once when mounted with the generic search router', async () => {
+      const integratedApp = new Hono<{ Bindings: Env }>();
+      integratedApp.route('/galleries/:galleryId', searchRoutes);
+      integratedApp.route('/galleries/:galleryId', colorSearchRoutes);
+
+      const res = await integratedApp.request('/galleries/ngs/search/color', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ colors: ['#FF5733'] }),
+      }, mockEnv);
+
+      expect(res.status).toBe(200);
+      expect(dailyQuotaChargeUpdates).toBe(1);
+      expect(usageEventInserts).toBe(1);
+    });
+
     it('logs an accepted NGA color search from the public search principal', async () => {
       testGalleryId = 'open-access-art';
-      const res = await request('/galleries/nga/search/color', {
+      const integratedApp = new Hono<{ Bindings: Env }>();
+      integratedApp.route('/galleries/:galleryId', searchRoutes);
+      integratedApp.route('/galleries/:galleryId', colorSearchRoutes);
+
+      const res = await integratedApp.request('/galleries/nga/search/color', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-User-Id': 'public-search-web',
         },
         body: JSON.stringify({ colors: ['#FF5733'] }),
-      });
+      }, mockEnv);
       const body = await res.json();
 
       expect(res.status).toBe(200);
       expect(res.headers.get('X-NGA-Search-Remaining')).toBe('999');
       expect(ngsQuota.used).toBe(1);
+      expect(dailyQuotaChargeUpdates).toBe(0);
       expect(usageEventInserts).toBe(1);
       expect(
         (mockEnv.DB.prepare as any).mock.calls.some(([sql]: [string]) =>

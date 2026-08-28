@@ -2936,7 +2936,13 @@ searchRoutes.use('/search/image', async (c, next) => {
 });
 
 searchRoutes.use(
-  '/search/*',
+  '/search/text',
+  requireAuthOrApiKey as any,
+  enforceDailyQuota({ queryType: 'vector_search' }) as any
+);
+
+searchRoutes.use(
+  '/search/image',
   requireAuthOrApiKey as any,
   enforceDailyQuota({ queryType: 'vector_search' }) as any
 );
