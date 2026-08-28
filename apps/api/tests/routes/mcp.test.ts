@@ -29,6 +29,7 @@ const makeEnv = (): Env =>
     ENVIRONMENT: 'test',
     API_VERSION: 'v1',
     API_KEY_PEPPER: 'test-only-mcp-capability-secret',
+    MCP_INTERNAL_CAPABILITY_SECRET: 'test-only-mcp-capability-secret',
   }) as Env;
 
 const quota = { limit: 1000, used: 1000, remaining: 0 };
@@ -119,6 +120,142 @@ const callTool = (
 
 describe('MCP downstream REST errors', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('fails closed with a stable 503 when its internal capability secret is missing', async () => {
+    const app = new Hono<{ Bindings: Env }>();
+    app.route('/api/v1/mcp', mcpRoutes);
+
+    const response = await app.request(
+      '/api/v1/mcp',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': 'mcp-user',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 9,
+          method: 'tools/call',
+          params: {
+            name: 'search_artworks',
+            arguments: { query: 'mangrove shore', collection: 'nga' },
+          },
+        }),
+      },
+      {
+        ...makeEnv(),
+        MCP_INTERNAL_CAPABILITY_SECRET: undefined,
+      }
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        data: {
+          httpStatus: 503,
+          code: 'MCP_INTERNAL_CAPABILITY_UNAVAILABLE',
+        },
+      },
+    });
+  });
+
+  it.each(['search_artworks', 'colour_search'] as const)(
+    'preserves valid NGA quota and retry metadata from a non-JSON %s failure without exposing the upstream body',
+    async (name) => {
+      const downstream = vi.fn(
+        async () =>
+          new Response('gateway diagnostic that must remain private', {
+            status: 503,
+            headers: {
+              'Content-Type': 'text/plain',
+              'X-NGA-Search-Limit': '1000',
+              'X-NGA-Search-Used': '17',
+              'X-NGA-Search-Remaining': '983',
+              'Retry-After': '30',
+              'X-Upstream-Secret': 'must-not-be-forwarded',
+            },
+          })
+      );
+      vi.stubGlobal('fetch', downstream);
+
+      const response = await callTool(name, 'open');
+      const payload = (await response.json()) as any;
+
+      expect(response.status).toBe(503);
+      expect(downstream).toHaveBeenCalledOnce();
+      expect(response.headers.get('X-NGA-Search-Limit')).toBe('1000');
+      expect(response.headers.get('X-NGA-Search-Used')).toBe('17');
+      expect(response.headers.get('X-NGA-Search-Remaining')).toBe('983');
+      expect(response.headers.get('Retry-After')).toBe('30');
+      expect(response.headers.get('X-Upstream-Secret')).toBeNull();
+      expect(payload).toMatchObject({
+        error: {
+          code: -32000,
+          message: 'API call failed: 503',
+          data: {
+            httpStatus: 503,
+            code: 'API_CALL_FAILED',
+            quota: { limit: 1000, used: 17, remaining: 983 },
+            retryAfterSeconds: 30,
+          },
+        },
+      });
+      expect(JSON.stringify(payload)).not.toContain('gateway diagnostic');
+      expect(JSON.stringify(payload)).not.toContain('must-not-be-forwarded');
+    }
+  );
+
+  it.each([
+    {
+      label: 'malformed',
+      headers: {
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': 'invalid',
+        'X-NGA-Search-Remaining': '983',
+        'Retry-After': '-1',
+      },
+    },
+    {
+      label: 'incomplete',
+      headers: {
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': '17',
+        'Retry-After': 'not-a-delay',
+      },
+    },
+  ])(
+    'drops $label quota and retry metadata from a non-JSON failure',
+    async ({ headers }) => {
+      const downstream = vi.fn(
+        async () =>
+          new Response('bad gateway', {
+            status: 502,
+            headers: {
+              'Content-Type': 'text/plain',
+              ...headers,
+            },
+          })
+      );
+      vi.stubGlobal('fetch', downstream);
+
+      const response = await callTool('search_artworks', 'open');
+      const payload = (await response.json()) as any;
+
+      expect(response.status).toBe(502);
+      expect(downstream).toHaveBeenCalledOnce();
+      expect(response.headers.get('X-NGA-Search-Limit')).toBeNull();
+      expect(response.headers.get('X-NGA-Search-Used')).toBeNull();
+      expect(response.headers.get('X-NGA-Search-Remaining')).toBeNull();
+      expect(response.headers.get('Retry-After')).toBeNull();
+      expect(payload.error).toMatchObject({
+        code: -32000,
+        data: { httpStatus: 502, code: 'API_CALL_FAILED' },
+      });
+      expect(payload.error.data).not.toHaveProperty('quota');
+      expect(payload.error.data).not.toHaveProperty('retryAfterSeconds');
+    }
+  );
 
   it.each(['search_artworks', 'colour_search'] as const)(
     'preserves an exhausted NGA quota from %s without repeating the request',

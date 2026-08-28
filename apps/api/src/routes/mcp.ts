@@ -6,6 +6,7 @@ import {
   canMutateOrg,
   createMcpInternalCapability,
   getAuth,
+  McpInternalCapabilityConfigurationError,
   requireAuthOrApiKey,
   type AuthPrincipal,
   MCP_INTERNAL_CAPABILITY_HEADER,
@@ -548,11 +549,51 @@ const jsonRpcError = (
   },
 });
 
-const NGS_QUOTA_HEADER_NAMES = [
+const NGA_QUOTA_HEADER_NAMES = [
   'X-NGA-Search-Limit',
   'X-NGA-Search-Used',
   'X-NGA-Search-Remaining',
 ] as const;
+
+type NgaSearchQuota = {
+  limit: number;
+  used: number;
+  remaining: number;
+};
+
+const asSafeNonNegativeInteger = (value: string | null) => {
+  if (!value || !/^(?:0|[1-9]\d*)$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+};
+
+const getNgaQuotaFromHeaders = (
+  headers: Headers
+): NgaSearchQuota | undefined => {
+  const [limit, used, remaining] = NGA_QUOTA_HEADER_NAMES.map((name) =>
+    asSafeNonNegativeInteger(headers.get(name))
+  );
+
+  if (
+    limit === undefined ||
+    used === undefined ||
+    remaining === undefined ||
+    used > limit ||
+    remaining > limit ||
+    used + remaining !== limit
+  ) {
+    return undefined;
+  }
+
+  return { limit, used, remaining };
+};
+
+const getRetryAfterSeconds = (headers: Headers) => {
+  const retryAfter = asSafeNonNegativeInteger(headers.get('Retry-After'));
+  return retryAfter === undefined || retryAfter > 86_400
+    ? undefined
+    : retryAfter;
+};
 
 class McpRestError extends Error {
   constructor(
@@ -560,13 +601,16 @@ class McpRestError extends Error {
     readonly code: string,
     message: string,
     readonly details: unknown,
-    readonly headers: Record<string, string>
+    readonly headers: Record<string, string>,
+    readonly headerQuota?: NgaSearchQuota,
+    readonly retryAfterSeconds?: number
   ) {
     super(message);
     this.name = 'McpRestError';
   }
 
   get quota() {
+    if (this.headerQuota) return this.headerQuota;
     if (
       this.details &&
       typeof this.details === 'object' &&
@@ -602,21 +646,42 @@ const callApi = async (
     ...init,
     headers,
   });
-  const payload = (await response.json()) as any;
+  let payload: any;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = undefined;
+  }
 
-  if (!response.ok || payload.success === false) {
-    const headers = Object.fromEntries(
-      NGS_QUOTA_HEADER_NAMES.flatMap((name) => {
-        const value = response.headers.get(name);
-        return value ? [[name, value]] : [];
-      })
-    );
+  if (
+    !response.ok ||
+    !payload ||
+    typeof payload !== 'object' ||
+    payload.success === false
+  ) {
+    const quota = getNgaQuotaFromHeaders(response.headers);
+    const retryAfterSeconds = getRetryAfterSeconds(response.headers);
+    const headers = Object.fromEntries([
+      ...(quota
+        ? [
+            ['X-NGA-Search-Limit', String(quota.limit)],
+            ['X-NGA-Search-Used', String(quota.used)],
+            ['X-NGA-Search-Remaining', String(quota.remaining)],
+          ]
+        : []),
+      ...(retryAfterSeconds === undefined
+        ? []
+        : [['Retry-After', String(retryAfterSeconds)]]),
+    ]);
     throw new McpRestError(
-      response.status,
-      payload.error?.code || 'API_CALL_FAILED',
-      payload.error?.message || `API call failed: ${response.status}`,
-      payload.error?.details,
-      headers
+      response.ok ? 502 : response.status,
+      payload?.error?.code || 'API_CALL_FAILED',
+      payload?.error?.message ||
+        `API call failed: ${response.ok ? 502 : response.status}`,
+      payload?.error?.details,
+      headers,
+      quota,
+      retryAfterSeconds
     );
   }
 
@@ -965,6 +1030,16 @@ mcpRoutes.post('/', async (c) => {
 
     return c.json(jsonRpcError(parsed.id, -32601, 'Method not found'), 404);
   } catch (error) {
+    if (error instanceof McpInternalCapabilityConfigurationError) {
+      return c.json(
+        jsonRpcError(parsed.id, -32000, error.message, {
+          httpStatus: 503,
+          code: 'MCP_INTERNAL_CAPABILITY_UNAVAILABLE',
+        }),
+        503
+      );
+    }
+
     if (error instanceof McpAuthorizationError) {
       return c.json(
         jsonRpcError(parsed.id, -32001, error.message, {
@@ -988,6 +1063,9 @@ mcpRoutes.post('/', async (c) => {
           code: error.code,
           ...(error.details === undefined ? {} : { details: error.details }),
           ...(error.quota === undefined ? {} : { quota: error.quota }),
+          ...(error.retryAfterSeconds === undefined
+            ? {}
+            : { retryAfterSeconds: error.retryAfterSeconds }),
         }),
         error.status as any
       );
