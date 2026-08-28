@@ -5,10 +5,11 @@ import type { ArtworkSearchResult } from '../../types';
 
 const artwork = (
   id: string,
-  image?: Partial<Pick<ArtworkSearchResult, 'thumbnailUrl' | 'imageUrl'>>
+  image?: Partial<ArtworkSearchResult>
 ) =>
   ({
     id,
+    galleryId: 'nga',
     title: id,
     similarity: 1,
     metadata: {},
@@ -39,6 +40,52 @@ describe('selectIdleShowcaseArtworks', () => {
       'shared',
       'primary-2',
       'primary-3',
+    ]);
+  });
+
+  it('shows a displayed artwork identity once when cached records have different ids', () => {
+    const results = selectIdleShowcaseArtworks([
+      artwork('mother-child-primary', {
+        title: 'Mother and Child, No. 1',
+        artist: 'James McNeill Whistler',
+        year: 1889,
+        thumbnailUrl: '/mother-child-primary.webp',
+      }),
+      artwork('mother-child-cached-duplicate', {
+        title: '  mother   AND child, no. 1 ',
+        artist: 'JAMES MCNEILL WHISTLER',
+        year: 1889,
+        thumbnailUrl: '/mother-child-cached-duplicate.webp',
+      }),
+      artwork('leibl-primary', {
+        title: 'Portrait of an Old Peasant Woman',
+        artist: 'Wilhelm Leibl',
+        year: 1875,
+        thumbnailUrl: '/leibl-primary.webp',
+      }),
+    ]);
+
+    expect(results.map((result) => result.id)).toEqual([
+      'mother-child-primary',
+      'leibl-primary',
+    ]);
+  });
+
+  it('keeps distinct records when their display identity is incomplete', () => {
+    const results = selectIdleShowcaseArtworks([
+      artwork('same-title-a', {
+        title: 'Untitled',
+        thumbnailUrl: '/same-title-a.webp',
+      }),
+      artwork('same-title-b', {
+        title: 'Untitled',
+        thumbnailUrl: '/same-title-b.webp',
+      }),
+    ]);
+
+    expect(results.map((result) => result.id)).toEqual([
+      'same-title-a',
+      'same-title-b',
     ]);
   });
 });

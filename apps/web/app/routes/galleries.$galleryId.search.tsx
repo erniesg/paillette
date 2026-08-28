@@ -133,6 +133,7 @@ import {
   getSpotlightSearchPlaceholder,
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
+import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
 import { apiClient } from '~/lib/api';
 import {
   canRetryNgaSearch,
@@ -1650,7 +1651,9 @@ export default function SearchPage() {
   const idleShowcaseResults = useMemo(
     () =>
       activeSpotlightSuggestionId
-        ? getSpotlightArtworks(spotlightBundle, activeSpotlightSuggestionId)
+        ? selectIdleShowcaseArtworks(
+            getSpotlightArtworks(spotlightBundle, activeSpotlightSuggestionId)
+          )
         : [],
     [activeSpotlightSuggestionId, spotlightBundle]
   );
