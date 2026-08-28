@@ -17,9 +17,20 @@ export const getNgaSearchQuota = (value: unknown) =>
   isNgaSearchQuota(value) ? value : null;
 
 export const getNgaSearchQuotaFromHeaders = (headers: Headers) => {
-  const limit = Number(headers.get('X-NGA-Search-Limit'));
-  const used = Number(headers.get('X-NGA-Search-Used'));
-  const remaining = Number(headers.get('X-NGA-Search-Remaining'));
+  const rawLimit = headers.get('X-NGA-Search-Limit');
+  const rawUsed = headers.get('X-NGA-Search-Used');
+  const rawRemaining = headers.get('X-NGA-Search-Remaining');
+  if (
+    !rawLimit?.trim() ||
+    !rawUsed?.trim() ||
+    !rawRemaining?.trim()
+  ) {
+    return null;
+  }
+
+  const limit = Number(rawLimit);
+  const used = Number(rawUsed);
+  const remaining = Number(rawRemaining);
   const quota = { limit, used, remaining };
 
   if (

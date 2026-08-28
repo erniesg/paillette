@@ -60,6 +60,24 @@ describe('NGA public search quota presentation', () => {
     queryClient.clear();
   });
 
+  it.each([
+    ['missing', new Headers()],
+    ['partial', new Headers({ 'X-NGA-Search-Limit': '1000' })],
+    [
+      'malformed',
+      new Headers({
+        'X-NGA-Search-Limit': '1000',
+        'X-NGA-Search-Used': 'not-a-number',
+        'X-NGA-Search-Remaining': '999',
+      }),
+    ],
+  ])('ignores %s quota headers on an unrelated upstream error', (_kind, headers) => {
+    expect(getNgaSearchQuotaFromHeaders(headers)).toBeNull();
+    expect(withNgaSearchQuotaFromHeaders({ retryable: true }, headers)).toEqual({
+      retryable: true,
+    });
+  });
+
   it('attaches a post-reservation limiter quota to the client error details', () => {
     const details = withNgaSearchQuotaFromHeaders(
       { retryable: true },
