@@ -874,6 +874,11 @@ const getTestPrincipal = (c: Context<AppBindings>): AuthPrincipal | null => {
   const userId = c.req.header('X-User-Id');
   if (!userId) return null;
   const isPublicSearchProxy = userId === 'public-search-web';
+  const explicitScopes = c.req
+    .header('X-User-Scopes')
+    ?.split(/\s+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
   return {
     kind: 'user',
     userId,
@@ -881,9 +886,11 @@ const getTestPrincipal = (c: Context<AppBindings>): AuthPrincipal | null => {
     name: c.req.header('X-User-Name') || userId,
     scopes: isPublicSearchProxy
       ? ['test', 'public_search']
-      : userId === 'mcp-user'
-        ? ['test', 'mcp:read']
-        : ['test'],
+      : explicitScopes?.length
+        ? ['test', ...explicitScopes]
+        : userId === 'mcp-user'
+          ? ['test', 'mcp:read']
+          : ['test'],
   } satisfies AuthPrincipal;
 };
 

@@ -768,9 +768,9 @@ describe('management API', () => {
       (tool: { name: string }) => tool.name
     );
     expect(toolNames).toContain('upsert_artwork_record');
-    expect(toolNames).toContain('list_collections');
     expect(toolNames).toContain('upsert_collection');
     expect(toolNames).toContain('add_artwork_to_collection');
     expect(toolNames).toContain('remove_artwork_from_collection');
+    expect(toolNames).not.toContain('list_collections');
   });
 });

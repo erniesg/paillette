@@ -255,9 +255,11 @@ orgs.get('/slug/:slug', async (c) => {
 orgs.post(
   '/',
   requireAuthOrApiKey as any,
-  requireGlobalMutationAccess as any,
   zValidator('json', CreateOrgRequestSchema),
   async (c) => {
+    const denied = await requireGlobalMutationAccess(c as any);
+    if (denied) return denied;
+
     const input = c.req.valid('json');
 
     try {
