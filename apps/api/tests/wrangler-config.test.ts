@@ -79,3 +79,18 @@ describe('wrangler open access asset queue config', () => {
     );
   });
 });
+
+describe('wrangler D1 migration config', () => {
+  it('uses the shared database migrations for top-level, production, and staging D1 bindings', () => {
+    const migrationsDir = '../../packages/database/migrations';
+    const d1Bindings = wranglerToml.match(
+      /\[\[(?:env\.(?:production|staging)\.)?d1_databases\]\][\s\S]*?(?=\n\[\[|\n\[env\.|$)/g
+    );
+
+    expect(d1Bindings).toHaveLength(3);
+
+    for (const binding of d1Bindings ?? []) {
+      expect(binding).toContain(`migrations_dir = "${migrationsDir}"`);
+    }
+  });
+});

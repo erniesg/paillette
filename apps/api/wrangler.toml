@@ -15,6 +15,7 @@ enabled = true
 binding = "DB"
 database_name = "paillette-db"
 database_id = "704e8ccf-eebb-4433-96a4-5196b2862ad7"
+migrations_dir = "../../packages/database/migrations"
 
 # R2 Storage
 [[r2_buckets]]
@@ -153,6 +154,7 @@ vars = { ENVIRONMENT = "production", API_VERSION = "v1", LOGTO_ISSUER = "https:/
 binding = "DB"
 database_name = "paillette-db"
 database_id = "704e8ccf-eebb-4433-96a4-5196b2862ad7"
+migrations_dir = "../../packages/database/migrations"
 
 [[env.production.r2_buckets]]
 binding = "IMAGES"
