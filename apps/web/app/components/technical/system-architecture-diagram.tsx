@@ -282,7 +282,7 @@ const CONNECTIONS: ArchitectureConnection[] = [
     nodeIds: ['auth-quota', 'query-router'],
   },
   {
-    paths: ['M 755 418 C 840 418 860 130 978 130'],
+    paths: ['M 775 418 C 840 418 860 130 978 130'],
     label: 'embed query',
     labelX: 849,
     labelY: 238,
@@ -296,7 +296,7 @@ const CONNECTIONS: ArchitectureConnection[] = [
     nodeIds: ['jina-workers-ai', 'vectorize-image-text', 'vectorize-captions'],
   },
   {
-    paths: ['M 755 438 C 820 438 812 524 878 524'],
+    paths: ['M 775 438 C 820 438 812 524 878 524'],
     label: 'metadata query',
     labelX: 810,
     labelY: 466,
@@ -416,9 +416,9 @@ const NODES = [
     id: 'query-router',
     x: 565,
     y: 390,
-    width: 190,
-    label: 'Interpret + route',
-    badge: 'API',
+    width: 210,
+    label: 'Query plan + route',
+    badge: 'PLAN',
     tone: '#c4b5fd',
   },
   {

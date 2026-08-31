@@ -57,16 +57,27 @@ describe('about page layout', () => {
     ).toBeTruthy();
   });
 
-  it('places illustrated query interpretation before the RRF approach', () => {
+  it('presents query interpretation before retrieval and ranking inside Approach', () => {
     render(<AboutPage />);
 
-    const interpretationHeading = screen.getByRole('heading', {
-      name: 'NGA query interpretation',
+    const approachHeading = screen.getByRole('heading', {
+      name: 'Approach',
+      level: 2,
     });
-    const approachHeading = screen.getByRole('heading', { name: 'Approach' });
+    const approachSection = approachHeading.closest('section');
+    const interpretationHeading = screen.getByRole('heading', {
+      name: 'Query interpretation',
+      level: 3,
+    });
+    const rankingHeading = screen.getByRole('heading', {
+      name: 'Retrieval and ranking',
+      level: 3,
+    });
 
+    expect(approachSection).toContainElement(interpretationHeading);
+    expect(approachSection).toContainElement(rankingHeading);
     expect(
-      interpretationHeading.compareDocumentPosition(approachHeading) &
+      interpretationHeading.compareDocumentPosition(rankingHeading) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(
@@ -85,6 +96,11 @@ describe('about page layout', () => {
       screen.getByRole('figure', {
         name: /what an nga query is deconstructed into/i,
       })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /search plan becomes the input to retrieval and ranking/i
+      )
     ).toBeInTheDocument();
   });
 
