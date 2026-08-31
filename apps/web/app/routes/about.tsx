@@ -10,6 +10,7 @@ import {
   PublicSiteFooter,
   PublicSiteHeader,
 } from '~/components/site/public-shell';
+import { QueryInterpretationDiagram } from '~/components/technical/query-interpretation-diagram';
 import { SystemArchitectureDiagram } from '~/components/technical/system-architecture-diagram';
 import { getServerEnv } from '~/lib/public-search.server';
 
@@ -19,13 +20,14 @@ export const meta: MetaFunction = () => {
     {
       name: 'description',
       content:
-        'Why Paillette was built and how its routed hybrid search works.',
+        'Why Paillette was built and how query interpretation and routed hybrid search work.',
     },
   ];
 };
 
 const searchFlowDiagram = `flowchart LR
-  Q["User query"] --> R["<b>Routing</b><br/>choose<br/>search channels"]
+  Q["User query"] --> U["<b>Interpretation</b><br/>meaning, filters,<br/>relationships"]
+  U --> R["<b>Routing</b><br/>choose<br/>search channels"]
 
   R --> K["<b>Keyword</b><br/>plain text<br/>match"]
   R --> M["<b>Metadata</b><br/>artist, title, date,<br/>accession number"]
@@ -42,6 +44,7 @@ const searchFlowDiagram = `flowchart LR
   F --> O["Ranked results"]
 
   classDef input fill:#111116,stroke:#3f3f46,color:#f8f7f4
+  classDef interpretation fill:#252038,stroke:#8b7de0,color:#f8f7f4
   classDef route fill:#1f2937,stroke:#64748b,color:#f8f7f4
   classDef keyword fill:#24213a,stroke:#7c6ee6,color:#f8f7f4
   classDef metadata fill:#223026,stroke:#6aa56f,color:#f8f7f4
@@ -50,6 +53,7 @@ const searchFlowDiagram = `flowchart LR
   classDef colour fill:#243238,stroke:#61a4b5,color:#f8f7f4
   classDef fusion fill:#3a2530,stroke:#c4718f,color:#f8f7f4
   class Q,O input
+  class U interpretation
   class R route
   class K keyword
   class M metadata
@@ -439,8 +443,15 @@ export default function AboutPage() {
           <h2 className={headingClassName}>Data</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
-              To make the index more comprehensive, we gathered publicly
-              available data from{' '}
+              Paillette brings together publicly available collection data from
+              the{' '}
+              <a
+                href="https://github.com/NationalGalleryOfArt/opendata"
+                className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-white/80"
+              >
+                National Gallery of Art, Washington
+              </a>
+              ,{' '}
               <a
                 href="https://www.nationalgallery.sg/sg/en/our-collections/search-collection.html"
                 className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-white/80"
@@ -454,7 +465,9 @@ export default function AboutPage() {
               >
                 Roots
               </a>
-              .
+              . The NGA search currently covers 63,253 artwork records with an
+              open-access published image, rather than the Gallery&apos;s entire
+              collection.
             </p>
           </div>
         </section>
@@ -469,6 +482,24 @@ export default function AboutPage() {
           <div className="mt-8">
             <SystemArchitectureDiagram />
           </div>
+        </section>
+
+        <section className={sectionClassName}>
+          <h2 className={headingClassName}>Query interpretation</h2>
+          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
+            <p className={bodyClassName}>
+              Before choosing search channels, Paillette runs an NGA query
+              through a deterministic parser. It normalises casing,
+              punctuation, and dashes; extracts displayed-date,
+              classification, and medium constraints from controlled rules;
+              resolves directional artwork relations and artist-attribution
+              phrases; then removes those structured spans. The descriptive
+              words left over become retrieval text, and all outputs compile
+              into one search plan. The trace below shows the rule and output
+              at every stage.
+            </p>
+          </div>
+          <QueryInterpretationDiagram />
         </section>
 
         <section className={sectionClassName}>

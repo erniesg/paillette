@@ -17,7 +17,7 @@ describe('SystemArchitectureDiagram', () => {
       'Remix web Worker',
       'Hono API Worker',
       'Auth + quota',
-      'Query router',
+      'Interpret + route',
       'Jina / Workers AI',
       'Vectorize image + text',
       'Vectorize captions',
