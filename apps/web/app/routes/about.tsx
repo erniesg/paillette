@@ -29,7 +29,7 @@ const searchFlowDiagram = `flowchart LR
   Q["User query"] --> U["<b>Interpretation</b><br/>meaning, filters,<br/>relationships"]
   U --> R["<b>Routing</b><br/>choose<br/>search channels"]
 
-  R -- "attribution" --> D["<b>Catalogue<br/>evidence query</b>"]
+  R -- "NGA attribution" --> D["<b>Catalogue<br/>evidence query</b>"]
   R -- "explicit facet" --> X["<b>Direct facet query</b>"]
   R -- "semantic / mixed" --> H["<b>Hybrid retrieval</b>"]
 
@@ -493,11 +493,11 @@ export default function AboutPage() {
         </section>
 
         <section className={sectionClassName}>
-          <h2 className={headingClassName}>Query interpretation</h2>
+          <h2 className={headingClassName}>NGA query interpretation</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
-              The parser turns a query into up to five typed parts. The diagram
-              shows what each part is and how it is found.
+              For NGA search, the parser turns a query into up to five typed
+              parts. The diagram shows what each part is and how it is found.
             </p>
           </div>
           <QueryInterpretationDiagram />
@@ -513,7 +513,7 @@ export default function AboutPage() {
               RRF gives more weight to results that appear near the top of one
               or more relevant channels, so the final ranking is not dependent
               on a single model score. Explicit facet searches use direct
-              catalogue lookups, while attribution queries use a direct
+              catalogue lookups, while NGA attribution queries use a direct
               evidence path.
             </p>
             <p className={bodyClassName}>

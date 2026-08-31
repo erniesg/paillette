@@ -7,7 +7,7 @@ describe('QueryInterpretationDiagram', () => {
     render(<QueryInterpretationDiagram />);
 
     const figure = screen.getByRole('figure', {
-      name: /what a query is deconstructed into/i,
+      name: /what an nga query is deconstructed into/i,
     });
     const table = within(figure).getByRole('table');
 
