@@ -494,15 +494,8 @@ export default function AboutPage() {
           <h2 className={headingClassName}>Query interpretation</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
-              Before choosing search channels, Paillette runs an NGA query
-              through a deterministic parser. It normalises casing,
-              punctuation, and dashes; extracts displayed-date,
-              classification, and medium constraints from controlled rules;
-              resolves directional artwork relations and artist-attribution
-              phrases; then removes those structured spans. The descriptive
-              words left over become retrieval text, and all outputs compile
-              into one search plan. The trace below shows the rule and output
-              at every stage.
+              The parser turns a query into up to five typed parts. The diagram
+              shows what each part is and how it is found.
             </p>
           </div>
           <QueryInterpretationDiagram />

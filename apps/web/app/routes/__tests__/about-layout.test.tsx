@@ -70,7 +70,7 @@ describe('about page layout', () => {
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(
-      screen.getByText(/all outputs compile into one search plan/i)
+      screen.getByText(/turns a query into up to five typed parts/i)
     ).toBeInTheDocument();
     expect(
       screen.getByText(/hybrid or mixed semantic queries/i)
@@ -80,7 +80,7 @@ describe('about page layout', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('figure', {
-        name: /how the nga parser unpacks a query/i,
+        name: /what a query is deconstructed into/i,
       })
     ).toBeInTheDocument();
   });
