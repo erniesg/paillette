@@ -73,6 +73,12 @@ describe('about page layout', () => {
       screen.getByText(/all outputs compile into one search plan/i)
     ).toBeInTheDocument();
     expect(
+      screen.getByText(/hybrid or mixed semantic queries/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/exact metadata lookups and attribution queries.*instead of being fused/i)
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole('figure', {
         name: /how the nga parser unpacks a query/i,
       })
