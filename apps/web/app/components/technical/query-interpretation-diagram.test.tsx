@@ -69,6 +69,30 @@ describe('QueryInterpretationDiagram', () => {
     ).toHaveTextContent(/catalogue evidence.*rembrandt/i);
   });
 
+  it('supports standard keyboard navigation between query example tabs', async () => {
+    const user = userEvent.setup();
+    render(<QueryInterpretationDiagram />);
+
+    const filters = screen.getByRole('tab', { name: 'Filters + meaning' });
+    const relationship = screen.getByRole('tab', {
+      name: 'Artwork relationship',
+    });
+    const attribution = screen.getByRole('tab', { name: 'Artist attribution' });
+
+    filters.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(relationship).toHaveFocus();
+    expect(relationship).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{End}');
+    expect(attribution).toHaveFocus();
+    expect(attribution).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{Home}');
+    expect(filters).toHaveFocus();
+    expect(filters).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('keeps the complete five-part reference collapsed until requested', async () => {
     const user = userEvent.setup();
     render(<QueryInterpretationDiagram />);

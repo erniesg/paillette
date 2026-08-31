@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 
 const microLabelClassName =
   'font-mono text-[10px] uppercase tracking-[0.18em] text-white/60';
@@ -166,6 +166,8 @@ const queryExamples: Record<
   },
 };
 
+const exampleIds = Object.keys(queryExamples) as ExampleId[];
+
 const planParts = [
   {
     part: 'Descriptive meaning',
@@ -213,6 +215,31 @@ export function QueryInterpretationDiagram() {
     setPreviewDetailId(null);
   };
 
+  const handleExampleKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentId: ExampleId
+  ) => {
+    const currentIndex = exampleIds.indexOf(currentId);
+    let nextIndex: number | null = null;
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % exampleIds.length;
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + exampleIds.length) % exampleIds.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = exampleIds.length - 1;
+    }
+
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextId = exampleIds[nextIndex]!;
+    selectExample(nextId);
+    document.getElementById(`query-example-tab-${nextId}`)?.focus();
+  };
+
   return (
     <figure
       aria-labelledby="query-interpretation-caption"
@@ -235,7 +262,7 @@ export function QueryInterpretationDiagram() {
         aria-label="Query examples"
         className="flex gap-5 overflow-x-auto border-b border-white/[0.1] px-5 md:px-6"
       >
-        {(Object.keys(queryExamples) as ExampleId[]).map((id) => (
+        {exampleIds.map((id) => (
           <button
             key={id}
             id={`query-example-tab-${id}`}
@@ -243,7 +270,9 @@ export function QueryInterpretationDiagram() {
             role="tab"
             aria-selected={exampleId === id}
             aria-controls="query-example-panel"
+            tabIndex={exampleId === id ? 0 : -1}
             onClick={() => selectExample(id)}
+            onKeyDown={(event) => handleExampleKeyDown(event, id)}
             className={`shrink-0 border-b-2 py-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${
               exampleId === id
                 ? 'border-white text-white'
