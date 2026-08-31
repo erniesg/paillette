@@ -17,7 +17,7 @@ describe('SystemArchitectureDiagram', () => {
       'Remix web Worker',
       'Hono API Worker',
       'Auth + quota',
-      'Interpret + route',
+      'Query plan + route',
       'Jina / Workers AI',
       'Vectorize image + text',
       'Vectorize captions',
@@ -27,6 +27,22 @@ describe('SystemArchitectureDiagram', () => {
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+  });
+
+  it('places query planning before ranked fusion', () => {
+    render(<SystemArchitectureDiagram />);
+
+    const queryPlan = screen.getByTestId('architecture-node-query-router');
+    const rankedFusion = screen.getByTestId('architecture-node-rrf-hydration');
+    const queryPlanY = Number(
+      queryPlan.querySelector('rect')?.getAttribute('y')
+    );
+    const rankedFusionY = Number(
+      rankedFusion.querySelector('rect')?.getAttribute('y')
+    );
+
+    expect(queryPlan).toHaveAccessibleName('Query plan + route component');
+    expect(queryPlanY).toBeLessThan(rankedFusionY);
   });
 
   it('labels the directional data flow instead of explaining it in prose', () => {

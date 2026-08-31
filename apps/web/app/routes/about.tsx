@@ -26,12 +26,11 @@ export const meta: MetaFunction = () => {
 };
 
 const searchFlowDiagram = `flowchart LR
-  Q["User query"] --> U["<b>Interpretation</b><br/>meaning, filters,<br/>relationships"]
-  U --> R["<b>Routing</b><br/>choose<br/>search channels"]
+  Q["User query"] --> U["<b>Search plan</b><br/>meaning, constraints,<br/>relationships"]
 
-  R -- "NGA attribution" --> D["<b>Catalogue<br/>evidence query</b>"]
-  R -- "explicit facet" --> X["<b>Direct facet query</b>"]
-  R -- "semantic / mixed" --> H["<b>Hybrid retrieval</b>"]
+  U -- "NGA attribution" --> D["<b>Catalogue<br/>evidence query</b>"]
+  U -- "explicit facet" --> X["<b>Direct facet query</b>"]
+  U -- "semantic / mixed" --> H["<b>Hybrid retrieval</b>"]
 
   H --> K["<b>Keyword</b><br/>plain text<br/>match"]
   H --> M["<b>Metadata</b><br/>artist, title, date,<br/>accession number"]
@@ -61,7 +60,7 @@ const searchFlowDiagram = `flowchart LR
   classDef fusion fill:#3a2530,stroke:#c4718f,color:#f8f7f4
   class Q,O input
   class U interpretation
-  class R,H route
+  class H route
   class D,X direct
   class K keyword
   class M metadata
@@ -73,6 +72,8 @@ const searchFlowDiagram = `flowchart LR
 const sectionClassName = 'border-t border-white/[0.08] py-10 md:py-12';
 const headingClassName =
   'font-display text-3xl font-semibold tracking-normal text-white md:text-4xl';
+const subheadingClassName =
+  'font-display text-2xl font-semibold tracking-normal text-white md:text-3xl';
 const bodyClassName =
   'text-base leading-8 text-white/68 md:text-lg md:leading-9';
 const ABOUT_CACHE_CONTROL =
@@ -325,6 +326,8 @@ export const action = async ({ context, request }: ActionFunctionArgs) => {
   }
 };
 
+let mermaidRenderSequence = 0;
+
 function MermaidDiagram({ chart }: { chart: string }) {
   const renderId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -359,8 +362,9 @@ function MermaidDiagram({ chart }: { chart: string }) {
           },
         });
 
+        mermaidRenderSequence += 1;
         const { svg } = await mermaid.render(
-          `about-search-flow-${renderId}`,
+          `about-search-flow-${renderId}-${mermaidRenderSequence}`,
           chart
         );
         if (isMounted && containerRef.current) {
@@ -484,7 +488,8 @@ export default function AboutPage() {
           <h2 className={headingClassName}>System architecture</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
-              From browser request to ranked result.
+              From browser request to ranked result. The query becomes a search
+              plan before retrieval channels produce candidates for ranking.
             </p>
           </div>
           <div className="mt-8">
@@ -493,37 +498,53 @@ export default function AboutPage() {
         </section>
 
         <section className={sectionClassName}>
-          <h2 className={headingClassName}>NGA query interpretation</h2>
-          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
-            <p className={bodyClassName}>
-              For NGA search, the parser turns a query into up to five typed
-              parts. The diagram shows what each part is and how it is found.
-            </p>
-          </div>
-          <QueryInterpretationDiagram />
-        </section>
-
-        <section className={sectionClassName}>
           <h2 className={headingClassName}>Approach</h2>
-          <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
-            <p className={bodyClassName}>
-              For hybrid or mixed semantic queries, Paillette routes the
-              retrieval text to the search channels that make sense, then
-              combines their ranked results with reciprocal rank fusion (RRF).
-              RRF gives more weight to results that appear near the top of one
-              or more relevant channels, so the final ranking is not dependent
-              on a single model score. Explicit facet searches use direct
-              catalogue lookups, while NGA attribution queries use a direct
-              evidence path.
-            </p>
-            <p className={bodyClassName}>
-              For example, an accession number leans on metadata. "Blue abstract
-              painting" leans on colour and image similarity. "Works about
-              migration" leans on captions and keywords.
-            </p>
-          </div>
+          <div className="mt-8 space-y-12 md:space-y-16">
+            <section aria-labelledby="query-interpretation-heading">
+              <h3
+                id="query-interpretation-heading"
+                className={subheadingClassName}
+              >
+                Query interpretation
+              </h3>
+              <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
+                <p className={bodyClassName}>
+                  For NGA search, the parser turns a query into up to five typed
+                  parts. The diagram shows what each part is and how it changes
+                  the search plan.
+                </p>
+              </div>
+              <QueryInterpretationDiagram />
+              <p className="mt-5 text-sm leading-7 text-white/58 md:text-base">
+                That search plan becomes the input to retrieval and ranking.
+              </p>
+            </section>
 
-          <MermaidDiagram chart={searchFlowDiagram} />
+            <section aria-labelledby="retrieval-ranking-heading">
+              <h3
+                id="retrieval-ranking-heading"
+                className={subheadingClassName}
+              >
+                Retrieval and ranking
+              </h3>
+              <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
+                <p className={bodyClassName}>
+                  For hybrid or mixed semantic queries, the search plan sends
+                  retrieval text to the relevant search channels, then combines
+                  their ranked results with reciprocal rank fusion (RRF).
+                  Explicit facet searches use direct catalogue lookups, while
+                  NGA attribution queries use a direct evidence path.
+                </p>
+                <p className={bodyClassName}>
+                  For example, an accession number leans on metadata. "Blue
+                  abstract painting" leans on colour and image similarity.
+                  "Works about migration" leans on captions and keywords.
+                </p>
+              </div>
+
+              <MermaidDiagram chart={searchFlowDiagram} />
+            </section>
+          </div>
         </section>
 
         <section className={sectionClassName}>
