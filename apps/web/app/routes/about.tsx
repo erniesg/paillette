@@ -29,11 +29,14 @@ const searchFlowDiagram = `flowchart LR
   Q["User query"] --> U["<b>Interpretation</b><br/>meaning, filters,<br/>relationships"]
   U --> R["<b>Routing</b><br/>choose<br/>search channels"]
 
-  R --> K["<b>Keyword</b><br/>plain text<br/>match"]
-  R --> M["<b>Metadata</b><br/>artist, title, date,<br/>accession number"]
-  R --> C["<b>Captions</b><br/>semantic / factual context"]
-  R --> I["<b>Image<br/>embeddings</b><br/>visual similarity"]
-  R --> P["<b>Colour</b><br/>colour terms / palette"]
+  R -- "exact metadata / attribution" --> D["<b>Direct catalogue<br/>or evidence query</b>"]
+  R -- "semantic / mixed" --> H["<b>Hybrid retrieval</b>"]
+
+  H --> K["<b>Keyword</b><br/>plain text<br/>match"]
+  H --> M["<b>Metadata</b><br/>artist, title, date,<br/>accession number"]
+  H --> C["<b>Captions</b><br/>semantic / factual context"]
+  H --> I["<b>Image<br/>embeddings</b><br/>visual similarity"]
+  H --> P["<b>Colour</b><br/>colour terms / palette"]
 
   K --> F["<b>Reciprocal rank<br/>fusion</b><br/>(RRF)"]
   M --> F
@@ -41,11 +44,13 @@ const searchFlowDiagram = `flowchart LR
   I --> F
   P --> F
 
-  F --> O["Ranked results"]
+  D --> O["Ranked results"]
+  F --> O
 
   classDef input fill:#111116,stroke:#3f3f46,color:#f8f7f4
   classDef interpretation fill:#252038,stroke:#8b7de0,color:#f8f7f4
   classDef route fill:#1f2937,stroke:#64748b,color:#f8f7f4
+  classDef direct fill:#2f2b21,stroke:#b89a5d,color:#f8f7f4
   classDef keyword fill:#24213a,stroke:#7c6ee6,color:#f8f7f4
   classDef metadata fill:#223026,stroke:#6aa56f,color:#f8f7f4
   classDef captions fill:#30223b,stroke:#a06ac4,color:#f8f7f4
@@ -54,7 +59,8 @@ const searchFlowDiagram = `flowchart LR
   classDef fusion fill:#3a2530,stroke:#c4718f,color:#f8f7f4
   class Q,O input
   class U interpretation
-  class R route
+  class R,H route
+  class D direct
   class K keyword
   class M metadata
   class C captions
@@ -506,12 +512,14 @@ export default function AboutPage() {
           <h2 className={headingClassName}>Approach</h2>
           <div className={ABOUT_BODY_GROUP_CLASS_NAME}>
             <p className={bodyClassName}>
-              In order to support different ways of searching the collection,
-              Paillette routes each query to the search channels that make
-              sense, then combines their ranked results with reciprocal rank
-              fusion (RRF). RRF gives more weight to results that appear near
-              the top of one or more relevant channels, so the final ranking is
-              not dependent on a single model score.
+              For hybrid or mixed semantic queries, Paillette routes the
+              retrieval text to the search channels that make sense, then
+              combines their ranked results with reciprocal rank fusion (RRF).
+              RRF gives more weight to results that appear near the top of one
+              or more relevant channels, so the final ranking is not dependent
+              on a single model score. Exact metadata lookups and attribution
+              queries take direct catalogue or evidence paths instead of being
+              fused.
             </p>
             <p className={bodyClassName}>
               For example, an accession number leans on metadata. "Blue abstract
