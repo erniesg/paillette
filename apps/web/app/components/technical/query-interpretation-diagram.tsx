@@ -45,7 +45,7 @@ export function QueryInterpretationDiagram() {
         className="border-b border-white/[0.1] px-5 py-4 md:px-6"
       >
         <span className="block font-display text-xl font-medium text-white md:text-2xl">
-          What a query is deconstructed into
+          What an NGA query is deconstructed into
         </span>
         <span className="mt-1 block text-sm leading-6 text-white/60 md:text-base">
           Five possible parts, each found by a different kind of rule.

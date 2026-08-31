@@ -61,7 +61,7 @@ describe('about page layout', () => {
     render(<AboutPage />);
 
     const interpretationHeading = screen.getByRole('heading', {
-      name: 'Query interpretation',
+      name: 'NGA query interpretation',
     });
     const approachHeading = screen.getByRole('heading', { name: 'Approach' });
 
@@ -70,7 +70,7 @@ describe('about page layout', () => {
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(
-      screen.getByText(/turns a query into up to five typed parts/i)
+      screen.getByText(/for nga search.*five typed parts/i)
     ).toBeInTheDocument();
     expect(
       screen.getByText(/hybrid or mixed semantic queries/i)
@@ -78,10 +78,12 @@ describe('about page layout', () => {
     expect(
       screen.getByText(/explicit facet searches use direct catalogue lookups/i)
     ).toBeInTheDocument();
-    expect(screen.getByText(/attribution queries use a direct evidence path/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/nga attribution queries use a direct evidence path/i)
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('figure', {
-        name: /what a query is deconstructed into/i,
+        name: /what an nga query is deconstructed into/i,
       })
     ).toBeInTheDocument();
   });
