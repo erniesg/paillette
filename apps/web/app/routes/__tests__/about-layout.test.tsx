@@ -76,8 +76,9 @@ describe('about page layout', () => {
       screen.getByText(/hybrid or mixed semantic queries/i)
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/exact metadata lookups and attribution queries.*instead of being fused/i)
+      screen.getByText(/explicit facet searches use direct catalogue lookups/i)
     ).toBeInTheDocument();
+    expect(screen.getByText(/attribution queries use a direct evidence path/i)).toBeInTheDocument();
     expect(
       screen.getByRole('figure', {
         name: /what a query is deconstructed into/i,

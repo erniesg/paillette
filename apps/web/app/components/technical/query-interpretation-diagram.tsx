@@ -6,31 +6,31 @@ const planParts = [
     part: 'Descriptive meaning',
     source: 'Words left after structured phrases are removed',
     example: '“oil paintings of ships before 1800” → “ships”',
-    outputs: ['retrievalQuery: “ships”'],
+    outputs: ['Semantic retrieval: ships'],
   },
   {
     part: 'Catalogue metadata',
     source: 'Controlled classification and medium vocabularies',
     example: '“oil paintings”',
-    outputs: ['classification: Painting', 'medium: oil'],
+    outputs: ['Hard filters: Painting · oil'],
   },
   {
     part: 'Displayed time',
     source: 'Date grammar: years, ranges, before/after, decades, centuries, circa',
     example: '“before 1800”',
-    outputs: ['dateRange: 1000–1799'],
+    outputs: ['Hard displayed-date range: 1000–1799'],
   },
   {
     part: 'Artwork relationship',
     source: 'Directional connectors such as showing, with, depicted in, or based on',
     example: '“painting showing a sculpture”',
-    outputs: ['return: Painting', 'depicts: Sculpture'],
+    outputs: ['Return paintings · require depicted sculpture'],
   },
   {
     part: 'Artist attribution',
     source: 'Ordered phrases such as by, after, attributed to, workshop, circle, or follower',
     example: '“drawings attributed to Rembrandt”',
-    outputs: ['relationship: attributed_to', 'target: Rembrandt'],
+    outputs: ['Catalogue relation: attributed to Rembrandt'],
   },
 ] as const;
 
@@ -74,7 +74,7 @@ export function QueryInterpretationDiagram() {
               How it is found
             </th>
             <th scope="col" className="px-6 py-2.5 font-normal">
-              Emitted field
+              What it controls
             </th>
           </tr>
         </thead>
@@ -103,7 +103,7 @@ export function QueryInterpretationDiagram() {
               </td>
               <td className="block sm:table-cell sm:px-6 sm:py-4 sm:align-top">
                 <span className={`${microLabelClassName} mb-1 block sm:hidden`}>
-                  Emitted field
+                  What it controls
                 </span>
                 {row.outputs.map((output) => (
                   <code

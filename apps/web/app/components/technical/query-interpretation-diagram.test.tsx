@@ -25,18 +25,15 @@ describe('QueryInterpretationDiagram', () => {
     }
   });
 
-  it('shows a concrete emitted field for every query part', () => {
+  it('shows what every query part controls without inventing internal field names', () => {
     render(<QueryInterpretationDiagram />);
 
     for (const output of [
-      'retrievalQuery: “ships”',
-      'classification: Painting',
-      'medium: oil',
-      'dateRange: 1000–1799',
-      'return: Painting',
-      'depicts: Sculpture',
-      'relationship: attributed_to',
-      'target: Rembrandt',
+      'Semantic retrieval: ships',
+      'Hard filters: Painting · oil',
+      'Hard displayed-date range: 1000–1799',
+      'Return paintings · require depicted sculpture',
+      'Catalogue relation: attributed to Rembrandt',
     ]) {
       expect(screen.getByText(output)).toBeInTheDocument();
     }
