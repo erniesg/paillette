@@ -29,7 +29,8 @@ const searchFlowDiagram = `flowchart LR
   Q["User query"] --> U["<b>Interpretation</b><br/>meaning, filters,<br/>relationships"]
   U --> R["<b>Routing</b><br/>choose<br/>search channels"]
 
-  R -- "exact metadata / attribution" --> D["<b>Direct catalogue<br/>or evidence query</b>"]
+  R -- "attribution" --> D["<b>Catalogue<br/>evidence query</b>"]
+  R -- "explicit facet" --> X["<b>Direct facet query</b>"]
   R -- "semantic / mixed" --> H["<b>Hybrid retrieval</b>"]
 
   H --> K["<b>Keyword</b><br/>plain text<br/>match"]
@@ -45,6 +46,7 @@ const searchFlowDiagram = `flowchart LR
   P --> F
 
   D --> O["Ranked results"]
+  X --> O
   F --> O
 
   classDef input fill:#111116,stroke:#3f3f46,color:#f8f7f4
@@ -60,7 +62,7 @@ const searchFlowDiagram = `flowchart LR
   class Q,O input
   class U interpretation
   class R,H route
-  class D direct
+  class D,X direct
   class K keyword
   class M metadata
   class C captions
@@ -510,9 +512,9 @@ export default function AboutPage() {
               combines their ranked results with reciprocal rank fusion (RRF).
               RRF gives more weight to results that appear near the top of one
               or more relevant channels, so the final ranking is not dependent
-              on a single model score. Exact metadata lookups and attribution
-              queries take direct catalogue or evidence paths instead of being
-              fused.
+              on a single model score. Explicit facet searches use direct
+              catalogue lookups, while attribution queries use a direct
+              evidence path.
             </p>
             <p className={bodyClassName}>
               For example, an accession number leans on metadata. "Blue abstract
