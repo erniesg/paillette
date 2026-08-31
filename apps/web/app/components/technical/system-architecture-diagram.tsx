@@ -417,7 +417,7 @@ const NODES = [
     x: 565,
     y: 390,
     width: 190,
-    label: 'Query router',
+    label: 'Interpret + route',
     badge: 'API',
     tone: '#c4b5fd',
   },

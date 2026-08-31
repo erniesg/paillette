@@ -57,6 +57,44 @@ describe('about page layout', () => {
     ).toBeTruthy();
   });
 
+  it('places illustrated query interpretation before the RRF approach', () => {
+    render(<AboutPage />);
+
+    const interpretationHeading = screen.getByRole('heading', {
+      name: 'Query interpretation',
+    });
+    const approachHeading = screen.getByRole('heading', { name: 'Approach' });
+
+    expect(
+      interpretationHeading.compareDocumentPosition(approachHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/all outputs compile into one search plan/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('figure', {
+        name: /how the nga parser unpacks a query/i,
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('states the NGA open-access scope alongside the existing sources', () => {
+    render(<AboutPage />);
+
+    expect(
+      screen.getByRole('link', {
+        name: 'National Gallery of Art, Washington',
+      })
+    ).toHaveAttribute(
+      'href',
+      'https://github.com/NationalGalleryOfArt/opendata'
+    );
+    expect(
+      screen.getByText(/63,253 artwork records with an open-access/i)
+    ).toBeInTheDocument();
+  });
+
   it('keeps feedback on the same content width as the preceding sections', () => {
     render(<AboutPage />);
 
