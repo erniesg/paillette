@@ -16,15 +16,19 @@ repository, on the `deploy-nga-open-access` branch:
 git log --since=2026-08-25T11:00:00-07:00 --format='%ad %h %s' --date=iso
 ```
 
-This returns 90 commits, spread over three dates: 79 on 2026-08-28, 8 on 2026-08-31,
-3 on 2026-09-03. The commit immediately before the cutoff is `e4ae3b43`
-("perf(search): cache every NGS Try result set", 2026-08-24 16:02:09 +0800) — there
-is a several-day gap with no commits between that and the first in-period commit,
-so the boundary is unambiguous. `master` (the repo's default branch) is currently
-still sitting at `e4ae3b43`; the 90 in-period commits, including everything in this
-document, live only on `deploy-nga-open-access` and have not been merged yet. That
-merge to `master` is a separate, tracked step (see `docs/webmcp-challenge-plan.md`,
-eligibility blocker #2) and must happen before submission.
+The commit immediately before the cutoff is `e4ae3b43` ("perf(search): cache every
+NGS Try result set", 2026-08-24 16:02:09 +0800), and the first one after it is
+`8a86c4c5` ("feat(search): add global NGS quota ledger", 2026-08-28 16:04:02 +0800).
+There is a multi-day gap with no commits in between, so the boundary is unambiguous
+and nothing straddles it.
+
+The submission-period work lives on `deploy-nga-open-access`. `master` (the repo's
+default branch) is an ancestor of that branch — it has no commits of its own that
+the branch lacks, so the merge is a fast-forward — but it currently predates all of
+the work described here. That merge to `master` is a separate, tracked step (see
+`docs/webmcp-challenge-plan.md`, eligibility blocker #2) and must happen before
+submission, or neither the licence nor the WebMCP code will be visible on the
+default branch a judge lands on.
 
 A judge can rerun the command above and check every hash independently.
 
