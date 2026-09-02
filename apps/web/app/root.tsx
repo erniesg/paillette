@@ -15,6 +15,7 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ThemeToggle } from './components/theme/theme-toggle';
+import { WebMcpBridge } from './components/webmcp/webmcp-bridge';
 import { UserProvider } from './contexts/user-context';
 import { ThemeProvider } from './contexts/theme-context';
 import { getApiBaseUrl, getServerEnv } from './lib/public-search.server';
@@ -124,6 +125,9 @@ export default function App() {
         >
           <Outlet />
           <ThemeToggle />
+          {/* Registers Paillette's tools on document.modelContext. Feature-
+              detected: a browser without WebMCP renders and installs nothing. */}
+          <WebMcpBridge />
         </UserProvider>
       </ThemeProvider>
     </QueryClientProvider>
