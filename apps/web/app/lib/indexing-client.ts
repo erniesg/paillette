@@ -1,0 +1,629 @@
+/**
+ * Browser-side client for the WebMCP indexing tools
+ * (`index_zip`, `index_folder`, `get_index_status`).
+ *
+ * WHY IT LOOKS LIKE THIS
+ *
+ * A WebMCP tool's `execute` must return quickly with JSON — it cannot block
+ * for minutes while hundreds of images are uploaded and embedded. So indexing
+ * is a job: `indexZip` / `indexFiles` create it, return `{ jobId, collectionId }`
+ * immediately, and keep uploading in the background. The agent then polls
+ * `getIndexStatus(jobId)` until it reads `complete`.
+ *
+ * The archive is opened here, in the browser: entry names and sizes are read
+ * to plan the job, then each image is decompressed only when its batch is
+ * about to be sent. The Worker never holds the zip.
+ */
+
+import JSZip from 'jszip';
+
+// ---------------------------------------------------------------------------
+// Contract
+// ---------------------------------------------------------------------------
+
+export type IndexJobState = 'queued' | 'running' | 'complete' | 'failed';
+
+export type IndexJobError = { file: string; message: string };
+
+export type IndexJobHandle = { jobId: string; collectionId: string };
+
+export type IndexStatus = {
+  jobId: string;
+  state: IndexJobState;
+  processed: number;
+  total: number;
+  collectionId: string;
+  errors: IndexJobError[];
+  /** Additive: an honest account of anything the caps or scope changed. */
+  notice?: string | null;
+  collectionName?: string;
+  failed?: number;
+  /** True once at least one image is embedded — partial results are usable. */
+  searchable?: boolean;
+};
+
+export type IndexOptions = {
+  collectionName: string;
+  orgId: string;
+  signal?: AbortSignal;
+  /** Additive: progress ticks for in-page UI while the agent polls. */
+  onProgress?: (status: { processed: number; total: number }) => void;
+};
+
+export type IndexedSearchResult = {
+  id: string;
+  similarity: number;
+  title: string;
+  artist: string | null;
+  year: number | null;
+  medium: string | null;
+  classification: string | null;
+  description: string | null;
+  original_filename: string | null;
+  imageUrl: string | null;
+};
+
+const DEFAULT_BATCH_SIZE = 4;
+
+// ---------------------------------------------------------------------------
+// Metadata
+// ---------------------------------------------------------------------------
+
+export type ItemMetadata = {
+  title?: string;
+  artist?: string;
+  year?: number;
+  date_text?: string;
+  medium?: string;
+  classification?: string;
+  description?: string;
+  credit_line?: string;
+  accession_number?: string;
+};
+
+/** Column aliases, most specific first. Sidecars in the wild are inconsistent. */
+const COLUMN_ALIASES: Array<[keyof ItemMetadata | 'filename', string[]]> = [
+  [
+    'filename',
+    ['filename', 'file', 'filepath', 'path', 'image', 'imagefile', 'imagename', 'imgfile'],
+  ],
+  ['title', ['title', 'worktitle', 'artworktitle', 'objecttitle', 'caption', 'label']],
+  ['artist', ['artist', 'creator', 'author', 'maker', 'artistname', 'photographer']],
+  ['year', ['year', 'date', 'dated', 'datecreated', 'yearcreated', 'created']],
+  ['medium', ['medium', 'materials', 'material', 'technique', 'support']],
+  [
+    'classification',
+    ['classification', 'objecttype', 'type', 'category', 'genre', 'class'],
+  ],
+  ['description', ['description', 'desc', 'notes', 'note', 'summary', 'abstract']],
+  ['credit_line', ['creditline', 'credit', 'creditlines']],
+  [
+    'accession_number',
+    ['accessionnumber', 'accession', 'accessionno', 'objectnumber', 'inventorynumber', 'refno'],
+  ],
+];
+
+/** Fallbacks tried only when no stronger column claimed the role. */
+const WEAK_ALIASES: Array<[keyof ItemMetadata | 'filename', string[]]> = [
+  ['filename', ['name', 'id', 'key']],
+  ['title', ['name', 'subject']],
+];
+
+/**
+ * `Blob.text()` is missing in older Safari and in the jsdom build the web
+ * tests run under, so fall back to FileReader rather than losing a sidecar.
+ */
+export const readTextFile = async (file: Blob): Promise<string> => {
+  const blob = file as Blob & { text?: () => Promise<string> };
+  if (typeof blob.text === 'function') return blob.text();
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Could not read the file'));
+    reader.readAsText(file);
+  });
+};
+
+export const normalizeColumnName = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Match a sidecar row to an entry regardless of folder prefix or case. */
+export const normalizeFilenameKey = (value: string) =>
+  (value.split(/[\\/]/).pop() || value).trim().toLowerCase();
+
+/**
+ * A deliberately small RFC-4180 reader: quoted fields, escaped quotes,
+ * embedded newlines and CRLF. Sidecar CSVs do not need more than this, and
+ * `apps/web` cannot take a new dependency without a workspace install.
+ */
+export const parseCsvRows = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+  let touched = false;
+
+  const endField = () => {
+    row.push(field);
+    field = '';
+    touched = true;
+  };
+  const endRow = () => {
+    endField();
+    if (row.some((value) => value.trim() !== '')) rows.push(row);
+    row = [];
+    touched = false;
+  };
+
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+
+    if (quoted) {
+      if (character === '"') {
+        if (source[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += character;
+      }
+      continue;
+    }
+
+    if (character === '"' && field === '') {
+      quoted = true;
+      touched = true;
+    } else if (character === ',') {
+      endField();
+    } else if (character === '\r') {
+      if (source[index + 1] === '\n') index += 1;
+      endRow();
+    } else if (character === '\n') {
+      endRow();
+    } else {
+      field += character;
+    }
+  }
+
+  if (field !== '' || touched || row.length) endRow();
+  return rows;
+};
+
+const firstYear = (value: string): number | undefined => {
+  // Not \b: "1890s" and "1954." must both yield a year, and a word boundary
+  // fails against a trailing letter.
+  const match = value.match(/(?<!\d)(\d{3,4})(?!\d)/);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  return year >= 0 && year <= 9999 ? year : undefined;
+};
+
+/**
+ * Map an optional CSV sidecar to per-file metadata, keyed by lowercase
+ * basename. Unknown columns are ignored; a missing sidecar is not an error.
+ */
+export const parseMetadataCsv = (text: string): Record<string, ItemMetadata> => {
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) return {};
+
+  const headers = rows[0]!.map(normalizeColumnName);
+  const columnFor = new Map<keyof ItemMetadata | 'filename', number>();
+
+  for (const [field, aliases] of [...COLUMN_ALIASES, ...WEAK_ALIASES]) {
+    if (columnFor.has(field)) continue;
+    for (const alias of aliases) {
+      const index = headers.indexOf(alias);
+      // A column may only fill one role, so `name` cannot be both file and title.
+      if (index >= 0 && ![...columnFor.values()].includes(index)) {
+        columnFor.set(field, index);
+        break;
+      }
+    }
+  }
+
+  const filenameColumn = columnFor.get('filename');
+  if (filenameColumn === undefined) return {};
+
+  const output: Record<string, ItemMetadata> = {};
+  for (const row of rows.slice(1)) {
+    const rawFilename = (row[filenameColumn] || '').trim();
+    if (!rawFilename) continue;
+
+    const metadata: ItemMetadata = {};
+    const read = (field: keyof ItemMetadata) => {
+      const index = columnFor.get(field);
+      const value = index === undefined ? '' : (row[index] || '').trim();
+      return value || undefined;
+    };
+
+    const title = read('title');
+    if (title) metadata.title = title;
+    const artist = read('artist');
+    if (artist) metadata.artist = artist;
+    const medium = read('medium');
+    if (medium) metadata.medium = medium;
+    const classification = read('classification');
+    if (classification) metadata.classification = classification;
+    const description = read('description');
+    if (description) metadata.description = description;
+    const creditLine = read('credit_line');
+    if (creditLine) metadata.credit_line = creditLine;
+    const accession = read('accession_number');
+    if (accession) metadata.accession_number = accession;
+
+    const rawYear = read('year');
+    if (rawYear) {
+      metadata.date_text = rawYear;
+      const year = firstYear(rawYear);
+      if (year !== undefined) metadata.year = year;
+    }
+
+    output[normalizeFilenameKey(rawFilename)] = metadata;
+  }
+
+  return output;
+};
+
+// ---------------------------------------------------------------------------
+// Zip reading
+// ---------------------------------------------------------------------------
+
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif']);
+const EXTENSION_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  avif: 'image/avif',
+};
+
+const extensionOf = (name: string) =>
+  (name.split('.').pop() || '').toLowerCase();
+
+export const isImageEntryName = (name: string) =>
+  IMAGE_EXTENSIONS.has(extensionOf(name));
+
+/** Archive noise no human means to index. */
+export const isIgnoredEntryName = (name: string) => {
+  const base = name.split('/').pop() || name;
+  return (
+    name.startsWith('__MACOSX/') ||
+    name.includes('/__MACOSX/') ||
+    base.startsWith('.') ||
+    base === 'Thumbs.db'
+  );
+};
+
+export type ZipEntry = {
+  name: string;
+  size: number;
+  /** Decompress on demand — the pump calls this only for the current batch. */
+  read: () => Promise<File>;
+};
+
+export type ParsedZip = {
+  images: ZipEntry[];
+  metadata: Record<string, ItemMetadata>;
+  /** Entries that could not even be listed. Never fatal. */
+  errors: IndexJobError[];
+};
+
+/**
+ * Read a zip's directory without decompressing its images. A malformed or
+ * unreadable entry is reported and skipped rather than failing the archive.
+ */
+export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
+  const zip = await JSZip.loadAsync(file);
+  const images: ZipEntry[] = [];
+  const errors: IndexJobError[] = [];
+  let metadata: Record<string, ItemMetadata> = {};
+  let csvName: string | null = null;
+
+  const entries = Object.values(zip.files) as Array<
+    JSZip.JSZipObject & { _data?: { uncompressedSize?: number } }
+  >;
+
+  for (const entry of entries) {
+    if (entry.dir || isIgnoredEntryName(entry.name)) continue;
+
+    if (extensionOf(entry.name) === 'csv') {
+      // Take the shallowest CSV: an export's sidecar sits beside the images.
+      const depth = entry.name.split('/').length;
+      if (!csvName || depth < csvName.split('/').length) {
+        try {
+          metadata = parseMetadataCsv(await entry.async('string'));
+          csvName = entry.name;
+        } catch (error) {
+          errors.push({
+            file: entry.name,
+            message: `Could not read the metadata sidecar: ${describeError(error)}`,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (!isImageEntryName(entry.name)) continue;
+
+    const name = entry.name.split('/').pop() || entry.name;
+    images.push({
+      name,
+      size: Number(entry._data?.uncompressedSize) || 0,
+      read: async () =>
+        new File([await entry.async('blob')], name, {
+          type: EXTENSION_MIME[extensionOf(name)] || 'application/octet-stream',
+        }),
+    });
+  }
+
+  return { images, metadata, errors };
+};
+
+// ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
+
+const describeError = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+const isAbort = (error: unknown) =>
+  error instanceof Error && error.name === 'AbortError';
+
+class IndexingError extends Error {
+  constructor(
+    message: string,
+    readonly code: string
+  ) {
+    super(message);
+    this.name = 'IndexingError';
+  }
+}
+
+const requestJson = async <T>(
+  path: string,
+  init: RequestInit & { signal?: AbortSignal }
+): Promise<T> => {
+  const response = await fetch(path, init);
+  let payload: {
+    success?: boolean;
+    data?: T;
+    error?: { code?: string; message?: string };
+  };
+  try {
+    payload = await response.json();
+  } catch {
+    throw new IndexingError(
+      `Indexing request failed with ${response.status}`,
+      'INVALID_RESPONSE'
+    );
+  }
+  if (!response.ok || !payload.success || payload.data === undefined) {
+    throw new IndexingError(
+      payload.error?.message || `Indexing request failed with ${response.status}`,
+      payload.error?.code || 'INDEXING_FAILED'
+    );
+  }
+  return payload.data;
+};
+
+type CreatedJob = {
+  jobId: string;
+  collectionId: string;
+  accepted: string[];
+  batchSize: number;
+};
+
+const createJob = async (
+  entries: Array<{ name: string; size: number }>,
+  opts: IndexOptions,
+  source: 'zip' | 'files'
+) =>
+  requestJson<CreatedJob>('/api/public-index/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      collectionName: opts.collectionName,
+      orgId: opts.orgId,
+      source,
+      files: entries.map((entry) => ({ name: entry.name, size: entry.size })),
+    }),
+    signal: opts.signal,
+  });
+
+const closeJob = async (jobId: string, error?: string) => {
+  try {
+    await fetch(`/api/public-index/${jobId}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(error ? { error } : {}),
+    });
+  } catch {
+    // A job left open still reports its real processed/total on the next poll.
+  }
+};
+
+/**
+ * Upload the accepted entries batch by batch, sequentially. Batches are small
+ * so each Worker invocation stays inside its CPU and subrequest budget, and a
+ * batch that fails outright is retried once before the run moves on — the
+ * remaining images should still be indexed.
+ */
+const pumpBatches = async (
+  job: CreatedJob,
+  readers: Map<string, () => Promise<File>>,
+  metadata: Record<string, ItemMetadata>,
+  opts: IndexOptions
+) => {
+  const batchSize = Math.max(1, job.batchSize || DEFAULT_BATCH_SIZE);
+  let processed = 0;
+
+  for (let offset = 0; offset < job.accepted.length; offset += batchSize) {
+    if (opts.signal?.aborted) {
+      await closeJob(job.jobId, 'Indexing was cancelled.');
+      return;
+    }
+
+    const names = job.accepted.slice(offset, offset + batchSize);
+    const form = new FormData();
+    const batchMetadata: Record<string, ItemMetadata> = {};
+    let attached = 0;
+
+    for (const name of names) {
+      const read = readers.get(name);
+      if (!read) continue;
+      try {
+        form.append('files', await read(), name);
+        attached += 1;
+      } catch {
+        // A corrupt entry is one lost image, not a lost archive. The server
+        // never sees it, so it stays 'pending' and is reported at completion.
+        continue;
+      }
+      const entry = metadata[normalizeFilenameKey(name)];
+      if (entry) batchMetadata[name] = entry;
+    }
+
+    if (attached === 0) continue;
+    form.append('metadata', JSON.stringify(batchMetadata));
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const status = await requestJson<IndexStatus>(
+          `/api/public-index/${job.jobId}/items`,
+          { method: 'POST', body: form, signal: opts.signal }
+        );
+        processed = status.processed;
+        opts.onProgress?.({ processed, total: status.total });
+        break;
+      } catch (error) {
+        if (isAbort(error)) {
+          await closeJob(job.jobId, 'Indexing was cancelled.');
+          return;
+        }
+        if (attempt === 1) {
+          console.warn(`Indexing batch failed for ${names.join(', ')}`, error);
+        }
+      }
+    }
+  }
+
+  await closeJob(
+    job.jobId,
+    processed === 0 ? 'No images could be indexed.' : undefined
+  );
+};
+
+const startJob = async (
+  entries: ZipEntry[],
+  metadata: Record<string, ItemMetadata>,
+  opts: IndexOptions,
+  source: 'zip' | 'files'
+): Promise<IndexJobHandle> => {
+  if (entries.length === 0) {
+    throw new IndexingError(
+      'No supported images were found to index.',
+      'NO_INDEXABLE_FILES'
+    );
+  }
+
+  const job = await createJob(entries, opts, source);
+  const readers = new Map(entries.map((entry) => [entry.name, entry.read]));
+
+  // Deliberately not awaited: the caller is a WebMCP `execute` that must
+  // return now. Progress is read back through `getIndexStatus(jobId)`.
+  void pumpBatches(job, readers, metadata, opts).catch((error) => {
+    console.warn('Indexing run failed', error);
+  });
+
+  return { jobId: job.jobId, collectionId: job.collectionId };
+};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/** `index_zip`: a zip of images (+ optional CSV sidecar) becomes a collection. */
+export async function indexZip(
+  file: File,
+  opts: IndexOptions
+): Promise<IndexJobHandle> {
+  let parsed: ParsedZip;
+  try {
+    parsed = await parseIndexZip(file);
+  } catch (error) {
+    throw new IndexingError(
+      `That file could not be read as a zip archive: ${describeError(error)}`,
+      'INVALID_ARCHIVE'
+    );
+  }
+  return startJob(parsed.images, parsed.metadata, opts, 'zip');
+}
+
+/** `index_folder`: the agent supplies a file list; same batch path. */
+export async function indexFiles(
+  files: File[],
+  opts: IndexOptions
+): Promise<IndexJobHandle> {
+  const images: ZipEntry[] = [];
+  let metadata: Record<string, ItemMetadata> = {};
+
+  for (const file of files) {
+    const name = file.name.split(/[\\/]/).pop() || file.name;
+    if (isIgnoredEntryName(name)) continue;
+
+    if (extensionOf(name) === 'csv') {
+      try {
+        metadata = { ...metadata, ...parseMetadataCsv(await readTextFile(file)) };
+      } catch {
+        // An unreadable sidecar just means filename-derived titles.
+      }
+      continue;
+    }
+    if (!isImageEntryName(name)) continue;
+
+    images.push({ name, size: file.size, read: async () => file });
+  }
+
+  return startJob(images, metadata, opts, 'files');
+}
+
+/** `get_index_status`: pollable progress. Never blocks on the run itself. */
+export async function getIndexStatus(
+  jobId: string,
+  opts?: { signal?: AbortSignal }
+): Promise<IndexStatus> {
+  return requestJson<IndexStatus>(`/api/public-index/${jobId}/status`, {
+    method: 'GET',
+    signal: opts?.signal,
+  });
+}
+
+/**
+ * Additive: semantic search over the collection a job just built, so the agent
+ * can index and then immediately search in one conversational turn.
+ */
+export async function searchIndexedCollection(
+  jobId: string,
+  query: string,
+  opts?: { topK?: number; signal?: AbortSignal }
+): Promise<{ collectionId: string; results: IndexedSearchResult[] }> {
+  const data = await requestJson<{
+    collectionId: string;
+    results: IndexedSearchResult[];
+  }>(`/api/public-index/${jobId}/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, topK: opts?.topK ?? 20 }),
+    signal: opts?.signal,
+  });
+  return data;
+}
+
+export { IndexingError };
