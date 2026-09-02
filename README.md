@@ -18,6 +18,36 @@ Starting with the **National Gallery Singapore**, we're building a platform that
 - [Paillette NGS search](https://paillette-stg.berlayar.ai/ngs/search)
 - [National Gallery Singapore Collection Search](https://www.nationalgallery.sg/sg/en/our-collections/search-collection.html), the source collection currently represented in Paillette
 
+## WebMCP: agent access
+
+Paillette is multimodal (text / image / colour) search and curation over art
+collections. With WebMCP, a browser agent can discover and drive the same
+search and curation tools directly on the page, alongside the human using it —
+not by scraping the DOM, and not through a separate integration.
+
+- **Live**: [paillette-stg.berlayar.ai/nga/search](https://paillette-stg.berlayar.ai/nga/search)
+  and [paillette.berlayar.ai](https://paillette.berlayar.ai) — National Gallery
+  of Art (Washington) open-access collection. See
+  `docs/webmcp-challenge-plan.md` for which one is the canonical submission URL.
+- **Tools are registered in**: `apps/web/app/lib/webmcp/`, mounted once from
+  `apps/web/app/root.tsx`. What each tool does and how it was implemented is in
+  `docs/webmcp-submission-description.md`.
+- **Run it locally**:
+  ```bash
+  pnpm install
+  pnpm dev   # api on :8787, web on :5173
+  ```
+  WebMCP requires a secure (HTTPS) context, so local dev will not expose tools
+  to a real browser agent — use one of the live URLs above to actually test the
+  WebMCP surface.
+- **Enable WebMCP to test it as a judge/reviewer**:
+  - **ChatGPT desktop app** → open a live URL above in its in-app browser
+    (WebMCP is on by default there), or
+  - **Chrome 149+** → visit `chrome://flags/#enable-webmcp-testing`, enable
+    the flag, restart Chrome, then open a live URL above.
+- **What's new for this hackathon, with dated commit evidence** distinguishing
+  it from the pre-existing platform: `docs/webmcp-whats-new.md`.
+
 ## Core Features
 
 ### 1. Image Collection & Embedding Generation
