@@ -310,6 +310,12 @@ export type ZipEntry = {
 
 export type ParsedZip = {
   images: ZipEntry[];
+  /**
+   * Real entries this client will not upload. They are still declared to the
+   * server so the status payload can say why each one was left out, instead of
+   * the human wondering where a file went.
+   */
+  skipped: Array<{ name: string; size: number }>;
   metadata: Record<string, ItemMetadata>;
   /** Entries that could not even be listed. Never fatal. */
   errors: IndexJobError[];
@@ -322,6 +328,7 @@ export type ParsedZip = {
 export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
   const zip = await JSZip.loadAsync(file);
   const images: ZipEntry[] = [];
+  const skipped: Array<{ name: string; size: number }> = [];
   const errors: IndexJobError[] = [];
   let metadata: Record<string, ItemMetadata> = {};
   let csvName: string | null = null;
@@ -350,12 +357,19 @@ export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
       continue;
     }
 
-    if (!isImageEntryName(entry.name)) continue;
+    const entrySize = Number(entry._data?.uncompressedSize) || 0;
+    if (!isImageEntryName(entry.name)) {
+      skipped.push({
+        name: entry.name.split('/').pop() || entry.name,
+        size: entrySize,
+      });
+      continue;
+    }
 
     const name = entry.name.split('/').pop() || entry.name;
     images.push({
       name,
-      size: Number(entry._data?.uncompressedSize) || 0,
+      size: entrySize,
       read: async () =>
         new File([await entry.async('blob')], name, {
           type: EXTENSION_MIME[extensionOf(name)] || 'application/octet-stream',
@@ -363,7 +377,7 @@ export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
     });
   }
 
-  return { images, metadata, errors };
+  return { images, skipped, metadata, errors };
 };
 
 // ---------------------------------------------------------------------------
@@ -522,6 +536,7 @@ const pumpBatches = async (
 
 const startJob = async (
   entries: ZipEntry[],
+  skipped: Array<{ name: string; size: number }>,
   metadata: Record<string, ItemMetadata>,
   opts: IndexOptions,
   source: 'zip' | 'files'
@@ -533,7 +548,9 @@ const startJob = async (
     );
   }
 
-  const job = await createJob(entries, opts, source);
+  // Unsupported entries are declared too, so the server records a reason for
+  // each and `get_index_status` can account for everything in the archive.
+  const job = await createJob([...entries, ...skipped], opts, source);
   const readers = new Map(entries.map((entry) => [entry.name, entry.read]));
 
   // Deliberately not awaited: the caller is a WebMCP `execute` that must
@@ -563,7 +580,7 @@ export async function indexZip(
       'INVALID_ARCHIVE'
     );
   }
-  return startJob(parsed.images, parsed.metadata, opts, 'zip');
+  return startJob(parsed.images, parsed.skipped, parsed.metadata, opts, 'zip');
 }
 
 /** `index_folder`: the agent supplies a file list; same batch path. */
@@ -572,6 +589,7 @@ export async function indexFiles(
   opts: IndexOptions
 ): Promise<IndexJobHandle> {
   const images: ZipEntry[] = [];
+  const skipped: Array<{ name: string; size: number }> = [];
   let metadata: Record<string, ItemMetadata> = {};
 
   for (const file of files) {
@@ -586,12 +604,15 @@ export async function indexFiles(
       }
       continue;
     }
-    if (!isImageEntryName(name)) continue;
+    if (!isImageEntryName(name)) {
+      skipped.push({ name, size: file.size });
+      continue;
+    }
 
     images.push({ name, size: file.size, read: async () => file });
   }
 
-  return startJob(images, metadata, opts, 'files');
+  return startJob(images, skipped, metadata, opts, 'files');
 }
 
 /** `get_index_status`: pollable progress. Never blocks on the run itself. */

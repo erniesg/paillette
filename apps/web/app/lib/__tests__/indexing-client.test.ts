@@ -258,6 +258,34 @@ describe('zip reading', () => {
       'two.PNG',
     ]);
     expect(parsed.metadata['one.jpg']).toEqual({ title: 'Sunrise' });
+
+    // Real-but-unsupported entries are still declared, so the status payload
+    // can account for them. Archive noise and the sidecar are not.
+    expect(parsed.skipped.map((entry) => entry.name)).toEqual(['notes.txt']);
+  });
+
+  it('declares unsupported entries to the server rather than dropping them', async () => {
+    const api = stubIndexingApi({ batchSize: 4 });
+    const file = await buildZip({
+      'one.jpg': imageBytes(1),
+      'notes.txt': 'not an image',
+      'meta.csv': 'filename,title\none.jpg,Sunrise\n',
+      '.DS_Store': imageBytes(9),
+    });
+
+    await indexZip(file, { collectionName: 'x', orgId: 'nga' });
+    await waitFor(
+      () => api.urls().includes('/api/public-index/job-42/complete'),
+      'job completion'
+    );
+
+    const created = JSON.parse(String(api.calls[0]!.init.body));
+    expect(created.files.map((entry: { name: string }) => entry.name)).toEqual([
+      'one.jpg',
+      'notes.txt',
+    ]);
+    // Only the image is actually uploaded.
+    expect(api.filenames()).toEqual(['one.jpg']);
   });
 
   it('reads entry sizes without decompressing them', async () => {
@@ -568,7 +596,10 @@ describe('indexFiles', () => {
 
     const created = JSON.parse(String(api.calls[0]!.init.body));
     expect(created.source).toBe('files');
-    expect(created.files).toEqual([{ name: 'one.jpg', size: 2000 }]);
+    expect(created.files).toEqual([
+      { name: 'one.jpg', size: 2000 },
+      { name: 'notes.txt', size: 2000 },
+    ]);
     expect(JSON.parse(String(api.forms[0]!.get('metadata')))).toEqual({
       'one.jpg': { title: 'Sunrise' },
     });
