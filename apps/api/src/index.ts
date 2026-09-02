@@ -16,6 +16,7 @@ import usageEventRoutes from './routes/usage-events';
 import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
+import indexingRoutes from './routes/indexing';
 import { requireAuthOrApiKey } from './middleware/auth';
 import {
   processOpenAccessAssetBatch,
@@ -168,6 +169,14 @@ const isPublicNgaArtworkRead = (c: { req: { method: string; path: string } }) =>
     c.req.path
   );
 
+// WebMCP indexing is deliberately anonymous: the demo runs in ChatGPT's
+// in-app browser with no account. The routes behind this exemption write only
+// into the hard-coded sandbox organisation seeded by migration 0021, are
+// bounded by INDEXING_CAPS, and expose no NGA/NGS data. The prefix is matched
+// exactly so no other API surface can be reached without authentication.
+const isPublicIndexingRoute = (c: { req: { path: string } }) =>
+  /^\/api\/v1\/public-index\/[A-Za-z0-9/_.-]*$/.test(c.req.path);
+
 api.use('*', async (c, next) => {
   // MCP owns its OAuth challenge so clients still receive the required
   // resource metadata and scope hint. All other API data routes share this
@@ -180,8 +189,13 @@ api.use('*', async (c, next) => {
     await next();
     return;
   }
+  if (isPublicIndexingRoute(c)) {
+    await next();
+    return;
+  }
   return requireAuthOrApiKey(c as any, next);
 });
+api.route('/public-index', indexingRoutes);
 api.route('/me', apiKeyRoutes as any);
 api.route('/impact', impactRoutes as any);
 api.route('/usage-events', usageEventRoutes as any);

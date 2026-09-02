@@ -696,3 +696,84 @@ BEGIN
   SET artwork_count = artwork_count - 1
   WHERE id = OLD.collection_id;
 END;
+
+-- ============================================================================
+-- WebMCP agent-driven indexing jobs (migration 0021)
+-- ============================================================================
+
+INSERT OR IGNORE INTO users (id, email, name, role, password_hash)
+VALUES (
+  '1f5d3b90-6c42-4a17-9e08-3d7b5c214e6a',
+  'webmcp-index@paillette.local',
+  'WebMCP Indexing Sandbox',
+  'curator',
+  'disabled:no-password-login'
+);
+
+INSERT OR IGNORE INTO orgs (
+  id, name, slug, description, settings, api_key, api_key_hash, owner_id
+)
+VALUES (
+  'f2b7c1a4-9d3e-4b8c-a1f6-2e5d7c9b4a30',
+  'WebMCP Indexing Sandbox',
+  'webmcp-index',
+  'Ephemeral collections created by browser agents through the WebMCP indexing tools.',
+  '{}',
+  'retired-org-key:f2b7c1a4-9d3e-4b8c-a1f6-2e5d7c9b4a30',
+  'disabled:no-org-key-auth',
+  '1f5d3b90-6c42-4a17-9e08-3d7b5c214e6a'
+);
+
+CREATE TABLE IF NOT EXISTS index_jobs (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  collection_id TEXT NOT NULL,
+  collection_name TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'zip' CHECK (source IN ('zip', 'files')),
+  state TEXT NOT NULL DEFAULT 'queued'
+    CHECK (state IN ('queued', 'running', 'complete', 'failed')),
+  total INTEGER NOT NULL DEFAULT 0,
+  processed INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  client_hash TEXT,
+  notice TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE INDEX idx_index_jobs_state ON index_jobs (state, created_at);
+CREATE INDEX idx_index_jobs_client ON index_jobs (client_hash, created_at);
+
+CREATE TABLE IF NOT EXISTS index_job_items (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  artwork_id TEXT,
+  state TEXT NOT NULL DEFAULT 'pending'
+    CHECK (state IN ('pending', 'complete', 'failed', 'skipped')),
+  message TEXT,
+  size_bytes INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+  FOREIGN KEY (job_id) REFERENCES index_jobs(id) ON DELETE CASCADE,
+  UNIQUE (job_id, filename)
+);
+
+CREATE INDEX idx_index_job_items_job ON index_job_items (job_id, state);
+
+CREATE TRIGGER update_index_jobs_timestamp
+AFTER UPDATE ON index_jobs
+FOR EACH ROW
+BEGIN
+  UPDATE index_jobs SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_index_job_items_timestamp
+AFTER UPDATE ON index_job_items
+FOR EACH ROW
+BEGIN
+  UPDATE index_job_items SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
