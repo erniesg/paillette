@@ -157,8 +157,10 @@ export const FlagBadge = ({
             type="button"
             data-flag-action={action}
             {...(pressed === undefined ? {} : { 'aria-pressed': pressed })}
+            // The accessible name carries the word; the button carries the
+            // key. A tooltip restating a control the letter already names is
+            // the interface explaining itself.
             aria-label={`${label}${suffix} (${key})`}
-            title={`${label} — ${key}`}
             onClick={(event) => {
               // The card behind this opens a dialog on click.
               event.stopPropagation();

@@ -28,6 +28,8 @@ import {
   getWebMcpState,
   setAgentResults,
   setBoard,
+  setDealError,
+  setDealing,
   type ResultSetOrigin,
 } from './store';
 
@@ -136,12 +138,31 @@ export const placeKeptInOrder = (
 };
 
 /**
+ * One deal at a time.
+ *
+ * Enter is cheap to press and a deal over a slow connection is not fast, so a
+ * person will press it again — and two deals in flight write the board twice
+ * from two different reads of the same state. The later write wins, the
+ * earlier one's newcomers vanish, and in the worst interleaving a pick is
+ * placed against an order that no longer exists. Refusing the second press is
+ * the only version of this with one outcome.
+ */
+let dealInFlight = false;
+
+/**
  * Run one deal. Identical whether the human pressed Enter or the agent called
  * the tool; only `by` differs, and it only affects what the board is labelled.
  */
 export const runRedeal = async (
   request: RedealRequest
 ): Promise<RedealResult> => {
+  if (dealInFlight) {
+    return fail(
+      'REDEAL_IN_FLIGHT',
+      'A deal is already running.',
+      'Wait for the board to settle; the flags are unchanged and the next deal will read them.'
+    );
+  }
   const state = getWebMcpState();
   const target = resolveSearchTarget(request.collection);
   if (target.kind === 'indexed') {
@@ -186,55 +207,90 @@ export const runRedeal = async (
   let added: string[] = [];
   let dealtRecords: ArtworkSearchResult[] = [];
 
-  if (need > 0) {
-    const alreadyDealt = state.board?.dealt ?? [];
-    const response = await searchByExemplarsPublic({
-      collectionId: target.collectionId,
-      positiveIds: exemplars.positive,
-      negativeIds: exemplars.negative,
-      // Everything this session has already put in front of the human is out.
-      // Without this a redeal hands back the same twelve and the loop stalls.
-      excludeIds: [...new Set([...alreadyDealt, ...previousOrder])],
-      topK: need + offset,
-      negativeWeight,
-      signal: request.signal,
+  dealInFlight = true;
+  setDealing(true);
+  setDealError(null);
+  try {
+    if (need > 0) {
+      const alreadyDealt = state.board?.dealt ?? [];
+      const response = await searchByExemplarsPublic({
+        collectionId: target.collectionId,
+        positiveIds: exemplars.positive,
+        negativeIds: exemplars.negative,
+        // Everything this session has already put in front of the human is out.
+        // Without this a redeal hands back the same twelve and the loop stalls.
+        excludeIds: [...new Set([...alreadyDealt, ...previousOrder])],
+        topK: need + offset,
+        negativeWeight,
+        signal: request.signal,
+      });
+      const widened = response.results.slice(offset, offset + need);
+      // Widening skips the nearest band on purpose. If the collection could not
+      // supply enough past it — a narrow corner of the index, or a session that
+      // has already dealt most of what matches — fill from the band we skipped
+      // rather than dealing a short board. A half-empty board reads as a
+      // failure; a slightly nearer one reads as an answer.
+      const shortfall = need - widened.length;
+      dealtRecords =
+        shortfall > 0
+          ? [...widened, ...response.results.slice(0, offset).slice(0, shortfall)]
+          : widened;
+      rememberArtworks(dealtRecords);
+      added = dealtRecords.map((result) => result.id);
+    }
+
+    const order = placeKeptInOrder(previousOrder, kept, added, size);
+    const note = request.note?.trim() || null;
+
+    setBoard({
+      order,
+      dealt: [...new Set([...(state.board?.dealt ?? []), ...previousOrder, ...added])],
+      note,
+      lastChangeBy: request.by,
+      redeals: (state.board?.redeals ?? 0) + 1,
+      at: Date.now(),
     });
-    dealtRecords = response.results.slice(offset, offset + need);
-    rememberArtworks(dealtRecords);
-    added = dealtRecords.map((result) => result.id);
+
+    // Mirror onto the canvas channel the search page already renders, so the
+    // board is on screen rather than only in the tool result.
+    const { found } = recallArtworks(order);
+    setAgentResults({
+      origin: request.by,
+      label: note || `${order.length} works, dealt from ${exemplars.positive.length} pick${exemplars.positive.length === 1 ? '' : 's'}`,
+      ...(note ? { note } : {}),
+      items: found.map(toAgentArtworkSummary),
+      at: Date.now(),
+    });
+
+    return {
+      ok: true,
+      kept,
+      removed,
+      added,
+      order,
+      exemplars,
+      strategy,
+      note,
+    };
+  } catch (error) {
+    // The board is left exactly as it was: a failed deal must not half-apply.
+    // Recording it is what stops Enter being a dead key when the network is
+    // down — get_view_context reports it, so the agent can say so, and the
+    // page has something to mark without anyone writing a sentence.
+    const failure = fail(
+      'REDEAL_FAILED',
+      error instanceof Error ? error.message : 'The deal could not be run.',
+      'The flags are unchanged. Press Enter again once the connection is back.'
+    );
+    setDealError(failure.error);
+    return failure;
+  } finally {
+    dealInFlight = false;
+    setDealing(false);
   }
+};
 
-  const order = placeKeptInOrder(previousOrder, kept, added, size);
-  const note = request.note?.trim() || null;
-
-  setBoard({
-    order,
-    dealt: [...new Set([...(state.board?.dealt ?? []), ...previousOrder, ...added])],
-    note,
-    lastChangeBy: request.by,
-    redeals: (state.board?.redeals ?? 0) + 1,
-    at: Date.now(),
-  });
-
-  // Mirror onto the canvas channel the search page already renders, so the
-  // board is on screen rather than only in the tool result.
-  const { found } = recallArtworks(order);
-  setAgentResults({
-    origin: request.by,
-    label: note || `${order.length} works, dealt from ${exemplars.positive.length} pick${exemplars.positive.length === 1 ? '' : 's'}`,
-    ...(note ? { note } : {}),
-    items: found.map(toAgentArtworkSummary),
-    at: Date.now(),
-  });
-
-  return {
-    ok: true,
-    kept,
-    removed,
-    added,
-    order,
-    exemplars,
-    strategy,
-    note,
-  };
+/** Test-only: clears the in-flight latch a rejected deal would otherwise hold. */
+export const __resetRedealForTest = () => {
+  dealInFlight = false;
 };

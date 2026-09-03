@@ -158,6 +158,15 @@ export interface WebMcpState {
   flags: FlagRecord[];
   /** The dealt board, once a redeal has run. Null before the first deal. */
   board: BoardState | null;
+  /**
+   * A deal in flight, and the last one that failed.
+   *
+   * Both exist so that pressing Enter is never a dead key. A slow deal has to
+   * be visibly in progress rather than look ignored, and a failed one has to
+   * say so — silence is the one response a person cannot act on.
+   */
+  dealing: boolean;
+  dealError: { code: string; message: string } | null;
   /** The two-up currently on screen, if any. */
   compare: CompareState | null;
   /** The card under the cursor or keyboard focus — the deictic anchor. */
@@ -190,6 +199,8 @@ const initialState: WebMcpState = {
   focused: null,
   flags: [],
   board: null,
+  dealing: false,
+  dealError: null,
   compare: null,
   hovered: null,
   selection: [],
@@ -258,6 +269,11 @@ export const setIndexJob = (indexJob: IndexJobHandleState | null) =>
 export const setFlagRecords = (flags: FlagRecord[]) => update({ flags });
 
 export const setBoard = (board: BoardState | null) => update({ board });
+
+export const setDealing = (dealing: boolean) => update({ dealing });
+
+export const setDealError = (dealError: WebMcpState['dealError']) =>
+  update({ dealError });
 
 export const setCompare = (compare: CompareState | null) => update({ compare });
 

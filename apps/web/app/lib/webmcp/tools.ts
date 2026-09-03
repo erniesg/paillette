@@ -73,6 +73,7 @@ import { NAMED_COLOURS, NAMED_COLOUR_IDS, resolveColour } from './colours';
 import {
   requestConfirmation,
   setAgentResults,
+  setBoard,
   setCanvasView,
   setCompare,
   setFocusedArtwork,
@@ -82,6 +83,7 @@ import {
 } from './store';
 import {
   getExemplars,
+  getPinnedIds,
   partitionFlags,
   setFlag,
   type FlagIntent,
@@ -972,6 +974,17 @@ const getViewContextTool = (context: ToolContext): WebMcpTool => ({
             resolved: false,
           }
         : null,
+      // A deal that failed is worth more to the agent than silence: it is the
+      // one thing on this page a human cannot fix by pointing at something.
+      ...(state.dealError
+        ? {
+            lastDealFailed: {
+              ...state.dealError,
+              hint: 'The board is unchanged and the flags are intact. Say so in one sentence rather than immediately dealing again.',
+            },
+          }
+        : {}),
+      ...(state.dealing ? { dealing: true } : {}),
       // The human can index their own zip on /try without saying a word to the
       // agent. Reporting the job here is how the agent finds out.
       indexedCollection: state.indexJob
@@ -1028,9 +1041,9 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
       },
       note: {
         type: 'string',
-        maxLength: 280,
+        maxLength: 160,
         description:
-          'One line shown to the human above the set, saying why these. Write it for them, not for yourself: "the four with the storm-lit horizon".',
+          'The wall label above the set: one sentence, naming the through-line. "The four with the storm-lit horizon." Not a paragraph, not a list of what you ruled out, and never a description of what you just did.',
       },
       colour: {
         type: 'string',
@@ -1072,7 +1085,17 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
       const outcome: ToolResult = { collection: collectionId };
 
       if (rawIds.length) {
-        const { found, missing } = recallArtworks(rawIds);
+        // Pin survival, enforced here rather than asked for.
+        //
+        // `redeal` cannot drop a confirmed pick, but an agent assembling a
+        // board by hand could simply leave one out — and a curated set that
+        // silently discards a work the human kept is exactly the failure the
+        // whole flag mechanism exists to prevent. So anything they picked and
+        // the agent omitted is added back, and the result says so.
+        const held = getPinnedIds().filter(
+          (id) => !rawIds.includes(id) && Boolean(recallArtwork(id))
+        );
+        const { found, missing } = recallArtworks([...rawIds, ...held]);
         if (!found.length) {
           return fail(
             'ARTWORK_NOT_IN_SESSION',
@@ -1080,6 +1103,7 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
             'Search first, then pin ids from the results.'
           );
         }
+        const order = found.map((artwork) => artwork.id);
         setAgentResults({
           origin: 'agent',
           label: note || `${found.length} works selected by the agent`,
@@ -1087,7 +1111,24 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
           items: found.map(toAgentArtworkSummary),
           at: Date.now(),
         });
+        // Whatever is on the canvas *is* the board. Without this the human
+        // sees a hang while get_view_context reports no board at all, and a
+        // redeal after it would deal from nothing.
+        const previousBoard = getWebMcpState().board;
+        setBoard({
+          order,
+          dealt: [...new Set([...(previousBoard?.dealt ?? []), ...order])],
+          note: note || null,
+          lastChangeBy: 'agent',
+          redeals: previousBoard?.redeals ?? 0,
+          at: Date.now(),
+        });
         outcome.pinned = found.length;
+        if (held.length) {
+          outcome.heldPicks = held.map((id) => ({ id, work: flagLabel(id) }));
+          outcome.heldPicksNote =
+            'These are the human’s confirmed picks. You left them out; they were put back. Build around them rather than replacing them.';
+        }
         if (missing.length) outcome.unresolved = missing;
       }
 
@@ -1507,9 +1548,9 @@ const redealTool = (): WebMcpTool => ({
       },
       note: {
         type: 'string',
-        maxLength: 280,
+        maxLength: 160,
         description:
-          'One line above the board, written for the human, naming what this deal follows: "You said warm; your picks are all cool and high-contrast. I followed the picks."',
+          'The wall label above the board: one sentence, naming what this deal follows. "You said warm; your picks are all cool. Following the picks." Not a paragraph.',
       },
       collection: collectionProperty,
     },

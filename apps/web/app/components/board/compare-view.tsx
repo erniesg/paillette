@@ -110,7 +110,7 @@ export const CompareView = () => {
         onClick={() => setCompare(null)}
         className="border border-white/15 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-white/50 hover:text-white/80"
       >
-        Neither — close
+        Neither
       </button>
     </div>
   );

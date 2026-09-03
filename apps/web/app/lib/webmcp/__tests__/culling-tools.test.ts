@@ -475,3 +475,51 @@ describe('get_view_context reports the gestures', () => {
     expect(result.flags.rejects[0]).toMatchObject({ id: 'b', onBoard: false });
   });
 });
+
+describe('set_results cannot lose a pick either', () => {
+  beforeEach(() => rememberArtworks(['a', 'b', 'c', 'd'].map(artwork)));
+
+  it('puts back a confirmed pick the agent left out, and says it did', async () => {
+    // redeal has no argument that can drop a pick. Assembling a board by hand
+    // is the other way in, and a curated set that quietly discards a work the
+    // human kept is the same failure wearing a different tool name.
+    setFlag('a', 'pick', { by: 'human' });
+
+    const result = await call('set_results', { artworkIds: ['b', 'c'] });
+
+    expect(getWebMcpState().board?.order).toEqual(['b', 'c', 'a']);
+    expect(result.heldPicks).toEqual([
+      { id: 'a', work: 'Work a — A. Painter' },
+    ]);
+  });
+
+  it('leaves the agent’s order alone when it kept the picks itself', async () => {
+    setFlag('c', 'pick', { by: 'human' });
+
+    const result = await call('set_results', { artworkIds: ['c', 'b'] });
+
+    expect(getWebMcpState().board?.order).toEqual(['c', 'b']);
+    expect(result.heldPicks).toBeUndefined();
+  });
+
+  it('ignores the agent’s own provisional pick — that is not the human’s work', async () => {
+    setFlag('a', 'pick', { by: 'agent', reason: 'proposed' });
+
+    await call('set_results', { artworkIds: ['b'] });
+
+    expect(getWebMcpState().board?.order).toEqual(['b']);
+  });
+
+  it('makes what is on the canvas the board, so a redeal after it has ground to stand on', async () => {
+    await call('set_results', { artworkIds: ['a', 'b'], note: 'Two quiet ones.' });
+
+    expect(getWebMcpState().board).toMatchObject({
+      order: ['a', 'b'],
+      note: 'Two quiet ones.',
+      lastChangeBy: 'agent',
+    });
+    // Dealt-this-session must include them, or the next redeal offers the
+    // same works straight back.
+    expect(getWebMcpState().board?.dealt).toEqual(['a', 'b']);
+  });
+});

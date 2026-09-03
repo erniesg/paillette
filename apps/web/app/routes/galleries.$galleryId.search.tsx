@@ -1167,8 +1167,12 @@ export default function SearchPage() {
     const { found } = recallArtworks(board.items.map((item) => item.id));
     return found.length > 0 ? found : null;
   }, [webmcpState.agentResults]);
+  // The note only. `label` is a factual description for the agent's own
+  // reading — "12 works, dealt from 3 picks" — and putting it on the wall
+  // where a note would go is the mechanism narrating itself. If nobody wrote a
+  // sentence about this board, the board says it.
   const agentBoardNote = agentBoardResults
-    ? (webmcpState.agentResults?.note ?? webmcpState.agentResults?.label ?? null)
+    ? (webmcpState.agentResults?.note ?? null)
     : null;
 
   /**
@@ -2828,11 +2832,29 @@ export default function SearchPage() {
           placeholder="Ask the agent — “something warm for above the sofa”"
         />
 
+        {/* The one case where silence is the wrong answer. Enter is cheap to
+            press and a dead key is unreadable — the person cannot tell a
+            broken connection from a board that had nothing left to deal. One
+            sentence, in the system's own voice, in the slot a note would use. */}
+        {webmcpState.dealError && (
+          <p
+            role="status"
+            data-deal-error={webmcpState.dealError.code}
+            className="paillette-deal-error mx-auto mt-6 max-w-3xl px-4 py-3 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-amber-200/70"
+          >
+            The deal didn’t run; your flags are unchanged.
+          </p>
+        )}
+
         {agentBoardNote && (
-          <p className="mx-auto mt-6 max-w-3xl rounded-xl border border-primary-500/30 bg-primary-500/[0.06] px-4 py-3 text-sm text-neutral-200">
-            <span className="mr-2 font-mono text-[11px] uppercase tracking-wider text-primary-300">
-              assembled by the agent
-            </span>
+          // Who wrote this is provenance, and provenance is ink rather than a
+          // caption saying who did what — which was also simply wrong once a
+          // human redeal could put a board here. `data-provenance` is the hook
+          // for the colour; the sentence stands on its own without it.
+          <p
+            className="paillette-wall-label mx-auto mt-6 max-w-3xl rounded-xl border border-primary-500/30 bg-primary-500/[0.06] px-4 py-3 text-sm text-neutral-200"
+            data-provenance={webmcpState.agentResults?.origin ?? 'agent'}
+          >
             {agentBoardNote}
           </p>
         )}

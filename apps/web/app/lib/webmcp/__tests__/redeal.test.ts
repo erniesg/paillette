@@ -14,8 +14,17 @@ import {
   rememberArtworks,
 } from '../artwork-index';
 import { __resetFlagsForTest, setFlag } from '../flags';
-import { placeKeptInOrder, runRedeal } from '../redeal';
-import { __resetWebMcpStateForTest, getWebMcpState, setBoard } from '../store';
+import {
+  __resetRedealForTest,
+  placeKeptInOrder,
+  runRedeal,
+} from '../redeal';
+import {
+  __resetWebMcpStateForTest,
+  getWebMcpState,
+  setBoard,
+  setDealError,
+} from '../store';
 import { __resetTurnStateForTest, submitHumanTurn } from '../turn';
 
 const artwork = (id: string): ArtworkSearchResult =>
@@ -52,6 +61,7 @@ const stubExemplarRoute = (dealt: string[]) => {
 
 beforeEach(() => {
   calls = [];
+  __resetRedealForTest();
   __resetWebMcpStateForTest();
   __resetFlagsForTest();
   __resetArtworkIndexForTest();
@@ -288,5 +298,118 @@ describe('Enter on an empty bar', () => {
       { artworkId: 'keep', to: 'pick' },
     ]);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('widening when the collection runs out', () => {
+  it('fills from the band it skipped rather than dealing a short board', async () => {
+    // "widen" skips the six nearest results. Ask for twelve against a corner
+    // of the index that can only offer eight, and a naive slice deals two —
+    // which reads on screen as a broken loop rather than as an answer.
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+    stubExemplarRoute(Array.from({ length: 8 }, (_, index) => `n${index}`));
+
+    const result = await runRedeal({ by: 'human', strategy: 'widen' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Eleven dealt plus the pick: everything the collection had.
+    expect(result.order).toHaveLength(9);
+    // The far band first, then the near one it fell back on.
+    expect(result.added.slice(0, 2)).toEqual(['n6', 'n7']);
+    expect(result.added).toContain('n0');
+  });
+});
+
+describe('when the deal cannot run', () => {
+  it('refuses a second deal while one is in flight, rather than racing it', async () => {
+    // Enter is cheap to press and a slow deal is not fast. Two in flight write
+    // the board twice from two reads of the same state — the later wins and
+    // the earlier one's newcomers simply vanish.
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+
+    let release: (value: unknown) => void = () => {};
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await gate;
+        const results = [artwork('n1')];
+        rememberArtworks(results);
+        return Response.json({
+          success: true,
+          data: { results, count: 1, queryTime: 1 },
+        });
+      })
+    );
+
+    const first = runRedeal({ by: 'human' });
+    const second = await runRedeal({ by: 'human' });
+
+    expect(second.ok).toBe(false);
+    expect(!second.ok && second.error.code).toBe('REDEAL_IN_FLIGHT');
+
+    release(null);
+    expect((await first).ok).toBe(true);
+    // And the latch is released, so the next press works.
+    expect(getWebMcpState().dealing).toBe(false);
+  });
+
+  it('leaves the board exactly as it was when the route fails', async () => {
+    rememberArtworks([artwork('keep'), artwork('old')]);
+    setFlag('keep', 'pick', { by: 'human' });
+    setBoard({
+      order: ['keep', 'old'],
+      dealt: ['keep', 'old'],
+      note: 'the quiet ones',
+      lastChangeBy: 'human',
+      redeals: 1,
+      at: 1,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('Failed to fetch');
+      })
+    );
+
+    const result = await runRedeal({ by: 'human' });
+
+    expect(!result.ok && result.error.code).toBe('REDEAL_FAILED');
+    // Half-applying a deal is worse than not dealing at all.
+    expect(getWebMcpState().board?.order).toEqual(['keep', 'old']);
+    expect(getWebMcpState().board?.redeals).toBe(1);
+    // And it is recorded, so pressing Enter is not a dead key.
+    expect(getWebMcpState().dealError).toMatchObject({ code: 'REDEAL_FAILED' });
+    expect(getWebMcpState().dealing).toBe(false);
+  });
+
+  it('reports the failure to the agent through the view context', async () => {
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('Failed to fetch');
+      })
+    );
+    await runRedeal({ by: 'human' });
+
+    expect(getWebMcpState().dealError?.message).toContain('Failed to fetch');
+  });
+
+  it('clears a previous failure once a deal succeeds', async () => {
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+    setDealError({ code: 'REDEAL_FAILED', message: 'earlier' });
+    stubExemplarRoute(['n1']);
+
+    await runRedeal({ by: 'human' });
+
+    expect(getWebMcpState().dealError).toBeNull();
   });
 });

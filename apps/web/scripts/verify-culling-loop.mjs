@@ -191,7 +191,29 @@ check(
   JSON.stringify(turn?.flagsDelta)
 );
 
-console.log('\ntwo-up');
+console.log('\nC opens the two-up');
+// The human's route into compare, which is the one the brief's definition of
+// done names. Hovering a card that is not the pick pairs it against the pick.
+await cards.nth(1).hover();
+await page.keyboard.press('c');
+await page.waitForSelector('.paillette-compare', { timeout: 5000 }).catch(() => {});
+check(
+  'C pairs the hovered work against one already kept',
+  (await page.locator('.paillette-compare').count()) === 1
+);
+const pairedWith = await page
+  .locator('.paillette-compare-work[data-side="left"]')
+  .getAttribute('data-artwork-id');
+check('the pick is the work it is weighed against', pairedWith === firstId);
+await page.keyboard.press('Escape');
+await page.locator('.paillette-compare button:has-text("Neither")').click();
+check(
+  'declining closes it and flags nothing',
+  (await page.locator('.paillette-compare').count()) === 0 &&
+    (await context()).flags.rejects.length === 1
+);
+
+console.log('\ntwo-up, resolved');
 await page.evaluate(
   ([a, b]) =>
     window.__paillette_webmcp.call('compare_artworks', {
