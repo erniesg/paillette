@@ -98,10 +98,55 @@ const ctx = () => page.evaluate(() => window.__paillette_webmcp.call('get_view_c
 await page.goto(`${BASE}/nga/search?webmcp-debug&q=estuary+at+dusk`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(2500);
 
+// The agent activity panel is a fixed overlay that covers the lower-left of
+// the board and intercepts clicks on the cards under it. Dismiss it first, the
+// way anyone would, or half this script is testing whether Playwright can
+// click through an aside. See voice-loop-notes.md.
+// The agent activity panel is a fixed overlay across the lower-left of the
+// board, and it re-opens itself whenever the agent does anything. While it is
+// open it intercepts clicks on the cards underneath. Dismissing it is a real
+// thing a person would do, so this does it whenever it is in the way rather
+// than forcing clicks through it. See voice-loop-notes.md.
+const dismissPanel = async () => {
+  const collapse = page.locator('button[aria-label="Collapse agent activity"]');
+  if (await collapse.count()) {
+    await collapse.click();
+    await page.waitForTimeout(200);
+  }
+};
+await dismissPanel();
+
 const bar = page.locator('input[aria-label="Ask the agent"]');
+const card = (id) => page.locator(`[data-artwork-id="${id}"]`).first();
 check('utterance bar renders', (await bar.count()) === 1);
 const c0 = await ctx();
 check('grid has works', (c0.humanResults?.count ?? 0) > 0, `${c0.humanResults?.count} on screen`);
+
+// -- 0b. PLURAL DEIXIS: "these two" against a real selection -----------------
+// Done before the first agent turn, because the activity panel appears the
+// moment the agent acts and then covers the lower-left of the board.
+// Shift-click is "these"; a plain click opens the work instead.
+await bar.click();
+await bar.fill('');
+// No board has been dealt yet at this point; the grid is showing the search.
+await card('nga-1').click({ modifiers: ['Shift'] });
+await page.waitForTimeout(200);
+await card('nga-2').click({ modifiers: ['Shift'] });
+await page.waitForTimeout(300);
+const selection = (await ctx()).selection ?? [];
+check('shift-click selects more than one work', selection.length >= 2,
+  JSON.stringify(selection.map((s) => s.id)));
+await bar.click();
+await page.keyboard.type('something between these two');
+await page.waitForTimeout(500);
+check('plural deixis resolves against the selection',
+  (await page.locator('p.flex.flex-wrap img').count()) >= 2,
+  `${await page.locator('p.flex.flex-wrap img').count()} thumbnail(s)`);
+check('two pictures need no "2 works" caption',
+  (await page.getByText('2 works', { exact: true }).count()) === 0);
+await page.screenshot({ path: '/tmp/vcheck/plural-live.png' });
+await bar.fill('');
+await page.waitForTimeout(200);
 
 // -- 1. TEXT FIRST: typed instruction alone fires the agent -----------------
 await bar.click();
@@ -117,7 +162,6 @@ check('typed turn stays silent', (await page.evaluate(() => window.__spoken)).le
 // ignored while a text field has focus — so on a fresh page P does nothing
 // until focus leaves it. A click on the board is what a human does first
 // anyway; without it this whole section is dead. See voice-loop-notes.md.
-const card = (id) => page.locator(`[data-artwork-id="${id}"]`).first();
 await page.mouse.click(640, 470);
 await page.waitForTimeout(150);
 check('grid keys are reachable (focus not trapped in a field)',

@@ -82,23 +82,39 @@ type Entry =
  * to draw costs a picture and nothing else.
  */
 function ReferentChip({ referent }: { referent: Referent }) {
+  const shown = referent.works.slice(0, 4);
+  const thumbnails = shown.filter((work) => work.thumbnailUrl);
+  // One work needs its name — nobody identifies a painting from a 16px square.
+  // Several do not: two thumbnails already say "two", and "2 works" beside two
+  // pictures of two works is the chip reading itself out loud. Words only
+  // where there is no picture to carry the meaning.
+  const label =
+    referent.works.length === 1
+      ? (shown[0]?.title ?? referent.phrase)
+      : thumbnails.length
+        ? null
+        : referent.phrase;
+
   return (
-    <span className="mx-0.5 inline-flex items-center gap-1 rounded border border-primary-500/40 bg-primary-500/10 px-1 py-px align-middle">
-      {referent.works.slice(0, 3).map((work) =>
-        work.thumbnailUrl ? (
-          <img
-            key={work.id}
-            src={work.thumbnailUrl}
-            alt=""
-            aria-hidden="true"
-            className="h-4 w-4 rounded-sm object-cover"
-          />
-        ) : null
-      )}
-      <span className="text-primary-200">
-        {referent.works.length === 1
-          ? (referent.works[0]?.title ?? referent.phrase)
-          : `${referent.works.length} works`}
+    <span
+      className="mx-0.5 inline-flex items-center gap-1 rounded border border-primary-500/40 bg-primary-500/10 px-1 py-px align-middle"
+      title={shown.map((work) => work.title ?? work.id).join(' · ')}
+    >
+      {thumbnails.map((work) => (
+        <img
+          key={work.id}
+          src={work.thumbnailUrl as string}
+          alt=""
+          aria-hidden="true"
+          className="h-4 w-4 rounded-sm object-cover"
+        />
+      ))}
+      {label && <span className="text-primary-200">{label}</span>}
+      {/* The pictures are the statement; this is the same fact for a reader
+          who cannot see them. */}
+      <span className="sr-only">
+        {referent.phrase}:{' '}
+        {shown.map((work) => work.title ?? work.id).join(', ')}
       </span>
     </span>
   );

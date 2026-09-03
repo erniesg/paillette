@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
-import { setFocusedArtwork } from '~/lib/webmcp/store';
+import { setFocusedArtwork, setSelection } from '~/lib/webmcp/store';
 import { setFlag, __resetFlagsForTest } from '~/lib/webmcp/flags';
 import { rememberArtworks, __resetArtworkIndexForTest } from '~/lib/webmcp/artwork-index';
 
@@ -119,6 +119,7 @@ const heard = (transcript: string, isFinal = false) =>
 afterEach(() => {
   setFocusedArtwork(null);
   __resetFlagsForTest();
+  setSelection([]);
   __resetArtworkIndexForTest();
   delete (window as unknown as { speechSynthesis?: unknown }).speechSynthesis;
   delete (window as unknown as { SpeechSynthesisUtterance?: unknown })
@@ -744,6 +745,31 @@ describe('AgentPrompt', () => {
     expect(bodies[0].turn?.flagsDelta).toHaveLength(1);
     // Restating them would read as the human having flagged it all over again.
     expect(bodies[1].turn).toBeUndefined();
+  });
+
+  it('names one work but lets several speak for themselves', async () => {
+    setModelContext({ getTools: async () => [] });
+    stubFetch();
+    rememberArtworks([
+      { id: 'nga-1', galleryId: 'nga', title: 'Salt Marsh', artist: 'Heade', imageUrl: 'a.jpg', thumbnailUrl: 'a.jpg', similarity: 1 },
+      { id: 'nga-2', galleryId: 'nga', title: 'Lake George', artist: 'Kensett', imageUrl: 'b.jpg', thumbnailUrl: 'b.jpg', similarity: 1 },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    setSelection(['nga-1', 'nga-2']);
+
+    const { container } = render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'between these two' } });
+
+    // Two thumbnails already say "two"; a "2 works" caption beside them is the
+    // chip reading itself out loud.
+    await waitFor(() =>
+      expect(container.querySelectorAll('p.flex.flex-wrap img')).toHaveLength(2)
+    );
+    expect(screen.queryByText('2 works')).not.toBeInTheDocument();
+    // But the fact survives for anyone who cannot see the pictures.
+    expect(container.querySelector('.sr-only')).toHaveTextContent(
+      /Salt Marsh, Lake George/
+    );
   });
 
   it('surfaces a message when microphone permission is denied', async () => {
