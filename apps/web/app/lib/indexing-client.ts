@@ -48,6 +48,12 @@ export type IndexOptions = {
   signal?: AbortSignal;
   /** Additive: progress ticks for in-page UI while the agent polls. */
   onProgress?: (status: { processed: number; total: number }) => void;
+  /**
+   * Additive: overrides the default metadata-map endpoint fetcher. Called at
+   * most once per header-set per session; failures degrade to the
+   * deterministic parse and never fail an upload.
+   */
+  fetchMapping?: MappingFetcher;
 };
 
 export type IndexedSearchResult = {
@@ -271,6 +277,256 @@ export const parseMetadataCsv = (text: string): Record<string, ItemMetadata> => 
 };
 
 // ---------------------------------------------------------------------------
+// Learned header mapping (LLM fallback for columns the aliases miss)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps raw header names to canonical `ItemMetadata` fields, or the special
+ * values 'filename' / 'ignore'. Produced by the server's metadata-map
+ * endpoint; only entries naming canonical metadata fields change the parse.
+ */
+export type MappingFetcher = (
+  headers: string[],
+  samples: string[][]
+) => Promise<Record<string, string>>;
+
+const METADATA_FIELDS: ReadonlySet<string> = new Set([
+  'title',
+  'artist',
+  'year',
+  'date_text',
+  'medium',
+  'classification',
+  'description',
+  'credit_line',
+  'accession_number',
+]);
+
+/** Mirrors the server contract: at most 3 rows, cells capped at 120 chars. */
+const LEARNING_SAMPLE_ROWS = 3;
+const LEARNING_CELL_LIMIT = 120;
+const LEARNING_MAX_HEADERS = 40;
+
+/**
+ * One fetch per header-set per session, keyed by the sorted normalized
+ * headers. The try page parses the same archive twice (preflight, then the
+ * indexing run); this is what keeps that to a single LLM call.
+ */
+const learnedMappings = new Map<string, Record<string, string>>();
+
+/** Test seam: reset the per-session cache. */
+export const clearLearnedMappingCache = () => learnedMappings.clear();
+
+const headerSetSignature = (headers: string[]) =>
+  [...headers].map(normalizeColumnName).sort().join('\n');
+
+const allAliasNames = new Set(
+  [...COLUMN_ALIASES, ...WEAK_ALIASES].flatMap(([, aliases]) => aliases)
+);
+
+/**
+ * Parse with a learned mapping merged in as highest-priority aliases.
+ * Learned entries naming canonical metadata fields claim their column before
+ * the deterministic aliases run; 'filename' and 'ignore' targets are skipped
+ * for the merge, with one fail-safe: a learned 'filename' column is used as
+ * the row key only when no deterministic alias identified one.
+ */
+const parseMetadataCsvWithMapping = (
+  text: string,
+  learned: Record<string, string>
+): Record<string, ItemMetadata> => {
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) return {};
+
+  const rawHeaders = rows[0]!;
+  const headers = rawHeaders.map(normalizeColumnName);
+
+  const targetFor = (rawHeader: string): string | undefined => {
+    const target = learned[rawHeader] ?? learned[rawHeader.trim()];
+    return typeof target === 'string' ? target.trim().toLowerCase() : undefined;
+  };
+
+  // Learned aliases first, in column order, so they outrank the tables below
+  // — but the row key comes first of all: if the learned mapping mislabels
+  // the filename column, the parse must not lose its keys entirely.
+  const learnedAliases: Array<[keyof ItemMetadata, string[]]> = [];
+  let learnedFilenameColumn: number | undefined;
+  rawHeaders.forEach((rawHeader, index) => {
+    const target = targetFor(rawHeader);
+    if (!target) return;
+    if (target === 'filename') {
+      learnedFilenameColumn ??= index;
+      return;
+    }
+    if (target === 'ignore' || !METADATA_FIELDS.has(target)) return;
+    learnedAliases.push([target as keyof ItemMetadata, [normalizeColumnName(rawHeader)]]);
+  });
+
+  const filenameEntries = [
+    ...COLUMN_ALIASES.filter(([field]) => field === 'filename'),
+    ...WEAK_ALIASES.filter(([field]) => field === 'filename'),
+  ];
+
+  const columnFor = new Map<keyof ItemMetadata | 'filename', number>();
+  for (const [field, aliases] of [
+    ...filenameEntries,
+    ...learnedAliases,
+    ...COLUMN_ALIASES,
+    ...WEAK_ALIASES,
+  ]) {
+    if (columnFor.has(field)) continue;
+    for (const alias of aliases) {
+      const index = headers.indexOf(alias);
+      // A column may only fill one role, so `name` cannot be both file and title.
+      if (index >= 0 && ![...columnFor.values()].includes(index)) {
+        columnFor.set(field, index);
+        break;
+      }
+    }
+  }
+
+  // A learned 'filename' target only becomes the row key when the aliases
+  // found nothing — 'filename' is deliberately skipped in the merge above.
+  let filenameColumn = columnFor.get('filename');
+  if (filenameColumn === undefined && learnedFilenameColumn !== undefined) {
+    filenameColumn = learnedFilenameColumn;
+  }
+  if (filenameColumn === undefined) return {};
+
+  const output: Record<string, ItemMetadata> = {};
+  for (const row of rows.slice(1)) {
+    const rawFilename = (row[filenameColumn] || '').trim();
+    if (!rawFilename) continue;
+
+    const metadata: ItemMetadata = {};
+    const read = (field: keyof ItemMetadata) => {
+      const index = columnFor.get(field);
+      const value = index === undefined ? '' : (row[index] || '').trim();
+      return value || undefined;
+    };
+
+    const title = read('title');
+    if (title) metadata.title = title;
+    const artist = read('artist');
+    if (artist) metadata.artist = artist;
+    const medium = read('medium');
+    if (medium) metadata.medium = medium;
+    const classification = read('classification');
+    if (classification) metadata.classification = classification;
+    const description = read('description');
+    if (description) metadata.description = description;
+    const creditLine = read('credit_line');
+    if (creditLine) metadata.credit_line = creditLine;
+    const accession = read('accession_number');
+    if (accession) metadata.accession_number = accession;
+
+    const rawYear = read('year');
+    if (rawYear) {
+      metadata.date_text = rawYear;
+      const year = firstYear(rawYear);
+      if (year !== undefined) metadata.year = year;
+    }
+
+    output[normalizeFilenameKey(rawFilename)] = metadata;
+  }
+
+  return output;
+};
+
+/**
+ * `parseMetadataCsv` plus an LLM fallback for the columns its aliases miss.
+ *
+ * The deterministic parse always runs first and is what the caller gets when
+ * nothing is learnable or the mapping cannot be fetched — this wrapper never
+ * throws and never fails an upload. Headers qualify for learning when no
+ * alias claims them and their values look like real data (a non-empty
+ * majority of rows); empty or junk columns are not worth an API call.
+ */
+export const parseMetadataCsvWithLearning = async (
+  text: string,
+  opts: { fetchMapping?: MappingFetcher } = {}
+): Promise<Record<string, ItemMetadata>> => {
+  const deterministic = parseMetadataCsv(text);
+  if (!opts.fetchMapping) return deterministic;
+
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) return deterministic;
+
+  const rawHeaders = rows[0]!;
+  if (rawHeaders.length > LEARNING_MAX_HEADERS) return deterministic;
+  const dataRows = rows.slice(1);
+
+  const learnable: string[] = [];
+  const learnableIndices: number[] = [];
+  const seen = new Set<string>();
+  rawHeaders.forEach((rawHeader, index) => {
+    const normalized = normalizeColumnName(rawHeader);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    if (allAliasNames.has(normalized)) return;
+    const nonEmpty = dataRows.filter(
+      (row) => (row[index] || '').trim() !== ''
+    ).length;
+    if (nonEmpty * 2 <= dataRows.length) return;
+    learnable.push(rawHeader.trim());
+    learnableIndices.push(index);
+  });
+
+  if (learnable.length === 0) return deterministic;
+
+  const signature = headerSetSignature(rawHeaders);
+  let learned = learnedMappings.get(signature);
+  if (!learned) {
+    const samples = dataRows
+      .slice(0, LEARNING_SAMPLE_ROWS)
+      .map((row) =>
+        learnableIndices.map(
+          (index) => (row[index] || '').trim().slice(0, LEARNING_CELL_LIMIT)
+        )
+      );
+    try {
+      learned = await opts.fetchMapping(learnable, samples);
+    } catch {
+      // No mapping is strictly worse metadata, never a lost archive.
+      return deterministic;
+    }
+    learnedMappings.set(signature, learned);
+  }
+
+  return parseMetadataCsvWithMapping(text, learned);
+};
+
+/**
+ * The production fetcher: POSTs the headers and sample rows to the anonymous
+ * metadata-map endpoint and unwraps its envelope. Any non-answer throws; the
+ * caller (parseMetadataCsvWithLearning) turns that into the deterministic
+ * parse.
+ */
+export const makeApiMappingFetcher = (baseUrl: string): MappingFetcher => {
+  const endpoint = `${baseUrl.replace(/\/+$/, '')}/api/public-index/metadata-map`;
+  return async (headers, samples) => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ headers, samples }),
+    });
+    if (!response.ok) {
+      throw new Error(`Metadata mapping failed with ${response.status}`);
+    }
+    const payload = (await response.json()) as {
+      success?: boolean;
+      data?: { mapping?: Record<string, string> };
+    };
+    if (!payload?.success || typeof payload.data?.mapping !== 'object') {
+      throw new Error('Metadata mapping response was malformed');
+    }
+    return payload.data.mapping;
+  };
+};
+
+const defaultMappingFetcher = makeApiMappingFetcher('');
+
+// ---------------------------------------------------------------------------
 // Zip reading
 // ---------------------------------------------------------------------------
 
@@ -324,8 +580,13 @@ export type ParsedZip = {
 /**
  * Read a zip's directory without decompressing its images. A malformed or
  * unreadable entry is reported and skipped rather than failing the archive.
+ * A CSV sidecar is parsed with the learned-header fallback unless the caller
+ * opts out by passing a fetchMapping of undefined explicitly.
  */
-export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
+export const parseIndexZip = async (
+  file: File | Blob,
+  opts: { fetchMapping?: MappingFetcher } = {}
+): Promise<ParsedZip> => {
   const zip = await JSZip.loadAsync(file);
   const images: ZipEntry[] = [];
   const skipped: Array<{ name: string; size: number }> = [];
@@ -345,7 +606,10 @@ export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
       const depth = entry.name.split('/').length;
       if (!csvName || depth < csvName.split('/').length) {
         try {
-          metadata = parseMetadataCsv(await entry.async('string'));
+          metadata = await parseMetadataCsvWithLearning(
+            await entry.async('string'),
+            { fetchMapping: opts.fetchMapping ?? defaultMappingFetcher }
+          );
           csvName = entry.name;
         } catch (error) {
           errors.push({
@@ -571,10 +835,10 @@ export async function indexZip(
   file: File,
   opts: IndexOptions
 ): Promise<IndexJobHandle> {
-  let parsed: ParsedZip;
-  try {
-    parsed = await parseIndexZip(file);
-  } catch (error) {
+    let parsed: ParsedZip;
+    try {
+      parsed = await parseIndexZip(file, { fetchMapping: opts.fetchMapping });
+    } catch (error) {
     throw new IndexingError(
       `That file could not be read as a zip archive: ${describeError(error)}`,
       'INVALID_ARCHIVE'
@@ -598,7 +862,12 @@ export async function indexFiles(
 
     if (extensionOf(name) === 'csv') {
       try {
-        metadata = { ...metadata, ...parseMetadataCsv(await readTextFile(file)) };
+        metadata = {
+          ...metadata,
+          ...(await parseMetadataCsvWithLearning(await readTextFile(file), {
+            fetchMapping: opts.fetchMapping ?? defaultMappingFetcher,
+          })),
+        };
       } catch {
         // An unreadable sidecar just means filename-derived titles.
       }
