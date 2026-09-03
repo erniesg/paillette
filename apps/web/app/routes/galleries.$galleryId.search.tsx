@@ -71,7 +71,8 @@ import {
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { AgentPrompt } from '~/components/webmcp/agent-prompt';
 import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
-import { recallArtworks } from '~/lib/webmcp/artwork-index';
+import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
+import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
 import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
@@ -1160,6 +1161,20 @@ export default function SearchPage() {
   const agentBoardNote = agentBoardResults
     ? (webmcpState.agentResults?.note ?? webmcpState.agentResults?.label ?? null)
     : null;
+
+  /**
+   * `show_artwork` is how an agent points at one work — "look at this one". It
+   * writes the focused artwork to the shared store, and `/try` renders it, but
+   * this page ignored it entirely: the call succeeded and nothing happened on
+   * screen. Open the page's own detail dialog instead of building a second one,
+   * so an agent pointing at a work lands exactly where a click would.
+   */
+  const focusedByAgent = webmcpState.focused;
+  useEffect(() => {
+    if (!focusedByAgent) return;
+    const artwork = recallArtwork(focusedByAgent.artwork.id);
+    if (artwork) setSelectedArtwork(artwork);
+  }, [focusedByAgent]);
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_PUBLIC_SEARCH_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
@@ -4677,9 +4692,20 @@ function SearchArtworkDialog({
                 </Dialog.Close>
               </div>
 
+              {/* A description is only assistive if it can be heard. The
+                  browser's own speech synthesis needs no agent and no account,
+                  so this works for the visitor who most needs it. */}
+              {(rootsDescriptionDetails || caption) && (
+                <SpeakButton
+                  className="mt-6"
+                  label="Read this aloud"
+                  text={caption || rootsDescriptionDetails?.text || ''}
+                />
+              )}
+
               {(rootsDescriptionDetails || caption) && (
                 <CaptionSourceToggle
-                  className="mt-6"
+                  className="mt-4"
                   rootsCaption={
                     rootsDescriptionDetails
                       ? {
