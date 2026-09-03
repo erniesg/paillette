@@ -9,7 +9,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlagBadge, useCardFlagProps } from '../flag-controls';
 import { __resetFlagsForTest, getFlag, setFlag } from '~/lib/webmcp/flags';
 import {
@@ -17,11 +17,22 @@ import {
   getWebMcpState,
 } from '~/lib/webmcp/store';
 
-const Card = ({ artworkId }: { artworkId: string }) => {
+// Shaped like the real card: the badge sits on top of a button that opens the
+// artwork, which is exactly what shift-click has to get past.
+const Card = ({
+  artworkId,
+  onOpen = () => {},
+}: {
+  artworkId: string;
+  onOpen?: () => void;
+}) => {
   const flagProps = useCardFlagProps(artworkId);
   return (
     <article {...flagProps} className="paillette-card">
       <FlagBadge artworkId={artworkId} title="Estuary at Dusk" />
+      <button type="button" onClick={onOpen}>
+        Open
+      </button>
     </article>
   );
 };
@@ -149,5 +160,39 @@ describe('useCardFlagProps', () => {
     await userEvent.unhover(first!);
 
     expect(getWebMcpState().hovered).toBe('b');
+  });
+
+  it('makes shift-click mean "and this one" instead of opening the work', () => {
+    const onOpen = vi.fn();
+    render(<Card artworkId="a" onOpen={onOpen} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }), {
+      shiftKey: true,
+    });
+
+    expect(getWebMcpState().selection).toEqual(['a']);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('leaves a plain click completely alone', async () => {
+    const onOpen = vi.fn();
+    render(<Card artworkId="a" onOpen={onOpen} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(getWebMcpState().selection).toEqual([]);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('marks the selection for whoever styles it', () => {
+    const { container } = render(<Card artworkId="a" />);
+    const card = container.querySelector('.paillette-card');
+    expect(card?.getAttribute('data-selected')).toBe('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }), {
+      shiftKey: true,
+    });
+
+    expect(card?.getAttribute('data-selected')).toBe('true');
   });
 });

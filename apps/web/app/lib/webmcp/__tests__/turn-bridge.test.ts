@@ -92,11 +92,16 @@ describe('withGestures', () => {
 
 describe('installTurnBridge', () => {
   const stubFetch = () => {
-    const spy = vi.fn(async () => new Response('{}'));
+    const spy = vi.fn<typeof globalThis.fetch>(async () => new Response('{}'));
     vi.stubGlobal('fetch', spy);
-    window.fetch = spy as unknown as typeof window.fetch;
+    window.fetch = spy;
     return spy;
   };
+
+  const sentBody = (
+    spy: ReturnType<typeof stubFetch>,
+    call: number
+  ): string => String((spy.mock.calls[call]?.[1] as RequestInit)?.body);
 
   it('rewrites only the agent turn route', async () => {
     const spy = stubFetch();
@@ -107,13 +112,13 @@ describe('installTurnBridge', () => {
       method: 'POST',
       body: body([user('warm')]),
     });
-    expect(parse(String(spy.mock.calls[0]?.[1]?.body)).turn).toBeUndefined();
+    expect(parse(sentBody(spy, 0)).turn).toBeUndefined();
 
     await window.fetch('/api/public-agent/turn', {
       method: 'POST',
       body: body([user('warm')]),
     });
-    expect(parse(String(spy.mock.calls[1]?.[1]?.body)).turn).toBeDefined();
+    expect(parse(sentBody(spy, 1)).turn).toBeDefined();
 
     dispose();
     expect(window.fetch).toBe(spy);
