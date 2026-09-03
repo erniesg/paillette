@@ -52,7 +52,6 @@ import {
   indexZip,
   searchIndexedCollection,
   IndexingError,
-  type IndexedSearchResult,
   type IndexJobHandle,
 } from '~/lib/indexing-client';
 import {
@@ -67,9 +66,12 @@ import {
   requestConfirmation,
   setAgentResults,
   setFocusedArtwork,
+  setIndexJob,
   getWebMcpState,
   type PageContext,
 } from './store';
+import { INDEX_CAPS } from './caps';
+import { toIndexedArtwork } from './indexed-artwork';
 import {
   addToShortlist,
   createShortlist,
@@ -682,6 +684,22 @@ const getViewContextTool = (context: ToolContext): WebMcpTool => ({
             artwork: state.focused.artwork,
           }
         : null,
+      // The human can index their own zip on /try without saying a word to the
+      // agent. Reporting the job here is how the agent finds out.
+      indexedCollection: state.indexJob
+        ? {
+            jobId: state.indexJob.jobId,
+            collectionId: state.indexJob.collectionId,
+            collectionName: state.indexJob.collectionName,
+            startedBy: state.indexJob.origin,
+            source: state.indexJob.source,
+            startedAt: new Date(state.indexJob.at).toISOString(),
+            hint:
+              state.indexJob.origin === 'human'
+                ? 'The human built this from their own files on this page. Call get_index_status with this jobId to read its progress, or pass a "query" to search what they just indexed.'
+                : 'You started this job. Call get_index_status with this jobId for progress, or pass a "query" to search it.',
+          }
+        : null,
       hint: state.humanResults
         ? 'Use lookup_artwork on any id above for the full record, or search_by_image with an id for visually similar works.'
         : 'The human has not run a search yet. set_results will start one in their grid.',
@@ -1066,15 +1084,6 @@ const addToCollectionTool = (): WebMcpTool => ({
  */
 const INDEX_SANDBOX_ORG = 'webmcp-index';
 
-/** Mirrors `INDEXING_CAPS` in `apps/api/src/routes/indexing.ts`. Stated, never hidden. */
-const INDEX_CAPS = {
-  maxImagesPerJob: 40,
-  maxImageBytes: INDEX_FILE_MAX_BYTES,
-  maxJobBytes: INDEX_ARCHIVE_MAX_BYTES,
-  maxJobsPerHour: 6,
-  imageTypes: ['jpeg', 'png', 'webp', 'gif', 'avif'],
-} as const;
-
 /** How long a job of this size realistically takes to become searchable. */
 const POLL_INTERVAL_MS = 2500;
 
@@ -1142,8 +1151,20 @@ const indexJobStarted = (
   collectionName: string,
   source: 'zip' | 'files',
   extra: ToolResult = {}
-): ToolResult =>
-  ok({
+): ToolResult => {
+  // Record it on the shared canvas so the human's page can show the job the
+  // agent just started, and so get_view_context can hand the jobId back later
+  // in the conversation without the model having to have kept it.
+  setIndexJob({
+    jobId: handle.jobId,
+    collectionId: handle.collectionId,
+    collectionName,
+    origin: 'agent',
+    source,
+    at: Date.now(),
+  });
+
+  return ok({
     jobId: handle.jobId,
     collectionId: handle.collectionId,
     collectionName,
@@ -1159,37 +1180,7 @@ const indexJobStarted = (
     },
     next: `Indexing is running in the background — this call did not wait for it. Poll get_index_status with jobId "${handle.jobId}" every ~${Math.round(POLL_INTERVAL_MS / 1000)}s until state is "complete". As soon as it reports searchable:true, pass a "query" to that same call to run semantic search over this collection; the ids it returns work with lookup_artwork, show_artwork and set_results, so you can put a freshly indexed image on the human's screen.`,
   });
-
-/**
- * Project an indexed hit into the same record the rest of the surface speaks,
- * so a work that existed only in the human's zip a minute ago is addressable
- * by every tool that already takes an artworkId.
- */
-const toIndexedArtwork = (
-  result: IndexedSearchResult,
-  collectionId: string,
-  collectionName: string
-): ArtworkSearchResult => ({
-  id: result.id,
-  galleryId: collectionId,
-  ...(result.title ? { title: result.title } : {}),
-  ...(result.artist ? { artist: result.artist } : {}),
-  ...(typeof result.year === 'number' ? { year: result.year } : {}),
-  imageUrl: result.imageUrl,
-  thumbnailUrl: result.imageUrl,
-  similarity: result.similarity,
-  metadata: {
-    ...(result.medium ? { medium: result.medium } : {}),
-    ...(result.classification ? { classification: result.classification } : {}),
-    ...(result.description ? { description: result.description } : {}),
-    ...(result.original_filename
-      ? { originalFilename: result.original_filename }
-      : {}),
-    // No sourceUrl or institution: these came from the human's own files, and
-    // inventing a citation for them would be a lie.
-    sourceCollection: collectionName,
-  },
-});
+};
 
 const indexZipTool = (): WebMcpTool => ({
   name: 'index_zip',

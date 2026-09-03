@@ -1,0 +1,17 @@
+{
+  "$comment": "Demo collections offered on /try. Add a dataset by copying its zip into this directory (keep it under ~20 MB — Cloudflare rejects static assets over 25 MiB) and appending an entry here. `path` may also be an absolute URL to a CORS-open host for larger archives. No app code needs to change.",
+  "version": 1,
+  "collections": [
+    {
+      "id": "nga-25-no-metadata",
+      "name": "25 works, no metadata",
+      "source": "National Gallery of Art, Washington",
+      "path": "/samples/sample-art-25-no-metadata.zip",
+      "imageCount": 25,
+      "hasMetadata": false,
+      "licence": "CC0 / NGA Open Access",
+      "bytes": 7629617,
+      "note": "Titles come from filenames — proof that a plain folder of images is enough."
+    }
+  ]
+}

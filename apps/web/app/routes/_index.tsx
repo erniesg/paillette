@@ -25,6 +25,12 @@ export default function Index() {
             <Logo size="md" />
             <nav className="flex items-center gap-4">
               <Link
+                to="/try"
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                Try it
+              </Link>
+              <Link
                 to="/collections"
                 className="text-neutral-400 hover:text-white transition-colors"
               >
@@ -85,17 +91,19 @@ export default function Index() {
               className="flex flex-col sm:flex-row gap-4 justify-center items-center"
             >
               <Link
-                to="/collections"
+                to="/try"
                 className="group relative px-8 py-4 bg-gradient-accent rounded-full font-semibold text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-primary-500/50"
               >
-                <span className="relative z-10">Get Started</span>
+                <span className="relative z-10">
+                  Index your own images — no account
+                </span>
               </Link>
-              <a
-                href="#features"
+              <Link
+                to="/collections"
                 className="px-8 py-4 border-2 border-primary-500/50 rounded-full font-semibold text-lg transition-all duration-300 hover:border-primary-400 hover:bg-primary-500/10"
               >
-                Explore Features
-              </a>
+                Browse collections
+              </Link>
             </motion.div>
           </motion.div>
         </div>

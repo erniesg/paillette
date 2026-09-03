@@ -35,6 +35,21 @@ export interface FocusedArtwork {
   at: number;
 }
 
+/**
+ * A collection built on this page from someone's own files — by the human on
+ * `/try`, or by the agent through `index_zip` / `index_folder`. Recording it
+ * here is what makes the two paths one canvas: whoever started the job, the
+ * other party can read it back out of `get_view_context` and poll or search it.
+ */
+export interface IndexJobHandleState {
+  jobId: string;
+  collectionId: string;
+  collectionName: string;
+  origin: ResultSetOrigin;
+  source: 'zip' | 'files';
+  at: number;
+}
+
 export interface PageContext {
   pathname: string;
   search: string;
@@ -76,6 +91,8 @@ export interface WebMcpState {
   /** The result set the agent last pushed onto the canvas. */
   agentResults: AgentResultSet | null;
   focused: FocusedArtwork | null;
+  /** The most recent indexing job started on this page, by either party. */
+  indexJob: IndexJobHandleState | null;
   activity: ActivityEntry[];
   pendingConfirmations: PendingConfirmation[];
   /** True once the bridge has registered tools with a real host. */
@@ -97,6 +114,7 @@ const initialState: WebMcpState = {
   humanResults: null,
   agentResults: null,
   focused: null,
+  indexJob: null,
   activity: [],
   pendingConfirmations: [],
   bridgeAttached: false,
@@ -147,6 +165,9 @@ export const setAgentResults = (results: AgentResultSet | null) =>
 
 export const setFocusedArtwork = (focused: FocusedArtwork | null) =>
   update({ focused });
+
+export const setIndexJob = (indexJob: IndexJobHandleState | null) =>
+  update({ indexJob });
 
 export const setBridgeAttached = (bridgeAttached: boolean) =>
   update({ bridgeAttached });
