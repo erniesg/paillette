@@ -20,19 +20,30 @@ type RecognitionInstance = {
 
 let recognitionInstance: RecognitionInstance | null = null;
 
+/** Hands the newest stub to the test. Kept out of the constructor body so the
+ *  instance is never aliased to a variable from inside itself. */
+const remember = (instance: RecognitionInstance) => {
+  recognitionInstance = instance;
+};
+
 const installRecognition = () => {
   recognitionInstance = null;
-  const Recognition = function (this: RecognitionInstance) {
-    this.lang = '';
-    this.interimResults = false;
-    this.continuous = false;
-    this.onresult = null;
-    this.onend = null;
-    this.onerror = null;
-    this.start = vi.fn();
-    this.stop = vi.fn();
-    recognitionInstance = this;
-  };
+  // Deliberately starts on the wrong settings, so a test asserting
+  // `interimResults` or `continuous` is reading what the component set rather
+  // than what the stub happened to default to.
+  class Recognition {
+    lang = '';
+    interimResults = false;
+    continuous = false;
+    onresult: RecognitionInstance['onresult'] = null;
+    onend: RecognitionInstance['onend'] = null;
+    onerror: RecognitionInstance['onerror'] = null;
+    start = vi.fn();
+    stop = vi.fn();
+    constructor() {
+      remember(this);
+    }
+  }
   (
     window as unknown as { webkitSpeechRecognition?: unknown }
   ).webkitSpeechRecognition = Recognition;
@@ -275,6 +286,30 @@ describe('AgentPrompt', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(field).toHaveValue('something warm');
     expect(screen.getByText(/Enter to send, Esc to discard/)).toBeInTheDocument();
+  });
+
+  it('takes Esc wherever focus is, because release does not move it', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const fetchMock = stubFetch();
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something warm', true);
+    release();
+    // Focus is on the mic control, not the field — the state a human is in
+    // immediately after speaking.
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    act(() => {
+      vi.advanceTimersByTime(GRACE_MS * 3);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(field).toHaveValue('');
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('discards the utterance on Esc, restoring what the field held', async () => {

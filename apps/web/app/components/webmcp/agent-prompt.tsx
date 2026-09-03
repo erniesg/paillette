@@ -183,6 +183,8 @@ export function AgentPrompt({
   const composedRef = useRef('');
   /** Released with nothing heard yet, briefly waiting for a late transcript. */
   const awaitingFlushRef = useRef(false);
+  /** `pendingVoice`, readable from the window key handler. */
+  const pendingVoiceRef = useRef(false);
   /** The page's voice, or null where the browser has none. */
   const speechRef = useRef<SpeechChannel | null>(null);
   const fieldRef = useRef<HTMLInputElement | null>(null);
@@ -225,7 +227,6 @@ export function AgentPrompt({
     []
   );
 
-  // eslint-disable-next-line max-params
   const run = useCallback(async (
     instruction: string,
     pointing: Resolution,
@@ -489,6 +490,7 @@ export function AgentPrompt({
   // as it stands now, not as it stood when the timer was armed.
   composedRef.current = composeUtterance(input, interim);
   commitRef.current = () => submit(composedRef.current);
+  pendingVoiceRef.current = pendingVoice;
 
   // While an utterance is waiting, keep the chips in step with the words —
   // including words the human retypes, which is the whole point of being able
@@ -543,6 +545,15 @@ export function AgentPrompt({
       !editable(event.target);
 
     const down = (event: KeyboardEvent) => {
+      // Esc has to reach a pending utterance wherever focus happens to be.
+      // Releasing the mic does not move focus into the field, so requiring a
+      // click first would mean the advertised way out did not work from the
+      // state the human is actually in. Not prevented: if something else on the
+      // page also treats Esc as "get me out of this", both are right.
+      if (event.key === 'Escape') {
+        if (pendingVoiceRef.current) discardUtterance();
+        return;
+      }
       if (!held(event)) return;
       // Space scrolls, and a page that jumps every time you speak is unusable.
       event.preventDefault();
@@ -564,7 +575,7 @@ export function AgentPrompt({
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', release);
     };
-  }, [startListening, stopListening]);
+  }, [discardUtterance, startListening, stopListening]);
 
   useEffect(
     () => () => {
