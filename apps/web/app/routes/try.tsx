@@ -44,6 +44,7 @@ import {
 } from '~/lib/demo-archives';
 import { INDEX_CAPS, megabytes } from '~/lib/webmcp/caps';
 import { toIndexedArtwork } from '~/lib/webmcp/indexed-artwork';
+import { getCollectionSuggestions } from '~/lib/webmcp/collection-suggestions';
 import { rememberArtworks } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { setHumanResults, setIndexJob } from '~/lib/webmcp/store';
@@ -347,6 +348,10 @@ export default function TryPaillette() {
   const canSearch =
     job !== null && (status?.searchable === true || processed > 0);
 
+  // Only a completed job has a fixed suggestion bundle — see get_index_status,
+  // the same field an agent reads for the same collection.
+  const suggestions = getCollectionSuggestions(status);
+
   // Rate measured on this job once it has produced anything; the published
   // estimate until then. Never shown as a countdown to zero — it is a guess
   // and reads as one.
@@ -590,6 +595,34 @@ export default function TryPaillette() {
                   {searching ? 'Searching…' : 'Search'}
                 </Button>
               </form>
+            )}
+
+            {suggestions && suggestions.suggestions.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Suggested searches —{' '}
+                  {suggestions.source === 'metadata'
+                    ? 'grounded in this collection’s catalogue metadata'
+                    : 'no metadata sidecar, so these come from filenames instead'}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {suggestions.suggestions.map((suggestion) => (
+                    <li key={suggestion.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(suggestion.query);
+                          void runSearch(suggestion.query);
+                        }}
+                        disabled={!canSearch || searching}
+                        className="rounded-full border border-neutral-700 bg-neutral-900/60 px-3 py-1 text-sm text-neutral-200 transition-colors hover:border-primary-500 hover:text-white disabled:opacity-50"
+                      >
+                        {suggestion.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             {!canSearch && running && (

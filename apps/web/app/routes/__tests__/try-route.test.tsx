@@ -85,6 +85,12 @@ const stubApi = (options: {
   manifest?: unknown | null;
   /** Hold the job in flight, so partial-result copy can be asserted. */
   stayRunning?: boolean;
+  /** Only ever returned once the job reports `complete`, like the real API. */
+  suggestions?: {
+    source: 'metadata' | 'filenames';
+    generatedAt: string;
+    suggestions: Array<{ id: string; type: string; label: string; query: string }>;
+  } | null;
 }) => {
   const stub: Stub = {
     jobBody: null,
@@ -161,6 +167,7 @@ const stubApi = (options: {
           errors: [{ file: 'readme.txt', message: 'Not an indexable image' }],
           notice: null,
           searchable: stub.processed > 0,
+          suggestions: stub.processed > 0 ? (options.suggestions ?? null) : null,
         },
       });
     }
@@ -320,6 +327,61 @@ describe('/try — anonymous indexing flow', () => {
       await screen.findByText(/search again in a moment/i)
     ).toBeInTheDocument();
     expect(screen.queryByText(/try a broader description/i)).toBeNull();
+  });
+
+  it('offers collection-specific suggested searches once indexing completes, and runs one on click', async () => {
+    const user = userEvent.setup();
+    const stub = stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      searchResults: [SEARCH_HIT],
+      suggestions: {
+        source: 'metadata',
+        generatedAt: '2026-09-03T00:00:00.000Z',
+        suggestions: [
+          {
+            id: 'artist:a-painter',
+            type: 'artist',
+            label: 'Works by A. Painter',
+            query: 'A. Painter',
+          },
+        ],
+      },
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    await waitFor(() => expect(stub.jobBody).not.toBeNull());
+
+    // Nothing suggested yet while the job is still running.
+    expect(
+      screen.queryByText(/suggested searches/i)
+    ).not.toBeInTheDocument();
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled());
+
+    // `canSearch` flips true from the upload's own progress callback, ahead of
+    // the next 2s status poll that actually carries `suggestions` — give that
+    // poll real time to land rather than the default 1s waitFor budget.
+    await waitFor(
+      () => expect(screen.getByText(/suggested searches/i)).toBeInTheDocument(),
+      { timeout: 3000 }
+    );
+    expect(
+      screen.getByText(/grounded in this collection.s catalogue metadata/i)
+    ).toBeInTheDocument();
+    const suggestionButton = screen.getByRole('button', {
+      name: 'Works by A. Painter',
+    });
+
+    await user.click(suggestionButton);
+
+    await waitFor(() => expect(stub.searchBody).not.toBeNull());
+    expect(stub.searchBody.query).toBe('A. Painter');
+    expect(await screen.findByText('wave 01')).toBeInTheDocument();
   });
 
   it('publishes the job and its results onto the shared canvas for the agent', async () => {

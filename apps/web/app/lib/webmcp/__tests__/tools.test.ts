@@ -999,6 +999,37 @@ describe('get_index_status', () => {
     expect(result.search.note).toBeUndefined();
   });
 
+  it('passes the collection-specific suggestions through to the agent once the job is done', async () => {
+    const suggestions = {
+      source: 'metadata' as const,
+      generatedAt: '2026-09-03T00:00:00.000Z',
+      suggestions: [
+        {
+          id: 'artist:hokusai',
+          type: 'artist' as const,
+          label: 'Works by Hokusai',
+          query: 'Hokusai',
+        },
+      ],
+    };
+    stubIndexingApi({
+      status: { state: 'complete', processed: 2, total: 2, suggestions },
+    });
+
+    const result = await call('get_index_status', { jobId: 'job-1' });
+    expect(result.suggestions).toEqual(suggestions);
+    expect(result.next).toContain('suggestions');
+  });
+
+  it('leaves suggestions null while a job is still running', async () => {
+    stubIndexingApi({
+      status: { state: 'running', processed: 1, total: 4, suggestions: null },
+    });
+
+    const result = await call('get_index_status', { jobId: 'job-1' });
+    expect(result.suggestions).toBeNull();
+  });
+
   it('does not search a job that has embedded nothing yet', async () => {
     const api = stubIndexingApi({
       status: { state: 'queued', processed: 0, total: 4, searchable: false },
