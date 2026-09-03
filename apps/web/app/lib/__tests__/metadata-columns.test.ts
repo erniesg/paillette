@@ -172,6 +172,56 @@ describe('synonym columns', () => {
     expect(mapping.needsReview).toBe(false);
   });
 
+  it('reads a Cleveland-shaped export, where the join is a bare id', () => {
+    const text = csv([
+      [
+        'id',
+        'accession_number',
+        'tombstone',
+        'title',
+        'title_in_original_language',
+        'series',
+        'creation_date',
+        'artists_tags',
+        'culture',
+        'technique',
+        'department',
+        'type',
+        'measurements',
+      ],
+      [
+        '135812',
+        '1958.427',
+        'Twilight in the Wilderness, 1860. Frederic Edwin Church (American, 1826-1900). Oil on fabric.',
+        'Twilight in the Wilderness',
+        '',
+        '',
+        '1860',
+        'Frederic Edwin Church',
+        'America',
+        'oil on fabric',
+        'American Painting and Sculpture',
+        'Painting',
+        '101.6 x 162.6 cm',
+      ],
+    ]);
+
+    const { items, mapping } = readMetadataCsv(text, {
+      knownFilenames: ['135812.jpg'],
+    });
+
+    expect(mapping.mapped.filename).toBe('id');
+    expect(items['135812.jpg']).toMatchObject({
+      title: 'Twilight in the Wilderness',
+      artist: 'Frederic Edwin Church',
+      medium: 'oil on fabric',
+      accession_number: '1958.427',
+      year: 1860,
+    });
+    // `type` is the closer word for classification than `department` is.
+    expect(mapping.mapped.classification).toBe('type');
+  });
+
   it('reads headers in another language', () => {
     const text = csv([
       ['Fichier', 'Titre', 'Auteur', 'Année', 'Technique'],
