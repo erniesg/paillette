@@ -18,6 +18,10 @@ import type {
 import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from '../utils/ngs-public-filter';
 import { getOrCreateQueryEmbedding } from '../utils/query-embedding-cache';
 import {
+  artworkMatchesIntentFilters,
+  resolveQueryIntent,
+} from '../utils/query-intent';
+import {
   PublicSearchColdMissRateLimitError,
   PublicSearchRequestRateLimitUnavailableError,
   enforcePublicSearchRequestRateLimit,
@@ -3232,7 +3236,28 @@ searchRoutes.post('/search/text', async (c) => {
       }
     };
     let resolvedFacet = facet;
+    // Zip-indexed collections — every scope that is not NGA or NGS public
+    // search — get an LLM query intent the way NGA gets parseNgaSearchIntent:
+    // natural language maps onto the collection's own metadata. A missing
+    // OPENAI_API_KEY or any resolution failure leaves the search exactly as
+    // it was before this feature.
+    const isIndexedCollectionSearch = !isNgaPublicSearch && !isNgsPublicSearch;
     const executeSearch = async (): Promise<SearchResponse> => {
+      const indexedIntent =
+        isIndexedCollectionSearch && orgId && !facet
+          ? await resolveQueryIntent(c.env, {
+              collectionId: orgId,
+              query,
+              signal: c.req.raw.signal,
+            })
+          : null;
+      const intentFilters =
+        indexedIntent && Object.keys(indexedIntent.filters).length > 0
+          ? indexedIntent.filters
+          : null;
+      // The embedding call runs against the rewrite; the original query still
+      // drives the exact-artist preflight and the result-cache identity.
+      const intentQuery = indexedIntent?.rewrittenQuery || retrievalQuery;
       const exactFreeTextArtist =
         ngaPlan?.mode !== 'relational' &&
         ngaPlan?.mode !== 'attribution' &&
@@ -3246,6 +3271,11 @@ searchRoutes.post('/search/text', async (c) => {
       resolvedFacet = exactFreeTextArtist ? 'artist' : facet;
       const retrievalTopK =
         ngaPlan?.mode === 'relational' ? MAX_SEARCH_RESULTS : topK;
+      // A filtered query fetches a wider candidate pool than the final
+      // page size so the JS post-filter still returns a full page.
+      const candidateTopK = intentFilters
+        ? Math.min(Math.max(topK, 30), MAX_SEARCH_RESULTS)
+        : retrievalTopK;
 
       const baseResults =
         ngaPlan?.mode === 'attribution' && ngaPlan.attribution
@@ -3278,22 +3308,27 @@ searchRoutes.post('/search/text', async (c) => {
                   c.env,
                   orgId,
                   provider,
-                  retrievalQuery,
-                  retrievalTopK,
+                  intentQuery,
+                  candidateTopK,
                   exactFreeTextArtist ? 'artist_exact' : undefined,
                   scheduleBackgroundWork,
                   degradedChannels,
                   structuredConstraints,
                   ngaPlan?.mode
                 );
-      const constrainedResults = structuredConstraints
+      const filteredResults = intentFilters
         ? baseResults.filter((result) =>
+            artworkMatchesIntentFilters(result, intentFilters)
+          )
+        : baseResults;
+      const constrainedResults = structuredConstraints
+        ? filteredResults.filter((result) =>
             searchResultMatchesStructuredConstraints(
               result,
               structuredConstraints
             )
           )
-        : baseResults;
+        : filteredResults;
       const enrichedResults = visualRefinement
         ? await rerankByVisualRefinement(
             c.env,
@@ -3330,7 +3365,18 @@ searchRoutes.post('/search/text', async (c) => {
                 }
               : {}),
           }
-        : undefined;
+        : indexedIntent
+          ? // Indexed collections surface the LLM intent in the same
+            // `interpretation` slot NGA uses. The wire format is plain JSON the
+            // WebMCP search_artworks tool passes through unchanged, so widening
+            // the NGA-typed response field locally is safe.
+            ({
+                parserVersion: 'llm-intent-v1',
+                filters: indexedIntent.filters,
+                rewrittenQuery: indexedIntent.rewrittenQuery,
+                rationale: indexedIntent.rationale,
+              } as unknown as SearchResponse['interpretation'])
+          : undefined;
 
       return {
         results: finalResults,

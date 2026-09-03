@@ -515,6 +515,16 @@ class FakeSearchDb {
       return this.ngaPublicSearchQuota as T;
     }
 
+    if (sql.includes('MIN(year) AS min_year')) {
+      const years = (this.rows as Array<{ year?: number | null }>)
+        .map((row) => row.year)
+        .filter((year): year is number => typeof year === 'number');
+      return {
+        min_year: years.length ? Math.min(...years) : null,
+        max_year: years.length ? Math.max(...years) : null,
+      } as T | null;
+    }
+
     if (sql.includes('FROM api_keys ak')) {
       return this.apiKeyRow as T | null;
     }
@@ -867,6 +877,32 @@ class FakeSearchDb {
           this.rows.filter((row) => ids.has(row.id))
         ),
       } as { success: boolean; results: T[] };
+    }
+
+    if (sql.includes('COUNT(*) AS count') && sql.includes('FROM artworks')) {
+      const column = sql.includes('trim(artist)')
+        ? 'artist'
+        : sql.includes('trim(medium)')
+          ? 'medium'
+          : 'classification';
+      const counts = new Map<string, { display: string; count: number }>();
+      for (const row of this.rows as Array<Record<string, unknown>>) {
+        const raw = row[column];
+        if (typeof raw !== 'string' || !raw.trim()) continue;
+        const key = raw.trim().toLowerCase();
+        const existing = counts.get(key);
+        if (existing) existing.count += 1;
+        else counts.set(key, { display: raw.trim(), count: 1 });
+      }
+      return {
+        success: true,
+        results: [...counts.values()]
+          .sort(
+            (a, b) => b.count - a.count || a.display.localeCompare(b.display)
+          )
+          .slice(0, 40)
+          .map(({ display, count }) => ({ value: display, count })),
+      } as unknown as { success: boolean; results: T[] };
     }
 
     return { success: true, results: [] as T[] };
@@ -5841,5 +5877,222 @@ describe('Search API auth and quota behavior', () => {
 
     expect(response.status).toBe(400);
     expect(payload.error.code).toBe('INVALID_SEARCH_CONSTRAINTS');
+  });
+});
+
+describe('indexed collection LLM query intent', () => {
+  const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
+  const INDEXED_ORG = 'webmcp-index';
+
+  const makeIndexedRow = (
+    overrides: Partial<typeof artworkRow>
+  ) =>
+    makeArtworkRow({
+      date_text: null,
+      ...overrides,
+    });
+
+  const openAiJsonResponse = (content: unknown, status = 200) =>
+    new Response(
+      JSON.stringify(
+        status === 200
+          ? { choices: [{ message: { content: JSON.stringify(content) } }] }
+          : { error: { message: 'OpenAI is down' } }
+      ),
+      { status, headers: { 'Content-Type': 'application/json' } }
+    );
+
+  const makeIntentEnv = (
+    db: FakeSearchDb,
+    overrides: Record<string, unknown> = {}
+  ) =>
+    ({
+      ...makeEnv(db),
+      OPENAI_API_KEY: 'test-openai-key',
+      CACHE: makeEmbeddingCache(),
+      ...overrides,
+    }) as Env;
+
+  let app: Hono<{ Bindings: Env }>;
+
+  beforeEach(() => {
+    resetPublicSearchColdMissRateLimitForTests();
+    app = makeApp();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rewrites the query, post-filters by the resolved filters, and surfaces the interpretation', async () => {
+    const db = new FakeSearchDb([
+      makeIndexedRow({
+        id: 'corot-1865',
+        title: 'Forest Clearing',
+        artist: 'Jean-Baptiste-Camille Corot',
+        year: 1865,
+        medium: 'oil on canvas',
+        classification: 'Painting',
+      }),
+      makeIndexedRow({
+        id: 'corot-1875',
+        title: 'Later Pond',
+        artist: 'Jean-Baptiste-Camille Corot',
+        year: 1875,
+        medium: 'oil on canvas',
+        classification: 'Painting',
+      }),
+      makeIndexedRow({
+        id: 'millet-1861',
+        title: 'The Sower',
+        artist: 'Jean-Francois Millet',
+        year: 1861,
+        medium: 'oil on canvas',
+        classification: 'Painting',
+      }),
+    ]);
+    const env = makeIntentEnv(db);
+    const fetchMock = vi.fn(async (input: unknown) =>
+      String(input).startsWith(OPENAI_CHAT_URL)
+        ? openAiJsonResponse({
+            rewrittenQuery: 'oil sketches',
+            filters: {
+              artist: 'Jean-Baptiste-Camille Corot',
+              yearFrom: 1860,
+              yearTo: 1869,
+            },
+            rationale: 'Artist and decade extracted.',
+          })
+        : new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), {
+            status: 200,
+          })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'corot oil sketches from the 1860s', topK: 10 },
+      INDEXED_ORG
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((result: any) => result.id)).toEqual([
+      'corot-1865',
+    ]);
+    expect(payload.data.interpretation).toEqual({
+      parserVersion: 'llm-intent-v1',
+      filters: {
+        artist: 'Jean-Baptiste-Camille Corot',
+        yearFrom: 1860,
+        yearTo: 1869,
+      },
+      rewrittenQuery: 'oil sketches',
+      rationale: 'Artist and decade extracted.',
+    });
+    // Retrieval ran against the rewritten query, not the raw one.
+    expect(db.metadataSearchParams[0]?.[0]).toBe('oil sketches');
+  });
+
+  it('degrades to the unfiltered search and omits the interpretation when OpenAI fails', async () => {
+    const db = new FakeSearchDb([
+      makeIndexedRow({
+        id: 'corot-1865',
+        artist: 'Jean-Baptiste-Camille Corot',
+        year: 1865,
+        classification: 'Painting',
+      }),
+      makeIndexedRow({
+        id: 'millet-1861',
+        artist: 'Jean-Francois Millet',
+        year: 1861,
+        classification: 'Painting',
+      }),
+    ]);
+    const env = makeIntentEnv(db);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => openAiJsonResponse({}, 500))
+    );
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'corot oil sketches from the 1860s', topK: 10 },
+      INDEXED_ORG
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results.map((result: any) => result.id).sort()).toEqual(
+      ['corot-1865', 'millet-1861']
+    );
+    expect(payload.data.interpretation).toBeUndefined();
+  });
+
+  it('skips intent resolution entirely when no OpenAI key is configured', async () => {
+    const db = new FakeSearchDb([
+      makeIndexedRow({
+        id: 'corot-1865',
+        artist: 'Jean-Baptiste-Camille Corot',
+        year: 1865,
+        classification: 'Painting',
+      }),
+    ]);
+    const env = makeIntentEnv(db, { OPENAI_API_KEY: undefined });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await textSearch(
+      app,
+      env,
+      { 'X-User-Id': 'user-1' },
+      { query: 'corot oil sketches from the 1860s', topK: 10 },
+      INDEXED_ORG
+    );
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(payload.data.results).toHaveLength(1);
+    expect(payload.data.interpretation).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reuses the cached intent so an identical query costs no second OpenAI call', async () => {
+    const db = new FakeSearchDb([
+      makeIndexedRow({
+        id: 'corot-1865',
+        artist: 'Jean-Baptiste-Camille Corot',
+        year: 1865,
+        classification: 'Painting',
+      }),
+    ]);
+    const env = makeIntentEnv(db);
+    const fetchMock = vi.fn(async (input: unknown) =>
+      String(input).startsWith(OPENAI_CHAT_URL)
+        ? openAiJsonResponse({
+            rewrittenQuery: 'corot oil sketches from the 1860s',
+            filters: { artist: 'Jean-Baptiste-Camille Corot' },
+            rationale: 'Artist extracted.',
+          })
+        : new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), {
+            status: 200,
+          })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const body = { query: 'corot oil sketches from the 1860s', topK: 10 };
+    const first = await textSearch(app, env, { 'X-User-Id': 'user-1' }, body, INDEXED_ORG);
+    const second = await textSearch(app, env, { 'X-User-Id': 'user-1' }, body, INDEXED_ORG);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const openAiCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).startsWith(OPENAI_CHAT_URL)
+    );
+    expect(openAiCalls).toHaveLength(1);
   });
 });
