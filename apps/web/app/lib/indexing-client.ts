@@ -691,14 +691,25 @@ const startJob = async (
 // Public API
 // ---------------------------------------------------------------------------
 
+/**
+ * How many of *these images* ended up with a record — not how many rows
+ * matched something, which is the same number until a sidecar has duplicate
+ * or surplus rows, and a misleading one after that.
+ */
+const countMatchedImages = (
+  names: string[],
+  metadata: Record<string, ItemMetadata>
+) => names.filter((name) => metadata[normalizeFilenameKey(name)]).length;
+
 const summarize = (
   file: string | null,
-  sidecar: MetadataSidecar | null
+  mapping: MetadataMappingReport | null,
+  matchedImages: number
 ): JobMetadataSummary => ({
   file,
-  rows: sidecar?.mapping.rowCount ?? 0,
-  matchedImages: sidecar?.matchedRows ?? 0,
-  mapping: sidecar?.mapping ?? noSidecarReport(),
+  rows: mapping?.rowCount ?? 0,
+  matchedImages,
+  mapping: mapping ?? noSidecarReport(),
 });
 
 /**
@@ -726,19 +737,17 @@ export async function inspectZipMetadata(
     );
   }
 
-  const matched = parsed.images.filter(
-    (entry) => parsed.metadata[normalizeFilenameKey(entry.name)]
-  ).length;
-
   return {
     images: parsed.images.length,
     skipped: parsed.skipped,
-    metadata: {
-      file: parsed.metadataFile,
-      rows: parsed.mapping.rowCount,
-      matchedImages: matched,
-      mapping: parsed.mapping,
-    },
+    metadata: summarize(
+      parsed.metadataFile,
+      parsed.mapping,
+      countMatchedImages(
+        parsed.images.map((entry) => entry.name),
+        parsed.metadata
+      )
+    ),
     // What the mapping actually produces, which is the only thing a human can
     // judge it by. A wrong column is obvious the moment you read three titles.
     sampleTitles: parsed.images.slice(0, 5).map((entry) => {
@@ -769,16 +778,21 @@ export async function indexZip(
     );
   }
 
-  const matched = parsed.images.filter(
-    (entry) => parsed.metadata[normalizeFilenameKey(entry.name)]
-  ).length;
-
-  return startJob(parsed.images, parsed.skipped, parsed.metadata, opts, 'zip', {
-    file: parsed.metadataFile,
-    rows: parsed.mapping.rowCount,
-    matchedImages: matched,
-    mapping: parsed.mapping,
-  });
+  return startJob(
+    parsed.images,
+    parsed.skipped,
+    parsed.metadata,
+    opts,
+    'zip',
+    summarize(
+      parsed.metadataFile,
+      parsed.mapping,
+      countMatchedImages(
+        parsed.images.map((entry) => entry.name),
+        parsed.metadata
+      )
+    )
+  );
 }
 
 /** `index_folder`: the agent supplies a file list; same batch path. */
@@ -834,7 +848,14 @@ export async function indexFiles(
     metadata,
     opts,
     'files',
-    summarize(best?.name ?? null, best?.sidecar ?? null)
+    summarize(
+      best?.name ?? null,
+      best?.sidecar.mapping ?? null,
+      countMatchedImages(
+        images.map((entry) => entry.name),
+        metadata
+      )
+    )
   );
 }
 
