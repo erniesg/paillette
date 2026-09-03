@@ -68,6 +68,8 @@ export interface Env {
   EXTRACT_FREE_LIFETIME_LIMIT?: string;
   FAL_KEY?: string;
   JINA_API_KEY?: string;
+  /** Daily cap on OpenAI calls across the mapper, interpreter and captioner. */
+  OPENAI_DAILY_CALL_LIMIT?: string;
   JINA_MULTIMODAL_MODEL?: string;
   JINA_EMBEDDING_DIMENSIONS?: string;
   CAPTION_VECTOR_SEARCH_ENABLED?: string;

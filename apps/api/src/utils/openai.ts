@@ -25,13 +25,72 @@ export type OpenAiImagePart = {
   image_url: { url: string };
 };
 
+/**
+ * One global daily budget for the shared OPENAI_API_KEY across all three
+ * callers (header mapping, query intent, captioning). Per-IP rate limits
+ * bound one visitor; this bounds everyone. KV counters are best-effort —
+ * concurrent increments can race, so the cap is approximate, which is the
+ * right trade for a cost ceiling that must never become a hard outage.
+ */
+export const DEFAULT_OPENAI_DAILY_CALL_LIMIT = 500;
+
+export const openaiQuotaKey = (now: Date = new Date()): string =>
+  `openai-quota:v1:${now.toISOString().slice(0, 10)}`;
+
+export const readOpenAiQuota = async (
+  env: OpenAiQuotaEnv,
+  now: Date = new Date()
+): Promise<{ limit: number; used: number } | null> => {
+  if (!env.CACHE) return null;
+  const limit = parseLimit(env);
+  try {
+    const raw = await env.CACHE.get(openaiQuotaKey(now));
+    return { limit, used: raw ? parseInt(raw, 10) || 0 : 0 };
+  } catch {
+    return null;
+  }
+};
+
+const parseLimit = (env: OpenAiQuotaEnv): number => {
+  const parsed = parseInt(env.OPENAI_DAILY_CALL_LIMIT ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_OPENAI_DAILY_CALL_LIMIT;
+};
+
+/** Returns false only when this call would exceed the daily budget. */
+const consumeQuota = async (env: OpenAiQuotaEnv): Promise<boolean> => {
+  if (!env.CACHE) return true;
+  const key = openaiQuotaKey();
+  try {
+    const raw = await env.CACHE.get(key);
+    const used = raw ? parseInt(raw, 10) || 0 : 0;
+    if (used >= parseLimit(env)) {
+      return false;
+    }
+    await env.CACHE.put(key, String(used + 1), { expirationTtl: 48 * 3600 });
+    return true;
+  } catch {
+    return true;
+  }
+};
+
 export type OpenAiMessage = {
   role: 'system' | 'user';
   content: string | Array<OpenAiTextPart | OpenAiImagePart>;
 };
 
+export type OpenAiQuotaEnv = {
+  OPENAI_API_KEY?: string;
+  OPENAI_DAILY_CALL_LIMIT?: string;
+  /** KV namespace for the shared daily counter. Optional: without it the
+   * daily cap cannot be enforced, so calls are allowed (matching the
+   * best-effort philosophy of the per-IP anonymous limiters). */
+  CACHE?: KVNamespace;
+};
+
 export type OpenAiCompletionOptions = {
-  env: { OPENAI_API_KEY?: string };
+  env: OpenAiQuotaEnv;
   messages: OpenAiMessage[];
   /** Ask for strict JSON output; the parsed object is returned directly. */
   json?: boolean;
@@ -51,6 +110,13 @@ export const openaiCompletion = async (
   const apiKey = options.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new OpenAiUnavailableError('OPENAI_API_KEY is not configured');
+  }
+
+  if (!(await consumeQuota(options.env))) {
+    throw new OpenAiUnavailableError(
+      'The shared OpenAI daily budget for this site is exhausted',
+      429
+    );
   }
 
   const response = await fetch(OPENAI_CHAT_URL, {
