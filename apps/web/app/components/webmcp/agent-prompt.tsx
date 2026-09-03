@@ -29,6 +29,7 @@ import {
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
+import { useWebMcpState } from './use-webmcp-state';
 
 /**
  * An agent, in the page, for visitors who did not bring one.
@@ -191,9 +192,15 @@ export function AgentPrompt({
   /** How far the input has scrolled its own text, for the mirror to match. */
   const [scrollLeft, setScrollLeft] = useState(0);
 
+  // The bridge installs `document.modelContext` after this component has
+  // already mounted, so a one-shot check at mount lost the race every time and
+  // the bar never appeared at all. `bridgeAttached` is the store flag the
+  // bridge sets once its tools are registered; subscribing to it is the
+  // difference between a bar that exists and one that does not.
+  const bridgeAttached = useWebMcpState().bridgeAttached;
   useEffect(() => {
     setAvailable(Boolean(getModelContext()));
-  }, []);
+  }, [bridgeAttached]);
 
   useEffect(() => {
     speechRef.current = createSpeechChannel();
