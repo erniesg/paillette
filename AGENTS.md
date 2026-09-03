@@ -15,7 +15,7 @@ Agent operating contract for `paillette`.
 
 | Lane | Use For | Runner | Evidence |
 |---|---|---|---|
-| portable | repo-only code/docs/tests | Codex/Claude/GitHub Actions | `.agent/evidence/*/manifest.json` |
+| portable | repo-only code/docs/tests | local checkout or GitHub Actions | `.agent/evidence/*/manifest.json` |
 | trusted-vm | browser sessions, subscriptions, private local tools | VM/self-hosted runner | screenshots/session logs/manifest |
 | deploy | previews/releases | CI/CD provider | deploy logs/preview URL |
 | sandbox | untrusted experiments/evals | disposable sandbox | logs/manifest |

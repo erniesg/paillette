@@ -276,7 +276,7 @@ After completing Phase 0-2, the project shifted to a sprint-based approach focus
 - Frontend render: <100ms for search results
 
 **Pull Requests**:
-- Merged from: `origin/claude/sprint-2-work-011CV3CpY6JKm5TqJd6Lw1P2`
+- Merged from the sprint 2 feature branch.
 
 **Package**: `packages/color-extraction`
 
@@ -344,7 +344,7 @@ After completing Phase 0-2, the project shifted to a sprint-based approach focus
 - Total load time: <1s for 500 artworks
 
 **Pull Requests**:
-- Sprint 5 implementation merged to `claude/sprint-work-011CV3HXPmbCHK4SiUg3omK4`
+- Sprint 5 implementation merged from the sprint 5 feature branch.
 
 **Package**: `apps/web/app/lib/dimensionality-reduction.ts`
 
@@ -579,5 +579,5 @@ a18f3ec feat: add comprehensive sprint plan and implement CSV metadata parser (#
 
 ---
 
-**Last Reviewed**: 2025-11-12 by Claude Code
+**Last Reviewed**: 2025-11-12
 **Next Review**: After Sprint 2 completion or production deployment

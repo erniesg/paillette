@@ -14,7 +14,7 @@ Required secret/env names for deploy contexts:
 - `cloudflare`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
 
 Required secret/env names for the Rucksack control plane:
-- `github repository`: `OPENAI_API_KEY` if the issue-ledger planner or `codex-action` provider is enabled.
+- `github repository`: a provider API key if the issue-ledger planner or a hosted build provider is enabled.
 - `github environment/staging`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `RUCKSACK_APP_ENV` when staging deploy lanes are enabled.
 - `github environment/production`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `RUCKSACK_APP_ENV` when production deploy lanes are enabled.
 
@@ -31,7 +31,7 @@ Storage policy:
 - Keep generated images, SQLite ledgers, vectors, captions, manifests, screenshots, and traces in `tmp/`, GitHub artifacts, or R2; do not commit them.
 
 VM/local-only auth:
-- Codex or Claude subscription login for long-running coding-agent sessions on the trusted VM.
+- Coding-agent subscription login for long-running sessions on the trusted VM.
 - Wrangler browser login may be used interactively on the VM; CI/deploy lanes should use scoped Cloudflare API tokens.
 
 Common account bootstrap checks:

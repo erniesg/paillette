@@ -27,12 +27,12 @@ Issue specs may include optional top-level metadata immediately under the
 `# Title`:
 
 ```yaml
-provider: claude
 depends-on: 001,002
 ```
 
-`provider` routes one issue to `codex-action`, `vm-codex`, or `claude` while
-unmarked issues use the repo default. `depends-on` keeps an issue queued until
+An optional `provider` key routes one issue to a specific build provider; the
+accepted values are the ones declared by `.github/workflows/rucksack-build.yml`,
+and unmarked issues use the repo default. `depends-on` keeps an issue queued until
 each dependency is closed or labeled `rucksack-awaiting-review`; dependency
 cycles are rejected when specs are seeded.
 
@@ -57,5 +57,5 @@ the repository without a separate database.
 | `rucksack-awaiting-review` | PR/evidence is ready for review. |
 
 The installed `.github/workflows/rucksack-ledger.yml` workflow can refresh this
-directory from repo context through the Codex app-server planner, seed/update
+directory from repo context through the issue-ledger planner, seed/update
 GitHub issues, and open a review PR for changed specs.
