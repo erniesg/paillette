@@ -19,16 +19,19 @@ let recognitionInstance: RecognitionInstance | null = null;
 
 const installRecognition = () => {
   recognitionInstance = null;
-  const Recognition = function (this: RecognitionInstance) {
-    this.lang = '';
-    this.interimResults = false;
-    this.continuous = true;
-    this.onresult = null;
-    this.onend = null;
-    this.onerror = null;
-    this.start = vi.fn();
-    this.stop = vi.fn();
-    recognitionInstance = this;
+  const Recognition = function () {
+    const instance: RecognitionInstance = {
+      lang: '',
+      interimResults: false,
+      continuous: true,
+      onresult: null,
+      onend: null,
+      onerror: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+    recognitionInstance = instance;
+    return instance;
   };
   (
     window as unknown as { webkitSpeechRecognition?: unknown }
