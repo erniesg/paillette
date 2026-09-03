@@ -16,10 +16,10 @@
  *   1. HEADER  — score every (column, field) pair against a wide alias list
  *                and assign greedily. Handles exact names, synonyms, museum
  *                phrasings, camelCase and a handful of non-English headers.
- *   2. CONTENT — for roles still empty, read 2-3 sample values and infer from
- *                what is *in* the column: values ending in `.jpg` that match
- *                real archive entries are the filename column; values that are
- *                just a date are the year column; and so on.
+ *   2. CONTENT — for roles still empty, infer from what is *in* the column
+ *                (a sample of its rows, not the whole file): values that name
+ *                images this archive actually holds are the filename column;
+ *                values that are nothing but a date are the year; and so on.
  *   3. SUPPLIED — an explicit `column -> field` map from the caller overrides
  *                both. This is the path an agent uses after it has looked at
  *                the unmapped headers and the sample rows this module hands
