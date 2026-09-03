@@ -52,6 +52,7 @@ import {
   indexFiles,
   indexZip,
   searchIndexedCollection,
+  searchIndexedCollectionByImage,
   IndexingError,
   type IndexJobHandle,
 } from '~/lib/indexing-client';
@@ -169,6 +170,44 @@ const capture = (results: ArtworkSearchResult[]) => {
   return results.map(toAgentArtworkSummary);
 };
 
+/**
+ * Which collection a search should actually run against.
+ *
+ * `/try` exists so a visitor can build a collection from their own zip, and
+ * while they are looking at it "show me stormy seascapes" means *that*
+ * collection — not the published NGA catalogue the tools default to. Reading
+ * the live index job off the shared store is what makes the agent's search and
+ * the human's grid the same collection.
+ *
+ * An explicitly named public collection always wins, so an agent can still
+ * reach the published catalogue from `/try` by naming it.
+ */
+export type SearchTarget =
+  | { kind: 'public'; collectionId: string }
+  | {
+      kind: 'indexed';
+      jobId: string;
+      collectionId: string;
+      collectionName: string;
+    };
+
+export const resolveSearchTarget = (collection: unknown): SearchTarget => {
+  const named = getPublicCollection(collection);
+  if (named) return { kind: 'public', collectionId: named.id };
+
+  const job = getWebMcpState().indexJob;
+  if (job) {
+    return {
+      kind: 'indexed',
+      jobId: job.jobId,
+      collectionId: job.collectionId,
+      collectionName: job.collectionName,
+    };
+  }
+
+  return { kind: 'public', collectionId: DEFAULT_PUBLIC_COLLECTION_ID };
+};
+
 const searchPathFor = (collectionId: string) =>
   getPublicCollection(collectionId)?.searchPath ?? '/nga/search';
 
@@ -240,9 +279,39 @@ const searchArtworksTool = (): WebMcpTool => ({
       if (!query) {
         return fail('INVALID_INPUT', 'query must be a non-empty string.');
       }
-      const collectionId = resolveCollectionId(
+      const target = resolveSearchTarget(
         (input as { collection?: unknown }).collection
       );
+      const topK = clampInt((input as { topK?: unknown }).topK, 1, 100, 30);
+
+      // A collection built on this page is searched through its job, which is
+      // the only route scoped to it — the public-search routes serve published
+      // collections and reject the anonymous indexing sandbox by design.
+      if (target.kind === 'indexed') {
+        const response = await searchIndexedCollection(target.jobId, query, {
+          topK: Math.min(topK, 50),
+          signal: options.signal,
+        });
+        const artworks = response.results.map((result) =>
+          toIndexedArtwork(
+            result,
+            response.collectionId,
+            target.collectionName
+          )
+        );
+        return ok({
+          collection: target.collectionName,
+          collectionId: response.collectionId,
+          indexed: true,
+          query,
+          count: artworks.length,
+          interpretation: response.interpretation ?? null,
+          results: capture(artworks),
+          next: 'Call set_results with this query to put the same results into the human’s grid, or show_artwork with one id to open it on their screen.',
+        });
+      }
+
+      const collectionId = target.collectionId;
       const facetInput = asString((input as { facet?: unknown }).facet);
       const facet =
         facetInput === 'artist' || facetInput === 'classification'
@@ -252,7 +321,7 @@ const searchArtworksTool = (): WebMcpTool => ({
       const response = await searchTextPublic({
         collectionId,
         query,
-        topK: clampInt((input as { topK?: unknown }).topK, 1, 100, 30),
+        topK,
         minScore: clampNumber(
           (input as { minScore?: unknown }).minScore,
           0,
@@ -316,9 +385,10 @@ const searchByImageTool = (): WebMcpTool => ({
     guard(async () => {
       const artworkId = asString((input as { artworkId?: unknown }).artworkId);
       const imageUrl = asString((input as { imageUrl?: unknown }).imageUrl);
-      const collectionId = resolveCollectionId(
+      const target = resolveSearchTarget(
         (input as { collection?: unknown }).collection
       );
+      const collectionId = target.collectionId;
 
       let sourceUrl = imageUrl;
       if (artworkId) {
@@ -350,16 +420,44 @@ const searchByImageTool = (): WebMcpTool => ({
       }
 
       const image = await loadImageBlob(sourceUrl, options.signal);
+      const topK = clampInt((input as { topK?: unknown }).topK, 1, 100, 30);
+      const minScore = clampNumber(
+        (input as { minScore?: unknown }).minScore,
+        0,
+        1,
+        0.3
+      );
+
+      // Same split as search_artworks: a collection built on this page is
+      // reachable only through its own job route.
+      if (target.kind === 'indexed') {
+        const response = await searchIndexedCollectionByImage(
+          target.jobId,
+          image,
+          { topK: Math.min(topK, 50), minScore, signal: options.signal }
+        );
+        const artworks = response.results.map((result) =>
+          toIndexedArtwork(result, response.collectionId, target.collectionName)
+        );
+        const results = capture(artworks).filter(
+          (result) => result.id !== artworkId
+        );
+        return ok({
+          collection: target.collectionName,
+          collectionId: response.collectionId,
+          indexed: true,
+          queriedWith: artworkId ? { artworkId } : { imageUrl: sourceUrl },
+          count: results.length,
+          results,
+          next: 'Call set_results with these ids to put them on the human’s screen, or show_artwork with one to open it.',
+        });
+      }
+
       const response = await searchImagePublic({
         collectionId,
         image,
-        topK: clampInt((input as { topK?: unknown }).topK, 1, 100, 30),
-        minScore: clampNumber(
-          (input as { minScore?: unknown }).minScore,
-          0,
-          1,
-          0.3
-        ),
+        topK,
+        minScore,
         signal: options.signal,
       });
 
@@ -857,9 +955,10 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
       const note = asString((input as { note?: unknown }).note);
       const facet = asString((input as { facet?: unknown }).facet);
       const colour = resolveColour((input as { colour?: unknown }).colour);
-      const collectionId = resolveCollectionId(
+      const target = resolveSearchTarget(
         (input as { collection?: unknown }).collection
       );
+      const collectionId = target.collectionId;
       const rawIds = Array.isArray((input as { artworkIds?: unknown }).artworkIds)
         ? ((input as { artworkIds: unknown[] }).artworkIds
             .map(asString)
@@ -897,19 +996,47 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
       }
 
       if (query || colour) {
-        const params = new URLSearchParams();
-        if (query) params.set('q', query);
-        if (facet === 'artist' || facet === 'classification') {
-          params.set('field', facet);
+        if (target.kind === 'indexed') {
+          // A collection built on this page has no URL-driven search page to
+          // navigate to — it lives in this tab, and navigating away would
+          // discard it. Run the search and push it onto the shared canvas,
+          // which is what /try renders.
+          const response = await searchIndexedCollection(target.jobId, query, {
+            topK: 30,
+          });
+          const artworks = response.results.map((result) =>
+            toIndexedArtwork(
+              result,
+              response.collectionId,
+              target.collectionName
+            )
+          );
+          rememberArtworks(artworks);
+          setAgentResults({
+            origin: 'agent',
+            label: note || `search “${query}” in ${target.collectionName}`,
+            ...(note ? { note } : {}),
+            items: artworks.map(toAgentArtworkSummary),
+            at: Date.now(),
+          });
+          outcome.searched = query;
+          outcome.shown = artworks.length;
+          outcome.humanGrid = `The human’s grid on this page is now showing ${artworks.length} results from the collection they indexed here.`;
+        } else {
+          const params = new URLSearchParams();
+          if (query) params.set('q', query);
+          if (facet === 'artist' || facet === 'classification') {
+            params.set('field', facet);
+          }
+          if (colour) params.set('colour', colour.selection);
+          const destination = `${searchPathFor(collectionId)}?${params.toString()}`;
+          // Client-side navigation: the search page is URL-driven, so this is
+          // the same code path as the human typing in the box.
+          context.navigate(destination);
+          outcome.navigatedTo = destination;
+          outcome.humanGrid =
+            'The human’s grid is now running this search. Their results will differ from a topK-limited tool call — the page uses its own paging.';
         }
-        if (colour) params.set('colour', colour.selection);
-        const target = `${searchPathFor(collectionId)}?${params.toString()}`;
-        // Client-side navigation: the search page is URL-driven, so this is
-        // the same code path as the human typing in the box.
-        context.navigate(target);
-        outcome.navigatedTo = target;
-        outcome.humanGrid =
-          'The human’s grid is now running this search. Their results will differ from a topK-limited tool call — the page uses its own paging.';
       }
 
       return ok({

@@ -1332,6 +1332,69 @@ indexing.get('/jobs/:jobId', async (c) => {
  * proof that a zip became searchable: same Vectorize index, same embedding
  * space as the rest of Paillette, filtered to the new collection.
  */
+/**
+ * Turn Vectorize matches into the artwork records both indexed-collection
+ * search routes return. Vector rank order is preserved; a match whose row has
+ * since been deleted simply drops out.
+ */
+const hydrateIndexedMatches = async (
+  db: D1Database,
+  matches: Array<{ id: string; score: number }>
+) => {
+  if (matches.length === 0) return [];
+
+  const placeholders = matches.map(() => '?').join(',');
+  const { results: rows } = await db
+    .prepare(
+      `SELECT id, title, artist, year, date_text, medium, classification,
+              description, original_filename, image_url, custom_metadata
+       FROM artworks
+       WHERE org_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`
+    )
+    .bind(WEBMCP_INDEX_ORG_ID, ...matches.map((match) => match.id))
+    .all<{
+      id: string;
+      title: string;
+      artist: string | null;
+      year: number | null;
+      date_text: string | null;
+      medium: string | null;
+      classification: string | null;
+      description: string | null;
+      original_filename: string | null;
+      image_url: string | null;
+      custom_metadata: string | null;
+    }>();
+
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  return matches
+    .map((match) => {
+      const row = rowsById.get(match.id);
+      if (!row) return null;
+      let assetId: string | null = null;
+      try {
+        assetId = JSON.parse(row.custom_metadata || '{}')?.assetId ?? null;
+      } catch {
+        assetId = null;
+      }
+      return {
+        id: row.id,
+        similarity: match.score,
+        title: row.title,
+        artist: row.artist,
+        year: row.year,
+        date_text: row.date_text,
+        medium: row.medium,
+        classification: row.classification,
+        description: row.description,
+        original_filename: row.original_filename,
+        // Same-origin path the browser can render without credentials.
+        imageUrl: assetId ? `/api/public-index/assets/${assetId}` : row.image_url,
+      };
+    })
+    .filter((result): result is NonNullable<typeof result> => result !== null);
+};
+
 indexing.post('/jobs/:jobId/search', async (c) => {
   const job = await readJob(c.env.DB, c.req.param('jobId'));
   if (!job) {
@@ -1422,55 +1485,7 @@ indexing.post('/jobs/:jobId/search', async (c) => {
     });
   }
 
-  const placeholders = matches.map(() => '?').join(',');
-  const { results: rows } = await c.env.DB.prepare(
-    `SELECT id, title, artist, year, date_text, medium, classification,
-            description, original_filename, image_url, custom_metadata
-     FROM artworks
-     WHERE org_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`
-  )
-    .bind(WEBMCP_INDEX_ORG_ID, ...matches.map((match) => match.id))
-    .all<{
-      id: string;
-      title: string;
-      artist: string | null;
-      year: number | null;
-      date_text: string | null;
-      medium: string | null;
-      classification: string | null;
-      description: string | null;
-      original_filename: string | null;
-      image_url: string | null;
-      custom_metadata: string | null;
-    }>();
-
-  const rowsById = new Map(rows.map((row) => [row.id, row]));
-  const results = matches
-    .map((match) => {
-      const row = rowsById.get(match.id);
-      if (!row) return null;
-      let assetId: string | null = null;
-      try {
-        assetId = JSON.parse(row.custom_metadata || '{}')?.assetId ?? null;
-      } catch {
-        assetId = null;
-      }
-      return {
-        id: row.id,
-        similarity: match.score,
-        title: row.title,
-        artist: row.artist,
-        year: row.year,
-        date_text: row.date_text,
-        medium: row.medium,
-        classification: row.classification,
-        description: row.description,
-        original_filename: row.original_filename,
-        // Same-origin path the browser can render without credentials.
-        imageUrl: assetId ? `/api/public-index/assets/${assetId}` : row.image_url,
-      };
-    })
-    .filter((result): result is NonNullable<typeof result> => result !== null);
+  const results = await hydrateIndexedMatches(c.env.DB, matches);
 
   // Intent filters cull after scoring, preserving vector rank order; the
   // page is then cut back to topK so filtered searches behave like plain
@@ -1512,6 +1527,124 @@ indexing.post('/jobs/:jobId/search', async (c) => {
           }
         : {}),
     },
+  });
+});
+
+/**
+ * POST /public-index/jobs/:jobId/image
+ *
+ * Visual search scoped to the collection this job built — the counterpart to
+ * `/jobs/:jobId/search`, and what `search_by_image` needs when the human is
+ * looking at a collection they indexed on this page rather than at a published
+ * one. It works because index-time image vectors and a query-side image
+ * embedding share a single jina-clip space (see `generateIndexEmbedding`):
+ * "more like this" is the same Vectorize query with an image on the query
+ * side instead of a sentence.
+ */
+indexing.post('/jobs/:jobId/image', async (c) => {
+  const job = await readJob(c.env.DB, c.req.param('jobId'));
+  if (!job) {
+    return c.json(jsonError('NOT_FOUND', 'Indexing job not found.'), 404);
+  }
+
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    return c.json(
+      jsonError('INVALID_INPUT', 'Expected multipart form data with an "image" part.'),
+      400
+    );
+  }
+
+  // workers-types declares FormData values as strings; at runtime an uploaded
+  // part is a File, so identify it structurally exactly as `/items` does.
+  const image = [form.get('image') as unknown].find(
+    (value): value is File =>
+      typeof value === 'object' &&
+      value !== null &&
+      typeof (value as File).arrayBuffer === 'function'
+  );
+  if (!image) {
+    return c.json(jsonError('INVALID_INPUT', 'An "image" file part is required.'), 400);
+  }
+  if (image.size === 0) {
+    return c.json(jsonError('INVALID_INPUT', 'The "image" part was empty.'), 400);
+  }
+  if (image.size > INDEXING_CAPS.maxFileBytes) {
+    return c.json(
+      jsonError(
+        'IMAGE_TOO_LARGE',
+        `Image search accepts files up to ${Math.round(INDEXING_CAPS.maxFileBytes / (1024 * 1024))}MB.`
+      ),
+      413
+    );
+  }
+  // The same set indexing accepts, so a query image is never rejected for a
+  // format the collection itself was built from.
+  if (!inferMimeType(image.name || 'query', image.type)) {
+    return c.json(
+      jsonError(
+        'IMAGE_TYPE_UNSUPPORTED',
+        `Image search accepts ${[...INDEXABLE_MIME_TYPES].join(', ')}.`
+      ),
+      400
+    );
+  }
+
+  const requestedTopK = Number(form.get('topK'));
+  const topK = Number.isFinite(requestedTopK)
+    ? Math.min(Math.max(Math.trunc(requestedTopK), 1), 50)
+    : 20;
+  const requestedMinScore = Number(form.get('minScore'));
+  const minScore = Number.isFinite(requestedMinScore)
+    ? Math.min(Math.max(requestedMinScore, 0), 1)
+    : 0;
+
+  const jina = getJinaIndexConfig(c.env);
+  const vectorize = getIndexVectorize(c.env);
+  if (!jina.apiKey || !vectorize) {
+    return c.json(
+      jsonError('INDEX_SEARCH_UNAVAILABLE', 'Vector search is not configured.'),
+      503
+    );
+  }
+
+  let matches: Array<{ id: string; score: number }>;
+  try {
+    const buffer = await image.arrayBuffer();
+    const queryEmbedding = await generateIndexEmbedding(
+      jina.apiKey,
+      { image: arrayBufferToBase64(buffer) },
+      jina.model,
+      jina.dimensions,
+      c.req.raw.signal
+    );
+    const result = await vectorize.query(queryEmbedding, {
+      topK,
+      filter: { galleryId: WEBMCP_INDEX_ORG_ID, indexJobId: job.id },
+      returnValues: false,
+      returnMetadata: 'indexed',
+    });
+    matches = result.matches.map((match) => ({ id: match.id, score: match.score }));
+  } catch (error) {
+    console.warn('Indexed collection image search failed:', error);
+    return c.json(
+      jsonError(
+        'INDEX_IMAGE_SEARCH_FAILED',
+        'Visual search over the indexed collection failed.'
+      ),
+      502
+    );
+  }
+
+  const results = (await hydrateIndexedMatches(c.env.DB, matches)).filter(
+    (result) => result.similarity >= minScore
+  );
+
+  return c.json({
+    success: true,
+    data: { jobId: job.id, collectionId: job.collection_id, results },
   });
 });
 

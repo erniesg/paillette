@@ -47,7 +47,13 @@ import { toIndexedArtwork } from '~/lib/webmcp/indexed-artwork';
 import { getCollectionSuggestions } from '~/lib/webmcp/collection-suggestions';
 import { rememberArtworks } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
-import { setHumanResults, setIndexJob } from '~/lib/webmcp/store';
+import {
+  setFocusedArtwork,
+  setHumanResults,
+  setIndexJob,
+} from '~/lib/webmcp/store';
+import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
+import type { AgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import type { ArtworkSearchResult } from '~/types';
 
 export const meta: MetaFunction = () => [
@@ -194,6 +200,13 @@ export default function TryPaillette() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState('');
+  /**
+   * When the human's own results landed. The agent writes its result set into
+   * the shared store with its own timestamp, so comparing the two is what
+   * decides whose set the grid is currently showing — without either party
+   * having to clear the other's.
+   */
+  const [resultsAt, setResultsAt] = useState(0);
 
   /** Set when an empty result is better explained by index lag than by the query. */
   const [searchLagged, setSearchLagged] = useState(false);
@@ -625,6 +638,7 @@ export default function TryPaillette() {
         );
         setResults(artworks);
         setLastQuery(trimmed);
+        setResultsAt(Date.now());
         // Decided here, not at render: whether an empty result is propagation
         // lag or a genuine miss depends on how much of the collection was
         // queryable when the search ran, not on when React re-renders.
@@ -650,6 +664,22 @@ export default function TryPaillette() {
     },
     [collectionName, job, readiness, uploading]
   );
+
+  /**
+   * The shared canvas. `set_results` and `show_artwork` write it from a WebMCP
+   * `execute` call outside React, so this page has to read it to render what
+   * the agent put there — otherwise the agent's search on this collection is
+   * invisible to the person sitting in front of it.
+   */
+  const webmcp = useWebMcpState();
+  const agentResults = webmcp.agentResults;
+  /** Whichever party acted last owns the grid. */
+  const showingAgentResults = Boolean(
+    agentResults && agentResults.at > resultsAt
+  );
+  const shownArtworks: Array<ArtworkSearchResult | AgentArtworkSummary> | null =
+    showingAgentResults ? agentResults!.items : results;
+  const focused = webmcp.focused;
 
   const busy = phase === 'reading' || phase === 'indexing';
   const total = status?.total ?? preflight?.willIndex ?? 0;
@@ -1040,13 +1070,31 @@ export default function TryPaillette() {
           </section>
         )}
 
-        {results && (
+        {shownArtworks && (
           <section className="mt-8">
-            <h3 className="mb-4 text-sm uppercase tracking-wide text-neutral-500">
-              {results.length} result{results.length === 1 ? '' : 's'} for “
-              {lastQuery}”
+            <h3 className="mb-4 flex flex-wrap items-center gap-2 text-sm uppercase tracking-wide text-neutral-500">
+              {showingAgentResults && (
+                <span className="rounded-full border border-primary-500/40 bg-primary-500/10 px-2 py-0.5 text-[11px] tracking-wider text-primary-300">
+                  agent
+                </span>
+              )}
+              {showingAgentResults ? (
+                <span className="normal-case tracking-normal text-neutral-400">
+                  {agentResults!.label}
+                </span>
+              ) : (
+                <span>
+                  {shownArtworks.length} result
+                  {shownArtworks.length === 1 ? '' : 's'} for “{lastQuery}”
+                </span>
+              )}
             </h3>
-            {results.length === 0 ? (
+            {showingAgentResults && agentResults!.note && (
+              <p className="mb-4 text-sm text-neutral-400">
+                {agentResults!.note}
+              </p>
+            )}
+            {shownArtworks.length === 0 ? (
               <p className="text-neutral-400">
                 {searchLagged
                   ? readinessClause
@@ -1059,7 +1107,7 @@ export default function TryPaillette() {
               </p>
             ) : (
               <ul className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-                {results.map((artwork) => (
+                {shownArtworks.map((artwork) => (
                   <li
                     key={artwork.id}
                     className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60"
@@ -1078,9 +1126,11 @@ export default function TryPaillette() {
                       <p className="truncate text-sm font-medium text-white">
                         {artwork.title || 'Untitled'}
                       </p>
-                      <p className="mt-1 text-xs text-neutral-500">
-                        {(artwork.similarity * 100).toFixed(1)}% match
-                      </p>
+                      {typeof artwork.similarity === 'number' && (
+                        <p className="mt-1 text-xs text-neutral-500">
+                          {(artwork.similarity * 100).toFixed(1)}% match
+                        </p>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -1089,6 +1139,94 @@ export default function TryPaillette() {
           </section>
         )}
       </main>
+
+      {/*
+        `show_artwork` is how an agent points at something — "take me to the
+        best one". It writes the focused artwork to the shared store; without
+        this the call succeeded and the human saw nothing change.
+      */}
+      {focused && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={focused.artwork.title || 'Artwork'}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+          onClick={() => setFocusedArtwork(null)}
+        >
+          <div
+            className="max-h-full w-full max-w-4xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-neutral-800 px-6 py-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-primary-300">
+                  shown by the agent
+                </p>
+                <h2 className="mt-1 text-xl font-medium text-white">
+                  {focused.artwork.title || 'Untitled'}
+                </h2>
+                {focused.artwork.artist && (
+                  <p className="mt-1 text-sm text-neutral-400">
+                    {focused.artwork.artist}
+                    {focused.artwork.dateText
+                      ? `, ${focused.artwork.dateText}`
+                      : focused.artwork.year
+                        ? `, ${focused.artwork.year}`
+                        : ''}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFocusedArtwork(null)}
+                className="rounded-lg border border-neutral-700 px-3 py-1 text-sm text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            {focused.note && (
+              <p className="border-b border-neutral-800 px-6 py-3 text-sm text-neutral-300">
+                {focused.note}
+              </p>
+            )}
+
+            <div className="flex items-center justify-center bg-black p-6">
+              <ImageWithFallback
+                src={
+                  focused.artwork.imageUrl || focused.artwork.thumbnailUrl || ''
+                }
+                alt={focused.artwork.title || 'Artwork'}
+                className="max-h-[60vh] w-auto max-w-full object-contain"
+                fallback={
+                  <NoImagePlaceholder className="h-64 w-full bg-transparent text-neutral-700" />
+                }
+              />
+            </div>
+
+            {(focused.artwork.medium || focused.artwork.classification) && (
+              <dl className="grid gap-2 px-6 py-4 text-sm sm:grid-cols-2">
+                {focused.artwork.medium && (
+                  <div>
+                    <dt className="text-neutral-500">Medium</dt>
+                    <dd className="text-neutral-200">
+                      {focused.artwork.medium}
+                    </dd>
+                  </div>
+                )}
+                {focused.artwork.classification && (
+                  <div>
+                    <dt className="text-neutral-500">Classification</dt>
+                    <dd className="text-neutral-200">
+                      {focused.artwork.classification}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -56,6 +56,20 @@ export type IndexOptions = {
   fetchMapping?: MappingFetcher;
 };
 
+/** Mirrors `IndexedSearchInterpretation` in `apps/api/src/utils/query-intent.ts`. */
+export type IndexedSearchInterpretation = {
+  parserVersion: 'llm-intent-v1';
+  filters: {
+    artist?: string;
+    medium?: string;
+    classification?: string;
+    yearFrom?: number;
+    yearTo?: number;
+  };
+  rewrittenQuery: string;
+  rationale: string;
+};
+
 export type IndexedSearchResult = {
   id: string;
   similarity: number;
@@ -903,10 +917,16 @@ export async function searchIndexedCollection(
   jobId: string,
   query: string,
   opts?: { topK?: number; signal?: AbortSignal }
-): Promise<{ collectionId: string; results: IndexedSearchResult[] }> {
+): Promise<{
+  collectionId: string;
+  results: IndexedSearchResult[];
+  /** How the LLM interpreter read the query, when it resolved one. */
+  interpretation?: IndexedSearchInterpretation | null;
+}> {
   const data = await requestJson<{
     collectionId: string;
     results: IndexedSearchResult[];
+    interpretation?: IndexedSearchInterpretation | null;
   }>(`/api/public-index/${jobId}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -914,6 +934,32 @@ export async function searchIndexedCollection(
     signal: opts?.signal,
   });
   return data;
+}
+
+/**
+ * `search_by_image` over a collection this page indexed. The counterpart to
+ * `searchIndexedCollection`: index-time image vectors and a query-image
+ * embedding share one space, so "more like this" is the same vector query with
+ * an image on the query side.
+ */
+export async function searchIndexedCollectionByImage(
+  jobId: string,
+  image: Blob,
+  opts?: { topK?: number; minScore?: number; signal?: AbortSignal }
+): Promise<{ collectionId: string; results: IndexedSearchResult[] }> {
+  const form = new FormData();
+  // The route reads `.type`/`.size`, so send a File rather than a bare Blob.
+  form.append(
+    'image',
+    new File([image], 'query', { type: image.type || 'image/jpeg' })
+  );
+  form.append('topK', String(opts?.topK ?? 20));
+  if (opts?.minScore !== undefined) form.append('minScore', String(opts.minScore));
+
+  return requestJson<{ collectionId: string; results: IndexedSearchResult[] }>(
+    `/api/public-index/${jobId}/image`,
+    { method: 'POST', body: form, signal: opts?.signal }
+  );
 }
 
 export { IndexingError };

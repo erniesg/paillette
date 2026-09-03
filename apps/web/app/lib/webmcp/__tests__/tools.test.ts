@@ -1,7 +1,11 @@
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetArtworkIndexForTest, rememberArtworks } from '../artwork-index';
-import { __resetWebMcpStateForTest, getWebMcpState } from '../store';
+import {
+  __resetWebMcpStateForTest,
+  getWebMcpState,
+  setIndexJob,
+} from '../store';
 import { __resetShortlistsForTest } from '../shortlists';
 import { createPailletteTools, type ToolContext } from '../tools';
 import type { WebMcpTool } from '../registry';
@@ -1215,5 +1219,139 @@ describe('get_index_status', () => {
         .get('get_index_status')!
         .execute({ jobId: 'job-1' }, { signal: new AbortController().signal })
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+
+describe('searching a collection built on this page', () => {
+  /**
+   * `/try` exists so a visitor can index their own zip and search it in the
+   * same tab. The public-search routes serve published collections and reject
+   * the anonymous indexing sandbox, so while an index job is live the search
+   * tools have to reach it through its own job route — otherwise "show me
+   * stormy seascapes" silently answers from the NGA catalogue instead of the
+   * collection the human is looking at.
+   */
+  const liveJob = () =>
+    setIndexJob({
+      jobId: 'job-1',
+      collectionId: 'collection-1',
+      collectionName: 'NGA 100',
+      origin: 'human',
+      source: 'zip',
+      at: Date.now(),
+    });
+
+  const indexedHit = {
+    id: 'indexed-1',
+    similarity: 0.62,
+    title: 'Estuary at Day’s End',
+    artist: 'Simon de Vlieger',
+    year: 1640,
+    medium: 'oil on panel',
+    classification: 'Painting',
+    description: null,
+    original_filename: 'nga-1028.jpg',
+    imageUrl: '/api/public-index/assets/asset-1',
+  };
+
+  it('search_artworks queries the indexed collection, not the published one', async () => {
+    liveJob();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          collectionId: 'collection-1',
+          results: [indexedHit],
+          interpretation: {
+            parserVersion: 'llm-intent-v1',
+            filters: { medium: 'oil on panel' },
+            rewrittenQuery: 'stormy seascape',
+            rationale: 'matched the collection’s own medium values',
+          },
+        },
+      })
+    );
+
+    const result = await call('search_artworks', { query: 'stormy seascapes' });
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/public-index/job-1/search');
+    expect(result.indexed).toBe(true);
+    expect(result.collectionId).toBe('collection-1');
+    expect(result.count).toBe(1);
+    expect(result.interpretation).toMatchObject({
+      parserVersion: 'llm-intent-v1',
+    });
+  });
+
+  it('still reaches the published collection when one is named', async () => {
+    liveJob();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: { results: [artwork('a')], count: 1, queryTime: 5 },
+      })
+    );
+
+    await call('search_artworks', { query: 'storm', collection: 'nga' });
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/public-search/nga/text');
+  });
+
+  it('search_by_image queries the indexed collection through its job route', async () => {
+    liveJob();
+    rememberArtworks([
+      artwork('seed', { imageUrl: 'https://assets.example/seed.jpg' }),
+    ]);
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('https://assets.example/')) {
+        return new Response(new Blob([new Uint8Array([1, 2, 3])]), {
+          status: 200,
+          headers: { 'Content-Type': 'image/jpeg' },
+        });
+      }
+      return jsonResponse({
+        success: true,
+        data: { collectionId: 'collection-1', results: [indexedHit] },
+      });
+    }) as unknown as typeof fetch);
+
+    const result = await call('search_by_image', { artworkId: 'seed' });
+
+    const called = fetchMock.mock.calls.map((entry) => String(entry[0]));
+    expect(called).toContain('/api/public-index/job-1/image');
+    expect(result.indexed).toBe(true);
+    expect(result.count).toBe(1);
+  });
+
+  it('set_results fills the canvas instead of navigating away from the collection', async () => {
+    liveJob();
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: { collectionId: 'collection-1', results: [indexedHit] },
+      })
+    );
+
+    const result = await call('set_results', { query: 'stormy seascapes' });
+
+    // Navigating would leave the page holding the collection — and lose it.
+    expect(navigate).not.toHaveBeenCalled();
+    expect(result.shown).toBe(1);
+    expect(getWebMcpState().agentResults?.items).toHaveLength(1);
+    expect(getWebMcpState().agentResults?.items[0]!.title).toBe(
+      'Estuary at Day’s End'
+    );
+  });
+
+  it('set_results still navigates the published collection’s own grid', async () => {
+    const result = await call('set_results', { query: 'moonlight' });
+
+    expect(navigate).toHaveBeenCalledWith('/nga/search?q=moonlight');
+    expect(result.navigatedTo).toBe('/nga/search?q=moonlight');
   });
 });
