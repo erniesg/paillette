@@ -3003,6 +3003,20 @@ searchRoutes.use(
   enforceDailyQuota({ queryType: 'vector_search' }) as any
 );
 
+// Relevance feedback is a search like any other and is gated like one. It is
+// registered here, with its siblings, because Hono runs middleware in
+// declaration order — a `use` written below the handler never runs.
+searchRoutes.use('/search/exemplars', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
+
+searchRoutes.use(
+  '/search/exemplars',
+  requireAuthOrApiKey as any,
+  enforceDailyQuota({ queryType: 'vector_search' }) as any
+);
+
 /**
  * POST /search/text
  * Search artworks using natural language text query
