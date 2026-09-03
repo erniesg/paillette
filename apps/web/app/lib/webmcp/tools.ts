@@ -1629,15 +1629,6 @@ const getIndexStatusTool = (): WebMcpTool => ({
                 'Nothing is embedded yet, so there is nothing to search. Poll again and repeat the query.',
             }
           : {}),
-        // Measured on staging: the vector index accepts an image well before
-        // it will answer a query about it — around four minutes for a small
-        // job. Without this the agent reads an empty result as an empty
-        // collection and tells the human their archive did not index.
-        ...(search && search.count === 0 && searchable
-          ? {
-              searchPending: `${status.processed} image(s) are indexed, but the vector index has not finished making them queryable yet — an empty result here does not mean the collection is empty. Wait ~30s and repeat the same query; it can take a few minutes after the job completes. Do not re-index.`,
-            }
-          : {}),
         next: done
           ? searchable
             ? `Indexing finished: ${status.processed} of ${status.total} images are in "${collectionName ?? status.collectionId}". Call this tool again with a "query" to search them, then show_artwork or set_results to put one on the human's screen.`

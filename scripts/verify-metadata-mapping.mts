@@ -179,11 +179,44 @@ const api = async (path: string, init: RequestInit = {}) => {
     error?: { code?: string; message?: string };
   };
   if (!response.ok || !payload.success) {
-    throw new Error(
+    const error = new Error(
       `${init.method || 'GET'} ${path} -> ${response.status} ${JSON.stringify(payload.error)}`
     );
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code =
+      payload.error?.code;
+    throw error;
   }
   return payload.data;
+};
+
+/**
+ * The anonymous sandbox allows six jobs an hour per client, counted into a
+ * fixed wall-clock bucket. Two runs of this script in the same hour — or one
+ * run alongside anybody else testing from the same address — hits it. That is
+ * the cap working, not a failure, so wait out the bucket rather than reporting
+ * a red run or working around the limit.
+ */
+const createJobWaitingOutTheCap = async (body: unknown) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await api('/api/public-index/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status !== 429 || attempt === 2) throw error;
+      const nextBucket = (Math.floor(Date.now() / 3_600_000) + 1) * 3_600_000;
+      const waitMs = nextBucket - Date.now() + 15_000;
+      log(
+        `  rate-limited by the anonymous job cap; waiting ${Math.ceil(waitMs / 1000)}s for the next hourly bucket`
+      );
+      await sleep(waitMs);
+    }
+  }
+  throw new Error('unreachable');
 };
 
 /**
@@ -205,18 +238,14 @@ const runIndexingJob = async (
   log(`  mapped:  ${JSON.stringify(parsed.mapping.mapped)}`);
   log(`  ignored: ${JSON.stringify(parsed.mapping.ignored)}`);
 
-  const job = await api('/api/public-index/jobs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      collectionName,
-      orgId: 'webmcp-index',
-      source: 'zip',
-      files: [
-        ...parsed.images.map((entry) => ({ name: entry.name, size: entry.size })),
-        ...parsed.skipped,
-      ],
-    }),
+  const job = await createJobWaitingOutTheCap({
+    collectionName,
+    orgId: 'webmcp-index',
+    source: 'zip',
+    files: [
+      ...parsed.images.map((entry) => ({ name: entry.name, size: entry.size })),
+      ...parsed.skipped,
+    ],
   });
 
   const bytes = await readEntryBytes(archive);
