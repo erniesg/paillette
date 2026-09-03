@@ -1348,6 +1348,60 @@ describe('searching a collection built on this page', () => {
     );
   });
 
+  it('describe_artwork captions against the indexed collection, not nga', async () => {
+    liveJob();
+    rememberArtworks([artwork('indexed-1')]);
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          artworkId: 'indexed-1',
+          collectionId: 'collection-1',
+          caption: 'A calm harbour under a bruised sky.',
+          model: 'gpt-5.6-luna',
+          cached: false,
+          persisted: true,
+        },
+      })
+    );
+
+    await call('describe_artwork', { artwork: 'indexed-1' });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]![1] as RequestInit).body as string
+    );
+    // Sending "nga" would hand the captioner an id that collection never had.
+    expect(body.collectionId).toBe('collection-1');
+  });
+
+  it('browse_collection refuses rather than paging the published catalogue', async () => {
+    liveJob();
+    const result = await call('browse_collection', { limit: 5 });
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('BROWSE_UNAVAILABLE_FOR_INDEXED_COLLECTION');
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it('search_by_color searches the indexed collection and admits the re-rank is skipped', async () => {
+    liveJob();
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: { collectionId: 'collection-1', results: [indexedHit] },
+      })
+    );
+
+    const result = await call('search_by_color', { color: 'navy' });
+
+    expect(vi.mocked(fetch).mock.calls[0]![0]).toBe(
+      '/api/public-index/job-1/search'
+    );
+    expect(result.indexed).toBe(true);
+    expect(result.method).toContain('skipped');
+  });
+
   it('set_results still navigates the published collection’s own grid', async () => {
     const result = await call('set_results', { query: 'moonlight' });
 

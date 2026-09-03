@@ -512,11 +512,39 @@ const searchByColorTool = (): WebMcpTool => ({
           `Named swatches: ${NAMED_COLOUR_IDS.join(', ')}.`
         );
       }
-      const collectionId = resolveCollectionId(
+      const target = resolveSearchTarget(
         (input as { collection?: unknown }).collection
       );
+      const collectionId = target.collectionId;
       const subject = asString((input as { query?: unknown }).query);
       const topK = clampInt((input as { topK?: unknown }).topK, 1, 100, 30);
+
+      // A collection indexed on this page has image vectors but no extracted
+      // palettes, so the CIEDE2000 re-rank has nothing to sort by. The
+      // semantic half still works — these are jina-clip image vectors, and
+      // colour language retrieves against them — so run that and say plainly
+      // that the re-rank was skipped rather than implying a palette match.
+      if (target.kind === 'indexed') {
+        const response = await searchIndexedCollection(
+          target.jobId,
+          subject ? `${subject} ${colour.searchText}` : colour.searchText,
+          { topK: Math.min(topK, 50), signal: options.signal }
+        );
+        const artworks = response.results.map((result) =>
+          toIndexedArtwork(result, response.collectionId, target.collectionName)
+        );
+        return ok({
+          collection: target.collectionName,
+          collectionId: response.collectionId,
+          indexed: true,
+          color: { input: colour.label, hex: colour.hex, swatch: colour.selection },
+          ...(subject ? { query: subject } : {}),
+          method:
+            'semantic search on the colour’s language against this collection’s image vectors. The palette re-rank the published collections get is skipped here: images indexed on this page have no extracted colour palette, so these are colour-relevant rather than palette-matched.',
+          count: artworks.length,
+          results: capture(artworks),
+        });
+      }
 
       const response = await searchTextPublic({
         collectionId,
@@ -593,9 +621,20 @@ const browseCollectionTool = (): WebMcpTool => ({
   },
   execute: async (input, options) =>
     guard(async () => {
-      const collectionId = resolveCollectionId(
+      const browseTarget = resolveSearchTarget(
         (input as { collection?: unknown }).collection
       );
+      if (browseTarget.kind === 'indexed') {
+        // Paging a collection built on this page has no route of its own, and
+        // quietly listing the published catalogue instead would be a wrong
+        // answer dressed as a right one.
+        return fail(
+          'BROWSE_UNAVAILABLE_FOR_INDEXED_COLLECTION',
+          `“${browseTarget.collectionName}” was indexed on this page and cannot be paged through.`,
+          'Use search_artworks (it searches this collection), or pass collection:"nga" to browse the published catalogue.'
+        );
+      }
+      const collectionId = browseTarget.collectionId;
       const sortByInput = asString((input as { sortBy?: unknown }).sortBy);
       const sortOrderInput = asString(
         (input as { sortOrder?: unknown }).sortOrder
@@ -776,9 +815,12 @@ const describeArtworkTool = (): WebMcpTool => ({
         );
       }
 
-      const collectionId = resolveCollectionId(
+      // Same routing as the search tools: a work from a collection indexed on
+      // this page has to be described against *that* collection, or the
+      // captioner is handed an id the published catalogue has never seen.
+      const collectionId = resolveSearchTarget(
         (input as { collection?: unknown }).collection
-      );
+      ).collectionId;
       const modelInput = asString((input as { model?: unknown }).model);
       const model = (DESCRIBE_MODELS as readonly string[]).includes(modelInput)
         ? (modelInput as (typeof DESCRIBE_MODELS)[number])
