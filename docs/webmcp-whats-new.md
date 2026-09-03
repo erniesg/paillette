@@ -24,14 +24,16 @@ and nothing straddles it.
 
 This makes the prior/new split unusually easy to audit. `master` sat at exactly
 `e4ae3b43` — the last pre-period commit — until the submission-period work was
-fast-forwarded onto it as `9536606b` (99 commits). So:
+fast-forwarded onto it. It has only ever moved forward since, by fast-forward, and
+now sits at `9daedcd` (111 commits past `e4ae3b43`). So:
 
 ```sh
 git log e4ae3b43..master      # == the submission-period work, and nothing else
 ```
 
-There was no merge commit and no rebase: `master` had no commits the branch lacked,
-so every hash below is the original, dated commit as it was authored.
+There was no merge commit and no rebase of the pre-period history: `master` never
+held a commit the branch lacked, so every hash below is the original, dated commit
+as it was authored.
 
 A judge can rerun the command above and check every hash independently.
 
@@ -83,29 +85,47 @@ not being offered as evidence of "meaningfully extended using WebMCP").
 
 ### 2a. The WebMCP layer — this is what's being judged
 
-> **PLACEHOLDER — fill in before submitting.** As of this writing (2026-09-03,
-> ~01:15 SGT), the WebMCP browser-bridge code was still being written concurrently
-> by other agents on this same branch, under `apps/web/app/lib/webmcp/**`,
-> `apps/web/app/root.tsx`, `apps/web/app/components/webmcp/**`,
-> `apps/api/src/routes/indexing.ts`, `apps/web/app/routes/api.public-index.*`, and
-> `apps/web/app/lib/indexing-client.ts`. None of those files existed in the tree at
-> the time this document was drafted. Once that work lands, replace this block with
-> the real commit hashes, e.g.:
+Fifteen tools are registered on `document.modelContext`. All of it was written on
+2026-09-03, inside the Submission Period. Hashes in commit order:
 
-- `document.modelContext.registerTool()` bridge and Tier 1 tools (`list_collections`,
-  `search_artworks`, `search_by_image`, `search_by_color`, `lookup_artwork`,
-  `get_search_quota`) — `[COMMIT HASH — TODO]`, `[DATE — TODO]`.
-- Shared-canvas / human-agent tools (`get_view_context`, `show_artwork` /
-  `set_results`, `create_collection`, `add_to_collection`) — `[COMMIT HASH — TODO]`,
-  `[DATE — TODO]`.
-- Zip/folder indexing tools (`index_zip`, `index_folder`, `get_index_status`) —
-  `[COMMIT HASH — TODO]`, `[DATE — TODO]` (confirm these actually landed; the plan's
-  scope-cut ladder allows dropping `index_folder` first and `index_zip` only as a
-  last resort — if either was cut, remove its line here instead of leaving a false
-  claim).
+- **Bridge core** — feature detection (`document.modelContext`, falling back to
+  `navigator.modelContext`), idempotent registration that survives React
+  StrictMode's double-mount, and `AbortSignal` plumbing into every `execute`:
+  `19bc988`, 2026-09-03 01:16 +0800 (`apps/web/app/lib/webmcp/registry.ts`).
+- **Anonymous indexing job routes** on the API worker — the server side the
+  indexing tools call: `5ddb16d`, 2026-09-03 01:20 +0800
+  (`apps/api/src/routes/indexing.ts`).
+- **The first twelve tools registered on `document.modelContext`**, and the bridge
+  mounted once from `apps/web/app/root.tsx` — read/search (`list_collections`,
+  `search_artworks`, `search_by_image`, `search_by_color`, `browse_collection`,
+  `lookup_artwork`, `get_search_quota`) and shared-canvas/curation
+  (`get_view_context`, `set_results`, `show_artwork`, `create_collection`,
+  `add_to_collection`): `629f47c`, 2026-09-03 01:29 +0800.
+- **Browser indexing client and `/api/public-index/*` proxy routes**: `07006bc`,
+  2026-09-03 01:32 +0800.
+- **Skipped-archive-entry reporting and an end-to-end indexing check**: `0ee64b9`,
+  2026-09-03 01:36 +0800.
+- **CORS-open source images**, so an agent can actually fetch what a tool returns:
+  `9536606`, 2026-09-03 17:35 +0800.
+- **Zip/folder indexing tools** (`index_zip`, `index_folder`, `get_index_status`) —
+  taking the surface to fifteen tools: `04b2bc5`, 2026-09-03 17:49 +0800. All three
+  landed; nothing was cut.
+- **Embedding fix** — indexed images were being embedded with the wrong Jina task
+  type and so never matched a query: `2750179`, 2026-09-03 17:54 +0800.
+- **Anonymous job cap raised to 100 images**: `386381c`, 2026-09-03 18:08 +0800.
+- **`/try`** — the anonymous human-facing page for the same flow the indexing tools
+  drive, sharing one client and one job with the agent path: `087c17d`,
+  2026-09-03 10:42 +0000.
+- **Vector-propagation honesty** — a search fired the instant a job reports
+  `searchable: true` legitimately returns nothing for ~15s; both the page and
+  `get_index_status` now say so instead of implying an empty collection:
+  `b813d13`, 2026-09-03 10:56 +0000.
+- **Auto-generated suggested searches** for a freshly indexed collection, each one
+  validated against the real index before it is offered: `f50d2fc`,
+  2026-09-03 11:40 +0000.
 
-All of the above hashes must fall after `e4ae3b43` (2026-08-24) and be verifiable
-with the same `git log --since=...` command at the top of this document.
+All of the above hashes fall after `e4ae3b43` (2026-08-24) and are verifiable with
+the same `git log --since=...` command at the top of this document.
 
 ### 2b. Other engineering completed in the same window (not WebMCP)
 
@@ -137,9 +157,9 @@ in-period work, but none of it calls the WebMCP API, so it is **not** claimed as
   is being judged.
 - **After Aug 25 2026, and using WebMCP**: the browser-native agent layer —
   `document.modelContext.registerTool()` calls that let a browser agent discover
-  and drive Paillette's search, view, and indexing tools directly. This is the
-  work this submission is asking to be judged on. See Section 2a for exact commit
-  hashes once filled in.
+  and drive Paillette's search, view, and indexing tools directly — fifteen tools,
+  all committed on 2026-09-03. This is the work this submission is asking to be
+  judged on. See Section 2a for the exact commit hashes.
 - **After Aug 25 2026, not using WebMCP**: real engineering (auth hardening, a
   query-interpretation UI) that happened to land in the same window. Included here
   for transparency, not claimed as the basis for eligibility.
