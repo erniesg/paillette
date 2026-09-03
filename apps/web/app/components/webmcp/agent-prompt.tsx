@@ -12,6 +12,16 @@ import {
   graceProgress,
   interimOffset,
 } from '~/lib/voice/utterance';
+import {
+  annotateForAgent,
+  emptyResolution,
+  readScene,
+  resolveDeixis,
+  segmentUtterance,
+  type Referent,
+  type Resolution,
+} from '~/lib/voice/deixis';
+import { getWebMcpState } from '~/lib/webmcp/store';
 
 /**
  * An agent, in the page, for visitors who did not bring one.
@@ -46,10 +56,41 @@ type AgentMessage = {
 
 /** What the human sees: their turns, and what the agent did about them. */
 type Entry =
-  | { kind: 'you'; text: string }
+  | { kind: 'you'; text: string; referents: Referent[] }
   | { kind: 'agent'; text: string }
   | { kind: 'tool'; name: string }
   | { kind: 'error'; text: string };
+
+/**
+ * What "this one" turned out to mean, drawn as the thumbnail inline — a
+ * sentence with pictures in it.
+ *
+ * Pure presentation. `hovered` and `selection` reach the agent through
+ * `get_view_context` whether or not any of this renders, so a chip that fails
+ * to draw costs a picture and nothing else.
+ */
+function ReferentChip({ referent }: { referent: Referent }) {
+  return (
+    <span className="mx-0.5 inline-flex items-center gap-1 rounded border border-primary-500/40 bg-primary-500/10 px-1 py-px align-middle">
+      {referent.works.slice(0, 3).map((work) =>
+        work.thumbnailUrl ? (
+          <img
+            key={work.id}
+            src={work.thumbnailUrl}
+            alt=""
+            aria-hidden="true"
+            className="h-4 w-4 rounded-sm object-cover"
+          />
+        ) : null
+      )}
+      <span className="text-primary-200">
+        {referent.works.length === 1
+          ? (referent.works[0]?.title ?? referent.phrase)
+          : `${referent.works.length} works`}
+      </span>
+    </span>
+  );
+}
 
 const MAX_TURNS = 8;
 
@@ -117,6 +158,12 @@ export function AgentPrompt({
    * waiting on Enter or Esc.
    */
   const [pendingVoice, setPendingVoice] = useState(false);
+  /**
+   * What the deictic words in the pending utterance turned out to mean. Shown
+   * while the countdown runs, so a wrong referent is something the human can
+   * see and stop rather than something they find out about from the board.
+   */
+  const [resolution, setResolution] = useState<Resolution>(emptyResolution());
   const historyRef = useRef<AgentMessage[]>([]);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   /** True between press and release, so a stop we caused reads as deliberate. */
@@ -130,12 +177,37 @@ export function AgentPrompt({
     setAvailable(Boolean(getModelContext()));
   }, []);
 
-  const run = useCallback(async (instruction: string) => {
+  /**
+   * Bind the pointing words in an utterance to what is on screen.
+   *
+   * Reads the shared WebMCP store rather than calling `get_view_context`: the
+   * same data, but synchronous — so the chip is on screen the instant the human
+   * lets go — and with thumbnails, which the tool's summary drops.
+   */
+  const resolveAgainstScreen = useCallback(
+    (text: string): Resolution => {
+      try {
+        return resolveDeixis(text, readScene(getWebMcpState()));
+      } catch {
+        // Deixis is a courtesy. The turn is worth more than the chip.
+        return emptyResolution();
+      }
+    },
+    []
+  );
+
+  const run = useCallback(async (instruction: string, pointing: Resolution) => {
     setBusy(true);
-    setEntries((current) => [...current, { kind: 'you', text: instruction }]);
+    setEntries((current) => [
+      ...current,
+      { kind: 'you', text: instruction, referents: pointing.referents },
+    ]);
     historyRef.current = [
       ...historyRef.current,
-      { role: 'user', content: instruction },
+      // The human's sentence goes up verbatim, with the bindings appended
+      // underneath. Rewriting someone's words and then acting on the rewrite is
+      // how an agent ends up confidently answering a question nobody asked.
+      { role: 'user', content: annotateForAgent(instruction, pointing) },
     ];
 
     try {
@@ -312,6 +384,7 @@ export function AgentPrompt({
   const discardUtterance = useCallback(() => {
     cancelGrace();
     setPendingVoice(false);
+    setResolution(emptyResolution());
     setInterim('');
     setInput(beforeUtteranceRef.current);
   }, [cancelGrace]);
@@ -320,19 +393,28 @@ export function AgentPrompt({
     (text: string) => {
       cancelGrace();
       setPendingVoice(false);
+      setResolution(emptyResolution());
       const instruction = text.trim();
       setInput('');
       setInterim('');
       beforeUtteranceRef.current = '';
       if (!instruction || busy) return;
-      void run(instruction);
+      void run(instruction, resolveAgainstScreen(instruction));
     },
-    [busy, cancelGrace, run]
+    [busy, cancelGrace, resolveAgainstScreen, run]
   );
 
   // Re-pointed every render so the countdown below always commits the sentence
   // as it stands now, not as it stood when the timer was armed.
   commitRef.current = () => submit(composeUtterance(input, interim));
+
+  // While an utterance is waiting, keep the chips in step with the words —
+  // including words the human retypes, which is the whole point of being able
+  // to edit during the grace.
+  useEffect(() => {
+    if (!pendingVoice) return;
+    setResolution(resolveAgainstScreen(composeUtterance(input, interim)));
+  }, [input, interim, pendingVoice, resolveAgainstScreen]);
 
   useEffect(() => {
     if (graceStartedAt === null) return undefined;
@@ -567,11 +649,39 @@ export function AgentPrompt({
         in words, which is the part that has to survive.
       */}
       {pendingVoice && (
-        <p aria-live="polite" className="mt-2 text-xs text-neutral-500">
-          {graceStartedAt !== null
-            ? 'Sending in a moment — click in to edit, Enter to send now, Esc to discard.'
-            : 'Waiting on you — Enter to send, Esc to discard.'}
-        </p>
+        <>
+          {/*
+            What the pointing words resolved to, while there is still time to
+            stop it. A referent bound to the wrong painting has to be visible
+            here, or the first anyone knows of it is a board full of the wrong
+            answer.
+          */}
+          {resolution.referents.length > 0 && (
+            <p className="mt-2 text-xs text-neutral-400">
+              {resolution.referents.map((referent, index) => (
+                <span key={`${referent.start}-${index}`} className="mr-2">
+                  <span className="text-neutral-600">
+                    “{referent.phrase}” ={' '}
+                  </span>
+                  <ReferentChip referent={referent} />
+                </span>
+              ))}
+            </p>
+          )}
+          {resolution.unresolved.map((gap, index) => (
+            <p
+              key={`${gap.start}-${index}`}
+              className="mt-1 text-xs text-amber-300/80"
+            >
+              Could not tell what “{gap.phrase}” means — {gap.reason}.
+            </p>
+          ))}
+          <p aria-live="polite" className="mt-2 text-xs text-neutral-500">
+            {graceStartedAt !== null
+              ? 'Sending in a moment — click in to edit, Enter to send now, Esc to discard.'
+              : 'Waiting on you — Enter to send, Esc to discard.'}
+          </p>
+        </>
       )}
       {micSupported && !pendingVoice && !listening && (
         <p className="mt-2 text-xs text-neutral-600">
@@ -588,7 +698,14 @@ export function AgentPrompt({
                   <span className="mr-2 text-xs uppercase tracking-wider text-neutral-600">
                     you
                   </span>
-                  {entry.text}
+                  {segmentUtterance(entry.text, entry.referents).map(
+                    (segment, at) =>
+                      segment.kind === 'text' ? (
+                        <span key={at}>{segment.text}</span>
+                      ) : (
+                        <ReferentChip key={at} referent={segment.referent} />
+                      )
+                  )}
                 </p>
               )}
               {entry.kind === 'tool' && (

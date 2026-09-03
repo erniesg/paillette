@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
+import { setFocusedArtwork } from '~/lib/webmcp/store';
 
 const PLACEHOLDER = 'Ask for what you want to see…';
 const MIC = 'Hold to speak';
@@ -42,7 +43,7 @@ const setModelContext = (value: unknown) => {
 };
 
 const stubFetch = () => {
-  const fetchMock = vi.fn(async () => ({
+  const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => ({
     ok: true,
     json: async () => ({
       success: true,
@@ -59,6 +60,22 @@ const said = (transcript: string, isFinal: boolean) =>
 
 const recogniser = () => recognitionInstance as unknown as RecognitionInstance;
 
+/**
+ * Put a work on the shared canvas the way the page does, so that "this one" has
+ * something to point at. Deixis reads the same store `get_view_context` reads.
+ */
+const openArtwork = () =>
+  setFocusedArtwork({
+    origin: 'human',
+    at: 0,
+    artwork: {
+      id: 'nga-1',
+      title: 'Lumber Schooners at Evening on Penobscot Bay',
+      artist: 'Fitz Henry Lane',
+      thumbnailUrl: 'https://example.test/nga-1.jpg',
+    },
+  } as unknown as Parameters<typeof setFocusedArtwork>[0]);
+
 /** Hold the mic control down. Push-to-talk: this is where listening starts. */
 const hold = () => fireEvent.pointerDown(screen.getByLabelText(MIC));
 /** Let go. This starts the grace countdown; it does not send. */
@@ -71,6 +88,7 @@ const heard = (transcript: string, isFinal = false) =>
   });
 
 afterEach(() => {
+  setFocusedArtwork(null);
   vi.useRealTimers();
   vi.unstubAllGlobals();
   delete (document as { modelContext?: unknown }).modelContext;
@@ -331,6 +349,69 @@ describe('AgentPrompt', () => {
 
     expect(screen.getByLabelText(MIC)).toBeInTheDocument();
     expect(recognitionInstance).toBeNull();
+  });
+
+  it('shows what "this one" resolved to while the countdown runs', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    stubFetch();
+    openArtwork();
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('more like this one but brighter', true);
+    release();
+
+    // The referent is on screen with time left to stop it.
+    expect(screen.getByText(/“this one” =/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Lumber Schooners at Evening on Penobscot Bay')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('sends the binding to the agent with the id, alongside the words as spoken', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const fetchMock = stubFetch();
+    openArtwork();
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('more like this one but brighter', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    const sent = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(sent?.body ?? '{}') as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const turn = body.messages.find((message) => message.role === 'user');
+    expect(turn?.content).toContain('more like this one but brighter');
+    expect(turn?.content).toContain('nga-1');
+  });
+
+  it('says what it could not resolve rather than binding it silently', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    stubFetch();
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something between these two', true);
+    release();
+
+    expect(
+      screen.getByText(/Could not tell what “these two” means/)
+    ).toBeInTheDocument();
   });
 
   it('surfaces a message when microphone permission is denied', async () => {
