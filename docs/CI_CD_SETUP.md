@@ -38,9 +38,8 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, 'claude/**']
+    branches: [master, staging]
   pull_request:
-    branches: [main, develop]
 
 env:
   NODE_VERSION: '20'
@@ -266,8 +265,8 @@ Once set up, the pipeline will:
 5. ✅ **Deploy** (optional) - Deploy to staging/production
 
 The pipeline runs on:
-- Every push to `main`, `develop`, or `claude/**` branches
-- Every pull request to `main` or `develop`
+- Every push to `master` or `staging`
+- Every pull request
 
 ---
 

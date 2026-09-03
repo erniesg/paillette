@@ -29,12 +29,12 @@ Issue specs may include optional top-level metadata immediately under the
 `# Title`:
 
 ```yaml
-provider: claude
 depends-on: 001,002
 ```
 
-`provider` routes one issue to `codex-action`, `vm-codex`, or `claude` while
-unmarked issues use the repo default. `depends-on` keeps an issue queued until
+An optional `provider` key routes one issue to a specific build provider; the
+accepted values are the ones declared by `.github/workflows/rucksack-build.yml`,
+and unmarked issues use the repo default. `depends-on` keeps an issue queued until
 each dependency is closed or labeled `rucksack-awaiting-review`; dependency
 cycles are rejected when specs are seeded.
 

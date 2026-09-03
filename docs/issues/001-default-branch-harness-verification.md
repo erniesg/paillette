@@ -31,7 +31,7 @@ None. This issue verifies workflow presence, labels, evidence artifacts, and que
 
 ## Stop conditions
 
-Stop if verification would require deploy secrets, Cloudflare tokens, R2 credentials, Codex/Claude subscription login, or live provider mutation.
+Stop if verification would require deploy secrets, Cloudflare tokens, R2 credentials, coding-agent subscription login, or live provider mutation.
 
 ## Human clarification protocol
 
