@@ -3,7 +3,7 @@
 For ElevenLabs. §1 is the script to paste, one block per cue, nothing but words
 to be spoken. §2 onward is production detail.
 
-Runtime ≈ **1:55** at ~150 wpm.
+Runtime ≈ **2:10** at ~150 wpm. Ten cues.
 
 ---
 
@@ -51,14 +51,21 @@ Runtime ≈ **1:55** at ~150 wpm.
 
 **Cue 8 · Let it work**
 
-> But we can push this much further. I'll ask for something to hang above the
-> sofa — warm, not busy, nothing grim. It doesn't run one search. It tries four
-> different ideas of what that could mean, and then puts the best of all of them
-> together on one board, and tells me why it chose them.
-> My own search box can't do that. Every search I run replaces the last one.
-> Only something driving the page can hold four searches side by side.
+> But we can make this even more agentic. I'll just say what I want — something
+> to hang above the sofa, warm, not busy, nothing grim.
+> It doesn't run one search. It works out four different things that could mean,
+> runs all of them, and puts the best of each on one board — laid out so I can
+> see how they relate.
 
-**Cue 9 · Close**
+**Cue 9 · Co-creator**
+
+> So the agent becomes a co-creator. Work that was unfindable is now not just
+> discoverable but usable — which means you can walk in with nothing but a
+> feeling and leave with a shortlist. Assembled from searches you would never
+> have thought to run. Arranged so you can see how they relate. And described
+> out loud, if you can't see them at all.
+
+**Cue 10 · Close**
 
 > Today, Paillette is your eyes on the collection. In the future: your ears too.
 
@@ -102,7 +109,8 @@ four on screen at once.
 | 6 | cut to `/nga/search`, cached works drifting in | — |
 | 7 | mood search, then the Rembrandt query with its filter chips | `search_artworks` |
 | 8 | the in-page agent: one goal, four searches, one merged board with its note | `search_artworks` ×4 → `set_results` |
-| 9 | end card | — |
+| 9 | the board flips to **atlas** — works positioned by visual similarity | `set_view` |
+| 10 | end card | — |
 
 ---
 
@@ -118,6 +126,8 @@ four on screen at once.
 | "Rembrandt etchings from the sixteen-forties" | parses to `dateRange 1640–1649` + `mediumFamilies: [etching]`, returns real Rembrandts |
 | "it tries four different ideas… on one board" | unscripted. Given "something to hang above the sofa, warm, not busy", the model ran `search_artworks` four times — soft landscapes, garden and flowers, Mediterranean earth tones, restful still lifes — then one `set_results` merging the best of all four, with its own note |
 | "my search box can't do that" | the UI is URL-driven and single-query; a new search replaces the previous result set. `set_results` accepts up to 60 ids in one call |
+| "laid out so I can see how they relate" | `set_view` — new in this build. Layout was React state the agent could not reach; it can now ask for masonry, salon, atlas or table |
+| "described out loud" | the page speaks a generated description with `speechSynthesis`; no agent and no account needed |
 
 ## 5. Not said, because it cannot be shown
 

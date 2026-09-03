@@ -71,6 +71,7 @@ import {
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { AgentPrompt } from '~/components/webmcp/agent-prompt';
 import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
+import { recallArtworks } from '~/lib/webmcp/artwork-index';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
 import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
@@ -1130,10 +1131,35 @@ export default function SearchPage() {
    * still wins the moment they touch the control; this only follows the agent
    * when the agent has actually asked.
    */
-  const agentView = useWebMcpState().view;
+  const webmcpState = useWebMcpState();
+  const agentView = webmcpState.view;
   useEffect(() => {
     if (agentView) setView(agentView);
   }, [agentView]);
+
+  /**
+   * A board the agent assembled takes over this canvas.
+   *
+   * `set_results` with explicit ids is the agent's answer to a goal rather than
+   * a query — a cross-section drawn from several different searches, which this
+   * page could otherwise never show, because its own grid only ever holds the
+   * results of the last search run. Without this the board lived in the
+   * activity panel while the canvas behind it sat on the idle showcase.
+   *
+   * The records come out of the session index rather than being re-fetched:
+   * every pinned id was returned to this page by a search it already ran.
+   */
+  const agentBoardResults = useMemo(() => {
+    const board = webmcpState.agentResults;
+    if (!board || board.origin !== 'agent' || board.items.length === 0) {
+      return null;
+    }
+    const { found } = recallArtworks(board.items.map((item) => item.id));
+    return found.length > 0 ? found : null;
+  }, [webmcpState.agentResults]);
+  const agentBoardNote = agentBoardResults
+    ? (webmcpState.agentResults?.note ?? webmcpState.agentResults?.label ?? null)
+    : null;
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_PUBLIC_SEARCH_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
@@ -1233,7 +1259,10 @@ export default function SearchPage() {
     setDisplayIdleSuggestion(null);
   }, [suggestionPool.length]);
 
-  const hasActiveSearch = searchPresentation.hasActiveSearch;
+  // An agent board counts as an active search: the canvas has something on it,
+  // so the idle showcase must give way.
+  const hasActiveSearch =
+    searchPresentation.hasActiveSearch || Boolean(agentBoardResults);
   const activeSearchSummary = useMemo<ActiveSearchSummary | null>(() => {
     if (isBrowsingCollection) {
       if (shouldSearch && normalizedCommittedTextQuery) {
@@ -1634,15 +1663,17 @@ export default function SearchPage() {
       }),
     [isBrowsingCollection, rankedResults, shouldSearch, sortedBrowseResults]
   );
-  const results = resultSections.combinedResults;
+  const results = agentBoardResults ?? resultSections.combinedResults;
   const activeSortColours = sortMode === 'colour' ? sortColours : [];
   const visibleRankedResults = resultSections.rankedResults;
   const visibleBrowseResults = isBrowsingCollection
     ? resultSections.browseResults
     : resultSections.browseResults.slice(0, visibleCount);
-  const visibleResults = isBrowsingCollection
-    ? [...visibleRankedResults, ...visibleBrowseResults]
-    : visibleBrowseResults;
+  const visibleResults =
+    agentBoardResults ??
+    (isBrowsingCollection
+      ? [...visibleRankedResults, ...visibleBrowseResults]
+      : visibleBrowseResults);
   const totalBrowseResults =
     browseQuery.data?.pages[0]?.total ?? resultSections.browseResults.length;
   const isLoading =
@@ -2761,8 +2792,17 @@ export default function SearchPage() {
             "something calm", then "warmer" — is visible without ChatGPT. */}
         <AgentPrompt
           className="mx-auto mt-6 max-w-3xl"
-          placeholder="Ask the agent — “something calm for a living room”"
+          placeholder="Ask the agent — “something warm for above the sofa”"
         />
+
+        {agentBoardNote && (
+          <p className="mx-auto mt-6 max-w-3xl rounded-xl border border-primary-500/30 bg-primary-500/[0.06] px-4 py-3 text-sm text-neutral-200">
+            <span className="mr-2 font-mono text-[11px] uppercase tracking-wider text-primary-300">
+              assembled by the agent
+            </span>
+            {agentBoardNote}
+          </p>
+        )}
 
         {hasActiveSearch && (
           <section
