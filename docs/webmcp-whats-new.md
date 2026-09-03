@@ -110,6 +110,12 @@ Fifteen tools are registered on `document.modelContext`. All of it was written o
 - **Zip/folder indexing tools** (`index_zip`, `index_folder`, `get_index_status`) —
   taking the surface to fifteen tools: `04b2bc5`, 2026-09-03 17:49 +0800. All three
   landed; nothing was cut.
+- **OpenAI-assisted metadata and access** — a model-mapped CSV header route with a
+  client-side learned-mapping fallback (`430611ea`/`e3667c2f`), an LLM query
+  interpreter grounding natural-language filters in each collection's own inventory
+  (`66a77de1`/`2d6b158c`), a `describe_artwork` vision captioner taking the surface
+  to sixteen tools (`c155b804`/`14bf9da8`), and a shared daily OpenAI budget across
+  all of it (`6e7b918b`, `dffa2f2f`), all committed 2026-09-03.
 - **Embedding fix** — indexed images were being embedded with the wrong Jina task
   type and so never matched a query: `2750179`, 2026-09-03 17:54 +0800.
 - **Anonymous job cap raised to 100 images**: `386381c`, 2026-09-03 18:08 +0800.
@@ -163,7 +169,7 @@ in-period work, but none of it calls the WebMCP API, so it is **not** claimed as
   is being judged.
 - **After Aug 25 2026, and using WebMCP**: the browser-native agent layer —
   `document.modelContext.registerTool()` calls that let a browser agent discover
-  and drive Paillette's search, view, and indexing tools directly — fifteen tools,
+  and drive Paillette's search, view, and indexing tools directly — sixteen tools,
   all committed on 2026-09-03. This is the work this submission is asking to be
   judged on. See Section 2a for the exact commit hashes.
 - **After Aug 25 2026, not using WebMCP**: real engineering (auth hardening, a

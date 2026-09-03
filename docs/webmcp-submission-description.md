@@ -31,6 +31,18 @@ plus curation into collections, plus building a brand-new collection out of a zi
 there are sixteen tools with real work behind them, not a single search box wrapped
 in a schema.
 
+Unseen data is handled, not special-cased. A CSV sidecar whose headers the page has
+never seen is mapped by a model call that receives only the header row and a few
+sample rows — never the file — and the learned mapping feeds directly into what gets
+indexed and what queries can constrain. Search queries themselves are interpreted
+against each collection's own metadata inventory: "oil sketches by Marco Ricci from
+the 1860s" becomes grounded artist/medium/date filters plus a rewritten semantic
+query, and the interpretation is returned so the agent can explain why a result set
+looks the way it does. `describe_artwork` generates assistive alt-text for any
+artwork — including one from a zip uploaded moments ago — with the model choice
+explicit in the tool schema, and every model spend across the surface draws from a
+single shared daily budget the tools can report honestly.
+
 ## How it creates a better user experience
 
 There is no handoff. The agent runs in the same tab the person is already browsing,
