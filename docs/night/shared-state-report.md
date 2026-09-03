@@ -18,7 +18,7 @@ and must not go past it.
 | `get_view_context` gains flags / selection / hovered / compare / board | shipped |
 | Turn payload `{ text?, flagsDelta, selection, hovered, compareChoice }` | shipped, **wired by a shim** — see §7 |
 | "Gestures outrank words" rule in the agent system prompt | shipped, verified live on 9 runs |
-| `search_by_exemplars` — Rocchio, server-side | shipped, **server-side path, not the degraded one** |
+| `search_by_exemplars` — Rocchio, server-side | shipped; formula verified over the real index |
 | `redeal`, 12 cards, picks held in place | shipped |
 | Enter on an empty prompt bar redeals with no model call | shipped, verified in a browser |
 | `compare_artworks` two-up | shipped; `C` verified in a browser |
@@ -26,6 +26,7 @@ and must not go past it.
 | Pin survival in `set_results` as well as `redeal` | shipped |
 | Failure, slow-network and empty-collection paths | shipped, 25 checks |
 | Terseness pass on this lane's own surfaces | shipped — see §6 |
+| Flags surviving a new search | shipped, verified in a browser |
 
 Four new tools, so `document.modelContext` now carries **21**, not 17. Anywhere
 the docs or the video script says 17, it is now wrong.
@@ -76,12 +77,13 @@ longer a property of `redeal` alone.
 `dealtThisSession`), `selection`, `hovered`, `compare`, and — when a deal has
 just failed — `lastDealFailed` and `dealing`.
 
-The three verification harnesses, all runnable by hand:
+The four verification harnesses, all runnable by hand:
 
 ```
-apps/web/scripts/verify-culling-loop.mjs     28 checks, the loop end to end
+apps/web/scripts/verify-culling-loop.mjs     29 checks, the loop end to end
 apps/web/scripts/verify-failure-paths.mjs    25 checks, every way it can refuse
 apps/web/scripts/verify-sofa-run.mjs         the brief's definition of done, live
+apps/api/scripts/verify-exemplars-live.mjs   the engine over the real 63,253
 ```
 
 New HTTP routes:
@@ -129,9 +131,19 @@ allowance — which is what makes a per-keystroke cull loop affordable. That cla
 is asserted by a test (`apps/api/tests/routes/exemplar-search.test.ts` checks the
 route makes no outbound `fetch` at all).
 
-**Not verified:** I have not run this route against the live 63,253-work index.
-The unit tests use hand-checkable two-dimensional vectors, and I did not deploy
-to staging (see §8). First thing to do at integration.
+**Now verified against the real collection** — see §4, "The engine over the
+real 63,253". The premise that the backend can fetch an embedding by artwork id
+is no longer an inference: `getByIds` resolved three real NGA ids to three real
+1024-dimension vectors, and the centroid of three shipwrecks returned ten
+seascapes.
+
+**What is still not verified:** the route's *own code path* has never executed
+against the real index. The verification runs the same arithmetic in a separate
+worker, because the route needs a D1 binding local dev does not carry and
+remote dev will not open a preview session on the API's custom domain. So: the
+formula is proven over real vectors, and the route is proven to implement the
+formula, but the two have not been proven in the same process. A staging deploy
+closes that, and is the first thing to do at integration.
 
 ---
 
@@ -147,7 +159,7 @@ pnpm --filter web dev                                   # in another shell
 node apps/web/scripts/verify-culling-loop.mjs http://localhost:5173
 ```
 
-Last run: **28 checks, all passed**, three times in a row. What it proves:
+Last run: **29 checks, all passed**, three times in a row. What it proves:
 
 - hover sets the deictic anchor; `P` picks the hovered card, `X` rejects it,
   drawn in the human's ink, with `aria-pressed` on the badge
@@ -161,6 +173,8 @@ Last run: **28 checks, all passed**, three times in a row. What it proves:
 - the board deals **12**
 - the pick is still in the seat it was in; the reject has left; the board is
   marked as the human's move
+- **the flags and the exemplars survive the human running a different search**
+  — the definition-of-done clause "flags persist per session"
 - the next *typed* turn carries the gestures, with titles resolved
 - `C` on a hovered card pairs it against a work already kept, and declining
   closes the two-up without flagging anything
@@ -239,6 +253,65 @@ worth suppressing in the page rather than asked for in the prompt.
 - The corpus in these runs is **eight fixture works with invented titles**, not
   the NGA. The behaviour is real; the pictures are not. Nothing here shows the
   engine returning good works from the real collection.
+
+### The engine over the real 63,253
+
+`apps/api/scripts/verify-exemplars-live.mjs` points the scoring formula at the
+staging vector index and prints titles, so the result can be read rather than
+scored. There is no green tick — the output is a list of pictures and a person
+decides.
+
+```sh
+cd apps/api/scripts
+../node_modules/.bin/wrangler dev -c exemplar-probe.wrangler.toml \
+  --experimental-vectorize-bind-to-prod --port 8790
+node apps/api/scripts/verify-exemplars-live.mjs
+```
+
+**Read the caveat first.** This runs a *mirror* of the route's arithmetic in a
+throwaway worker (`exemplar-probe-worker.mjs`), not the route itself, for the
+reason given in §3. Its header says so loudly. What follows is therefore
+evidence about the formula and the index, not about the shipped handler.
+
+Positives — three works found through the ordinary text search: *Storm at Sea*
+(Niss), *Storm-Tossed Ships Wrecked on a Rocky Coast* (Dietzsch), *Shipwreck*
+(Calame).
+
+**1. Embeddings resolve by artwork id.** Asked for 3, got 3, at **1024
+dimensions** — `jina-clip-v2`, as documented. This was the gamble in taking the
+server-side path over the client-side RRF fallback, and it holds.
+
+**2. The centroid lands where it should.** Ten nearest, all ten seascapes:
+
+```
+0.8489  Weymouth Bay                     David Lucas after John Constable
+0.8475  At Sea                           Elbridge Kingsley
+0.8452  Sailing Boats in a Tempest       Schelte Adams Bolswert
+0.8410  Mount's Bay                      Francis Seymour Haden
+0.8391  The Resounding Sea               Thomas Moran
+0.8358  The Much Resounding Sea          Thomas Moran
+0.8335  A Rock in the Sea                Elbridge Kingsley
+0.8299  Norwegian Coast During a Storm   Johan Christian Dahl
+```
+
+No catalogue field says "sea" for all of those. The pictures do.
+
+**3. One rejection moves a region, not a work.** Reject the top result,
+*Weymouth Bay* — a calm Constable coastal view — and *Mount's Bay*, the other
+calm bay etching, leaves the board with it. What arrives: *The Breakers*,
+*Ships in a Stormy Sea*, *The Coming Storm: A Fishing Boat Making for Home off
+Whitby*. One `X` drifts the board from calm coasts toward storms. This is the
+"drift" the brief describes, on real data.
+
+**4. `max` over the negatives, measured rather than argued.** Reject *Weymouth
+Bay* **and** an unrelated portrait. Under `max` the portrait is ignored and the
+board stays stormy. Under `mean` the penalty is halved and **Mount's Bay climbs
+back to third** — the exact work the rejection was meant to push away. That is
+the dilution the design avoids, with a title on it.
+
+This is the strongest evidence in the lane and the clearest demo material: the
+board moving from calm bays to storms on a single keypress, with no model
+anywhere in the path.
 
 ### Verified typed, with voice off
 
@@ -356,8 +429,9 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
 
 - **No staging deploy.** Two other lanes are working against the same staging
   environment tonight and a web deploy would have put my branch in front of
-  them. The cost is §3's unverified claim: the exemplar route has not run
-  against the real NGA index.
+  them. The engine was verified without one, by binding a throwaway worker to
+  the staging vector index read-only (§4); what a deploy would still add is the
+  route's own handler running end to end against real data.
 - **`keep` is decorative.** `redeal { keep: "picks" }` is the only legal value
   and picks are held whether or not it is passed, because pin survival is
   enforced in the implementation. The argument exists so the brief's signature
@@ -391,9 +465,13 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
   data is correct — `order` keeps a pick at its index — but with no FLIP
   animation a redeal is a jump cut. That is the visuals lane's money shot, and
   it is not in this branch.
-- **The fixture corpus is not the collection.** Every live model run used eight
-  invented works. Nothing in this lane has been exercised against the real
-  63,253.
+- **The fixture corpus is not the collection, on the model side.** Every live
+  model run used eight invented works, so nothing shows the *agent* reasoning
+  about real NGA pictures. The engine underneath it has now been run against
+  the real index (§4), but the two have not been joined up.
+- **No lane has run the route's own handler against the real index.** The
+  formula is verified there and the handler is verified to implement the
+  formula; a staging deploy is what closes the gap.
 
 ---
 
@@ -406,8 +484,9 @@ Baseline was web 59 files / 593 tests, api 41 / 770.
 | `pnpm --filter api test` | **43 files, 791 tests, all passed** |
 | `pnpm --filter web test` | **68 files, 732 tests, all passed** |
 | `pnpm --filter web typecheck` | **1 error, pre-existing, not mine** |
-| `verify-culling-loop.mjs` | **28 checks, all passed, 3 runs** |
-| `verify-failure-paths.mjs` | **25 checks, all passed** |
+| `verify-culling-loop.mjs` | **29 checks, all passed, 3 runs** |
+| `verify-failure-paths.mjs` | **25 checks, all passed, 3 runs** |
+| `verify-exemplars-live.mjs` | **ran; output is for reading, not a pass/fail** |
 | `verify-sofa-run.mjs` | **9 runs, all 9 redealt with a one-sentence note** |
 
 Two things to know about those numbers:
