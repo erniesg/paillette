@@ -2615,6 +2615,12 @@ export default function SearchPage() {
                   className="relative"
                   onSubmit={(event) => {
                     event.preventDefault();
+                    // Let go of the caret. The search has run, the board is
+                    // now the subject, and a single-letter binding like P is
+                    // dead for as long as a text field holds focus.
+                    (
+                      event.currentTarget.querySelector('input') ?? null
+                    )?.blur();
                     runTextSearch();
                   }}
                 >
@@ -2622,7 +2628,10 @@ export default function SearchPage() {
                   <input
                     value={textQuery}
                     onChange={(event) => updateTextDraft(event.target.value)}
-                    autoFocus
+                    // Only when there is nothing else to do. Arriving with a
+                    // query means there are cards on screen, and parking the
+                    // caret here would make the culling keys dead on arrival.
+                    autoFocus={!textQuery}
                     placeholder="search by feeling, era, subject..."
                     disabled={isSearchDisabled}
                     className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"

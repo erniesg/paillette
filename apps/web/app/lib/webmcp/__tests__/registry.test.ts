@@ -143,6 +143,29 @@ describe('registration', () => {
     expect(host.registerTool).toHaveBeenCalledTimes(2);
   });
 
+  it('re-registers immediately after a dispose, without waiting for it to land', async () => {
+    // React tears down and re-runs an effect in the same tick, so the new
+    // registerTool is queued while the old unregisterTool is still in flight.
+    // When the two were not serialised the host rejected the duplicate, the
+    // unregister then completed, and the page ended up with the tool surface
+    // gone and every name reported as already registered.
+    const host = createHost();
+    installHost(host);
+    const onError = vi.fn();
+
+    // No await anywhere in here: React runs mount, cleanup and mount again in
+    // one synchronous commit, so the first registration has not even reached
+    // the host by the time the second one is queued.
+    const dispose = registerTools([makeTool('browse_collection')], { onError });
+    dispose();
+    registerTools([makeTool('browse_collection')], { onError });
+    await waitForWebMcpRegistry();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(host.registered.has('browse_collection')).toBe(true);
+    expect(getRegisteredToolNames()).toEqual(['browse_collection']);
+  });
+
   it('is safe to dispose twice', async () => {
     const host = createHost();
     installHost(host);

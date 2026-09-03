@@ -44,7 +44,11 @@ export function WebMcpBridge() {
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    // The debug harness must install its stub host before registration runs.
+    // The stub host itself is already up — `debug-harness` claims
+    // `document.modelContext` as its module loads, because a real host is
+    // there before any of this page's script runs and anything that checks
+    // for one on mount has to find the same thing either way. This call only
+    // re-binds the driver.
     const disposeHarness = isWebMcpDebugRequested()
       ? installWebMcpDebugHarness()
       : () => {};

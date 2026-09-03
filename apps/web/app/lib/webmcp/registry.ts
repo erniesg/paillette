@@ -40,6 +40,18 @@ interface RegistryEntry {
 
 const entries = new Map<string, RegistryEntry>();
 
+/**
+ * The tail of every register/unregister queued for a name, kept **past** the
+ * life of the entry it belonged to.
+ *
+ * A remount drops the entry synchronously but its unregister is still in
+ * flight, so seeding the next entry's queue from a fresh promise let the new
+ * `registerTool` overtake the old `unregisterTool` — and the host rejects a
+ * duplicate name. The symptom is a page that has torn its own tool surface
+ * down and reports every tool as already registered.
+ */
+const queues = new Map<string, Promise<unknown>>();
+
 export interface RegisterToolsOptions {
   /**
    * Called for recoverable problems (host rejected a tool, teardown
@@ -250,7 +262,7 @@ export const registerTools = (
       tool: instrument(tool, options),
       owners: new Set([owner]),
       teardown: null,
-      queue: Promise.resolve(),
+      queue: queues.get(tool.name) ?? Promise.resolve(),
     };
     entries.set(tool.name, entry);
     claimed.push(tool.name);
@@ -270,6 +282,7 @@ export const registerTools = (
         entries.delete(tool.name);
         options.onError?.(toError(error), { toolName: tool.name });
       });
+    queues.set(tool.name, entry.queue);
   }
 
   let disposed = false;
@@ -289,6 +302,7 @@ export const registerTools = (
         .catch((error) => {
           options.onError?.(toError(error), { toolName: name });
         });
+      queues.set(name, entry.queue);
     }
   };
 };
@@ -375,10 +389,14 @@ export const getHostTools = async (): Promise<WebMcpTool[]> => {
 
 /** Flushes pending register/unregister work. Tests and the debug harness only. */
 export const waitForWebMcpRegistry = async () => {
+  // Retired names are included: an unregister still in flight is exactly the
+  // work a caller waiting here needs to have finished.
   await Promise.all([...entries.values()].map((entry) => entry.queue));
+  await Promise.all([...queues.values()]);
 };
 
 /** Test-only: drops all bookkeeping without calling the host. */
 export const __resetWebMcpRegistryForTest = () => {
   entries.clear();
+  queues.clear();
 };

@@ -14,14 +14,19 @@ import {
   isEmptyUtteranceBar,
   resolveComparePair,
 } from '../board-keyboard';
-import { __resetFlagsForTest, getFlag, setFlag } from '../flags';
+import {
+  __resetFlagsForTest,
+  getFlag,
+  peekFlagChanges,
+  setFlag,
+} from '../flags';
 import {
   __resetWebMcpStateForTest,
   getWebMcpState,
   setHoveredArtwork,
   setSelection,
 } from '../store';
-import { __resetTurnStateForTest } from '../turn';
+import { __resetTurnStateForTest, prepareTurn } from '../turn';
 
 const artwork = (id: string): ArtworkSearchResult =>
   ({ id, title: `Work ${id}`, artist: 'A Painter', similarity: 0.5 }) as unknown as ArtworkSearchResult;
@@ -170,6 +175,47 @@ describe('Enter on an empty prompt bar', () => {
 
   it('ignores Enter pressed anywhere that is not the prompt bar', () => {
     expect(press('Enter', document.createElement('input')).handled).toBe(false);
+  });
+
+  it('does not spend the gestures on a turn no model will ever read', async () => {
+    // Flag, redeal, then speak. The agent has to hear about the picks that
+    // caused the deal — draining them here would hand it an empty payload and
+    // silently undo the one thing the payload exists for.
+    rememberArtworks([artwork('keep'), artwork('drop')]);
+    setFlag('keep', 'pick', { by: 'human' });
+    setFlag('drop', 'reject', { by: 'human' });
+    const bar = utteranceBar('');
+    bar.focus();
+
+    press('Enter', bar);
+    await vi.waitFor(() => expect(fetched).not.toHaveLength(0));
+
+    expect(peekFlagChanges()).toHaveLength(2);
+    expect(prepareTurn('now something warmer').flagsDelta).toHaveLength(2);
+    // And once it has been spoken, it is gone.
+    expect(peekFlagChanges()).toHaveLength(0);
+  });
+});
+
+describe('Escape', () => {
+  it('lets go of a text field, because the culling keys are dead while it holds focus', () => {
+    const bar = utteranceBar('half a thought');
+    bar.focus();
+    expect(document.activeElement).toBe(bar);
+
+    expect(press('Escape', bar).handled).toBe(true);
+    expect(document.activeElement).not.toBe(bar);
+  });
+
+  it('leaves the text where it was — this is not a discard', () => {
+    const bar = utteranceBar('half a thought');
+    bar.focus();
+    press('Escape', bar);
+    expect(bar.value).toBe('half a thought');
+  });
+
+  it('does nothing at all when no field has focus and nothing is selected', () => {
+    expect(press('Escape').handled).toBe(false);
   });
 });
 

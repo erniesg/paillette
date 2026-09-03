@@ -77,6 +77,16 @@ export const handleBoardKey = (
     return true;
   }
 
+  // Escape is the way out of a text field and into the board. Without it the
+  // culling keys are unreachable for as long as a caret is parked somewhere,
+  // and "click on the background first" is not a thing anyone should have to
+  // be told. Conventional enough to need no explaining: Escape has meant
+  // "never mind" in every text field since there were text fields.
+  if (event.key === 'Escape' && isTextEntry(document.activeElement)) {
+    (document.activeElement as HTMLElement).blur();
+    return true;
+  }
+
   // Every other binding is a bare letter, so it must not fire while someone is
   // typing a word that happens to contain it.
   if (isTextEntry(document.activeElement)) return false;
