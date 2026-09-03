@@ -62,21 +62,106 @@ export const meta: MetaFunction = () => [
 const POLL_INTERVAL_MS = 2000;
 const SEARCH_TOP_K = 24;
 
-/**
- * Measured on staging, not guessed: the job reports `searchable: true` the
- * instant the first batch is embedded, but Vectorize needs roughly another 15
- * seconds before a query returns those vectors (0 hits at t+1.9s and t+7.6s
- * after a batch of 4, 1 hit at t+14.6s). A search run inside that window comes
- * back empty, which reads as "this is broken" unless the page says otherwise.
- */
-const VECTOR_LAG_SECONDS = 15;
 /** Consecutive status-poll failures before the page admits it has lost the job. */
 const MAX_POLL_FAILURES = 5;
 
 /** Anonymous indexing writes only here; the server enforces it. */
 const INDEX_SANDBOX_ORG = 'webmcp-index';
 
+/**
+ * How long an embedded image takes to become queryable is not a constant, so
+ * the page used to print a fixed "~15s" that was wrong in the direction that
+ * makes the product look broken — the visitor searches, gets nothing, and
+ * concludes it failed. Measured on staging over a 30-image job, counting from
+ * the moment the job reported `complete`: 1 of 30 queryable at +1s, still 1 at
+ * +7s, 25 at +14s, all 30 at +34s. A visitor told to wait 15 seconds would
+ * have searched a collection that was 5 images short.
+ *
+ * So it is measured instead. A broad probe search returns whatever the vector
+ * index currently holds for this job — Vectorize returns the topK nearest
+ * matches with no score floor, so the result count *is* the count of vectors
+ * that have landed — and the page reports that climbing number. The count is
+ * eventually consistent and can dip (1, then 0, then 1 in the run above), so
+ * the high-water mark is what gets reported. The probe backs off and stops
+ * when the count stops climbing; it is never shown as a countdown.
+ */
+const READINESS_PROBE_QUERY = 'artwork';
+/** Server-side ceiling on `topK`; above this the count can only be a floor. */
+const READINESS_PROBE_MAX_TOP_K = 50;
+const READINESS_BACKOFF_MS = [
+  1500, 2500, 4000, 6000, 9000, 12_000, 15_000, 15_000, 15_000, 15_000,
+];
+/** Probes with no climb before the count is called settled. */
+const READINESS_SETTLE_ROUNDS = 3;
+
+/**
+ * The page holds the archive, so closing the tab ends the upload. What survives
+ * is the job: whatever was embedded stays searchable. Remember it so a visitor
+ * who navigated away lands back on their collection instead of an empty page.
+ */
+const RESUME_STORAGE_KEY = 'paillette.try.job.v1';
+
+type StoredJob = {
+  jobId: string;
+  collectionId: string;
+  collectionName: string;
+  total: number;
+  startedAt: number;
+};
+
+const readStoredJob = (): StoredJob | null => {
+  try {
+    const raw = window.localStorage.getItem(RESUME_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredJob> | null;
+    if (!parsed || typeof parsed.jobId !== 'string' || !parsed.jobId) return null;
+    return {
+      jobId: parsed.jobId,
+      collectionId:
+        typeof parsed.collectionId === 'string' ? parsed.collectionId : '',
+      collectionName:
+        typeof parsed.collectionName === 'string' && parsed.collectionName
+          ? parsed.collectionName
+          : 'Your collection',
+      total: Number(parsed.total) || 0,
+      startedAt: Number(parsed.startedAt) || 0,
+    };
+  } catch {
+    // Private mode, a full quota, or a record from an older shape. Either way
+    // there is nothing to restore and that must not break the page.
+    return null;
+  }
+};
+
+const writeStoredJob = (job: StoredJob) => {
+  try {
+    window.localStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify(job));
+  } catch {
+    // Not being able to remember the job only costs the resume path.
+  }
+};
+
+const clearStoredJob = () => {
+  try {
+    window.localStorage.removeItem(RESUME_STORAGE_KEY);
+  } catch {
+    // As above.
+  }
+};
+
 type Phase = 'idle' | 'reading' | 'indexing' | 'ready' | 'failed';
+
+/** What the probe knows so far. `expected` is what the server says it embedded. */
+type Readiness = {
+  count: number;
+  expected: number;
+  settled: boolean;
+  /** `expected` is above the probe ceiling, so `count` can only be a floor. */
+  capped: boolean;
+};
+
+/** A collection picked back up on load, and whether its upload was cut short. */
+type ResumedJob = { interrupted: boolean };
 
 const describeError = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -85,6 +170,9 @@ const timestampName = (prefix: string) =>
   `${prefix} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
 
 const filenameOf = (path: string) => path.split('/').pop() || 'archive.zip';
+
+const sentence = (clause: string) =>
+  clause.charAt(0).toUpperCase() + clause.slice(1);
 
 export default function TryPaillette() {
   const [phase, setPhase] = useState<Phase>('idle');
@@ -110,19 +198,25 @@ export default function TryPaillette() {
   /** Set when an empty result is better explained by index lag than by the query. */
   const [searchLagged, setSearchLagged] = useState(false);
 
+  /** Non-null once a collection is being measured; drives the probe loop. */
+  const [probeFor, setProbeFor] = useState<{
+    jobId: string;
+    expected: number;
+  } | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [resumed, setResumed] = useState<ResumedJob | null>(null);
+
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  /**
-   * When an empty search stops being explained by propagation lag. Infinite
-   * while a job is still embedding; once it finishes, the last image still
-   * needs roughly VECTOR_LAG_SECONDS before Vectorize will return it — and
-   * that is exactly when a visitor, watching the page stop moving, types their
-   * first query.
-   */
-  const lagUntilRef = useRef<number>(Number.POSITIVE_INFINITY);
   /** Consecutive failed status polls, so a dead poll surfaces instead of spinning. */
   const pollFailuresRef = useRef(0);
+  /**
+   * Set the moment the visitor starts a job. The restore below runs a network
+   * round trip on mount, and must not overwrite a collection they have already
+   * begun in the meantime.
+   */
+  const startedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -155,6 +249,122 @@ export default function TryPaillette() {
     [stopPolling]
   );
 
+  // Pick a job back up after a reload or a navigation. The archive is gone —
+  // it only ever lived in the tab that read it — so this restores the
+  // collection, not the upload: what was embedded before the page went away is
+  // still indexed, and still searchable.
+  useEffect(() => {
+    const stored = readStoredJob();
+    if (!stored) return;
+
+    let live = true;
+    const controller = new AbortController();
+
+    void (async () => {
+      let restored: IndexStatus;
+      try {
+        restored = await getIndexStatus(stored.jobId, {
+          signal: controller.signal,
+        });
+      } catch {
+        // The job is gone or unreachable. Nothing to offer, so say nothing.
+        clearStoredJob();
+        return;
+      }
+      if (!live || startedRef.current) return;
+
+      // One restore only: the upload cannot be picked up from here, so leaving
+      // the record behind would re-offer the same stalled job forever.
+      clearStoredJob();
+      if (restored.processed <= 0) return;
+
+      setJob({
+        jobId: restored.jobId,
+        collectionId: restored.collectionId || stored.collectionId,
+      });
+      setCollectionName(restored.collectionName || stored.collectionName);
+      setStatus(restored);
+      setPhase('ready');
+      setResumed({ interrupted: restored.state !== 'complete' });
+      setProbeFor({ jobId: restored.jobId, expected: restored.processed });
+      // Back onto the shared canvas, so an agent asking `get_view_context`
+      // sees the restored collection exactly as it saw the original.
+      setIndexJob({
+        jobId: restored.jobId,
+        collectionId: restored.collectionId || stored.collectionId,
+        collectionName: restored.collectionName || stored.collectionName,
+        origin: 'human',
+        source: 'zip',
+        at: Date.now(),
+      });
+    })();
+
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, []);
+
+  // Measure how much of the collection the vector index will actually return,
+  // and keep measuring until the number stops climbing. Each probe is one
+  // broad search, so the count is the truth rather than an estimate of it.
+  useEffect(() => {
+    if (!probeFor) return;
+    const { jobId, expected } = probeFor;
+
+    const limit = Math.min(Math.max(expected, 1), READINESS_PROBE_MAX_TOP_K);
+    const capped = expected > READINESS_PROBE_MAX_TOP_K;
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let best = 0;
+    let flat = 0;
+
+    setReadiness({ count: 0, expected, settled: false, capped });
+
+    const step = async (attempt: number) => {
+      try {
+        const response = await searchIndexedCollection(
+          jobId,
+          READINESS_PROBE_QUERY,
+          { topK: limit, signal: controller.signal }
+        );
+        if (cancelled) return;
+        const count = response.results.length;
+        if (count > best) {
+          best = count;
+          flat = 0;
+        } else {
+          flat += 1;
+        }
+      } catch {
+        // A failed probe is not evidence of anything; it just does not climb.
+        if (cancelled) return;
+        flat += 1;
+      }
+
+      const settled =
+        best >= limit ||
+        flat >= READINESS_SETTLE_ROUNDS ||
+        attempt + 1 >= READINESS_BACKOFF_MS.length;
+      setReadiness({ count: best, expected, settled, capped });
+      if (settled) return;
+
+      timer = setTimeout(
+        () => void step(attempt + 1),
+        READINESS_BACKOFF_MS[attempt]
+      );
+    };
+
+    void step(0);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [probeFor]);
+
   // A 100-image archive takes minutes. Counting the seconds out loud is the
   // difference between "working" and "hung".
   useEffect(() => {
@@ -173,6 +383,7 @@ export default function TryPaillette() {
       stopPolling();
       const controller = new AbortController();
       abortRef.current = controller;
+      startedRef.current = true;
 
       setPhase('reading');
       setError(null);
@@ -185,7 +396,10 @@ export default function TryPaillette() {
       setElapsed(0);
       setStartedAt(null);
       setSearchLagged(false);
-      lagUntilRef.current = Number.POSITIVE_INFINITY;
+      setResumed(null);
+      setProbeFor(null);
+      setReadiness(null);
+      clearStoredJob();
       pollFailuresRef.current = 0;
       setCollectionName(name);
       setStage('Reading the archive…');
@@ -234,6 +448,15 @@ export default function TryPaillette() {
       setJob(handle);
       setPhase('indexing');
       setStartedAt(Date.now());
+      // Written before the first batch lands: if the visitor leaves a second
+      // later, the job already exists and whatever it embeds is recoverable.
+      writeStoredJob({
+        jobId: handle.jobId,
+        collectionId: handle.collectionId,
+        collectionName: name,
+        total: plan.willIndex,
+        startedAt: Date.now(),
+      });
       // Put it on the shared canvas: an agent asking `get_view_context` now
       // learns that the human has a collection of their own, and can poll or
       // search it without being told the jobId.
@@ -253,6 +476,10 @@ export default function TryPaillette() {
             signal: controller.signal,
           });
         } catch {
+          // A poll for a run the visitor has already replaced must not touch
+          // the new run's state — not its failure count, and not its stored
+          // record.
+          if (abortRef.current !== controller) return;
           // A dropped poll is not a dropped job; the next tick re-reads it.
           // A poll that keeps failing is a different thing, though: without
           // this the page polls forever with both picker buttons disabled and
@@ -260,6 +487,7 @@ export default function TryPaillette() {
           pollFailuresRef.current += 1;
           if (pollFailuresRef.current >= MAX_POLL_FAILURES) {
             stopPolling();
+            clearStoredJob();
             setPhase('failed');
             setError(
               `Lost contact with the indexing job after ${MAX_POLL_FAILURES} attempts. Images already embedded are still in the collection; reload to start again.`
@@ -267,6 +495,7 @@ export default function TryPaillette() {
           }
           return;
         }
+        if (abortRef.current !== controller) return;
         pollFailuresRef.current = 0;
         setStatus(next);
         if (next.searchable ?? next.processed > 0) {
@@ -274,7 +503,16 @@ export default function TryPaillette() {
         }
         if (next.state === 'complete' || next.state === 'failed') {
           stopPolling();
-          lagUntilRef.current = Date.now() + VECTOR_LAG_SECONDS * 1000;
+          // The run is over, so there is nothing left to come back to.
+          clearStoredJob();
+          if (next.processed > 0) {
+            // Functional, because the immediate poll and the interval poll can
+            // both see `complete` — one measurement, not two racing loops.
+            setProbeFor(
+              (current) =>
+                current ?? { jobId: handle.jobId, expected: next.processed }
+            );
+          }
           if (next.processed === 0) {
             setPhase('failed');
             setError(
@@ -295,6 +533,7 @@ export default function TryPaillette() {
 
   const startDemo = useCallback(
     async (archive: DemoArchive) => {
+      startedRef.current = true;
       setPhase('reading');
       setError(null);
       setStage(`Fetching ${archive.name}…`);
@@ -332,6 +571,45 @@ export default function TryPaillette() {
     [beginJob]
   );
 
+  /**
+   * True only while this page is actively pushing batches. A restored job is
+   * not uploading — the archive stayed in the tab that read it — even though
+   * the server still has it filed as `running`, because nothing ever told the
+   * server the client had gone.
+   */
+  const uploading =
+    resumed === null &&
+    status?.state !== 'complete' &&
+    status?.state !== 'failed';
+
+  const indexingInFlight = job !== null && phase !== 'failed' && uploading;
+
+  /** Put the restored collection away and go back to the picker. */
+  const dismissResumed = useCallback(() => {
+    setResumed(null);
+    setJob(null);
+    setStatus(null);
+    setResults(null);
+    setProbeFor(null);
+    setReadiness(null);
+    setPhase('idle');
+    clearStoredJob();
+  }, []);
+
+  // Closing the tab ends the upload — the archive only ever existed here — so
+  // the browser gets to ask. Registered only while a job is actually in
+  // flight: an idle page must never interrupt someone for nothing.
+  useEffect(() => {
+    if (!indexingInFlight) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Chrome still wants the legacy assignment before it shows the prompt.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [indexingInFlight]);
+
   const runSearch = useCallback(
     async (raw: string) => {
       const trimmed = raw.trim();
@@ -347,11 +625,12 @@ export default function TryPaillette() {
         );
         setResults(artworks);
         setLastQuery(trimmed);
-        // Decided here, not at render: whether an empty result is lag or a
-        // genuine miss depends on when the search ran, not on when React
-        // happens to re-render.
+        // Decided here, not at render: whether an empty result is propagation
+        // lag or a genuine miss depends on how much of the collection was
+        // queryable when the search ran, not on when React re-renders.
         setSearchLagged(
-          artworks.length === 0 && Date.now() < lagUntilRef.current
+          artworks.length === 0 &&
+            (uploading || (readiness !== null && !readiness.settled))
         );
         // The same two calls the public-search observer makes for the NGA
         // grid, so `get_view_context` reports these results as what the human
@@ -369,7 +648,7 @@ export default function TryPaillette() {
         setSearching(false);
       }
     },
-    [collectionName, job]
+    [collectionName, job, readiness, uploading]
   );
 
   const busy = phase === 'reading' || phase === 'indexing';
@@ -377,7 +656,6 @@ export default function TryPaillette() {
   const processed = Math.max(status?.processed ?? 0, uploaded);
   const percent =
     total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
-  const running = status?.state !== 'complete' && status?.state !== 'failed';
 
   // Searchable the moment the server has embedded anything. Both counts here
   // are server-confirmed — `uploaded` comes from the /items reply, `status`
@@ -395,7 +673,7 @@ export default function TryPaillette() {
   // estimate until then. Never shown as a countdown to zero — it is a guess
   // and reads as one.
   const remainingLabel = (() => {
-    if (!running || total <= processed) return null;
+    if (!uploading || total <= processed) return null;
     const left = total - processed;
     const seconds =
       processed > 0 && elapsed > 0
@@ -403,6 +681,18 @@ export default function TryPaillette() {
         : left * SECONDS_PER_IMAGE;
     return `about ${formatDuration(seconds)} left`;
   })();
+
+  // The measured count, phrased as a clause so the same words can carry a
+  // status line and an explanation for an empty result set.
+  const readinessClause = readiness
+    ? `${
+        readiness.capped && readiness.count >= READINESS_PROBE_MAX_TOP_K
+          ? `at least ${readiness.count}`
+          : readiness.count
+      } of ${readiness.expected} image${readiness.expected === 1 ? '' : 's'} ${
+        readiness.expected === 1 ? 'is' : 'are'
+      } searchable${readiness.settled ? '' : ' so far'}`
+    : null;
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
@@ -576,14 +866,49 @@ export default function TryPaillette() {
                   style={{ width: `${percent}%` }}
                 />
               </div>
-              <p className="mt-2 text-xs text-neutral-500">
-                {formatDuration(elapsed)} elapsed
-                {remainingLabel ? ` · ${remainingLabel}` : ''}
-                {running
-                  ? ' · this page keeps uploading as long as it stays open'
-                  : ''}
-              </p>
+              {startedAt !== null && (
+                <p className="mt-2 text-xs text-neutral-500">
+                  {formatDuration(elapsed)} elapsed
+                  {remainingLabel ? ` · ${remainingLabel}` : ''}
+                  {uploading
+                    ? ' · this page keeps uploading as long as it stays open'
+                    : ''}
+                </p>
+              )}
             </div>
+
+            {resumed && (
+              <div
+                role="status"
+                className="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/20 px-4 py-3 text-sm text-amber-100"
+              >
+                {resumed.interrupted ? (
+                  <>
+                    <p>
+                      Picked this collection back up. You left while it was
+                      still indexing, and the upload runs in the page, so it
+                      stopped there — {processed} of {total} images were indexed
+                      before it did. Those {processed} are searchable below.
+                    </p>
+                    <p className="mt-2">
+                      The rest were never uploaded and cannot be resumed from
+                      here: this page no longer has the archive. Index it again
+                      to get the whole set.
+                    </p>
+                  </>
+                ) : (
+                  <p>
+                    Picked this collection back up — it finished indexing, and
+                    all {processed} images are still here to search.
+                  </p>
+                )}
+                <div className="mt-3">
+                  <Button variant="outline" onClick={dismissResumed}>
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {status?.notice && (
               <p className="mt-4 text-sm text-amber-200">{status.notice}</p>
@@ -666,19 +991,35 @@ export default function TryPaillette() {
               </div>
             )}
 
-            {!canSearch && running && (
+            {!canSearch && uploading && (
               <p className="mt-2 text-sm text-neutral-500">
                 Search opens as soon as the first image is embedded — you do not
                 have to wait for the whole archive.
               </p>
             )}
 
-            {canSearch && running && (
+            {canSearch && uploading && (
               <p className="mt-2 text-sm text-neutral-500">
-                Searchable now. An image takes roughly another{' '}
-                {VECTOR_LAG_SECONDS}s after it is embedded before the vector
-                index will return it, so an early search comes back thin — run
-                it again as the count climbs.
+                Searchable now. The vector index picks each image up shortly
+                after it is embedded, so an early search comes back thin — run
+                it again as more land.
+              </p>
+            )}
+
+            {/* Measured, not predicted: the count the vector index will
+                actually return right now, climbing until it stops. */}
+            {readinessClause && (
+              <p className="mt-2 text-sm text-neutral-400" role="status">
+                {!readiness?.settled
+                  ? `${sentence(readinessClause)} — checking again…`
+                  : readiness.capped &&
+                      readiness.count >= READINESS_PROBE_MAX_TOP_K
+                    ? // The probe hit its own ceiling, not the index's. Say
+                      // which one stopped, rather than implying the index did.
+                      `${sentence(readinessClause)} — this check reads ${READINESS_PROBE_MAX_TOP_K} at a time, so that is a floor and not a total.`
+                    : readiness.count >= readiness.expected
+                      ? `${sentence(readinessClause)}.`
+                      : `${sentence(readinessClause)} — the count stopped climbing there.`}
               </p>
             )}
 
@@ -702,9 +1043,12 @@ export default function TryPaillette() {
             {results.length === 0 ? (
               <p className="text-neutral-400">
                 {searchLagged
-                  ? running
-                    ? `Nothing back yet — an image becomes queryable about ${VECTOR_LAG_SECONDS}s after it is embedded, and ${processed} of ${total} are in so far. Search again in a moment.`
-                    : `Nothing back yet — all ${processed} images are embedded, but the vector index needs about ${VECTOR_LAG_SECONDS}s after the last one before it will return them. Search again in a moment.`
+                  ? readinessClause
+                    ? readiness?.settled
+                      ? // It has caught up since; the search itself was early.
+                        `Nothing back yet — that search ran before the index had caught up. ${sentence(readinessClause)} now, so search again.`
+                      : `Nothing back yet — ${readinessClause}, and the count is still climbing. Search again in a moment.`
+                    : `Nothing back yet — ${processed} of ${total} images are embedded so far, and the vector index picks each one up shortly after. Search again in a moment.`
                   : 'Nothing matched. Try a broader description — the index is only as large as the archive you sent.'}
               </p>
             ) : (
