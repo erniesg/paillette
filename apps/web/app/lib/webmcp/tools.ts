@@ -30,6 +30,7 @@ import {
 } from './artwork-index';
 import {
   collectPalette,
+  getReadableImageUrl,
   toAgentArtworkDetail,
   toAgentArtworkSummary,
   type AgentArtworkSummary,
@@ -262,7 +263,7 @@ const searchByImageTool = (): WebMcpTool => ({
   name: 'search_by_image',
   title: 'Search by image',
   description:
-    'Find artworks that look like a given image, using the visual embedding rather than the text index. The best way to say "more like this one": pass artworkId from any previous result. An imageUrl works too, but only if that host allows cross-origin reads, so prefer artworkId when you have one.',
+    'Find artworks that look like a given image, using the visual embedding rather than the text index. The best way to say "more like this one": pass artworkId from any previous result and the work\'s own image becomes the query. An imageUrl or a data: URI works too — use that to search from an image the human brought with them.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   inputSchema: {
     type: 'object',
@@ -270,12 +271,12 @@ const searchByImageTool = (): WebMcpTool => ({
       artworkId: {
         type: 'string',
         description:
-          'Id of an artwork already returned this session. Its image becomes the query. This is the reliable path — the image is on Paillette’s own asset host.',
+          'Id of an artwork already returned this session; its image becomes the query. This is the reliable path — the tool resolves the holding institution’s public IIIF image, which is readable cross-origin.',
       },
       imageUrl: {
         type: 'string',
         description:
-          'Absolute https:// URL or a data: URI of a JPEG, PNG, or WebP up to 10 MB. The browser must be allowed to read it (CORS), which most third-party image hosts do not permit.',
+          'Absolute https:// URL or a data: URI of a JPEG, PNG, or WebP up to 10 MB. A remote URL must send CORS headers for the browser to read it; a data: URI always works, so encode an image the human supplied rather than linking it.',
       },
       collection: collectionProperty,
       topK: topKProperty,
@@ -308,7 +309,9 @@ const searchByImageTool = (): WebMcpTool => ({
             'Run search_artworks or browse_collection first; ids are only resolvable within this browsing session.'
           );
         }
-        sourceUrl = artwork.imageUrl ?? artwork.thumbnailUrl ?? '';
+        // Resolve to the institution's public (CORS-open) image, not
+        // Paillette's session-gated asset URL.
+        sourceUrl = getReadableImageUrl(artwork) ?? '';
         if (!sourceUrl) {
           return fail(
             'ARTWORK_HAS_NO_IMAGE',

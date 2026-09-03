@@ -27,6 +27,7 @@ export interface AgentArtworkSummary {
   similarity: number | null;
   /** Up to six dominant hex colours, most prominent first. */
   palette: string[];
+  /** Publicly fetchable image (CORS-open) — safe for an agent to read. */
   thumbnailUrl: string | null;
   imageUrl: string | null;
   /** Canonical record at the holding institution — cite this, not Paillette. */
@@ -49,6 +50,43 @@ export interface AgentArtworkDetail extends AgentArtworkSummary {
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * Paillette's own asset URLs (`/api/v1/assets/<id>/content`) require a session,
+ * so they are useless to an anonymous agent and render as broken images in the
+ * activity panel. Open-access records carry the holding institution's public
+ * IIIF URL in their provenance blob, which is served with
+ * `Access-Control-Allow-Origin: *`. Prefer that everywhere.
+ */
+const readSourceImageUrl = (artwork: ArtworkSearchResult): string | null => {
+  const provenance = meta(artwork).provenance;
+  if (typeof provenance !== 'string') return null;
+  try {
+    const parsed = JSON.parse(provenance) as { source_image_url?: unknown };
+    const url = asText(parsed?.source_image_url);
+    return url && /^https?:\/\//i.test(url) ? url : null;
+  } catch {
+    // Not every collection stores provenance as JSON.
+    return null;
+  }
+};
+
+/**
+ * The image URL an agent (or this page's own panel) can actually read.
+ * Exported because `search_by_image` needs the same resolution when it turns
+ * an artworkId into a query image.
+ */
+export const getReadableImageUrl = (
+  artwork: ArtworkSearchResult
+): string | null => readSourceImageUrl(artwork) ?? artwork.imageUrl ?? null;
+
+/** IIIF exposes size in the path; ask for a grid-sized rendering. */
+const IIIF_FULL_SIZE = /\/full\/[^/]+\/0\//;
+
+const readSourceThumbnailUrl = (sourceImageUrl: string | null) =>
+  sourceImageUrl && IIIF_FULL_SIZE.test(sourceImageUrl)
+    ? sourceImageUrl.replace(IIIF_FULL_SIZE, '/full/400,/0/')
+    : null;
 
 const asText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -114,7 +152,11 @@ export const collectDominantColors = (
       if (Array.isArray(palette.colors)) {
         palette.colors.forEach((color, index) => {
           const percentage = asNumber(percentages[index]);
-          if (typeof color === 'string' && HEX.test(color) && percentage !== 0) {
+          if (
+            typeof color === 'string' &&
+            HEX.test(color) &&
+            percentage !== 0
+          ) {
             collected.push({ color: color.toUpperCase(), percentage });
           }
         });
@@ -145,23 +187,29 @@ const roundSimilarity = (value: unknown): number | null => {
 
 export const toAgentArtworkSummary = (
   artwork: ArtworkSearchResult
-): AgentArtworkSummary => ({
-  id: artwork.id,
-  title: asText(artwork.title),
-  artist: asText(artwork.artist),
-  year: asNumber(artwork.year),
-  dateText: asText(field(artwork, 'dateText', 'date_text')),
-  medium: asText(meta(artwork).medium),
-  classification: asText(meta(artwork).classification),
-  similarity: roundSimilarity(artwork.similarity),
-  palette: collectPalette(artwork).slice(0, 6),
-  thumbnailUrl: asText(artwork.thumbnailUrl),
-  imageUrl: asText(artwork.imageUrl),
-  sourceUrl: asText(field(artwork, 'sourceUrl', 'source_url')),
-  sourceInstitution: asText(
-    field(artwork, 'sourceInstitution', 'source_institution')
-  ),
-});
+): AgentArtworkSummary => {
+  const sourceImageUrl = readSourceImageUrl(artwork);
+  return {
+    id: artwork.id,
+    title: asText(artwork.title),
+    artist: asText(artwork.artist),
+    year: asNumber(artwork.year),
+    dateText: asText(field(artwork, 'dateText', 'date_text')),
+    medium: asText(meta(artwork).medium),
+    classification: asText(meta(artwork).classification),
+    similarity: roundSimilarity(artwork.similarity),
+    palette: collectPalette(artwork).slice(0, 6),
+    thumbnailUrl:
+      readSourceThumbnailUrl(sourceImageUrl) ??
+      sourceImageUrl ??
+      asText(artwork.thumbnailUrl),
+    imageUrl: sourceImageUrl ?? asText(artwork.imageUrl),
+    sourceUrl: asText(field(artwork, 'sourceUrl', 'source_url')),
+    sourceInstitution: asText(
+      field(artwork, 'sourceInstitution', 'source_institution')
+    ),
+  };
+};
 
 /** Long descriptions are useful but not worth 2KB each; cap them. */
 const DESCRIPTION_LIMIT = 900;
@@ -183,7 +231,9 @@ export const toAgentArtworkDetail = (
     sourceCollection: asText(
       field(artwork, 'sourceCollection', 'source_collection')
     ),
-    sourceRecordId: asText(field(artwork, 'sourceRecordId', 'source_record_id')),
+    sourceRecordId: asText(
+      field(artwork, 'sourceRecordId', 'source_record_id')
+    ),
     rights: asText(meta(artwork).rights),
     openAccess:
       typeof meta(artwork).openAccess === 'boolean'
