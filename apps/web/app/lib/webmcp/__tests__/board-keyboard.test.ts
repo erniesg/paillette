@@ -43,7 +43,7 @@ const utteranceBar = (value = '') => {
   const input = document.createElement('input');
   input.setAttribute('aria-label', 'Ask the agent');
   input.value = value;
-  document.body.append(input);
+  document.body.appendChild(input);
   return input;
 };
 
