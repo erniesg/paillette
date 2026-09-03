@@ -35,8 +35,13 @@ export const WEBMCP_INDEX_ORG_SLUG = 'webmcp-index';
 const WEBMCP_INDEX_USER_ID = '1f5d3b90-6c42-4a17-9e08-3d7b5c214e6a';
 
 export const INDEXING_CAPS = {
-  /** Images accepted per job. Anything beyond this is reported, not silent. */
-  maxFilesPerJob: 40,
+  /**
+   * Images accepted per job. Anything beyond this is reported, not silent.
+   * Sized to fit the bundled 100-image demo zip (`data/samples/sample-art-100.zip`)
+   * through the anonymous path, so a judge who uploads it gets the whole
+   * collection rather than a silently truncated 40.
+   */
+  maxFilesPerJob: 100,
   /** Per-image byte ceiling. */
   maxFileBytes: 8 * 1024 * 1024,
   /** Whole-job byte ceiling. */
