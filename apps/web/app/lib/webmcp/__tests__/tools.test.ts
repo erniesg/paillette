@@ -966,6 +966,39 @@ describe('get_index_status', () => {
     expect(looked.artworks[0].description).toBe('A cresting wave.');
   });
 
+  it('calls an empty mid-job search propagation lag, not an empty collection', async () => {
+    // Measured on staging: `searchable: true` lands ~15s before Vectorize will
+    // return the vectors it refers to. Without this note an agent reports a
+    // working collection as empty.
+    stubIndexingApi({
+      status: { state: 'running', processed: 4, total: 25, searchable: true },
+      searchResults: [],
+    });
+
+    const result = await call('get_index_status', {
+      jobId: 'job-1',
+      query: 'blue wave',
+    });
+
+    expect(result.search.count).toBe(0);
+    expect(result.search.note).toContain('propagation lag');
+    expect(result.search.note).toContain('4 of 25');
+  });
+
+  it('does not flag propagation lag once the job is finished', async () => {
+    stubIndexingApi({
+      status: { state: 'complete', processed: 2, total: 2, searchable: true },
+      searchResults: [],
+    });
+
+    const result = await call('get_index_status', {
+      jobId: 'job-1',
+      query: 'blue wave',
+    });
+    expect(result.search.count).toBe(0);
+    expect(result.search.note).toBeUndefined();
+  });
+
   it('does not search a job that has embedded nothing yet', async () => {
     const api = stubIndexingApi({
       status: { state: 'queued', processed: 0, total: 4, searchable: false },

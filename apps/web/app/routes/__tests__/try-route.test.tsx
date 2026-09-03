@@ -83,6 +83,8 @@ const stubApi = (options: {
   zipBytes: ArrayBuffer;
   /** Omit the manifest to exercise the bundled fallback. */
   manifest?: unknown | null;
+  /** Hold the job in flight, so partial-result copy can be asserted. */
+  stayRunning?: boolean;
 }) => {
   const stub: Stub = {
     jobBody: null,
@@ -150,7 +152,8 @@ const stubApi = (options: {
         success: true,
         data: {
           jobId: 'job-42',
-          state: stub.processed > 0 ? 'complete' : 'running',
+          state:
+            stub.processed > 0 && !options.stayRunning ? 'complete' : 'running',
           processed: stub.processed,
           total: 2,
           collectionId: 'collection-42',
@@ -290,6 +293,33 @@ describe('/try — anonymous indexing flow', () => {
 
     expect(await screen.findByText('wave 01')).toBeInTheDocument();
     expect(screen.getByText(/1 result for/i)).toBeInTheDocument();
+  });
+
+  it('blames the vector index lag, not the query, when a running job returns nothing', async () => {
+    // Live on staging: `searchable: true` lands ~15s before Vectorize will
+    // return the vectors it refers to. Telling a visitor mid-job to "try a
+    // broader description" would be blaming them for a propagation delay.
+    const user = userEvent.setup();
+    stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      searchResults: [],
+      stayRunning: true,
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled(), { timeout: 5000 });
+    await user.type(box, 'a wave');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+
+    expect(
+      await screen.findByText(/search again in a moment/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/try a broader description/i)).toBeNull();
   });
 
   it('publishes the job and its results onto the shared canvas for the agent', async () => {
