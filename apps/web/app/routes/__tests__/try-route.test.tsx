@@ -25,6 +25,8 @@ import { INDEX_CAPS } from '~/lib/webmcp/caps';
 import {
   __resetWebMcpStateForTest,
   getWebMcpState,
+  setAgentResults,
+  setIndexJob,
 } from '~/lib/webmcp/store';
 
 const MANIFEST_PATH = '/samples/manifest.json';
@@ -867,5 +869,63 @@ describe('/try — anonymous indexing flow', () => {
     const alert = await screen.findByRole('alert');
     expect(within(alert).getByText(/HTTP 404/i)).toBeInTheDocument();
     expect(stub.jobBody).toBeNull();
+  });
+
+  it('adopts a collection the agent indexed, instead of sitting on the picker', async () => {
+    // index_zip runs entirely through the WebMCP tool: it writes the job to
+    // the shared store and never touches this component's state. Without
+    // adoption the human watched the collection picker while the agent
+    // indexed a hundred works.
+    stubApi({ zipBytes: EMPTY_ZIP });
+    renderTry();
+
+    setIndexJob({
+      jobId: 'job-42',
+      collectionId: 'collection-42',
+      collectionName: 'Agent’s collection',
+      origin: 'agent',
+      source: 'zip',
+      at: Date.now(),
+    });
+
+    // The page has stopped offering the picker and is now watching the job:
+    // its own search control only exists once it holds a collection.
+    await waitFor(() => {
+      expect(screen.getByText(/Search this collection/i)).toBeTruthy();
+    });
+  });
+
+  it('renders the result set the agent pushed onto the canvas', async () => {
+    stubApi({ zipBytes: EMPTY_ZIP });
+    renderTry();
+
+    setAgentResults({
+      origin: 'agent',
+      label: 'search “stormy seascapes” in NGA 100',
+      note: 'the stormiest of them',
+      items: [
+        {
+          id: 'a1',
+          title: 'Storm at Sea',
+          artist: 'T. Niss',
+          year: 1890,
+          dateText: '1890',
+          medium: 'oil on canvas',
+          classification: 'Painting',
+          similarity: 0.81,
+          palette: [],
+          thumbnailUrl: '/api/public-index/assets/a1',
+          imageUrl: '/api/public-index/assets/a1',
+          sourceUrl: null,
+          sourceInstitution: null,
+        },
+      ],
+      at: Date.now(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Storm at Sea')).toBeTruthy();
+    });
+    expect(screen.getByText('the stormiest of them')).toBeTruthy();
   });
 });

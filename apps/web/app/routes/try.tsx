@@ -181,6 +181,14 @@ const sentence = (clause: string) =>
   clause.charAt(0).toUpperCase() + clause.slice(1);
 
 export default function TryPaillette() {
+  /**
+   * The shared canvas. `index_zip`, `set_results` and `show_artwork` write it
+   * from a WebMCP `execute` call outside React, so this page has to read it to
+   * render what the agent did — otherwise the agent's work on this collection
+   * is invisible to the person sitting in front of it.
+   */
+  const webmcp = useWebMcpState();
+
   const [phase, setPhase] = useState<Phase>('idle');
   const [stage, setStage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -623,6 +631,66 @@ export default function TryPaillette() {
     return () => window.removeEventListener('beforeunload', warn);
   }, [indexingInFlight]);
 
+  /**
+   * Adopt a collection the *agent* started.
+   *
+   * `index_zip` runs entirely through the WebMCP tool: it writes the job to
+   * the shared store, but the page's own state knew nothing about it, so while
+   * the agent indexed a hundred works the human sat looking at the collection
+   * picker. This is the shared canvas in the other direction — whoever starts
+   * a job, both parties end up watching it.
+   */
+  const webmcpIndexJob = webmcp.indexJob;
+  const agentJobId =
+    webmcpIndexJob?.origin === 'agent' ? webmcpIndexJob.jobId : null;
+  useEffect(() => {
+    if (!agentJobId || startedRef.current || job?.jobId === agentJobId) return;
+
+    const controller = new AbortController();
+    let live = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const read = async () => {
+      let next: IndexStatus;
+      try {
+        next = await getIndexStatus(agentJobId, { signal: controller.signal });
+      } catch {
+        return; // A dropped poll is not a dropped job; the next tick re-reads.
+      }
+      if (!live) return;
+
+      setJob({ jobId: next.jobId, collectionId: next.collectionId });
+      if (next.collectionName) setCollectionName(next.collectionName);
+      setStatus(next);
+      setPhase((current) =>
+        next.state === 'failed'
+          ? 'failed'
+          : next.state === 'complete'
+            ? 'ready'
+            : current === 'idle'
+              ? 'indexing'
+              : current
+      );
+
+      if (next.state === 'complete' || next.state === 'failed') {
+        if (timer) clearInterval(timer);
+        timer = null;
+        if (next.state === 'complete') {
+          setProbeFor({ jobId: next.jobId, expected: next.processed });
+        }
+      }
+    };
+
+    timer = setInterval(() => void read(), POLL_INTERVAL_MS);
+    void read();
+
+    return () => {
+      live = false;
+      if (timer) clearInterval(timer);
+      controller.abort();
+    };
+  }, [agentJobId, job?.jobId]);
+
   const runSearch = useCallback(
     async (raw: string) => {
       const trimmed = raw.trim();
@@ -665,13 +733,6 @@ export default function TryPaillette() {
     [collectionName, job, readiness, uploading]
   );
 
-  /**
-   * The shared canvas. `set_results` and `show_artwork` write it from a WebMCP
-   * `execute` call outside React, so this page has to read it to render what
-   * the agent put there — otherwise the agent's search on this collection is
-   * invisible to the person sitting in front of it.
-   */
-  const webmcp = useWebMcpState();
   const agentResults = webmcp.agentResults;
   /** Whichever party acted last owns the grid. */
   const showingAgentResults = Boolean(
