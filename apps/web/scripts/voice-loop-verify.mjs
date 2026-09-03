@@ -9,14 +9,17 @@
  * bar off the page did not exist there; and jsdom has no layout, so nothing
  * that depends on the cursor leaving a card was observable.
  *
- *   pnpm --filter web dev          # in one terminal
+ *   pnpm --filter web dev --port 5199 --strictPort   # in one terminal
  *   node apps/web/scripts/voice-loop-verify.mjs
  *
  * Exits non-zero if any check fails.
  */
 import { chromium } from '@playwright/test';
 
-const BASE = 'http://localhost:5173';
+// Other lanes run their own dev servers on this VM and 5173 is first-come.
+// Pin the port, or this silently verifies somebody else's tree — which it did
+// once, and the results looked entirely plausible.
+const BASE = process.env.PAILLETTE_BASE ?? 'http://localhost:5199';
 const WORKS = [
   ['nga-1', 'Lumber Schooners at Evening on Penobscot Bay', 'Fitz Henry Lane'],
   ['nga-2', "Estuary at Day's End", 'Fitz Henry Lane'],
@@ -54,11 +57,13 @@ const check = (label, pass, detail = '') =>
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 let agentCalls = 0, exemplarCalls = 0;
+const agentBodies = [];
 
 await page.route('**/api/**', async (route) => {
   const path = new URL(route.request().url()).pathname;
   if (path.endsWith('/public-agent/turn')) {
     agentCalls += 1;
+    try { agentBodies.push(JSON.parse(route.request().postData() ?? '{}')); } catch { /* ignore */ }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
       success: true,
       data: { message: { role: 'assistant', content: 'Five warm, calm options. I dropped the two with figures.' } },
@@ -108,7 +113,16 @@ check('note is rendered', (await page.getByText('Five warm, calm options.', { ex
 check('typed turn stays silent', (await page.evaluate(() => window.__spoken)).length === 0);
 
 // -- 2. HUMAN FLAGS: hover + P / X ------------------------------------------
+// The search field carries `autofocus`, and the grid keys are correctly
+// ignored while a text field has focus — so on a fresh page P does nothing
+// until focus leaves it. A click on the board is what a human does first
+// anyway; without it this whole section is dead. See voice-loop-notes.md.
 const card = (id) => page.locator(`[data-artwork-id="${id}"]`).first();
+await page.mouse.click(640, 470);
+await page.waitForTimeout(150);
+check('grid keys are reachable (focus not trapped in a field)',
+  await page.evaluate(() => document.activeElement?.tagName !== 'INPUT'),
+  await page.evaluate(() => document.activeElement?.tagName ?? '?'));
 await card('nga-1').hover();
 await page.keyboard.press('p');
 await page.waitForTimeout(200);
@@ -121,6 +135,38 @@ check('P records a human pick', (c1.flags?.picks ?? []).some((f) => f.id === 'ng
 check('X records a human reject', (c1.flags?.rejects ?? []).some((f) => f.id === 'nga-2'),
   JSON.stringify((c1.flags?.rejects ?? []).map((f) => f.id)));
 check('hovered is reported', Boolean(c1.hovered), JSON.stringify(c1.hovered));
+
+// U clears a flag; C puts two works up against each other.
+await card('nga-2').hover();
+await page.keyboard.press('u');
+await page.waitForTimeout(250);
+const cU = await ctx();
+check('U clears the flag it was put on',
+  !(cU.flags?.rejects ?? []).some((f) => f.id === 'nga-2'),
+  JSON.stringify((cU.flags?.rejects ?? []).map((f) => f.id)));
+// Put it back, so the redeal below still has a reject to act on.
+await page.keyboard.press('x');
+await page.waitForTimeout(200);
+
+await card('nga-3').hover();
+await page.keyboard.press('c');
+await page.waitForTimeout(400);
+const cC = await ctx();
+check('C opens a two-up', Boolean(cC.compare), JSON.stringify(cC.compare));
+await page.screenshot({ path: '/tmp/vcheck/compare.png' });
+
+// Answer it the way a human does — one click. The winner becomes a pick and
+// the loser a reject, which is what "gestures are utterances" means here.
+// There is no Escape on this dialog, so clicking is also the only way out.
+const [winnerId, loserId] = cC.compare.artworkIds;
+await page.locator(`.paillette-compare-work[data-artwork-id="${winnerId}"]`).click();
+await page.waitForTimeout(400);
+const cAfter = await ctx();
+check('the two-up closes when answered', !cAfter.compare);
+check('the winner became a pick',
+  (cAfter.flags?.picks ?? []).some((f) => f.id === winnerId));
+check('the loser became a reject',
+  (cAfter.flags?.rejects ?? []).some((f) => f.id === loserId));
 await page.screenshot({ path: '/tmp/vcheck/flags.png' });
 
 // -- 3. ENTER ON AN EMPTY BAR: redeal, no model call ------------------------
@@ -145,6 +191,44 @@ check('pick holds its place across a second redeal', idxA >= 0 && idxA === idxB,
   `index ${idxA} then ${idxB}`);
 check('reject left the board', !orderAfter.includes('nga-2'));
 await page.screenshot({ path: '/tmp/vcheck/redeal.png' });
+
+// -- 3b. GESTURES RIDE THE TURN ---------------------------------------------
+// The board is flagged by now, so the next typed turn must carry the flags —
+// with titles, or the agent can only recite ids back at somebody.
+// Whatever is on the board after the redeals, minus the pick we are keeping.
+// The journal was drained by the redeals, so these are fresh gestures.
+const onBoard = (c3.board?.order ?? []).filter((id) => id !== 'nga-1');
+const target = onBoard[0];
+// Note the bar is NOT focused here: a bare letter must reach the grid, and
+// pressing x with the caret in the field types an x, which is correct.
+await page.mouse.click(640, 470);
+await page.waitForTimeout(150);
+await card(target).hover();
+await page.keyboard.press('x');
+await page.waitForTimeout(200);
+// And answer a two-up, so the choice is pending when the turn goes.
+await card(onBoard[1]).hover();
+await page.keyboard.press('c');
+await page.waitForTimeout(400);
+const cmp = (await ctx()).compare;
+if (cmp) {
+  await page.locator(`.paillette-compare-work[data-artwork-id="${cmp.artworkIds[0]}"]`).click();
+  await page.waitForTimeout(300);
+}
+await bar.click();
+await bar.fill('now warmer');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(1500);
+const lastTurn = agentBodies.at(-1)?.turn;
+const delta = lastTurn?.flagsDelta ?? [];
+check('the typed turn carries the gestures', delta.length > 0,
+  `${delta.length} flag change(s)`);
+check('the compare answer rides the next turn',
+  Boolean(lastTurn?.compareChoice),
+  JSON.stringify(lastTurn?.compareChoice ?? null).slice(0, 120));
+check('flag changes name the work, not just its id',
+  delta.every((f) => typeof f.title === 'string' && f.title.length > 0),
+  JSON.stringify(delta.map((f) => `${f.to}:${f.title ?? f.artworkId}`)));
 
 // -- 4. DEIXIS: "this one" binds to what the cursor is over ------------------
 await bar.click();

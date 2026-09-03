@@ -108,3 +108,50 @@ One `onClick` with `event.shiftKey` on the card would close both.
 At 1280×900 on `/nga/search`, `agent-activity-panel.tsx` overlaps the prompt
 bar and the deictic chips underneath it. Not touched — a human is editing that
 file — but it is in shot for any recording at that size.
+
+---
+
+## 7. `autofocus` on the search field kills P/X/U/C on a fresh page — for the grid/search lane
+
+**This would have wrecked a take.** Measured in Chromium on `/nga/search`:
+
+```
+focus on load          : INPUT ph="search by feeling, era, subject..."
+picks after P (focused): []
+focus after a click    : BODY
+picks after P (blurred): ["nga-1"]
+```
+
+The search input in `galleries.$galleryId.search.tsx` carries `autofocus`.
+`board-keyboard.ts` correctly ignores bare letters while a text field has focus
+— it must, or typing "p" into the search box would flag a work instead of
+typing. The two are individually right and jointly fatal: load the page, hover a
+card, press `P`, and nothing happens.
+
+One click anywhere neutral fixes it for the rest of the session, so it is a
+precondition rather than a defect in the keys. But it is invisible, and the
+first thing anyone filming will do is load the page and press P.
+
+**The ask, for whoever owns the search route:** drop `autofocus` from that
+input, or blur it when the pointer enters a card. Either makes the keys work
+from a cold load.
+
+Not touched here: it is another lane's file and the fix has UX consequences for
+people who come to the page to type a query.
+
+Worth knowing: this lane's verification script appeared to pass P and X before
+this was understood, because a turn in flight disables the utterance bar and the
+browser moves focus to `body` as a side effect. The script now clicks the board
+first and asserts focus is not in a field, so the precondition is explicit
+rather than accidental.
+
+## 8. The compare two-up has no Escape
+
+`compare-view.tsx` closes on choosing a work or on the "Neither — close"
+button, but nothing handles `Escape`. It is a `role="dialog"` with
+`aria-modal="true"`, where Escape is the expected dismissal, and while it is
+open it covers the page and intercepts pointer events.
+
+Not a blocker — the close button is there and visible — and forcing a decision
+may well be deliberate. Noting it because it cost this lane a confusing
+half-hour of a verification run timing out against an invisible modal.
