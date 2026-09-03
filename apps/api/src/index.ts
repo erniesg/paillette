@@ -17,6 +17,7 @@ import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
 import indexingRoutes from './routes/indexing';
+import metadataMapRoutes from './routes/metadata-map';
 import { requireAuthOrApiKey } from './middleware/auth';
 import {
   processOpenAccessAssetBatch,
@@ -196,6 +197,7 @@ api.use('*', async (c, next) => {
   return requireAuthOrApiKey(c as any, next);
 });
 api.route('/public-index', indexingRoutes);
+api.route('/public-index', metadataMapRoutes);
 api.route('/me', apiKeyRoutes as any);
 api.route('/impact', impactRoutes as any);
 api.route('/usage-events', usageEventRoutes as any);

@@ -667,8 +667,9 @@ const sha256Hex = async (value: string | ArrayBuffer) =>
 /**
  * Only Cloudflare's injected connecting address can separate anonymous
  * visitors. A client-supplied header must never be substituted here.
+ * Exported for the metadata-map route, which shares the limiter below.
  */
-const getClientHash = async (connectingIp: string | undefined) => {
+export const getClientHash = async (connectingIp: string | undefined) => {
   const candidate = connectingIp?.trim();
   if (!candidate || candidate.length > 45) return null;
   return sha256Hex(`webmcp-index:${candidate}`);
@@ -793,17 +794,24 @@ const respondWithStatus = async (env: Env, row: JobStatusRow) => ({
  * Anonymous writes need a ceiling. KV is best-effort: when the binding is
  * absent (unit tests, local dev) or errors, indexing stays available and the
  * per-job caps remain the binding constraint.
+ *
+ * Shared with the other anonymous LLM surface (`metadata-map`), which passes
+ * its own key prefix and a much lower hourly limit.
  */
-const withinJobRateLimit = async (
+export const withinJobRateLimit = async (
   env: Env,
-  clientHash: string | null
+  clientHash: string | null,
+  options: { keyPrefix?: string; limitPerHour?: number } = {}
 ): Promise<boolean> => {
+  const keyPrefix = options.keyPrefix ?? 'webmcp-index-jobs:v1';
+  const limitPerHour =
+    options.limitPerHour ?? INDEXING_CAPS.maxJobsPerClientPerHour;
   if (!clientHash || !env.CACHE) return true;
   const bucket = Math.floor(Date.now() / 3_600_000);
-  const key = `webmcp-index-jobs:v1:${bucket}:${clientHash}`;
+  const key = `${keyPrefix}:${bucket}:${clientHash}`;
   try {
     const used = Number((await env.CACHE.get(key)) || '0');
-    if (Number.isFinite(used) && used >= INDEXING_CAPS.maxJobsPerClientPerHour) {
+    if (Number.isFinite(used) && used >= limitPerHour) {
       return false;
     }
     await env.CACHE.put(key, String((Number.isFinite(used) ? used : 0) + 1), {
