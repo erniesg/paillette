@@ -50,10 +50,15 @@ import {
   getIndexStatus,
   indexFiles,
   indexZip,
+  inspectZipMetadata,
+  getJobMetadataSummary,
   searchIndexedCollection,
   IndexingError,
+  ALL_ROLES,
   type IndexedSearchResult,
   type IndexJobHandle,
+  type JobMetadataSummary,
+  type SuppliedColumnMapping,
 } from '~/lib/indexing-client';
 import {
   DEFAULT_PUBLIC_COLLECTION_ID,
@@ -1098,6 +1103,73 @@ const INDEXING_HINTS: Record<string, string> = {
 const timestampName = (prefix: string) =>
   `${prefix} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
 
+// ---------------------------------------------------------------------------
+// Sidecar columns: mapped in the page, reported, and correctable
+// ---------------------------------------------------------------------------
+
+/**
+ * A judge's own zip does not have our column names. Deterministic rules cover
+ * most real exports, but when they do not, the model that should resolve the
+ * remainder is already in the conversation — so instead of shipping the
+ * header row off to a second model behind the page, `dryRun` hands the
+ * unmapped headers and a few sample values *to the agent*, and `columnMapping`
+ * is how its answer comes back. That keeps the decision visible: the human
+ * sees the proposal in chat before a hundred images are indexed under it.
+ */
+const COLUMN_ROLES: string[] = [...ALL_ROLES, 'ignore'];
+
+const columnMappingSchema = {
+  type: 'object',
+  description: `An explicit mapping from a CSV column heading to the catalogue field it fills, e.g. {"Object Title": "title", "Artist Display Name": "artist", "Inv. No.": "accession_number"}. Use "ignore" to drop a column. Supplying this overrides the automatic matching for the columns you name. Get the headings and sample values from a dryRun call first, and show the human what you propose before you run it for real — this is the confirmation step, not a formality. Values: ${COLUMN_ROLES.join(', ')}.`,
+  additionalProperties: { type: 'string', enum: [...COLUMN_ROLES] },
+};
+
+const parseColumnMapping = (value: unknown): SuppliedColumnMapping | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const allowed = new Set<string>(COLUMN_ROLES);
+  const mapping: SuppliedColumnMapping = {};
+  for (const [column, role] of Object.entries(value as Record<string, unknown>)) {
+    const name = asString(column).slice(0, 200);
+    const target = asString(role).trim().toLowerCase();
+    if (name && allowed.has(target)) {
+      mapping[name] = target as SuppliedColumnMapping[string];
+    }
+  }
+  return Object.keys(mapping).length ? mapping : null;
+};
+
+/**
+ * The sidecar account, shaped for a tool result: what each column became, what
+ * nobody claimed, and — when something is still unresolved — the sample rows a
+ * model needs to finish the job. Never the whole file.
+ */
+const describeMetadata = (summary: JobMetadataSummary) => {
+  const { mapping } = summary;
+  const unmatched = Math.max(0, summary.rows - summary.matchedImages);
+
+  return {
+    sidecar: summary.file,
+    rows: summary.rows,
+    matchedImages: summary.matchedImages,
+    ...(unmatched > 0 ? { rowsWithoutAnImage: unmatched } : {}),
+    mappedColumns: mapping.mapped,
+    ignoredColumns: mapping.ignored,
+    decidedBy:
+      mapping.source === 'supplied'
+        ? 'the columnMapping supplied with this call'
+        : 'automatic column matching in the page (no model was consulted)',
+    columns: mapping.columns,
+    needsReview: mapping.needsReview,
+    ...(mapping.samples.length ? { unmappedSamples: mapping.samples } : {}),
+    summary: mapping.summary,
+    ...(mapping.needsReview
+      ? {
+          next: 'Some columns were not recognised and a field that matters is still empty. Read `unmappedSamples` — that is the header row plus up to three values per unclaimed column — decide what each one is, tell the human what you propose, and re-run this tool with `columnMapping` set. Do not present these records as a finished catalogue until that is settled.',
+        }
+      : {}),
+  };
+};
+
 /**
  * The host's signal is scoped to `execute`; the upload pump deliberately
  * outlives the call. So forward cancellation only while the call is in flight
@@ -1195,7 +1267,7 @@ const indexZipTool = (): WebMcpTool => ({
   name: 'index_zip',
   title: 'Index a zip archive',
   description:
-    'Turn a zip of images into a new, semantically searchable collection on this site. The archive is opened in the browser, each image is embedded in the same vector space as everything else Paillette indexes, and an optional CSV sidecar inside the zip (columns like filename, title, artist, year, medium) becomes catalogue metadata. Returns a jobId immediately — indexing keeps running after this call returns, so poll get_index_status rather than waiting. Use this when the human has an archive of their own images; use index_folder for a handful of loose files.',
+    'Turn a zip of images into a new, semantically searchable collection on this site. The archive is opened in the browser, each image is embedded in the same vector space as everything else Paillette indexes, and an optional CSV sidecar inside the zip becomes catalogue metadata. Its columns do not have to be named the way Paillette names them: headings are matched against a wide alias list in several languages, and anything still unclaimed is inferred from the values themselves. The result comes back as `metadata`, naming every column that was used and every one that was ignored. If it reports needsReview, run with dryRun first, read the samples, and re-run with columnMapping. Returns a jobId immediately — indexing keeps running after this call returns, so poll get_index_status rather than waiting. Use this when the human has an archive of their own images; use index_folder for a handful of loose files.',
   // Mutating: this uploads the human's images and creates a server-side
   // collection. Not destructive — it only ever adds — but it is a real write,
   // so it asks on the page first, exactly as create_collection does.
@@ -1221,6 +1293,13 @@ const indexZipTool = (): WebMcpTool => ({
         description:
           'What to call the collection this archive becomes, e.g. "Studio scans 2024". Shown to the human and returned by get_index_status. Defaults to a timestamped name.',
       },
+      dryRun: {
+        type: 'boolean',
+        default: false,
+        description:
+          'Read the archive and report how its CSV columns were understood — including sample values for the ones that were not — without uploading anything or creating a collection. Use this when you do not know what the sidecar looks like: it costs one read, needs no confirmation from the human, and lets you settle the mapping before a hundred images are indexed under the wrong titles.',
+      },
+      columnMapping: columnMappingSchema,
     },
     required: ['zipUrl'],
     additionalProperties: false,
@@ -1239,14 +1318,22 @@ const indexZipTool = (): WebMcpTool => ({
           0,
           80
         ) || timestampName('Indexed archive');
-
-      const declined = await confirmIndexing(
-        'index_zip',
-        `Index a zip archive as “${collectionName}”?`,
-        `Up to ${INDEX_CAPS.maxImagesPerJob} images are uploaded to this site's shared anonymous indexing sandbox and embedded for search. Nothing is written to the NGA catalogue.`,
-        options.signal
+      const columnMapping = parseColumnMapping(
+        (input as { columnMapping?: unknown }).columnMapping
       );
-      if (declined) return declined;
+      const dryRun = (input as { dryRun?: unknown }).dryRun === true;
+
+      // A dry run writes nothing and uploads nothing, so it does not ask: the
+      // whole point is to be cheap enough to run before asking for anything.
+      if (!dryRun) {
+        const declined = await confirmIndexing(
+          'index_zip',
+          `Index a zip archive as “${collectionName}”?`,
+          `Up to ${INDEX_CAPS.maxImagesPerJob} images are uploaded to this site's shared anonymous indexing sandbox and embedded for search. Nothing is written to the NGA catalogue.`,
+          options.signal
+        );
+        if (declined) return declined;
+      }
 
       const archive = await loadAgentFile(zipUrl, {
         fallbackName: 'archive.zip',
@@ -1254,16 +1341,36 @@ const indexZipTool = (): WebMcpTool => ({
         signal: options.signal,
       });
 
+      if (dryRun) {
+        const preview = await inspectZipMetadata(archive, {
+          ...(columnMapping ? { columnMapping } : {}),
+        });
+        return ok({
+          dryRun: true,
+          archive: { name: archive.name, bytes: archive.size },
+          images: preview.images,
+          skipped: preview.skipped,
+          metadata: describeMetadata(preview.metadata),
+          sampleTitles: preview.sampleTitles,
+          next: preview.metadata.mapping.needsReview
+            ? 'Nothing was uploaded. Work out what the unmapped columns are from `unmappedSamples`, tell the human the mapping you propose, then call index_zip again with `columnMapping` set and dryRun off.'
+            : `Nothing was uploaded. ${preview.images} image(s) are ready and \`sampleTitles\` shows what they would be catalogued as. Call index_zip again without dryRun to index them.`,
+        });
+      }
+
       const handle = await withCallScopedAbort(options.signal, (jobSignal) =>
         indexZip(archive, {
           collectionName,
           orgId: INDEX_SANDBOX_ORG,
           signal: jobSignal,
+          ...(columnMapping ? { columnMapping } : {}),
         })
       );
 
+      const summary = getJobMetadataSummary(handle.jobId);
       return indexJobStarted(handle, collectionName, 'zip', {
         archive: { name: archive.name, bytes: archive.size },
+        ...(summary ? { metadata: describeMetadata(summary) } : {}),
       });
     }),
 });
@@ -1317,8 +1424,9 @@ const indexFolderTool = (): WebMcpTool => ({
         type: 'string',
         maxLength: 100000,
         description:
-          'Optional CSV giving each file a real catalogue record instead of a filename-derived title. One row per image; a header naming any of filename, title, artist, year, medium, classification, description, credit_line, accession_number (common aliases such as creator, date and object type are understood). The filename column is matched case-insensitively against each file\'s name.',
+          'Optional CSV giving each file a real catalogue record instead of a filename-derived title. One row per image, with a header row. The headings do not have to be ours: filename, title, artist, year, medium, classification, description, credit_line and accession_number are matched through a wide alias list (creator, Object Date, Titre, 作者 …), and a column nothing recognises is inferred from its values or reported back unmapped rather than dropped. The filename column is matched case-insensitively against each file\'s name. The result comes back as `metadata` — read it.',
       },
+      columnMapping: columnMappingSchema,
     },
     required: ['files'],
     additionalProperties: false,
@@ -1401,17 +1509,24 @@ const indexFolderTool = (): WebMcpTool => ({
         );
       }
 
+      const columnMapping = parseColumnMapping(
+        (input as { columnMapping?: unknown }).columnMapping
+      );
+
       const handle = await withCallScopedAbort(options.signal, (jobSignal) =>
         indexFiles(files, {
           collectionName,
           orgId: INDEX_SANDBOX_ORG,
           signal: jobSignal,
+          ...(columnMapping ? { columnMapping } : {}),
         })
       );
 
+      const summary = getJobMetadataSummary(handle.jobId);
       return indexJobStarted(handle, collectionName, 'files', {
         submitted: files.length - (metadataCsv ? 1 : 0),
         ...(metadataCsv ? { metadataCsvApplied: true } : {}),
+        ...(summary ? { metadata: describeMetadata(summary) } : {}),
         ...(unreadable.length ? { unreadable } : {}),
       });
     }),
@@ -1421,7 +1536,7 @@ const getIndexStatusTool = (): WebMcpTool => ({
   name: 'get_index_status',
   title: 'Get indexing status',
   description:
-    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, and any per-file errors. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results.',
+    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, any per-file errors, and — for a job this page started — a `metadata` account of which CSV columns became which catalogue fields and which were ignored. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results.',
   // A pure read of job progress, like get_search_quota: it writes nothing, but
   // the answer changes between calls, so it is not idempotent.
   annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
@@ -1503,11 +1618,24 @@ const getIndexStatusTool = (): WebMcpTool => ({
         searchable,
         done,
         notice: status.notice ?? null,
+        // Why the records look the way they do, alongside how many there are.
+        // Only for jobs this page started — the mapping is decided in the
+        // browser and the CSV never reaches the server.
+        ...(status.metadata ? { metadata: describeMetadata(status.metadata) } : {}),
         ...(search ? { search } : {}),
         ...(query && !searchable
           ? {
               searchSkipped:
                 'Nothing is embedded yet, so there is nothing to search. Poll again and repeat the query.',
+            }
+          : {}),
+        // Measured on staging: the vector index accepts an image well before
+        // it will answer a query about it — around four minutes for a small
+        // job. Without this the agent reads an empty result as an empty
+        // collection and tells the human their archive did not index.
+        ...(search && search.count === 0 && searchable
+          ? {
+              searchPending: `${status.processed} image(s) are indexed, but the vector index has not finished making them queryable yet — an empty result here does not mean the collection is empty. Wait ~30s and repeat the same query; it can take a few minutes after the job completes. Do not re-index.`,
             }
           : {}),
         next: done

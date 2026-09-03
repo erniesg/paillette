@@ -4,8 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   IndexingError,
   getIndexStatus,
+  getJobMetadataSummary,
   indexFiles,
   indexZip,
+  inspectZipMetadata,
   isIgnoredEntryName,
   normalizeFilenameKey,
   parseCsvRows,
@@ -342,6 +344,82 @@ describe('zip reading', () => {
       indexZip(file, { collectionName: 'x', orgId: 'nga' })
     ).rejects.toMatchObject({ code: 'NO_INDEXABLE_FILES' });
   });
+
+  it('indexes an archive with no sidecar at all, and says so', async () => {
+    const api = stubIndexingApi({ batchSize: 4 });
+    const file = await buildZip({
+      'plate-01.jpg': imageBytes(1),
+      'plate-02.jpg': imageBytes(2),
+    });
+
+    const parsed = await parseIndexZip(file);
+    expect(parsed.metadata).toEqual({});
+    expect(parsed.metadataFile).toBeNull();
+    expect(parsed.mapping.needsReview).toBe(false);
+    expect(parsed.mapping.summary).toContain('titled from its filename');
+
+    // The images still index — a missing sidecar has never been an error, and
+    // the server derives a title from each filename.
+    const handle = await indexZip(file, { collectionName: 'x', orgId: 'nga' });
+    await waitFor(
+      () => api.urls().includes('/api/public-index/job-42/complete'),
+      'job completion'
+    );
+    expect(api.filenames()).toEqual(['plate-01.jpg', 'plate-02.jpg']);
+    expect(getJobMetadataSummary(handle.jobId)).toMatchObject({
+      file: null,
+      rows: 0,
+      matchedImages: 0,
+    });
+  });
+
+  it('reports the column mapping without uploading anything', async () => {
+    const api = stubIndexingApi({ batchSize: 4 });
+    const file = await buildZip({
+      '436535.jpg': imageBytes(1),
+      '436536.jpg': imageBytes(2),
+      'catalogue.csv':
+        'Object ID,Title,Artist Display Name,Object Date,Curator Note\n' +
+        '436535,Wheat Field,Vincent van Gogh,1889,keep\n' +
+        '436536,The Sower,Vincent van Gogh,1888,keep\n',
+    });
+
+    const preview = await inspectZipMetadata(file);
+
+    expect(api.calls).toEqual([]);
+    expect(preview.images).toBe(2);
+    expect(preview.metadata.file).toBe('catalogue.csv');
+    expect(preview.metadata.matchedImages).toBe(2);
+    expect(preview.metadata.mapping.mapped).toMatchObject({
+      filename: 'Object ID',
+      title: 'Title',
+      artist: 'Artist Display Name',
+      year: 'Object Date',
+    });
+    // What it would actually produce, which is the only thing worth confirming.
+    expect(preview.sampleTitles[0]).toEqual({
+      file: '436535.jpg',
+      title: 'Wheat Field',
+      artist: 'Vincent van Gogh',
+    });
+  });
+
+  it('applies a column mapping the caller supplies', async () => {
+    const file = await buildZip({
+      'one.jpg': imageBytes(1),
+      'meta.csv': 'pic,zzz,qqq\none.jpg,Mostly Harmless,Q. Anon\n',
+    });
+
+    const parsed = await parseIndexZip(file, {
+      columnMapping: { qqq: 'artist', zzz: 'title' },
+    });
+
+    expect(parsed.metadata['one.jpg']).toEqual({
+      title: 'Mostly Harmless',
+      artist: 'Q. Anon',
+    });
+    expect(parsed.mapping.source).toBe('supplied');
+  });
 });
 
 describe('job lifecycle', () => {
@@ -623,8 +701,10 @@ describe('status and search', () => {
   });
 
   it('reads job status without blocking on the run', async () => {
+    // A job this page did not start carries no sidecar account, so the status
+    // is handed back exactly as the API sent it.
     const status = {
-      jobId: 'job-42',
+      jobId: 'job-from-another-tab',
       state: 'running',
       processed: 3,
       total: 10,
@@ -638,7 +718,7 @@ describe('status and search', () => {
       vi.fn(async () => Response.json({ success: true, data: status }))
     );
 
-    await expect(getIndexStatus('job-42')).resolves.toEqual(status);
+    await expect(getIndexStatus('job-from-another-tab')).resolves.toEqual(status);
   });
 
   it('surfaces the API error code when a job is unknown', async () => {

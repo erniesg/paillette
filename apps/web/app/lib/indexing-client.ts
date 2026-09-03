@@ -17,6 +17,26 @@
 
 import JSZip from 'jszip';
 
+import {
+  buildEntryMatcher,
+  mapMetadataColumns,
+  noSidecarReport,
+  type MappedRole,
+  type MetadataMappingReport,
+  type SuppliedColumnMapping,
+} from './metadata-columns';
+
+export {
+  ALL_ROLES,
+  noSidecarReport,
+  normalizeColumnName,
+  type ColumnDecision,
+  type MappedRole,
+  type MetadataField,
+  type MetadataMappingReport,
+  type SuppliedColumnMapping,
+} from './metadata-columns';
+
 // ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
@@ -40,6 +60,24 @@ export type IndexStatus = {
   failed?: number;
   /** True once at least one image is embedded — partial results are usable. */
   searchable?: boolean;
+  /**
+   * How this job read its CSV sidecar. Decided in the browser while the
+   * archive was opened, so the server never sees it and it is stitched back on
+   * here — the poller gets one payload with both the progress and the reason
+   * its records look the way they do.
+   */
+  metadata?: JobMetadataSummary;
+};
+
+/** The sidecar account carried alongside a running job. */
+export type JobMetadataSummary = {
+  /** The sidecar file this came from, or null when there was none. */
+  file: string | null;
+  /** Rows read from the sidecar. */
+  rows: number;
+  /** Rows that named an image the archive actually contains. */
+  matchedImages: number;
+  mapping: MetadataMappingReport;
 };
 
 export type IndexOptions = {
@@ -48,6 +86,12 @@ export type IndexOptions = {
   signal?: AbortSignal;
   /** Additive: progress ticks for in-page UI while the agent polls. */
   onProgress?: (status: { processed: number; total: number }) => void;
+  /**
+   * An explicit `csv header -> catalogue field` mapping, applied instead of
+   * the built-in rules. This is how a proposed mapping gets confirmed before
+   * it is used, rather than guessed at silently.
+   */
+  columnMapping?: SuppliedColumnMapping;
 };
 
 export type IndexedSearchResult = {
@@ -81,34 +125,6 @@ export type ItemMetadata = {
   accession_number?: string;
 };
 
-/** Column aliases, most specific first. Sidecars in the wild are inconsistent. */
-const COLUMN_ALIASES: Array<[keyof ItemMetadata | 'filename', string[]]> = [
-  [
-    'filename',
-    ['filename', 'file', 'filepath', 'path', 'image', 'imagefile', 'imagename', 'imgfile'],
-  ],
-  ['title', ['title', 'worktitle', 'artworktitle', 'objecttitle', 'caption', 'label']],
-  ['artist', ['artist', 'creator', 'author', 'maker', 'artistname', 'photographer']],
-  ['year', ['year', 'date', 'dated', 'datecreated', 'yearcreated', 'created']],
-  ['medium', ['medium', 'materials', 'material', 'technique', 'support']],
-  [
-    'classification',
-    ['classification', 'objecttype', 'type', 'category', 'genre', 'class'],
-  ],
-  ['description', ['description', 'desc', 'notes', 'note', 'summary', 'abstract']],
-  ['credit_line', ['creditline', 'credit', 'creditlines']],
-  [
-    'accession_number',
-    ['accessionnumber', 'accession', 'accessionno', 'objectnumber', 'inventorynumber', 'refno'],
-  ],
-];
-
-/** Fallbacks tried only when no stronger column claimed the role. */
-const WEAK_ALIASES: Array<[keyof ItemMetadata | 'filename', string[]]> = [
-  ['filename', ['name', 'id', 'key']],
-  ['title', ['name', 'subject']],
-];
-
 /**
  * `Blob.text()` is missing in older Safari and in the jsdom build the web
  * tests run under, so fall back to FileReader rather than losing a sidecar.
@@ -125,9 +141,6 @@ export const readTextFile = async (file: Blob): Promise<string> => {
     reader.readAsText(file);
   });
 };
-
-export const normalizeColumnName = (value: string) =>
-  value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** Match a sidecar row to an entry regardless of folder prefix or case. */
 export const normalizeFilenameKey = (value: string) =>
@@ -204,58 +217,89 @@ const firstYear = (value: string): number | undefined => {
   return year >= 0 && year <= 9999 ? year : undefined;
 };
 
+export type MetadataSidecar = {
+  /** Per-file metadata, keyed by lowercase basename. */
+  items: Record<string, ItemMetadata>;
+  /** What each column was taken to mean, and what went unclaimed. */
+  mapping: MetadataMappingReport;
+  /** Rows whose filename matched an image the archive actually contains. */
+  matchedRows: number;
+};
+
+export type SidecarOptions = {
+  /** Image entry names from the archive, so the filename column is provable. */
+  knownFilenames?: string[];
+  /** An explicit `header -> field` mapping that overrides the built-in rules. */
+  columnMapping?: SuppliedColumnMapping;
+};
+
+const TEXT_FIELDS: Array<Exclude<MappedRole, 'filename' | 'year'>> = [
+  'title',
+  'artist',
+  'medium',
+  'classification',
+  'description',
+  'credit_line',
+  'accession_number',
+];
+
 /**
- * Map an optional CSV sidecar to per-file metadata, keyed by lowercase
- * basename. Unknown columns are ignored; a missing sidecar is not an error.
+ * Read a CSV sidecar into per-file metadata *and* an account of how its
+ * columns were understood. A missing filename column is not a failure: the
+ * rows cannot be attached to images, but the report still names every column
+ * so the caller can say why the catalogue came out empty instead of leaving
+ * the human to guess.
  */
-export const parseMetadataCsv = (text: string): Record<string, ItemMetadata> => {
+export const readMetadataCsv = (
+  text: string,
+  options: SidecarOptions = {}
+): MetadataSidecar => {
   const rows = parseCsvRows(text);
-  if (rows.length < 2) return {};
+  const headers = rows[0] ?? [];
+  const body = rows.slice(1);
 
-  const headers = rows[0]!.map(normalizeColumnName);
-  const columnFor = new Map<keyof ItemMetadata | 'filename', number>();
-
-  for (const [field, aliases] of [...COLUMN_ALIASES, ...WEAK_ALIASES]) {
-    if (columnFor.has(field)) continue;
-    for (const alias of aliases) {
-      const index = headers.indexOf(alias);
-      // A column may only fill one role, so `name` cannot be both file and title.
-      if (index >= 0 && ![...columnFor.values()].includes(index)) {
-        columnFor.set(field, index);
-        break;
-      }
-    }
+  if (headers.length === 0) {
+    return { items: {}, mapping: noSidecarReport(), matchedRows: 0 };
   }
 
-  const filenameColumn = columnFor.get('filename');
-  if (filenameColumn === undefined) return {};
+  const entries = buildEntryMatcher(options.knownFilenames ?? []);
 
-  const output: Record<string, ItemMetadata> = {};
-  for (const row of rows.slice(1)) {
+  const { columns, report } = mapMetadataColumns(headers, body, {
+    ...(options.knownFilenames ? { knownFilenames: options.knownFilenames } : {}),
+    ...(options.columnMapping ? { supplied: options.columnMapping } : {}),
+  });
+
+  const filenameColumn = columns.get('filename');
+  if (filenameColumn === undefined) {
+    return {
+      items: {},
+      mapping: {
+        ...report,
+        needsReview: body.length > 0,
+        summary: `${report.summary} No column identifies which image each row describes, so none of these records could be attached — every image is titled from its filename instead.`,
+      },
+      matchedRows: 0,
+    };
+  }
+
+  const items: Record<string, ItemMetadata> = {};
+  let matchedRows = 0;
+
+  for (const row of body) {
     const rawFilename = (row[filenameColumn] || '').trim();
     if (!rawFilename) continue;
 
     const metadata: ItemMetadata = {};
-    const read = (field: keyof ItemMetadata) => {
-      const index = columnFor.get(field);
+    const read = (field: MappedRole) => {
+      const index = columns.get(field);
       const value = index === undefined ? '' : (row[index] || '').trim();
       return value || undefined;
     };
 
-    const title = read('title');
-    if (title) metadata.title = title;
-    const artist = read('artist');
-    if (artist) metadata.artist = artist;
-    const medium = read('medium');
-    if (medium) metadata.medium = medium;
-    const classification = read('classification');
-    if (classification) metadata.classification = classification;
-    const description = read('description');
-    if (description) metadata.description = description;
-    const creditLine = read('credit_line');
-    if (creditLine) metadata.credit_line = creditLine;
-    const accession = read('accession_number');
-    if (accession) metadata.accession_number = accession;
+    for (const field of TEXT_FIELDS) {
+      const value = read(field);
+      if (value) metadata[field] = value;
+    }
 
     const rawYear = read('year');
     if (rawYear) {
@@ -264,11 +308,42 @@ export const parseMetadataCsv = (text: string): Record<string, ItemMetadata> => 
       if (year !== undefined) metadata.year = year;
     }
 
-    output[normalizeFilenameKey(rawFilename)] = metadata;
+    // Key on the archive entry when the value resolves to one, so a sidecar
+    // that says `436535` still lands on `436535.jpg`. Otherwise key on the
+    // value itself and let the batch pump match it if it can.
+    const entry = entries.resolve(rawFilename);
+    if (entry) matchedRows += 1;
+    items[entry ?? normalizeFilenameKey(rawFilename)] = metadata;
   }
 
-  return output;
+  // Every column mapped, every row read, and not one of them landed on an
+  // image: the sidecar describes something other than what is in the archive.
+  // That is worth saying out loud, because from the outside it looks identical
+  // to having had no sidecar at all.
+  if (entries.size > 0 && body.length > 0 && matchedRows === 0) {
+    return {
+      items,
+      mapping: {
+        ...report,
+        needsReview: true,
+        summary: `${report.summary} None of the ${body.length} row(s) named an image in this archive — "${headers[filenameColumn] ?? ''}" is probably not the column that identifies the file. Set columnMapping to the column that is, or these images will be titled from their filenames.`,
+      },
+      matchedRows,
+    };
+  }
+
+  return { items, mapping: report, matchedRows };
 };
+
+/**
+ * Map an optional CSV sidecar to per-file metadata, keyed by lowercase
+ * basename. Unknown columns are ignored; a missing sidecar is not an error.
+ * `readMetadataCsv` is the same read with the mapping report attached.
+ */
+export const parseMetadataCsv = (
+  text: string,
+  options: SidecarOptions = {}
+): Record<string, ItemMetadata> => readMetadataCsv(text, options).items;
 
 // ---------------------------------------------------------------------------
 // Zip reading
@@ -317,6 +392,10 @@ export type ParsedZip = {
    */
   skipped: Array<{ name: string; size: number }>;
   metadata: Record<string, ItemMetadata>;
+  /** How the sidecar's columns were read. Present even when there was none. */
+  mapping: MetadataMappingReport;
+  /** The sidecar this mapping came from, if any. */
+  metadataFile: string | null;
   /** Entries that could not even be listed. Never fatal. */
   errors: IndexJobError[];
 };
@@ -324,13 +403,20 @@ export type ParsedZip = {
 /**
  * Read a zip's directory without decompressing its images. A malformed or
  * unreadable entry is reported and skipped rather than failing the archive.
+ *
+ * The sidecar is mapped only once every image entry is known, because the
+ * surest way to identify the filename column is that its values name files
+ * this archive actually contains.
  */
-export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
+export const parseIndexZip = async (
+  file: File | Blob,
+  options: { columnMapping?: SuppliedColumnMapping } = {}
+): Promise<ParsedZip> => {
   const zip = await JSZip.loadAsync(file);
   const images: ZipEntry[] = [];
   const skipped: Array<{ name: string; size: number }> = [];
   const errors: IndexJobError[] = [];
-  let metadata: Record<string, ItemMetadata> = {};
+  let csvText: string | null = null;
   let csvName: string | null = null;
 
   const entries = Object.values(zip.files) as Array<
@@ -345,7 +431,7 @@ export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
       const depth = entry.name.split('/').length;
       if (!csvName || depth < csvName.split('/').length) {
         try {
-          metadata = parseMetadataCsv(await entry.async('string'));
+          csvText = await entry.async('string');
           csvName = entry.name;
         } catch (error) {
           errors.push({
@@ -377,7 +463,22 @@ export const parseIndexZip = async (file: File | Blob): Promise<ParsedZip> => {
     });
   }
 
-  return { images, skipped, metadata, errors };
+  const sidecar =
+    csvText === null
+      ? null
+      : readMetadataCsv(csvText, {
+          knownFilenames: images.map((entry) => entry.name),
+          ...(options.columnMapping ? { columnMapping: options.columnMapping } : {}),
+        });
+
+  return {
+    images,
+    skipped,
+    metadata: sidecar?.items ?? {},
+    mapping: sidecar?.mapping ?? noSidecarReport(),
+    metadataFile: csvName,
+    errors,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -534,12 +635,35 @@ const pumpBatches = async (
   );
 };
 
+/**
+ * The sidecar account for jobs this page started. The mapping is worked out in
+ * the browser and never travels to the server, so `getIndexStatus` reads it
+ * from here and merges it into the status the API returns. Bounded, because a
+ * long agent session can start a lot of jobs.
+ */
+const JOB_METADATA = new Map<string, JobMetadataSummary>();
+const JOB_METADATA_LIMIT = 32;
+
+const rememberJobMetadata = (jobId: string, summary: JobMetadataSummary) => {
+  JOB_METADATA.set(jobId, summary);
+  while (JOB_METADATA.size > JOB_METADATA_LIMIT) {
+    const oldest = JOB_METADATA.keys().next().value;
+    if (oldest === undefined) break;
+    JOB_METADATA.delete(oldest);
+  }
+};
+
+/** What this page knows about a job's sidecar, if it started that job. */
+export const getJobMetadataSummary = (jobId: string) =>
+  JOB_METADATA.get(jobId) ?? null;
+
 const startJob = async (
   entries: ZipEntry[],
   skipped: Array<{ name: string; size: number }>,
   metadata: Record<string, ItemMetadata>,
   opts: IndexOptions,
-  source: 'zip' | 'files'
+  source: 'zip' | 'files',
+  summary: JobMetadataSummary
 ): Promise<IndexJobHandle> => {
   if (entries.length === 0) {
     throw new IndexingError(
@@ -552,6 +676,7 @@ const startJob = async (
   // each and `get_index_status` can account for everything in the archive.
   const job = await createJob([...entries, ...skipped], opts, source);
   const readers = new Map(entries.map((entry) => [entry.name, entry.read]));
+  rememberJobMetadata(job.jobId, summary);
 
   // Deliberately not awaited: the caller is a WebMCP `execute` that must
   // return now. Progress is read back through `getIndexStatus(jobId)`.
@@ -566,6 +691,67 @@ const startJob = async (
 // Public API
 // ---------------------------------------------------------------------------
 
+const summarize = (
+  file: string | null,
+  sidecar: MetadataSidecar | null
+): JobMetadataSummary => ({
+  file,
+  rows: sidecar?.mapping.rowCount ?? 0,
+  matchedImages: sidecar?.matchedRows ?? 0,
+  mapping: sidecar?.mapping ?? noSidecarReport(),
+});
+
+/**
+ * Read an archive's sidecar and report how its columns were understood,
+ * without uploading anything. The point of a separate read is that a mapping
+ * can be inspected — and corrected via `columnMapping` — *before* a hundred
+ * images are indexed under titles nobody checked.
+ */
+export async function inspectZipMetadata(
+  file: File | Blob,
+  opts: { columnMapping?: SuppliedColumnMapping } = {}
+): Promise<{
+  images: number;
+  skipped: Array<{ name: string; size: number }>;
+  metadata: JobMetadataSummary;
+  sampleTitles: Array<{ file: string; title: string | null; artist: string | null }>;
+}> {
+  let parsed: ParsedZip;
+  try {
+    parsed = await parseIndexZip(file, opts);
+  } catch (error) {
+    throw new IndexingError(
+      `That file could not be read as a zip archive: ${describeError(error)}`,
+      'INVALID_ARCHIVE'
+    );
+  }
+
+  const matched = parsed.images.filter(
+    (entry) => parsed.metadata[normalizeFilenameKey(entry.name)]
+  ).length;
+
+  return {
+    images: parsed.images.length,
+    skipped: parsed.skipped,
+    metadata: {
+      file: parsed.metadataFile,
+      rows: parsed.mapping.rowCount,
+      matchedImages: matched,
+      mapping: parsed.mapping,
+    },
+    // What the mapping actually produces, which is the only thing a human can
+    // judge it by. A wrong column is obvious the moment you read three titles.
+    sampleTitles: parsed.images.slice(0, 5).map((entry) => {
+      const record = parsed.metadata[normalizeFilenameKey(entry.name)];
+      return {
+        file: entry.name,
+        title: record?.title ?? null,
+        artist: record?.artist ?? null,
+      };
+    }),
+  };
+}
+
 /** `index_zip`: a zip of images (+ optional CSV sidecar) becomes a collection. */
 export async function indexZip(
   file: File,
@@ -573,14 +759,26 @@ export async function indexZip(
 ): Promise<IndexJobHandle> {
   let parsed: ParsedZip;
   try {
-    parsed = await parseIndexZip(file);
+    parsed = await parseIndexZip(file, {
+      ...(opts.columnMapping ? { columnMapping: opts.columnMapping } : {}),
+    });
   } catch (error) {
     throw new IndexingError(
       `That file could not be read as a zip archive: ${describeError(error)}`,
       'INVALID_ARCHIVE'
     );
   }
-  return startJob(parsed.images, parsed.skipped, parsed.metadata, opts, 'zip');
+
+  const matched = parsed.images.filter(
+    (entry) => parsed.metadata[normalizeFilenameKey(entry.name)]
+  ).length;
+
+  return startJob(parsed.images, parsed.skipped, parsed.metadata, opts, 'zip', {
+    file: parsed.metadataFile,
+    rows: parsed.mapping.rowCount,
+    matchedImages: matched,
+    mapping: parsed.mapping,
+  });
 }
 
 /** `index_folder`: the agent supplies a file list; same batch path. */
@@ -590,7 +788,7 @@ export async function indexFiles(
 ): Promise<IndexJobHandle> {
   const images: ZipEntry[] = [];
   const skipped: Array<{ name: string; size: number }> = [];
-  let metadata: Record<string, ItemMetadata> = {};
+  const sidecars: Array<{ name: string; text: string }> = [];
 
   for (const file of files) {
     const name = file.name.split(/[\\/]/).pop() || file.name;
@@ -598,7 +796,7 @@ export async function indexFiles(
 
     if (extensionOf(name) === 'csv') {
       try {
-        metadata = { ...metadata, ...parseMetadataCsv(await readTextFile(file)) };
+        sidecars.push({ name, text: await readTextFile(file) });
       } catch {
         // An unreadable sidecar just means filename-derived titles.
       }
@@ -612,18 +810,50 @@ export async function indexFiles(
     images.push({ name, size: file.size, read: async () => file });
   }
 
-  return startJob(images, skipped, metadata, opts, 'files');
+  // Sidecars are read after the images, for the same reason as in a zip: the
+  // filename column is identifiable by the files it names.
+  const knownFilenames = images.map((entry) => entry.name);
+  let metadata: Record<string, ItemMetadata> = {};
+  let best: { name: string; sidecar: MetadataSidecar } | null = null;
+
+  for (const entry of sidecars) {
+    const read = readMetadataCsv(entry.text, {
+      knownFilenames,
+      ...(opts.columnMapping ? { columnMapping: opts.columnMapping } : {}),
+    });
+    metadata = { ...metadata, ...read.items };
+    // Several CSVs in one folder is rare; report the one that mapped most.
+    if (!best || read.matchedRows > best.sidecar.matchedRows) {
+      best = { name: entry.name, sidecar: read };
+    }
+  }
+
+  return startJob(
+    images,
+    skipped,
+    metadata,
+    opts,
+    'files',
+    summarize(best?.name ?? null, best?.sidecar ?? null)
+  );
 }
 
-/** `get_index_status`: pollable progress. Never blocks on the run itself. */
+/**
+ * `get_index_status`: pollable progress. Never blocks on the run itself.
+ *
+ * The sidecar account is stitched in from this page rather than the server,
+ * because the mapping was decided here and the raw CSV is never uploaded.
+ */
 export async function getIndexStatus(
   jobId: string,
   opts?: { signal?: AbortSignal }
 ): Promise<IndexStatus> {
-  return requestJson<IndexStatus>(`/api/public-index/${jobId}/status`, {
-    method: 'GET',
-    signal: opts?.signal,
-  });
+  const status = await requestJson<IndexStatus>(
+    `/api/public-index/${jobId}/status`,
+    { method: 'GET', signal: opts?.signal }
+  );
+  const metadata = JOB_METADATA.get(jobId);
+  return metadata ? { ...status, metadata } : status;
 }
 
 /**
