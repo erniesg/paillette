@@ -217,6 +217,10 @@ export function AgentActivityPanel() {
           'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
       }}
     >
+      <style>{`@keyframes webmcpPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.3; transform: scale(0.55); }
+      }`}</style>
       <header
         style={{
           display: 'flex',
@@ -500,14 +504,35 @@ export function AgentActivityPanel() {
         <section style={{ display: 'grid', gap: 8 }}>
           <div
             style={{
-              fontFamily: MONO,
-              fontSize: 10.5,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: MUTED,
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 12,
             }}
           >
-            Tool calls
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 10.5,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: MUTED,
+              }}
+            >
+              Tool calls
+            </span>
+            {runningEntry && (
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 10.5,
+                  letterSpacing: '0.06em',
+                  color: RUNNING,
+                }}
+              >
+                step {stepByEntryId.get(runningEntry.id)} of {burst.length}
+              </span>
+            )}
           </div>
           {activity.length === 0 ? (
             <p style={{ margin: 0, fontSize: 12.5, color: MUTED }}>
@@ -523,60 +548,97 @@ export function AgentActivityPanel() {
                 gap: 8,
               }}
             >
-              {activity.map((entry) => (
-                <li
-                  key={entry.id}
-                  style={{
-                    border: `1px solid ${LINE}`,
-                    borderRadius: 8,
-                    padding: 10,
-                    background: SURFACE_RAISED,
-                    display: 'grid',
-                    gap: 5,
-                  }}
-                >
-                  <div
+              {activity.map((entry) => {
+                const step = stepByEntryId.get(entry.id);
+                const isRunning = entry.status === 'running';
+                return (
+                  <li
+                    key={entry.id}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 10,
+                      border: `1px solid ${isRunning ? RUNNING : LINE}`,
+                      borderRadius: 8,
+                      padding: 10,
+                      background: isRunning
+                        ? 'rgba(168,85,247,0.14)'
+                        : SURFACE_RAISED,
+                      boxShadow: isRunning
+                        ? '0 0 0 1px rgba(168,85,247,0.35), 0 0 22px rgba(168,85,247,0.22)'
+                        : undefined,
+                      display: 'grid',
+                      gap: 5,
                     }}
                   >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          minWidth: 0,
+                        }}
+                      >
+                        {step !== undefined && (
+                          <span
+                            style={{
+                              fontFamily: MONO,
+                              fontSize: 10,
+                              letterSpacing: '0.04em',
+                              padding: '1px 5px',
+                              borderRadius: 4,
+                              border: `1px solid ${isRunning ? RUNNING : LINE}`,
+                              color: isRunning ? RUNNING : MUTED,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            step {step}
+                          </span>
+                        )}
+                        <code
+                          style={{
+                            fontFamily: MONO,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: TEXT,
+                          }}
+                        >
+                          {entry.toolName}
+                        </code>
+                      </span>
+                      <Pill
+                        color={STATUS_COLOR[entry.status]}
+                        pulse={isRunning}
+                      >
+                        {STATUS_LABEL[entry.status]}
+                        {entry.endedAt
+                          ? ` ${entry.endedAt - entry.startedAt}ms`
+                          : ''}
+                      </Pill>
+                    </div>
                     <code
                       style={{
                         fontFamily: MONO,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: TEXT,
+                        fontSize: 11.5,
+                        color: MUTED,
+                        wordBreak: 'break-word',
                       }}
                     >
-                      {entry.toolName}
+                      {formatInput(entry.input)}
                     </code>
-                    <Pill color={STATUS_COLOR[entry.status]}>
-                      {STATUS_LABEL[entry.status]}
-                      {entry.endedAt
-                        ? ` ${entry.endedAt - entry.startedAt}ms`
-                        : ''}
-                    </Pill>
-                  </div>
-                  <code
-                    style={{
-                      fontFamily: MONO,
-                      fontSize: 11.5,
-                      color: MUTED,
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    {formatInput(entry.input)}
-                  </code>
-                  {entry.summary && (
-                    <div style={{ fontSize: 12.5, color: TEXT }}>
-                      {entry.summary}
-                    </div>
-                  )}
-                </li>
-              ))}
+                    {entry.summary && (
+                      <div style={{ fontSize: 12.5, color: TEXT }}>
+                        {entry.summary}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </section>
