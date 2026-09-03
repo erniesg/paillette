@@ -17,6 +17,7 @@ import {
   type LedgerFrame,
 } from '~/components/board/ledger-filmstrip';
 import { TwoUpCompare } from '~/components/board/two-up-compare';
+import { useCullingKeys } from '~/components/board/use-culling-keys';
 import { DEMO_WORKS, type DemoWork } from '~/lib/board/demo-works';
 
 export const meta: MetaFunction = () => [
@@ -140,6 +141,16 @@ export default function NightDealRoute() {
   );
   const turnSeq = useRef(0);
 
+  /**
+   * The card the culling keys act on.
+   *
+   * Hover is what Lightroom uses in grid view. Focus is the same idea without
+   * a pointer, and it is what makes the loop work by keyboard alone — which
+   * matters because the board has to be fully drivable by typing, with no
+   * voice and, at the limit, no mouse either.
+   */
+  const [targetId, setTargetId] = useState<string | null>(null);
+
   const byId = useMemo(() => {
     const map = new Map<string, DemoWork>();
     for (const work of DEMO_WORKS) map.set(work.id, work);
@@ -260,8 +271,10 @@ export default function NightDealRoute() {
       };
     });
 
-    const agentNote =
-      'Three provisional marks, dashed until you confirm them. The reject is the one that broke the run.';
+    // What it is proposing, not how the proposal is drawn. The dashes already
+    // say "provisional" and the ink already says "the agent"; a sentence
+    // repeating either is the interface explaining itself.
+    const agentNote = 'Two to keep, one to lose.';
 
     setAgentActiveIds(candidates);
     setFlags(nextFlags);
@@ -277,8 +290,11 @@ export default function NightDealRoute() {
 
     setFlags(nextFlags);
     setAgentActiveIds([]);
-    setNote('Confirmed. The dashed marks are solid now, still in the agent’s ink.');
-    recordTurn('human', 'Confirmed the agent’s marks', boardIds, nextFlags);
+    // Confirming needs no wall label. The marks going from dashed to solid is
+    // the whole of the feedback, and a sentence saying so out loud is the
+    // interface narrating a thing you just watched happen.
+    setNote(null);
+    recordTurn('human', 'Confirmed', boardIds, nextFlags);
   }, [flags, boardIds, recordTurn]);
 
   const redeal = useCallback(() => {
@@ -309,21 +325,32 @@ export default function NightDealRoute() {
       .map((work) => work.id);
 
     const nextBoardIds = [...kept, ...filler];
+
+    /*
+     * Two different jobs, and conflating them is what made this wordy.
+     *
+     * The note is a wall label: one sentence, and only when there is something
+     * to say. "Picks held their places" was narrating an animation the viewer
+     * had just watched, and "flag a few and redeal again" was onboarding copy
+     * on a board with two buttons. With no flags there is nothing to label, so
+     * there is no label — the twelve cards changing is the feedback.
+     *
+     * The caption is a record, and a record always has an entry.
+     */
     const agentNote = positives.length
       ? `Following ${positives.length} pick${positives.length === 1 ? '' : 's'}${
           negatives.length
             ? ` and ${negatives.length} reject${negatives.length === 1 ? '' : 's'}`
             : ''
-        }. Picks held their places.`
-      : 'No flags yet, so this is just a fresh deal. Flag a few and redeal again.';
+        }.`
+      : null;
 
     setBoardIds(nextBoardIds);
     setDealCount((count) => count + 1);
     setNote(agentNote);
-    // The human pressed redeal; the agent wrote the sentence about it. The
-    // frame is the agent's because the caption is, and the ink has to match
-    // the words it is colouring.
-    recordTurn('agent', agentNote, nextBoardIds, flags);
+    // The human pressed redeal; the agent wrote the sentence about it, so the
+    // frame is the agent's and the ink matches the words it is colouring.
+    recordTurn('agent', agentNote ?? 'Redealt', nextBoardIds, flags);
   }, [pickIds, rejectedWorks, byId, dealCount, flags, recordTurn]);
 
   /**
@@ -371,7 +398,10 @@ export default function NightDealRoute() {
 
       setFlags(nextFlags);
       setComparePair(null);
-      setNote(`Picked ${winner.title ?? 'it'}. The other one is in the tray.`);
+      // The winner is now wearing a frame and the loser is greyed. Saying
+      // "the other one is in the tray" describes a position the eye can
+      // already see, which is the definition of a word doing no work.
+      setNote(null);
       // The click is the utterance, so the caption is the gesture rather than
       // a sentence about it.
       recordTurn(
@@ -400,7 +430,9 @@ export default function NightDealRoute() {
       setActiveFrameId(entry.frame.id);
       setComparePair(null);
       setAgentActiveIds([]);
-      setNote(entry.frame.caption ?? null);
+      // The strip already marks which frame you are on, and the board already
+      // changed. Re-printing the caption above the board says it a third time.
+      setNote(null);
     },
     [ledger]
   );
@@ -428,6 +460,15 @@ export default function NightDealRoute() {
     return out;
   }, [flags]);
 
+  // Off while two-up owns the screen: in there, left and right mean "choose",
+  // and a stray `X` should not be rejecting something on the board behind.
+  useCullingKeys({
+    targetId,
+    onFlag: setFlag,
+    onCompare: openCompare,
+    enabled: comparePair === null,
+  });
+
   return (
     // Twelve cards, all on one screen. The point of dealing twelve rather than
     // sixty is that every move is readable, and that only holds if you never
@@ -441,9 +482,12 @@ export default function NightDealRoute() {
           >
             The deal
           </h1>
+          {/* Catalogue data, so it earns its place — but the tray count went,
+              because the tray is right there and counting it in words as well
+              is the same fact twice. */}
           <p className="lt-catalogue mt-1">
-            {DEFAULT_BOARD_SIZE} works · deal {dealCount} · {pickIds.length} picked ·{' '}
-            {rejectedWorks.length} rejected · {trayItems.length} in the tray
+            {DEFAULT_BOARD_SIZE} works · deal {dealCount} · {pickIds.length}{' '}
+            picked · {rejectedWorks.length} rejected
           </p>
         </div>
 
@@ -483,18 +527,36 @@ export default function NightDealRoute() {
           agentActiveIds={agentActiveIds}
           size={DEFAULT_BOARD_SIZE}
           renderCard={(work, context) => (
-            <LightTableCard
-              work={work}
-              rank={context.rank}
-              mark={context.mark}
-              agentActive={context.agentActive}
-              actions={
-                <FlagRow
-                  current={flags[work.id]?.flag ?? null}
-                  onFlag={(flag) => setFlag(work.id, flag)}
-                />
+            /*
+             * Hover and focus both nominate the card the keys act on, and
+             * leaving clears it — `onBlur` as well as `onMouseLeave`, or a
+             * card stays armed after the pointer has gone and a later `X`
+             * rejects something nobody was looking at.
+             */
+            <div
+              className="h-full"
+              onMouseEnter={() => setTargetId(work.id)}
+              onMouseLeave={() =>
+                setTargetId((current) => (current === work.id ? null : current))
               }
-            />
+              onFocus={() => setTargetId(work.id)}
+              onBlur={() =>
+                setTargetId((current) => (current === work.id ? null : current))
+              }
+            >
+              <LightTableCard
+                work={work}
+                rank={context.rank}
+                mark={context.mark}
+                agentActive={context.agentActive}
+                actions={
+                  <FlagRow
+                    current={flags[work.id]?.flag ?? null}
+                    onFlag={(flag) => setFlag(work.id, flag)}
+                  />
+                }
+              />
+            </div>
           )}
           renderTrayCard={(work) => (
             <button

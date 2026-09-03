@@ -38,6 +38,38 @@ export interface LightTableCardProps {
 
 const UNTITLED = 'Untitled';
 
+/** The picture, or the honest absence of one. Shared by both wells. */
+function LightTableWell({
+  source,
+  title,
+  failed,
+  onFail,
+}: {
+  source: string | null;
+  title: string;
+  failed: boolean;
+  onFail: () => void;
+}) {
+  if (!source || failed) {
+    return (
+      <span className="lt-catalogue flex h-full w-full items-center justify-center">
+        No image
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={source}
+      alt={title}
+      loading="lazy"
+      draggable={false}
+      onError={onFail}
+      className="h-full w-full object-contain"
+    />
+  );
+}
+
 /**
  * One work, mounted like a slide on a light table: a pale mount, a dark well
  * so the work has an edge to sit against, and enough shadow to look like an
@@ -69,8 +101,20 @@ export function LightTableCard({
     // a held pick cannot be nudged vertically by a neighbour with a longer
     // title changing underneath it. Uniform slots are what make "it did not
     // move" a fact rather than an approximation.
+    /*
+     * The card is always a tab stop, even with nothing to open.
+     *
+     * Focus is what nominates a card for the culling keys — it is the
+     * pointerless half of "the card under the cursor" — so a card that cannot
+     * hold focus cannot be picked or rejected by keyboard at all. This
+     * previously rendered a *disabled* button whenever `onSelect` was absent,
+     * which took the whole board out of the tab order and silently killed the
+     * keyboard path on any board that was not also click-to-open.
+     */
     <article
       className={`lt-slide flex h-full flex-col ${className ?? ''}`}
+      tabIndex={0}
+      aria-label={`${title} — ${artist}`}
       {...provenanceAttributes(mark, { agentActive })}
     >
       {mark && (
@@ -80,28 +124,35 @@ export function LightTableCard({
         </span>
       )}
 
-      <button
-        type="button"
-        onClick={onSelect ? () => onSelect(work) : undefined}
-        disabled={!onSelect}
-        className="lt-slide-well lt-focusable block w-full flex-1 appearance-none border-0 p-0 disabled:cursor-default"
-        aria-label={onSelect ? `Open ${title}` : undefined}
-      >
-        {source && !failed ? (
-          <img
-            src={source}
-            alt={title}
-            loading="lazy"
-            draggable={false}
-            onError={() => setFailed(true)}
-            className="h-full w-full object-contain"
+      {/*
+       * Opening is a separate affordance from pointing at the card, so it only
+       * exists when there is something to open. A button that does nothing is
+       * worse than no button.
+       */}
+      {onSelect ? (
+        <button
+          type="button"
+          onClick={() => onSelect(work)}
+          className="lt-slide-well lt-focusable block w-full flex-1 appearance-none border-0 p-0"
+          aria-label={`Open ${title}`}
+        >
+          <LightTableWell
+            source={source}
+            title={title}
+            failed={failed}
+            onFail={() => setFailed(true)}
           />
-        ) : (
-          <span className="lt-catalogue flex h-full w-full items-center justify-center">
-            No image
-          </span>
-        )}
-      </button>
+        </button>
+      ) : (
+        <div className="lt-slide-well block w-full flex-1">
+          <LightTableWell
+            source={source}
+            title={title}
+            failed={failed}
+            onFail={() => setFailed(true)}
+          />
+        </div>
+      )}
 
       {/* The label block is a fixed height so the wells all line up. A long
         * title truncates rather than pushing its own card taller than the rest

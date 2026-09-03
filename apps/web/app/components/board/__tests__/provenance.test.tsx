@@ -136,8 +136,34 @@ describe('LightTableCard', () => {
     ).toBeInTheDocument();
   });
 
+  /*
+   * The name of this test was already right and the assertion was wrong: it
+   * required a *disabled button*, which is still a button and, worse, is not
+   * a tab stop. That took the whole board out of the tab order and killed the
+   * culling keys, which act on whichever card holds focus.
+   *
+   * With nothing to open there is no control, and the card carries the tab
+   * stop itself.
+   */
   it('is not a button when there is nothing to open', () => {
     render(<LightTableCard work={work} />);
-    expect(screen.getByRole('button')).toBeDisabled();
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+
+    const card = screen.getByRole('article');
+    expect(card).toHaveAttribute('tabindex', '0');
+    // Named by the work, so a screen reader reaching the card knows which one
+    // the culling keys are about to act on.
+    expect(card).toHaveAccessibleName(
+      'Lumber Schooners at Evening — Fitz Henry Lane'
+    );
+  });
+
+  it('offers exactly one control when there is something to open', () => {
+    render(<LightTableCard work={work} onSelect={() => {}} />);
+
+    const open = screen.getByRole('button');
+    expect(open).toBeEnabled();
+    expect(open).toHaveAccessibleName(/^Open /);
   });
 });

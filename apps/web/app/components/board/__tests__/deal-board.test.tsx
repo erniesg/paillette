@@ -132,7 +132,12 @@ describe('DealBoard', () => {
 
     const tray = screen.getByRole('complementary', { name: /set aside — 2 works/i });
     expect(tray).toBeInTheDocument();
-    expect(within(tray).getByText('Set aside')).toBeVisible();
+    expect(within(tray).getAllByRole('generic').length).toBeGreaterThan(0);
+
+    // The name is on the landmark and nowhere on screen: the tray is a
+    // position, not a labelled box, and a heading over a column of greyed
+    // cards at the edge is a word doing no work.
+    expect(within(tray).queryByText('Set aside')).not.toBeInTheDocument();
   });
 
   it('omits the tray when the board is not culling', () => {
@@ -200,6 +205,28 @@ describe('DealBoard', () => {
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent('3 works on the board');
     expect(status).toHaveTextContent('3 new');
+  });
+
+  /*
+   * Focus is the pointerless half of "the card under the cursor", so a card
+   * that cannot hold focus cannot be picked or rejected by keyboard at all.
+   * This regressed once already: the card rendered a *disabled* button
+   * whenever it had nothing to open, which took the whole board out of the tab
+   * order. Caught in a browser, not here, so it is asserted here now.
+   */
+  it('leaves every card able to hold focus with nothing to open', () => {
+    render(<DealBoard items={works(['a', 'b'])} size={2} renderCard={renderCard} />);
+
+    const cards = screen
+      .getByTestId('deal-board-grid')
+      .querySelectorAll('article.lt-slide');
+
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card).toHaveAttribute('tabindex', '0');
+    }
+    // And no dead control left behind to take the tab stop instead.
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
   it('passes the rank and mark through to the card renderer', () => {
