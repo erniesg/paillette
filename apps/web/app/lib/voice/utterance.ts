@@ -10,6 +10,13 @@
 /** How long a released utterance sits, visibly, before it commits. */
 export const GRACE_MS = 1200;
 
+/**
+ * How long release will wait for a transcript that has not arrived yet before
+ * concluding nothing was said. Bounded on purpose: an open-ended wait lets a
+ * stray result turn up minutes later and start a countdown nobody expects.
+ */
+export const FLUSH_GRACE_MS = 700;
+
 const endsOpen = (text: string) => /[\s([{“"'\-—]$/.test(text);
 const startsClosed = (interim: string) => /^[\s,.;:!?)\]}]/.test(interim);
 

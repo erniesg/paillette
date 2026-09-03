@@ -433,6 +433,48 @@ describe('AgentPrompt', () => {
     ).toBeInTheDocument();
   });
 
+  it('starts the countdown when a transcript arrives after release', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    stubFetch();
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    // Release beats the recogniser's flush — common on a real machine.
+    release();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+
+    heard('something warm', true);
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveValue(
+      'something warm'
+    );
+  });
+
+  it('puts no countdown on screen for a tap that heard nothing', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const fetchMock = stubFetch();
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    release();
+    act(() => {
+      vi.advanceTimersByTime(GRACE_MS * 4);
+    });
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // And a transcript that turns up long afterwards must not start sending.
+    heard('a stray result from a minute ago', true);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
   it('speaks the note back after a spoken turn, one sentence of it', async () => {
     setModelContext({ getTools: async () => [] });
     installRecognition();

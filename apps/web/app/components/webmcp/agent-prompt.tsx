@@ -7,6 +7,7 @@ import {
   type SpeechRecognitionLike,
 } from '~/lib/voice/recognition';
 import {
+  FLUSH_GRACE_MS,
   GRACE_MS,
   composeUtterance,
   graceProgress,
@@ -178,6 +179,10 @@ export function AgentPrompt({
   const beforeUtteranceRef = useRef('');
   /** Set once per render to a closure over the current text. See the effect. */
   const commitRef = useRef<() => void>(() => {});
+  /** The composed field, readable from recogniser callbacks. */
+  const composedRef = useRef('');
+  /** Released with nothing heard yet, briefly waiting for a late transcript. */
+  const awaitingFlushRef = useRef(false);
   /** The page's voice, or null where the browser has none. */
   const speechRef = useRef<SpeechChannel | null>(null);
 
@@ -353,6 +358,7 @@ export function AgentPrompt({
     // Talking over the human is the one thing a voice interface cannot do.
     speechRef.current?.cancel();
     cancelGrace();
+    awaitingFlushRef.current = false;
     holdingRef.current = true;
 
     const recognition = new Recognition();
@@ -366,10 +372,23 @@ export function AgentPrompt({
       const { final, interim: live } = readTranscripts(event);
       if (final) {
         // Settled words graduate into the text the human owns, at full
-        // contrast. A flush arriving after release restarts the countdown, so
-        // nobody is asked to react to a sentence that changed under them.
+        // contrast.
         setInput((current) => composeUtterance(current, final));
         setInterim('');
+        // Release can beat the recogniser's flush by a few hundred
+        // milliseconds. If it did, the countdown starts here instead, so a
+        // sentence that arrived late still gets its 1.2 s rather than sitting
+        // in the field waiting for an Enter nobody knows to press.
+        if (awaitingFlushRef.current) {
+          awaitingFlushRef.current = false;
+          setPendingVoice(true);
+          setGraceFill(0);
+          setGraceStartedAt(Date.now());
+          return;
+        }
+        // And if it arrived during the countdown, the countdown restarts —
+        // nobody should be asked to react to a sentence that changed under
+        // them.
         setGraceStartedAt((current) => (current === null ? null : Date.now()));
         return;
       }
@@ -409,6 +428,18 @@ export function AgentPrompt({
     } catch {
       // A recogniser that was never really started does not need stopping.
     }
+
+    // Nothing heard yet: an accidental tap should not put a countdown on
+    // screen. Wait briefly for a late flush, then give up — an open-ended wait
+    // would let a stray transcript arrive minutes later and start sending.
+    if (!composedRef.current.trim()) {
+      awaitingFlushRef.current = true;
+      setTimeout(() => {
+        awaitingFlushRef.current = false;
+      }, FLUSH_GRACE_MS);
+      return;
+    }
+
     setPendingVoice(true);
     setGraceStartedAt(Date.now());
     setGraceFill(0);
@@ -447,7 +478,8 @@ export function AgentPrompt({
 
   // Re-pointed every render so the countdown below always commits the sentence
   // as it stands now, not as it stood when the timer was armed.
-  commitRef.current = () => submit(composeUtterance(input, interim));
+  composedRef.current = composeUtterance(input, interim);
+  commitRef.current = () => submit(composedRef.current);
 
   // While an utterance is waiting, keep the chips in step with the words —
   // including words the human retypes, which is the whole point of being able
