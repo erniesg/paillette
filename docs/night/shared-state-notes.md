@@ -99,6 +99,28 @@ What is left is the no-host case. Two options, your call:
   bar) never touches `document.modelContext` at all, so it works with no host.
   Only the agent path needs one.
 
+## Two more things, one each
+
+**Voice lane — the agent's reply is now usually empty, on purpose.** The note
+above the board is the sentence; repeating it as the reply put the same words
+twice on one screen, which is the owner's standing complaint. The system prompt
+now says: add a sentence the note does not say, or say nothing. Six live runs
+produced an empty reply every time.
+
+That matters to you because the symmetric-speech rule needs something to speak.
+**Speak the note, not the reply** — it is on the shared store at
+`agentResults.note` and in `get_view_context` as `board.note`, and it is
+guaranteed to be one sentence. If you speak `message.content` you will often
+speak nothing at all.
+
+**Whoever owns `agent-activity-panel.tsx` — it is showing a chat.** With the
+note now rendered as a wall label above the board, the panel repeats it
+underneath a mini-board and a list of tool calls, so the same sentence is on
+screen twice. Brief triage item 9: *"Ledger filmstrip; if it will not land,
+hide the activity panel entirely rather than show a chat."* I have not touched
+the file. A screenshot of the duplication is at `/tmp/sofa-run-1.png` if it is
+still there; re-create it with `apps/web/scripts/verify-sofa-run.mjs`.
+
 ## What I need from nobody, but you should know
 
 - `speak-button.tsx` untouched.
@@ -107,3 +129,13 @@ What is left is the no-host case. Two options, your call:
   the *human* ran shows up on the canvas the same way an agent board does. I
   removed the `origin !== 'agent'` guard on it, which was a no-op before
   because nothing else ever wrote that field.
+- The "assembled by the agent" caption above the board is gone. It was a word
+  doing an ink's job, and it was simply wrong once a human redeal could put a
+  board there. `data-provenance="human"|"agent"` is on the wall label
+  (`.paillette-wall-label`) for whoever inks it.
+- The flag badge is now quiet until its card is hovered, focused or flagged —
+  thirty-six letters stamped over a twelve-card board read as a toolbar.
+  `data-quiet` is on `.paillette-flag-badge` if you want to take it further.
+- A failed deal marks the page: `[data-deal-error="REDEAL_FAILED"]`, one
+  sentence, and `dealing` is on the store while a deal is in flight if you want
+  to show motion instead.

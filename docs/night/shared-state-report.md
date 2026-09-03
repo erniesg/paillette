@@ -16,13 +16,16 @@ and must not go past it.
 | Flags module, session-scoped, surviving redeals | shipped |
 | `P` / `X` / `U` on hovered or focused card + corner badge | shipped |
 | `get_view_context` gains flags / selection / hovered / compare / board | shipped |
-| Turn payload `{ text?, flagsDelta, selection, hovered, compareChoice }` | shipped, **wired by a shim** — see §6 |
-| "Gestures outrank words" rule in the agent system prompt | shipped, verified live on 3 runs |
+| Turn payload `{ text?, flagsDelta, selection, hovered, compareChoice }` | shipped, **wired by a shim** — see §7 |
+| "Gestures outrank words" rule in the agent system prompt | shipped, verified live on 6 runs |
 | `search_by_exemplars` — Rocchio, server-side | shipped, **server-side path, not the degraded one** |
 | `redeal`, 12 cards, picks held in place | shipped |
 | Enter on an empty prompt bar redeals with no model call | shipped, verified in a browser |
-| `compare_artworks` two-up | shipped |
+| `compare_artworks` two-up | shipped; `C` verified in a browser |
 | Multi-select (shift-click), P5 "Point" | shipped |
+| Pin survival in `set_results` as well as `redeal` | shipped |
+| Failure, slow-network and empty-collection paths | shipped, 25 checks |
+| Terseness pass on this lane's own surfaces | shipped — see §6 |
 
 Four new tools, so `document.modelContext` now carries **21**, not 17. Anywhere
 the docs or the video script says 17, it is now wrong.
@@ -62,10 +65,24 @@ compare_artworks                               readOnlyHint: false
   question?: string }
 ```
 
+`set_results` is unchanged in its arguments but not in its behaviour: passing
+`artworkIds` now also writes the board, and any **confirmed human pick the
+agent left out is added back** and reported as `heldPicks`. Pin survival is no
+longer a property of `redeal` alone.
+
 `get_view_context` additionally returns `flags` (`picks` / `rejects` /
 `provisional`, each with id, title, artist and reason where given, plus
 `exemplars`), `board` (`order`, `works`, `note`, `lastChangeBy`, `redeals`,
-`dealtThisSession`), `selection`, `hovered`, and `compare`.
+`dealtThisSession`), `selection`, `hovered`, `compare`, and — when a deal has
+just failed — `lastDealFailed` and `dealing`.
+
+The three verification harnesses, all runnable by hand:
+
+```
+apps/web/scripts/verify-culling-loop.mjs     28 checks, the loop end to end
+apps/web/scripts/verify-failure-paths.mjs    25 checks, every way it can refuse
+apps/web/scripts/verify-sofa-run.mjs         the brief's definition of done, live
+```
 
 New HTTP routes:
 
@@ -114,7 +131,7 @@ route makes no outbound `fetch` at all).
 
 **Not verified:** I have not run this route against the live 63,253-work index.
 The unit tests use hand-checkable two-dimensional vectors, and I did not deploy
-to staging (see §7). First thing to do at integration.
+to staging (see §8). First thing to do at integration.
 
 ---
 
@@ -130,7 +147,7 @@ pnpm --filter web dev                                   # in another shell
 node apps/web/scripts/verify-culling-loop.mjs http://localhost:5173
 ```
 
-Last run: **24 checks, all passed.** What it proves:
+Last run: **28 checks, all passed**, three times in a row. What it proves:
 
 - hover sets the deictic anchor; `P` picks the hovered card, `X` rejects it,
   drawn in the human's ink, with `aria-pressed` on the badge
@@ -138,15 +155,40 @@ Last run: **24 checks, all passed.** What it proves:
 - shift-click selects instead of opening the work; `get_view_context` reports
   "these"; Escape drops it
 - **Enter on an empty prompt bar reaches `/exemplars` and never
-  `/public-agent` — asserted negatively, so the test can fail if a model call
+  `/public-agent` — asserted negatively, so the check can fail if a model call
   ever appears**
 - the request carries the human's positive and negative exemplars
 - the board deals **12**
 - the pick is still in the seat it was in; the reject has left; the board is
   marked as the human's move
 - the next *typed* turn carries the gestures, with titles resolved
+- `C` on a hovered card pairs it against a work already kept, and declining
+  closes the two-up without flagging anything
 - one click on the two-up resolves winner → pick, loser → reject, and closes
 - no uncaught page errors
+
+### The unhappy paths, driven the way a host drives them
+
+`apps/web/scripts/verify-failure-paths.mjs` calls tools that should fail
+through `window.__paillette_webmcp.call` on a real page. **25 checks, all
+passed.** The point is not that the code refuses — unit tests cover that — but
+that the refusal arrives as a readable `{ok:false,error:{code,message,hint}}`
+rather than as a thrown exception, a hang, or a half-applied board.
+
+- stale ids on `flag_artworks`, `compare_artworks`, `search_by_exemplars`,
+  `set_results`, `show_artwork`, `describe_artwork`
+- malformed input on five tools — one id where two are required, the same work
+  twice, an empty positive set, an unknown flag value, no arguments at all
+- `redeal` with nothing picked: says there is no direction rather than dealing
+  at random
+- the backend refusing (422): the upstream code reaches the caller and the
+  board is not half-applied
+- the connection dead: a shaped failure, the flags untouched, the agent told
+  through `get_view_context`, and the human told on the page
+- the collection exhausted: the picks stay and the board is not cleared
+- the connection slow: a second Enter on top of an in-flight deal is refused
+  rather than interleaved, and the latch releases afterwards
+- Enter with nothing flagged at all: silent, and nothing breaks
 
 ### Verified against the live model
 
@@ -154,21 +196,53 @@ The brief's definition-of-done item: *"Given the sofa prompt and two X presses,
 the agent's redeal note refers to the content of what was rejected. Check by
 hand on three runs."*
 
-I ran the real route against `gpt-5.6-terra` six times — three with the turn
-payload, three without — with the sofa prompt, three cool picks and two warm
-rejects. All six followed the gestures and named the content of the rejects:
+`apps/web/scripts/verify-sofa-run.mjs` is that sequence, typed, in a real
+browser, against the real model. Only the corpus is stubbed — fixtures with
+legible warm and cool titles, so the note can be read against what was thrown
+out. Everything else is live: the page, the tools, `POST
+/api/public-agent/turn`, the system prompt, `gpt-5.6-terra`.
 
-> "You said warm, but you've picked three cool, quiet scenes and rejected the
-> golden ones. I'm following the picks: atmospheric blue-grey calm rather than
-> literal warmth, while steering clear of grimness."
+```sh
+cd apps/api && npx wrangler dev --port 8787            # needs OPENAI_API_KEY
+PAILLETTE_API_URL=http://localhost:8787 pnpm --filter web dev
+node apps/web/scripts/verify-sofa-run.mjs http://localhost:5173 3
+```
 
-**Be precise about what this shows.** The behaviour comes from the system-prompt
-rule, not from the turn payload: the three control runs *without* the payload
-produced the same sentence, because the model calls `get_view_context` first and
-the flags are there too. The payload's job is narrower and still real — it puts
-the gesture *delta*, with titles, into the first request of a turn so the model
-knows what changed since it last looked, without having to spend a tool call.
-Do not claim the payload is what makes the agent follow the picks.
+**Six consecutive runs, all six the same shape.** Every run: `get_view_context`,
+then `redeal` — twelve cards, board marked as the agent's move, the human's pick
+still on it — and a one-sentence note naming what was rejected. Verbatim:
+
+> "You said warm; you picked the grey harbour and rejected the golds — following
+> the picks."
+
+> "You said warm, but picked the grey harbour and rejected the golds—following
+> the picks."
+
+> "You said warm; you picked the grey harbour and rejected the golds—following
+> the pick's quiet light."
+
+The reply field was empty in all six: the note had already said it, and saying
+the same sentence twice on one screen is the thing the owner objects to.
+
+**Be precise about what this shows, and about what it does not.**
+
+- The said-versus-chose behaviour comes from the **system-prompt rule**, not
+  from the turn payload. Three earlier control runs *without* the payload
+  produced the same sentence, because the model calls `get_view_context` first
+  and the flags are there too. Do not claim the payload is what makes the agent
+  follow the picks. Its job is narrower and still real: it puts the gesture
+  *delta*, with titles, into the first request of a turn.
+- The corpus in these runs is **eight fixture works with invented titles**, not
+  the NGA. The behaviour is real; the pictures are not. Nothing here shows the
+  engine returning good works from the real collection.
+
+### Verified typed, with voice off
+
+Every check above is typed and clicked. No speech API is touched anywhere in
+this lane — `grep` for `SpeechRecognition`, `speechSynthesis` or
+`webkitSpeech` across `lib/webmcp`, `components/board`, the verification
+scripts and the agent route returns nothing. The agentic trigger fires from a
+typed instruction alone, and the deterministic loop fires from a keypress.
 
 ### Pinned by tests
 
@@ -221,7 +295,43 @@ with the Chrome flag.
 
 ---
 
-## 6. The one shim, and how to delete it
+## 6. The terseness pass
+
+Section 5b of the brief, applied to this lane's own surfaces. What came out:
+
+- **"assembled by the agent"**, the caption above the board. A word doing an
+  ink's job, and wrong the moment a human redeal could put a board there. Gone;
+  `data-provenance="human"|"agent"` on the wall label is the hook for a colour.
+- **The board's fallback label** — "12 works, dealt from 3 picks" — was
+  rendered as the wall label whenever nobody wrote a note. That is the
+  mechanism narrating itself. The page now renders the note or nothing; the
+  factual label survives only in `get_view_context`, where a machine reads it.
+- **Tooltips on the flag buttons** ("Pick — P") restating the letter printed on
+  the button. Gone; the accessible name still carries the word.
+- **"Neither — close"** on the two-up is now **"Neither"**.
+- **Thirty-six letters of chrome.** Twelve cards times three controls, stamped
+  over every work. Looking at a rendered twelve-up rather than reasoning about
+  the component settled it: the badge is now quiet until the card is hovered,
+  focused, or flagged. A set flag is a mark and stays. Nothing is unmounted, so
+  tab order and screen readers are unaffected.
+- **The agent's note is one sentence**, enforced in the system prompt and in
+  the schema (`maxLength` 160, down from 280), and it may not be repeated as
+  the spoken reply. Six live runs produced one sentence and an empty reply.
+
+The one place a word was **added**, deliberately: a failed deal now says so, in
+one sentence. Enter is cheap to press, and a dead key is the single response a
+person cannot act on — they cannot tell a broken connection from a collection
+with nothing left. That is a failure report, not helper text.
+
+Still wordy, and **not mine to fix**: the agent activity panel repeats the
+note underneath a mini-board and a list of tool calls, so the same sentence
+appears twice on screen. The brief's triage item 9 says to hide that panel
+entirely rather than show a chat. A human is editing that file; the
+recommendation is in `docs/night/shared-state-notes.md`.
+
+---
+
+## 7. The one shim, and how to delete it
 
 `apps/web/app/lib/webmcp/turn-bridge.ts` wraps `window.fetch` to attach the
 `turn` payload to `POST /api/public-agent/turn`. It exists because the component
@@ -238,7 +348,7 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
 
 ---
 
-## 7. What I cut, and what is still not right
+## 8. What I cut, and what is still not right
 
 - **No staging deploy.** Two other lanes are working against the same staging
   environment tonight and a web deploy would have put my branch in front of
@@ -256,11 +366,11 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
   the same flag attributes; `.paillette-compare`, `.paillette-compare-work` and
   `data-side` are on the two-up. Two inks and a dashed state should be CSS with
   no JavaScript.
-- **The two-up is plain and has no keyboard answer.** You click a picture or you
-  click "Neither". `C` opens it; nothing closes it but a click. I removed the
-  line of text telling people to click a picture — it was the interface
-  apologising for itself — which does mean the `U`-to-override affordance is now
-  discoverable only from the card badges.
+- **The two-up is plain and has no keyboard answer.** You click a picture or
+  you click "Neither". `C` opens it; nothing closes it but a click — Escape
+  does not, which is the most obvious remaining gap in it. The line of text
+  telling people to click a picture is gone, so the `U`-to-override affordance
+  is discoverable only from the card badges.
 - **Agent flags are never rendered as dashed** by me. The data attribute says
   `data-flag-provisional="true"`; drawing it is the visual pass.
 - **`redeal` refuses on a collection indexed in-tab** (`/try`), with
@@ -268,19 +378,33 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
   index. The loop is `/nga/search` only.
 - **Nothing persists.** Flags, board and selection are page-session state in
   memory. A refresh loses the cull.
+- **A second Enter during a slow deal is dropped, not queued.** It returns
+  `REDEAL_IN_FLIGHT` and nothing happens. That is deliberate — the flags have
+  not changed, so the next press would read the same thing — but on a slow
+  connection it will feel like a missed keypress until the visual pass marks
+  `dealing`.
+- **The deal is not animated and picks do not visibly hold their seats.** The
+  data is correct — `order` keeps a pick at its index — but with no FLIP
+  animation a redeal is a jump cut. That is the visuals lane's money shot, and
+  it is not in this branch.
+- **The fixture corpus is not the collection.** Every live model run used eight
+  invented works. Nothing in this lane has been exercised against the real
+  63,253.
 
 ---
 
-## 8. Test and typecheck results, exactly
+## 9. Test and typecheck results, exactly
 
 Baseline was web 59 files / 593 tests, api 41 / 770.
 
 | Command | Result |
 | --- | --- |
 | `pnpm --filter api test` | **43 files, 791 tests, all passed** |
-| `pnpm --filter web test` | **68 files, 718 tests, all passed** |
+| `pnpm --filter web test` | **68 files, 732 tests, all passed** |
 | `pnpm --filter web typecheck` | **1 error, pre-existing, not mine** |
-| `node apps/web/scripts/verify-culling-loop.mjs` | **24 checks, all passed** |
+| `verify-culling-loop.mjs` | **28 checks, all passed, 3 runs** |
+| `verify-failure-paths.mjs` | **25 checks, all passed** |
+| `verify-sofa-run.mjs` | **6 runs, all 6 redealt with a one-sentence note** |
 
 Two things to know about those numbers:
 
@@ -297,7 +421,7 @@ Two things to know about those numbers:
 
 ---
 
-## 9. Files this lane touched
+## 10. Files this lane touched
 
 Inside the declared list, plus two justified exceptions.
 
