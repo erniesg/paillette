@@ -299,11 +299,24 @@ export function AgentPrompt({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: historyRef.current, tools }),
         });
-        const payload = (await response.json()) as {
+        type TurnPayload = {
           success?: boolean;
           data?: { message: AgentMessage };
           error?: { message?: string };
         };
+        // An HTML error page from an edge, or a stale deploy with no such
+        // route, parses as nothing — and `Unexpected token '<'` is not a
+        // sentence to put in front of anybody.
+        let payload: TurnPayload;
+        try {
+          payload = (await response.json()) as TurnPayload;
+        } catch {
+          payload = {
+            error: {
+              message: `The agent service replied with something unreadable (HTTP ${response.status}).`,
+            },
+          };
+        }
         if (!response.ok || !payload.success || !payload.data) {
           setEntries((current) => [
             ...current,

@@ -633,6 +633,34 @@ describe('AgentPrompt', () => {
     expect(spoken).toEqual([]);
   });
 
+  it('does not put a JSON parser error in front of anybody', async () => {
+    setModelContext({ getTools: async () => [] });
+    // What an edge error page or a stale deploy actually returns.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token \'<\'');
+        },
+      }))
+    );
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'something warm' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/replied with something unreadable/i);
+    expect(alert).not.toHaveTextContent(/Unexpected token/);
+    // And the bar is usable again rather than stuck on "Working…".
+    expect(field).not.toBeDisabled();
+  });
+
   it('surfaces a message when microphone permission is denied', async () => {
     setModelContext({ getTools: async () => [] });
     installRecognition();
