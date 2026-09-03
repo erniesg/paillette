@@ -298,6 +298,36 @@ export const registerTools = (
  * runs in the console at Gate 1 (`await document.modelContext.getTools()`), so
  * the bridge exposes the same thing programmatically for the debug harness.
  */
+/**
+ * Invoke a registered tool from inside the page.
+ *
+ * `getTools()` on a real host returns *descriptors* — Chrome 152 with
+ * `--enable-features=WebMCPTesting` hands back all 17 of ours with no `execute`
+ * on any of them, because executing is the host's job, not the page's. Anything
+ * page-side that wants to run a tool (the in-page agent, the debug harness)
+ * therefore cannot go through `getTools()`; it has to reach the function this
+ * page registered, which is right here.
+ *
+ * Returns null when no such tool is registered, so a caller can say so rather
+ * than throwing something opaque.
+ */
+export const invokeRegisteredTool = async (
+  name: string,
+  input: Record<string, unknown>,
+  options: { signal?: AbortSignal } = {}
+): Promise<unknown | null> => {
+  const entry = entries.get(name);
+  if (!entry) return null;
+  const controller = options.signal ? null : new AbortController();
+  return entry.tool.execute(input, {
+    signal: options.signal ?? controller!.signal,
+  });
+};
+
+/** Tool descriptors this page registered, execute included. */
+export const getRegisteredTools = (): WebMcpTool[] =>
+  [...entries.values()].map((entry) => entry.tool);
+
 export const getHostTools = async (): Promise<WebMcpTool[]> => {
   const context = getModelContext();
   if (!context || typeof context.getTools !== 'function') return [];

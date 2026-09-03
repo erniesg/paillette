@@ -9,6 +9,7 @@ import {
   isWebMcpAvailable,
   registerTools,
   waitForWebMcpRegistry,
+  invokeRegisteredTool,
 } from '../registry';
 
 const makeTool = (
@@ -329,5 +330,35 @@ describe('execute wrapper', () => {
       status: 'error',
       message: 'upstream exploded',
     });
+  });
+});
+
+describe('invoking a registered tool from the page', () => {
+  /**
+   * On a real host `getTools()` returns descriptors with no `execute` — Chrome
+   * 152 with --enable-features=WebMCPTesting hands back all seventeen of ours
+   * that way, because executing belongs to the host. Anything page-side that
+   * runs a tool has to reach the function this page registered instead.
+   */
+  it('runs the registered implementation and passes a signal', async () => {
+    installHost(createHost());
+    const execute = vi.fn(async () => ({ ok: true }));
+    registerTools([makeTool('page_side_tool', execute)]);
+    await waitForWebMcpRegistry();
+
+    const result = await invokeRegisteredTool('page_side_tool', { a: 1 });
+
+    expect(result).toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]![0]).toEqual({ a: 1 });
+    expect(execute.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('returns null for a tool this page never registered', async () => {
+    installHost(createHost());
+    registerTools([makeTool('search_artworks')]);
+    await waitForWebMcpRegistry();
+
+    expect(await invokeRegisteredTool('not_a_tool', {})).toBeNull();
   });
 });
