@@ -427,6 +427,52 @@ describe('collection suggestions', () => {
   });
 });
 
+describe('collection suggestions, real-catalogue edge cases', () => {
+  // Every case here came off a live run against a real museum export.
+  const row = (over: Partial<SuggestionSourceRow>): SuggestionSourceRow => ({
+    title: 'A work',
+    artist: 'A. Painter',
+    year: 1954,
+    medium: 'Oil on canvas',
+    classification: 'Painting',
+    ...over,
+  });
+
+  it('does not offer an anonymous artist as a search', () => {
+    const rows = [
+      row({ artist: 'Unknown' }),
+      row({ artist: 'Unknown' }),
+      row({ artist: 'Unknown' }),
+      row({ artist: 'Rosa Bonheur' }),
+    ];
+    const { suggestions } = deriveCollectionSuggestions(rows, () => new Date(0));
+    expect(suggestions.some((s) => /unknown/i.test(s.query))).toBe(false);
+  });
+
+  it('ignores an implausible year rather than letting it define the era', () => {
+    // "12" is an accession number that landed in the year column.
+    const rows = [
+      row({ year: 12 }),
+      row({ year: 1892 }),
+      row({ year: 1904 }),
+      row({ year: 1911 }),
+      row({ year: 1923 }),
+    ];
+    const era = deriveCollectionSuggestions(rows, () => new Date(0)).suggestions.find(
+      (s) => s.type === 'era'
+    );
+    expect(era?.label).not.toMatch(/\b12\b/);
+  });
+
+  it('skips a medium too long to read on a chip', () => {
+    const verbose =
+      'Black chalk, stumped, and white chalk; framing lines in black chalk';
+    const rows = [row({ medium: verbose }), row({ medium: verbose })];
+    const { suggestions } = deriveCollectionSuggestions(rows, () => new Date(0));
+    expect(suggestions.some((s) => s.query === verbose)).toBe(false);
+  });
+});
+
 describe('indexing job lifecycle', () => {
   let sqlite: NodeDatabaseSync;
   let env: ReturnType<typeof createEnv>;

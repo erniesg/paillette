@@ -308,6 +308,31 @@ export type SuggestionSourceRow = {
 
 const MAX_COLLECTION_SUGGESTIONS = 6;
 
+/**
+ * Catalogues record an unattributed work in a dozen ways. "Works by Unknown"
+ * is a suggestion nobody wants and it matches nothing, so drop them.
+ */
+const ANONYMOUS_ARTIST =
+  /^(unknown|unidentified|anonymous|unattributed|various|n\.?a\.?|none)\b/i;
+const isAnonymousArtist = (value: string) => ANONYMOUS_ARTIST.test(value.trim());
+
+/**
+ * Medium and classification strings run from "oil on canvas" to a full
+ * conservation note. Anything long makes an unreadable chip and a hopeless
+ * query, so only offer the concise ones.
+ */
+const isConciseFacet = (value: string) => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 40 && !trimmed.includes(';');
+};
+
+/** Years outside this range are a parse artifact, not a date. */
+const isPlausibleYear = (year: unknown): year is number =>
+  typeof year === 'number' &&
+  Number.isInteger(year) &&
+  year >= 1000 &&
+  year <= new Date().getUTCFullYear() + 1;
+
 const slugifySuggestion = (value: string) =>
   value
     .toLowerCase()
@@ -383,7 +408,11 @@ export const deriveCollectionSuggestions = (
 
   if (hasMetadata) {
     const artistSuggestions = topByFrequency(
-      rows.map((row) => row.artist).filter((v): v is string => Boolean(v)),
+      rows
+        .map((row) => row.artist)
+        .filter(
+          (v): v is string => typeof v === 'string' && !isAnonymousArtist(v)
+        ),
       2
     ).map((artist) => ({
       id: `artist:${slugifySuggestion(artist)}`,
@@ -395,7 +424,9 @@ export const deriveCollectionSuggestions = (
     const classificationSuggestions = topByFrequency(
       rows
         .map((row) => row.classification)
-        .filter((v): v is string => Boolean(v)),
+        .filter(
+          (v): v is string => typeof v === 'string' && isConciseFacet(v)
+        ),
       2
     ).map((classification) => ({
       id: `classification:${slugifySuggestion(classification)}`,
@@ -408,7 +439,11 @@ export const deriveCollectionSuggestions = (
       classificationSuggestions.map((entry) => entry.label)
     );
     const mediumSuggestions = topByFrequency(
-      rows.map((row) => row.medium).filter((v): v is string => Boolean(v)),
+      rows
+        .map((row) => row.medium)
+        .filter(
+          (v): v is string => typeof v === 'string' && isConciseFacet(v)
+        ),
       2
     )
       .map((medium) => ({
@@ -419,11 +454,18 @@ export const deriveCollectionSuggestions = (
       }))
       .filter((entry) => !seenLabels.has(entry.label));
 
+    // A single mis-parsed cell (an accession number read as a year, say)
+    // otherwise produces an era like "Art from 12-1459". Require a plausible
+    // year, and take the 10th/90th percentile rather than the extremes so one
+    // outlier cannot define the range.
     const years = rows
       .map((row) => row.year)
-      .filter((year): year is number => typeof year === 'number' && year > 0);
-    const minYear = years.length > 1 ? Math.min(...years) : null;
-    const maxYear = years.length > 1 ? Math.max(...years) : null;
+      .filter(isPlausibleYear)
+      .sort((a, b) => a - b);
+    const minYear =
+      years.length >= 3 ? years[Math.floor(years.length * 0.1)]! : null;
+    const maxYear =
+      years.length >= 3 ? years[Math.ceil(years.length * 0.9) - 1]! : null;
     const eraSuggestions =
       minYear !== null && maxYear !== null && minYear !== maxYear
         ? [
