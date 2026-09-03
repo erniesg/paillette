@@ -61,6 +61,15 @@ export const meta: MetaFunction = () => [
 const POLL_INTERVAL_MS = 2000;
 const SEARCH_TOP_K = 24;
 
+/**
+ * Measured on staging, not guessed: the job reports `searchable: true` the
+ * instant the first batch is embedded, but Vectorize needs roughly another 15
+ * seconds before a query returns those vectors (0 hits at t+1.9s and t+7.6s
+ * after a batch of 4, 1 hit at t+14.6s). A search run inside that window comes
+ * back empty, which reads as "this is broken" unless the page says otherwise.
+ */
+const VECTOR_LAG_SECONDS = 15;
+
 /** Anonymous indexing writes only here; the server enforces it. */
 const INDEX_SANDBOX_ORG = 'webmcp-index';
 
@@ -592,8 +601,10 @@ export default function TryPaillette() {
 
             {canSearch && running && (
               <p className="mt-2 text-sm text-neutral-500">
-                Searchable now. More images join the results as they finish —
-                run the search again to pick them up.
+                Searchable now. An image takes roughly another{' '}
+                {VECTOR_LAG_SECONDS}s after it is embedded before the vector
+                index will return it, so an early search comes back thin — run
+                it again as the count climbs.
               </p>
             )}
 
@@ -616,8 +627,9 @@ export default function TryPaillette() {
             </h3>
             {results.length === 0 ? (
               <p className="text-neutral-400">
-                Nothing matched. Try a broader description — the index is only
-                as large as the archive you sent.
+                {running
+                  ? `Nothing back yet — an image becomes queryable about ${VECTOR_LAG_SECONDS}s after it is embedded, and ${processed} of ${total} are in so far. Search again in a moment.`
+                  : 'Nothing matched. Try a broader description — the index is only as large as the archive you sent.'}
               </p>
             ) : (
               <ul className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">

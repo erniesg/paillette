@@ -1087,6 +1087,13 @@ const INDEX_SANDBOX_ORG = 'webmcp-index';
 /** How long a job of this size realistically takes to become searchable. */
 const POLL_INTERVAL_MS = 2500;
 
+/**
+ * Measured on staging: `searchable: true` means "embedded", and Vectorize
+ * needs roughly another 15s before a query returns those vectors. Told to the
+ * agent, or it reports a working collection as empty.
+ */
+const VECTOR_LAG_SECONDS = 15;
+
 /** Recovery advice per failure code, read by `guard`. */
 const INDEXING_HINTS: Record<string, string> = {
   INVALID_ARCHIVE:
@@ -1178,7 +1185,7 @@ const indexJobStarted = (
       arguments: { jobId: handle.jobId },
       suggestedIntervalMs: POLL_INTERVAL_MS,
     },
-    next: `Indexing is running in the background — this call did not wait for it. Poll get_index_status with jobId "${handle.jobId}" every ~${Math.round(POLL_INTERVAL_MS / 1000)}s until state is "complete". As soon as it reports searchable:true, pass a "query" to that same call to run semantic search over this collection; the ids it returns work with lookup_artwork, show_artwork and set_results, so you can put a freshly indexed image on the human's screen.`,
+    next: `Indexing is running in the background — this call did not wait for it. Poll get_index_status with jobId "${handle.jobId}" every ~${Math.round(POLL_INTERVAL_MS / 1000)}s until state is "complete". As soon as it reports searchable:true, pass a "query" to that same call to run semantic search over this collection; the ids it returns work with lookup_artwork, show_artwork and set_results, so you can put a freshly indexed image on the human's screen. Measured caveat: an image is queryable roughly ${VECTOR_LAG_SECONDS} seconds after it is embedded, so a search fired the instant searchable flips can legitimately return zero hits — that is propagation, not failure. Poll again and re-run the query rather than reporting the collection as empty.`,
   });
 };
 
@@ -1478,6 +1485,13 @@ const getIndexStatusTool = (): WebMcpTool => ({
           query,
           count: artworks.length,
           results: capture(artworks),
+          // The one case an agent reliably misreads: a job that is genuinely
+          // working looks like an empty collection for the first few seconds.
+          ...(artworks.length === 0 && !done
+            ? {
+                note: `No hits yet. An image is queryable roughly ${VECTOR_LAG_SECONDS}s after it is embedded, and only ${status.processed} of ${status.total} are embedded so far — this is propagation lag, not an empty collection. Poll again and repeat the query before telling the human anything is wrong.`,
+              }
+            : {}),
         };
       }
 
