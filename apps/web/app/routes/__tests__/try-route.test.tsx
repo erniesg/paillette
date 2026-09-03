@@ -29,6 +29,9 @@ import {
 
 const MANIFEST_PATH = '/samples/manifest.json';
 const DEMO_PATH = '/samples/demo-a.zip';
+/** Must match READINESS_PROBE_QUERY in the page — the readiness measurement. */
+const PROBE_QUERY = 'artwork';
+const RESUME_KEY = 'paillette.try.job.v1';
 
 const MANIFEST = {
   version: 1,
@@ -74,7 +77,10 @@ type Stub = {
   jobBody: any;
   itemsCalls: number;
   statusCalls: number;
+  /** The last search the *visitor* ran; readiness probes are recorded apart. */
   searchBody: any;
+  probeCalls: number;
+  probeTopK: number | null;
   /** Flips the job to complete once the client has pushed a batch. */
   processed: number;
 };
@@ -94,12 +100,21 @@ const stubApi = (options: {
     generatedAt: string;
     suggestions: Array<{ id: string; type: string; label: string; query: string }>;
   } | null;
+  /**
+   * What the readiness probe sees, per call. The real thing climbs as
+   * Vectorize catches up; the last entry is what it settles on.
+   */
+  probeCounts?: number[];
+  /** Restore an existing job instead of creating one, as after a reload. */
+  restoredStatus?: Record<string, unknown> | 'missing';
 }) => {
   const stub: Stub = {
     jobBody: null,
     itemsCalls: 0,
     statusCalls: 0,
     searchBody: null,
+    probeCalls: 0,
+    probeTopK: null,
     processed: 0,
   };
 
@@ -160,6 +175,12 @@ const stubApi = (options: {
       if (options.statusFails) {
         return new Response('', { status: 502 });
       }
+      if (options.restoredStatus) {
+        if (options.restoredStatus === 'missing') {
+          return new Response('', { status: 404 });
+        }
+        return Response.json({ success: true, data: options.restoredStatus });
+      }
       return Response.json({
         success: true,
         data: {
@@ -179,7 +200,28 @@ const stubApi = (options: {
     }
 
     if (url.endsWith('/search')) {
-      stub.searchBody = JSON.parse(String(init.body));
+      const body = JSON.parse(String(init.body));
+      // The readiness probe is a search too, so it is separated by its query
+      // rather than by endpoint — otherwise it would overwrite whatever the
+      // visitor last searched for.
+      if (body.query === PROBE_QUERY) {
+        const counts = options.probeCounts ?? [0];
+        const count =
+          counts[Math.min(stub.probeCalls, counts.length - 1)] ?? 0;
+        stub.probeCalls += 1;
+        stub.probeTopK = body.topK;
+        return Response.json({
+          success: true,
+          data: {
+            collectionId: 'collection-42',
+            results: Array.from({ length: count }, (_, index) => ({
+              ...SEARCH_HIT,
+              id: `probe-${index}`,
+            })),
+          },
+        });
+      }
+      stub.searchBody = body;
       return Response.json({
         success: true,
         data: {
@@ -215,6 +257,7 @@ const EMPTY_ZIP = new ArrayBuffer(0);
 describe('/try — anonymous indexing flow', () => {
   beforeEach(() => {
     __resetWebMcpStateForTest();
+    window.localStorage.clear();
     vi.stubGlobal('fetch', vi.fn());
   });
 
@@ -540,6 +583,272 @@ describe('/try — anonymous indexing flow', () => {
     ).toBeInTheDocument();
     expect(stub.jobBody).toBeNull();
   });
+
+  it('warns before the tab closes while a job is in flight, and stops once it is not', async () => {
+    // The upload loop lives in this page. Closing the tab ends it, leaving a
+    // half-indexed collection and no way back — so the browser gets to ask.
+    const user = userEvent.setup();
+    stubApi({ zipBytes: await buildZip(FIXTURE_ENTRIES), stayRunning: true });
+    const added = vi.spyOn(window, 'addEventListener');
+    const removed = vi.spyOn(window, 'removeEventListener');
+
+    const { unmount } = renderTry();
+    // Nothing is running yet, so nothing may interrupt the visitor.
+    expect(
+      added.mock.calls.filter(([type]) => String(type) === 'beforeunload')
+    ).toHaveLength(0);
+
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+    await waitFor(() =>
+      expect(
+        added.mock.calls.filter(([type]) => String(type) === 'beforeunload')
+      ).toHaveLength(1)
+    );
+
+    // And the prompt is actually requested, not just a listener that shrugs.
+    const handler = added.mock.calls.find(
+      ([type]) => String(type) === 'beforeunload'
+    )![1] as EventListener;
+    const event = new Event('beforeunload', { cancelable: true });
+    handler(event);
+    expect(event.defaultPrevented).toBe(true);
+
+    unmount();
+    expect(
+      removed.mock.calls.filter(([type]) => String(type) === 'beforeunload')
+    ).toHaveLength(1);
+  });
+
+  it('stops warning once the job has finished', async () => {
+    const user = userEvent.setup();
+    stubApi({ zipBytes: await buildZip(FIXTURE_ENTRIES) });
+    const removed = vi.spyOn(window, 'removeEventListener');
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/images indexed · complete/i)
+        ).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
+    await waitFor(() =>
+      expect(
+        removed.mock.calls.filter(([type]) => String(type) === 'beforeunload').length
+      ).toBeGreaterThan(0)
+    );
+    // A finished job is nothing to lose, so the record is gone too.
+    expect(window.localStorage.getItem(RESUME_KEY)).toBeNull();
+  });
+
+  it('remembers a job in flight so it can be picked back up', async () => {
+    const user = userEvent.setup();
+    stubApi({ zipBytes: await buildZip(FIXTURE_ENTRIES), stayRunning: true });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    await waitFor(() =>
+      expect(window.localStorage.getItem(RESUME_KEY)).not.toBeNull()
+    );
+    const stored = JSON.parse(window.localStorage.getItem(RESUME_KEY)!);
+    expect(stored.jobId).toBe('job-42');
+    expect(stored.collectionId).toBe('collection-42');
+    expect(stored.collectionName).toContain('Demo A');
+    expect(stored.total).toBe(2);
+  });
+
+  it('restores a collection left half-indexed, and lets the visitor search it', async () => {
+    // What a judge does: start the demo, navigate away, come back. The archive
+    // is gone with the tab, but the job — and everything it embedded — is not.
+    const user = userEvent.setup();
+    window.localStorage.setItem(
+      RESUME_KEY,
+      JSON.stringify({
+        jobId: 'job-42',
+        collectionId: 'collection-42',
+        collectionName: 'Museum A — Demo A',
+        total: 30,
+        startedAt: Date.now() - 60_000,
+      })
+    );
+    const stub = stubApi({
+      zipBytes: EMPTY_ZIP,
+      searchResults: [SEARCH_HIT],
+      probeCounts: [11],
+      restoredStatus: {
+        jobId: 'job-42',
+        state: 'running',
+        processed: 11,
+        total: 30,
+        collectionId: 'collection-42',
+        collectionName: 'Museum A — Demo A',
+        errors: [],
+        notice: null,
+        searchable: true,
+      },
+    });
+
+    renderTry();
+
+    expect(
+      await screen.findByText(/picked this collection back up/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/11 of 30 images indexed/i)).toBeInTheDocument();
+    // Honest about what it cannot do: no file handle, so no resumed upload.
+    expect(screen.getByText(/cannot be resumed from here/i)).toBeInTheDocument();
+    expect(screen.getByText(/index it again/i)).toBeInTheDocument();
+    // Nothing is uploading, so nothing claims to be.
+    expect(
+      screen.queryByText(/keeps uploading as long as it stays open/i)
+    ).toBeNull();
+    // And the agent sees the restored collection, same as the original.
+    expect(getWebMcpState().indexJob).toMatchObject({ jobId: 'job-42' });
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, 'a wave');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+
+    await waitFor(() => expect(stub.searchBody).not.toBeNull());
+    expect(stub.searchBody.query).toBe('a wave');
+    expect(await screen.findByText('wave 01')).toBeInTheDocument();
+
+    // One restore only — a stalled job must not be re-offered forever.
+    expect(window.localStorage.getItem(RESUME_KEY)).toBeNull();
+  });
+
+  it('drops a remembered job the server no longer has', async () => {
+    window.localStorage.setItem(
+      RESUME_KEY,
+      JSON.stringify({ jobId: 'job-gone', collectionId: 'c', total: 4 })
+    );
+    stubApi({ zipBytes: EMPTY_ZIP, restoredStatus: 'missing' });
+
+    renderTry();
+
+    expect(
+      await screen.findByRole('button', { name: /index demo a/i })
+    ).toBeEnabled();
+    await waitFor(() =>
+      expect(window.localStorage.getItem(RESUME_KEY)).toBeNull()
+    );
+    expect(screen.queryByText(/picked this collection back up/i)).toBeNull();
+    expect(screen.queryByText(/images indexed/i)).toBeNull();
+  });
+
+  it('measures how much of the collection is really searchable, and says so', async () => {
+    // The page used to print a fixed "~15s". Live, the lag ran from seconds to
+    // minutes, so the number was sometimes wrong in the direction that makes
+    // the product look broken. Count the vectors instead.
+    const user = userEvent.setup();
+    const stub = stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      probeCounts: [0, 1, 2],
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    expect(
+      await screen.findByText(/0 of 2 images are searchable so far/i, undefined, {
+        timeout: 8000,
+      })
+    ).toBeInTheDocument();
+    // Climbing, and never a countdown to a fixed number of seconds.
+    expect(
+      await screen.findByText(/2 of 2 images are searchable\./i, undefined, {
+        timeout: 15000,
+      })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/15s/)).toBeNull();
+
+    // The probe asks for exactly as much as the job embedded, no more.
+    expect(stub.probeTopK).toBe(2);
+    // And it stops once the count reaches the total, rather than polling on.
+    const settledAt = stub.probeCalls;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    expect(stub.probeCalls).toBe(settledAt);
+  }, 30000);
+
+  it('says the probe ceiling is a floor, not a total, on a collection bigger than it', async () => {
+    // The 100-image demo is the first card on the page, and the search
+    // endpoint caps topK at 50 — so above that the measurement can only
+    // report a lower bound, and must not claim the index stopped climbing.
+    window.localStorage.setItem(
+      RESUME_KEY,
+      JSON.stringify({ jobId: 'job-42', collectionId: 'collection-42', total: 60 })
+    );
+    stubApi({
+      zipBytes: EMPTY_ZIP,
+      probeCounts: [50],
+      restoredStatus: {
+        jobId: 'job-42',
+        state: 'complete',
+        processed: 60,
+        total: 60,
+        collectionId: 'collection-42',
+        collectionName: 'A big one',
+        errors: [],
+        notice: null,
+        searchable: true,
+      },
+    });
+
+    renderTry();
+
+    expect(
+      await screen.findByText(
+        /at least 50 of 60 images are searchable — this check reads 50 at a time/i
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/stopped climbing/i)).toBeNull();
+    // A job that finished before the visitor left is described as finished.
+    expect(screen.getByText(/it finished indexing/i)).toBeInTheDocument();
+  });
+
+  it('blames the measured count, not the query, when a search lands early', async () => {
+    const user = userEvent.setup();
+    stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      searchResults: [],
+      probeCounts: [0],
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled(), { timeout: 5000 });
+    // Search once the measurement is under way but before it has settled —
+    // the moment a visitor watching the page stop moving types their query.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/0 of 2 images are searchable so far/i)
+        ).toBeInTheDocument(),
+      { timeout: 8000 }
+    );
+    await user.type(box, 'a wave');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+
+    expect(
+      await screen.findByText(/still climbing.*search again in a moment/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/nothing matched/i)).toBeNull();
+  }, 20000);
 
   it('says so when a demo archive cannot be fetched, without creating a job', async () => {
     const user = userEvent.setup();
