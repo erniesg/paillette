@@ -21,6 +21,7 @@ vi.mock('@remix-run/react', () => ({
 }));
 
 import TryPaillette from '../try';
+import { INDEX_CAPS } from '~/lib/webmcp/caps';
 import {
   __resetWebMcpStateForTest,
   getWebMcpState,
@@ -230,7 +231,7 @@ describe('/try — anonymous indexing flow', () => {
     expect(caps).toContain('100 images');
     expect(caps).toContain('8 MB per image');
     expect(caps).toContain('120 MB per job');
-    expect(caps).toContain('6 jobs per hour');
+    expect(caps).toContain(`${INDEX_CAPS.maxJobsPerHour} jobs per hour`);
     // No upload has happened, so nothing claims a collection exists yet.
     expect(screen.queryByText(/images indexed/i)).not.toBeInTheDocument();
   });

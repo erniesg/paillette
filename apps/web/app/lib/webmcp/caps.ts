@@ -13,7 +13,7 @@ export const INDEX_CAPS = {
   maxImagesPerJob: 100,
   maxImageBytes: INDEX_FILE_MAX_BYTES,
   maxJobBytes: INDEX_ARCHIVE_MAX_BYTES,
-  maxJobsPerHour: 6,
+  maxJobsPerHour: 24,
   imageTypes: ['jpeg', 'png', 'webp', 'gif', 'avif'],
 } as const;
 
