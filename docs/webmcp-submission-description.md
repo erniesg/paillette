@@ -28,7 +28,7 @@ separate integration and no server-side OAuth for the read paths.
 
 And because the domain is genuinely multimodal — text, image, and colour queries,
 plus curation into collections, plus building a brand-new collection out of a zip —
-there are fifteen tools with real work behind them, not a single search box wrapped
+there are sixteen tools with real work behind them, not a single search box wrapped
 in a schema.
 
 ## How it creates a better user experience
@@ -51,12 +51,15 @@ says exactly that in its result, with the current embedded count, so an agent re
 "still settling, N of M embedded" instead of telling the human their collection is
 empty.
 
-Of the fifteen tools, nine are annotated `readOnlyHint: true`. The six that are not
-(`set_results`, `show_artwork`, `create_collection`, `add_to_collection`,
-`index_zip`, `index_folder`) are marked `readOnlyHint: false`, and the four that
-write persistent data or spend real compute — `create_collection`,
+Of the sixteen tools, nine are annotated `readOnlyHint: true`. The seven that are
+not (`set_results`, `show_artwork`, `describe_artwork`, `create_collection`,
+`add_to_collection`, `index_zip`, `index_folder`) are marked `readOnlyHint: false`.
+The four that write human-visible state — `create_collection`,
 `add_to_collection`, `index_zip`, `index_folder` — are additionally gated behind an
-in-page confirmation the human sees and approves before anything commits.
+in-page confirmation the human sees and approves before anything commits;
+`describe_artwork` spends a paid model call but only adds a caption to the record,
+so it asks no permission and says in its result whether the caption was new or
+already stored.
 
 Nothing changes for visitors without WebMCP support: the bridge feature-detects, and
 a browser without it installs nothing and renders nothing.
@@ -89,7 +92,7 @@ instead of being a black box.
 
 ## Briefly, how we implemented WebMCP
 
-Tools are defined in `apps/web/app/lib/webmcp/` (`tools.ts` for the fifteen
+Tools are defined in `apps/web/app/lib/webmcp/` (`tools.ts` for the sixteen
 definitions, `registry.ts` for the host binding, `store.ts` for the shared canvas) and
 mounted once from `apps/web/app/root.tsx` via
 `apps/web/app/components/webmcp/webmcp-bridge.tsx`, so the tools exist on every route
@@ -111,9 +114,13 @@ backend surface for reads. The shared-canvas tools (`get_view_context`, `set_res
 `show_artwork`) read and write the same React state the human's UI already renders
 from, so there is exactly one source of truth for "what is on screen."
 
-Indexing is the one place that needed new backend surface: anonymous job routes on the
-API worker (`apps/api/src/routes/indexing.ts`) behind Worker proxy routes
-(`apps/web/app/routes/api.public-index.*`). Because indexing an archive takes minutes,
+Indexing and assistive description are the places that needed new backend surface:
+anonymous job routes on the API worker (`apps/api/src/routes/indexing.ts`) behind
+Worker proxy routes (`apps/web/app/routes/api.public-index.*`), and an anonymous
+captioner (`POST /api/public-describe`, `apps/api/src/routes/describe.ts`) behind its
+own proxy (`apps/web/app/routes/api.public-describe.ts`) — per-caller rate-limited,
+pinned to two allowlisted vision models, and scoped to reads of the open-access
+collection only. Because indexing an archive takes minutes,
 `index_zip` returns a pollable job id rather than blocking inside `execute`, and the
 upload pump deliberately outlives the tool call — a host cancelling `execute` does not
 cancel the job. Anonymous writes are sandboxed to a dedicated org and capped
