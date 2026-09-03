@@ -105,6 +105,10 @@ describe('tool surface', () => {
       'set_results',
       'show_artwork',
       'set_view',
+      'flag_artworks',
+      'search_by_exemplars',
+      'redeal',
+      'compare_artworks',
       'create_collection',
       'add_to_collection',
       'index_zip',
@@ -143,6 +147,9 @@ describe('tool surface', () => {
       'lookup_artwork',
       'get_search_quota',
       'get_view_context',
+      // Proposing candidates changes nothing; redeal, which deals them onto
+      // the board, is honestly not readOnly.
+      'search_by_exemplars',
       // Polling a job writes nothing; the two tools that upload images do.
       'get_index_status',
     ]);

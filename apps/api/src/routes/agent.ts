@@ -35,6 +35,12 @@ const AGENT_MODEL = 'gpt-5.6-terra';
  * belongs here, in the product — not in whatever the visitor happened to type.
  * Someone who says "something warm for above the sofa" should not also have to
  * say "try several interpretations and merge them"; working that out is the job.
+ *
+ * The gesture rules below are the part that could not exist anywhere else. A
+ * search box has words and no gestures; a chat has words and no board. This
+ * page has both, so it is the only place where a model can be told what to do
+ * when the two disagree — and the answer is not "ask", it is "follow the hands
+ * and say so out loud".
  */
 const SYSTEM_PROMPT = [
   'You operate a museum art-search page through the tools it exposes.',
@@ -44,6 +50,19 @@ const SYSTEM_PROMPT = [
   'Then assemble one board with set_results, taking the best of every angle you tried rather than the top of any single search, and pass a note naming what the selection has in common and what you ruled out.',
   'Choose the layout with set_view when it helps: atlas when you want to show how a cross-section relates, salon for a curated hang, table for comparing catalogue fields.',
   'A plain, specific query — an artist, a medium, a date — needs none of that. Run it and show the results.',
+
+  // --- The gestures ------------------------------------------------------
+  'You share this page with the person using it, and they act on it as much as you do. They flag works as picks and rejects with P and X, they select and hover, and they choose between two works you put side by side. Every turn you receive carries what they did as well as what they said, and get_view_context reports the flags, the board and what they are pointing at.',
+  'When the human\'s words and their gestures conflict, follow the gestures and say so. Name the gap in one plain sentence and act on the picks: "You said warm; you\'ve picked three cool ones. I\'m following the picks." Do not ask them which they meant, do not quietly average the two, and do not pretend you did not notice. The gap is usually the most useful thing on the screen — it is where they are discovering what they actually want.',
+  'A pick is a constraint to build around, not just a work to keep. Whatever else changes, those stay, so your job is to find what goes with them.',
+  'A reject tells you about the axis they care about, not merely that one work is out. Ask yourself what that work had that the picks do not, and move the whole board away from it — one strong rejection is worth more than three vague picks.',
+  'Their reasons are not always in words. When picks share something they have not named, name it for them in your note — "these are all horizon-line pictures" — and let them correct you. Being usefully wrong about it is better than being silent.',
+
+  // --- The loop ----------------------------------------------------------
+  'The board holds twelve works. Use redeal to deal a new one from the flags: picks hold their positions, rejects leave, newcomers fill the gaps. This is the same operation the human runs by pressing Enter on an empty prompt bar, so do not describe it as something you are doing for them.',
+  'Use flag_artworks to disagree in their own currency, at most three at a time and always with a reason. Your flags arrive provisional and do not steer the redeal until they confirm them; that is deliberate, so propose freely.',
+  'Use compare_artworks when you have a real hypothesis about what they want and two works that differ on exactly that axis. One click from them is worth more than a paragraph of questions, and it is the only question you may ask.',
+
   'Be decisive and never ask clarifying questions. Keep any spoken reply to two sentences; the page is doing the showing.',
 ].join(' ');
 
@@ -51,6 +70,73 @@ const jsonError = (code: string, message: string) => ({
   success: false as const,
   error: { code, message },
 });
+
+/**
+ * The gesture half of a human turn, as the page sends it.
+ *
+ * A click is a turn even with no text, so `text` is optional and everything
+ * else describes what their hands did since the last turn. Titles arrive
+ * resolved because the catalogue lives in the browser's session index, not
+ * here — this route stays stateless and never looks anything up.
+ */
+export interface HumanTurnPayload {
+  text?: string;
+  flagsDelta?: {
+    artworkId: string;
+    title?: string;
+    to: 'pick' | 'reject' | null;
+  }[];
+  selection?: { id: string; title?: string }[];
+  hovered?: { id: string; title?: string } | null;
+  compareChoice?: {
+    winner: { id: string; title?: string };
+    loser: { id: string; title?: string };
+    question?: string | null;
+  } | null;
+}
+
+const named = (entry: { id?: string; artworkId?: string; title?: string }) =>
+  entry.title?.trim() || entry.artworkId || entry.id || 'an untitled work';
+
+/**
+ * Render the gestures as a sentence rather than as JSON.
+ *
+ * The rule this feeds — gestures outrank words — is a judgement, and models
+ * follow judgements stated in prose far more reliably than ones they have to
+ * infer from a data structure they were handed. So the payload becomes
+ * English, and it is labelled as observed fact so it cannot be mistaken for
+ * something the human typed.
+ */
+export const describeHumanTurn = (turn: HumanTurnPayload): string | null => {
+  const parts: string[] = [];
+  const delta = turn.flagsDelta ?? [];
+
+  const picked = delta.filter((change) => change.to === 'pick');
+  const rejected = delta.filter((change) => change.to === 'reject');
+  const cleared = delta.filter((change) => change.to === null);
+
+  if (picked.length) parts.push(`picked ${picked.map(named).join('; ')}`);
+  if (rejected.length) parts.push(`rejected ${rejected.map(named).join('; ')}`);
+  if (cleared.length) parts.push(`unflagged ${cleared.map(named).join('; ')}`);
+  if (turn.compareChoice) {
+    parts.push(
+      `chose ${named(turn.compareChoice.winner)} over ${named(turn.compareChoice.loser)}` +
+        (turn.compareChoice.question
+          ? ` when asked "${turn.compareChoice.question}"`
+          : '')
+    );
+  }
+  if (turn.selection?.length) {
+    parts.push(`selected ${turn.selection.map(named).join('; ')}`);
+  }
+  if (turn.hovered) parts.push(`is pointing at ${named(turn.hovered)}`);
+
+  if (!parts.length) return null;
+  return [
+    `Since the last turn the human ${parts.join(', and ')}.`,
+    'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so.',
+  ].join(' ');
+};
 
 const toHex = (value: ArrayBuffer) =>
   Array.from(new Uint8Array(value), (byte) =>
@@ -99,7 +185,7 @@ agent.post('/public-agent/turn', async (c) => {
     );
   }
 
-  let body: { messages?: unknown; tools?: unknown };
+  let body: { messages?: unknown; tools?: unknown; turn?: unknown };
   try {
     body = JSON.parse(raw) as typeof body;
   } catch {
@@ -130,6 +216,13 @@ agent.post('/public-agent/turn', async (c) => {
     );
   }
 
+  // A turn is optional: an agent driving this route from outside the page has
+  // no gestures to report, and the loop must still work for it.
+  const gestures =
+    body.turn && typeof body.turn === 'object'
+      ? describeHumanTurn(body.turn as HumanTurnPayload)
+      : null;
+
   const clientHash = await getClientHash(
     c.req.header('CF-Connecting-IP') || undefined
   );
@@ -154,6 +247,12 @@ agent.post('/public-agent/turn', async (c) => {
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         ...(messages as OpenAiToolMessage[]),
+        // Placed after the conversation, not before it: what the human just
+        // did with their hands is the most recent thing that happened, and it
+        // should read that way rather than as standing background.
+        ...(gestures
+          ? [{ role: 'system' as const, content: gestures }]
+          : []),
       ],
       tools: tools as Record<string, unknown>[],
       signal: c.req.raw.signal,
