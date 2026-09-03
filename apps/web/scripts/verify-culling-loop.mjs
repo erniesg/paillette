@@ -203,8 +203,14 @@ await page.evaluate(
     afterRedeal.board.order[1],
   ]
 );
+// The wait is the assertion: nothing below it can run if the two-up never
+// opened, so a redundant check() here would only inflate the count.
 await page.waitForSelector('.paillette-compare', { timeout: 5000 });
-check('the two-up opens with the question set between the works', true);
+check(
+  'the two-up sets the agent’s question between the works',
+  (await page.locator('.paillette-compare').getAttribute('aria-label')) ===
+    'Which reads from further away?'
+);
 await page.locator('.paillette-compare-work[data-side="left"]').click();
 const afterCompare = await context();
 check(
