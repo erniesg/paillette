@@ -43,6 +43,29 @@ export const emptyScene = (): DeicticScene => ({
   visible: [],
 });
 
+/**
+ * Hold on to what was last pointed at, for the length of one utterance.
+ *
+ * A hover is the only genuinely transient signal on the page: a selection and
+ * an open work persist, but the cursor leaves a card the moment it goes
+ * anywhere else — including when reaching for the field, or when focusing it
+ * scrolls the card out from under the pointer. Measured in Chromium: point at a
+ * card, then click into the bar, and `hovered` is null before the first
+ * keystroke lands.
+ *
+ * Re-reading the live hover on every keystroke therefore made "this one" mean
+ * *whatever the mouse is over right now*, which is not what pointing means.
+ * Someone says "more like this one" about the thing they were pointing at when
+ * they started the sentence. Carrying the last hover forward is the smaller
+ * lie, and it is not a silent one: the chip shows what it bound to, so a stale
+ * referent is visible and can be corrected before the turn commits.
+ */
+export const carryHover = (
+  live: DeicticScene,
+  remembered: SceneWork | null
+): DeicticScene =>
+  live.hovered || !remembered ? live : { ...live, hovered: remembered };
+
 export type ReferentSource = 'hovered' | 'focused' | 'selection' | 'position';
 
 export interface Referent {
@@ -83,23 +106,40 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const asText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value : null;
 
-const toWork = (value: unknown): SceneWork | null => {
+/**
+ * Turns an id into a work with a title and a picture.
+ *
+ * The store holds `hovered` and `selection` as bare id strings, because that is
+ * the honest representation of a gesture — the page points at an id, and the
+ * record is looked up when someone needs to see it.
+ */
+export type WorkLookup = (id: string) => SceneWork | null;
+
+const fromId = (id: string, lookup?: WorkLookup): SceneWork =>
+  lookup?.(id) ?? { id, title: null, artist: null, thumbnailUrl: null };
+
+const toWork = (value: unknown, lookup?: WorkLookup): SceneWork | null => {
+  // A bare id: what the store keeps for a hover or a selection.
+  if (typeof value === 'string') return value ? fromId(value, lookup) : null;
   if (!isRecord(value)) return null;
   // Some payloads wrap the record one level down (`{ openedBy, artwork }`).
   const record = isRecord(value.artwork) ? value.artwork : value;
   const id = asText(record.id);
   if (!id) return null;
-  return {
-    id,
-    title: asText(record.title),
-    artist: asText(record.artist),
-    thumbnailUrl: asText(record.thumbnailUrl) ?? asText(record.imageUrl),
-  };
+  const title = asText(record.title);
+  const artist = asText(record.artist);
+  const thumbnailUrl = asText(record.thumbnailUrl) ?? asText(record.imageUrl);
+  // A reference with no detail on it — `{ id }` from a turn payload — is still
+  // worth looking up, or the chip would be a rectangle with an id in it.
+  if (!title && !artist && !thumbnailUrl) return fromId(id, lookup);
+  return { id, title, artist, thumbnailUrl };
 };
 
-const toWorks = (value: unknown): SceneWork[] =>
+const toWorks = (value: unknown, lookup?: WorkLookup): SceneWork[] =>
   Array.isArray(value)
-    ? value.map(toWork).filter((work): work is SceneWork => work !== null)
+    ? value
+        .map((entry) => toWork(entry, lookup))
+        .filter((work): work is SceneWork => work !== null)
     : [];
 
 const firstNonEmpty = (...candidates: SceneWork[][]): SceneWork[] =>
@@ -115,32 +155,40 @@ const firstNonEmpty = (...candidates: SceneWork[][]): SceneWork[] =>
  * spelling defensively means this lights up when they land instead of needing a
  * second edit, and resolves what it can meanwhile.
  */
-export const readScene = (source: unknown): DeicticScene => {
+export const readScene = (
+  source: unknown,
+  lookup?: WorkLookup
+): DeicticScene => {
   if (!isRecord(source)) return emptyScene();
 
   const agent = isRecord(source.agentResults) ? source.agentResults : null;
   const human = isRecord(source.humanResults) ? source.humanResults : null;
+  const board = isRecord(source.board) ? source.board : null;
+  const work = (value: unknown) => toWork(value, lookup);
+  const works = (value: unknown) => toWorks(value, lookup);
 
   return {
-    hovered: toWork(source.hovered) ?? toWork(source.hoveredArtwork),
+    hovered: work(source.hovered) ?? work(source.hoveredArtwork),
     focused:
-      toWork(source.openArtwork) ??
-      toWork(source.focused) ??
-      toWork(source.focusedArtwork),
+      work(source.openArtwork) ??
+      work(source.focused) ??
+      work(source.focusedArtwork),
     selection: firstNonEmpty(
-      toWorks(source.selection),
-      toWorks(source.selected),
-      toWorks(source.selectedArtworks)
+      works(source.selection),
+      works(source.selected),
+      works(source.selectedArtworks)
     ),
-    // The agent's board takes over the canvas when there is one, so it is what
-    // the human is looking at and therefore what "the left one" counts across.
+    // The hung board is what "the left one" counts across — it is the thing
+    // the human is looking at. A result set only stands in for it where no
+    // board has been dealt yet.
     visible: firstNonEmpty(
-      toWorks(agent?.items),
-      toWorks(agent?.visible),
-      toWorks(human?.items),
-      toWorks(human?.visible),
-      toWorks(source.visible),
-      toWorks(source.board)
+      works(board?.order),
+      works(agent?.items),
+      works(agent?.visible),
+      works(human?.items),
+      works(human?.visible),
+      works(source.visible),
+      works(source.board)
     ),
   };
 };

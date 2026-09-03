@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   annotateForAgent,
+  carryHover,
   emptyScene,
   readScene,
   resolveDeixis,
@@ -230,5 +231,48 @@ describe('segmentUtterance', () => {
       )
       .join('');
     expect(rebuilt).toBe(text);
+  });
+});
+
+describe('carryHover', () => {
+  it('keeps the live hover when there is one', () => {
+    const live = scene({ hovered: lane });
+    expect(carryHover(live, dusk).hovered).toEqual(lane);
+  });
+
+  it('carries the last hover once the cursor has left the card', () => {
+    // Reaching for the field clears the hover before the first keystroke.
+    expect(carryHover(emptyScene(), lane).hovered).toEqual(lane);
+  });
+
+  it('is unchanged when nothing was ever pointed at', () => {
+    expect(carryHover(emptyScene(), null)).toEqual(emptyScene());
+  });
+
+  it('leaves everything except the hover alone', () => {
+    const live = scene({ visible: [lane, dusk], selection: [third] });
+    const carried = carryHover(live, dusk);
+    expect(carried.visible).toEqual(live.visible);
+    expect(carried.selection).toEqual(live.selection);
+  });
+});
+
+describe('readScene with bare ids', () => {
+  it('resolves the ids the store keeps for a hover and a selection', () => {
+    const lookup = (id: string) =>
+      id === 'nga-1' ? lane : id === 'nga-2' ? dusk : null;
+    const result = readScene(
+      { hovered: 'nga-1', selection: ['nga-2'], board: { order: ['nga-1', 'nga-2'] } },
+      lookup
+    );
+    expect(result.hovered).toEqual(lane);
+    expect(result.selection).toEqual([dusk]);
+    expect(result.visible).toEqual([lane, dusk]);
+  });
+
+  it('still yields something pointable when the lookup misses', () => {
+    const result = readScene({ hovered: 'nga-404' });
+    expect(result.hovered?.id).toBe('nga-404');
+    expect(result.hovered?.title).toBeNull();
   });
 });
