@@ -86,22 +86,19 @@ survivor.
 
 ---
 
-## 5. Nothing in the UI ever calls `setSelection` — for whoever owns the grid
+## 5. Nothing in the UI ever calls `setSelection` — RESOLVED
 
-`setSelection` exists in `store.ts`, `get_view_context` reports `selection`, and
-`board-keyboard.ts` reads it to decide what `C` compares. But a grep across
-`apps/web/app` finds **no caller anywhere in the application** — shift-click
-multi-select was never wired up.
+Fixed by the shared-state lane in `47ac14b`: shift-click on a card now calls
+`toggleSelection`, in a capture handler so a plain click still opens the work.
 
-Consequences beyond this lane:
+**Plural deixis works as a result.** Verified in the browser: shift-click two
+cards, type "something between these two", and the chip resolves to both with
+their thumbnails, and the turn carries the selection with titles.
 
-- Plural deixis — "these two", "both of these", "those three" — can never
-  resolve. It is written and unit-tested and lights up the moment something
-  selects; today it correctly reports itself unresolved.
-- `resolveComparePair` falls back to hovered-plus-first-pick for `C`, so
-  two-up never gets its unambiguous "compare exactly these two" path.
-
-One `onClick` with `event.shiftKey` on the card would close both.
+One consequence for this lane, fixed here: a selection persists until it is
+cleared, so it is routinely older than the sentence being spoken. Singular
+deixis no longer lets a multi-selection block a hover — "this one" while
+pointing means the card, not the set picked out three turns ago.
 
 ## 6. The activity panel sits on top of the utterance bar
 
@@ -155,3 +152,54 @@ open it covers the page and intercepts pointer events.
 Not a blocker — the close button is there and visible — and forcing a decision
 may well be deliberate. Noting it because it cost this lane a confusing
 half-hour of a verification run timing out against an invisible modal.
+
+---
+
+## 9. A failed redeal is completely silent — for the shared-state lane
+
+`installBoardKeyboard` takes `onTurn` and `onError`, and the comment on them
+says "reports every redeal the keyboard triggers, for surfacing failures". But
+`useBoardKeyboard` in `flag-controls.tsx:52` installs with no options at all:
+
+```ts
+export const useBoardKeyboard = () => {
+  useEffect(() => installBoardKeyboard(), []);
+};
+```
+
+Measured: pick a work, press Enter on an empty bar, have `/exemplars` return
+500. The board does not change and **nothing appears anywhere on the page**. No
+uncaught error either — it is caught and dropped. On camera that is
+indistinguishable from a dead key, and it is section 9's headline beat.
+
+This matters more than most failure paths because the redeal is the one thing
+the brief says must be demonstrated, and it depends on a network call.
+
+**The ask:** pass something through. Even
+
+```ts
+installBoardKeyboard({
+  onTurn: (outcome) => { if (outcome.kind === 'redeal' && !outcome.result.ok) show(outcome.result.error); },
+  onError: (e) => show(e),
+});
+```
+
+would turn silence into an answer. Not touched here: it is your component, and
+you have a `verify-failure-paths.mjs` of your own that could assert it.
+
+What *does* hold up, checked in the same sweep: leaning on Enter five times
+fires exactly one redeal, and Enter with nothing flagged at all calls neither
+backend and raises nothing.
+
+## 10. The activity panel covers the board and re-opens itself
+
+Noted before as overlapping the utterance bar; it is worse than cosmetic. The
+panel is absent on a cold load and appears the moment the agent does anything,
+as a fixed overlay across the lower-left. While open it **intercepts clicks on
+the cards underneath** — Playwright cannot shift-click a card behind it, and
+neither can a person. Collapsing it works, but the next agent action brings it
+back.
+
+This lane's verification script now runs its selection checks before the first
+agent turn to stay out of its way. For filming, either collapse it between
+beats or keep the works being flagged out of the lower-left.
