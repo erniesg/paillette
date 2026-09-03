@@ -104,8 +104,8 @@ What is left is the no-host case. Two options, your call:
 **Voice lane — the agent's reply is now usually empty, on purpose.** The note
 above the board is the sentence; repeating it as the reply put the same words
 twice on one screen, which is the owner's standing complaint. The system prompt
-now says: add a sentence the note does not say, or say nothing. Six live runs
-produced an empty reply every time.
+now says: add a sentence the note does not say, or say nothing. Eight of nine
+live runs produced an empty reply; the ninth restated the note.
 
 That matters to you because the symmetric-speech rule needs something to speak.
 **Speak the note, not the reply** — it is on the shared store at

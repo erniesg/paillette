@@ -17,7 +17,7 @@ and must not go past it.
 | `P` / `X` / `U` on hovered or focused card + corner badge | shipped |
 | `get_view_context` gains flags / selection / hovered / compare / board | shipped |
 | Turn payload `{ text?, flagsDelta, selection, hovered, compareChoice }` | shipped, **wired by a shim** — see §7 |
-| "Gestures outrank words" rule in the agent system prompt | shipped, verified live on 6 runs |
+| "Gestures outrank words" rule in the agent system prompt | shipped, verified live on 9 runs |
 | `search_by_exemplars` — Rocchio, server-side | shipped, **server-side path, not the degraded one** |
 | `redeal`, 12 cards, picks held in place | shipped |
 | Enter on an empty prompt bar redeals with no model call | shipped, verified in a browser |
@@ -208,9 +208,10 @@ PAILLETTE_API_URL=http://localhost:8787 pnpm --filter web dev
 node apps/web/scripts/verify-sofa-run.mjs http://localhost:5173 3
 ```
 
-**Six consecutive runs, all six the same shape.** Every run: `get_view_context`,
-then `redeal` — twelve cards, board marked as the agent's move, the human's pick
-still on it — and a one-sentence note naming what was rejected. Verbatim:
+**Nine consecutive runs, all nine the same shape.** Every run:
+`get_view_context`, then `redeal` — twelve cards, board marked as the agent's
+move, the human's pick still on it — and a one-sentence note naming what was
+rejected. Verbatim:
 
 > "You said warm; you picked the grey harbour and rejected the golds — following
 > the picks."
@@ -221,8 +222,11 @@ still on it — and a one-sentence note naming what was rejected. Verbatim:
 > "You said warm; you picked the grey harbour and rejected the golds—following
 > the pick's quiet light."
 
-The reply field was empty in all six: the note had already said it, and saying
-the same sentence twice on one screen is the thing the owner objects to.
+The reply field was empty in **eight of the nine**: the note had already said
+it, and the same sentence twice on one screen is the thing the owner objects
+to. The ninth restated the note as its reply. So the rule holds most of the
+time and is not absolute — if the duplication matters on camera, the reply is
+worth suppressing in the page rather than asked for in the prompt.
 
 **Be precise about what this shows, and about what it does not.**
 
@@ -404,7 +408,7 @@ Baseline was web 59 files / 593 tests, api 41 / 770.
 | `pnpm --filter web typecheck` | **1 error, pre-existing, not mine** |
 | `verify-culling-loop.mjs` | **28 checks, all passed, 3 runs** |
 | `verify-failure-paths.mjs` | **25 checks, all passed** |
-| `verify-sofa-run.mjs` | **6 runs, all 6 redealt with a one-sentence note** |
+| `verify-sofa-run.mjs` | **9 runs, all 9 redealt with a one-sentence note** |
 
 Two things to know about those numbers:
 
