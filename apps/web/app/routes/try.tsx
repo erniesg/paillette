@@ -190,6 +190,8 @@ export default function TryPaillette() {
   const webmcp = useWebMcpState();
 
   const [phase, setPhase] = useState<Phase>('idle');
+  /** Drop-zone hover state; purely visual. */
+  const [dragging, setDragging] = useState(false);
   const [stage, setStage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
@@ -807,30 +809,53 @@ export default function TryPaillette() {
         <h1 className="font-display text-4xl font-bold lg:text-5xl">
           Turn a pile of images into a searchable collection
         </h1>
-        <p className="mt-4 max-w-2xl text-lg leading-relaxed text-neutral-400">
-          Pick a demo collection or drop in your own zip. Every image is
-          embedded in the same vector space Paillette uses for the National
-          Gallery of Art, and you can search it in plain language while the rest
-          is still indexing. No account, nothing to install. An agent in this
-          browser can do all of it too — and can see whatever you index here.
-        </p>
 
-        {/* Caps up front, not after a failed upload. One flat paragraph: the
-            limits have to read as a single sentence to a screen reader and to
-            anyone scanning the page, not as a label plus a fragment. */}
-        <p className="mt-6 rounded-lg border border-neutral-800 bg-neutral-900/60 px-4 py-3 text-sm text-neutral-400">
-          Anonymous limits: up to {INDEX_CAPS.maxImagesPerJob} images per
-          archive,{' '}
-          {megabytes(INDEX_CAPS.maxImageBytes)} MB per image,{' '}
-          {megabytes(INDEX_CAPS.maxJobBytes)} MB per job,{' '}
-          {INDEX_CAPS.maxJobsPerHour} jobs per hour from one address. Supported
-          types: {INDEX_CAPS.imageTypes.join(', ')}. A CSV sidecar named in the
-          archive becomes catalogue metadata; without one, titles come from
-          filenames. Everything lands in a shared public sandbox — do not upload
-          anything private.
-        </p>
+        {/* The drop zone is the page. Everything that used to sit above it —
+            three paragraphs of explanation and a wall of caps — pushed the one
+            control a visitor came here for below the fold. */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            const dropped = event.dataTransfer.files?.[0];
+            if (dropped) {
+              void beginJob(
+                dropped,
+                timestampName(dropped.name.replace(/\.zip$/i, ''))
+              );
+            }
+          }}
+          className={`mt-8 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-14 transition-colors ${
+            dragging
+              ? 'border-primary-400 bg-primary-500/10'
+              : 'border-neutral-700 bg-neutral-900/40 hover:border-neutral-500 hover:bg-neutral-900/70'
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          <span className="font-display text-2xl font-semibold text-white">
+            Drop a zip of images
+          </span>
+          <span className="mt-2 text-sm text-neutral-400">
+            or click to choose one — up to {INDEX_CAPS.maxImagesPerJob} images
+          </span>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".zip,application/zip,application/x-zip-compressed"
+          className="hidden"
+          aria-label="Upload a zip archive of images"
+          onChange={onPickFile}
+        />
 
-        <section className="mt-8" aria-labelledby="try-picker-heading">
+        <section className="mt-10" aria-labelledby="try-picker-heading">
           <h2
             id="try-picker-heading"
             className="text-sm uppercase tracking-wide text-neutral-500"
@@ -838,19 +863,20 @@ export default function TryPaillette() {
             Choose a collection to index
           </h2>
 
-          <ul className="mt-4 grid gap-4 md:grid-cols-2">
+          <ul className="mt-4 grid gap-3 md:grid-cols-2">
             {(archives ?? []).map((archive) => (
-              <li
-                key={archive.id}
-                className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/60 p-5"
-              >
-                <h3 className="font-display text-xl font-semibold">
-                  {archive.name}
-                </h3>
-                <p className="mt-1 text-sm text-neutral-400">
+              <li key={archive.id}>
+                <Button
+                  onClick={() => void startDemo(archive)}
+                  disabled={busy}
+                  className="w-full justify-start text-left"
+                >
+                  Index {archive.name}
+                </Button>
+                <p className="mt-1.5 px-1 text-xs text-neutral-400">
                   {archive.source}
                 </p>
-                <p className="mt-3 text-sm text-neutral-500">
+                <p className="px-1 text-xs text-neutral-500">
                   {archive.imageCount > 0
                     ? `${archive.imageCount} images · about ${estimateMinutes(archive.imageCount)} min to index`
                     : 'Size unknown until it is read'}
@@ -859,55 +885,30 @@ export default function TryPaillette() {
                     ? 'with catalogue metadata'
                     : 'no metadata sidecar'}
                 </p>
-                {archive.note && (
-                  <p className="mt-2 text-sm text-neutral-500">{archive.note}</p>
-                )}
-                <p className="mt-2 text-xs text-neutral-600">
-                  {archive.licence}
-                  {archive.bytes ? ` · ${megabytes(archive.bytes)} MB` : ''}
-                </p>
-                <div className="mt-4">
-                  <Button
-                    onClick={() => void startDemo(archive)}
-                    disabled={busy}
-                  >
-                    Index {archive.name}
-                  </Button>
-                </div>
               </li>
             ))}
-
-            <li className="flex flex-col rounded-xl border border-dashed border-neutral-700 bg-neutral-900/30 p-5">
-              <h3 className="font-display text-xl font-semibold">
-                Your own images
-              </h3>
-              <p className="mt-1 text-sm text-neutral-400">
-                A zip from your machine
-              </p>
-              <p className="mt-3 text-sm text-neutral-500">
-                Up to {INDEX_CAPS.maxImagesPerJob} images. Anything the archive
-                cannot index is listed rather than dropped silently.
-              </p>
-              <div className="mt-4 grow content-end">
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={busy}
-                >
-                  Upload your own zip
-                </Button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".zip,application/zip,application/x-zip-compressed"
-                className="hidden"
-                aria-label="Upload a zip archive of images"
-                onChange={onPickFile}
-              />
-            </li>
           </ul>
         </section>
+
+        {/* Still on the page and still one flat sentence for a screen reader —
+            just folded away, because a visitor deciding whether to drop a zip
+            does not read a licence paragraph first. */}
+        <details className="mt-8 rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-3">
+          <summary className="cursor-pointer text-sm text-neutral-400">
+            Limits, formats and privacy
+          </summary>
+          <p className="mt-3 text-sm text-neutral-400">
+            Anonymous limits: up to {INDEX_CAPS.maxImagesPerJob} images per
+            archive,{' '}
+            {megabytes(INDEX_CAPS.maxImageBytes)} MB per image,{' '}
+            {megabytes(INDEX_CAPS.maxJobBytes)} MB per job,{' '}
+            {INDEX_CAPS.maxJobsPerHour} jobs per hour from one address.
+            Supported types: {INDEX_CAPS.imageTypes.join(', ')}. A CSV sidecar
+            named in the archive becomes catalogue metadata; without one, titles
+            come from filenames. Everything lands in a shared public sandbox —
+            do not upload anything private.
+          </p>
+        </details>
 
         {busy && (
           <p className="mt-6 text-sm text-primary-300" role="status">

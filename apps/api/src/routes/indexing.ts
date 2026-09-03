@@ -28,6 +28,7 @@ import {
   resolveQueryIntent,
   artworkMatchesIntentFilters,
   type QueryIntent,
+  type QueryIntentFilters,
 } from '../utils/query-intent';
 import { generateJinaQueryEmbedding } from './search';
 
@@ -1333,6 +1334,106 @@ indexing.get('/jobs/:jobId', async (c) => {
  * space as the rest of Paillette, filtered to the new collection.
  */
 /**
+ * Rows in this collection that satisfy a hard filter, straight from D1.
+ *
+ * The vector query returns a semantic top-K and the intent filters then cull
+ * it, which fails exactly where the filter is most precise: an artist whose
+ * pictures do not look like their name. Searching "Eadweard Muybridge" over
+ * jina-clip image vectors surfaces neither of his motion studies in the top 24,
+ * so the artist filter had nothing left to keep and a suggestion built from
+ * this collection's own catalogue returned zero results.
+ *
+ * A suggested search must never be empty, so when the filtered vector page is
+ * short this fills it from the metadata the filter actually describes.
+ */
+const queryIndexedByFilters = async (
+  db: D1Database,
+  collectionId: string,
+  filters: QueryIntentFilters,
+  limit: number
+) => {
+  const wheres: string[] = [
+    'org_id = ?',
+    'collection_id = ?',
+    'deleted_at IS NULL',
+  ];
+  const binds: unknown[] = [WEBMCP_INDEX_ORG_ID, collectionId];
+
+  // LIKE, not equality: the intent is grounded in the collection's own facet
+  // values, but a row may carry a longer form of the same value.
+  for (const [column, value] of [
+    ['artist', filters.artist],
+    ['medium', filters.medium],
+    ['classification', filters.classification],
+  ] as const) {
+    if (!value) continue;
+    wheres.push(`LOWER(${column}) LIKE ?`);
+    binds.push(`%${value.toLowerCase()}%`);
+  }
+  if (filters.yearFrom !== undefined) {
+    wheres.push('year IS NOT NULL AND year >= ?');
+    binds.push(filters.yearFrom);
+  }
+  if (filters.yearTo !== undefined) {
+    wheres.push('year IS NOT NULL AND year <= ?');
+    binds.push(filters.yearTo);
+  }
+
+  try {
+    const { results: rows } = await db
+      .prepare(
+        `SELECT id, title, artist, year, date_text, medium, classification,
+                description, original_filename, image_url, custom_metadata
+         FROM artworks
+         WHERE ${wheres.join(' AND ')}
+         ORDER BY year IS NULL, year, title
+         LIMIT ?`
+      )
+      .bind(...binds, limit)
+      .all<{
+        id: string;
+        title: string;
+        artist: string | null;
+        year: number | null;
+        date_text: string | null;
+        medium: string | null;
+        classification: string | null;
+        description: string | null;
+        original_filename: string | null;
+        image_url: string | null;
+        custom_metadata: string | null;
+      }>();
+
+    return rows.map((row) => {
+      let assetId: string | null = null;
+      try {
+        assetId = JSON.parse(row.custom_metadata || '{}')?.assetId ?? null;
+      } catch {
+        assetId = null;
+      }
+      return {
+        id: row.id,
+        // Not a vector hit: this row matched the filter, it was not scored.
+        similarity: 0,
+        title: row.title,
+        artist: row.artist,
+        year: row.year,
+        date_text: row.date_text,
+        medium: row.medium,
+        classification: row.classification,
+        description: row.description,
+        original_filename: row.original_filename,
+        imageUrl: assetId ? `/api/public-index/assets/${assetId}` : row.image_url,
+      };
+    });
+  } catch (error) {
+    // Never fail a search because the supplement failed.
+    console.warn('Indexed metadata filter query failed:', error);
+    return [];
+  }
+};
+
+/**
  * Turn Vectorize matches into the artwork records both indexed-collection
  * search routes return. Vector rank order is preserved; a match whose row has
  * since been deleted simply drops out.
@@ -1490,7 +1591,7 @@ indexing.post('/jobs/:jobId/search', async (c) => {
   // Intent filters cull after scoring, preserving vector rank order; the
   // page is then cut back to topK so filtered searches behave like plain
   // ones from the caller's point of view.
-  const filteredResults =
+  let filteredResults =
     intent && hasFilters
       ? results
           .filter((result) =>
@@ -1508,6 +1609,26 @@ indexing.post('/jobs/:jobId/search', async (c) => {
           )
           .slice(0, topK)
       : results;
+
+  // The suggestions this collection offers are generated from its own
+  // catalogue, so a suggested search that returns nothing is a broken promise.
+  // Top up from D1 whenever the filtered vector page came back short, keeping
+  // the vector-ranked hits first.
+  if (intent && hasFilters && filteredResults.length < topK) {
+    const seen = new Set(filteredResults.map((result) => result.id));
+    const supplement = await queryIndexedByFilters(
+      c.env.DB,
+      job.collection_id,
+      intent.filters,
+      topK
+    );
+    for (const row of supplement) {
+      if (filteredResults.length >= topK) break;
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      filteredResults.push(row);
+    }
+  }
 
   return c.json({
     success: true,
