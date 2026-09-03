@@ -1104,6 +1104,94 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   text-align: left;
 }
 
+/*
+ * Their compare overlay, made into a room.
+ *
+ * This is the same brief as `.lt-two-up` — two works at a size you can judge,
+ * a question set like a wall label, nothing else on screen — but theirs is the
+ * one wired to the state, so theirs is the one that ships. It arrives as a
+ * translucent near-black scrim with each work in a bordered box, which is a
+ * dialog with two thumbnails in it: exactly the thing compare is not supposed
+ * to be.
+ *
+ * Opaque, not a scrim: a translucent overlay leaves the grid showing through
+ * and the works stop being the only thing in the room. Boxes off the works,
+ * because a frame drawn by the interface competes with the frame in the
+ * painting. Shadow instead, so they hang.
+ */
+.paillette-compare {
+  background: var(--lt-ground);
+  padding: clamp(1.5rem, 4vh, 4rem) clamp(1.5rem, 4vw, 5rem);
+}
+
+.paillette-compare > p {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+/* Who asked decides the ink, so the question never has to say who asked. */
+.paillette-compare[data-asked-by='agent'] {
+  --ink: var(--ink-agent);
+}
+
+.paillette-compare[data-asked-by='human'] {
+  --ink: var(--ink-human);
+}
+
+.paillette-compare-work {
+  border: 0 !important;
+  background: transparent;
+  padding: 0;
+  transition: filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.paillette-compare-work img {
+  box-shadow: var(--lt-slide-shadow-lifted);
+}
+
+.paillette-compare-work span {
+  color: var(--ink-human);
+}
+
+/* The second line of the caption is catalogue data. */
+.paillette-compare-work span + span {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+/* Hovering dims the other one rather than lighting this one, so the screen
+ * never gains brightness it did not already have. */
+.paillette-compare:hover .paillette-compare-work:not(:hover),
+.paillette-compare:focus-within .paillette-compare-work:not(:focus-within) {
+  filter: brightness(0.72);
+}
+
+/* "Neither" is the one answer the pictures cannot give, so it stays — as a
+ * hairline, in catalogue mono, at the quietest weight that is still legible. */
+.paillette-compare > button {
+  border-color: var(--lt-rule) !important;
+  color: var(--ink-human-faint) !important;
+}
+
+.paillette-compare > button:hover {
+  border-color: var(--ink-human) !important;
+  color: var(--ink-human) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paillette-compare-work,
+  .paillette-compare:hover .paillette-compare-work:not(:hover),
+  .paillette-compare:focus-within .paillette-compare-work:not(:focus-within) {
+    transition: none;
+  }
+}
+
 .theme-toggle-control {
   position: fixed;
   right: 1rem;

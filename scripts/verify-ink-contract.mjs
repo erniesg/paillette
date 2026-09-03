@@ -194,6 +194,61 @@ async function main() {
     'a tile carrying both class names and their attributes still reads correctly'
   );
 
+  // --- their compare overlay ------------------------------------------------
+
+  const compare = await page.evaluate(() => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div class="paillette-compare fixed inset-0 flex flex-col items-center
+                  justify-center gap-6 bg-neutral-950/95 p-8"
+           data-asked-by="agent">
+        <p class="max-w-2xl text-center font-display text-xl text-white">Which one?</p>
+        <div class="flex w-full flex-1 items-center justify-center gap-8">
+          <button class="paillette-compare-work flex flex-col border border-white/10 p-4"
+                  data-side="left">
+            <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" />
+            <span>A title</span><span>An artist</span>
+          </button>
+        </div>
+        <button class="border border-white/15 px-3 py-1">Neither</button>
+      </div>`;
+    document.body.appendChild(host);
+    const room = host.querySelector('.paillette-compare');
+    const work = host.querySelector('.paillette-compare-work');
+    const q = host.querySelector('.paillette-compare > p');
+    const caption = host.querySelectorAll('.paillette-compare-work span');
+    const out = {
+      roomBg: getComputedStyle(room).backgroundColor,
+      questionFont: getComputedStyle(q).fontFamily.split(',')[0],
+      questionColour: getComputedStyle(q).color,
+      workBorder: getComputedStyle(work).borderTopWidth,
+      captionFont: getComputedStyle(caption[1]).fontFamily.split(',')[0],
+    };
+    host.remove();
+    return out;
+  });
+
+  check(
+    compare.roomBg === 'rgb(26, 26, 29)',
+    'their compare room is the opaque light-table ground, not a scrim'
+  );
+  check(
+    compare.questionFont.includes('EB Garamond'),
+    'their compare question is set in the wall serif'
+  );
+  check(
+    compare.questionColour === AGENT,
+    "their compare question takes the asking hand's ink"
+  );
+  check(
+    compare.workBorder === '0px',
+    'their compare works lose the box that competed with the painting'
+  );
+  check(
+    compare.captionFont.includes('IBM Plex Mono'),
+    'their compare caption sets catalogue data in the mono face'
+  );
+
   // --- light theme, where every token flips ---------------------------------
 
   await page.evaluate(() => {
@@ -222,6 +277,63 @@ async function main() {
     lightHuman.boxShadow !== lightAgent.boxShadow,
     'light theme: the two hands are still distinguishable'
   );
+
+  // A picture of the merged result, so the integrator can judge it without
+  // checking out both branches and resolving a conflict first.
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark';
+    document.body.innerHTML = '';
+    document.body.className = 'lt-ground';
+    const states = [
+      ['none', 'none', 'false', 'unflagged'],
+      ['pick', 'human', 'false', 'human pick'],
+      ['reject', 'human', 'false', 'human reject'],
+      ['pick', 'agent', 'true', 'agent pick, unconfirmed'],
+      ['reject', 'agent', 'true', 'agent reject, unconfirmed'],
+      ['pick', 'agent', 'false', 'agent pick, confirmed'],
+    ];
+    const grid = document.createElement('div');
+    grid.style.cssText =
+      'display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding:40px';
+    grid.innerHTML = states
+      .map(
+        ([flag, by, prov, label]) => `
+        <div>
+          <article class="paillette-card" data-artwork-id="w"
+                   data-flag="${flag}" data-flag-by="${by}"
+                   data-flag-provisional="${prov}"
+                   style="padding:10px">
+            <div style="position:absolute;right:8px;top:8px;z-index:10">
+              <div class="paillette-flag-badge" style="display:flex;gap:4px"
+                   data-flag="${flag}" data-flag-by="${by}"
+                   data-flag-provisional="${prov}">
+                <button class="paillette-flag-button" style="border-width:1px;padding:2px 6px"
+                        aria-pressed="${flag === 'pick'}">P</button>
+                <button class="paillette-flag-button" style="border-width:1px;padding:2px 6px"
+                        aria-pressed="${flag === 'reject'}">X</button>
+                <button class="paillette-flag-button" style="border-width:1px;padding:2px 6px">U</button>
+              </div>
+            </div>
+            <img alt="" style="width:100%;height:150px;object-fit:cover"
+                 src="https://api.nga.gov/iiif/a0eb9fb8-28a3-4446-b28d-70a4cc50c6e5/full/400,/0/default.jpg" />
+          </article>
+          <p class="lt-catalogue" style="padding-top:8px">${label}</p>
+        </div>`
+      )
+      .join('');
+    document.body.appendChild(grid);
+
+    const label = document.createElement('p');
+    label.className = 'paillette-wall-label';
+    label.dataset.provenance = 'agent';
+    label.style.cssText = 'margin:0 40px 40px';
+    label.textContent =
+      'You said warm; you have picked three cool ones. I am following the picks.';
+    document.body.appendChild(label);
+  });
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: 'docs/night/shots/30-flag-lane-markup.png' });
+  console.log('  → docs/night/shots/30-flag-lane-markup.png');
 
   await browser.close();
 
