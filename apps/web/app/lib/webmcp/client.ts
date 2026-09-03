@@ -294,21 +294,25 @@ export const loadAgentFile = async (
     );
   }
 
-  const blob = await response.blob();
-  if (blob.size === 0) {
+  // Bytes, not a Blob: `new File([blob], …)` silently stringifies the blob to
+  // "[object Blob]" when the Response and the File come from different
+  // implementations (jsdom over undici does exactly this), and a zip that
+  // arrives as 15 bytes of text is indistinguishable from a corrupt archive.
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength === 0) {
     throw new PailletteApiError('FILE_EMPTY', `${url.slice(0, 120)} was empty.`, 400);
   }
-  if (blob.size > options.maxBytes) {
+  if (bytes.byteLength > options.maxBytes) {
     throw new PailletteApiError(
       'FILE_TOO_LARGE',
-      `This accepts up to ${Math.round(options.maxBytes / (1024 * 1024))} MB; received ${(blob.size / 1024 / 1024).toFixed(1)} MB.`,
+      `This accepts up to ${Math.round(options.maxBytes / (1024 * 1024))} MB; received ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB.`,
       400
     );
   }
 
   const name =
     options.name?.trim() || basenameFromUrl(url) || options.fallbackName;
-  return new File([blob], name, {
-    type: blob.type || 'application/octet-stream',
+  return new File([bytes], name, {
+    type: response.headers.get('content-type') || 'application/octet-stream',
   });
 };
