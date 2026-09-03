@@ -124,6 +124,34 @@ check(
   JSON.stringify(beforeRedeal.flags)
 );
 
+console.log('\nflags outlive the search that produced them');
+// "Flags persist per session" is a line in the definition of done, and the
+// thing that ends most sessions-within-a-session is the human running another
+// search. A judgement about a picture has to outlive the query it was made
+// under, or the exemplar set resets every time somebody changes their mind
+// about what to type.
+const searchBox = page.locator('input[placeholder*="search by feeling"]');
+await searchBox.click();
+await searchBox.fill('a different query entirely');
+await page.keyboard.press('Enter');
+await page.waitForFunction(
+  () => window.location.search.includes('a+different+query') ||
+    window.location.search.includes('a%20different%20query'),
+  undefined,
+  { timeout: 10_000 }
+).catch(() => {});
+const afterSearch = await context();
+check(
+  'the flags survive a new search',
+  afterSearch.flags.picks.length === 1 && afterSearch.flags.rejects.length === 1,
+  JSON.stringify(afterSearch.flags)
+);
+check(
+  'and so do the exemplars the deal runs on',
+  afterSearch.flags.exemplars.positive[0] === firstId,
+  JSON.stringify(afterSearch.flags.exemplars)
+);
+
 console.log('\nselection');
 await third.click({ modifiers: ['Shift'] });
 const thirdId = await third.getAttribute('data-artwork-id');
