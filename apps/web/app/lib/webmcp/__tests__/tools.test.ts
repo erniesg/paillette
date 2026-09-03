@@ -864,6 +864,59 @@ describe('index_folder', () => {
     });
   });
 
+  it('tells the agent how the CSV columns were read, and what was left over', async () => {
+    const api = stubIndexingApi({ batchSize: 2 });
+    api.serve(JPG, imageBytes(1) as BlobPart, 'image/jpeg');
+
+    const pending = call('index_folder', {
+      files: [{ url: JPG, name: 'wave-01.jpg' }],
+      collectionName: 'Folder drop',
+      // Headings nothing recognises, and one column that cannot be inferred.
+      metadataCsv: 'pic,zzz,qqq\nwave-01.jpg,Blue Wave,Q. Anon\n',
+    });
+    await answerConfirmation(true);
+    const result = await pending;
+
+    expect(result.metadata).toMatchObject({
+      sidecar: 'metadata.csv',
+      rows: 1,
+      matchedImages: 1,
+      needsReview: true,
+    });
+    expect(result.metadata.mappedColumns.filename).toBe('pic');
+    expect(result.metadata.ignoredColumns).toContain('qqq');
+    // The header row plus its values for the unresolved column — and nothing
+    // else from the file — is what an agent needs to propose a mapping.
+    expect(result.metadata.unmappedSamples).toEqual([{ qqq: 'Q. Anon' }]);
+    expect(result.metadata.decidedBy).toContain('no model was consulted');
+    expect(result.metadata.next).toContain('columnMapping');
+    expect(() => JSON.stringify(result)).not.toThrow();
+  });
+
+  it('applies a columnMapping the agent supplies after looking at the samples', async () => {
+    const api = stubIndexingApi({ batchSize: 2 });
+    api.serve(JPG, imageBytes(1) as BlobPart, 'image/jpeg');
+
+    const pending = call('index_folder', {
+      files: [{ url: JPG, name: 'wave-01.jpg' }],
+      collectionName: 'Folder drop',
+      metadataCsv: 'pic,zzz,qqq\nwave-01.jpg,Blue Wave,Q. Anon\n',
+      columnMapping: { qqq: 'artist', zzz: 'title' },
+    });
+    await answerConfirmation(true);
+    const result = await pending;
+
+    expect(result.metadata.needsReview).toBe(false);
+    expect(result.metadata.decidedBy).toContain('columnMapping supplied');
+
+    await waitFor(() => api.forms.length > 0, 'the first batch');
+    const metadata = JSON.parse(String(api.forms[0]!.get('metadata')));
+    expect(metadata['wave-01.jpg']).toEqual({
+      title: 'Blue Wave',
+      artist: 'Q. Anon',
+    });
+  });
+
   it('fails with a usable message when nothing could be read', async () => {
     const api = stubIndexingApi();
     const pending = call('index_folder', {
