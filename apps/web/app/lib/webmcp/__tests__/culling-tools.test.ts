@@ -523,3 +523,29 @@ describe('set_results cannot lose a pick either', () => {
     expect(getWebMcpState().board?.dealt).toEqual(['a', 'b']);
   });
 });
+
+describe('search_by_exemplars and ids that are not real', () => {
+  it('refuses when no positive is on this page, without a round trip', async () => {
+    stubExemplars(['n1']);
+
+    const result = await call('search_by_exemplars', { positiveIds: ['ghost'] });
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('ARTWORK_NOT_IN_SESSION');
+    // The point of failing here is not spending the request.
+    expect(requests).toHaveLength(0);
+  });
+
+  it('drops an invented id, keeps the real ones, and says which it dropped', async () => {
+    rememberArtworks([artwork('a')]);
+    stubExemplars(['n1']);
+
+    const result = await call('search_by_exemplars', {
+      positiveIds: ['a', 'ghost'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(requests[0]?.body).toMatchObject({ positiveIds: ['a'] });
+    expect(result.unresolved).toEqual(['ghost']);
+  });
+});

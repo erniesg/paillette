@@ -1488,9 +1488,24 @@ const searchByExemplarsTool = (): WebMcpTool => ({
         );
       }
 
+      // Fail on ids this page has never seen, the way every other tool here
+      // does, rather than spending a round trip on a query the server will
+      // refuse. A positive the page cannot resolve is almost always a model
+      // inventing an id, and silently averaging the rest would answer a
+      // question nobody asked.
+      const knownPositives = positiveIds.filter((id) => Boolean(recallArtwork(id)));
+      const unresolved = positiveIds.filter((id) => !recallArtwork(id));
+      if (!knownPositives.length) {
+        return fail(
+          'ARTWORK_NOT_IN_SESSION',
+          `None of those ids have been loaded by this page: ${positiveIds.join(', ')}.`,
+          'Ids are only resolvable within this browsing session. Run a search, or read get_view_context for what is already on screen.'
+        );
+      }
+
       const response = await searchByExemplarsPublic({
         collectionId: target.collectionId,
-        positiveIds,
+        positiveIds: knownPositives,
         negativeIds: readStringArray(
           (input as { negativeIds?: unknown }).negativeIds
         ),
@@ -1507,6 +1522,13 @@ const searchByExemplarsTool = (): WebMcpTool => ({
         scoring:
           'cos(x, mean(positives)) − 0.5 · max over negatives. Fixed weights, nothing learned; the same exemplars always return the same works.',
         results: capture(response.results),
+        ...(unresolved.length
+          ? {
+              unresolved,
+              unresolvedHint:
+                'These ids are not on this page and were left out of the average. Check them before using them again.',
+            }
+          : {}),
         next: 'Call redeal to put a set like this on the board with the human’s picks held in place, or set_results to pin a chosen subset.',
       });
     }),
