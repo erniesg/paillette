@@ -520,7 +520,11 @@ export const buildEntryMatcher = (entryNames: string[]) => {
   const byStem = new Map<string, string>();
 
   for (const name of entryNames) {
-    const base = basename(name).toLowerCase();
+    // Trimmed on both sides of the comparison, and in the same order as
+    // `normalizeFilenameKey`, because these keys have to match the ones the
+    // batch pump looks records up by.
+    const base = basename(name.trim()).toLowerCase();
+    if (!base) continue;
     full.add(base);
     const stem = stripExtension(base);
     if (stem && !byStem.has(stem)) byStem.set(stem, base);
