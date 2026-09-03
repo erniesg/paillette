@@ -6,7 +6,12 @@ on outside `agent-prompt.tsx` and `app/lib/voice/**`.
 
 ---
 
-## 1. `get_view_context` has no `hovered` and no `selection` — for the shared-state lane
+> **Update, later round.** The shared-state lane landed `hovered`, `selection`,
+> flags, the board and `redeal`, and that branch is now merged into this one.
+> Item 1 below is resolved for `hovered`; item 2 still stands. A new item 5
+> records the one gap that blocks plural deixis.
+
+## 1. `get_view_context` has no `hovered` and no `selection` — RESOLVED
 
 Deixis resolution ("this one", "these two", "the left one") needs to know what
 the human is pointing at. Today `get_view_context`
@@ -101,3 +106,28 @@ deliberately — swapping the agent loop's tool execution mid-run, while other
 lanes are editing the tools it calls, is not a trade worth making tonight. But
 the two functions should become one, and `registry.callTool` is the right
 survivor.
+
+---
+
+## 5. Nothing in the UI ever calls `setSelection` — for whoever owns the grid
+
+`setSelection` exists in `store.ts`, `get_view_context` reports `selection`, and
+`board-keyboard.ts` reads it to decide what `C` compares. But a grep across
+`apps/web/app` finds **no caller anywhere in the application** — shift-click
+multi-select was never wired up.
+
+Consequences beyond this lane:
+
+- Plural deixis — "these two", "both of these", "those three" — can never
+  resolve. It is written and unit-tested and lights up the moment something
+  selects; today it correctly reports itself unresolved.
+- `resolveComparePair` falls back to hovered-plus-first-pick for `C`, so
+  two-up never gets its unambiguous "compare exactly these two" path.
+
+One `onClick` with `event.shiftKey` on the card would close both.
+
+## 6. The activity panel sits on top of the utterance bar
+
+At 1280×900 on `/nga/search`, `agent-activity-panel.tsx` overlaps the prompt
+bar and the deictic chips underneath it. Not touched — a human is editing that
+file — but it is in shot for any recording at that size.

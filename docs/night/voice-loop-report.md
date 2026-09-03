@@ -1,273 +1,278 @@
 # Voice lane — report
 
-Branch `night/voice-loop`, cut from `deploy-nga-open-access`. Section 5 of the
-brief: make voice a reason the project exists rather than a gimmick, and make
-the boundary between speaking and typing disappear.
+Branch `night/voice-loop`. Section 5 and 5b of the brief: make voice a reason
+this project exists rather than a gimmick, make the boundary between speaking
+and typing disappear, and keep text as the primary path.
 
-**The submission lane may only describe what is under "Demonstrably true".**
-Everything under "Cannot be verified on this machine" is built and tested at the
-logic level but has never met a real recogniser, because this machine cannot run
-one.
+**The submission lane may describe anything under "Demonstrably true" — those
+claims are checked by a script anyone can re-run against the running app.**
+Anything under "Not verifiable here" is built and unit-tested but has never met
+a real microphone, and must not be claimed.
 
 ---
 
-## Files touched
+## How to check any of this yourself
 
-| File | |
+```sh
+pnpm --filter web dev                          # one terminal
+node apps/web/scripts/voice-loop-verify.mjs    # another
+```
+
+Twenty-one checks against the real page in real Chromium — real board, real
+store, real tools, real keyboard, real component — with only the network
+fixtured so the run is deterministic and needs no API key. Exits non-zero on any
+failure. Run three times consecutively while writing this: 21/21 each time.
+
+---
+
+## This round merged the shared-state lane
+
+`night/shared-state` is merged into this branch, as one clearly labelled merge
+commit (`e89aa84`). Section 9's headline beat — *Enter on an empty bar redeals
+from human flags with no LLM call* — could not be wired or demonstrated from
+either branch alone: the redeal engine is theirs, the utterance bar is this
+lane's. Building against the real interface rather than guessing at it is the
+only reason the verification above exists. The integrator can cherry-pick this
+lane's commits instead if they prefer.
+
+---
+
+## The two bugs that mattered most
+
+Both were invisible to unit tests and both were found only by running the app.
+
+**1. The utterance bar never rendered.** On `/nga/search` in an ordinary
+browser, `AgentPrompt` returned `null` — always. It decided once, at mount,
+whether the page had a `document.modelContext`; the bridge installs that about
+half a second later (measured: mount ~100 ms, bridge 833 ms), so the check lost
+every time.
+
+Everything this lane has built sat inside that `null`: push-to-talk, the grace
+bar, the deictic chips, speech out. So did section 9's headline beat, because
+`board-keyboard.ts` finds the bar by `input[aria-label="Ask the agent"]` and
+there was no such element on the page. jsdom sets `modelContext` before anything
+mounts, so the race does not exist in tests and 82 passing tests said nothing.
+Inherited from `fab3ccb`, but it is this lane's file and this lane's feature it
+silently deleted. Now derived from the store's `bridgeAttached` flag.
+
+**2. Deixis only worked if you were talking.** The chip resolution was gated on
+a pending *voice* utterance, which made pointing a feature of the microphone —
+backwards, since the cursor is always there. It also could not read the store's
+`hovered`/`selection`, which are bare id strings, not objects. Both fixed;
+"this one" now resolves for a typed utterance with the mic absent entirely.
+
+---
+
+## Demonstrably true
+
+Every line below is asserted by the verification script.
+
+### Text first (section 5b)
+
+- **A typed instruction alone fires the agent.** Type "something warm for above
+  the sofa", press Enter, the turn goes to the model and the note comes back.
+  No microphone involved at any point.
+- **A typed turn is silent.** Nothing is spoken. The symmetric channel rule
+  holds in the direction that matters most for anyone who never touches voice.
+- **Deixis works by typing.** With the mic absent, "more like this one" binds to
+  the pointed-at work and renders a chip with its thumbnail.
+- **The whole lane degrades to a plain text box.** No `SpeechRecognition` → no
+  mic button, no hotkey, identical behaviour otherwise. No `speechSynthesis` →
+  no sound, everything else unchanged.
+
+### Section 9's headline beat
+
+- **Enter on an empty bar redeals from human flags with no model call.** `P` on
+  a hovered card records a human pick, `X` a human reject, Enter on the empty
+  bar runs the exemplar search and makes **zero** calls to the agent route.
+- **Picks hold their index across a redeal** (verified across two consecutive
+  redeals: index 0, then 0). **Rejects leave the board.**
+- Flags placed through the debug harness are correctly recorded as *agent*
+  flags, provisional, and are correctly ignored by the deterministic redeal —
+  which counts human flags only.
+
+### The utterance bar
+
+- Hold the mic control, or hold Space anywhere outside a text field, to talk.
+- Release does not send. It starts a 1.2 s countdown drawn as a thin line
+  draining under the field. Click in to edit, Enter to send now, Esc to restore
+  the field to exactly what it held before. Esc works from wherever focus is.
+- Interim words are grey, settled words white, in one field. Verified in
+  Chromium: identical font metrics, and the mirror tracks the input's scroll so
+  a long sentence does not come apart.
+- `continuous = true`, `interimResults = true` on the real recogniser object.
+- Speech extends typed text rather than replacing it; typing takes ownership of
+  spoken words (the fix for "any in us in here" → Inness is to retype it).
+- After a **spoken** turn the note is spoken back, one sentence, once.
+
+### Failure paths
+
+Checked by returning real failures to the running page:
+
+- A 500 surfaces the service's message and frees the field.
+- A non-JSON reply — an edge error page — says *"The agent service replied with
+  something unreadable (HTTP 200)"*. It used to print
+  `Unexpected token '<', "<html>nope</html>" is not valid JSON` on screen.
+- A four-second turn disables the field and the mic while in flight and returns
+  both afterwards.
+- A deictic phrase pointing at an id the session cannot resolve is marked, not
+  guessed.
+- No uncaught page errors in any of the above.
+
+---
+
+## Cutting the words (section 5b)
+
+Audited against Lightroom's culling view, which carries no helper text at all —
+a rejected frame simply dims, and keypress feedback is a transient overlay that
+fades — and the museum wall label, which gives artist, title, date, medium and
+never explains why the work is hung there. You know what a label refers to from
+where it is.
+
+Removed:
+
+| Was | Now |
 | --- | --- |
-| `apps/web/app/components/webmcp/agent-prompt.tsx` | rewritten around push-to-talk |
-| `apps/web/app/lib/voice/recognition.ts` | new — recogniser detection, transcript reading, error copy |
-| `apps/web/app/lib/voice/utterance.ts` | new — composition rules, grace timing |
-| `apps/web/app/lib/voice/deixis.ts` | new — scene reading, referent binding, chip segmentation |
-| `apps/web/app/lib/voice/speech-channel.ts` | new — the symmetric channel rule |
-| `apps/web/app/lib/voice/__tests__/*` | new — 55 tests |
-| `apps/web/app/components/webmcp/__tests__/agent-prompt.test.tsx` | 6 tests → 27 |
-| `docs/night/voice-loop-notes.md`, `voice-loop-report.md` | new |
+| "Hold the mic, or hold Space, to talk." | nothing — the control turns into a pulsing "listening" when held |
+| "Sending in a moment — click in to edit, Enter to send now, Esc to discard." | the draining bar; the sentence survives only as a screen-reader status |
+| `"this one" =` before each chip | nothing — the picture is the statement |
+| "Could not tell what 'these two' means — nothing is selected." | the phrase in a dashed amber outline, beside the solid chips that resolved |
+| `→ search_artworks` tool lines | nothing — the board shows the work landing; tool calls live in the activity panel |
+| "you" on every human turn | a graphite left rule, against the agent's coloured one |
 
-Nothing outside that list was edited. `tools.ts`, `store.ts`, the result tiles,
-the layout components and `agent-activity-panel.tsx` are untouched — verify with
-`git diff --stat 44b2c7d..HEAD`.
+The result under the field is two marks and no sentences: a solid chip with a
+thumbnail for what bound, a dashed outline holding the human's own words for
+what did not. Terse rather than cryptic — you see your own phrase either
+wearing a picture or not.
 
-`speak-button.tsx` is at `app/components/artwork/speak-button.tsx`, not under
-`webmcp/` as the brief had it. It was **not modified**; the new speech-out
-channel deliberately yields to it rather than coordinating with it.
+**The one place words were kept** is a visually hidden `role="status"` region
+announcing the countdown. That is not helper text; it is the accessible
+rendering of a control that is otherwise purely visual.
 
-## Tests and typecheck — exactly what happened
+---
+
+## Not verifiable here — do not claim these
+
+Headless Chromium cannot do real speech recognition; Chrome ships the audio to
+Google's service. The verification script installs a fake recogniser, which
+makes the *plumbing* real in a real browser but not the speech.
+
+1. **That a real recogniser produces usable interim results.** The two-contrast
+   field assumes a steady stream of them. Never observed.
+2. **Flush timing on release.** A real recogniser often flushes a few hundred
+   milliseconds after you let go. Two failure modes were reasoned about and
+   fixed — an empty tap no longer shows a countdown, and a transcript landing
+   within 700 ms of release starts the countdown then. **The 700 ms is a guess.
+   Watch this specifically.**
+3. **Whether 1.2 s is the right grace.** It is the brief's number, not a tested
+   one.
+4. **Whether `continuous = true` survives a long pause** in a real Chrome. Some
+   builds end the session anyway; the degraded path keeps the words and starts
+   the countdown on release, but it has not been seen happen.
+5. **`onerror` codes in the wild.** The `not-allowed` / `no-speech` / `aborted`
+   copy is driven by strings no real recogniser has produced here.
+6. **That Chrome actually says the sentence.** `speechSynthesis.speak` is called
+   with one sentence after a spoken turn and not after a typed one — verified.
+   Audio has never been produced on this machine.
+7. **Microphone permission flow.** Never triggered.
+
+A genuinely spoken take must be filmed on a real machine. Everything after the
+transcript is capturable headlessly.
+
+---
+
+## What is cut or missing
+
+**Artist/title autocomplete — cut.** There is no catalogue-facet endpoint to
+draw names from; `facet` is a search *restriction*, not a source of names.
+Building it needs a new API route (another lane's files) or a phonetic matcher
+over on-screen artists, and a name-fixer that is right most of the time is
+exactly the sort of thing that ruins a take. The valuable half ships: click the
+word and retype it, because typing takes ownership of spoken text.
+
+**Plural deixis cannot resolve, because nothing on the page can select.**
+`setSelection` exists in the store and is reported by `get_view_context`, but it
+is **called from no UI anywhere in the app** — shift-click multi-select was
+never wired. So "these two" and "both of these" always report themselves
+unresolved. The resolver is written and unit-tested and will work the moment
+something selects. Do not claim multi-select in the submission.
+
+**Hover-deixis has an order to it.** Put the caret in the bar first, *then*
+point at a card. The reverse — point, then reach for the field — loses the
+hover, because focusing the bar scrolls the card out from under the cursor. The
+last hover is now carried for the length of one utterance, so the referent
+survives the cursor moving away, but the initial pointing gesture still has to
+happen while the field has focus. Worth knowing before filming.
+
+**A dropdown autocomplete in the bar — cut on principle.** It would need Enter
+and Esc, both already spoken for by the grace bar.
+
+---
+
+## Checks, exactly as they ran
 
 ```
 pnpm --filter web test
-  Test Files  1 failed | 62 passed (63)
-  Tests       667 passed (667)
+  Test Files  1 failed | 66 passed (67)
+  Tests       749 passed (749)
+
+pnpm --filter api test
+  Test Files  43 passed (43)
+  Tests       791 passed (791)
 
 pnpm --filter web typecheck
   app/components/webmcp/agent-activity-panel.tsx(153,9): TS6133 'runningEntry' unused
   worker.ts(2,24): TS2307 Cannot find module './build/server/index.js'
 ```
 
-- **667 passed, 0 failed.** Baseline before this lane: 591 passed / 59 files.
-  This lane adds 4 files and 76 tests. (The brief cites 593; the two-test
-  difference is `worker-cache-control.test.ts`, which never collected here.)
-- **The one failing *file*, `__tests__/worker-cache-control.test.ts`, was
-  already failing before this lane touched anything.** It imports
-  `./build/server/index.js`, which only exists after `pnpm build`. Same cause as
-  the `worker.ts` typecheck error. Not mine, not fixed.
-- **Both typecheck errors are pre-existing and outside this lane.**
+- **749 web tests pass, 0 fail.** This lane's own suite is 91 tests across 5
+  files. The lane began the night at a 591-test baseline; the rest of the
+  increase is the shared-state merge.
+- **The one failing web test *file*, `worker-cache-control.test.ts`, was already
+  failing before this lane touched anything.** It imports `./build/server/
+  index.js`, which exists only after `pnpm build`. Same cause as the `worker.ts`
+  typecheck error. Both reproduce on the base commit `44b2c7d`; verified by
+  checking out a worktree at that commit and running the same commands.
+- **Both remaining typecheck errors are pre-existing and outside this lane.**
   `agent-activity-panel.tsx` is the file a human is editing locally, so it was
-  left alone. Both reproduce on the base commit `44b2c7d`.
-- `npx eslint` over `app/lib/voice` and `app/components/webmcp`: clean. It was
-  not clean on the base commit — the inherited recogniser stub tripped
-  `no-this-alias` — and that is fixed.
+  left alone.
+- A third typecheck error appeared when the two lanes met — `document.body
+  .append(input)` in `board-keyboard.test.ts`, clean on the shared-state branch
+  and failing in the combined tree. Fixed with `appendChild`, which is identical
+  for one element. Another lane's file, touched only because otherwise every
+  branch carrying both lanes fails typecheck.
+- `npx eslint` over `app/lib/voice` and `app/components/webmcp`: clean.
+- API tests were run because the merge brought API changes; this lane wrote none
+  of them.
 
 ---
 
-## What is demonstrably true
+## For whoever integrates
 
-### Step 1 — what already existed, checked before writing anything
-
-Commit `fab3ccb9` was mostly as the brief described. Verified against the code:
-`interimResults = true`, `continuous = false`, interim text written into the
-input, submit on the final result, and `onerror` copy for `not-allowed` and
-`no-speech`, with six tests.
-
-Two of the brief's guesses about what was missing were wrong, and one was right:
-
-- **The pulsing listening indicator already existed** (`animate-pulse` dot plus
-  the word "listening"). It did not survive `prefers-reduced-motion`, which is
-  fixed — `motion-reduce:animate-none`, with the word and a steady dot carrying
-  the meaning.
-- **The interim/final contrast was genuinely missing.** Interim text was written
-  into the input looking exactly like something the human had typed, so there
-  was no moment on camera where the words stopped being a guess.
-- A third problem the brief did not name: **interim text overwrote the field**
-  (`setInput(live)`), so speaking after typing destroyed what was typed.
-
-### Step 2 — push-to-talk with a grace bar
-
-- Hold the mic control (pointer, or Space/Enter held on it when focused) or hold
-  **Space anywhere on the page** when no text field has focus.
-- Release does **not** send. It starts a 1.2 s countdown drawn as a thin line
-  draining left to right under the field, with `role="progressbar"` and a live
-  `aria-valuenow`.
-- Click into the field during it → the countdown stops and waits. Enter → sends
-  now. Esc → the field goes back to exactly what it held before the utterance.
-- Esc works from wherever focus is, not just the field. Release does not move
-  focus into the field, so binding Esc there meant the advertised escape did not
-  work from the state a human is actually in after speaking.
-- The bar is driven from the clock, not a CSS animation, so there is nothing to
-  disable under `prefers-reduced-motion` and the same number is assertable. A
-  text line states the whole contract in words for anyone who cannot see a
-  two-pixel line move.
-
-`continuous` changed from `false` to `true`, and the existing test assertion was
-updated accordingly. This is required by push-to-talk, not a stylistic change:
-with `continuous = false` the recogniser ends the turn at its own first silence,
-so "something warm… for above the sofa" arrives as "something warm". Push-to-talk
-means the human owns the sentence boundary.
-
-### Step 3 — one field, two inputs
-
-- The mic writes into the single utterance bar. There is no second field and no
-  mode.
-- Speech **extends** typed text (`"warm landscape"` + spoken `"without people"`
-  → `"warm landscape without people"`). It never replaces it and never moves
-  focus.
-- Typing takes ownership of every word in the field, spoken ones included — the
-  fix for "any in us in here" when you meant Inness is to click the word and
-  retype it, and the retyped text is what gets sent.
-- Settled words are white; words still being heard are grey, inside the same
-  field. Implemented as a mirror layer under a transparent input.
-
-**Checked in real Chromium, not just jsdom** (jsdom has no layout, so no test
-could have caught this). Font, size, family, padding, border width and
-line-height are identical between the mirror and the input, the boxes are
-pixel-identical, and overlaying the input's own text in red on the mirror showed
-the glyphs in exact register. That check found a real bug: on a long utterance
-the input scrolls its text to follow the caret and the mirror did not, so at
-404px of scroll the field showed the opening words in white with every grey
-provisional word off the right-hand edge — i.e. it broke precisely when someone
-speaks at length, which is the shot. The mirror now translates by the input's
-scroll offset; re-verified in the browser.
-
-### Step 4 — deixis
-
-Deictic phrases are bound to records before the turn is sent, and drawn during
-the countdown as a chip with the thumbnail inline.
-
-Resolves today, against real page state:
-
-| Phrase | Binds to |
-| --- | --- |
-| "this one", "that painting", "more like this" | the open artwork |
-| "the left one", "the second one", "the last one", "the right picture" | board order |
-| "these two", "both of these" | the selection — **see the caveat below** |
-
-Precedence is selection → hover → open dialog: the more deliberate the gesture,
-the more likely it is the subject.
-
-**What it will not do:**
-
-- `it` and `them` are not treated as pointing at anything. "Make it brighter" is
-  not a gesture, and a resolver that guessed there would be wrong far more often
-  than right.
-- Anything it cannot bind is stated on screen — "Could not tell what 'these two'
-  means — nothing is selected" — and passed to the model as unresolved. It never
-  picks a plausible referent to avoid looking uncertain.
-
-The human's sentence goes to the model verbatim with the bindings appended
-underneath, ids included, so the next tool call can use them.
-
-### Step 5 — the symmetric channel rule
-
-- The note is always displayed. It is **spoken only if the human's last turn was
-  spoken.** A turn counts as spoken if the mic put any words into it, including
-  one the human then corrected by hand.
-- One sentence, never more.
-- Interrupted by a new utterance or by a click anywhere.
-- It will not start while `speechSynthesis` is already busy, which is how it
-  stays off a caption read-aloud from `speak-button.tsx`. That one is a button
-  somebody pressed on purpose, so it outranks a note the agent volunteered.
-  Deferring rather than cancelling into it also means the listener is never left
-  guessing which of two voices they are hearing.
-- Absent `speechSynthesis`, everything behaves identically minus the sound.
-
-### Reduced motion
-
-The only decorative animation added anywhere is the listening pulse, and it
-carries `motion-reduce:animate-none`. The grace bar is a countdown readout
-rather than decoration and keeps draining, because removing it would remove the
-human's ability to see when the agent will act — the thing the brief calls the
-feature. It is paired with a text line saying the same thing.
-
----
-
-## Cannot be verified on this machine
-
-Headless Chromium cannot do real speech recognition — Chrome ships the audio to
-Google's service. **Everything below is exercised against a stubbed recogniser
-and must be checked on a real machine before filming.**
-
-1. **That a real recogniser produces usable interim results at all.** The whole
-   two-contrast field assumes a steady stream of interim text. Never observed
-   here.
-2. **Flush timing on release.** On a real machine the flush often lands a few
-   hundred milliseconds after you let go. Two failure modes were found by
-   reasoning and fixed: a tap that heard nothing no longer puts a countdown on
-   screen, and a sentence that lands within 700 ms of release starts its
-   countdown then rather than sitting in the field waiting for an Enter nobody
-   knows they owe. The 700 ms figure is a guess. **Watch this specifically.**
-3. **Whether 1.2 s is the right grace.** Chosen because the brief specifies it,
-   not because it was tried on anyone.
-4. **Whether `continuous = true` behaves as expected across a long pause.** Some
-   Chrome builds end the session on their own regardless. If that happens, the
-   words captured so far are kept and the countdown starts on release — degraded,
-   not broken — but it has not been seen happen.
-5. **`onerror` codes in the wild.** The `not-allowed` / `no-speech` / `aborted`
-   copy is driven by string literals no real recogniser has produced here.
-6. **Speech synthesis actually speaking.** jsdom has no voices. The channel
-   logic is fully tested; that Chrome says the sentence is not.
-7. **Microphone permission flow.** Never triggered.
-
-Also unverified, though for a different reason: **the deictic chip's thumbnail
-has never loaded a real image.** The markup and layout were checked in Chromium
-with a placeholder swatch.
-
----
-
-## What was cut, and why
-
-**Step 6, artist/title autocomplete — cut.** There is no catalogue-facet
-endpoint to draw names from. The `facet` parameter in `tools.ts` is a *search
-restriction* ("match within the artist field"), not a source of artist names, and
-nothing on the page enumerates them. Building it would mean either a new API
-route — another lane's files — or fuzzy-matching spoken word-runs against the
-artists currently on the board, which needs a phonetic matcher. "Any in us in
-here" against "Inness" is a hard match for anything simple, and a name-fixer
-that is right most of the time is exactly the kind of feature that ruins a take.
-The brief's own rule applies: a flaky feature costs more than a missing one.
-
-The half of step 6 that matters most does ship: **click the word and retype it**
-works, because typing takes ownership of spoken text rather than losing it. It
-is tested, using "any in us in here" → "Inness" as the case.
-
-**An autocomplete dropdown in the utterance bar — cut for a second reason.** It
-would need Enter and Esc, and both are already spoken for by the grace bar. Two
-meanings for Enter in one field is precisely the ambiguity this lane exists to
-remove.
-
-**The `webmcp/voice-activity-capture` capture harness — not cherry-picked.** Its
-`--speak` flag reproduces the recogniser's *final-result* path, which is the one
-path the unit tests already cover directly and cheaply. It would not have
-exercised interim results, flush timing, or synthesis, which are the parts that
-are actually uncertain.
-
----
-
-## Things the next person should know
-
-- **Space is now a global hold-to-talk key** while `AgentPrompt` is mounted, and
-  its keydown is `preventDefault`ed so the page does not scroll. Guarded against
-  firing inside inputs, textareas, selects and contenteditables, and against
-  Meta/Ctrl/Alt chords. It does not collide with the brief's `P`/`X`/`U`/`C`.
-  If the grid wants Space, this lane can move to another key — nothing depends
-  on which one it is.
-- **`get_view_context` has no `hovered` and no `selection`**, so plural deixis
-  and hover-pointing report themselves unresolved. The scene reader already
-  accepts every plausible spelling of both, so they light up with no edit here.
-  Details in `docs/night/voice-loop-notes.md`.
+- **Space is a global hold-to-talk key** while the bar is mounted, with its
+  keydown prevented so the page does not scroll. Guarded against firing inside
+  inputs, textareas, selects and contenteditables, and against modifier chords.
+  It does not collide with `P`/`X`/`U`/`C`. Easy to move if the grid wants it.
 - **`agent-prompt.tsx` has a local `callTool` that cannot reach a real WebMCP
-  host**, duplicating `registry.ts`'s host-aware one. Pre-existing; left alone
-  deliberately rather than swapping the agent loop's execution path while other
-  lanes edit the tools it calls. Written up in the notes.
-- The deixis resolver reads the **store** rather than calling
-  `get_view_context`, because the tool's summary drops `thumbnailUrl` and is
-  async. Same data.
+  host**, duplicating the host-aware one in `registry.ts`. Pre-existing; left
+  alone deliberately rather than changing the agent loop's execution path while
+  other lanes edit the tools it calls.
+- **The activity panel overlaps the utterance bar** at 1280×900 on
+  `/nga/search`. Not this lane's file (`agent-activity-panel.tsx`, human-edited)
+  and not touched, but it will be in shot.
+- `sampleResults` in `tools.ts` still drops `thumbnailUrl`, so the chips read
+  the store directly rather than `get_view_context`. Same data, plus pictures,
+  and synchronous. Details in `voice-loop-notes.md`.
 
 ## Against the brief's definition of done
 
 > A voice utterance lands in the editable field; the note is spoken only after
 > voice input.
 
-The first half is true and tested. The second half is true and tested **at the
-logic level** — `speechSynthesis.speak` is called with one sentence after a
-spoken turn and not called after a typed one. That Chrome then makes a sound has
-not been observed on this machine.
+Both halves are true and verified in a real browser, with the caveat that the
+recogniser is a fake and no audio has been produced on this machine.
+
+> Enter on an empty bar redeals from human flags with picks in place and no LLM
+> call. Demonstrate this.
+
+Demonstrated, and re-runnable: `node apps/web/scripts/voice-loop-verify.mjs`.
