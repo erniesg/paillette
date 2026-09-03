@@ -276,6 +276,271 @@ export const buildCaptionText = (
     .join('. ')
     .slice(0, 2000);
 
+// ---------------------------------------------------------------------------
+// Suggested searches for a freshly indexed collection
+// ---------------------------------------------------------------------------
+
+export type CollectionSuggestion = {
+  id: string;
+  type: 'artist' | 'classification' | 'medium' | 'era' | 'keyword' | 'subject';
+  label: string;
+  query: string;
+};
+
+export type CollectionSuggestions = {
+  /**
+   * Where the queries came from: a CSV sidecar's catalogue fields, the image
+   * filenames when those carry real words, or broad subject queries when
+   * neither does.
+   */
+  source: 'metadata' | 'filenames' | 'generic';
+  generatedAt: string;
+  suggestions: CollectionSuggestion[];
+};
+
+export type SuggestionSourceRow = {
+  title: string | null;
+  artist: string | null;
+  year: number | null;
+  medium: string | null;
+  classification: string | null;
+};
+
+const MAX_COLLECTION_SUGGESTIONS = 6;
+
+const slugifySuggestion = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '')
+    .slice(0, 60) || 'x';
+
+/** Dedupe case-insensitively, keep the most common casing, most frequent first. */
+const topByFrequency = (values: string[], limit: number): string[] => {
+  const counts = new Map<string, { display: string; count: number }>();
+  for (const value of values) {
+    const key = value.toLowerCase();
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(key, { display: value, count: 1 });
+    }
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.display.localeCompare(b.display))
+    .slice(0, limit)
+    .map((entry) => entry.display);
+};
+
+const GENERIC_TITLE =
+  /^(img|dsc|scan|photo|photograph|image|untitled|copy|final)[\s_-]*\d*$/i;
+
+/**
+ * Last-resort queries for a collection whose filenames are opaque. These lean
+ * on the image vectors rather than the caption text, so they work even when a
+ * collection carries no usable words at all — measured against the bundled
+ * 25-image NGA archive (accession-number filenames, no CSV), where every one
+ * of these returns real ranked hits.
+ */
+const SUBJECT_SUGGESTIONS: ReadonlyArray<{ label: string; query: string }> = [
+  { label: 'A painting', query: 'a painting' },
+  { label: 'A portrait', query: 'a portrait' },
+  { label: 'A landscape', query: 'a landscape' },
+  { label: 'A photograph', query: 'a photograph' },
+  { label: 'A drawing or print', query: 'a drawing or print' },
+  { label: 'A building', query: 'a building' },
+];
+
+/**
+ * A filename only makes a usable query if it carries actual words. An
+ * accession number like `nga-140010.jpg` becomes the title "nga 140010",
+ * which clears a naive length check but embeds to noise — and that is exactly
+ * the shape of the archive the demo picker ships.
+ */
+const isWordyTitle = (title: string) =>
+  title.split(/\s+/).filter((word) => /^[a-z]{3,}$/i.test(word)).length >= 2;
+
+/**
+ * Grounds suggested queries in whatever real signal a collection has. A CSV
+ * sidecar means artist/medium/classification/year are populated, so those
+ * facets drive the suggestions. Without one, only filename-derived titles
+ * exist (see `titleFromFilename`) — those double as the caption text this
+ * collection's own image vectors were embedded against, so they still make
+ * usable, honest queries; the caller is told which case it got via `source`.
+ */
+export const deriveCollectionSuggestions = (
+  rows: readonly SuggestionSourceRow[],
+  now: () => Date = () => new Date()
+): CollectionSuggestions => {
+  const hasMetadata = rows.some(
+    (row) => row.artist || row.medium || row.classification
+  );
+  let source: CollectionSuggestions['source'] = hasMetadata
+    ? 'metadata'
+    : 'filenames';
+  const suggestions: CollectionSuggestion[] = [];
+
+  if (hasMetadata) {
+    const artistSuggestions = topByFrequency(
+      rows.map((row) => row.artist).filter((v): v is string => Boolean(v)),
+      2
+    ).map((artist) => ({
+      id: `artist:${slugifySuggestion(artist)}`,
+      type: 'artist' as const,
+      label: `Works by ${artist}`,
+      query: artist,
+    }));
+
+    const classificationSuggestions = topByFrequency(
+      rows
+        .map((row) => row.classification)
+        .filter((v): v is string => Boolean(v)),
+      2
+    ).map((classification) => ({
+      id: `classification:${slugifySuggestion(classification)}`,
+      type: 'classification' as const,
+      label: `${classification} works`,
+      query: classification,
+    }));
+
+    const seenLabels = new Set(
+      classificationSuggestions.map((entry) => entry.label)
+    );
+    const mediumSuggestions = topByFrequency(
+      rows.map((row) => row.medium).filter((v): v is string => Boolean(v)),
+      2
+    )
+      .map((medium) => ({
+        id: `medium:${slugifySuggestion(medium)}`,
+        type: 'medium' as const,
+        label: `${medium} pieces`,
+        query: medium,
+      }))
+      .filter((entry) => !seenLabels.has(entry.label));
+
+    const years = rows
+      .map((row) => row.year)
+      .filter((year): year is number => typeof year === 'number' && year > 0);
+    const minYear = years.length > 1 ? Math.min(...years) : null;
+    const maxYear = years.length > 1 ? Math.max(...years) : null;
+    const eraSuggestions =
+      minYear !== null && maxYear !== null && minYear !== maxYear
+        ? [
+            {
+              id: `era:${minYear}-${maxYear}`,
+              type: 'era' as const,
+              label: `Art from ${minYear}–${maxYear}`,
+              query: `${minYear} to ${maxYear}`,
+            },
+          ]
+        : [];
+
+    // Round-robin across categories so one of each survives the cap below,
+    // rather than two artists crowding out the era or medium entirely.
+    const rounds = [
+      [eraSuggestions[0], artistSuggestions[0], classificationSuggestions[0], mediumSuggestions[0]],
+      [artistSuggestions[1], classificationSuggestions[1], mediumSuggestions[1]],
+    ];
+    for (const round of rounds) {
+      for (const suggestion of round) {
+        if (suggestion) suggestions.push(suggestion);
+      }
+    }
+  } else {
+    const titles = rows
+      .map((row) => row.title?.trim())
+      .filter(
+        (title): title is string =>
+          typeof title === 'string' &&
+          title.length >= 4 &&
+          !GENERIC_TITLE.test(title) &&
+          isWordyTitle(title)
+      );
+
+    for (const title of topByFrequency(titles, titles.length).slice(0, 4)) {
+      suggestions.push({
+        id: `keyword:${slugifySuggestion(title)}`,
+        type: 'keyword',
+        label: title.replace(/\b\w/g, (char) => char.toUpperCase()),
+        query: title,
+      });
+    }
+
+    // Opaque filenames leave nothing worth suggesting. Offering "Nga 140010"
+    // as a query would be worse than offering nothing: it looks like a real
+    // suggestion and returns noise. An empty collection is different — there
+    // is genuinely nothing to search, so it still gets no suggestions.
+    if (suggestions.length === 0 && rows.length > 0) {
+      source = 'generic';
+      for (const subject of SUBJECT_SUGGESTIONS) {
+        suggestions.push({
+          id: `subject:${slugifySuggestion(subject.query)}`,
+          type: 'subject',
+          label: subject.label,
+          query: subject.query,
+        });
+      }
+    }
+  }
+
+  return {
+    source,
+    generatedAt: now().toISOString(),
+    suggestions: suggestions.slice(0, MAX_COLLECTION_SUGGESTIONS),
+  };
+};
+
+const SUGGESTIONS_CACHE_VERSION = 'v1';
+const SUGGESTIONS_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30;
+
+/**
+ * Computed once per collection and cached in KV, not recomputed per status
+ * poll or page view. KV is best-effort, matching `withinJobRateLimit` below —
+ * a cache miss just recomputes from D1 rather than failing the request.
+ */
+const getCollectionSuggestions = async (
+  env: Env,
+  collectionId: string
+): Promise<CollectionSuggestions> => {
+  const cacheKey = `webmcp-index-suggestions:${SUGGESTIONS_CACHE_VERSION}:${collectionId}`;
+
+  if (env.CACHE) {
+    try {
+      const cached = await env.CACHE.get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as CollectionSuggestions;
+        if (parsed && Array.isArray(parsed.suggestions)) return parsed;
+      }
+    } catch {
+      // Fall through and recompute.
+    }
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT title, artist, year, medium, classification
+     FROM artworks
+     WHERE collection_id = ? AND org_id = ? AND deleted_at IS NULL
+     LIMIT 1000`
+  )
+    .bind(collectionId, WEBMCP_INDEX_ORG_ID)
+    .all<SuggestionSourceRow>();
+
+  const bundle = deriveCollectionSuggestions(results);
+
+  if (env.CACHE) {
+    try {
+      await env.CACHE.put(cacheKey, JSON.stringify(bundle), {
+        expirationTtl: SUGGESTIONS_CACHE_TTL_SECONDS,
+      });
+    } catch {
+      // Best-effort cache; the next read just recomputes.
+    }
+  }
+
+  return bundle;
+};
+
 export type JobStatusRow = {
   id: string;
   org_id: string;
@@ -465,8 +730,16 @@ const readJobErrors = async (db: D1Database, jobId: string) => {
   }));
 };
 
-const respondWithStatus = async (db: D1Database, row: JobStatusRow) =>
-  buildJobStatus(row, await readJobErrors(db, row.id));
+const respondWithStatus = async (env: Env, row: JobStatusRow) => ({
+  ...buildJobStatus(row, await readJobErrors(env.DB, row.id)),
+  // Only a completed job has a fixed image set worth summarising; suggesting
+  // queries mid-upload would mean recomputing (and invalidating) them as more
+  // images land.
+  suggestions:
+    row.state === 'complete'
+      ? await getCollectionSuggestions(env, row.collection_id)
+      : null,
+});
 
 /**
  * Anonymous writes need a ceiling. KV is best-effort: when the binding is
@@ -740,8 +1013,33 @@ indexing.post('/jobs/:jobId/items', async (c) => {
     message?: string;
   }> = [];
 
+  // The client resends a batch when a response is lost, not only when the
+  // server rejected the work — so the same file can arrive twice after it was
+  // already indexed. Without this, the retry mints a second artwork row, a
+  // second R2 object and a second Vectorize entry for one image (the same
+  // picture then comes back twice in search) and increments `processed` again,
+  // which can push it past `total` and render "6 of 5 images indexed".
+  const alreadyComplete = new Map<string, string | null>();
+  const { results: completedRows } = await c.env.DB.prepare(
+    `SELECT filename, artwork_id FROM index_job_items
+     WHERE job_id = ? AND state = 'complete'`
+  )
+    .bind(jobId)
+    .all<{ filename: string; artwork_id: string | null }>();
+  for (const row of completedRows ?? []) {
+    alreadyComplete.set(row.filename, row.artwork_id);
+  }
+
   for (const file of files) {
     const filename = file.name || 'untitled';
+    if (alreadyComplete.has(filename)) {
+      results.push({
+        file: filename,
+        ok: true,
+        artworkId: alreadyComplete.get(filename) ?? undefined,
+      });
+      continue;
+    }
     try {
       const mimeType = inferMimeType(filename, file.type);
       if (!mimeType) {
@@ -917,7 +1215,7 @@ indexing.post('/jobs/:jobId/items', async (c) => {
   return c.json({
     success: true,
     data: {
-      ...(refreshed ? await respondWithStatus(c.env.DB, refreshed) : {}),
+      ...(refreshed ? await respondWithStatus(c.env, refreshed) : {}),
       batch: results,
     },
   });
@@ -953,7 +1251,7 @@ indexing.post('/jobs/:jobId/complete', async (c) => {
   const refreshed = await readJob(c.env.DB, jobId);
   return c.json({
     success: true,
-    data: refreshed ? await respondWithStatus(c.env.DB, refreshed) : null,
+    data: refreshed ? await respondWithStatus(c.env, refreshed) : null,
   });
 });
 
@@ -963,7 +1261,7 @@ indexing.get('/jobs/:jobId', async (c) => {
   if (!job) {
     return c.json(jsonError('NOT_FOUND', 'Indexing job not found.'), 404);
   }
-  return c.json({ success: true, data: await respondWithStatus(c.env.DB, job) });
+  return c.json({ success: true, data: await respondWithStatus(c.env, job) });
 });
 
 /**

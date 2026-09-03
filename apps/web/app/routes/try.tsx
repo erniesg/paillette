@@ -44,11 +44,11 @@ import {
 } from '~/lib/demo-archives';
 import { INDEX_CAPS, megabytes } from '~/lib/webmcp/caps';
 import { toIndexedArtwork } from '~/lib/webmcp/indexed-artwork';
+import { getCollectionSuggestions } from '~/lib/webmcp/collection-suggestions';
 import { rememberArtworks } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { setHumanResults, setIndexJob } from '~/lib/webmcp/store';
 import type { ArtworkSearchResult } from '~/types';
-import type { SuggestedQuery } from './__lib/collection-suggestions.server';
 
 export const meta: MetaFunction = () => [
   { title: 'Try Paillette — index your own images' },
@@ -70,6 +70,8 @@ const SEARCH_TOP_K = 24;
  * back empty, which reads as "this is broken" unless the page says otherwise.
  */
 const VECTOR_LAG_SECONDS = 15;
+/** Consecutive status-poll failures before the page admits it has lost the job. */
+const MAX_POLL_FAILURES = 5;
 
 /** Anonymous indexing writes only here; the server enforces it. */
 const INDEX_SANDBOX_ORG = 'webmcp-index';
@@ -105,49 +107,27 @@ export default function TryPaillette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState('');
 
-  const [suggestions, setSuggestions] = useState<SuggestedQuery[] | null>(null);
-  const [suggestionsGrounded, setSuggestionsGrounded] = useState(false);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  /** Set when an empty result is better explained by index lag than by the query. */
+  const [searchLagged, setSearchLagged] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  /** One suggestions fetch per completed job, not one per poll tick. */
-  const suggestionsFetchedForRef = useRef<string | null>(null);
+  /**
+   * When an empty search stops being explained by propagation lag. Infinite
+   * while a job is still embedding; once it finishes, the last image still
+   * needs roughly VECTOR_LAG_SECONDS before Vectorize will return it — and
+   * that is exactly when a visitor, watching the page stop moving, types their
+   * first query.
+   */
+  const lagUntilRef = useRef<number>(Number.POSITIVE_INFINITY);
+  /** Consecutive failed status polls, so a dead poll surfaces instead of spinning. */
+  const pollFailuresRef = useRef(0);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
       clearInterval(pollRef.current);
       pollRef.current = null;
-    }
-  }, []);
-
-  // Suggested searches are derived from the finished collection, so they are
-  // fetched once a job completes rather than polled. The endpoint itself
-  // caches the result, but this ref keeps this page from asking twice.
-  const loadSuggestions = useCallback(async (jobId: string) => {
-    if (suggestionsFetchedForRef.current === jobId) return;
-    suggestionsFetchedForRef.current = jobId;
-    setSuggestionsLoading(true);
-    try {
-      const response = await fetch(`/api/public-index/${jobId}/suggestions`);
-      const payload = (await response.json()) as {
-        success?: boolean;
-        data?: {
-          ready?: boolean;
-          grounded?: boolean;
-          suggestions?: SuggestedQuery[];
-        };
-      };
-      if (response.ok && payload.success && payload.data?.ready) {
-        setSuggestions(payload.data.suggestions ?? []);
-        setSuggestionsGrounded(Boolean(payload.data.grounded));
-      }
-    } catch {
-      // Suggestions are a nice-to-have on top of a working search box — a
-      // failure here should never block the human from searching by hand.
-    } finally {
-      setSuggestionsLoading(false);
     }
   }, []);
 
@@ -204,12 +184,11 @@ export default function TryPaillette() {
       setUploaded(0);
       setElapsed(0);
       setStartedAt(null);
+      setSearchLagged(false);
+      lagUntilRef.current = Number.POSITIVE_INFINITY;
+      pollFailuresRef.current = 0;
       setCollectionName(name);
       setStage('Reading the archive…');
-      setSuggestions(null);
-      setSuggestionsGrounded(false);
-      setSuggestionsLoading(false);
-      suggestionsFetchedForRef.current = null;
 
       let plan: ArchivePreflight;
       try {
@@ -243,7 +222,8 @@ export default function TryPaillette() {
           signal: controller.signal,
           // Each batch the server confirms moves the bar immediately, rather
           // than waiting for the next poll to notice.
-          onProgress: ({ processed }) => setUploaded(processed),
+          onProgress: ({ processed }) =>
+            setUploaded(Number.isFinite(processed) ? processed : 0),
         });
       } catch (cause) {
         setPhase('failed');
@@ -274,23 +254,33 @@ export default function TryPaillette() {
           });
         } catch {
           // A dropped poll is not a dropped job; the next tick re-reads it.
+          // A poll that keeps failing is a different thing, though: without
+          // this the page polls forever with both picker buttons disabled and
+          // nothing on screen saying anything is wrong.
+          pollFailuresRef.current += 1;
+          if (pollFailuresRef.current >= MAX_POLL_FAILURES) {
+            stopPolling();
+            setPhase('failed');
+            setError(
+              `Lost contact with the indexing job after ${MAX_POLL_FAILURES} attempts. Images already embedded are still in the collection; reload to start again.`
+            );
+          }
           return;
         }
+        pollFailuresRef.current = 0;
         setStatus(next);
         if (next.searchable ?? next.processed > 0) {
           setPhase((current) => (current === 'indexing' ? 'ready' : current));
         }
         if (next.state === 'complete' || next.state === 'failed') {
           stopPolling();
-          if (next.state === 'failed' && next.processed === 0) {
+          lagUntilRef.current = Date.now() + VECTOR_LAG_SECONDS * 1000;
+          if (next.processed === 0) {
             setPhase('failed');
             setError(
               next.notice ||
                 'The job finished without indexing anything. See the per-file errors below.'
             );
-          }
-          if (next.state === 'complete') {
-            void loadSuggestions(handle.jobId);
           }
         }
       };
@@ -300,7 +290,7 @@ export default function TryPaillette() {
       }, POLL_INTERVAL_MS);
       void poll();
     },
-    [stopPolling, loadSuggestions]
+    [stopPolling]
   );
 
   const startDemo = useCallback(
@@ -357,6 +347,12 @@ export default function TryPaillette() {
         );
         setResults(artworks);
         setLastQuery(trimmed);
+        // Decided here, not at render: whether an empty result is lag or a
+        // genuine miss depends on when the search ran, not on when React
+        // happens to re-render.
+        setSearchLagged(
+          artworks.length === 0 && Date.now() < lagUntilRef.current
+        );
         // The same two calls the public-search observer makes for the NGA
         // grid, so `get_view_context` reports these results as what the human
         // is looking at, and `show_artwork` can resolve their ids.
@@ -379,7 +375,8 @@ export default function TryPaillette() {
   const busy = phase === 'reading' || phase === 'indexing';
   const total = status?.total ?? preflight?.willIndex ?? 0;
   const processed = Math.max(status?.processed ?? 0, uploaded);
-  const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+  const percent =
+    total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   const running = status?.state !== 'complete' && status?.state !== 'failed';
 
   // Searchable the moment the server has embedded anything. Both counts here
@@ -389,6 +386,10 @@ export default function TryPaillette() {
   // search box for six minutes with results already sitting in the index.
   const canSearch =
     job !== null && (status?.searchable === true || processed > 0);
+
+  // Only a completed job has a fixed suggestion bundle — see get_index_status,
+  // the same field an agent reads for the same collection.
+  const suggestions = getCollectionSuggestions(status);
 
   // Rate measured on this job once it has produced anything; the published
   // estimate until then. Never shown as a countdown to zero — it is a guess
@@ -635,6 +636,36 @@ export default function TryPaillette() {
               </form>
             )}
 
+            {suggestions && suggestions.suggestions.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Suggested searches —{' '}
+                  {suggestions.source === 'metadata'
+                    ? 'grounded in this collection’s catalogue metadata'
+                    : suggestions.source === 'filenames'
+                      ? 'no metadata sidecar, so these come from filenames instead'
+                      : 'no metadata sidecar and no readable filenames, so these search the images themselves'}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {suggestions.suggestions.map((suggestion) => (
+                    <li key={suggestion.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(suggestion.query);
+                          void runSearch(suggestion.query);
+                        }}
+                        disabled={!canSearch || searching}
+                        className="rounded-full border border-neutral-700 bg-neutral-900/60 px-3 py-1 text-sm text-neutral-200 transition-colors hover:border-primary-500 hover:text-white disabled:opacity-50"
+                      >
+                        {suggestion.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {!canSearch && running && (
               <p className="mt-2 text-sm text-neutral-500">
                 Search opens as soon as the first image is embedded — you do not
@@ -649,49 +680,6 @@ export default function TryPaillette() {
                 index will return it, so an early search comes back thin — run
                 it again as the count climbs.
               </p>
-            )}
-
-            {(suggestionsLoading || (suggestions && suggestions.length > 0)) && (
-              <div className="mt-6">
-                <p className="text-xs uppercase tracking-wide text-neutral-500">
-                  {suggestionsLoading
-                    ? 'Finding things to search for…'
-                    : suggestionsGrounded
-                      ? 'Suggested searches, from this collection’s own catalogue metadata'
-                      : 'Suggested searches — not enough catalogue metadata in this collection to ground them, so these are broad starter queries instead'}
-                </p>
-                {suggestions && suggestions.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion.id}
-                        type="button"
-                        onClick={() => {
-                          setQuery(suggestion.query);
-                          void runSearch(suggestion.query);
-                        }}
-                        disabled={!canSearch || searching}
-                        className="flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 transition-colors hover:border-primary-500 hover:text-white disabled:opacity-50"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            suggestion.source === 'metadata'
-                              ? 'bg-emerald-400'
-                              : 'bg-neutral-600'
-                          }`}
-                        />
-                        {suggestion.label}
-                        <span className="sr-only">
-                          {suggestion.source === 'metadata'
-                            ? ' (from catalogue metadata)'
-                            : ' (generic starter query)'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             )}
 
             {searchError && (
@@ -713,8 +701,10 @@ export default function TryPaillette() {
             </h3>
             {results.length === 0 ? (
               <p className="text-neutral-400">
-                {running
-                  ? `Nothing back yet — an image becomes queryable about ${VECTOR_LAG_SECONDS}s after it is embedded, and ${processed} of ${total} are in so far. Search again in a moment.`
+                {searchLagged
+                  ? running
+                    ? `Nothing back yet — an image becomes queryable about ${VECTOR_LAG_SECONDS}s after it is embedded, and ${processed} of ${total} are in so far. Search again in a moment.`
+                    : `Nothing back yet — all ${processed} images are embedded, but the vector index needs about ${VECTOR_LAG_SECONDS}s after the last one before it will return them. Search again in a moment.`
                   : 'Nothing matched. Try a broader description — the index is only as large as the archive you sent.'}
               </p>
             ) : (

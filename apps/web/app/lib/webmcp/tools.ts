@@ -72,6 +72,7 @@ import {
 } from './store';
 import { INDEX_CAPS } from './caps';
 import { toIndexedArtwork } from './indexed-artwork';
+import { getCollectionSuggestions } from './collection-suggestions';
 import {
   addToShortlist,
   createShortlist,
@@ -1419,7 +1420,7 @@ const getIndexStatusTool = (): WebMcpTool => ({
   name: 'get_index_status',
   title: 'Get indexing status',
   description:
-    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, and any per-file errors. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results.',
+    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, and any per-file errors. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results. Once the job is done, the payload also carries `suggestions`: queries grounded in this collection\'s own catalogue metadata, or failing that its filenames, or failing that broad subject queries against the images — the same ones shown to the human on the page, so offer them rather than guessing a first query. `suggestions.source` says which.',
   // A pure read of job progress, like get_search_quota: it writes nothing, but
   // the answer changes between calls, so it is not idempotent.
   annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
@@ -1465,34 +1466,52 @@ const getIndexStatusTool = (): WebMcpTool => ({
       const collectionName = status.collectionName ?? null;
       const searchable = status.searchable ?? status.processed > 0;
       const done = status.state === 'complete' || status.state === 'failed';
+      const suggestions = getCollectionSuggestions(status);
 
       let search: ToolResult | null = null;
       if (query && searchable) {
-        const response = await searchIndexedCollection(jobId, query, {
-          topK: clampInt((input as { topK?: unknown }).topK, 1, 50, 20),
-          signal: options.signal,
-        });
-        const artworks = response.results.map((result) =>
-          toIndexedArtwork(
-            result,
-            response.collectionId,
-            collectionName ?? 'Indexed collection'
-          )
-        );
-        // Same session index as every other search, so show_artwork and
-        // set_results resolve these ids without a second round trip.
-        search = {
-          query,
-          count: artworks.length,
-          results: capture(artworks),
-          // The one case an agent reliably misreads: a job that is genuinely
-          // working looks like an empty collection for the first few seconds.
-          ...(artworks.length === 0 && !done
-            ? {
-                note: `No hits yet. An image is queryable roughly ${VECTOR_LAG_SECONDS}s after it is embedded, and only ${status.processed} of ${status.total} are embedded so far — this is propagation lag, not an empty collection. Poll again and repeat the query before telling the human anything is wrong.`,
-              }
-            : {}),
-        };
+        try {
+          const response = await searchIndexedCollection(jobId, query, {
+            topK: clampInt((input as { topK?: unknown }).topK, 1, 50, 20),
+            signal: options.signal,
+          });
+          const artworks = response.results.map((result) =>
+            toIndexedArtwork(
+              result,
+              response.collectionId,
+              collectionName ?? 'Indexed collection'
+            )
+          );
+          // Same session index as every other search, so show_artwork and
+          // set_results resolve these ids without a second round trip.
+          search = {
+            query,
+            count: artworks.length,
+            results: capture(artworks),
+            // The one case an agent reliably misreads: a job that is genuinely
+            // working looks like an empty collection. The window does not close
+            // when the job does — the last image is embedded about a second
+            // before `complete`, so the lag straddles that transition and an
+            // agent told "indexing finished" queries straight into it.
+            ...(artworks.length === 0 && status.processed > 0
+              ? {
+                  note: done
+                    ? `No hits yet, but all ${status.processed} images are embedded. Vectorize needs roughly ${VECTOR_LAG_SECONDS}s after the last image before it will return it, so a query this soon after completion can come back empty. Repeat it once before telling the human the collection is empty or that nothing matched.`
+                    : `No hits yet. An image is queryable roughly ${VECTOR_LAG_SECONDS}s after it is embedded, and only ${status.processed} of ${status.total} are embedded so far — this is propagation lag, not an empty collection. Poll again and repeat the query before telling the human anything is wrong.`,
+                }
+              : {}),
+          };
+        } catch (cause) {
+          // A failed search must not cost the agent its progress read: without
+          // this, one 502 from the search route fails the whole status call.
+          search = {
+            query,
+            count: 0,
+            results: [],
+            error: cause instanceof Error ? cause.message : String(cause),
+            note: 'The search failed, but the indexing status above is accurate. Retry the query rather than reporting the job as broken.',
+          };
+        }
       }
 
       return ok({
@@ -1508,6 +1527,7 @@ const getIndexStatusTool = (): WebMcpTool => ({
         searchable,
         done,
         notice: status.notice ?? null,
+        suggestions,
         ...(search ? { search } : {}),
         ...(query && !searchable
           ? {
@@ -1517,7 +1537,11 @@ const getIndexStatusTool = (): WebMcpTool => ({
           : {}),
         next: done
           ? searchable
-            ? `Indexing finished: ${status.processed} of ${status.total} images are in "${collectionName ?? status.collectionId}". Call this tool again with a "query" to search them, then show_artwork or set_results to put one on the human's screen.`
+            ? `Indexing finished: ${status.processed} of ${status.total} images are in "${collectionName ?? status.collectionId}". ${
+                suggestions?.suggestions.length
+                  ? `Try one of \`suggestions\` (${suggestions.source === 'metadata' ? "grounded in this collection's catalogue metadata" : suggestions.source === 'filenames' ? 'derived from its filenames — it had no metadata sidecar' : 'broad subject queries — it had neither a metadata sidecar nor readable filenames'}), or call this tool again with your own "query".`
+                  : 'Call this tool again with a "query" to search them.'
+              } Then show_artwork or set_results to put one on the human's screen.`
             : 'The job finished without indexing anything. Read `errors` and `notice` and tell the human what went wrong rather than retrying blindly.'
           : `Still indexing (${status.processed}/${status.total}). Poll again in ~${Math.round(POLL_INTERVAL_MS / 1000)}s.${searchable ? ' Partial results are already searchable — you can pass a query now.' : ''}`,
       });

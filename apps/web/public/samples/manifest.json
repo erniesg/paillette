@@ -3,6 +3,39 @@
   "version": 1,
   "collections": [
     {
+      "id": "nga-100",
+      "name": "100 works with full catalogue metadata",
+      "source": "National Gallery of Art, Washington",
+      "path": "/samples/sample-art-100.zip",
+      "imageCount": 100,
+      "hasMetadata": true,
+      "licence": "CC0 / NGA Open Access",
+      "bytes": 9509162,
+      "note": "Ships a metadata.csv, so the suggested searches come from real artists, media and classifications rather than filenames."
+    },
+    {
+      "id": "met-45",
+      "name": "45 works, Met open access",
+      "source": "The Metropolitan Museum of Art",
+      "path": "/samples/sample-met-45.zip",
+      "imageCount": 45,
+      "hasMetadata": true,
+      "licence": "CC0 / Met Open Access",
+      "bytes": 4503650,
+      "note": "A second institution, to show the pipeline is not tuned to one collection."
+    },
+    {
+      "id": "cleveland-30",
+      "name": "30 works, Cleveland open access",
+      "source": "Cleveland Museum of Art",
+      "path": "/samples/sample-cleveland-30.zip",
+      "imageCount": 30,
+      "hasMetadata": true,
+      "licence": "CC0 / CMA Open Access",
+      "bytes": 7644252,
+      "note": "Smallest set — quickest end-to-end run if you are in a hurry."
+    },
+    {
       "id": "nga-25-no-metadata",
       "name": "25 works, no metadata",
       "source": "National Gallery of Art, Washington",

@@ -76,20 +76,6 @@ type Stub = {
   searchBody: any;
   /** Flips the job to complete once the client has pushed a batch. */
   processed: number;
-  suggestionsCalls: number;
-};
-
-const DEFAULT_SUGGESTIONS = {
-  grounded: false,
-  suggestions: [
-    {
-      id: 'content:a-wave',
-      label: 'A wave',
-      query: 'a wave',
-      source: 'content',
-      count: 1,
-    },
-  ],
 };
 
 const stubApi = (options: {
@@ -99,8 +85,14 @@ const stubApi = (options: {
   manifest?: unknown | null;
   /** Hold the job in flight, so partial-result copy can be asserted. */
   stayRunning?: boolean;
-  /** Omit to use a single generic suggestion; pass null to disable entirely. */
-  suggestions?: typeof DEFAULT_SUGGESTIONS | null;
+  /** Make every status poll fail, to prove the page stops rather than spins. */
+  statusFails?: boolean;
+  /** Only ever returned once the job reports `complete`, like the real API. */
+  suggestions?: {
+    source: 'metadata' | 'filenames';
+    generatedAt: string;
+    suggestions: Array<{ id: string; type: string; label: string; query: string }>;
+  } | null;
 }) => {
   const stub: Stub = {
     jobBody: null,
@@ -108,7 +100,6 @@ const stubApi = (options: {
     statusCalls: 0,
     searchBody: null,
     processed: 0,
-    suggestionsCalls: 0,
   };
 
   vi.mocked(fetch).mockImplementation((async (
@@ -165,6 +156,9 @@ const stubApi = (options: {
 
     if (url.endsWith('/status')) {
       stub.statusCalls += 1;
+      if (options.statusFails) {
+        return new Response('', { status: 502 });
+      }
       return Response.json({
         success: true,
         data: {
@@ -178,6 +172,7 @@ const stubApi = (options: {
           errors: [{ file: 'readme.txt', message: 'Not an indexable image' }],
           notice: null,
           searchable: stub.processed > 0,
+          suggestions: stub.processed > 0 ? (options.suggestions ?? null) : null,
         },
       });
     }
@@ -189,27 +184,6 @@ const stubApi = (options: {
         data: {
           collectionId: 'collection-42',
           results: options.searchResults ?? [],
-        },
-      });
-    }
-
-    if (url.endsWith('/suggestions')) {
-      stub.suggestionsCalls += 1;
-      if (options.suggestions === null) {
-        return Response.json({
-          success: true,
-          data: { ready: false, state: 'running' },
-        });
-      }
-      const chosen = options.suggestions ?? DEFAULT_SUGGESTIONS;
-      return Response.json({
-        success: true,
-        data: {
-          ready: true,
-          jobId: 'job-42',
-          collectionId: 'collection-42',
-          grounded: chosen.grounded,
-          suggestions: chosen.suggestions,
         },
       });
     }
@@ -333,100 +307,6 @@ describe('/try — anonymous indexing flow', () => {
     expect(screen.getByText(/1 result for/i)).toBeInTheDocument();
   });
 
-  it('offers a collection-specific suggested search once indexing finishes, and searches it on click', async () => {
-    const user = userEvent.setup();
-    const stub = stubApi({
-      zipBytes: await buildZip(FIXTURE_ENTRIES),
-      searchResults: [SEARCH_HIT],
-    });
-
-    renderTry();
-    await user.click(
-      await screen.findByRole('button', { name: /index demo a/i })
-    );
-
-    await waitFor(
-      () => expect(screen.getByText(/2 of 2 images indexed/i)).toBeInTheDocument(),
-      { timeout: 5000 }
-    );
-
-    const chip = await screen.findByRole(
-      'button',
-      { name: /a wave/i },
-      { timeout: 5000 }
-    );
-    expect(
-      screen.getByText(/not enough catalogue metadata.*broad starter/i)
-    ).toBeInTheDocument();
-    expect(stub.suggestionsCalls).toBeGreaterThan(0);
-
-    await user.click(chip);
-
-    await waitFor(() => expect(stub.searchBody).not.toBeNull());
-    expect(stub.searchBody.query).toBe('a wave');
-    expect(await screen.findByText('wave 01')).toBeInTheDocument();
-  });
-
-  it('tells the visitor when suggestions came from the archive’s own catalogue metadata', async () => {
-    const user = userEvent.setup();
-    stubApi({
-      zipBytes: await buildZip(FIXTURE_ENTRIES),
-      searchResults: [SEARCH_HIT],
-      suggestions: {
-        grounded: true,
-        suggestions: [
-          {
-            id: 'artist:jane-doe',
-            label: 'Works by Jane Doe',
-            query: 'Jane Doe',
-            source: 'metadata',
-            count: 3,
-          },
-        ],
-      },
-    });
-
-    renderTry();
-    await user.click(
-      await screen.findByRole('button', { name: /index demo a/i })
-    );
-
-    await waitFor(
-      () => expect(screen.getByText(/2 of 2 images indexed/i)).toBeInTheDocument(),
-      { timeout: 5000 }
-    );
-
-    expect(
-      await screen.findByRole(
-        'button',
-        { name: /works by jane doe/i },
-        { timeout: 5000 }
-      )
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/from this collection.s own catalogue metadata/i)
-    ).toBeInTheDocument();
-  });
-
-  it('never asks for suggestions while a job is still running', async () => {
-    const user = userEvent.setup();
-    const stub = stubApi({
-      zipBytes: await buildZip(FIXTURE_ENTRIES),
-      searchResults: [],
-      stayRunning: true,
-    });
-
-    renderTry();
-    await user.click(
-      await screen.findByRole('button', { name: /index demo a/i })
-    );
-
-    await waitFor(() =>
-      expect(screen.getByText(/2 of 2 images indexed/i)).toBeInTheDocument()
-    );
-    expect(stub.suggestionsCalls).toBe(0);
-  });
-
   it('blames the vector index lag, not the query, when a running job returns nothing', async () => {
     // Live on staging: `searchable: true` lands ~15s before Vectorize will
     // return the vectors it refers to. Telling a visitor mid-job to "try a
@@ -453,6 +333,125 @@ describe('/try — anonymous indexing flow', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/try a broader description/i)).toBeNull();
   });
+
+  it('offers collection-specific suggested searches once indexing completes, and runs one on click', async () => {
+    const user = userEvent.setup();
+    const stub = stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      searchResults: [SEARCH_HIT],
+      suggestions: {
+        source: 'metadata',
+        generatedAt: '2026-09-03T00:00:00.000Z',
+        suggestions: [
+          {
+            id: 'artist:a-painter',
+            type: 'artist',
+            label: 'Works by A. Painter',
+            query: 'A. Painter',
+          },
+        ],
+      },
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    await waitFor(() => expect(stub.jobBody).not.toBeNull());
+
+    // Nothing suggested yet while the job is still running.
+    expect(
+      screen.queryByText(/suggested searches/i)
+    ).not.toBeInTheDocument();
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled());
+
+    // `canSearch` flips true from the upload's own progress callback, ahead of
+    // the next 2s status poll that actually carries `suggestions` — give that
+    // poll real time to land rather than the default 1s waitFor budget.
+    await waitFor(
+      () => expect(screen.getByText(/suggested searches/i)).toBeInTheDocument(),
+      { timeout: 3000 }
+    );
+    expect(
+      screen.getByText(/grounded in this collection.s catalogue metadata/i)
+    ).toBeInTheDocument();
+    const suggestionButton = screen.getByRole('button', {
+      name: 'Works by A. Painter',
+    });
+
+    await user.click(suggestionButton);
+
+    await waitFor(() => expect(stub.searchBody).not.toBeNull());
+    expect(stub.searchBody.query).toBe('A. Painter');
+    expect(await screen.findByText('wave 01')).toBeInTheDocument();
+  });
+
+  it('explains the index lag on an empty search just after the job completes', async () => {
+    // The last image is embedded about a second before the job reports
+    // complete, so the ~15s Vectorize window straddles that transition. This
+    // is the moment a visitor searches — the page has just stopped moving —
+    // and telling them "nothing matched" blames them for a propagation delay.
+    const user = userEvent.setup();
+    stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      searchResults: [],
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled(), { timeout: 5000 });
+    // The 2s status poll, not the upload, is what flips the job to complete.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/images indexed · complete/i)
+        ).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
+
+    await user.type(box, 'a wave');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+
+    expect(
+      await screen.findByText(/search again in a moment/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/nothing matched/i)).toBeNull();
+  });
+
+  it('gives up and says so when the status poll keeps failing', async () => {
+    // Otherwise the page polls forever with both picker buttons disabled and
+    // nothing on screen admitting anything is wrong — indistinguishable from
+    // a hang.
+    const user = userEvent.setup();
+    stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      statusFails: true,
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    expect(
+      await screen.findByText(/lost contact with the indexing job/i, undefined, {
+        timeout: 20000,
+      })
+    ).toBeInTheDocument();
+    // And the visitor can pick another archive rather than reloading.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /index demo a/i })
+      ).toBeEnabled()
+    );
+  }, 30000);
 
   it('publishes the job and its results onto the shared canvas for the agent', async () => {
     const user = userEvent.setup();
