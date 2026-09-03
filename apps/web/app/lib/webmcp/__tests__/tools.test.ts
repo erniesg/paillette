@@ -104,6 +104,7 @@ describe('tool surface', () => {
       'get_view_context',
       'set_results',
       'show_artwork',
+      'set_view',
       'create_collection',
       'add_to_collection',
       'index_zip',
@@ -1407,5 +1408,29 @@ describe('searching a collection built on this page', () => {
 
     expect(navigate).toHaveBeenCalledWith('/nga/search?q=moonlight');
     expect(result.navigatedTo).toBe('/nga/search?q=moonlight');
+  });
+});
+
+
+describe('set_view', () => {
+  /**
+   * Layout is React state on the search page, so before this tool existed the
+   * agent could choose *what* to show but never *how* — and a cross-section
+   * drawn from four searches is a different kind of answer from a result list.
+   */
+  it('puts the requested layout on the shared canvas', async () => {
+    const result = await call('set_view', { view: 'atlas' });
+
+    expect(result.ok).toBe(true);
+    expect(result.view).toBe('atlas');
+    expect(getWebMcpState().view).toBe('atlas');
+  });
+
+  it('refuses a layout the page does not have', async () => {
+    const result = await call('set_view', { view: 'carousel' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(getWebMcpState().view).toBeNull();
   });
 });

@@ -84,8 +84,18 @@ export interface PendingConfirmation {
   resolve: (approved: boolean) => void;
 }
 
+/** How the human's grid is laid out. Mirrors `ViewMode` on the search page. */
+export type CanvasView = 'masonry' | 'salon' | 'atlas' | 'table';
+
 export interface WebMcpState {
   page: PageContext;
+  /**
+   * The layout the agent asked for, or null while the human's own choice
+   * stands. Presentation is part of the answer: a cross-section assembled from
+   * four searches reads as a constellation in atlas view and as a list in
+   * table view, and only the agent knows which it meant.
+   */
+  view: CanvasView | null;
   /** The result set the human's own grid is showing (observed, not guessed). */
   humanResults: AgentResultSet | null;
   /** The result set the agent last pushed onto the canvas. */
@@ -111,6 +121,7 @@ const initialState: WebMcpState = {
     facet: null,
     colour: null,
   },
+  view: null,
   humanResults: null,
   agentResults: null,
   focused: null,
@@ -162,6 +173,8 @@ export const setHumanResults = (results: AgentResultSet | null) =>
 
 export const setAgentResults = (results: AgentResultSet | null) =>
   update({ agentResults: results });
+
+export const setCanvasView = (view: CanvasView | null) => update({ view });
 
 export const setFocusedArtwork = (focused: FocusedArtwork | null) =>
   update({ focused });

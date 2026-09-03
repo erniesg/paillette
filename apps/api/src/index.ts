@@ -18,6 +18,7 @@ import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
 import indexingRoutes from './routes/indexing';
 import describeRoutes from './routes/describe';
+import agentRoutes from './routes/agent';
 import metadataMapRoutes from './routes/metadata-map';
 import { requireAuthOrApiKey } from './middleware/auth';
 import {
@@ -230,6 +231,7 @@ api.route('/galleries/:galleryId', embeddingsRoutes);
 // stays anonymous: the route enforces its own model allowlist, per-caller
 // budget and read scope, mirroring the public-index surface.
 app.route('/api', describeRoutes);
+app.route('/api', agentRoutes);
 
 // Mount API routes
 app.route('/api/v1', api);

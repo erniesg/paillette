@@ -54,6 +54,7 @@ import {
   setIndexJob,
 } from '~/lib/webmcp/store';
 import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
+import { AgentPrompt } from '~/components/webmcp/agent-prompt';
 import type { AgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import type { ArtworkSearchResult } from '~/types';
 
@@ -859,6 +860,11 @@ export default function TryPaillette() {
           className="hidden"
           aria-label="Upload a zip archive of images"
           onChange={onPickFile}
+        />
+
+        <AgentPrompt
+          className="mt-6"
+          placeholder="Ask the agent — “index the NGA sample, then show me something calm”"
         />
 
         <section className="mt-10" aria-labelledby="try-picker-heading">

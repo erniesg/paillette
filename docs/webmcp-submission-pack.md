@@ -44,7 +44,7 @@ turn. `index_zip` creates a job and returns immediately with a `jobId`; the
 agent polls `get_index_status`, and can search partial results before the job
 finishes. Previously this needed an account, an upload UI and a pipeline run.
 
-**How WebMCP was implemented.** 16 tools registered on `document.modelContext`
+**How WebMCP was implemented.** 17 tools registered on `document.modelContext`
 in `apps/web/app/lib/webmcp/tools.ts` via `apps/web/app/lib/webmcp/registry.ts`.
 Feature-detected (`'modelContext' in document`), so the page is unchanged in a
 browser without WebMCP. Registration is idempotent and route-scoped, tools

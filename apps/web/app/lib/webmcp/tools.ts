@@ -67,6 +67,7 @@ import { NAMED_COLOURS, NAMED_COLOUR_IDS, resolveColour } from './colours';
 import {
   requestConfirmation,
   setAgentResults,
+  setCanvasView,
   setFocusedArtwork,
   setIndexJob,
   getWebMcpState,
@@ -1089,6 +1090,50 @@ const setResultsTool = (context: ToolContext): WebMcpTool => ({
     }),
 });
 
+const setViewTool = (): WebMcpTool => ({
+  name: 'set_view',
+  title: 'Change how the results are laid out',
+  description:
+    "Choose how the human's grid is arranged. Presentation is part of an answer: a cross-section you assembled from several different searches reads as a constellation in `atlas`, a hang reads as `salon`, a comparison of catalogue fields reads as `table`, and ordinary browsing reads as `masonry`. Set it when the shape of your answer is not an ordinary result list — otherwise leave the human's own choice alone.",
+  // Not readOnly: it changes what a person is looking at. It stores nothing and
+  // is trivially reversible by the human, so it needs no confirmation.
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      view: {
+        type: 'string',
+        enum: ['masonry', 'salon', 'atlas', 'table'],
+        description:
+          'masonry: the default grid. salon: a dense hang, good for a curated set. atlas: works positioned by visual similarity, good for showing how a cross-section relates. table: catalogue fields side by side.',
+      },
+    },
+    required: ['view'],
+    additionalProperties: false,
+  },
+  execute: async (input) =>
+    guard(async () => {
+      const view = asString((input as { view?: unknown }).view);
+      const allowed = ['masonry', 'salon', 'atlas', 'table'] as const;
+      if (!(allowed as readonly string[]).includes(view)) {
+        return fail(
+          'INVALID_INPUT',
+          `view must be one of ${allowed.join(', ')}.`
+        );
+      }
+      setCanvasView(view as (typeof allowed)[number]);
+      return ok({
+        view,
+        effect: 'The human’s grid is now laid out this way.',
+      });
+    }),
+});
+
 const showArtworkTool = (): WebMcpTool => ({
   name: 'show_artwork',
   title: 'Show an artwork to the human',
@@ -1836,6 +1881,7 @@ export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   getViewContextTool(context),
   setResultsTool(context),
   showArtworkTool(),
+  setViewTool(),
   createCollectionTool(),
   addToCollectionTool(),
   indexZipTool(),
@@ -1855,6 +1901,7 @@ export const PAILLETTE_TOOL_NAMES = [
   'get_view_context',
   'set_results',
   'show_artwork',
+  'set_view',
   'create_collection',
   'add_to_collection',
   'index_zip',

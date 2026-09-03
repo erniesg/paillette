@@ -110,6 +110,82 @@ export type OpenAiCompletionOptions = {
  * Run one chat completion. With `json`, returns the parsed object — a
  * malformed response throws rather than letting callers improvise.
  */
+/** A message in a tool-calling exchange, relayed between page and model. */
+export type OpenAiToolMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: unknown;
+  tool_call_id?: string;
+};
+
+export type OpenAiChatOptions = {
+  env: OpenAiQuotaEnv;
+  messages: OpenAiToolMessage[];
+  /** Function definitions, in OpenAI's `{type:'function', function:{...}}` shape. */
+  tools: Record<string, unknown>[];
+  model?: string;
+  maxTokens?: number;
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+  signal?: AbortSignal;
+};
+
+/**
+ * One tool-calling turn. Unlike `openaiCompletion` this returns the assistant
+ * message untouched — including `tool_calls` — because the caller is a loop
+ * that has to relay it back verbatim on the next turn.
+ *
+ * Nothing is executed here. The tools live on a page; this only decides.
+ */
+export const openaiChat = async (
+  options: OpenAiChatOptions
+): Promise<Record<string, unknown>> => {
+  const apiKey = options.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new OpenAiUnavailableError('OPENAI_API_KEY is not configured');
+  }
+  if (!(await consumeQuota(options.env))) {
+    throw new OpenAiUnavailableError(
+      'The shared OpenAI daily budget for this site is exhausted',
+      429
+    );
+  }
+
+  const response = await fetch(OPENAI_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: options.model ?? DEFAULT_MODEL,
+      messages: options.messages,
+      tools: options.tools,
+      tool_choice: 'auto',
+      max_completion_tokens: options.maxTokens ?? 1200,
+      ...(options.reasoningEffort
+        ? { reasoning_effort: options.reasoningEffort }
+        : {}),
+    }),
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    throw new OpenAiUnavailableError(
+      `OpenAI request failed with ${response.status}`,
+      response.status === 429 ? 429 : 503
+    );
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: Record<string, unknown> }>;
+  };
+  const message = payload.choices?.[0]?.message;
+  if (!message) {
+    throw new OpenAiUnavailableError('OpenAI returned no message');
+  }
+  return message;
+};
+
 export const openaiCompletion = async (
   options: OpenAiCompletionOptions
 ): Promise<string | Record<string, unknown>> => {

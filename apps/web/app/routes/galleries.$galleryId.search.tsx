@@ -69,6 +69,8 @@ import {
   getRootsUrl,
 } from '~/lib/public-artwork-metadata';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
+import { AgentPrompt } from '~/components/webmcp/agent-prompt';
+import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
 import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
 import {
@@ -1120,6 +1122,18 @@ export default function SearchPage() {
     urlSearchColour ? 'colour' : 'relevance'
   );
   const [view, setView] = useState<ViewMode>('masonry');
+
+  /**
+   * `set_view` lets the agent choose the layout, because presentation is part
+   * of its answer — a cross-section drawn from four different searches reads as
+   * a constellation in atlas and as a list in table. The human's own choice
+   * still wins the moment they touch the control; this only follows the agent
+   * when the agent has actually asked.
+   */
+  const agentView = useWebMcpState().view;
+  useEffect(() => {
+    if (agentView) setView(agentView);
+  }, [agentView]);
   const [topK, setTopK] = useState(30);
   const [minScore, setMinScore] = useState(DEFAULT_PUBLIC_SEARCH_MIN_SCORE);
   const [browsePageSize, setBrowsePageSize] = useState(BROWSE_PAGE_SIZE);
@@ -2741,6 +2755,14 @@ export default function SearchPage() {
             )}
           </div>
         </section>
+
+        {/* An agent for visitors who did not bring one. It drives the same
+            tools an external WebMCP host would, so the refinement loop —
+            "something calm", then "warmer" — is visible without ChatGPT. */}
+        <AgentPrompt
+          className="mx-auto mt-6 max-w-3xl"
+          placeholder="Ask the agent — “something calm for a living room”"
+        />
 
         {hasActiveSearch && (
           <section
