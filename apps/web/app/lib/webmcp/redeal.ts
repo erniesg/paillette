@@ -171,7 +171,15 @@ export const runRedeal = async (
   const previousOrder = state.board?.order ?? [];
   const pinned = new Set(exemplars.positive);
   // Pin survival: computed from the flags, not from anything the caller said.
-  const kept = previousOrder.filter((id) => pinned.has(id));
+  //
+  // Every confirmed pick ends up on the board, not just the ones already
+  // hanging on it. The first redeal of a session is the case that matters —
+  // the human picked from their own search grid, there is no board yet, and
+  // dropping those picks would silently discard the only instruction they gave.
+  const kept = [
+    ...previousOrder.filter((id) => pinned.has(id)),
+    ...exemplars.positive.filter((id) => !previousOrder.includes(id)),
+  ];
   const removed = previousOrder.filter((id) => !pinned.has(id));
   const need = Math.max(size - kept.length, 0);
 

@@ -18,9 +18,11 @@
  *    mechanism, not the mechanism.
  */
 
-import { drainFlagChanges, type FlagChange } from './flags';
+import { recallArtwork } from './artwork-index';
+import { toAgentArtworkSummary } from './artwork-summary';
+import { drainFlagChanges, setFlag, type FlagChange } from './flags';
 import { runRedeal, type RedealResult } from './redeal';
-import { getWebMcpState } from './store';
+import { getWebMcpState, setCompare } from './store';
 
 export interface CompareChoice {
   winnerId: string;
@@ -48,6 +50,30 @@ let pendingCompareChoice: CompareChoice | null = null;
 /** Recorded when a compare is resolved, and carried by the next turn. */
 export const recordCompareChoice = (choice: CompareChoice) => {
   pendingCompareChoice = choice;
+};
+
+/**
+ * Answering "this one or that one?" with a click.
+ *
+ * The click is worth an order of magnitude more than the sentence someone
+ * would have had to write instead, so it is spent properly: the winner becomes
+ * a pick, the loser a reject, and both land in the same exemplar set every
+ * other gesture feeds.
+ *
+ * It does **not** fire a turn. Flags never trigger the agent — Enter is the
+ * beat — or the board thrashes under the human's hands while they are still
+ * deciding. The choice waits in the journal and rides the next turn, which is
+ * how the agent finds out either way.
+ */
+export const resolveCompare = (
+  winnerId: string,
+  loserId: string,
+  question: string | null = null
+) => {
+  setFlag(winnerId, 'pick', { by: 'human' });
+  setFlag(loserId, 'reject', { by: 'human' });
+  recordCompareChoice({ winnerId, loserId, question });
+  setCompare(null);
 };
 
 /**
@@ -116,48 +142,62 @@ export const submitHumanTurn = async (
 };
 
 /**
- * How the gesture half of a turn reads to the model. Rendered as a plain
- * sentence rather than JSON because the rule it has to follow — gestures
- * outrank words — is a judgement, and judgements survive prose better than
- * they survive schemas.
+ * The turn as `POST /api/public-agent/turn` wants it, with titles resolved.
+ *
+ * Resolving them here is not a nicety: the session index lives in this tab and
+ * the agent route is stateless, so if the page does not name the works it
+ * flagged, the model receives a list of opaque ids and cannot say anything
+ * about *what* was rejected. The whole point is that it can.
  */
-export const describeTurnForAgent = (
-  turn: HumanTurn,
-  titleOf: (id: string) => string
-): string => {
-  const lines: string[] = [];
+export interface HumanTurnPayload {
+  text?: string;
+  flagsDelta: {
+    artworkId: string;
+    title?: string;
+    to: 'pick' | 'reject' | null;
+  }[];
+  selection: { id: string; title?: string }[];
+  hovered: { id: string; title?: string } | null;
+  compareChoice: {
+    winner: { id: string; title?: string };
+    loser: { id: string; title?: string };
+    question?: string | null;
+  } | null;
+}
 
-  const picks = turn.flagsDelta.filter((change) => change.to === 'pick');
-  const rejects = turn.flagsDelta.filter((change) => change.to === 'reject');
-  const cleared = turn.flagsDelta.filter((change) => change.to === null);
-
-  if (picks.length) {
-    lines.push(`Picked: ${picks.map((c) => titleOf(c.artworkId)).join('; ')}.`);
-  }
-  if (rejects.length) {
-    lines.push(
-      `Rejected: ${rejects.map((c) => titleOf(c.artworkId)).join('; ')}.`
-    );
-  }
-  if (cleared.length) {
-    lines.push(
-      `Unflagged: ${cleared.map((c) => titleOf(c.artworkId)).join('; ')}.`
-    );
-  }
-  if (turn.compareChoice) {
-    lines.push(
-      `Chose ${titleOf(turn.compareChoice.winnerId)} over ${titleOf(turn.compareChoice.loserId)}${turn.compareChoice.question ? ` when asked: ${turn.compareChoice.question}` : ''}.`
-    );
-  }
-  if (turn.selection.length) {
-    lines.push(`Selected: ${turn.selection.map(titleOf).join('; ')}.`);
-  }
-  if (turn.hovered) {
-    lines.push(`Pointing at: ${titleOf(turn.hovered)}.`);
-  }
-
-  return lines.join(' ');
+const titleOf = (id: string): string | undefined => {
+  const artwork = recallArtwork(id);
+  if (!artwork) return undefined;
+  const summary = toAgentArtworkSummary(artwork);
+  if (!summary.title) return undefined;
+  return summary.artist ? `${summary.title} (${summary.artist})` : summary.title;
 };
+
+const namedId = (id: string) => {
+  const title = titleOf(id);
+  return title ? { id, title } : { id };
+};
+
+export const toTurnPayload = (turn: HumanTurn): HumanTurnPayload => ({
+  ...(turn.text ? { text: turn.text } : {}),
+  flagsDelta: turn.flagsDelta.map((change) => {
+    const title = titleOf(change.artworkId);
+    return {
+      artworkId: change.artworkId,
+      ...(title ? { title } : {}),
+      to: change.to,
+    };
+  }),
+  selection: turn.selection.map(namedId),
+  hovered: turn.hovered ? namedId(turn.hovered) : null,
+  compareChoice: turn.compareChoice
+    ? {
+        winner: namedId(turn.compareChoice.winnerId),
+        loser: namedId(turn.compareChoice.loserId),
+        question: turn.compareChoice.question,
+      }
+    : null,
+});
 
 export const __resetTurnStateForTest = () => {
   pendingCompareChoice = null;

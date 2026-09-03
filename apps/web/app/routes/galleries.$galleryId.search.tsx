@@ -71,6 +71,12 @@ import {
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { AgentPrompt } from '~/components/webmcp/agent-prompt';
 import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
+import {
+  FlagBadge,
+  useBoardKeyboard,
+  useCardFlagProps,
+} from '~/components/board/flag-controls';
+import { CompareView } from '~/components/board/compare-view';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
@@ -1152,7 +1158,10 @@ export default function SearchPage() {
    */
   const agentBoardResults = useMemo(() => {
     const board = webmcpState.agentResults;
-    if (!board || board.origin !== 'agent' || board.items.length === 0) {
+    // Origin-blind on purpose: a redeal the human ran by pressing Enter puts a
+    // board here with origin "human", and it has to reach the canvas exactly
+    // like the agent's does. One board, two operators.
+    if (!board || board.items.length === 0) {
       return null;
     }
     const { found } = recallArtworks(board.items.map((item) => item.id));
@@ -5007,18 +5016,25 @@ function ColourStrip({
   );
 }
 
-function ResultsView({
-  view,
-  results,
-  selectedColours,
-  sortMode,
-  showSimilarity,
-  onMasonryColumnEndVisible,
-  onSortModeChange,
-  onFacetSearch,
-  onPaletteColourSelect,
-  onSelectArtwork,
-}: {
+/**
+ * The results, plus the two things that belong to the board rather than to any
+ * one layout: the culling keys, and the two-up overlay they can open.
+ */
+function ResultsView(props: ResultsViewProps) {
+  // One page-level keyboard contract for the whole grid — P/X/U/C on the card
+  // under the cursor, and Enter on an empty prompt bar to redeal. Mounted here
+  // rather than per card so the bindings exist exactly once.
+  useBoardKeyboard();
+
+  return (
+    <>
+      <CompareView />
+      <ResultsLayout {...props} />
+    </>
+  );
+}
+
+type ResultsViewProps = {
   view: ViewMode;
   results: ArtworkSearchResult[];
   selectedColours: string[];
@@ -5029,7 +5045,20 @@ function ResultsView({
   onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
-}) {
+};
+
+function ResultsLayout({
+  view,
+  results,
+  selectedColours,
+  sortMode,
+  showSimilarity,
+  onMasonryColumnEndVisible,
+  onSortModeChange,
+  onFacetSearch,
+  onPaletteColourSelect,
+  onSelectArtwork,
+}: ResultsViewProps) {
   if (view === 'table') {
     return (
       <TableResults
@@ -5304,9 +5333,18 @@ function ResultCard({
   const artist = getDisplayArtist(result);
   const image = getArtworkImageSources(result, imageRole);
   const imageFrameStyle = getMasonryImageFrameStyle(result);
+  // Hover and focus here are what make P/X/U land on the right card, and what
+  // gives "this one" a referent in the agent's view context.
+  const flagProps = useCardFlagProps(result.id);
 
   return (
-    <article className="break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]">
+    <article
+      {...flagProps}
+      className="paillette-card relative break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]"
+    >
+      <div className="absolute right-2 top-2 z-10">
+        <FlagBadge artworkId={result.id} title={title} />
+      </div>
       <button
         type="button"
         onClick={() => onSelectArtwork(result)}
