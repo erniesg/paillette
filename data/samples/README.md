@@ -1,17 +1,24 @@
 # Sample art datasets
 
-Two zips for demoing and judging Paillette: on-camera demos, and for judges
-to download and re-upload themselves to test the app end to end. Both are
-built from the same public-domain source, verified image-by-image, and are
-small enough to upload over hotel wifi.
+Four zips for demoing and judging Paillette: on-camera demos, and for judges
+to download and re-upload themselves to test the app end to end. Each is
+verified image-by-image and small enough to upload over hotel wifi. They come
+from three different museums on purpose — NGA was the collection this branch
+happened to ingest first, not the limit of what the app indexes.
 
-- `sample-art-100.zip` — 100 images + a `metadata.csv` sidecar. Demonstrates
-  the metadata-aware ingest path.
-- `sample-art-25-no-metadata.zip` — 25 images, no CSV. Demonstrates that
-  metadata is optional — the app still ingests and indexes plain images.
+- `sample-art-100.zip` — 100 National Gallery of Art images + a
+  `metadata.csv` sidecar. Demonstrates the metadata-aware ingest path.
+- `sample-art-25-no-metadata.zip` — 25 National Gallery of Art images, no
+  CSV. Demonstrates that metadata is optional — the app still ingests and
+  indexes plain images.
+- `sample-met-45.zip` — 45 Metropolitan Museum of Art images + `metadata.csv`.
+- `sample-cleveland-30.zip` — 30 Cleveland Museum of Art images +
+  `metadata.csv`.
 
-The two sets do not overlap (125 distinct artworks total, 111 distinct
-artists/attributions).
+All four are produced (or reproducible) by `scripts/build-sample-datasets.ts`
+— see [Regenerating](#regenerating) below. The two NGA sets do not overlap
+(125 distinct artworks total, 111 distinct artists/attributions); Met and
+Cleveland are independently sampled from their own collections.
 
 ## Provenance: National Gallery of Art (Washington), Open Access
 
@@ -70,6 +77,96 @@ not a byproduct of that pipeline.
 - `sample-art-25-no-metadata.zip`: 12 Painting, 5 Print, 4 Drawing,
   2 Sculpture, 2 Photograph.
 
+## Provenance: The Metropolitan Museum of Art, Open Access
+
+`sample-met-45.zip` — 45 images from the Met's public collection API,
+`collectionapi.metmuseum.org/public/collection/v1` (no API key required).
+
+- **Selection**: candidate object IDs pulled from `/search` with
+  `hasImages=true&isPublicDomain=true` across five query terms (painting,
+  drawing, print, sculpture, photograph) to spread across classifications,
+  then each candidate's full record fetched from `/objects/{id}`. Every
+  record is checked for `isPublicDomain === true` individually — the search
+  filter is not trusted on its own. 45 were picked with a seeded,
+  deterministic sample (see `selectStratified` in the generator script),
+  stratified across whatever `classification` values turned up and capped
+  at 3 works per artist.
+- **Images**: `primaryImageSmall` (the Met's own pre-generated web-sized
+  derivative; there is no IIIF/on-the-fly resize endpoint for Met images, so
+  this is the smallest official variant short of downloading and resizing
+  the multi-megabyte `primaryImage` locally — a deliberate choice to avoid
+  adding a new image-processing dependency for this change). Averages
+  ~90 KiB/image in this build; longest edge varies by work, well under NGA's
+  1200px target since the Met doesn't offer a comparably large "small"
+  variant.
+- **Licence**: **CC0 (Open Access)**.
+  https://www.metmuseum.org/about-the-met/policies-and-documents/open-access
+  — the live page returned HTTP 429 (rate-limited) at build time, so this
+  quotes a Wayback Machine snapshot dated 2025-11-24 instead: "In February
+  2017, The Met introduced its Open Access Initiative which makes all
+  images of public-domain artworks and basic data on all accessioned works
+  in its collection available for unrestricted use under Creative Commons
+  Zero (CC0)."
+- **Classification mix** (Met's own vocabulary, not simplified): 25
+  Paintings, 3 Ceramics-Porcelain, 2 each of Codices, Woodwork-Furniture,
+  Sculpture, Sculpture-Bronze, Calligraphy, and 1 each of
+  Textiles-Embroidered, Drawings, Wood, Horology, Ivories-Elephant, Stone,
+  Prints. 36 distinct artists across 45 works.
+
+## Provenance: Cleveland Museum of Art, Open Access
+
+`sample-cleveland-30.zip` — 30 images from Cleveland's public API,
+`openaccess-api.clevelandart.org/api/artworks` (no API key required).
+
+- **Selection**: listing endpoint queried with `is_public_domain=true`,
+  paginated. Every record is checked for `share_license_status === 'CC0'`
+  individually (the collection-level filter is not trusted on its own). 30
+  were picked with the same seeded, stratified, artist-capped sampler used
+  for Met.
+- **Images**: the `images.web` variant from each record (Cleveland's own
+  pre-generated derivative; `print`/`full` variants exist but run into the
+  tens of megabytes per image). Averages ~320 KiB/image in this build;
+  longest edge up to ~1263px, close to NGA's 1200px target (Cleveland's
+  `web` derivative is itself museum-generated, not resized by this script).
+- **Licence**: **CC0 (Open Access)**. https://www.clevelandart.org/open-access
+  — fetched directly (HTTP 200): "High-resolution images and data related to
+  the CMA's collection are made available under a Creative Commons Zero
+  (CC0) designation... Images, data, software, and documentation offered
+  with Creative Commons Zero can be used in any application... without fees
+  or restriction."
+- **Classification mix** (Cleveland's own `type` vocabulary): 3 each of
+  Sculpture, Furniture and woodwork, Painting, Drawing; 2 each of Ceramic,
+  Bound Volume, Silver, Print, Glass, Miscellaneous; 1 each of Textile,
+  Metalwork, Carpet, Portrait Miniature, Wood, Enamel. 25 distinct artists
+  across 30 works.
+
+## Sources considered but not shipped in this PR
+
+- **Art Institute of Chicago** (`api.artic.edu`) — implemented in
+  `scripts/build-sample-datasets.ts` (`artic` source) and its metadata API
+  is reachable and confirms per-record `is_public_domain` plus a real CC0
+  licence (fetched directly from `api.artic.edu`, HTTP 200: "All other data
+  in this response is licensed under a Creative Commons Zero (CC0) 1.0
+  designation"; images confirmed CC0 too via a Wayback Machine snapshot of
+  `artic.edu/open-access` dated 2026-04-22, since the live page is blocked
+  — see below). **Not included as a zip**: the image CDN
+  (`www.artic.edu/iiif/...`) returned HTTP 403 with Cloudflare's bot
+  challenge (`cf-mitigated: challenge`) for every request from this build
+  sandbox — confirmed persistent across retries, HEAD/GET, and browser user
+  agents; `api.artic.edu` (the JSON API, different subdomain) is unaffected.
+  This looks like Cloudflare bot mitigation on datacenter egress IPs, which
+  may also affect CI. Running `... build-sample-datasets.ts artic` from an
+  unblocked network (a developer laptop) should work as written; it has not
+  been verified end-to-end and no `sample-artic-*.zip` is committed here.
+- **Rijksmuseum** — per the issue, only wired up if a key already exists in
+  the repo's env. None does (checked `.dev.vars.example`, `wrangler.toml`,
+  and the shell env), so `fetchRijksmuseum()` in the generator script
+  short-circuits with a log message and no network call. The implementation
+  is best-effort and unexercised: it derives `year` from `longTitle` (the
+  list endpoint has no structured date field) and leaves `medium`/
+  `classification` blank (would need a per-object detail call). If a key is
+  added later, treat this path as a starting point, not verified output.
+
 ## `metadata.csv` column format (inside `sample-art-100.zip`)
 
 Matches the sidecar format the app's own CSV parser expects
@@ -96,6 +193,14 @@ ignored):
 - `nga_object_id`, `source_url` — not app-recognized columns (ignored by the
   parser), kept so every row traces back to its NGA collection page, e.g.
   `https://www.nga.gov/collection/art-object-page.30230.html`.
+
+`sample-met-45.zip` and `sample-cleveland-30.zip` ship the same core columns
+(`filename`, `title`, `artist`, `year`, `medium`, `classification`,
+`credit_line`, `accession_number`) generated by
+`scripts/build-sample-datasets.ts`, plus `source_url` (not app-recognized,
+same audit-trail purpose as NGA's). There is no per-source `*_object_id`
+column for these two — `accession_number` and `source_url` already cover
+that.
 
 ## Provenance of the 25 no-metadata images
 
@@ -131,58 +236,104 @@ that's the point of the sample. Their provenance is recorded here instead:
 ## How to use
 
 **In the app UI** (recommended for the live demo and for judges): go to
-"New collection" (or an existing collection's upload page), drop either zip
+"New collection" (or an existing collection's upload page), drop any zip
 in the uploader. The uploader's defaults
 (`apps/web/app/components/upload/zip-uploader.tsx`) are a 500-image cap and
-a 10MB-per-file cap — both zips are far under both (100 images max, ~600KB
-largest single JPEG).
+a 10MB-per-file cap — all four zips are far under both.
 
-**Via an agent, through the `index_zip` WebMCP tool**: works for either zip,
+**Via an agent, through the `index_zip` WebMCP tool**: works for any zip,
 but note the anonymous WebMCP sandbox caps a job at
 `INDEXING_CAPS.maxFilesPerJob = 40` images
 (`apps/api/src/routes/indexing.ts`). `sample-art-25-no-metadata.zip` (25
-images) fits entirely within one job. `sample-art-100.zip` will hit that cap
-if handed to `index_zip` directly — the tool will process the first 40 and
-report the rest as not accepted rather than failing silently. For a full
-100-image `index_zip` demo, either raise the cap for the demo environment or
-split the zip; for demoing the CSV-metadata path specifically, a smaller
-slice of `sample-art-100.zip` (≤ 40 images, keeping matching `metadata.csv`
-rows) also works. This cap does not apply to the direct UI upload path
-above.
+images) and `sample-cleveland-30.zip` (30 images) fit entirely within one
+job. `sample-met-45.zip` and `sample-art-100.zip` will hit that cap if
+handed to `index_zip` directly — the tool will process the first 40 and
+report the rest as not accepted rather than failing silently. This cap does
+not apply to the direct UI upload path above.
 
 ## Sizes (verified)
 
 - `sample-art-100.zip`: 29,365,195 bytes (~28.0 MiB / 100 JPEGs + 1 CSV).
 - `sample-art-25-no-metadata.zip`: 7,629,617 bytes (~7.3 MiB / 25 JPEGs).
-- Combined: ~35.3 MiB — comfortably uploadable over hotel wifi.
-- Both are committed as binaries directly (no generator script) since the
-  combined size is well under the repo-bloat threshold this was scoped to
-  (50MB). The exact selection is reproducible: seeded random sample (seed
-  42 for the 100-set, seed 43 for the 25-set) over the filtered NGA
-  candidate pool described above — re-derivable from the two source CSVs
-  and the filter/quota rules in this document if the pipeline is ever
-  needed again, but no script is checked in for it.
+- `sample-met-45.zip`: 4,503,650 bytes (~4.3 MiB / 45 JPEGs + 1 CSV).
+- `sample-cleveland-30.zip`: 7,644,252 bytes (~7.3 MiB / 30 JPEGs + 1 CSV).
+- Combined: ~46.9 MiB — under the ~50MB budget this was scoped to, still
+  comfortably uploadable over hotel wifi.
+- The NGA pair is committed as binaries directly (no generator script backs
+  them — see their own note below). Met and Cleveland are produced by
+  `scripts/build-sample-datasets.ts`, committed here as build output. The
+  sampler itself is deterministic (seeded RNG, same seed every run), but
+  re-running the script is **not** guaranteed to reproduce a byte-identical
+  zip: it re-queries each museum's live API, and Met's `/search` in
+  particular returned a different-sized candidate pool (69 vs. 71 IDs)
+  across two back-to-back runs during this build, which shifts the
+  stratified sample downstream. Cleveland's paginated listing was stable
+  across the same two runs. Treat "regenerate" as "produces an equally
+  valid, freshly-verified sample from the same source and rules," not as
+  "byte-for-byte reproducible."
+
+## Regenerating
+
+`scripts/build-sample-datasets.ts` is the reusable generator behind the Met
+and Cleveland zips (and, network permitting, Art Institute of Chicago and
+Rijksmuseum — see [Sources considered but not shipped](#sources-considered-but-not-shipped-in-this-pr)).
+It adds no new dependency; run it through a workspace package that already
+has `jszip`/`tsx` (`apps/web`):
+
+```sh
+corepack pnpm --filter @paillette/web exec tsx ../../scripts/build-sample-datasets.ts [source...]
+# no args = every source with a working fetcher and no missing prerequisite
+# e.g.: ... build-sample-datasets.ts met cleveland
+```
+
+Each source: queries its collection API, keeps only records the API itself
+flags public-domain/CC0 on that specific record, deterministically samples
+`count` of them (seeded RNG, stratified by classification, capped at 3
+works per artist), downloads images, and writes
+`sample-<source>-<n>[-no-metadata].zip` into this directory. A source whose
+fetch or every download fails is skipped with a warning rather than aborting
+the whole run (this is how `artic` behaves in this sandbox — see above).
 
 ## Verification performed (2026-09-03)
 
-- Both zips opened and every entry counted: exactly 100 `.jpg` + 1
+- All four zips opened and every entry counted: exactly 100 `.jpg` + 1
   `metadata.csv` in `sample-art-100.zip`; exactly 25 `.jpg` and no CSV or
-  other file in `sample-art-25-no-metadata.zip`. No `__MACOSX/` or dotfile
-  junk entries in either.
-- `unzip -t` integrity check passed on both archives (no CRC errors).
-- Every image decoded with Pillow (`Image.load()`) after extraction from
-  the zip; all are valid baseline JPEGs; longest edge is exactly 1200px on
-  every image (none upscaled, none exceed 1200px).
-- `metadata.csv` filenames cross-checked against the zip's actual `.jpg`
-  entries: exact set match, no missing/extra rows either direction.
-- `metadata.csv` was parsed with the app's real, unmodified
+  other file in `sample-art-25-no-metadata.zip`; exactly 45 `.jpg` + 1
+  `metadata.csv` in `sample-met-45.zip`; exactly 30 `.jpg` + 1 `metadata.csv`
+  in `sample-cleveland-30.zip`. No `__MACOSX/` or dotfile junk entries in
+  any.
+- `unzip -t` integrity check passed on all four archives (no CRC errors).
+- Every image in all four zips decoded with Pillow (`Image.load()`) after
+  extraction; all are valid baseline JPEGs. NGA images are exactly 1200px
+  on the longest edge (never upscaled, never exceeding it); Met and
+  Cleveland use each source's own pre-generated web-sized derivative
+  instead (see their provenance sections above for why) — longest edge up
+  to 625px for Met, up to 1263px for Cleveland in this build, and varies
+  per image since neither source offers on-the-fly resizing the way NGA's
+  IIIF endpoint does.
+- `metadata.csv` filenames cross-checked against each zip's actual `.jpg`
+  entries for all three CSV-bearing zips: exact set match, no missing/extra
+  rows either direction, in every case.
+- Every `metadata.csv` was parsed with the app's real, unmodified
   `parseMetadataCsv` from `apps/web/app/lib/indexing-client.ts` (via `tsx`,
-  not a reimplementation): 100/100 rows parsed, matched to their image
-  file, and every row resolved non-empty `title`, `artist`, numeric `year`,
-  `medium`, and `classification` — zero incomplete rows.
-- The NGA Open Access Policy quote above was fetched from a Wayback Machine
+  not a reimplementation): 100/100 rows for `sample-art-100.zip`, 45/45 for
+  `sample-met-45.zip`, 30/30 for `sample-cleveland-30.zip` — every row
+  matched to its image file and resolved non-empty `title`, `artist`,
+  numeric `year`, `medium`, and `classification`, zero incomplete rows. (An
+  earlier build of the Met zip had 3 rows with date text like "12th–early
+  13th century" — digits present, but not the 3-4 digit run the app's
+  `firstYear` regex requires — which the parser silently turned into an
+  undefined `year`; the generator's year-fallback logic now checks for that
+  specific pattern, not just "any digit", and the rebuilt zip has zero such
+  rows.)
+- The Met and Cleveland CC0 licence quotes above were fetched live (or, for
+  Met, via a very recent Wayback Machine snapshot after the live page
+  rate-limited); the ARTIC quote came from a Wayback snapshot since the live
+  site is blocked in this sandbox. All URLs actually resolved before being
+  cited.
+- The NGA Open Access Policy quote was fetched from a Wayback Machine
   snapshot because `nga.gov` returns HTTP 403 to scripted fetches directly;
-  the CC0 licence quote for the metadata CSVs was fetched directly from
+  the CC0 licence quote for the NGA metadata CSVs was fetched directly from
   `raw.githubusercontent.com` (HTTP 200). The IIIF image CORS header
   (`access-control-allow-origin: *`) was confirmed with a live `curl -I`
   against `api.nga.gov` at build time.
@@ -193,8 +344,12 @@ above.
   not today — it was the closest available capture; the live page could not
   be fetched directly (403) to confirm the text is unchanged since. The
   wording matches NGA's long-standing, widely-cited open access policy.
+- ARTIC images could not be fetched from this build sandbox at all (see
+  above); the `sample-artic-*.zip` this would produce is unverified.
+- Rijksmuseum was never exercised (no key); its fetcher is unverified and
+  known-incomplete (`medium`/`classification` left blank).
 - No live smoke test was run of the actual upload flow (`/collections/new`,
   `/collections/:id/upload`) or `index_zip` in a running instance of the
-  app against these exact zips — verification above is at the file/CSV
-  level (decoding, structure, and the app's own parser function), not an
-  end-to-end UI/API run.
+  app against any of these exact zips — verification above is at the
+  file/CSV level (decoding, structure, and the app's own parser function),
+  not an end-to-end UI/API run.
