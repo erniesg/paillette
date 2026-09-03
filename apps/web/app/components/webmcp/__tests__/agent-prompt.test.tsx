@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
 import { setFocusedArtwork } from '~/lib/webmcp/store';
+import { setFlag, __resetFlagsForTest } from '~/lib/webmcp/flags';
+import { rememberArtworks, __resetArtworkIndexForTest } from '~/lib/webmcp/artwork-index';
 
 const PLACEHOLDER = 'Ask for what you want to see…';
 const MIC = 'Hold to speak';
@@ -116,6 +118,8 @@ const heard = (transcript: string, isFinal = false) =>
 
 afterEach(() => {
   setFocusedArtwork(null);
+  __resetFlagsForTest();
+  __resetArtworkIndexForTest();
   delete (window as unknown as { speechSynthesis?: unknown }).speechSynthesis;
   delete (window as unknown as { SpeechSynthesisUtterance?: unknown })
     .SpeechSynthesisUtterance;
@@ -659,6 +663,87 @@ describe('AgentPrompt', () => {
     expect(alert).not.toHaveTextContent(/Unexpected token/);
     // And the bar is usable again rather than stuck on "Working…".
     expect(field).not.toBeDisabled();
+  });
+
+  it('sends what the hands did, not only what was typed', async () => {
+    setModelContext({ getTools: async () => [] });
+    const fetchMock = stubFetch('Following the picks.');
+    // Two works on the page, one of them rejected by the human.
+    rememberArtworks([
+      {
+        id: 'nga-2',
+        galleryId: 'nga',
+        title: "Estuary at Day's End",
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    setFlag('nga-2', 'reject', { by: 'human' });
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'something warm' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    const sent = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(sent?.body ?? '{}') as {
+      turn?: { flagsDelta?: Array<{ artworkId: string; title?: string; to: string | null }> };
+    };
+    const delta = body.turn?.flagsDelta ?? [];
+    expect(delta).toHaveLength(1);
+    expect(delta[0]?.artworkId).toBe('nga-2');
+    expect(delta[0]?.to).toBe('reject');
+    // The title is what lets the model say *what* was rejected rather than
+    // reciting an id back at somebody.
+    expect(delta[0]?.title).toMatch(/Estuary at Day's End/);
+  });
+
+  it('reports the gestures once, not on every tool round trip', async () => {
+    setModelContext({ getTools: async () => [] });
+    rememberArtworks([
+      { id: 'nga-2', galleryId: 'nga', title: 'A', artist: 'B', imageUrl: null, similarity: 1 },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    setFlag('nga-2', 'pick', { by: 'human' });
+
+    let call = 0;
+    const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => {
+      call += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          call === 1
+            ? {
+                success: true,
+                data: {
+                  message: {
+                    role: 'assistant',
+                    tool_calls: [
+                      { id: 't1', function: { name: 'get_view_context', arguments: '{}' } },
+                    ],
+                  },
+                },
+              }
+            : { success: true, data: { message: { role: 'assistant', content: 'Done.' } } },
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'something warm' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(c[1]?.body ?? '{}'));
+    expect(bodies.length).toBeGreaterThan(1);
+    expect(bodies[0].turn?.flagsDelta).toHaveLength(1);
+    // Restating them would read as the human having flagged it all over again.
+    expect(bodies[1].turn).toBeUndefined();
   });
 
   it('surfaces a message when microphone permission is denied', async () => {

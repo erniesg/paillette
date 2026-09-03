@@ -31,6 +31,7 @@ import {
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
+import { submitHumanTurn, toTurnPayload } from '~/lib/webmcp/turn';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { useWebMcpState } from './use-webmcp-state';
@@ -280,6 +281,25 @@ export function AgentPrompt({
     ];
 
     try {
+      // The gesture half of the turn. A search box has words and no gestures;
+      // a chat has words and no board. This page has both, so what the human's
+      // hands did since the last turn travels with what they typed — flags
+      // with titles on them, the selection, what they are pointing at, and any
+      // compare they answered. Without this the model can only ever respond to
+      // the words, and "you said warm, you've picked three cool ones" is not
+      // available to it.
+      //
+      // Drained exactly once, here, before the loop: `prepareTurn` empties the
+      // gesture journal, so calling it per iteration would report the same
+      // flags repeatedly and then report none.
+      let gestures: ReturnType<typeof toTurnPayload> | null = null;
+      try {
+        const outcome = await submitHumanTurn(instruction);
+        if (outcome.kind === 'agent') gestures = toTurnPayload(outcome.turn);
+      } catch {
+        // Gestures are an enrichment. Losing them must not lose the sentence.
+      }
+
       const context = getModelContext();
       const registered = (await context?.getTools?.()) ?? [];
       // The page's own schemas become the model's function definitions; nothing
@@ -297,7 +317,14 @@ export function AgentPrompt({
         const response = await fetch('/api/public-agent/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: historyRef.current, tools }),
+          // Only on the first pass: the later ones carry tool results, and
+          // restating the gestures there would read as the human having done
+          // it all again.
+          body: JSON.stringify({
+            messages: historyRef.current,
+            tools,
+            ...(turn === 0 && gestures ? { turn: gestures } : {}),
+          }),
         });
         type TurnPayload = {
           success?: boolean;
