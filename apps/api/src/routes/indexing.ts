@@ -50,8 +50,14 @@ export const INDEXING_CAPS = {
   batchSize: 4,
   /** Hard server-side ceiling per /items call (subrequest budget). */
   maxBatchSize: 6,
-  /** Jobs one edge address may create per hour. */
-  maxJobsPerClientPerHour: 6,
+  /**
+   * Jobs one edge address may create per hour. Generous on purpose: this is
+   * an anonymous demo surface, and someone evaluating it will index several
+   * collections in a sitting. The real backstop on abuse is
+   * `maxSandboxArtworks` below, which bounds total stored work regardless of
+   * how many jobs produced it.
+   */
+  maxJobsPerClientPerHour: 24,
   /** Backstop on total sandbox size before new jobs are refused. */
   maxSandboxArtworks: 5000,
 } as const;
