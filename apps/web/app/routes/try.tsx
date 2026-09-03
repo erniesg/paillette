@@ -1019,7 +1019,13 @@ export default function TryPaillette() {
                       `${sentence(readinessClause)} — this check reads ${READINESS_PROBE_MAX_TOP_K} at a time, so that is a floor and not a total.`
                     : readiness.count >= readiness.expected
                       ? `${sentence(readinessClause)}.`
-                      : `${sentence(readinessClause)} — the count stopped climbing there.`}
+                      : readiness.count === 0
+                        ? // Nothing has landed yet. The index is eventually
+                          // consistent and can take minutes, so "stopped
+                          // climbing" would read as failure when it is just
+                          // lag. Say what is true and keep the box usable.
+                          'The vector index has not caught up yet — searching now returns nothing. It usually lands within a minute or two; run your search again.'
+                        : `${sentence(readinessClause)} — the count stopped climbing there. The index is eventually consistent, so searching again in a minute may return more.`}
               </p>
             )}
 
