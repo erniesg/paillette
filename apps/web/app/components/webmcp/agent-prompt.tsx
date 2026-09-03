@@ -21,6 +21,12 @@ import {
   type Referent,
   type Resolution,
 } from '~/lib/voice/deixis';
+import {
+  createSpeechChannel,
+  shouldSpeakReply,
+  type SpeechChannel,
+  type TurnChannel,
+} from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
 
 /**
@@ -172,9 +178,24 @@ export function AgentPrompt({
   const beforeUtteranceRef = useRef('');
   /** Set once per render to a closure over the current text. See the effect. */
   const commitRef = useRef<() => void>(() => {});
+  /** The page's voice, or null where the browser has none. */
+  const speechRef = useRef<SpeechChannel | null>(null);
 
   useEffect(() => {
     setAvailable(Boolean(getModelContext()));
+  }, []);
+
+  useEffect(() => {
+    speechRef.current = createSpeechChannel();
+    // Interruptible, and cheaply: a click anywhere is somebody's attention
+    // moving on, and a note that keeps talking through that is a note nobody
+    // asked for. Cancelling is a no-op unless this component is the speaker.
+    const interrupt = () => speechRef.current?.cancel();
+    document.addEventListener('pointerdown', interrupt, true);
+    return () => {
+      document.removeEventListener('pointerdown', interrupt, true);
+      interrupt();
+    };
   }, []);
 
   /**
@@ -196,7 +217,12 @@ export function AgentPrompt({
     []
   );
 
-  const run = useCallback(async (instruction: string, pointing: Resolution) => {
+  // eslint-disable-next-line max-params
+  const run = useCallback(async (
+    instruction: string,
+    pointing: Resolution,
+    channel: TurnChannel
+  ) => {
     setBusy(true);
     setEntries((current) => [
       ...current,
@@ -254,6 +280,12 @@ export function AgentPrompt({
           const said = (message.content ?? '').trim();
           if (said) {
             setEntries((current) => [...current, { kind: 'agent', text: said }]);
+            // The note is always shown. Whether it is also *heard* depends on
+            // one thing: how the human's last turn arrived. Text in, text out;
+            // voice in, voice out. That single rule is what makes typing and
+            // talking feel like one conversation, and it needs nothing as
+            // heavy as a manager deciding whose go it is.
+            if (shouldSpeakReply(channel)) speechRef.current?.speak(said);
           }
           return;
         }
@@ -318,6 +350,8 @@ export function AgentPrompt({
     const Recognition = getSpeechRecognition();
     if (!Recognition) return;
 
+    // Talking over the human is the one thing a voice interface cannot do.
+    speechRef.current?.cancel();
     cancelGrace();
     holdingRef.current = true;
 
@@ -399,9 +433,16 @@ export function AgentPrompt({
       setInterim('');
       beforeUtteranceRef.current = '';
       if (!instruction || busy) return;
-      void run(instruction, resolveAgainstScreen(instruction));
+      // A turn counts as spoken if the mic put words into it. Correcting the
+      // transcript by hand before sending does not demote it: the sentence
+      // started in someone's mouth, so the reply belongs in their ears.
+      void run(
+        instruction,
+        resolveAgainstScreen(instruction),
+        pendingVoice ? 'voice' : 'text'
+      );
     },
-    [busy, cancelGrace, resolveAgainstScreen, run]
+    [busy, cancelGrace, pendingVoice, resolveAgainstScreen, run]
   );
 
   // Re-pointed every render so the countdown below always commits the sentence

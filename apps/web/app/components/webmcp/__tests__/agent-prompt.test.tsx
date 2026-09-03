@@ -42,16 +42,32 @@ const setModelContext = (value: unknown) => {
   (document as { modelContext?: unknown }).modelContext = value;
 };
 
-const stubFetch = () => {
+const stubFetch = (note = '') => {
   const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => ({
     ok: true,
     json: async () => ({
       success: true,
-      data: { message: { role: 'assistant', content: '' } },
+      data: { message: { role: 'assistant', content: note } },
     }),
   }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
+};
+
+/** The browser's voice, faked. Collects whatever was said aloud. */
+const installSynthesis = () => {
+  const spoken: string[] = [];
+  const synthesis = { speaking: false, pending: false, cancel: vi.fn() };
+  (window as unknown as { speechSynthesis: unknown }).speechSynthesis = {
+    ...synthesis,
+    speak: (utterance: { text: string }) => spoken.push(utterance.text),
+  };
+  (
+    window as unknown as { SpeechSynthesisUtterance: unknown }
+  ).SpeechSynthesisUtterance = function (this: { text: string }, text: string) {
+    this.text = text;
+  };
+  return { spoken };
 };
 
 const alternative = (transcript: string) => [{ transcript }];
@@ -89,6 +105,9 @@ const heard = (transcript: string, isFinal = false) =>
 
 afterEach(() => {
   setFocusedArtwork(null);
+  delete (window as unknown as { speechSynthesis?: unknown }).speechSynthesis;
+  delete (window as unknown as { SpeechSynthesisUtterance?: unknown })
+    .SpeechSynthesisUtterance;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   delete (document as { modelContext?: unknown }).modelContext;
@@ -412,6 +431,83 @@ describe('AgentPrompt', () => {
     expect(
       screen.getByText(/Could not tell what “these two” means/)
     ).toBeInTheDocument();
+  });
+
+  it('speaks the note back after a spoken turn, one sentence of it', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { spoken } = installSynthesis();
+    stubFetch('Five warm, calm options. I dropped the two with figures in.');
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something warm for above the sofa', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    expect(spoken).toEqual(['Five warm, calm options.']);
+  });
+
+  it('stays silent after a typed turn — text in, text out', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { spoken } = installSynthesis();
+    stubFetch('Five warm, calm options.');
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'something warm' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    // The note is on screen either way. Only the channel differs.
+    expect(screen.getByText('Five warm, calm options.')).toBeInTheDocument();
+    expect(spoken).toEqual([]);
+  });
+
+  it('is silent where the browser cannot speak', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    stubFetch('Five warm, calm options.');
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something warm', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    expect(screen.getByText('Five warm, calm options.')).toBeInTheDocument();
+  });
+
+  it('will not talk over a caption read-aloud somebody pressed play on', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { spoken } = installSynthesis();
+    (
+      window as unknown as { speechSynthesis: { speaking: boolean } }
+    ).speechSynthesis.speaking = true;
+    stubFetch('Five warm, calm options.');
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something warm', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    expect(spoken).toEqual([]);
   });
 
   it('surfaces a message when microphone permission is denied', async () => {
