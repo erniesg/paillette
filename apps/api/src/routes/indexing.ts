@@ -385,7 +385,14 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
 
 /**
  * Index-time vectors must live in the same space the NGA corpus was built in:
- * jina-clip-v2 / retrieval.passage / 1024 dims, L2-normalised.
+ * jina-clip-v2 / retrieval.query / 1024 dims, L2-normalised.
+ *
+ * `retrieval.query` (not `retrieval.passage`, which reads like the natural
+ * choice for ingestion) is deliberate: the deployed embedding endpoint only
+ * accepts `retrieval.query` for this model, and the whole existing corpus is
+ * embedded that way — see `search.ts` and the `retrieval.query` suffix baked
+ * into the search index version. Sending `retrieval.passage` here made every
+ * image fail validation and silently produced empty collections.
  */
 const generateIndexEmbedding = async (
   apiKey: string,
@@ -406,7 +413,7 @@ const generateIndexEmbedding = async (
       input: [input],
       normalized: true,
       embedding_type: 'float',
-      task: 'retrieval.passage',
+      task: 'retrieval.query',
       dimensions,
       truncate: true,
     }),
