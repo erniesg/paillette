@@ -135,6 +135,76 @@ describe('AgentPrompt', () => {
     ).toBeInTheDocument();
   });
 
+  it('draws words still being heard at a lower contrast than settled ones', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { container } = render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'warm landscape' } });
+    fireEvent.click(screen.getByLabelText('Speak your request'));
+
+    const recognition = recognitionInstance as unknown as RecognitionInstance;
+    act(() => {
+      recognition.onresult?.({
+        results: [Object.assign(alternative('without people'), { isFinal: false })],
+      });
+    });
+
+    // The typed half stays white; the heard half is grey until it settles.
+    await waitFor(() =>
+      expect(container.querySelector('.text-neutral-500')).toHaveTextContent(
+        'without people'
+      )
+    );
+    expect(container.querySelector('.text-white')).toHaveTextContent(
+      'warm landscape'
+    );
+    expect(field).toHaveClass('text-transparent');
+  });
+
+  it('lets speech extend typed text instead of replacing it', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'warm landscape' } });
+    fireEvent.click(screen.getByLabelText('Speak your request'));
+
+    const recognition = recognitionInstance as unknown as RecognitionInstance;
+    act(() => {
+      recognition.onresult?.({
+        results: [Object.assign(alternative('without people'), { isFinal: false })],
+      });
+    });
+
+    await waitFor(() =>
+      expect(field).toHaveValue('warm landscape without people')
+    );
+  });
+
+  it('lets typing take ownership of spoken words rather than losing them', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.click(screen.getByLabelText('Speak your request'));
+    const recognition = recognitionInstance as unknown as RecognitionInstance;
+    act(() => {
+      recognition.onresult?.({
+        results: [Object.assign(alternative('any in us in here'), { isFinal: false })],
+      });
+    });
+    await waitFor(() => expect(field).toHaveValue('any in us in here'));
+
+    // Text is the ground truth: editing the transcript is just editing.
+    fireEvent.change(field, { target: { value: 'Inness' } });
+    expect(field).toHaveValue('Inness');
+    expect(field).toHaveClass('text-white');
+  });
+
   it('surfaces a message when microphone permission is denied', async () => {
     setModelContext({ getTools: async () => [] });
     installRecognition();

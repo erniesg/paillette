@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  getSpeechRecognition,
+  readTranscripts,
+  voiceErrorMessage,
+  type SpeechRecognitionLike,
+} from '~/lib/voice/recognition';
+import { composeUtterance, interimOffset } from '~/lib/voice/utterance';
 
 /**
  * An agent, in the page, for visitors who did not bring one.
@@ -39,28 +46,6 @@ type Entry =
   | { kind: 'error'; text: string };
 
 const MAX_TURNS = 8;
-
-/** A single recognition alternative, per the (non-standard) web speech shape. */
-type RecognitionAlternative = { transcript: string };
-
-/** One result in `SpeechRecognitionResultList`; `isFinal` marks a settled one. */
-type RecognitionResult = ArrayLike<RecognitionAlternative> & {
-  isFinal: boolean;
-};
-
-/** The `onerror` payload carries a machine-readable reason string. */
-type RecognitionError = { error: string };
-
-const voiceErrorMessage = (error: string): string => {
-  switch (error) {
-    case 'not-allowed':
-      return 'Microphone access was denied. Allow it in your browser, then try again.';
-    case 'no-speech':
-      return 'No speech was heard. Try again.';
-    default:
-      return 'Voice input stopped. Try again.';
-  }
-};
 
 type ModelContextLike = {
   getTools: () => Promise<
@@ -106,14 +91,15 @@ export function AgentPrompt({
   className?: string;
 }) {
   const [available, setAvailable] = useState(false);
+  /** The text the human owns. Ground truth: this is what gets sent. */
   const [input, setInput] = useState('');
+  /** Words currently being heard. Provisional, and rendered as such. */
+  const [interim, setInterim] = useState('');
   const [entries, setEntries] = useState<Entry[]>([]);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const historyRef = useRef<AgentMessage[]>([]);
-  const recognitionRef = useRef<{ start: () => void; stop: () => void } | null>(
-    null
-  );
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   useEffect(() => {
     setAvailable(Boolean(getModelContext()));
@@ -221,11 +207,7 @@ export function AgentPrompt({
   }, []);
 
   const toggleMic = useCallback(() => {
-    const holder = window as Window & {
-      webkitSpeechRecognition?: new () => never;
-      SpeechRecognition?: new () => never;
-    };
-    const Recognition = holder.SpeechRecognition ?? holder.webkitSpeechRecognition;
+    const Recognition = getSpeechRecognition();
     if (!Recognition) return;
 
     if (listening) {
@@ -234,45 +216,27 @@ export function AgentPrompt({
       return;
     }
 
-    const recognition = new Recognition() as unknown as {
-      lang: string;
-      interimResults: boolean;
-      continuous: boolean;
-      onresult: (event: { results: ArrayLike<RecognitionResult> }) => void;
-      onend: () => void;
-      onerror: (event: RecognitionError) => void;
-      start: () => void;
-      stop: () => void;
-    };
+    const recognition = new Recognition();
     recognition.lang = 'en-GB';
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.onresult = (event) => {
-      let finalTranscript = '';
-      let interim = '';
-      for (let index = 0; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (!result) continue;
-        const transcript = result[0]?.transcript ?? '';
-        if (result.isFinal) finalTranscript += transcript;
-        else interim += transcript;
-      }
+      const { final, interim: live } = readTranscripts(event);
 
       // A settled result is the goal; the interim text was just so the words
       // appear on camera while the person is still speaking.
-      const settled = finalTranscript.trim();
-      if (settled) {
+      if (final) {
+        setInterim('');
         setInput('');
-        void run(settled);
+        void run(final);
         return;
       }
-
-      const live = interim.trim();
-      if (live) setInput(live);
+      if (live) setInterim(live);
     };
     recognition.onend = () => setListening(false);
     recognition.onerror = (event) => {
       setListening(false);
+      setInterim('');
       setEntries((current) => [
         ...current,
         { kind: 'error', text: voiceErrorMessage(event.error) },
@@ -286,13 +250,11 @@ export function AgentPrompt({
   // Nothing to offer where the page never registered its tools.
   if (!available) return null;
 
-  const micSupported =
-    typeof window !== 'undefined' &&
-    Boolean(
-      (window as Window & { webkitSpeechRecognition?: unknown })
-        .webkitSpeechRecognition ??
-        (window as Window & { SpeechRecognition?: unknown }).SpeechRecognition
-    );
+  const micSupported = getSpeechRecognition() !== null;
+  // One string, two contrasts: what the human owns, then what is still being
+  // heard. Both live in the same field because there is only one field.
+  const composed = composeUtterance(input, interim);
+  const settledLength = interimOffset(input, interim);
 
   return (
     <section
@@ -302,27 +264,57 @@ export function AgentPrompt({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          const instruction = input.trim();
+          const instruction = composed.trim();
           if (!instruction || busy) return;
           setInput('');
+          setInterim('');
           void run(instruction);
         }}
         className="flex items-center gap-2"
       >
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder={placeholder}
-          aria-label="Ask the agent"
-          disabled={busy}
-          className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-600 focus:border-primary-500 focus:outline-none"
-        />
+        <div className="relative min-w-0 flex-1">
+          {/*
+            A mirror under a transparent input, so provisional words can be a
+            different colour from settled ones inside a single field. The
+            alternative — a second box for the transcript — would reintroduce
+            the mode switch this whole design exists to remove. Metrics are
+            copied from the input exactly, transparent border included, and if
+            they ever drifted the failure would be cosmetic: the value is
+            unaffected.
+          */}
+          {interim && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-pre rounded-lg border border-transparent px-3 py-2 text-sm"
+            >
+              <span className="text-white">
+                {composed.slice(0, settledLength)}
+              </span>
+              <span className="text-neutral-500">{interim}</span>
+            </div>
+          )}
+          <input
+            value={composed}
+            onChange={(event) => {
+              // Typing takes ownership of every word in the field, spoken ones
+              // included. Text is the ground truth.
+              setInput(event.target.value);
+              setInterim('');
+            }}
+            placeholder={placeholder}
+            aria-label="Ask the agent"
+            disabled={busy}
+            className={`w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm placeholder:text-neutral-600 focus:border-primary-500 focus:outline-none ${
+              interim ? 'text-transparent caret-white' : 'text-white'
+            }`}
+          />
+        </div>
         {micSupported && (
           <button
             type="button"
             onClick={toggleMic}
             aria-label={listening ? 'Stop listening' : 'Speak your request'}
-            className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+            className={`shrink-0 rounded-lg border px-3 py-2 text-sm transition-colors ${
               listening
                 ? 'border-primary-400 bg-primary-500/15 text-primary-200'
                 : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
@@ -330,7 +322,12 @@ export function AgentPrompt({
           >
             {listening ? (
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-primary-300" />
+                {/*
+                  The word carries the meaning; the pulse only makes it easier
+                  to catch out of the corner of an eye. Someone who has asked
+                  for less motion gets a steady dot and loses nothing.
+                */}
+                <span className="h-2 w-2 animate-pulse rounded-full bg-primary-300 motion-reduce:animate-none" />
                 listening
               </span>
             ) : (
@@ -340,7 +337,7 @@ export function AgentPrompt({
         )}
         <button
           type="submit"
-          disabled={busy || !input.trim()}
+          disabled={busy || !composed.trim()}
           className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:opacity-40"
         >
           {busy ? 'Working…' : 'Ask'}
