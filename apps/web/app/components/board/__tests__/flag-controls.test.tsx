@@ -196,3 +196,40 @@ describe('useCardFlagProps', () => {
     expect(card?.getAttribute('data-selected')).toBe('true');
   });
 });
+
+describe('how loud the badge is', () => {
+  it('stays quiet on a card nobody is pointing at', () => {
+    const { container } = render(<Card artworkId="a" />);
+
+    expect(
+      container
+        .querySelector('.paillette-flag-badge')
+        ?.getAttribute('data-quiet')
+    ).toBe('true');
+    // Quiet, not absent: the buttons are still reachable by tab and by a
+    // screen reader, which is the whole reason they are not unmounted.
+    expect(screen.getByRole('button', { name: /Pick/ })).toBeTruthy();
+  });
+
+  it('speaks up on the card under the cursor', async () => {
+    const { container } = render(<Card artworkId="a" />);
+    await userEvent.hover(container.querySelector('.paillette-card') as HTMLElement);
+
+    expect(
+      container
+        .querySelector('.paillette-flag-badge')
+        ?.getAttribute('data-quiet')
+    ).toBe('false');
+  });
+
+  it('a flag is a mark, so it stays visible once set', () => {
+    setFlag('a', 'pick', { by: 'human' });
+    const { container } = render(<Card artworkId="a" />);
+
+    expect(
+      container
+        .querySelector('.paillette-flag-badge')
+        ?.getAttribute('data-quiet')
+    ).toBe('false');
+  });
+});

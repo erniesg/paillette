@@ -138,14 +138,28 @@ export const FlagBadge = ({
   title?: string;
 }) => {
   const flag = useFlag(artworkId);
+  const hovered = useHovered(artworkId);
   const suffix = title ? ` ${title}` : '';
+
+  // Quiet until it has something to say.
+  //
+  // Twelve cards times three controls is thirty-six letters of chrome on a
+  // board whose whole point is that the pictures are the only loud thing on
+  // it. A flag that has been set is a mark and stays visible; the controls
+  // for setting one appear on the card you are actually pointing at, which is
+  // the only card the keys can reach anyway. Kept in the DOM rather than
+  // unmounted, so tab order and screen readers are unaffected.
+  const quiet = !flag && !hovered;
 
   return (
     <div
-      className="paillette-flag-badge flex items-center gap-1"
+      className={`paillette-flag-badge flex items-center gap-1 ${
+        quiet ? 'opacity-0 focus-within:opacity-100' : 'opacity-100'
+      }`}
       data-flag={flag?.flag ?? 'none'}
       data-flag-by={flag?.by ?? 'none'}
       data-flag-provisional={String(Boolean(flag?.provisional))}
+      data-quiet={String(quiet)}
     >
       {ACTIONS.map(({ action, key, label }) => {
         // "Unflag" is not a state, so it is a plain button rather than a
