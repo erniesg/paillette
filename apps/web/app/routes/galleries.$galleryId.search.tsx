@@ -2816,7 +2816,13 @@ export default function SearchPage() {
             tools an external WebMCP host would, so the refinement loop —
             "something calm", then "warmer" — is visible without ChatGPT. */}
         <AgentPrompt
-          className="mx-auto mt-6 max-w-3xl"
+          /* `lt-agent-bar` is the hook the light table styles against.
+             `agent-prompt.tsx` belongs to the voice lane and hard-codes a dark
+             rounded box with a purple focus ring, which is a third colour on a
+             ground whose whole argument is that there are two. Passing a class
+             and restating it from `tailwind.css` keeps the seam out of their
+             file — the bar is unchanged anywhere else it is used. */
+          className="lt-agent-bar mx-auto mt-6 max-w-3xl"
           /* The example alone. "Ask the agent —" was narrating the mechanism
              in the one place the human is about to type into anyway; showing
              the shape of an utterance is more use than naming the feature. */

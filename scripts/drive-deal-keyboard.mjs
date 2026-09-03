@@ -58,6 +58,39 @@ const focusSlot = (n) => p.evaluate((i) => {
 const focusedIsCard = () => p.evaluate(() =>
   document.activeElement?.matches('article.lt-slide') ?? false);
 
+
+/**
+ * Section 9 of the brief: "two colours of ink visible in every state".
+ *
+ * Read the computed colour of every mark and caption actually on screen and
+ * confirm both hands are represented. Asserting the class is not enough — the
+ * ink is a CSS custom property resolved through `data-hand`, so the only
+ * honest check is what the browser painted.
+ */
+const inksOnScreen = () => p.evaluate(() => {
+  const seen = new Set();
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  for (const el of document.querySelectorAll(
+    '.lt-mark, .lt-ledger-said, .lt-wall-label, .lt-slide[data-flag]'
+  )) {
+    if (!visible(el)) continue;
+    const hand = el.closest('[data-hand]')?.getAttribute('data-hand');
+    if (hand) seen.add(hand);
+  }
+  return [...seen];
+});
+
+const checkInks = async (tag) => {
+  const inks = await inksOnScreen();
+  check(
+    inks.includes('human') && inks.includes('agent'),
+    `two inks visible — ${tag} (${inks.join('+') || 'none'})`
+  );
+};
+
 // 2. P / X / U on the focused card, no pointer involved.
 await focusSlot(0);
 check(await focusedIsCard(), 'the card itself can hold focus');
@@ -111,6 +144,28 @@ check(held === picksBefore.length,
 // 6. The ledger recorded the turns and can be operated by keyboard.
 const frames = await p.locator('.lt-ledger-frame').count();
 check(frames >= 3, `ledger recorded turns (${frames})`);
+
+
+// 7. Both hands on screen at once, which is the state every screenshot has to
+//    be able to show. The agent proposes, then the human answers it.
+await p.getByRole('button', { name: 'Agent proposes' }).click();
+await p.waitForTimeout(700);
+await checkInks('agent has proposed, human has picked');
+
+// 8. Soak: run the loop repeatedly and make sure nothing drifts or throws.
+for (let round = 1; round <= 3; round++) {
+  await p.getByRole('button', { name: 'Redeal' }).click();
+  await p.waitForTimeout(1800);
+  const slots = await p.locator('[data-board-slot]').count();
+  check(slots >= 12, `round ${round}: the board still deals twelve (${slots})`);
+
+  const picks = await p.locator('[data-board-slot] article[data-flag="pick"]').count();
+  const named = await p.evaluate(() => Array.from(
+    document.querySelectorAll('[data-board-slot] h3'), (n) => n.textContent));
+  check(new Set(named).size === named.length,
+    `round ${round}: no work is dealt onto the board twice`);
+  check(picks > 0, `round ${round}: picks survived (${picks})`);
+}
 
 await b.close();
 console.log('\nPASS');

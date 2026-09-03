@@ -287,6 +287,61 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 }
 
 /*
+ * The utterance bar, seated on the table.
+ *
+ * `agent-prompt.tsx` is the voice lane's file and hard-codes a rounded dark
+ * box, a near-black field and a `primary-500` focus ring. On this ground a
+ * saturated colour has exactly one meaning — the agent — so a purple focus
+ * ring on the human's own input is the palette contradicting itself.
+ *
+ * Restated from here rather than by editing that component, so the bar is
+ * unchanged everywhere else. `!important` because the rules being overridden
+ * are Tailwind utilities, which sit in a later layer than this one.
+ */
+.lt-agent-bar {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* One rule under the words, like the search field above it. The bar is where
+ * the human types, so it is graphite, not the agent's ink. */
+.lt-agent-bar input {
+  border: 0 !important;
+  border-bottom: 1px solid var(--lt-rule-strong) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--ink-human) !important;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+}
+
+.lt-agent-bar input::placeholder {
+  color: var(--ink-human-faint) !important;
+  font-style: italic;
+}
+
+.lt-agent-bar input:focus {
+  border-bottom-color: var(--ink-human) !important;
+  outline: none;
+}
+
+/* The buttons beside it — mic, send — go to hairlines like every other
+ * control on the table. */
+.lt-agent-bar button {
+  border-radius: 0 !important;
+  border-color: var(--lt-rule) !important;
+  background: transparent !important;
+  color: var(--ink-human-soft) !important;
+}
+
+.lt-agent-bar button:hover:not(:disabled) {
+  border-color: var(--lt-rule-strong) !important;
+  color: var(--ink-human) !important;
+}
+
+/*
  * A rail of segmented controls — sort, view, search mode.
  *
  * Chrome that exists to be available rather than to be looked at: a hairline

@@ -88,6 +88,25 @@ async function main() {
     }
   );
 
+  /*
+   * The utterance bar hides itself unless the page registered its tools, and
+   * headless Chromium has no `document.modelContext` at all — so without this
+   * the most important control on the page is missing from every screenshot,
+   * and its styling was going unverified.
+   *
+   * This stubs the *presence* of a model context, not its behaviour: enough
+   * for the bar to render and be looked at. It does not make the agent work,
+   * and nothing in these shots should be read as evidence that it does.
+   */
+  await context.addInitScript(() => {
+    if (!('modelContext' in document)) {
+      Object.defineProperty(document, 'modelContext', {
+        value: { getTools: async () => [] },
+        configurable: true,
+      });
+    }
+  });
+
   const page = await context.newPage();
   page.on('console', (message) => {
     if (message.type() === 'error') console.log(`  ! ${message.text().slice(0, 110)}`);
