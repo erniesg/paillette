@@ -23,6 +23,12 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
 import { uploadImage } from '../utils/r2';
+import {
+  getCollectionMetadataInventory,
+  resolveQueryIntent,
+  artworkMatchesIntentFilters,
+  type QueryIntent,
+} from '../utils/query-intent';
 import { generateJinaQueryEmbedding } from './search';
 
 // ---------------------------------------------------------------------------
@@ -1357,18 +1363,45 @@ indexing.post('/jobs/:jobId/search', async (c) => {
     );
   }
 
+  // The /try flow and the search_artworks WebMCP tool reach indexed
+  // collections through this route, so the LLM query interpreter must sit here
+  // too — not only on /search/text. It degrades to the raw query on any
+  // failure and is KV-cached after the first resolution of a query. The
+  // deadline is generous because a Workers request cannot warm the cache in
+  // the background after responding: whatever budget it gets here is all it
+  // ever gets, so an abort-at-1.5s would mean interpreting never succeeds.
+  const intent = await resolveIndexedQueryIntent(
+    c.env,
+    job.collection_id,
+    query,
+    c.req.raw.signal,
+    8000
+  );
+  const effectiveQuery = intent?.rewrittenQuery || query;
+  const hasFilters = Boolean(
+    intent &&
+      (intent.filters.artist ||
+        intent.filters.medium ||
+        intent.filters.classification ||
+        intent.filters.yearFrom !== undefined ||
+        intent.filters.yearTo !== undefined)
+  );
+  // Over-fetch when filters will cull candidates, so a filtered page still
+  // returns topK results rather than a filtered fraction of topK.
+  const candidateTopK = hasFilters ? Math.min(topK * 3, 100) : topK;
+
   let matches: Array<{ id: string; score: number }>;
   try {
     // The query side reuses the shared search helper so indexed collections
     // are queried exactly the way the rest of Paillette is.
     const queryEmbedding = await generateJinaQueryEmbedding(
       jina.apiKey,
-      query,
+      effectiveQuery,
       jina.model,
       jina.dimensions
     );
     const result = await vectorize.query(queryEmbedding, {
-      topK,
+      topK: candidateTopK,
       filter: { galleryId: WEBMCP_INDEX_ORG_ID, indexJobId: job.id },
       returnValues: false,
       returnMetadata: 'indexed',
@@ -1439,11 +1472,78 @@ indexing.post('/jobs/:jobId/search', async (c) => {
     })
     .filter((result): result is NonNullable<typeof result> => result !== null);
 
+  // Intent filters cull after scoring, preserving vector rank order; the
+  // page is then cut back to topK so filtered searches behave like plain
+  // ones from the caller's point of view.
+  const filteredResults =
+    intent && hasFilters
+      ? results
+          .filter((result) =>
+            artworkMatchesIntentFilters(
+              {
+                artist: result.artist,
+                year: result.year,
+                metadata: {
+                  medium: result.medium,
+                  classification: result.classification,
+                },
+              },
+              intent.filters
+            )
+          )
+          .slice(0, topK)
+      : results;
+
   return c.json({
     success: true,
-    data: { jobId: job.id, collectionId: job.collection_id, query, results },
+    data: {
+      jobId: job.id,
+      collectionId: job.collection_id,
+      query,
+      results: filteredResults,
+      ...(intent
+        ? {
+            interpretation: {
+              parserVersion: 'llm-intent-v1' as const,
+              filters: intent.filters,
+              rewrittenQuery: intent.rewrittenQuery,
+              rationale: intent.rationale,
+            },
+          }
+        : {}),
+    },
   });
 });
+
+/**
+ * Resolve the LLM query intent for an indexed-collection search. Both the
+ * inventory fetch and the resolution are fail-open: any error simply means
+ * the search runs on the raw query, exactly as it did before the interpreter
+ * existed.
+ */
+const resolveIndexedQueryIntent = async (
+  env: Env,
+  collectionId: string,
+  query: string,
+  signal: AbortSignal | undefined,
+  timeoutMs?: number
+): Promise<QueryIntent | null> => {
+  try {
+    const inventory = await getCollectionMetadataInventory(
+      env.DB,
+      collectionId
+    );
+    return await resolveQueryIntent(env, {
+      collectionId,
+      query,
+      inventory: inventory ?? undefined,
+      signal,
+      timeoutMs,
+    });
+  } catch {
+    return null;
+  }
+};
 
 /**
  * GET /public-index/assets/:assetId

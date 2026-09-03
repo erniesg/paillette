@@ -3249,6 +3249,11 @@ searchRoutes.post('/search/text', async (c) => {
               collectionId: orgId,
               query,
               signal: c.req.raw.signal,
+              // A Workers request cannot warm the intent cache in the
+              // background after responding, so the deadline must be long
+              // enough for one real OpenAI round trip or the interpreter
+              // would never succeed for a first-time query.
+              timeoutMs: 8000,
             })
           : null;
       const intentFilters =

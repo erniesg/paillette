@@ -20,6 +20,7 @@ import { Hono } from 'hono';
 import type { Env } from '../index';
 import { openaiCompletion } from '../utils/openai';
 import { OPEN_ACCESS_ORG_ID, resolveOpenAccessProviderScope } from '../utils/orgs';
+import { WEBMCP_INDEX_ORG_ID } from './indexing';
 
 export const DESCRIBE_MODELS = ['gpt-4o-mini', 'gpt-4o'] as const;
 export type DescribeModel = (typeof DESCRIBE_MODELS)[number];
@@ -224,13 +225,23 @@ describe.post('/public-describe', async (c) => {
     ? (requestedModel as DescribeModel)
     : DEFAULT_DESCRIBE_MODEL;
 
-  // Collection scoping: only the open-access NGA collection is readable here,
-  // resolved to its immutable organisation ID exactly as public search does.
-  if (resolveOpenAccessProviderScope(collectionId) !== 'nga') {
-    return c.json(
-      jsonError('NOT_FOUND', 'No publicly describable collection with that id.'),
-      404
-    );
+  // Collection scoping: the open-access NGA collection, resolved to its
+  // immutable organisation ID exactly as public search does, plus any
+  // collection built by the anonymous WebMCP indexing flow in the sandbox
+  // org — describing a freshly indexed artwork is the flagship case.
+  const ngaScope = resolveOpenAccessProviderScope(collectionId) === 'nga';
+  if (!ngaScope) {
+    const sandboxCollection = await c.env.DB.prepare(
+      'SELECT 1 AS ok FROM index_jobs WHERE collection_id = ? AND org_id = ? LIMIT 1'
+    )
+      .bind(collectionId, WEBMCP_INDEX_ORG_ID)
+      .first();
+    if (!sandboxCollection) {
+      return c.json(
+        jsonError('NOT_FOUND', 'No publicly describable collection with that id.'),
+        404
+      );
+    }
   }
 
   const row = await c.env.DB.prepare(
@@ -238,7 +249,7 @@ describe.post('/public-describe', async (c) => {
      FROM artworks
      WHERE id = ? AND org_id = ? AND deleted_at IS NULL`
   )
-    .bind(artworkId, OPEN_ACCESS_ORG_ID)
+    .bind(artworkId, ngaScope ? OPEN_ACCESS_ORG_ID : WEBMCP_INDEX_ORG_ID)
     .first<ArtworkRow>();
   if (!row) {
     return c.json(
