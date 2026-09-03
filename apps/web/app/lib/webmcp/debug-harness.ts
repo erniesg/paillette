@@ -156,3 +156,31 @@ export const installWebMcpDebugHarness = (): (() => void) => {
     }
   };
 };
+
+let ensured = false;
+
+/**
+ * Installs the harness at module-evaluation time rather than from an effect.
+ *
+ * Ordering is the whole point. React runs a route subtree's effects *before*
+ * those of a later sibling in the tree, and `WebMcpBridge` is rendered after
+ * `<Outlet />` in `root.tsx`. Anything on the page that reads
+ * `document.modelContext` from its own mount effect — the in-page agent decides
+ * whether to render that way — therefore looked before the bridge's effect had
+ * installed the stub, found nothing, and latched off for the lifetime of the
+ * page. `?webmcp-debug` registered all 17 tools and still showed no agent.
+ *
+ * Calling this from module scope removes the race for every consumer at once:
+ * `root.tsx` imports the bridge statically, so this runs during bundle
+ * evaluation, before React renders anything. Still gated on the query
+ * parameter, so a normal visit is untouched, and still a no-op on the server.
+ */
+export const ensureWebMcpDebugHarness = (): void => {
+  if (ensured || !isWebMcpDebugRequested()) return;
+  ensured = true;
+  installWebMcpDebugHarness();
+};
+
+export const __resetWebMcpDebugHarnessForTest = () => {
+  ensured = false;
+};

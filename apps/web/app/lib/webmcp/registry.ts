@@ -34,11 +34,30 @@ interface RegistryEntry {
   /** Opaque tokens; one per live caller that asked for this tool. */
   owners: Set<object>;
   teardown: (() => void | Promise<void>) | null;
-  /** Serialises register/unregister for this name so remounts cannot race. */
-  queue: Promise<unknown>;
 }
 
 const entries = new Map<string, RegistryEntry>();
+
+/**
+ * Serialises register/unregister per tool name.
+ *
+ * Keyed by name and held outside `entries` on purpose: the entry is deleted the
+ * moment its last owner releases it, while the host-side `unregisterTool` for
+ * that name is still in flight. A remount that started its own queue on a fresh
+ * entry would therefore race the teardown of the old one — the host rejects the
+ * re-registration as a duplicate, then the late unregister lands and the tool is
+ * gone from the host with the page believing it registered. StrictMode's
+ * mount → cleanup → mount is exactly that sequence, and it emptied the whole
+ * surface in dev: 17 "already registered" warnings and `getTools()` returning
+ * nothing.
+ */
+const queues = new Map<string, Promise<unknown>>();
+
+const enqueue = (name: string, task: () => unknown): Promise<unknown> => {
+  const next = (queues.get(name) ?? Promise.resolve()).then(task, task);
+  queues.set(name, next);
+  return next;
+};
 
 export interface RegisterToolsOptions {
   /**
@@ -250,26 +269,26 @@ export const registerTools = (
       tool: instrument(tool, options),
       owners: new Set([owner]),
       teardown: null,
-      queue: Promise.resolve(),
     };
     entries.set(tool.name, entry);
     claimed.push(tool.name);
 
-    entry.queue = entry.queue
-      .then(() => context.registerTool(entry.tool))
-      .then((registrationResult) => {
-        entry.teardown = resolveTeardown(
-          context,
-          tool.name,
-          registrationResult,
-          options
-        );
-      })
-      .catch((error) => {
-        // Host refused. Drop the entry so a later mount can retry cleanly.
-        entries.delete(tool.name);
-        options.onError?.(toError(error), { toolName: tool.name });
-      });
+    void enqueue(tool.name, () =>
+      Promise.resolve(context.registerTool(entry.tool))
+        .then((registrationResult) => {
+          entry.teardown = resolveTeardown(
+            context,
+            tool.name,
+            registrationResult,
+            options
+          );
+        })
+        .catch((error) => {
+          // Host refused. Drop the entry so a later mount can retry cleanly.
+          if (entries.get(tool.name) === entry) entries.delete(tool.name);
+          options.onError?.(toError(error), { toolName: tool.name });
+        })
+    );
   }
 
   let disposed = false;
@@ -284,11 +303,11 @@ export const registerTools = (
       if (entry.owners.size > 0) continue;
 
       entries.delete(name);
-      entry.queue = entry.queue
-        .then(() => entry.teardown?.())
-        .catch((error) => {
+      void enqueue(name, () =>
+        Promise.resolve(entry.teardown?.()).catch((error) => {
           options.onError?.(toError(error), { toolName: name });
-        });
+        })
+      );
     }
   };
 };
@@ -375,10 +394,17 @@ export const getHostTools = async (): Promise<WebMcpTool[]> => {
 
 /** Flushes pending register/unregister work. Tests and the debug harness only. */
 export const waitForWebMcpRegistry = async () => {
-  await Promise.all([...entries.values()].map((entry) => entry.queue));
+  // Drain by name, not by live entry: a teardown in flight has already been
+  // removed from `entries` and is the very thing a caller is waiting on.
+  while (queues.size > 0) {
+    const pending = [...queues.values()];
+    await Promise.all(pending);
+    if (pending.length === queues.size) break;
+  }
 };
 
 /** Test-only: drops all bookkeeping without calling the host. */
 export const __resetWebMcpRegistryForTest = () => {
   entries.clear();
+  queues.clear();
 };
