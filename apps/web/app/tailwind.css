@@ -927,6 +927,183 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 
 } /* @layer components — end of the light table */
 
+/* ---------------------------------------------------------------------------
+ * The same ink, in the shared-state lane's words
+ *
+ * That lane ships the flag logic and writes its own vocabulary onto the tiles.
+ * It is the same four facts under different names, and its own source says the
+ * provenance hooks are "drawn entirely in CSS, with no JavaScript here needing
+ * to know which colour the agent got" — so supplying that CSS is this lane's
+ * job. Without it the ink renders on nothing, and "two hands visible in every
+ * state" is false on the only page a visitor sees.
+ *
+ *   theirs                              mine
+ *   .paillette-card                     .lt-slide
+ *   data-flag="pick|reject|none"        data-flag="pick|reject" (absent = unset)
+ *   data-flag-by="human|agent|none"     data-hand="human|agent"
+ *   data-flag-provisional="true|false"  data-provisional (present = true)
+ *   data-provenance on the wall label   data-hand
+ *
+ * Bridged rather than renamed, because a rename is an edit to somebody else's
+ * file during a parallel run and this is not. Both vocabularies work, in any
+ * combination, so it does not matter which way the merge lands.
+ *
+ * The `none` and `false` sentinels are inert by construction: every selector
+ * names the value it wants, so an unflagged card matches nothing.
+ *
+ * NOT in `@layer components`, deliberately. Tailwind content-scans that layer
+ * and drops any class it cannot find in this branch's source — and every class
+ * below is defined in the *other* lane's branch, so all of it was silently
+ * purged on the first attempt. The selectors survived only where they shared a
+ * rule with an `lt-` class. Unlayered CSS is never purged, and it also wins
+ * over the utilities these rules exist to override.
+ * ------------------------------------------------------------------------- */
+
+[data-flag-by='human'],
+.paillette-card {
+  --ink: var(--ink-human);
+  --ink-soft: var(--ink-human-soft);
+  --ink-faint: var(--ink-human-faint);
+  --ink-wash: var(--ink-human-wash);
+}
+
+/*
+ * After the human default, not before it. Both selectors are one class worth
+ * of specificity, so on a tile carrying `paillette-card` *and*
+ * `data-flag-by="agent"` the later rule wins — and getting that backwards
+ * silently painted every agent mark in graphite, which is the exact failure
+ * this whole palette exists to prevent.
+ */
+[data-flag-by='agent'] {
+  --ink: var(--ink-agent);
+  --ink-soft: var(--ink-agent-soft);
+  --ink-faint: var(--ink-agent-faint);
+  --ink-wash: var(--ink-agent-wash);
+}
+
+/* Their tile is a slide too, or it sits on the light table looking like a div. */
+.paillette-card {
+  position: relative;
+  border: 0;
+  background: var(--lt-slide);
+  box-shadow:
+    inset 0 0 0 1px var(--lt-rule),
+    var(--lt-slide-shadow);
+  transition:
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.paillette-card[data-flag='pick'] {
+  box-shadow:
+    0 0 0 1px var(--ink),
+    var(--lt-slide-shadow-lifted);
+}
+
+.paillette-card[data-flag='pick'][data-flag-provisional='true'] {
+  box-shadow: var(--lt-slide-shadow);
+  outline: 1px dashed var(--ink);
+  outline-offset: -1px;
+}
+
+.paillette-card[data-flag='reject'] {
+  box-shadow: 0 0 0 1px var(--ink-faint);
+}
+
+.paillette-card[data-flag='reject'][data-flag-provisional='true'] {
+  box-shadow: inset 0 0 0 1px var(--lt-rule);
+  outline: 1px dashed var(--ink);
+  outline-offset: -1px;
+}
+
+/*
+ * Their tile has no `.lt-slide-well`, so the picture is addressed directly.
+ * The desaturation is on the image and never on the card: filtering the card
+ * would drain the colour out of the agent's ink along with the painting, and
+ * an agent's reject would stop being distinguishable from a human's.
+ */
+.paillette-card[data-flag='reject'] img {
+  filter: saturate(0.12) brightness(0.78);
+  transition: filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.paillette-card[data-flag='reject']:hover img,
+.paillette-card[data-flag='reject']:focus-within img {
+  filter: none;
+}
+
+/*
+ * Their corner control: three one-letter buttons, invisible until the card is
+ * pointed at or already flagged. That restraint is theirs and is right —
+ * twelve cards times three controls is thirty-six letters of chrome on a board
+ * whose point is that the pictures are the only loud thing on it. Only the
+ * colour is restated here.
+ *
+ * A set flag is filled and the rest are hairlines, matching `.lt-mark`: a
+ * decision reads as a mark, an available action reads as an outline.
+ */
+.paillette-flag-button {
+  border-radius: 0;
+  border-color: var(--lt-rule-strong);
+  background: transparent;
+  color: var(--ink-human-faint);
+  transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.paillette-flag-button:hover {
+  border-color: var(--ink-human);
+  color: var(--ink-human);
+}
+
+/* `aria-pressed` is the state, so it is what the fill hangs off, and the ink
+ * comes from `--ink` so an agent's mark arrives in the agent's colour. */
+.paillette-flag-button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--lt-ground);
+}
+
+.paillette-flag-badge[data-flag-provisional='true']
+  .paillette-flag-button[aria-pressed='true'] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink);
+}
+
+/*
+ * Their wall label. `data-provenance` is the same fact as `data-hand`, so it
+ * picks the same ink — and it matters that this is not hard-wired to the
+ * agent, because a human redeal can put a board on the canvas and a note about
+ * it must not arrive in the agent's colour.
+ */
+.paillette-wall-label {
+  border: 0;
+  border-left: 1px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0 0 1rem;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.paillette-wall-label[data-provenance='agent'] {
+  --ink: var(--ink-agent);
+}
+
+.paillette-wall-label[data-provenance='human'] {
+  --ink: var(--ink-human);
+}
+
+/* One sentence when a deal did not run. Catalogue mono, graphite, no box: the
+ * system reporting a fact, not the agent saying something. */
+.paillette-deal-error {
+  border-left: 1px solid var(--ink-human-faint);
+  color: var(--ink-human-soft);
+  text-align: left;
+}
+
 .theme-toggle-control {
   position: fixed;
   right: 1rem;
