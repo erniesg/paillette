@@ -510,6 +510,180 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 }
 
 /* ---------------------------------------------------------------------------
+ * Two-up, as a room
+ *
+ * Compare is not a dialog with two thumbnails in it. It is two works at a size
+ * you can actually judge, on the wall ground, with a label between them and
+ * nothing else on screen at all. The whole point is a beat of ten seconds with
+ * no interface in it, so every rule below is about taking something away.
+ * ------------------------------------------------------------------------- */
+
+.lt-two-up {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  /* Stretch, not centre. Two works of different proportions hung at their own
+   * heights read as two loose pictures rather than a pair being compared; a
+   * gallery hangs on one centre line and labels on one baseline, and that is
+   * what makes the eye go straight to the difference instead of to the hang. */
+  align-items: stretch;
+  justify-content: center;
+  gap: clamp(1rem, 3vw, 3rem);
+  padding: clamp(1.5rem, 4vh, 4rem) clamp(1.5rem, 4vw, 5rem);
+  /* Opaque, not a scrim. A translucent overlay leaves the page's own grid
+   * showing through, and the works stop being the only thing in the room. */
+  background: var(--lt-ground);
+  animation: lt-two-up-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-two-up:focus {
+  outline: none;
+}
+
+@keyframes lt-two-up-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.lt-two-up-side {
+  display: flex;
+  min-width: 0;
+  max-width: 44vw;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+/*
+ * The work itself is the button. There is nothing else to press, so it carries
+ * no border, no fill and no hover lift — only a shadow, so it hangs.
+ */
+.lt-two-up-choice {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  transition: filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-two-up-choice img {
+  max-height: 68vh;
+  max-width: 100%;
+  object-fit: contain;
+  box-shadow: var(--lt-slide-shadow-lifted);
+}
+
+/* Hover dims the *other* side rather than lighting this one, so the screen
+ * never gains brightness it did not have. Handled by dimming siblings. */
+.lt-two-up:hover .lt-two-up-side:not(:hover) .lt-two-up-choice,
+.lt-two-up:focus-within .lt-two-up-side:not(:focus-within) .lt-two-up-choice {
+  filter: brightness(0.72);
+}
+
+/* The label sits on the baseline, not under the picture, so both captions line
+ * up however tall or short the two works turn out to be. */
+.lt-two-up-caption {
+  display: flex;
+  min-height: 2.75rem;
+  max-width: 32ch;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.lt-two-up-caption .font-wall {
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  color: var(--ink-human);
+}
+
+/*
+ * The label between the two works. It is a column, not a caption bar, because
+ * on a wall a label between two hung pictures is a column.
+ */
+.lt-two-up-label {
+  display: flex;
+  width: clamp(8rem, 15vw, 15rem);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
+.lt-two-up-question {
+  text-align: center;
+  /* `--ink` resolves from `data-hand` on the room, so the question is in the
+   * ink of whoever asked it and never has to say who that was. */
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+/*
+ * The only control in the room, and it is invisible until a keyboard finds it.
+ * The camera sees an empty wall; a keyboard user gets a real, labelled button.
+ */
+.lt-two-up-escape {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  color: var(--ink-human);
+  background: transparent;
+}
+
+.lt-two-up-escape:focus-visible {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  border: 1px solid var(--ink-human);
+  padding: 0.375rem 0.75rem;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 860px) {
+  /* Stacked, and the label goes back to being a caption between the two. */
+  .lt-two-up {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .lt-two-up-side {
+    max-width: 100%;
+  }
+
+  .lt-two-up-choice img {
+    max-height: 32vh;
+  }
+
+  .lt-two-up-label {
+    width: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Motion
  *
  * Everything on the board is eased and under 450ms. Nothing overshoots: a
@@ -522,6 +696,18 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   .lt-slide:focus-within {
     transition: none;
     transform: none;
+  }
+
+  /* The room arrives, it does not fade in. Everything else about it is still
+   * anyway, so there is nothing else here to switch off. */
+  .lt-two-up {
+    animation: none;
+  }
+
+  .lt-two-up-choice,
+  .lt-two-up:hover .lt-two-up-side:not(:hover) .lt-two-up-choice,
+  .lt-two-up:focus-within .lt-two-up-side:not(:focus-within) .lt-two-up-choice {
+    transition: none;
   }
 
   .lt-slide[data-agent-active] {

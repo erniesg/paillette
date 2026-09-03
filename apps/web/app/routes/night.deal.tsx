@@ -4,8 +4,12 @@ import {
   DealBoard,
   DEFAULT_BOARD_SIZE,
 } from '~/components/board/deal-board';
-import { LightTableCard } from '~/components/board/light-table-card';
+import {
+  LightTableCard,
+  type LightTableWork,
+} from '~/components/board/light-table-card';
 import type { BoardMark } from '~/components/board/provenance';
+import { TwoUpCompare } from '~/components/board/two-up-compare';
 import { DEMO_WORKS, type DemoWork } from '~/lib/board/demo-works';
 
 export const meta: MetaFunction = () => [
@@ -39,6 +43,19 @@ interface FlagState {
 
 const REJECT_WEIGHT = 0.5;
 
+/**
+ * The optometrist's question, and the only one this harness can honestly ask.
+ *
+ * The obvious move is to name what the pair has in common — but the fixture's
+ * `motif` is the *spotlight a work was drawn from*, not a description of it.
+ * Two works out of "The Feast of the Gods" are both Madonnas, so a label
+ * reading "Both are The Feast of the Gods" is simply false about the pictures
+ * underneath it, and a viewer who notices stops believing every other label on
+ * screen. The motif is good enough to choose a genuinely similar pair, which is
+ * what it is used for; it is not good enough to put in a sentence.
+ */
+const COMPARE_QUESTION = 'Which one is closer to what you meant?';
+
 /** Rocchio's shape, with motif membership standing in for a CLIP embedding. */
 function scoreAgainstFlags(
   work: DemoWork,
@@ -66,6 +83,9 @@ export default function NightDealRoute() {
   const [note, setNote] = useState<string | null>(null);
   const [agentActiveIds, setAgentActiveIds] = useState<string[]>([]);
   const [dealCount, setDealCount] = useState(0);
+  const [comparePair, setComparePair] = useState<
+    readonly [DemoWork, DemoWork] | null
+  >(null);
 
   const byId = useMemo(() => {
     const map = new Map<string, DemoWork>();
@@ -205,7 +225,57 @@ export default function NightDealRoute() {
     );
   }, [pickIds, rejectedWorks, byId, dealCount]);
 
+  /**
+   * The agent asks a question with pictures.
+   *
+   * The pair has to be two works that are genuinely alike, or the question
+   * between them is a lie and the shot is worthless — a comparison of a
+   * thirteenth-century Madonna against a Federal-period sofa asks nothing. So
+   * this takes the first two unflagged works on the board that share a motif,
+   * and phrases the question from that motif so the words are true of the
+   * pictures underneath them.
+   *
+   * On the real board the pair is whatever `compare_artworks` was called with.
+   * The presentation does not care which; this route only exists to drive it.
+   */
+  const openCompare = useCallback(() => {
+    const available = boardIds
+      .filter((id) => !flags[id])
+      .map((id) => byId.get(id))
+      .filter((work): work is DemoWork => Boolean(work));
+
+    for (let i = 0; i < available.length; i += 1) {
+      for (let j = i + 1; j < available.length; j += 1) {
+        const a = available[i]!;
+        const b = available[j]!;
+        if (a.motif === b.motif) {
+          setComparePair([a, b]);
+          return;
+        }
+      }
+    }
+  }, [boardIds, flags, byId]);
+
+  /**
+   * A click is an utterance. The winner becomes a pick and the loser a reject,
+   * both in the human's own graphite — the agent asked, but the human answered,
+   * and the ink follows the hand that decided rather than the one that spoke.
+   */
+  const answerCompare = useCallback(
+    (winner: LightTableWork, loser: LightTableWork) => {
+      setFlags((current) => ({
+        ...current,
+        [winner.id]: { flag: 'pick', hand: 'human' },
+        [loser.id]: { flag: 'reject', hand: 'human' },
+      }));
+      setComparePair(null);
+      setNote(`Picked ${winner.title ?? 'it'}. The other one is in the tray.`);
+    },
+    []
+  );
+
   const reset = useCallback(() => {
+    setComparePair(null);
     setFlags({});
     setBoardIds(DEMO_WORKS.slice(0, DEFAULT_BOARD_SIZE).map((work) => work.id));
     setNote(null);
@@ -240,6 +310,9 @@ export default function NightDealRoute() {
 
         <div className="flex flex-wrap items-center gap-2">
           <BoardButton onClick={redeal}>Redeal</BoardButton>
+          <BoardButton onClick={openCompare} hand="agent">
+            Agent asks
+          </BoardButton>
           <BoardButton onClick={proposeAsAgent} hand="agent">
             Agent proposes
           </BoardButton>
@@ -307,6 +380,15 @@ export default function NightDealRoute() {
           )}
         />
       </div>
+
+      {/* Two-up takes the whole screen when it is open, so it renders last and
+          sits over everything else rather than inside the board's layout. */}
+      <TwoUpCompare
+        works={comparePair}
+        question={COMPARE_QUESTION}
+        onChoose={answerCompare}
+        onDismiss={() => setComparePair(null)}
+      />
     </main>
   );
 }
