@@ -2452,7 +2452,12 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="themeable-surface min-h-screen bg-[#0b0b0e] text-white">
+    // Charcoal, not black. A black page makes the dark passages of a painting
+    // dissolve into the background and leaves every work floating in nothing;
+    // charcoal gives them an edge to sit against. The token flips with the
+    // theme, so this no longer needs the light-mode class overrides that the
+    // hard-coded `bg-[#0b0b0e]` did.
+    <div className="themeable-surface lt-ground min-h-screen">
       <PublicSiteHeader
         active="search"
         searchHref={searchRoutePath}
@@ -2556,7 +2561,7 @@ export default function SearchPage() {
               ) : null}
 
               <div className="flex justify-center">
-                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1">
+                <div className="lt-rail items-center gap-1 p-1">
                   <ModeButton
                     active={editorMode === 'text'}
                     icon={Search}
@@ -2609,19 +2614,24 @@ export default function SearchPage() {
                     runTextSearch();
                   }}
                 >
-                  <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
+                  <Search
+                    className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2"
+                    style={{ color: 'var(--ink-human-faint)' }}
+                  />
                   <input
                     value={textQuery}
                     onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
                     placeholder="search by feeling, era, subject..."
                     disabled={isSearchDisabled}
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
+                    className="lt-search-field w-full py-5 pl-10 pr-20 font-wall text-3xl italic sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:opacity-45"
                   />
                   <button
                     type="submit"
                     disabled={isSearchDisabled || !canSubmitTextSearch}
-                    className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
+                    className="lt-seg lt-focusable absolute right-0 top-1/2 -translate-y-1/2 justify-center px-3 sm:px-4"
+                    data-boxed=""
+                    data-catalogue=""
                     aria-label="Search text"
                   >
                     <Search className="h-3.5 w-3.5" />
@@ -2810,9 +2820,17 @@ export default function SearchPage() {
           placeholder="Ask the agent — “something warm for above the sofa”"
         />
 
+        {/* The agent's note is a wall label above the board, not a chat bubble:
+            set in the serif, in the agent's ink, with a single rule down the
+            side. It says who wrote it by its colour, so it does not have to
+            say so in words twice. */}
         {agentBoardNote && (
-          <p className="mx-auto mt-6 max-w-3xl rounded-xl border border-primary-500/30 bg-primary-500/[0.06] px-4 py-3 text-sm text-neutral-200">
-            <span className="mr-2 font-mono text-[11px] uppercase tracking-wider text-primary-300">
+          <p
+            className="lt-wall-label mx-auto mt-6 max-w-3xl border-l pl-4"
+            data-hand="agent"
+            style={{ borderColor: 'var(--ink-agent)', color: 'var(--ink-agent)' }}
+          >
+            <span className="lt-catalogue mr-2 block pb-1">
               assembled by the agent
             </span>
             {agentBoardNote}
@@ -2825,10 +2843,19 @@ export default function SearchPage() {
             className="mt-8"
             aria-busy={isLoading || isPreparingImage}
           >
-            <div className="sticky top-14 z-30 -mx-5 border-y border-white/[0.07] bg-[#0b0b0e]/90 px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8">
+            {/* Chrome reduced to hairlines: one rule under the bar, none above,
+                and the ground showing through it. */}
+            <div
+              className="sticky top-14 z-30 -mx-5 border-b px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8"
+              style={{
+                borderColor: 'var(--lt-rule)',
+                background:
+                  'color-mix(in srgb, var(--lt-ground) 88%, transparent)',
+              }}
+            >
               <div className="mx-auto max-w-7xl">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
+                  <p className="lt-catalogue">
                     {isBrowsingCollection
                       ? isLoading && !results.length
                         ? 'Loading collection'
@@ -2844,8 +2871,15 @@ export default function SearchPage() {
                             : 'Ready'}
                     {(submittedSearch?.kind === 'text' ||
                       submittedSearch?.kind === 'colour') && (
-                      <span className="ml-2 normal-case tracking-normal text-white/70">
-                        "{submittedSearch.query}"
+                      // The human's own words, set in the same serif italic
+                      // they were typed in. Wherever an utterance surfaces on
+                      // this page it wears the same face, so the eye can tell
+                      // what was said from what was counted.
+                      <span
+                        className="ml-2 font-wall text-[15px] italic normal-case tracking-normal"
+                        style={{ color: 'var(--ink-human)' }}
+                      >
+                        “{submittedSearch.query}”
                       </span>
                     )}
                     {isBrowsingCollection && (
@@ -2962,10 +2996,8 @@ export default function SearchPage() {
                     </span>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
-                      <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
-                        Sort
-                      </span>
+                    <div className="lt-rail">
+                      <span className="lt-rail-legend lt-catalogue">Sort</span>
                       <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
                         {SORT_OPTIONS.map((option) => {
                           const Icon = option.icon;
@@ -3023,15 +3055,8 @@ export default function SearchPage() {
                                   ? 'Toggle newest or oldest'
                                   : `Sort by ${option.label.toLowerCase()}`
                               }
-                              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                                active
-                                  ? 'bg-white/[0.14] text-white'
-                                  : 'text-white/45 hover:text-white/80'
-                              }${
-                                isNgsSearchLocked
-                                  ? ' cursor-not-allowed opacity-45'
-                                  : ''
-                              }`}
+                              className="lt-seg lt-focusable"
+                              data-active={active ? '' : undefined}
                             >
                               <Icon className="h-3.5 w-3.5" />
                               <span className="hidden md:inline">{label}</span>
@@ -3040,10 +3065,8 @@ export default function SearchPage() {
                         })}
                       </div>
                     </div>
-                    <div className="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
-                      <span className="flex h-10 items-center border-r border-white/10 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
-                        View
-                      </span>
+                    <div className="lt-rail">
+                      <span className="lt-rail-legend lt-catalogue">View</span>
                       <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
                         {VIEW_OPTIONS.map((option) => {
                           const Icon = option.icon;
@@ -3057,15 +3080,8 @@ export default function SearchPage() {
                                 setView(option.id);
                               }}
                               title={option.label}
-                              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                                view === option.id
-                                  ? 'bg-white/[0.14] text-white'
-                                  : 'text-white/45 hover:text-white/80'
-                              }${
-                                isNgsSearchLocked
-                                  ? ' cursor-not-allowed opacity-45'
-                                  : ''
-                              }`}
+                              className="lt-seg lt-focusable"
+                              data-active={view === option.id ? '' : undefined}
                             >
                               <Icon className="h-3.5 w-3.5" />
                               <span className="hidden sm:inline">
@@ -3085,15 +3101,15 @@ export default function SearchPage() {
                       }}
                       aria-expanded={isSettingsOpen}
                       aria-label="Search settings"
-                      className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors ${
-                        isSettingsOpen
-                          ? 'border-white/20 bg-white/[0.12] text-white'
-                          : 'border-white/10 bg-white/[0.035] text-white/55 hover:text-white/85'
-                      }${isNgsSearchLocked ? ' cursor-not-allowed opacity-45' : ''}`}
+                      className="lt-seg lt-focusable px-3"
+                      data-boxed=""
+                      data-active={isSettingsOpen ? '' : undefined}
                     >
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       <span>Settings</span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+                      {/* The counts are catalogue data, so they are set in the
+                          mono face like every other number on the page. */}
+                      <span className="lt-catalogue">
                         {isBrowsingCollection
                           ? `${browsePageSize} / infinite`
                           : `${topK} / ${Math.round(minScore * 100)}`}
@@ -3933,7 +3949,8 @@ const IdleShowcaseBackdrop = forwardRef<
   return (
     <div
       ref={ref}
-      className="absolute inset-0 overflow-hidden bg-[#0b0b0e]"
+      className="absolute inset-0 overflow-hidden"
+      style={{ background: 'var(--lt-ground)' }}
       aria-label="Suggested artworks"
     >
       <div className="pointer-events-none absolute inset-0">
@@ -4902,11 +4919,8 @@ function ModeButton({
       onClick={onClick}
       aria-label={`${label} search mode`}
       aria-pressed={active}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
-        active
-          ? 'bg-white/[0.14] text-white'
-          : 'text-white/45 hover:text-white/80'
-      }${disabled ? ' cursor-not-allowed opacity-45' : ''}`}
+      className="lt-seg lt-focusable"
+      data-active={active ? '' : undefined}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
@@ -5179,7 +5193,8 @@ function SalonResults({
               onClick={() => onSelectArtwork(result)}
               className="block w-full appearance-none border-0 bg-transparent p-0 text-left"
             >
-              <div className="bg-[#131318] p-2 shadow-[0_24px_50px_-18px_rgba(0,0,0,0.85),inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-transform duration-300 group-hover:scale-[1.03]">
+              {/* A hang, so the work is framed and the frame is the chrome. */}
+              <div className="lt-slide p-2 transition-transform duration-300 group-hover:scale-[1.03]">
                 <ImageWithFallback
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
@@ -5193,13 +5208,14 @@ function SalonResults({
                 />
               </div>
             </button>
-            <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 transition-colors group-hover:text-white/75">
+            <p className="lt-catalogue mt-3 text-center transition-colors">
               #{rank}
               <br />
               <button
                 type="button"
                 onClick={() => onSelectArtwork(result)}
-                className="font-display text-sm italic normal-case tracking-normal text-white/75 transition-colors hover:text-white"
+                className="lt-focusable font-wall text-sm normal-case tracking-normal transition-colors"
+                style={{ color: 'var(--ink-human)' }}
               >
                 {title}
               </button>
@@ -5207,7 +5223,8 @@ function SalonResults({
               <button
                 type="button"
                 onClick={() => onFacetSearch(artist, 'artist')}
-                className="normal-case tracking-normal underline decoration-white/15 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+                className="lt-focusable normal-case tracking-normal underline decoration-current/20 underline-offset-4 transition-colors"
+                style={{ color: 'var(--ink-human-soft)' }}
               >
                 {artist}
               </button>{' '}
@@ -5306,16 +5323,22 @@ function ResultCard({
   const imageFrameStyle = getMasonryImageFrameStyle(result);
 
   return (
-    <article className="break-inside-avoid overflow-hidden border border-white/[0.08] bg-white/[0.025]">
+    /*
+     * A slide on the light table: a pale mount, a well for the work, and real
+     * shadow, so a card reads as an object rather than a region of the page.
+     *
+     * The `lt-slide` class is also where provenance ink lands. Whoever owns
+     * flag state sets `data-flag` / `data-hand` / `data-provisional` on this
+     * element and the frame, the badge and the desaturation follow from CSS —
+     * no shared component, and no edit to this file.
+     */
+    <article className="lt-slide break-inside-avoid">
       <button
         type="button"
         onClick={() => onSelectArtwork(result)}
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
-        <div
-          className="overflow-hidden bg-white/[0.03]"
-          style={imageFrameStyle}
-        >
+        <div className="lt-slide-well" style={imageFrameStyle}>
           <ImageWithFallback
             src={image.src}
             fallbackSrc={image.fallbackSrc}
@@ -5327,7 +5350,7 @@ function ResultCard({
           />
         </div>
       </button>
-      <div className="space-y-3 p-4">
+      <div className="space-y-2.5 p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <button
@@ -5335,20 +5358,27 @@ function ResultCard({
               onClick={() => onSelectArtwork(result)}
               className="min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
             >
-              <h2 className="font-display text-lg font-semibold leading-tight text-white transition-colors hover:text-cyan-100">
+              {/* Wall labels are set in the serif. Hover goes to full graphite
+                  rather than to the accent: on this board the coloured ink means
+                  the agent and nothing else, so ordinary hover cannot borrow it. */}
+              <h2
+                className="font-wall text-lg leading-tight transition-colors"
+                style={{ color: 'var(--ink-human)' }}
+              >
                 {title}
               </h2>
             </button>
             <button
               type="button"
               onClick={() => onFacetSearch(artist, 'artist')}
-              className="mt-1 block max-w-full truncate text-left text-sm text-white/60 underline decoration-white/15 underline-offset-4 transition-colors hover:text-cyan-100 hover:decoration-cyan-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+              className="lt-focusable mt-1 block max-w-full truncate text-left text-sm underline decoration-current/20 underline-offset-4 transition-colors hover:opacity-100"
+              style={{ color: 'var(--ink-human-soft)' }}
               title={`Search ${artist}`}
             >
               {artist}
             </button>
           </div>
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+          <span className="lt-catalogue">
             #{rank.toString().padStart(2, '0')}
           </span>
         </div>
@@ -5361,7 +5391,7 @@ function ResultCard({
             onColourSelect={onPaletteColourSelect}
           />
           <span
-            className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35"
+            className="lt-catalogue"
             title={
               selectedColours.length
                 ? getColourMatchTitle(result, selectedColours)

@@ -164,6 +164,22 @@
   color: var(--ink-human);
 }
 
+/*
+ * A page can be both a themeable surface and a light table. The generic
+ * surface rule below sets `--app-bg` with `!important` under the light theme,
+ * which would otherwise beat even an inline style and leave the table a
+ * different paper to its own slides. Opting into `.lt-ground` says the light
+ * table wins, in both themes, so the ground never changes tone halfway.
+ *
+ * `color` is safe to force here: inheritance passes the computed value, not
+ * the importance, so any descendant with its own colour still wins.
+ */
+.themeable-surface.lt-ground,
+html[data-theme='light'] .themeable-surface.lt-ground {
+  background: var(--lt-ground) !important;
+  color: var(--ink-human) !important;
+}
+
 /* One mono face for catalogue data — accession numbers, ranks, similarity. */
 .lt-catalogue {
   font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
@@ -215,6 +231,133 @@
   outline: 2px solid var(--ink-human);
   outline-offset: 2px;
   border-radius: 1px;
+}
+
+/*
+ * The site header sits on the table too.
+ *
+ * It hard-codes a near-black band and a solid-white signup button in
+ * `public-shell.tsx`, which is shared site chrome rather than a board
+ * component. Restating it from here keeps the light table's look in one place
+ * and out of a file this change has no business editing — the header stays
+ * exactly as it is on every other page.
+ *
+ * The solid white button is the loudest thing on the page after the works, and
+ * on a ground built so the works are the only weight on screen it cannot stay
+ * filled. It keeps its hairline, its contrast and its hit area; it just stops
+ * shouting.
+ */
+.lt-ground > header {
+  background: color-mix(in srgb, var(--lt-ground) 88%, transparent) !important;
+  border-bottom-color: var(--lt-rule) !important;
+}
+
+.lt-ground > header .bg-white {
+  background: transparent !important;
+  border-color: var(--ink-human) !important;
+  color: var(--ink-human) !important;
+}
+
+.lt-ground > header .bg-white:hover {
+  background: var(--ink-human-wash) !important;
+}
+
+/*
+ * A rail of segmented controls — sort, view, search mode.
+ *
+ * Chrome that exists to be available rather than to be looked at: a hairline
+ * box with no fill, and the selected segment marked by ink plus a single
+ * underline instead of a filled pill. A filled pill on this ground competes
+ * with the works for weight, and the works are meant to be the only thing on
+ * screen that has any.
+ */
+.lt-rail {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  border: 1px solid var(--lt-rule);
+  background: transparent;
+}
+
+.lt-rail-legend {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  border-right: 1px solid var(--lt-rule);
+  padding: 0 0.75rem;
+}
+
+.lt-seg {
+  position: relative;
+  display: inline-flex;
+  height: 2rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem;
+  font-size: 0.75rem;
+  color: var(--ink-human-faint);
+  transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-seg:hover:not(:disabled),
+.lt-seg[data-active] {
+  color: var(--ink-human);
+}
+
+/* The underline is the entire selected state. One line, no box. */
+.lt-seg[data-active]::after {
+  content: '';
+  position: absolute;
+  right: 0.625rem;
+  bottom: 0.25rem;
+  left: 0.625rem;
+  height: 1px;
+  background: var(--ink-human);
+}
+
+/*
+ * The search field is a single rule under the words, and that rule is
+ * graphite. On this ground a saturated colour has exactly one meaning — the
+ * agent — so a box the human is typing into cannot borrow it.
+ */
+.lt-search-field {
+  background: transparent;
+  border-bottom: 1px solid var(--lt-rule-strong);
+  color: var(--ink-human);
+  transition: border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-search-field:focus {
+  outline: none;
+  border-bottom-width: 2px;
+  border-bottom-color: var(--ink-human);
+}
+
+.lt-search-field::placeholder {
+  color: var(--ink-human-faint);
+  font-style: normal;
+}
+
+/* A segment that stands on its own rather than inside a rail still needs the
+ * hairline box, so it reads as the same kind of control. */
+.lt-seg[data-boxed] {
+  height: 2.5rem;
+  border: 1px solid var(--lt-rule);
+}
+
+/* A segment whose label is catalogue data rather than a word — SEARCH, counts.
+ * Declared here rather than composed from `.lt-catalogue`, because both are
+ * plain classes and whichever lands later in the file would silently win. */
+.lt-seg[data-catalogue] {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.lt-seg:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* ---------------------------------------------------------------------------
