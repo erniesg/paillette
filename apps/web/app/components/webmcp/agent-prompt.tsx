@@ -16,11 +16,13 @@ import {
 import {
   annotateForAgent,
   emptyResolution,
+  carryHover,
   readScene,
   resolveDeixis,
   segmentUtterance,
   type Referent,
   type Resolution,
+  type SceneWork,
 } from '~/lib/voice/deixis';
 import {
   createSpeechChannel,
@@ -29,6 +31,8 @@ import {
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
+import { recallArtwork } from '~/lib/webmcp/artwork-index';
+import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { useWebMcpState } from './use-webmcp-state';
 
 /**
@@ -66,7 +70,6 @@ type AgentMessage = {
 type Entry =
   | { kind: 'you'; text: string; referents: Referent[] }
   | { kind: 'agent'; text: string }
-  | { kind: 'tool'; name: string }
   | { kind: 'error'; text: string };
 
 /**
@@ -99,6 +102,23 @@ function ReferentChip({ referent }: { referent: Referent }) {
     </span>
   );
 }
+
+/**
+ * A gesture points at an id; a chip needs a picture. The session index is
+ * where the page already keeps every record it has loaded, so this is a read,
+ * not a fetch — which is why deixis can resolve inside a keystroke.
+ */
+const lookUpWork = (id: string): SceneWork | null => {
+  const artwork = recallArtwork(id);
+  if (!artwork) return null;
+  const summary = toAgentArtworkSummary(artwork);
+  return {
+    id: summary.id,
+    title: summary.title,
+    artist: summary.artist,
+    thumbnailUrl: summary.thumbnailUrl ?? summary.imageUrl,
+  };
+};
 
 const MAX_TURNS = 8;
 
@@ -186,6 +206,8 @@ export function AgentPrompt({
   const awaitingFlushRef = useRef(false);
   /** `pendingVoice`, readable from the window key handler. */
   const pendingVoiceRef = useRef(false);
+  /** The last work pointed at, held for the length of one utterance. */
+  const lastHoverRef = useRef<SceneWork | null>(null);
   /** The page's voice, or null where the browser has none. */
   const speechRef = useRef<SpeechChannel | null>(null);
   const fieldRef = useRef<HTMLInputElement | null>(null);
@@ -225,7 +247,12 @@ export function AgentPrompt({
   const resolveAgainstScreen = useCallback(
     (text: string): Resolution => {
       try {
-        return resolveDeixis(text, readScene(getWebMcpState()));
+        const live = readScene(getWebMcpState(), lookUpWork);
+        // The cursor leaves the card as soon as it reaches for the field, so
+        // the last thing pointed at is carried through the utterance it
+        // belongs to. Reset whenever the field empties, below.
+        if (live.hovered) lastHoverRef.current = live.hovered;
+        return resolveDeixis(text, carryHover(live, lastHoverRef.current));
       } catch {
         // Deixis is a courtesy. The turn is worth more than the chip.
         return emptyResolution();
@@ -313,11 +340,6 @@ export function AgentPrompt({
           } catch {
             // Let the tool reject malformed arguments and say why.
           }
-          setEntries((current) => [
-            ...current,
-            { kind: 'tool', name: call.function.name },
-          ]);
-
           let result: unknown;
           try {
             result = await callTool(call.function.name, args);
@@ -499,13 +521,16 @@ export function AgentPrompt({
   commitRef.current = () => submit(composedRef.current);
   pendingVoiceRef.current = pendingVoice;
 
-  // While an utterance is waiting, keep the chips in step with the words —
-  // including words the human retypes, which is the whole point of being able
-  // to edit during the grace.
+  // Chips track the field, typed or spoken. Gating this on a pending voice
+  // utterance made pointing a feature of the microphone, which is exactly
+  // backwards: the cursor says which, and the cursor is always there.
   useEffect(() => {
-    if (!pendingVoice) return;
-    setResolution(resolveAgainstScreen(composeUtterance(input, interim)));
-  }, [input, interim, pendingVoice, resolveAgainstScreen]);
+    const text = composeUtterance(input, interim);
+    // An empty field ends the utterance, and with it the memory of what was
+    // being pointed at. The next sentence starts from whatever is true then.
+    if (!text.trim()) lastHoverRef.current = null;
+    setResolution(resolveAgainstScreen(text));
+  }, [input, interim, resolveAgainstScreen]);
 
   useEffect(() => {
     if (graceStartedAt === null) return undefined;
@@ -763,56 +788,60 @@ export function AgentPrompt({
         who cannot see a two-pixel line draining still gets the whole contract
         in words, which is the part that has to survive.
       */}
-      {pendingVoice && (
-        <>
-          {/*
-            What the pointing words resolved to, while there is still time to
-            stop it. A referent bound to the wrong painting has to be visible
-            here, or the first anyone knows of it is a board full of the wrong
-            answer.
-          */}
-          {resolution.referents.length > 0 && (
-            <p className="mt-2 text-xs text-neutral-400">
-              {resolution.referents.map((referent, index) => (
-                <span key={`${referent.start}-${index}`} className="mr-2">
-                  <span className="text-neutral-600">
-                    “{referent.phrase}” ={' '}
-                  </span>
-                  <ReferentChip referent={referent} />
-                </span>
-              ))}
-            </p>
-          )}
-          {resolution.unresolved.map((gap, index) => (
-            <p
-              key={`${gap.start}-${index}`}
-              className="mt-1 text-xs text-amber-300/80"
-            >
-              Could not tell what “{gap.phrase}” means — {gap.reason}.
-            </p>
+      {/*
+        What the pointing words resolved to, under the field, updating as they
+        are typed or spoken. A wall label works the same way: you know what it
+        refers to because of where it is, so it does not have to say so. The
+        picture is the whole statement; a caption reading “this one” = would
+        only be the chip apologising for itself.
+
+        A phrase that did not resolve keeps its place in the row as a dashed
+        outline with no picture in it — the same dashed-is-provisional ink the
+        board uses. Nothing is silently bound to the wrong painting, and
+        nothing needs a sentence to say so.
+      */}
+      {(resolution.referents.length > 0 ||
+        resolution.unresolved.length > 0) && (
+        <p className="mt-2 flex flex-wrap items-center gap-1">
+          {resolution.referents.map((referent, index) => (
+            <ReferentChip key={`r${referent.start}-${index}`} referent={referent} />
           ))}
-          <p aria-live="polite" className="mt-2 text-xs text-neutral-500">
-            {graceStartedAt !== null
-              ? 'Sending in a moment — click in to edit, Enter to send now, Esc to discard.'
-              : 'Waiting on you — Enter to send, Esc to discard.'}
-          </p>
-        </>
-      )}
-      {micSupported && !pendingVoice && !listening && (
-        <p className="mt-2 text-xs text-neutral-600">
-          Hold the mic, or hold Space, to talk.
+          {resolution.unresolved.map((gap, index) => (
+            <span
+              key={`u${gap.start}-${index}`}
+              title={gap.reason}
+              className="inline-flex items-center rounded border border-dashed border-amber-400/60 px-1 py-px text-xs text-amber-300/80"
+            >
+              {gap.phrase}
+            </span>
+          ))}
         </p>
       )}
+
+      {/*
+        The bar is the countdown for anyone who can see it. This is the same
+        fact for anyone who cannot — not helper text, but the accessible
+        rendering of a control that is otherwise purely visual.
+      */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {pendingVoice
+          ? graceStartedAt !== null
+            ? 'Sending shortly. Enter to send now, Escape to discard.'
+            : 'Waiting. Enter to send, Escape to discard.'
+          : ''}
+      </span>
 
       {entries.length > 0 && (
         <ol className="mt-4 space-y-2 text-sm">
           {entries.map((entry, index) => (
             <li key={index}>
+              {/*
+                Provenance is ink, not a caption. Graphite rule for the human,
+                coloured rule for the agent — the same two hands the board
+                draws, so neither turn needs a word saying whose it was.
+              */}
               {entry.kind === 'you' && (
-                <p className="text-neutral-300">
-                  <span className="mr-2 text-xs uppercase tracking-wider text-neutral-600">
-                    you
-                  </span>
+                <p className="border-l-2 border-neutral-600 pl-3 text-neutral-300">
                   {segmentUtterance(entry.text, entry.referents).map(
                     (segment, at) =>
                       segment.kind === 'text' ? (
@@ -823,13 +852,10 @@ export function AgentPrompt({
                   )}
                 </p>
               )}
-              {entry.kind === 'tool' && (
-                <p className="font-mono text-xs text-primary-300">
-                  → {entry.name}
-                </p>
-              )}
               {entry.kind === 'agent' && (
-                <p className="text-neutral-400">{entry.text}</p>
+                <p className="border-l-2 border-primary-500/70 pl-3 text-neutral-400">
+                  {entry.text}
+                </p>
               )}
               {entry.kind === 'error' && (
                 <p role="alert" className="text-red-300">

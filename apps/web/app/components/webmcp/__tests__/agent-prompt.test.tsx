@@ -285,7 +285,10 @@ describe('AgentPrompt', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(field).toHaveValue('something warm');
-    expect(screen.getByText(/Enter to send, Esc to discard/)).toBeInTheDocument();
+    // The bar is the countdown; this is the same fact for a screen reader.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /Enter to send, Escape to discard/
+    );
   });
 
   it('takes Esc wherever focus is, because release does not move it', async () => {
@@ -418,11 +421,11 @@ describe('AgentPrompt', () => {
     heard('more like this one but brighter', true);
     release();
 
-    // The referent is on screen with time left to stop it.
-    expect(screen.getByText(/“this one” =/)).toBeInTheDocument();
+    // The picture is the whole statement — no caption restating the phrase.
     expect(
       screen.getByText('Lumber Schooners at Evening on Penobscot Bay')
     ).toBeInTheDocument();
+    expect(screen.queryByText(/“this one” =/)).not.toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
@@ -463,9 +466,11 @@ describe('AgentPrompt', () => {
     heard('something between these two', true);
     release();
 
-    expect(
-      screen.getByText(/Could not tell what “these two” means/)
-    ).toBeInTheDocument();
+    // A mark, not a sentence: the phrase keeps its place in the row as a
+    // dashed outline with no picture in it.
+    const gap = screen.getByText('these two');
+    expect(gap).toBeInTheDocument();
+    expect(gap.className).toMatch(/border-dashed/);
   });
 
   it('starts the countdown when a transcript arrives after release', async () => {
@@ -508,6 +513,47 @@ describe('AgentPrompt', () => {
     // And a transcript that turns up long afterwards must not start sending.
     heard('a stray result from a minute ago', true);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('resolves deixis for a typed utterance, with the mic never touched', async () => {
+    setModelContext({ getTools: async () => [] });
+    // No speech recognition installed at all: text is the primary path.
+    stubFetch();
+    openArtwork();
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'more like this one' } });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Lumber Schooners at Evening on Penobscot Bay')
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByLabelText(MIC)).not.toBeInTheDocument();
+  });
+
+  it('sends a typed turn with its bindings, and stays silent', async () => {
+    setModelContext({ getTools: async () => [] });
+    const { spoken } = installSynthesis();
+    const fetchMock = stubFetch('Five warm, calm options.');
+    openArtwork();
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'more like this one' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    const sent = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(sent?.body ?? '{}') as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    expect(
+      body.messages.find((message) => message.role === 'user')?.content
+    ).toContain('nga-1');
+    expect(spoken).toEqual([]);
   });
 
   it('speaks the note back after a spoken turn, one sentence of it', async () => {
