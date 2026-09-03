@@ -324,6 +324,45 @@ export const invokeRegisteredTool = async (
   });
 };
 
+/**
+ * Run a tool the way a host does, preferring the host itself.
+ *
+ * Chrome 152 behind `--enable-features=WebMCPTesting` implements
+ * `ModelContext.executeTool`, and two things about it are easy to get wrong:
+ * the first argument is the `RegisteredTool` object from `getTools()` rather
+ * than its name, and the second is a **JSON string**, not an object. Passing an
+ * object fails with "Failed to parse input arguments".
+ *
+ * Going through the host matters where one exists — it is the host's job to
+ * execute, and anything it wants to observe or gate happens there. Falling back
+ * to this page's own implementation keeps a browser without the API working,
+ * which is the same no-op-degrades rule the rest of this file follows.
+ */
+export const callTool = async (
+  name: string,
+  input: Record<string, unknown>,
+  options: { signal?: AbortSignal } = {}
+): Promise<unknown | null> => {
+  const context = getModelContext() as
+    | (ModelContext & {
+        executeTool?: (tool: unknown, args: string) => Promise<unknown>;
+      })
+    | null;
+
+  if (context && typeof context.executeTool === 'function') {
+    try {
+      const hostTools = (await context.getTools?.()) ?? [];
+      const tool = hostTools.find((candidate) => candidate.name === name);
+      if (tool) return await context.executeTool(tool, JSON.stringify(input));
+    } catch {
+      // A host that cannot run it is not a reason to fail: fall through to the
+      // implementation this page registered, which is the same function.
+    }
+  }
+
+  return invokeRegisteredTool(name, input, options);
+};
+
 /** Tool descriptors this page registered, execute included. */
 export const getRegisteredTools = (): WebMcpTool[] =>
   [...entries.values()].map((entry) => entry.tool);

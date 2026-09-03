@@ -40,6 +40,28 @@ type Entry =
 
 const MAX_TURNS = 8;
 
+/** A single recognition alternative, per the (non-standard) web speech shape. */
+type RecognitionAlternative = { transcript: string };
+
+/** One result in `SpeechRecognitionResultList`; `isFinal` marks a settled one. */
+type RecognitionResult = ArrayLike<RecognitionAlternative> & {
+  isFinal: boolean;
+};
+
+/** The `onerror` payload carries a machine-readable reason string. */
+type RecognitionError = { error: string };
+
+const voiceErrorMessage = (error: string): string => {
+  switch (error) {
+    case 'not-allowed':
+      return 'Microphone access was denied. Allow it in your browser, then try again.';
+    case 'no-speech':
+      return 'No speech was heard. Try again.';
+    default:
+      return 'Voice input stopped. Try again.';
+  }
+};
+
 type ModelContextLike = {
   getTools: () => Promise<
     Array<{ name: string; description?: string; inputSchema?: unknown }>
@@ -215,25 +237,47 @@ export function AgentPrompt({
     const recognition = new Recognition() as unknown as {
       lang: string;
       interimResults: boolean;
-      onresult: (event: {
-        results: ArrayLike<ArrayLike<{ transcript: string }>>;
-      }) => void;
+      continuous: boolean;
+      onresult: (event: { results: ArrayLike<RecognitionResult> }) => void;
       onend: () => void;
-      onerror: () => void;
+      onerror: (event: RecognitionError) => void;
       start: () => void;
       stop: () => void;
     };
     recognition.lang = 'en-GB';
-    recognition.interimResults = false;
+    recognition.interimResults = true;
+    recognition.continuous = false;
     recognition.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript ?? '';
-      if (transcript) {
-        setInput('');
-        void run(transcript);
+      let finalTranscript = '';
+      let interim = '';
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (!result) continue;
+        const transcript = result[0]?.transcript ?? '';
+        if (result.isFinal) finalTranscript += transcript;
+        else interim += transcript;
       }
+
+      // A settled result is the goal; the interim text was just so the words
+      // appear on camera while the person is still speaking.
+      const settled = finalTranscript.trim();
+      if (settled) {
+        setInput('');
+        void run(settled);
+        return;
+      }
+
+      const live = interim.trim();
+      if (live) setInput(live);
     };
     recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
+    recognition.onerror = (event) => {
+      setListening(false);
+      setEntries((current) => [
+        ...current,
+        { kind: 'error', text: voiceErrorMessage(event.error) },
+      ]);
+    };
     recognitionRef.current = recognition;
     setListening(true);
     recognition.start();
@@ -284,7 +328,14 @@ export function AgentPrompt({
                 : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
             }`}
           >
-            {listening ? '● listening' : '🎤'}
+            {listening ? (
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-primary-300" />
+                listening
+              </span>
+            ) : (
+              '🎤'
+            )}
           </button>
         )}
         <button

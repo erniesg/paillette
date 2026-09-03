@@ -24,13 +24,16 @@ const SURFACE_RAISED = '#181b21';
 const LINE = '#2c313a';
 const TEXT = '#f2f4f7';
 const MUTED = '#9aa3b0';
-const ACCENT = '#cda636';
+const ACCENT = '#fbbf24';
+const RUNNING = '#a855f7';
+const OK = '#4ade80';
+const ERROR = '#ef6a6a';
 
 const STATUS_COLOR: Record<ActivityEntry['status'], string> = {
-  running: '#63a9ff',
-  ok: '#5ec48a',
-  error: '#ef6a6a',
-  aborted: '#9aa3b0',
+  running: RUNNING,
+  ok: OK,
+  error: ERROR,
+  aborted: MUTED,
 };
 
 const STATUS_LABEL: Record<ActivityEntry['status'], string> = {
@@ -38,6 +41,32 @@ const STATUS_LABEL: Record<ActivityEntry['status'], string> = {
   ok: 'ok',
   error: 'error',
   aborted: 'cancelled',
+};
+
+/**
+ * The burst the viewer should read as one operation: the contiguous run of
+ * back-to-back tool calls a single agent turn produces. `activity` is
+ * newest-first, so two adjacent entries belong to the same burst when the newer
+ * call began within `BURST_GAP_MS` of the older one ending. A longer gap means
+ * the agent went quiet and the next call is a new operation, which is what
+ * resets the step counter — no extra store state is needed to derive it.
+ */
+const BURST_GAP_MS = 10_000;
+
+const currentBurst = (activity: ActivityEntry[]): ActivityEntry[] => {
+  const burst: ActivityEntry[] = [];
+  for (const entry of activity) {
+    const newer = burst[burst.length - 1];
+    if (
+      newer &&
+      entry.endedAt !== null &&
+      newer.startedAt - entry.endedAt > BURST_GAP_MS
+    ) {
+      break;
+    }
+    burst.push(entry);
+  }
+  return burst;
 };
 
 const MONO =
@@ -64,9 +93,11 @@ const formatInput = (input: unknown): string => {
 const Pill = ({
   children,
   color,
+  pulse = false,
 }: {
   children: React.ReactNode;
   color: string;
+  pulse?: boolean;
 }) => (
   <span
     style={{
@@ -87,6 +118,7 @@ const Pill = ({
         borderRadius: 999,
         background: color,
         display: 'inline-block',
+        animation: pulse ? 'webmcpPulse 1.2s ease-in-out infinite' : undefined,
       }}
     />
     {children}
@@ -109,6 +141,16 @@ export function AgentActivityPanel() {
     agentResults !== null ||
     focused !== null ||
     pendingConfirmations.length > 0;
+
+  // Newest-first burst; step 1 is the oldest call still in the current
+  // operation. Only entries inside the burst carry a step number.
+  const burst = currentBurst(activity);
+  const stepByEntryId = new Map<string, number>();
+  for (let index = 0; index < burst.length; index += 1) {
+    const entry = burst[index];
+    if (entry) stepByEntryId.set(entry.id, burst.length - index);
+  }
+  const runningEntry = burst.find((entry) => entry.status === 'running');
 
   // Nothing has happened and no host is present: stay completely out of the
   // way. The page must look untouched without WebMCP.

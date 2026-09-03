@@ -342,7 +342,14 @@ describe('invoking a registered tool from the page', () => {
    */
   it('runs the registered implementation and passes a signal', async () => {
     installHost(createHost());
-    const execute = vi.fn(async () => ({ ok: true }));
+    const execute = vi.fn(
+      async (
+        _input: Record<string, unknown>,
+        _options: { signal: AbortSignal }
+      ) => ({ ok: true })
+    ) as unknown as ModelContextTool['execute'] & {
+      mock: { calls: [Record<string, unknown>, { signal: AbortSignal }][] };
+    };
     registerTools([makeTool('page_side_tool', execute)]);
     await waitForWebMcpRegistry();
 
