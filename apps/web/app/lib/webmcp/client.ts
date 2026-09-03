@@ -231,3 +231,84 @@ export const loadImageBlob = async (
   }
   return blob;
 };
+
+/** Mirrors `INDEXING_CAPS.maxTotalBytes` in `apps/api/src/routes/indexing.ts`. */
+export const INDEX_ARCHIVE_MAX_BYTES = 120 * 1024 * 1024;
+/** Mirrors `INDEXING_CAPS.maxFileBytes`. */
+export const INDEX_FILE_MAX_BYTES = 8 * 1024 * 1024;
+
+const basenameFromUrl = (url: string): string | null => {
+  if (url.startsWith('data:')) return null;
+  try {
+    const { pathname } = new URL(url, window.location.origin);
+    const base = decodeURIComponent(pathname.split('/').pop() || '').trim();
+    return base || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Turns a reference the agent supplied — an https:// URL or a data: URI — into
+ * a named `File`, which is what `indexZip` / `indexFiles` consume.
+ *
+ * Deliberately permissive about MIME: the archive parser and the server's own
+ * `inferMimeType` decide what is indexable, and a data: URI frequently arrives
+ * as `application/octet-stream`. Size is *not* permissive: the caps here are
+ * the Worker's caps, enforced before bytes move so the agent gets a precise
+ * message instead of a 413 halfway through a job.
+ *
+ * Same CORS caveat as `loadImageBlob`: a cross-origin host that does not send
+ * `Access-Control-Allow-Origin` cannot be read by this page at all.
+ */
+export const loadAgentFile = async (
+  url: string,
+  options: {
+    /** Wins when the caller knows the filename (extension drives MIME server-side). */
+    name?: string;
+    fallbackName: string;
+    maxBytes: number;
+    signal?: AbortSignal;
+  }
+): Promise<File> => {
+  const isData = url.startsWith('data:');
+  let response: Response;
+  try {
+    response = await fetch(
+      url,
+      isData ? { signal: options.signal } : { signal: options.signal, mode: 'cors' }
+    );
+  } catch (error) {
+    if ((error as { name?: string })?.name === 'AbortError') throw error;
+    throw new PailletteApiError(
+      'FILE_FETCH_BLOCKED',
+      `The browser could not read ${url.slice(0, 120)}. Cross-origin files must send CORS headers; pass a data: URI instead.`,
+      0
+    );
+  }
+  if (!response.ok) {
+    throw new PailletteApiError(
+      'FILE_FETCH_FAILED',
+      `Fetching ${url.slice(0, 120)} returned HTTP ${response.status}.`,
+      response.status
+    );
+  }
+
+  const blob = await response.blob();
+  if (blob.size === 0) {
+    throw new PailletteApiError('FILE_EMPTY', `${url.slice(0, 120)} was empty.`, 400);
+  }
+  if (blob.size > options.maxBytes) {
+    throw new PailletteApiError(
+      'FILE_TOO_LARGE',
+      `This accepts up to ${Math.round(options.maxBytes / (1024 * 1024))} MB; received ${(blob.size / 1024 / 1024).toFixed(1)} MB.`,
+      400
+    );
+  }
+
+  const name =
+    options.name?.trim() || basenameFromUrl(url) || options.fallbackName;
+  return new File([blob], name, {
+    type: blob.type || 'application/octet-stream',
+  });
+};

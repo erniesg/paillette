@@ -38,11 +38,23 @@ import {
 import {
   browsePublic,
   getSearchQuotaPublic,
+  loadAgentFile,
   loadImageBlob,
   searchImagePublic,
   searchTextPublic,
+  INDEX_ARCHIVE_MAX_BYTES,
+  INDEX_FILE_MAX_BYTES,
   PailletteApiError,
 } from './client';
+import {
+  getIndexStatus,
+  indexFiles,
+  indexZip,
+  searchIndexedCollection,
+  IndexingError,
+  type IndexedSearchResult,
+  type IndexJobHandle,
+} from '~/lib/indexing-client';
 import {
   DEFAULT_PUBLIC_COLLECTION_ID,
   PUBLIC_COLLECTIONS,
@@ -100,8 +112,13 @@ const guard = async (run: () => Promise<ToolResult>): Promise<ToolResult> => {
         error.message,
         error.code === 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED'
           ? 'The shared anonymous search quota for this collection is spent. Browsing still works; call browse_collection instead.'
-          : undefined
+          : INDEXING_HINTS[error.code]
       );
+    }
+    // The indexing client raises its own typed error; keep its code rather
+    // than flattening every indexing failure into UNEXPECTED_ERROR.
+    if (error instanceof IndexingError) {
+      return fail(error.code, error.message, INDEXING_HINTS[error.code]);
     }
     return fail(
       'UNEXPECTED_ERROR',
@@ -1025,10 +1042,487 @@ const addToCollectionTool = (): WebMcpTool => ({
     }),
 });
 
+// ---------------------------------------------------------------------------
+// Tier 3 — indexing: the agent brings its own images and makes them searchable
+// ---------------------------------------------------------------------------
+
+/**
+ * Indexing is a *job*, not a call. A WebMCP `execute` must return in seconds
+ * and hundreds of embeddings take minutes, so `index_zip`/`index_folder`
+ * create the job, hand back `{jobId, collectionId}` and let the upload pump
+ * run on in the page; `get_index_status` is the agent's window into it.
+ *
+ * That shape is what makes the last beat possible: the same `get_index_status`
+ * call that reports `searchable: true` will, given a `query`, search the
+ * collection the zip just became — so "index this" and "now find the blue one"
+ * are one conversation, not two systems.
+ */
+
+/**
+ * Anonymous indexing always lands in one sandbox organisation, enforced
+ * server-side (`WEBMCP_INDEX_ORG_ID`). It is named here only so the job
+ * carries no "you asked for somewhere else" notice; the agent is not offered a
+ * choice because it does not have one.
+ */
+const INDEX_SANDBOX_ORG = 'webmcp-index';
+
+/** Mirrors `INDEXING_CAPS` in `apps/api/src/routes/indexing.ts`. Stated, never hidden. */
+const INDEX_CAPS = {
+  maxImagesPerJob: 40,
+  maxImageBytes: INDEX_FILE_MAX_BYTES,
+  maxJobBytes: INDEX_ARCHIVE_MAX_BYTES,
+  maxJobsPerHour: 6,
+  imageTypes: ['jpeg', 'png', 'webp', 'gif', 'avif'],
+} as const;
+
+/** How long a job of this size realistically takes to become searchable. */
+const POLL_INTERVAL_MS = 2500;
+
+/** Recovery advice per failure code, read by `guard`. */
+const INDEXING_HINTS: Record<string, string> = {
+  INVALID_ARCHIVE:
+    'That was not a readable zip. Pass the archive as a data: URI if a remote URL is being rewritten in transit, or use index_folder for loose images.',
+  NO_INDEXABLE_FILES: `Nothing in it was an indexable image (${INDEX_CAPS.imageTypes.join(', ')}). Check what you sent before retrying; a retry with the same input will fail the same way.`,
+  INDEXING_RATE_LIMITED: `Only ${INDEX_CAPS.maxJobsPerHour} indexing jobs may be created per hour from one address. Tell the human rather than retrying in a loop.`,
+  INDEXING_SANDBOX_FULL:
+    'The shared indexing sandbox is full and an operator has to clear it. Nothing you can retry — say so plainly.',
+  FILE_FETCH_BLOCKED:
+    'The page could not read that URL cross-origin. A data: URI always works.',
+  FILE_TOO_LARGE: `Per-image ceiling is ${Math.round(INDEX_CAPS.maxImageBytes / (1024 * 1024))} MB and one job may total ${Math.round(INDEX_CAPS.maxJobBytes / (1024 * 1024))} MB.`,
+  NOT_FOUND:
+    'No such indexing job. jobIds come from index_zip or index_folder and live on the server, not in this page.',
+  INDEX_SEARCH_UNAVAILABLE:
+    'Vector search is not configured on this deployment, so the indexed collection cannot be queried. The images are still indexed.',
+};
+
+const timestampName = (prefix: string) =>
+  `${prefix} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+
+/**
+ * The host's signal is scoped to `execute`; the upload pump deliberately
+ * outlives the call. So forward cancellation only while the call is in flight
+ * — a host that tidies up its AbortController after `execute` resolves must
+ * not silently kill a job the human is waiting on.
+ */
+const withCallScopedAbort = async <T>(
+  signal: AbortSignal | undefined,
+  run: (jobSignal: AbortSignal) => Promise<T>
+): Promise<T> => {
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  if (signal?.aborted) forward();
+  else signal?.addEventListener('abort', forward, { once: true });
+  try {
+    return await run(controller.signal);
+  } finally {
+    signal?.removeEventListener('abort', forward);
+  }
+};
+
+/** Consent for indexing reads the same way as create_collection's. */
+const confirmIndexing = async (
+  toolName: string,
+  title: string,
+  detail: string,
+  signal?: AbortSignal
+) => {
+  const approved = await requestConfirmation({ toolName, title, detail, signal });
+  return approved
+    ? null
+    : fail(
+        'DECLINED_BY_USER',
+        'The human declined this on the page.',
+        'Do not retry without being asked to. Say what you were about to index and let them decide.'
+      );
+};
+
+/** One shape for both index tools, so the agent learns the loop once. */
+const indexJobStarted = (
+  handle: IndexJobHandle,
+  collectionName: string,
+  source: 'zip' | 'files',
+  extra: ToolResult = {}
+): ToolResult =>
+  ok({
+    jobId: handle.jobId,
+    collectionId: handle.collectionId,
+    collectionName,
+    source,
+    state: 'queued',
+    ...extra,
+    caps: INDEX_CAPS,
+    storage: `Images are uploaded to Paillette's shared anonymous indexing sandbox ("${INDEX_SANDBOX_ORG}"). Nothing is written to the NGA catalogue, and anyone with the jobId can read this collection.`,
+    poll: {
+      tool: 'get_index_status',
+      arguments: { jobId: handle.jobId },
+      suggestedIntervalMs: POLL_INTERVAL_MS,
+    },
+    next: `Indexing is running in the background — this call did not wait for it. Poll get_index_status with jobId "${handle.jobId}" every ~${Math.round(POLL_INTERVAL_MS / 1000)}s until state is "complete". As soon as it reports searchable:true, pass a "query" to that same call to run semantic search over this collection; the ids it returns work with lookup_artwork, show_artwork and set_results, so you can put a freshly indexed image on the human's screen.`,
+  });
+
+/**
+ * Project an indexed hit into the same record the rest of the surface speaks,
+ * so a work that existed only in the human's zip a minute ago is addressable
+ * by every tool that already takes an artworkId.
+ */
+const toIndexedArtwork = (
+  result: IndexedSearchResult,
+  collectionId: string,
+  collectionName: string
+): ArtworkSearchResult => ({
+  id: result.id,
+  galleryId: collectionId,
+  ...(result.title ? { title: result.title } : {}),
+  ...(result.artist ? { artist: result.artist } : {}),
+  ...(typeof result.year === 'number' ? { year: result.year } : {}),
+  imageUrl: result.imageUrl,
+  thumbnailUrl: result.imageUrl,
+  similarity: result.similarity,
+  metadata: {
+    ...(result.medium ? { medium: result.medium } : {}),
+    ...(result.classification ? { classification: result.classification } : {}),
+    ...(result.description ? { description: result.description } : {}),
+    ...(result.original_filename
+      ? { originalFilename: result.original_filename }
+      : {}),
+    // No sourceUrl or institution: these came from the human's own files, and
+    // inventing a citation for them would be a lie.
+    sourceCollection: collectionName,
+  },
+});
+
+const indexZipTool = (): WebMcpTool => ({
+  name: 'index_zip',
+  title: 'Index a zip archive',
+  description:
+    'Turn a zip of images into a new, semantically searchable collection on this site. The archive is opened in the browser, each image is embedded in the same vector space as everything else Paillette indexes, and an optional CSV sidecar inside the zip (columns like filename, title, artist, year, medium) becomes catalogue metadata. Returns a jobId immediately — indexing keeps running after this call returns, so poll get_index_status rather than waiting. Use this when the human has an archive of their own images; use index_folder for a handful of loose files.',
+  // Mutating: this uploads the human's images and creates a server-side
+  // collection. Not destructive — it only ever adds — but it is a real write,
+  // so it asks on the page first, exactly as create_collection does.
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      zipUrl: {
+        type: 'string',
+        description:
+          'Absolute https:// URL or a data: URI of a .zip archive, up to 120 MB. A data: URI always works, so encode an archive the human handed you rather than linking it; a remote URL must send CORS headers for this page to be allowed to read it. (Same affordance as search_by_image\'s imageUrl.)',
+        examples: ['data:application/zip;base64,UEsDBBQ…'],
+      },
+      collectionName: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 80,
+        description:
+          'What to call the collection this archive becomes, e.g. "Studio scans 2024". Shown to the human and returned by get_index_status. Defaults to a timestamped name.',
+      },
+    },
+    required: ['zipUrl'],
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const zipUrl = asString((input as { zipUrl?: unknown }).zipUrl);
+      if (!zipUrl) {
+        return fail(
+          'INVALID_INPUT',
+          'zipUrl must be an https:// URL or a data: URI of a .zip archive.'
+        );
+      }
+      const collectionName =
+        asString((input as { collectionName?: unknown }).collectionName).slice(
+          0,
+          80
+        ) || timestampName('Indexed archive');
+
+      const declined = await confirmIndexing(
+        'index_zip',
+        `Index a zip archive as “${collectionName}”?`,
+        `Up to ${INDEX_CAPS.maxImagesPerJob} images are uploaded to this site's shared anonymous indexing sandbox and embedded for search. Nothing is written to the NGA catalogue.`,
+        options.signal
+      );
+      if (declined) return declined;
+
+      const archive = await loadAgentFile(zipUrl, {
+        fallbackName: 'archive.zip',
+        maxBytes: INDEX_ARCHIVE_MAX_BYTES,
+        signal: options.signal,
+      });
+
+      const handle = await withCallScopedAbort(options.signal, (jobSignal) =>
+        indexZip(archive, {
+          collectionName,
+          orgId: INDEX_SANDBOX_ORG,
+          signal: jobSignal,
+        })
+      );
+
+      return indexJobStarted(handle, collectionName, 'zip', {
+        archive: { name: archive.name, bytes: archive.size },
+      });
+    }),
+});
+
+const indexFolderTool = (): WebMcpTool => ({
+  name: 'index_folder',
+  title: 'Index a list of images',
+  description:
+    'Turn a list of individual image files into a new, semantically searchable collection — the loose-files counterpart to index_zip, for when the human has a folder rather than an archive. Each file is fetched by the page, embedded in Paillette\'s own vector space, and titled from its filename unless you supply metadata. Returns a jobId immediately; indexing continues in the background and is read back with get_index_status.',
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      files: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 60,
+        description: `The images to index, in order. Up to ${INDEX_CAPS.maxImagesPerJob} are accepted per job (${INDEX_CAPS.imageTypes.join(', ')}, ${Math.round(INDEX_CAPS.maxImageBytes / (1024 * 1024))} MB each); anything past that is reported as skipped by get_index_status rather than dropped in silence. A file this page cannot read is skipped and named in the result — the rest of the job still runs.`,
+        items: {
+          type: 'object',
+          properties: {
+            url: {
+              type: 'string',
+              description:
+                'Absolute https:// URL or data: URI of one image. A data: URI always works; a remote URL must send CORS headers.',
+            },
+            name: {
+              type: 'string',
+              maxLength: 200,
+              description:
+                'Filename including its extension, e.g. "wave-01.jpg". The extension decides the image type, and the name matches this file to a row in metadataCsv. Defaults to the URL\'s last path segment.',
+            },
+          },
+          required: ['url'],
+          additionalProperties: false,
+        },
+      },
+      collectionName: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 80,
+        description:
+          'What to call the collection these files become. Defaults to a timestamped name.',
+      },
+      metadataCsv: {
+        type: 'string',
+        maxLength: 100000,
+        description:
+          'Optional CSV giving each file a real catalogue record instead of a filename-derived title. One row per image; a header naming any of filename, title, artist, year, medium, classification, description, credit_line, accession_number (common aliases such as creator, date and object type are understood). The filename column is matched case-insensitively against each file\'s name.',
+      },
+    },
+    required: ['files'],
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const raw = Array.isArray((input as { files?: unknown }).files)
+        ? ((input as { files: unknown[] }).files as unknown[])
+        : [];
+      const requested = raw
+        .map((entry) => {
+          const record = (entry ?? {}) as { url?: unknown; name?: unknown };
+          return {
+            url: asString(record.url),
+            name: asString(record.name).slice(0, 200),
+          };
+        })
+        .filter((entry) => entry.url);
+
+      if (!requested.length) {
+        return fail(
+          'INVALID_INPUT',
+          'files must contain at least one { url } entry.',
+          'Each entry is an https:// URL or a data: URI of a single image.'
+        );
+      }
+
+      const collectionName =
+        asString((input as { collectionName?: unknown }).collectionName).slice(
+          0,
+          80
+        ) || timestampName('Indexed files');
+      const metadataCsv = asString(
+        (input as { metadataCsv?: unknown }).metadataCsv
+      );
+
+      const declined = await confirmIndexing(
+        'index_folder',
+        `Index ${requested.length} file${requested.length === 1 ? '' : 's'} as “${collectionName}”?`,
+        `They are uploaded to this site's shared anonymous indexing sandbox and embedded for search. Nothing is written to the NGA catalogue.`,
+        options.signal
+      );
+      if (declined) return declined;
+
+      const files: File[] = [];
+      const unreadable: Array<{ url: string; message: string }> = [];
+      for (const entry of requested) {
+        try {
+          files.push(
+            await loadAgentFile(entry.url, {
+              ...(entry.name ? { name: entry.name } : {}),
+              fallbackName: `image-${files.length + 1}.jpg`,
+              maxBytes: INDEX_FILE_MAX_BYTES,
+              signal: options.signal,
+            })
+          );
+        } catch (error) {
+          if (isAbort(error)) throw error;
+          // One unreadable URL is one lost image, not a lost job.
+          unreadable.push({
+            url: entry.url.slice(0, 120),
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (!files.length) {
+        return fail(
+          'NO_READABLE_FILES',
+          `None of the ${requested.length} file(s) could be read by this page.`,
+          `First failure: ${unreadable[0]?.message ?? 'unknown'}. data: URIs avoid cross-origin restrictions entirely.`
+        );
+      }
+
+      if (metadataCsv) {
+        // `indexFiles` already reads any .csv in the list as a sidecar, so the
+        // agent's inline CSV rides the same path as one found in a folder.
+        files.push(
+          new File([metadataCsv], 'metadata.csv', { type: 'text/csv' })
+        );
+      }
+
+      const handle = await withCallScopedAbort(options.signal, (jobSignal) =>
+        indexFiles(files, {
+          collectionName,
+          orgId: INDEX_SANDBOX_ORG,
+          signal: jobSignal,
+        })
+      );
+
+      return indexJobStarted(handle, collectionName, 'files', {
+        submitted: files.length - (metadataCsv ? 1 : 0),
+        ...(metadataCsv ? { metadataCsvApplied: true } : {}),
+        ...(unreadable.length ? { unreadable } : {}),
+      });
+    }),
+});
+
+const getIndexStatusTool = (): WebMcpTool => ({
+  name: 'get_index_status',
+  title: 'Get indexing status',
+  description:
+    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, and any per-file errors. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results.',
+  // A pure read of job progress, like get_search_quota: it writes nothing, but
+  // the answer changes between calls, so it is not idempotent.
+  annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      jobId: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 64,
+        description: 'The jobId returned by index_zip or index_folder.',
+      },
+      query: {
+        type: 'string',
+        maxLength: 500,
+        description:
+          'Optional. When the job is searchable, also run this natural-language search over the collection it built and return the matches — the one call that takes you from "indexed" to "here are the results". Ignored (with a note) while the job has processed nothing yet.',
+      },
+      topK: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 50,
+        default: 20,
+        description:
+          'How many matches to return when `query` is given. The route clamps this to 1-50.',
+      },
+    },
+    required: ['jobId'],
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const jobId = asString((input as { jobId?: unknown }).jobId);
+      if (!jobId) {
+        return fail(
+          'INVALID_INPUT',
+          'jobId is required.',
+          'It is returned by index_zip and index_folder.'
+        );
+      }
+      const query = asString((input as { query?: unknown }).query);
+      const status = await getIndexStatus(jobId, { signal: options.signal });
+      const collectionName = status.collectionName ?? null;
+      const searchable = status.searchable ?? status.processed > 0;
+      const done = status.state === 'complete' || status.state === 'failed';
+
+      let search: ToolResult | null = null;
+      if (query && searchable) {
+        const response = await searchIndexedCollection(jobId, query, {
+          topK: clampInt((input as { topK?: unknown }).topK, 1, 50, 20),
+          signal: options.signal,
+        });
+        const artworks = response.results.map((result) =>
+          toIndexedArtwork(
+            result,
+            response.collectionId,
+            collectionName ?? 'Indexed collection'
+          )
+        );
+        // Same session index as every other search, so show_artwork and
+        // set_results resolve these ids without a second round trip.
+        search = {
+          query,
+          count: artworks.length,
+          results: capture(artworks),
+        };
+      }
+
+      return ok({
+        jobId: status.jobId,
+        state: status.state,
+        processed: status.processed,
+        total: status.total,
+        collectionId: status.collectionId,
+        errors: status.errors.slice(0, 10),
+        errorCount: status.errors.length,
+        collectionName,
+        failed: status.failed ?? 0,
+        searchable,
+        done,
+        notice: status.notice ?? null,
+        ...(search ? { search } : {}),
+        ...(query && !searchable
+          ? {
+              searchSkipped:
+                'Nothing is embedded yet, so there is nothing to search. Poll again and repeat the query.',
+            }
+          : {}),
+        next: done
+          ? searchable
+            ? `Indexing finished: ${status.processed} of ${status.total} images are in "${collectionName ?? status.collectionId}". Call this tool again with a "query" to search them, then show_artwork or set_results to put one on the human's screen.`
+            : 'The job finished without indexing anything. Read `errors` and `notice` and tell the human what went wrong rather than retrying blindly.'
+          : `Still indexing (${status.processed}/${status.total}). Poll again in ~${Math.round(POLL_INTERVAL_MS / 1000)}s.${searchable ? ' Partial results are already searchable — you can pass a query now.' : ''}`,
+      });
+    }),
+});
+
 /**
  * The full surface, in the order a judge (or a model) should read it:
  * discovery, then the three search modalities, then browse and lookup, then
- * quota, then the shared canvas, then the gated mutations.
+ * quota, then the shared canvas, then the gated mutations, then indexing.
  */
 export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   listCollectionsTool(),
@@ -1043,6 +1537,9 @@ export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   showArtworkTool(),
   createCollectionTool(),
   addToCollectionTool(),
+  indexZipTool(),
+  indexFolderTool(),
+  getIndexStatusTool(),
 ];
 
 export const PAILLETTE_TOOL_NAMES = [
@@ -1058,6 +1555,9 @@ export const PAILLETTE_TOOL_NAMES = [
   'show_artwork',
   'create_collection',
   'add_to_collection',
+  'index_zip',
+  'index_folder',
+  'get_index_status',
 ] as const;
 
 export { NAMED_COLOURS };

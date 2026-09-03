@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetArtworkIndexForTest, rememberArtworks } from '../artwork-index';
 import { __resetWebMcpStateForTest, getWebMcpState } from '../store';
@@ -100,6 +101,9 @@ describe('tool surface', () => {
       'show_artwork',
       'create_collection',
       'add_to_collection',
+      'index_zip',
+      'index_folder',
+      'get_index_status',
     ]);
 
     for (const tool of tools.values()) {
@@ -120,7 +124,7 @@ describe('tool surface', () => {
     }
   });
 
-  it('marks the seven read tools readOnly and the rest not', () => {
+  it('marks the read tools readOnly and the rest not', () => {
     const readOnly = [...tools.values()]
       .filter((tool) => tool.annotations?.readOnlyHint === true)
       .map((tool) => tool.name);
@@ -133,7 +137,18 @@ describe('tool surface', () => {
       'lookup_artwork',
       'get_search_quota',
       'get_view_context',
+      // Polling a job writes nothing; the two tools that upload images do.
+      'get_index_status',
     ]);
+  });
+
+  it('documents every property of the nested file list too', () => {
+    const items = tools.get('index_folder')!.inputSchema.properties?.files
+      ?.items as { properties?: Record<string, { description?: string }> };
+    expect(Object.keys(items.properties ?? {})).toEqual(['url', 'name']);
+    for (const schema of Object.values(items.properties ?? {})) {
+      expect(schema.description).toBeTruthy();
+    }
   });
 });
 
@@ -504,5 +519,495 @@ describe('browse_collection and get_search_quota', () => {
     const result = await call('get_search_quota');
     expect(result).toMatchObject({ limit: 1000, used: 12, remaining: 988 });
     expect(result.scope).toContain('Shared');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Indexing: index_zip / index_folder / get_index_status
+// ---------------------------------------------------------------------------
+
+const imageBytes = (fill: number, length = 1024) =>
+  new Uint8Array(new ArrayBuffer(length)).fill(fill);
+
+const buildZip = async (entries: Record<string, Uint8Array | string>) => {
+  const zip = new JSZip();
+  for (const [name, content] of Object.entries(entries)) zip.file(name, content);
+  return zip.generateAsync({ type: 'uint8array' });
+};
+
+const waitFor = async (predicate: () => boolean, label: string) => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for: ${label}`);
+};
+
+/** Resolves the confirmation the mutating tool just parked. */
+const answerConfirmation = async (approved: boolean) => {
+  await Promise.resolve();
+  const confirmation = getWebMcpState().pendingConfirmations[0];
+  if (!confirmation) throw new Error('no confirmation was requested');
+  confirmation.resolve(approved);
+  return confirmation;
+};
+
+/**
+ * Stands in for the six anonymous `/api/public-index/*` proxy routes plus the
+ * remote files the agent points at, so a zip can be driven all the way from a
+ * data: URI to a searchable collection without a network.
+ */
+const stubIndexingApi = (
+  options: {
+    batchSize?: number;
+    /** Held open to prove the tool returns before any upload finishes. */
+    itemsGate?: Promise<void>;
+    status?: Record<string, unknown>;
+    statusResponse?: Response;
+    searchResults?: unknown[];
+  } = {}
+) => {
+  const remote = new Map<string, { body: BlobPart; type: string }>();
+  const forms: FormData[] = [];
+  const api = {
+    remote,
+    forms,
+    jobBody: null as any,
+    itemsAttempts: 0,
+    searchBody: null as any,
+    completeBody: null as any,
+    statusCalls: 0,
+    searchCalls: 0,
+    /** Register a URL the agent may pass as zipUrl / files[].url. */
+    serve(url: string, body: BlobPart, type: string) {
+      remote.set(url, { body, type });
+      return url;
+    },
+  };
+
+  let processed = 0;
+
+  vi.mocked(fetch).mockImplementation((async (
+    input: RequestInfo | URL,
+    init: RequestInit = {}
+  ) => {
+    const url = String(input);
+
+    const file = remote.get(url);
+    if (file) {
+      return new Response(file.body, {
+        headers: { 'Content-Type': file.type },
+      });
+    }
+    if (url.startsWith('data:') || url.startsWith('http')) {
+      // Nothing served it: this is what a CORS-blocked fetch looks like.
+      throw new TypeError(`Failed to fetch ${url}`);
+    }
+
+    if (url === '/api/public-index/jobs') {
+      api.jobBody = JSON.parse(String(init.body));
+      return Response.json({
+        success: true,
+        data: {
+          jobId: 'job-1',
+          collectionId: 'collection-1',
+          accepted: api.jobBody.files
+            .filter((entry: { name: string }) => !entry.name.endsWith('.txt'))
+            .map((entry: { name: string }) => entry.name),
+          batchSize: options.batchSize ?? 4,
+        },
+      });
+    }
+
+    if (url.endsWith('/items')) {
+      api.itemsAttempts += 1;
+      if (options.itemsGate) await options.itemsGate;
+      const form = init.body as FormData;
+      forms.push(form);
+      processed += form.getAll('files').length;
+      return Response.json({
+        success: true,
+        data: {
+          jobId: 'job-1',
+          state: 'running',
+          processed,
+          total: 2,
+          collectionId: 'collection-1',
+          errors: [],
+        },
+      });
+    }
+
+    if (url.endsWith('/complete')) {
+      api.completeBody = JSON.parse(String(init.body ?? '{}'));
+      return Response.json({ success: true, data: { jobId: 'job-1' } });
+    }
+
+    if (url.endsWith('/status')) {
+      api.statusCalls += 1;
+      if (options.statusResponse) return options.statusResponse;
+      return Response.json({
+        success: true,
+        data: {
+          jobId: 'job-1',
+          state: 'running',
+          processed: 1,
+          total: 2,
+          collectionId: 'collection-1',
+          collectionName: 'Studio scans',
+          errors: [],
+          failed: 0,
+          searchable: true,
+          notice: null,
+          ...options.status,
+        },
+      });
+    }
+
+    if (url.endsWith('/search')) {
+      api.searchCalls += 1;
+      api.searchBody = JSON.parse(String(init.body));
+      return Response.json({
+        success: true,
+        data: {
+          jobId: 'job-1',
+          collectionId: 'collection-1',
+          query: api.searchBody.query,
+          results: options.searchResults ?? [],
+        },
+      });
+    }
+
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as unknown as typeof fetch);
+
+  return api;
+};
+
+const ZIP_URI = 'data:application/zip;base64,ZIPFIXTURE';
+
+const serveFixtureZip = async (api: ReturnType<typeof stubIndexingApi>) => {
+  const bytes = await buildZip({
+    'photos/wave-01.jpg': imageBytes(1),
+    'photos/wave-02.png': imageBytes(2),
+    'photos/readme.txt': 'not an image',
+    'photos/metadata.csv': 'filename,title,artist\nwave-01.jpg,Blue Wave,Hokusai\n',
+  });
+  return api.serve(ZIP_URI, bytes as BlobPart, 'application/zip');
+};
+
+describe('index_zip', () => {
+  it('asks on the page, then returns a job handle without waiting for the upload', async () => {
+    // /items never settles: the tool must still return, because indexing is a
+    // job the agent polls, not something an execute() may block on.
+    const api = stubIndexingApi({ itemsGate: new Promise<void>(() => {}) });
+    await serveFixtureZip(api);
+
+    const pending = call('index_zip', {
+      zipUrl: ZIP_URI,
+      collectionName: 'Studio scans',
+    });
+    const confirmation = await answerConfirmation(true);
+    expect(confirmation.toolName).toBe('index_zip');
+    expect(confirmation.title).toContain('Studio scans');
+
+    const result = await pending;
+    expect(result).toMatchObject({
+      ok: true,
+      jobId: 'job-1',
+      collectionId: 'collection-1',
+      collectionName: 'Studio scans',
+      source: 'zip',
+      state: 'queued',
+    });
+    expect(result.poll).toMatchObject({
+      tool: 'get_index_status',
+      arguments: { jobId: 'job-1' },
+    });
+    expect(result.next).toContain('get_index_status');
+    expect(result.next).toContain('show_artwork');
+    expect(() => JSON.stringify(result)).not.toThrow();
+
+    // The archive was planned server-side; nothing was uploaded yet.
+    expect(api.jobBody.source).toBe('zip');
+    expect(api.jobBody.orgId).toBe('webmcp-index');
+    expect(api.jobBody.collectionName).toBe('Studio scans');
+    expect(
+      api.jobBody.files.map((entry: { name: string }) => entry.name)
+    ).toEqual(['wave-01.jpg', 'wave-02.png', 'readme.txt']);
+
+    // The tool returned while the first upload is still in flight, which is
+    // the whole point: execute() must not wait for the job.
+    await waitFor(() => api.itemsAttempts === 1, 'the first upload to start');
+    expect(api.forms).toHaveLength(0);
+  });
+
+  it('keeps uploading after the host cancels the tool call', async () => {
+    // The host's signal is scoped to execute(); the pump outlives it. One
+    // image per batch, so the second batch proves the job was not cancelled.
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const api = stubIndexingApi({ batchSize: 1, itemsGate: gate });
+    await serveFixtureZip(api);
+
+    const controller = new AbortController();
+    const pending = tools
+      .get('index_zip')!
+      .execute({ zipUrl: ZIP_URI }, { signal: controller.signal }) as Promise<
+      Record<string, any>
+    >;
+    await answerConfirmation(true);
+    const result = await pending;
+    expect(result.ok).toBe(true);
+
+    controller.abort();
+    release();
+
+    await waitFor(() => api.completeBody !== null, 'the job to close');
+    expect(api.forms).toHaveLength(2);
+    // Closed cleanly — not with "Indexing was cancelled."
+    expect(api.completeBody).toEqual({});
+  });
+
+  it('fails closed when the human declines, without touching the network', async () => {
+    const api = stubIndexingApi();
+    await serveFixtureZip(api);
+
+    const pending = call('index_zip', { zipUrl: ZIP_URI });
+    await answerConfirmation(false);
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('DECLINED_BY_USER');
+    expect(api.jobBody).toBeNull();
+  });
+
+  it('reports a file that is not a zip as a recoverable error', async () => {
+    const api = stubIndexingApi();
+    api.serve(ZIP_URI, imageBytes(9) as BlobPart, 'application/zip');
+
+    const pending = call('index_zip', { zipUrl: ZIP_URI });
+    await answerConfirmation(true);
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('INVALID_ARCHIVE');
+    expect(result.error.hint).toContain('index_folder');
+  });
+
+  it('says so plainly when the browser cannot read the URL', async () => {
+    stubIndexingApi();
+    const pending = call('index_zip', {
+      zipUrl: 'https://blocked.example/archive.zip',
+    });
+    await answerConfirmation(true);
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('FILE_FETCH_BLOCKED');
+    expect(result.error.hint).toContain('data: URI');
+  });
+
+  it('rejects a missing zipUrl before asking the human anything', async () => {
+    stubIndexingApi();
+    const result = await call('index_zip', {});
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(getWebMcpState().pendingConfirmations).toHaveLength(0);
+  });
+});
+
+describe('index_folder', () => {
+  const JPG = 'data:image/jpeg;base64,ONE';
+  const PNG = 'data:image/png;base64,TWO';
+
+  it('fetches each file, applies an inline CSV, and names what it could not read', async () => {
+    const api = stubIndexingApi({ batchSize: 2 });
+    api.serve(JPG, imageBytes(1) as BlobPart, 'image/jpeg');
+    api.serve(PNG, imageBytes(2) as BlobPart, 'image/png');
+
+    const pending = call('index_folder', {
+      files: [
+        { url: JPG, name: 'wave-01.jpg' },
+        { url: PNG, name: 'wave-02.png' },
+        { url: 'https://blocked.example/missing.jpg', name: 'missing.jpg' },
+      ],
+      collectionName: 'Folder drop',
+      metadataCsv: 'filename,title,artist\nwave-01.jpg,Blue Wave,Hokusai\n',
+    });
+    const confirmation = await answerConfirmation(true);
+    expect(confirmation.title).toContain('3 files');
+
+    const result = await pending;
+    expect(result).toMatchObject({
+      ok: true,
+      jobId: 'job-1',
+      source: 'files',
+      submitted: 2,
+      metadataCsvApplied: true,
+    });
+    expect(result.unreadable).toHaveLength(1);
+    expect(result.unreadable[0].url).toContain('blocked.example');
+
+    // The CSV rides the same sidecar path a folder's own CSV would.
+    expect(api.jobBody.source).toBe('files');
+    expect(
+      api.jobBody.files.map((entry: { name: string }) => entry.name)
+    ).toEqual(['wave-01.jpg', 'wave-02.png']);
+
+    await waitFor(() => api.forms.length > 0, 'the first batch');
+    const metadata = JSON.parse(String(api.forms[0]!.get('metadata')));
+    expect(metadata['wave-01.jpg']).toMatchObject({
+      title: 'Blue Wave',
+      artist: 'Hokusai',
+    });
+  });
+
+  it('fails with a usable message when nothing could be read', async () => {
+    const api = stubIndexingApi();
+    const pending = call('index_folder', {
+      files: [{ url: 'https://blocked.example/a.jpg', name: 'a.jpg' }],
+    });
+    await answerConfirmation(true);
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('NO_READABLE_FILES');
+    expect(result.error.hint).toContain('data: URIs');
+    expect(api.jobBody).toBeNull();
+  });
+
+  it('rejects an empty file list before asking the human anything', async () => {
+    stubIndexingApi();
+    const result = await call('index_folder', { files: [] });
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(getWebMcpState().pendingConfirmations).toHaveLength(0);
+  });
+});
+
+describe('get_index_status', () => {
+  const indexedHit = {
+    id: 'idx-1',
+    similarity: 0.8123,
+    title: 'Blue Wave',
+    artist: 'Hokusai',
+    year: 1831,
+    medium: 'woodblock print',
+    classification: 'Print',
+    description: 'A cresting wave.',
+    original_filename: 'wave-01.jpg',
+    imageUrl: '/api/public-index/assets/asset-1',
+  };
+
+  it('reports progress and tells the agent how to poll', async () => {
+    const api = stubIndexingApi({
+      status: { state: 'running', processed: 1, total: 4, searchable: true },
+    });
+
+    const result = await call('get_index_status', { jobId: 'job-1' });
+    expect(result).toMatchObject({
+      ok: true,
+      jobId: 'job-1',
+      state: 'running',
+      processed: 1,
+      total: 4,
+      collectionId: 'collection-1',
+      errors: [],
+      searchable: true,
+      done: false,
+    });
+    expect(result.next).toContain('Poll again');
+    expect(api.searchCalls).toBe(0);
+  });
+
+  it('searches the collection the job just built and hands the ids to the canvas', async () => {
+    const api = stubIndexingApi({
+      status: {
+        state: 'complete',
+        processed: 2,
+        total: 2,
+        searchable: true,
+        collectionName: 'Studio scans',
+      },
+      searchResults: [indexedHit],
+    });
+
+    const result = await call('get_index_status', {
+      jobId: 'job-1',
+      query: 'blue wave',
+      topK: 5,
+    });
+
+    expect(api.searchBody).toEqual({ query: 'blue wave', topK: 5 });
+    expect(result.done).toBe(true);
+    expect(result.search.count).toBe(1);
+    expect(result.search.results[0]).toMatchObject({
+      id: 'idx-1',
+      title: 'Blue Wave',
+      artist: 'Hokusai',
+      year: 1831,
+      similarity: 0.812,
+      imageUrl: '/api/public-index/assets/asset-1',
+      // The human's own files carry no institutional citation. Do not invent one.
+      sourceUrl: null,
+      sourceInstitution: null,
+    });
+
+    // The beat the demo turns on: a work that was inside a zip a minute ago is
+    // now addressable by the tools that already existed.
+    const shown = await call('show_artwork', {
+      artworkId: 'idx-1',
+      note: 'from your archive',
+    });
+    expect(shown.ok).toBe(true);
+    expect(getWebMcpState().focused?.artwork.id).toBe('idx-1');
+    const looked = await call('lookup_artwork', { artworkId: 'idx-1' });
+    expect(looked.artworks[0].description).toBe('A cresting wave.');
+  });
+
+  it('does not search a job that has embedded nothing yet', async () => {
+    const api = stubIndexingApi({
+      status: { state: 'queued', processed: 0, total: 4, searchable: false },
+    });
+
+    const result = await call('get_index_status', {
+      jobId: 'job-1',
+      query: 'blue wave',
+    });
+    expect(api.searchCalls).toBe(0);
+    expect(result.search).toBeUndefined();
+    expect(result.searchSkipped).toContain('Poll again');
+  });
+
+  it('surfaces an unknown job as a structured error with recovery advice', async () => {
+    stubIndexingApi({
+      statusResponse: jsonResponse(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Indexing job not found.' } },
+        404
+      ),
+    });
+
+    const result = await call('get_index_status', { jobId: 'ghost' });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('NOT_FOUND');
+    expect(result.error.hint).toContain('index_zip');
+  });
+
+  it('requires a jobId', async () => {
+    const result = await call('get_index_status', {});
+    expect(result.error.code).toBe('INVALID_INPUT');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('propagates an abort instead of swallowing it', async () => {
+    vi.mocked(fetch).mockRejectedValue(
+      Object.assign(new Error('aborted'), { name: 'AbortError' })
+    );
+    await expect(
+      tools
+        .get('get_index_status')!
+        .execute({ jobId: 'job-1' }, { signal: new AbortController().signal })
+    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
