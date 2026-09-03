@@ -37,6 +37,7 @@ import {
 } from './artwork-summary';
 import {
   browsePublic,
+  describeArtworkPublic,
   getSearchQuotaPublic,
   loadAgentFile,
   loadImageBlob,
@@ -617,6 +618,98 @@ const getSearchQuotaTool = (): WebMcpTool => ({
     }),
 });
 
+/**
+ * The vision model an agent may spend. Mirrors the API route's allowlist —
+ * anonymous callers never choose an arbitrary model.
+ */
+const DESCRIBE_MODELS = ['gpt-4o-mini', 'gpt-4o'] as const;
+
+const describeArtworkTool = (): WebMcpTool => ({
+  name: 'describe_artwork',
+  title: 'Describe artwork',
+  description:
+    'Generate assistive alt-text for one artwork with a vision model: what is visibly depicted, in one or two plain sentences suitable for a screen reader. Useful for accessibility, and for grounding your own discussion of a work in what it actually shows rather than its catalogue wording. This spends a paid model call from the same shared anonymous budget story as search — the site pays per call and every anonymous caller shares it — so describe works worth reading about, not every result. A generated caption is stored on the record, so describing the same work again returns the stored text instead of spending another call.',
+  // Not readOnly: the caption is persisted on the record server-side. It only
+  // ever adds text, so destructiveHint is false, and it needs no confirmation
+  // — but the cost is honest: the first call for a work spends real money.
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      artwork: {
+        type: 'string',
+        description:
+          'Id from any previous search, browse, or get_view_context result — the same ids lookup_artwork resolves.',
+      },
+      collection: collectionProperty,
+      model: {
+        type: 'string',
+        enum: [...DESCRIBE_MODELS],
+        default: 'gpt-4o-mini',
+        description:
+          'Which vision model to spend. gpt-4o-mini is the default and is tuned for this; use gpt-4o only for a dense composition where the finer read justifies the extra cost.',
+      },
+    },
+    required: ['artwork'],
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const artworkId = asString((input as { artwork?: unknown }).artwork);
+      if (!artworkId) {
+        return fail(
+          'INVALID_INPUT',
+          'artwork is required.',
+          'Pass an id from search_artworks, browse_collection, or get_view_context.'
+        );
+      }
+      // Fail fast on ids this page has not seen rather than spending a model
+      // call on an id the API would refuse anyway.
+      if (!recallArtwork(artworkId)) {
+        return fail(
+          'ARTWORK_NOT_IN_SESSION',
+          `No artwork "${artworkId}" has been seen on this page.`,
+          'Run search_artworks or browse_collection first; ids are only resolvable within this browsing session.'
+        );
+      }
+
+      const collectionId = resolveCollectionId(
+        (input as { collection?: unknown }).collection
+      );
+      const modelInput = asString((input as { model?: unknown }).model);
+      const model = (DESCRIBE_MODELS as readonly string[]).includes(modelInput)
+        ? (modelInput as (typeof DESCRIBE_MODELS)[number])
+        : undefined;
+
+      const result = await describeArtworkPublic({
+        collectionId,
+        artworkId,
+        ...(model ? { model } : {}),
+        signal: options.signal,
+      });
+
+      return ok({
+        artworkId: result.artworkId,
+        caption: result.caption,
+        model: result.model,
+        cached: result.cached,
+        persisted: result.persisted,
+        ...(result.persisted
+          ? {}
+          : {
+              persistedNote:
+                'The caption could not be stored on the record just now; it is still valid to use.',
+            }),
+        next: 'Call show_artwork with this id to open it on the human’s screen — this caption reads well as its alt text.',
+      });
+    }),
+});
+
 // ---------------------------------------------------------------------------
 // Tier 1.5 — the shared canvas: read and write what the human is looking at
 // ---------------------------------------------------------------------------
@@ -1110,6 +1203,14 @@ const INDEXING_HINTS: Record<string, string> = {
     'No such indexing job. jobIds come from index_zip or index_folder and live on the server, not in this page.',
   INDEX_SEARCH_UNAVAILABLE:
     'Vector search is not configured on this deployment, so the indexed collection cannot be queried. The images are still indexed.',
+  // describe_artwork shares this map: guard looks every PailletteApiError
+  // code up here, so its failures carry a next step the same way.
+  DESCRIBE_RATE_LIMITED:
+    'This address has spent its hourly description budget. Tell the human, and lean on catalogue metadata and your own reading of the image instead of retrying.',
+  DESCRIBE_UNAVAILABLE:
+    'Assistive descriptions are not configured on this deployment right now. Say so plainly rather than retrying.',
+  DESCRIBE_FAILED:
+    'The description model could not be reached this time. One retry is reasonable; more is not.',
 };
 
 const timestampName = (prefix: string) =>
@@ -1551,7 +1652,8 @@ const getIndexStatusTool = (): WebMcpTool => ({
 /**
  * The full surface, in the order a judge (or a model) should read it:
  * discovery, then the three search modalities, then browse and lookup, then
- * quota, then the shared canvas, then the gated mutations, then indexing.
+ * quota and description, then the shared canvas, then the gated mutations,
+ * then indexing.
  */
 export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   listCollectionsTool(),
@@ -1561,6 +1663,7 @@ export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   browseCollectionTool(),
   lookupArtworkTool(),
   getSearchQuotaTool(),
+  describeArtworkTool(),
   getViewContextTool(context),
   setResultsTool(context),
   showArtworkTool(),
@@ -1579,6 +1682,7 @@ export const PAILLETTE_TOOL_NAMES = [
   'browse_collection',
   'lookup_artwork',
   'get_search_quota',
+  'describe_artwork',
   'get_view_context',
   'set_results',
   'show_artwork',

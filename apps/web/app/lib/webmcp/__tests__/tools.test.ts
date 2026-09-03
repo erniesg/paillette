@@ -96,6 +96,7 @@ describe('tool surface', () => {
       'browse_collection',
       'lookup_artwork',
       'get_search_quota',
+      'describe_artwork',
       'get_view_context',
       'set_results',
       'show_artwork',
@@ -519,6 +520,103 @@ describe('browse_collection and get_search_quota', () => {
     const result = await call('get_search_quota');
     expect(result).toMatchObject({ limit: 1000, used: 12, remaining: 988 });
     expect(result.scope).toContain('Shared');
+  });
+});
+
+describe('describe_artwork', () => {
+  it('posts to the describe route and returns the caption with provenance', async () => {
+    rememberArtworks([artwork('a')]);
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          artworkId: 'a',
+          collectionId: 'nga',
+          caption: 'A grey sea under a wide sky, one small sail off centre.',
+          model: 'gpt-4o-mini',
+          cached: false,
+          persisted: true,
+        },
+      })
+    );
+
+    const result = await call('describe_artwork', { artwork: 'a' });
+
+    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({
+      caption: 'A grey sea under a wide sky, one small sail off centre.',
+      model: 'gpt-4o-mini',
+      cached: false,
+      persisted: true,
+    });
+    expect(result.next).toContain('show_artwork');
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe('/api/public-describe');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      collectionId: 'nga',
+      artworkId: 'a',
+    });
+  });
+
+  it('passes an allowlisted model through when asked', async () => {
+    rememberArtworks([artwork('a')]);
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        data: {
+          artworkId: 'a',
+          collectionId: 'nga',
+          caption: 'A dense still life.',
+          model: 'gpt-4o',
+          cached: false,
+          persisted: true,
+        },
+      })
+    );
+
+    const result = await call('describe_artwork', {
+      artwork: 'a',
+      model: 'gpt-4o',
+    });
+
+    expect(result.model).toBe('gpt-4o');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toMatchObject({
+      model: 'gpt-4o',
+    });
+  });
+
+  it('refuses ids this page has not seen without spending a model call', async () => {
+    const fetchMock = vi.mocked(fetch);
+
+    const result = await call('describe_artwork', { artwork: 'ghost' });
+
+    expect(result.error.code).toBe('ARTWORK_NOT_IN_SESSION');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the API failure codes with a recovery hint', async () => {
+    rememberArtworks([artwork('a')]);
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(
+        {
+          success: false,
+          error: {
+            code: 'DESCRIBE_RATE_LIMITED',
+            message: 'Only 20 descriptions may be generated per hour.',
+          },
+        },
+        429
+      )
+    );
+
+    const result = await call('describe_artwork', { artwork: 'a' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('DESCRIBE_RATE_LIMITED');
+    expect(result.error.hint).toContain('hourly description budget');
   });
 });
 

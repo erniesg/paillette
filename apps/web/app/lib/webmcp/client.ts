@@ -181,6 +181,41 @@ export const getSearchQuotaPublic = async (
   return readEnvelope<NgaSearchQuota>(response);
 };
 
+export interface DescribeArtworkInput {
+  collectionId: string;
+  artworkId: string;
+  model?: 'gpt-4o-mini' | 'gpt-4o';
+  signal?: AbortSignal;
+}
+
+export interface DescribeArtworkResponse {
+  artworkId: string;
+  collectionId: string;
+  caption: string;
+  model: string;
+  cached: boolean;
+  persisted: boolean;
+}
+
+export const describeArtworkPublic = async ({
+  collectionId,
+  artworkId,
+  model,
+  signal,
+}: DescribeArtworkInput): Promise<DescribeArtworkResponse> => {
+  const response = await fetch('/api/public-describe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      collectionId,
+      artworkId,
+      ...(model ? { model } : {}),
+    }),
+    signal,
+  });
+  return readEnvelope<DescribeArtworkResponse>(response);
+};
+
 /**
  * Turns an image reference into a Blob the image-search route will accept,
  * enforcing the route's own limits here so the agent gets a precise, actionable
