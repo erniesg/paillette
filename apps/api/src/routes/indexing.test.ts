@@ -9,11 +9,13 @@ import {
   WEBMCP_INDEX_ORG_ID,
   buildCaptionText,
   buildJobStatus,
+  deriveCollectionSuggestions,
   inferMimeType,
   planIndexJob,
   sanitizeItemMetadata,
   titleFromFilename,
   type JobStatusRow,
+  type SuggestionSourceRow,
 } from './indexing';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
@@ -325,6 +327,78 @@ describe('job status payload', () => {
   });
 });
 
+describe('collection suggestions', () => {
+  const metadataRows: SuggestionSourceRow[] = [
+    {
+      title: 'Sunrise',
+      artist: 'A. Painter',
+      year: 1954,
+      medium: 'Oil on canvas',
+      classification: 'Painting',
+    },
+    {
+      title: 'Harbor at Dusk',
+      artist: 'A. Painter',
+      year: 1961,
+      medium: 'Oil on canvas',
+      classification: 'Painting',
+    },
+    {
+      title: 'Study in Grey',
+      artist: 'B. Sculptor',
+      year: 1972,
+      medium: 'Bronze',
+      classification: 'Sculpture',
+    },
+  ];
+
+  it('grounds suggestions in real catalogue metadata when it exists', () => {
+    const bundle = deriveCollectionSuggestions(metadataRows, () => new Date(0));
+
+    expect(bundle.source).toBe('metadata');
+    expect(bundle.generatedAt).toBe(new Date(0).toISOString());
+    // The most frequent artist is included, even though era leads.
+    expect(bundle.suggestions).toContainEqual(
+      expect.objectContaining({ type: 'artist', query: 'A. Painter' })
+    );
+    expect(bundle.suggestions.map((s) => s.type)).toContain('classification');
+    expect(bundle.suggestions.map((s) => s.type)).toContain('medium');
+    expect(bundle.suggestions.map((s) => s.type)).toContain('era');
+    const era = bundle.suggestions.find((s) => s.type === 'era');
+    expect(era?.query).toBe('1954 to 1972');
+    // Every suggested query should be something the search box can run as-is.
+    for (const suggestion of bundle.suggestions) {
+      expect(suggestion.query.trim()).not.toBe('');
+      expect(suggestion.id).toMatch(/^[a-z]+:/);
+    }
+  });
+
+  it('falls back to filename-derived keywords and says so when there is no CSV', () => {
+    const filenameRows: SuggestionSourceRow[] = [
+      { title: 'red barn field', artist: null, year: null, medium: null, classification: null },
+      { title: 'red barn field', artist: null, year: null, medium: null, classification: null },
+      { title: 'sunset over harbor', artist: null, year: null, medium: null, classification: null },
+      { title: 'img 0042', artist: null, year: null, medium: null, classification: null },
+    ];
+
+    const bundle = deriveCollectionSuggestions(filenameRows);
+
+    expect(bundle.source).toBe('filenames');
+    expect(bundle.suggestions.every((s) => s.type === 'keyword')).toBe(true);
+    // A camera-default name carries no signal and must not become a suggestion.
+    expect(bundle.suggestions.some((s) => s.query === 'img 0042')).toBe(false);
+    expect(bundle.suggestions.some((s) => s.query === 'red barn field')).toBe(
+      true
+    );
+  });
+
+  it('is honest about having nothing to suggest rather than inventing queries', () => {
+    const bundle = deriveCollectionSuggestions([]);
+    expect(bundle.source).toBe('filenames');
+    expect(bundle.suggestions).toEqual([]);
+  });
+});
+
 describe('indexing job lifecycle', () => {
   let sqlite: NodeDatabaseSync;
   let env: ReturnType<typeof createEnv>;
@@ -536,6 +610,44 @@ describe('indexing job lifecycle', () => {
       { name: 'b.jpg', type: 'image/jpeg' },
     ]);
     expect(afterComplete.status).toBe(409);
+  });
+
+  it('adds suggested searches to the status payload only once the job completes, and caches them', async () => {
+    const { payload: created } = await createJob(env, [
+      { name: 'sunrise.jpg', size: 1000 },
+    ]);
+    const jobId = created.data.jobId;
+
+    await postBatch(
+      env,
+      jobId,
+      [{ name: 'sunrise.jpg', type: 'image/jpeg' }],
+      { 'sunrise.jpg': { artist: 'A. Painter', medium: 'Oil on canvas' } }
+    );
+
+    const running = (await (
+      await app.fetch(new Request(`${BASE}/jobs/${jobId}`), env as never)
+    ).json()) as any;
+    expect(running.data.suggestions).toBeNull();
+
+    const completed = (await (
+      await app.fetch(
+        new Request(`${BASE}/jobs/${jobId}/complete`, { method: 'POST' }),
+        env as never
+      )
+    ).json()) as any;
+    expect(completed.data.suggestions.source).toBe('metadata');
+    expect(
+      completed.data.suggestions.suggestions.some(
+        (s: { query: string }) => s.query === 'A. Painter'
+      )
+    ).toBe(true);
+
+    // Second read must return the same bundle from cache, not a fresh compute.
+    const polledAgain = (await (
+      await app.fetch(new Request(`${BASE}/jobs/${jobId}`), env as never)
+    ).json()) as any;
+    expect(polledAgain.data.suggestions).toEqual(completed.data.suggestions);
   });
 
   it('marks a job failed only when nothing at all was indexed', async () => {
