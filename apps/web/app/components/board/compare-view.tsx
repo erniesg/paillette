@@ -103,16 +103,14 @@ export const CompareView = () => {
         })}
       </div>
 
-      <p className="text-xs text-white/40">
-        Click the one you want. Either choice is undone with{' '}
-        <kbd className="font-mono text-white/70">U</kbd> on the card.
-      </p>
+      {/* Two pictures and a question need no instructions. The only thing
+          worth a control is the answer neither picture offers. */}
       <button
         type="button"
         onClick={() => setCompare(null)}
         className="border border-white/15 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-white/50 hover:text-white/80"
       >
-        Neither — close
+        Neither
       </button>
     </div>
   );

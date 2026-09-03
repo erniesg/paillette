@@ -20,7 +20,12 @@
 
 import { recallArtwork } from './artwork-index';
 import { toAgentArtworkSummary } from './artwork-summary';
-import { drainFlagChanges, setFlag, type FlagChange } from './flags';
+import {
+  drainFlagChanges,
+  peekFlagChanges,
+  setFlag,
+  type FlagChange,
+} from './flags';
 import { runRedeal, type RedealResult } from './redeal';
 import { getWebMcpState, setCompare } from './store';
 
@@ -76,20 +81,16 @@ export const resolveCompare = (
   setCompare(null);
 };
 
-/**
- * Assemble the turn and clear the journals, so no gesture is reported twice.
- * Draining is the point: the model should see what changed since it last
- * looked, not the whole history restated every turn.
- */
-export const prepareTurn = (text?: string): HumanTurn => {
+const buildTurn = (
+  text: string | undefined,
+  flagsDelta: FlagChange[],
+  compareChoice: CompareChoice | null
+): HumanTurn => {
   const state = getWebMcpState();
-  const compareChoice = pendingCompareChoice;
-  pendingCompareChoice = null;
-
   const trimmed = text?.trim();
   return {
     ...(trimmed ? { text: trimmed } : {}),
-    flagsDelta: drainFlagChanges(),
+    flagsDelta,
     selection: [...state.selection],
     hovered: state.hovered,
     compareChoice,
@@ -102,6 +103,33 @@ export const prepareTurn = (text?: string): HumanTurn => {
       : null,
   };
 };
+
+/**
+ * Assemble the turn and clear the journals, so no gesture is reported twice.
+ * Draining is the point: the model should see what changed since it last
+ * looked, not the whole history restated every turn.
+ *
+ * Only for a turn that is actually going to a model. "Since the last turn"
+ * means since the last time anyone spoke to it, which is not the same as
+ * since the last thing the human did.
+ */
+export const prepareTurn = (text?: string): HumanTurn => {
+  const compareChoice = pendingCompareChoice;
+  pendingCompareChoice = null;
+  return buildTurn(text, drainFlagChanges(), compareChoice);
+};
+
+/**
+ * The same turn, without emptying anything.
+ *
+ * A deterministic redeal is a turn the human took on the board and no model
+ * ever saw. Draining there would silently spend their gestures on nothing:
+ * they would flag three works, press Enter, watch the board deal — and the
+ * next thing they typed would reach the agent with nothing attached, which is
+ * precisely the behaviour the payload exists to prevent.
+ */
+export const peekTurn = (text?: string): HumanTurn =>
+  buildTurn(text, peekFlagChanges(), pendingCompareChoice);
 
 /** Does this turn have anything in it at all? */
 export const isEmptyTurn = (turn: HumanTurn) =>
@@ -126,15 +154,15 @@ export const submitHumanTurn = async (
   text?: string,
   options: { signal?: AbortSignal } = {}
 ): Promise<HumanTurnOutcome> => {
-  const turn = prepareTurn(text);
+  if (text?.trim()) return { kind: 'agent', turn: prepareTurn(text) };
 
-  if (turn.text) return { kind: 'agent', turn };
-
-  // No words. If anything is picked, the picks are the instruction.
+  // No words. If anything is picked, the picks are the whole instruction, and
+  // no model is involved — so the gestures are only reported, not spent.
   const result = await runRedeal({
     by: 'human',
     ...(options.signal ? { signal: options.signal } : {}),
   });
+  const turn = peekTurn();
   if (!result.ok && result.error.code === 'NO_EXEMPLARS') {
     return { kind: 'noop', turn };
   }

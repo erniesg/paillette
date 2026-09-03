@@ -5,7 +5,8 @@
  * photographer has had in their fingers since 2007, doing the exact job they
  * have always done: culling. Nothing is invented here, which is the point.
  * The paradigm is borrowed whole and pointed at 63,253 works instead of a
- * card full of raw files.
+ * card full of raw files. Shift-click and `Esc` are the other borrowed pair:
+ * they have meant "and this one" and "never mind" since the Finder.
  *
  * And **Enter on an empty prompt bar redeals**, with no model call anywhere in
  * the path. That single binding is the argument the whole submission rests on:
@@ -17,6 +18,7 @@
  */
 
 import { toggleFlag } from './flags';
+import { clearSelection } from './selection';
 import { getWebMcpState, setCompare } from './store';
 import { submitHumanTurn, type HumanTurnOutcome } from './turn';
 
@@ -75,6 +77,16 @@ export const handleBoardKey = (
     return true;
   }
 
+  // Escape is the way out of a text field and into the board. Without it the
+  // culling keys are unreachable for as long as a caret is parked somewhere,
+  // and "click on the background first" is not a thing anyone should have to
+  // be told. Conventional enough to need no explaining: Escape has meant
+  // "never mind" in every text field since there were text fields.
+  if (event.key === 'Escape' && isTextEntry(document.activeElement)) {
+    (document.activeElement as HTMLElement).blur();
+    return true;
+  }
+
   // Every other binding is a bare letter, so it must not fire while someone is
   // typing a word that happens to contain it.
   if (isTextEntry(document.activeElement)) return false;
@@ -90,6 +102,15 @@ export const handleBoardKey = (
     toggleFlag(hovered, key === 'p' ? 'pick' : key === 'x' ? 'reject' : 'clear', {
       by: 'human',
     });
+    return true;
+  }
+
+  // Escape drops "these" without touching a single judgement. Pointing at
+  // something is not an opinion about it, so it has to be cheap to undo.
+  if (event.key === 'Escape') {
+    if (getWebMcpState().selection.length === 0) return false;
+    event.preventDefault();
+    clearSelection();
     return true;
   }
 

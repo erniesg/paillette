@@ -15,6 +15,7 @@
  *                              data-flag-by="human" | "agent"
  *                              data-flag-provisional="true" | "false"
  *                              data-hovered="true" | "false"
+ *                              data-selected="true" | "false"
  *   .paillette-flag-badge      the corner control
  *   .paillette-flag-button     data-flag-action="pick" | "reject" | "clear"
  *                              aria-pressed
@@ -24,9 +25,15 @@
  * needing to know which colour the agent got.
  */
 
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { installBoardKeyboard } from '~/lib/webmcp/board-keyboard';
 import { toggleFlag } from '~/lib/webmcp/flags';
+import { toggleSelection } from '~/lib/webmcp/selection';
 import {
   getWebMcpState,
   getWebMcpServerState,
@@ -65,6 +72,13 @@ const useHovered = (artworkId: string): boolean =>
     () => false
   );
 
+const useSelected = (artworkId: string): boolean =>
+  useSyncExternalStore(
+    subscribeWebMcpState,
+    () => getWebMcpState().selection.includes(artworkId),
+    () => false
+  );
+
 /**
  * Everything a result card needs to become flaggable, in one spread.
  *
@@ -75,11 +89,24 @@ const useHovered = (artworkId: string): boolean =>
 export const useCardFlagProps = (artworkId: string) => {
   const flag = useFlag(artworkId);
   const hovered = useHovered(artworkId);
+  const selected = useSelected(artworkId);
 
   const point = useCallback(() => setHoveredArtwork(artworkId), [artworkId]);
   const unpoint = useCallback(() => {
     if (getWebMcpState().hovered === artworkId) setHoveredArtwork(null);
   }, [artworkId]);
+
+  // Capture, so shift-click means "these" rather than opening the dialog the
+  // card's own click handler would. A plain click is left completely alone.
+  const select = useCallback(
+    (event: MouseEvent | ReactMouseEvent) => {
+      if (!event.shiftKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSelection(artworkId);
+    },
+    [artworkId]
+  );
 
   return {
     'data-artwork-id': artworkId,
@@ -87,10 +114,12 @@ export const useCardFlagProps = (artworkId: string) => {
     'data-flag-by': flag?.by ?? 'none',
     'data-flag-provisional': String(Boolean(flag?.provisional)),
     'data-hovered': String(hovered),
+    'data-selected': String(selected),
     onMouseEnter: point,
     onMouseLeave: unpoint,
     onFocus: point,
     onBlur: unpoint,
+    onClickCapture: select,
   } as const;
 };
 
@@ -109,14 +138,28 @@ export const FlagBadge = ({
   title?: string;
 }) => {
   const flag = useFlag(artworkId);
+  const hovered = useHovered(artworkId);
   const suffix = title ? ` ${title}` : '';
+
+  // Quiet until it has something to say.
+  //
+  // Twelve cards times three controls is thirty-six letters of chrome on a
+  // board whose whole point is that the pictures are the only loud thing on
+  // it. A flag that has been set is a mark and stays visible; the controls
+  // for setting one appear on the card you are actually pointing at, which is
+  // the only card the keys can reach anyway. Kept in the DOM rather than
+  // unmounted, so tab order and screen readers are unaffected.
+  const quiet = !flag && !hovered;
 
   return (
     <div
-      className="paillette-flag-badge flex items-center gap-1"
+      className={`paillette-flag-badge flex items-center gap-1 ${
+        quiet ? 'opacity-0 focus-within:opacity-100' : 'opacity-100'
+      }`}
       data-flag={flag?.flag ?? 'none'}
       data-flag-by={flag?.by ?? 'none'}
       data-flag-provisional={String(Boolean(flag?.provisional))}
+      data-quiet={String(quiet)}
     >
       {ACTIONS.map(({ action, key, label }) => {
         // "Unflag" is not a state, so it is a plain button rather than a
@@ -128,8 +171,10 @@ export const FlagBadge = ({
             type="button"
             data-flag-action={action}
             {...(pressed === undefined ? {} : { 'aria-pressed': pressed })}
+            // The accessible name carries the word; the button carries the
+            // key. A tooltip restating a control the letter already names is
+            // the interface explaining itself.
             aria-label={`${label}${suffix} (${key})`}
-            title={`${label} — ${key}`}
             onClick={(event) => {
               // The card behind this opens a dialog on click.
               event.stopPropagation();

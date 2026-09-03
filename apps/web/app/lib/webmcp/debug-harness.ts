@@ -156,3 +156,19 @@ export const installWebMcpDebugHarness = (): (() => void) => {
     }
   };
 };
+
+/**
+ * Claim `document.modelContext` as this module loads, rather than waiting for
+ * a component to mount.
+ *
+ * A genuine host is present before a single line of the page's script runs, so
+ * anything that asks "is there a host?" during mount must find the same answer
+ * with the stub as it would with Chrome. It did not: the bridge installed the
+ * stub from an effect, effects run child-first, and the in-page prompt bar —
+ * which checks once on mount and renders nothing if there is no host — had
+ * already decided there was none. The result was a page with the whole tool
+ * surface registered and no way to talk to it.
+ *
+ * Still inert without `?webmcp-debug`, and still refuses to shadow a real host.
+ */
+if (isWebMcpDebugRequested()) installWebMcpDebugHarness();

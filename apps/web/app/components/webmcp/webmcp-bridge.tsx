@@ -26,6 +26,7 @@ import {
 } from '~/lib/webmcp/store';
 import { summariseToolResult } from '~/lib/webmcp/summarise';
 import { createPailletteTools } from '~/lib/webmcp/tools';
+import { installTurnBridge } from '~/lib/webmcp/turn-bridge';
 
 export function WebMcpBridge() {
   const location = useLocation();
@@ -43,7 +44,11 @@ export function WebMcpBridge() {
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    // The debug harness must install its stub host before registration runs.
+    // The stub host itself is already up — `debug-harness` claims
+    // `document.modelContext` as its module loads, because a real host is
+    // there before any of this page's script runs and anything that checks
+    // for one on mount has to find the same thing either way. This call only
+    // re-binds the driver.
     const disposeHarness = isWebMcpDebugRequested()
       ? installWebMcpDebugHarness()
       : () => {};
@@ -59,6 +64,9 @@ export function WebMcpBridge() {
     // belongs to so the summary can be shaped per tool.
     const toolNameByActivityId = new Map<string, string>();
     const disposeObserver = observePublicSearchResponses();
+    // Installed after the observer and disposed before it, so the two fetch
+    // wrappers unwind in the order they were laid down.
+    const disposeTurnBridge = installTurnBridge();
     const disposeTools = registerTools(
       createPailletteTools({
         navigate: (to, options) => navigateRef.current(to, options),
@@ -102,6 +110,7 @@ export function WebMcpBridge() {
 
     return () => {
       disposeTools();
+      disposeTurnBridge();
       disposeObserver();
       setBridgeAttached(false);
       disposeHarness();
