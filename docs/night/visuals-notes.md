@@ -62,6 +62,34 @@ redeal is not allowed to overrule a decision the human already made.
 If you pass the agent's provisional picks in there too, provisional marks will
 pin the board, which is probably wrong: they have not been confirmed.
 
+### The culling keys — reuse this rather than rewriting it
+
+`app/components/board/use-culling-keys.ts` binds Lightroom's `P`/`X`/`U`/`C` to
+whichever card the human is pointing at. It is presentational in the sense that
+it owns no state — you give it a target id and a callback.
+
+```ts
+useCullingKeys({
+  targetId,                    // card under the cursor, or holding focus
+  onFlag: (id, flag) => {},    // flag is 'pick' | 'reject' | null (U clears)
+  onCompare: () => {},         // C; omit it and C does nothing
+  enabled: !compareIsOpen,     // off while a modal owns the keyboard
+});
+```
+
+Two things it already handles that are easy to miss and expensive to get wrong:
+
+- **It stays out of the way while the human is typing.** The utterance bar and
+  the board share one keyboard. Without the guard, typing "explore" into the bar
+  picks and rejects things behind it. Inputs, textareas, selects,
+  `contenteditable` and `role=textbox|combobox|searchbox` all suppress it.
+- **It leaves Cmd/Ctrl/Alt alone**, because Cmd-P is print and Ctrl-U is view
+  source.
+
+The target has to be able to hold focus, or the keyboard path silently dies.
+`LightTableCard` now carries `tabIndex={0}` and an accessible name for exactly
+this reason — if you build your own tile, do the same.
+
 ### The tray
 
 `DealBoard` takes `tray?: readonly T[]`. **Passing `[]` and passing `undefined`

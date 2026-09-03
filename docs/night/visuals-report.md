@@ -3,277 +3,273 @@
 Branch `night/visuals`, cut from `origin/deploy-nga-open-access`. Section 7 of
 the brief.
 
-Screenshots of everything below are in `docs/night/shots/`. They are captured
-headlessly from a real dev server by `scripts/capture-board-shots.mjs` and
-`scripts/capture-search-shots.mjs`, so what is in the PNG is what the browser
-painted.
+**Read this section first if you are writing the submission.** The rest of the
+document backs it up.
+
+- Everything this lane built lives on a **demo harness at `/night/deal`**, not
+  on the product page at `/nga/search`. The harness is real, runs in a browser
+  and is driven by a checked-in script — but it is a harness, and it uses a
+  fixed set of 40 works instead of the 63,253-work collection.
+- The **search page restyle is on the real page** and is the one visual change a
+  visitor to `/nga/search` would actually see.
+- **Do not claim the deal animation, the compare room or the ledger appear in
+  the product.** They are components with tested interfaces, proven in a
+  harness, waiting on flag state from the shared-state lane.
 
 ---
 
-## Checks
+## Checks, exactly as they ran
 
 | | |
 | --- | --- |
-| `pnpm --filter web test` | **65 files / 658 tests, all passing** |
-| `pnpm --filter web typecheck` | **fails — one error, pre-existing, not mine** |
+| `pnpm --filter web test` | **66 files / 677 tests, all passing** |
+| `pnpm --filter web typecheck` | **fails — one error, pre-existing, not this lane's** |
+| `node scripts/drive-deal-keyboard.mjs` | **21 assertions, passing, 3 consecutive runs** |
+| `pnpm --filter api test` | **not run — this lane touched no API code** |
 
-The typecheck error is:
+The typecheck error, in full:
 
 ```
 app/components/webmcp/agent-activity-panel.tsx(153,9):
   error TS6133: 'runningEntry' is declared but its value is never read.
 ```
 
-It is present at `25ae39b`, the commit this lane started from, in a file that
-is clean in git and that the brief forbids this lane from touching because a
-human is editing it locally. It is a one-line deletion for whoever owns that
-file. **It is the only error typecheck reports** — nothing this lane wrote or
-changed contributes one.
+It exists at `25ae39b`, the commit this lane started from. The file is clean in
+git and the brief forbids this lane touching it because a human is editing it
+locally. It is a one-line deletion for whoever owns it. It is the only error
+typecheck reports.
 
-Test counts, for the record: the brief's baseline is 59 files / 593 tests. HEAD
-was already at 62 / 630 when this session started (an earlier session on this
-same lane had added the board). This session took it to 65 / 658 — three new
-files, 28 new tests.
+Test baseline from the brief is 59 files / 593 tests. This lane's branch is at
+66 / 677.
+
+---
+
+## Where this lane actually is against the brief's triage
+
+Section 8 lists ten items. Four are this lane's.
+
+| # | Item | State |
+| --- | --- | --- |
+| 5 | Provenance ink | **Done.** On the real page and the harness. |
+| 6 | The deal animation | **Done in the harness.** Not on `/nga/search` — needs flag state. |
+| 8 | Compare two-up | **Done in the harness.** Component is complete and separable. |
+| 9 | Ledger filmstrip | **Built and tested. Not wired into any page.** |
+
+Items 1–4 (flags state, gestures-as-turn, `search_by_exemplars`, `redeal`)
+belong to the shared-state lane and **had not landed on this branch** when this
+was written — nothing sets `data-flag`, nothing passes `preservedIds`. That is
+why 6, 8 and 9 stop at the harness: the presentation is finished, the state it
+presents is not this lane's to build.
+
+---
+
+## What is demonstrably true
+
+Each of these is checked by `scripts/drive-deal-keyboard.mjs`, which drives a
+real browser against a running dev server and exits non-zero on any failure. It
+was run three times in a row with identical results.
+
+1. A card can hold focus, and is reachable by pressing Tab alone.
+2. `P` picks the focused card, `X` rejects it, `U` clears it.
+3. Nothing fires when no card is targeted, or while the human is typing into a
+   field, or under Cmd/Ctrl.
+4. `C` opens the compare room; an arrow key answers it and closes it.
+5. **Picks keep their exact slot index through a redeal** — asserted by
+   comparing slot number and title before and after, not by eye.
+6. Both inks are on screen at once after the agent proposes and the human
+   answers, read from computed styles rather than from class names.
+7. Over three consecutive redeals the board still deals twelve, never deals the
+   same work twice, and picks survive.
+
+Separately verified by script:
+
+- **The words that narrated the mechanism are gone.** A script loads the page,
+  walks the loop and greps the rendered text for eight banned strings across
+  five states. All clean. With no flags set there is now **no wall label at
+  all** rather than a sentence explaining that there is nothing to say.
+- The utterance bar renders with a transparent background, no border, no corner
+  radius, EB Garamond, graphite text and a graphite focus rule — read from
+  `getComputedStyle`, not assumed.
+
+Reduced motion is captured as a second full set of screenshots taken in a
+browser context with `prefers-reduced-motion: reduce`, so "it degrades cleanly"
+is a picture and not a promise. With the preference set there is no animation
+and picks are collected at the front of the board instead.
 
 ---
 
 ## What shipped
 
-### 1. The deal — the money shot
+### On the real page (`/nga/search`)
 
-`app/components/board/deal-board.tsx`, `app/lib/board/deal-plan.ts`.
+The light-table restyle. Charcoal `#1a1a1d` rather than black, so the dark
+passages of a painting have an edge to sit against. Cards are slides with a
+mount, a well and real shadow. Sort, view and search-mode controls became
+hairline rails whose selected segment is marked by ink and a single underline
+instead of a filled pill. One serif for wall labels and for the human's own
+words wherever they appear; one mono for catalogue data. The page previously
+carried fuchsia and cyan accents, which put three saturated colours on screen
+competing with the paintings.
 
-Twelve cards. On a redeal, picks do not move, rejects slide left into a narrow
-tray that stays on screen, newcomers arrive from the right on a 15 ms stagger.
-420 ms, `cubic-bezier(0.22, 1, 0.36, 1)`, no overshoot.
+The utterance bar is now one graphite rule under the words, in the same serif
+as the search field above it.
 
-The continuity is a *layout* result rather than an animation one, which is the
-part worth knowing. `planDeal` pins held ids to the slot index they already
-occupied, so a held card renders in the same grid cell, Framer Motion measures
-a delta of zero, and animates nothing. The picks do not "animate back to where
-they were" — they are never anywhere else. Framer Motion was already a
-dependency; nothing was added.
+Light theme is not regressed — it is a paper light table with lit slides.
 
-- `docs/night/shots/deal-animation.webm` — the loop. A still cannot carry
-  this; "the picks stayed" is a claim about two frames.
-- `05-deal-midflight.png` — caught 180 ms in, newcomers still arriving.
-- `06-deal-settled.png`, `01-deal-fresh.png`.
+### Components, complete and tested, proven in the harness
 
-**Reduced motion:** with `prefers-reduced-motion: reduce`, no animation, and
-picks are collected at the front instead — see `06-deal-settled-reduced.png`,
-where the picks occupy the leading slots. Every board shot has a `-reduced`
-twin captured in a second browser context with the preference set; the
-light-theme shots are captured once.
+**The deal** (`deal-board.tsx`, `deal-plan.ts`). Twelve cards. On a redeal picks
+do not move, rejects slide left into a tray that stays on screen, newcomers
+arrive from the right on a 15 ms stagger. 420 ms, ease-out, no overshoot. The
+continuity is a layout result rather than an animation one: held ids are pinned
+to the slot they already occupied, so the delta is zero and nothing animates.
+The picks are never anywhere else. Framer Motion was already a dependency.
 
-### 2. Provenance ink
+**Provenance ink** (`provenance.ts`, tokens in `tailwind.css`). Graphite for the
+human, one cyan for the agent, dashed while the agent's mark is unconfirmed.
+Graphite is achromatic on purpose, so the single coloured thing on screen always
+means the agent. A reject desaturates the *image*, never the card — filtering
+the card would drain the colour out of the agent's ink too, and an agent's
+reject would stop being distinguishable from a human's.
 
-`app/components/board/provenance.ts`, tokens in `app/tailwind.css`.
+**Two-up** (`two-up-compare.tsx`). Two works at scale on the wall ground, hung
+on one centre line with labels on one baseline, the question in the serif
+between them, and nothing else on screen — no toolbar, no title bar, no visible
+close button. The keyboard is the interface; the close control is clipped to one
+pixel until focused.
 
-Graphite for the human, one cyan for the agent, dashed while the agent's mark
-is unconfirmed. Applied to flags, tile frames, ledger captions, the compare
-question, and a pulse on cards the agent is touching.
+**The ledger** (`ledger-filmstrip.tsx`). One frame per turn along the bottom
+edge, each a six-thumbnail miniature captioned in the ink of whoever took the
+turn. Clicking restores that board. Frames are data — ids and a string — not
+screenshots.
 
-`03b-ink-detail.png` is the crop that shows the whole vocabulary at once: a
-solid graphite frame and badge (human pick), a dashed cyan frame and badge with
-a desaturated image (agent's unconfirmed reject), side by side. No legend.
-
-Two decisions that carry weight:
-
-- **Graphite is achromatic on purpose.** The human's mark is not "a colour", it
-  is the absence of one, so the single coloured ink on screen always means the
-  agent.
-- **A reject desaturates the image, never the card.** Filtering the whole card
-  drains the colour out of the agent's ink along with the painting, and an
-  agent's reject becomes indistinguishable from a human's — the one distinction
-  the palette exists to make.
-
-The whole thing is CSS keyed on DOM attributes (`data-flag`, `data-hand`,
-`data-provisional`, `data-agent-active`), not a component. See the hooks
-section below.
-
-### 3. The light table
-
-`app/tailwind.css`, applied to `galleries.$galleryId.search.tsx`.
-
-Charcoal `#1a1a1d`, not black — a black page makes the dark passages of a
-painting dissolve and leaves every work floating in nothing. Cards are slides
-with a pale mount, a well, and real shadow. Chrome is hairlines: the sort, view
-and search-mode controls stopped being filled pills and became hairline rails
-whose selected segment is marked by ink and one underline.
-
-One serif (EB Garamond) for wall labels and the human's own words wherever they
-appear; one mono (IBM Plex Mono) for catalogue data. The page previously had
-fuchsia and cyan accents, which put three saturated colours on screen competing
-with the paintings and cost the agent's ink its meaning.
-
-- `11-search-masonry.png`, `12-search-salon.png`, `13-search-table.png`
-- `14-search-light-theme.png` — light theme is not regressed; it is a paper
-  light table with lit slides. Also `07-deal-light-theme.png`,
-  `23-ledger-light-theme.png`, `24-two-up-light-theme.png`.
-
-### 4. Two-up as a room
-
-`app/components/board/two-up-compare.tsx`. `20-two-up.png`,
-`24-two-up-light-theme.png`.
-
-Two works at large scale on the wall ground, the question in the serif between
-them like a wall label, and nothing else on screen at all — no toolbar, no
-title bar, no visible close button. Hung on one centre line with labels on one
-baseline, because two works centred individually read as two loose pictures
-rather than a pair being compared.
-
-The keyboard is the interface, since there is no chrome to click: left and
-right answer, Escape leaves, and a real labelled close button sits clipped to
-one pixel until a keyboard focuses it. The camera sees an empty wall; a
-keyboard user gets a working control.
-
-It reports a **gesture** — which side was clicked — and never touches flag
-state. See the hooks section.
-
-### 5. The ledger
-
-`app/components/board/ledger-filmstrip.tsx`. `21-ledger.png`,
-`22-ledger-detail.png`.
-
-A thin strip along the bottom edge, one frame per turn, each a six-thumbnail
-miniature of the board captioned in the ink of whoever took the turn. Clicking
-a frame restores that board. Frames are data — a handful of ids and a string,
-reusing thumbnails the board already loaded.
-
-`22-ledger-detail.png` is the one to look at: six frames, the first three
-sharing a board and the last three visibly diverging, captions alternating
-graphite and cyan. Nothing had to *say* the board drifted.
-
-Six thumbnails rather than twelve, because at 100px a full board is a texture.
-The works that did not fit are counted in the caption and in the accessible
-name.
-
-**It is built but not wired into the real page.** That is deliberate — the
-activity panel is off-limits, so wiring is left as a one-element change. See
-the hooks section.
+**The culling keys** (`use-culling-keys.ts`). Lightroom's `P`/`X`/`U`/`C`, acting
+on the card under the cursor or holding focus.
 
 ---
 
-## Two bugs found and fixed on the way
+## Bugs found by running it, not by testing it
 
-Both were found by looking rather than by a failing test, which is worth
-saying out loud.
+Worth recording because all four were invisible to a green test suite.
 
-**Hydration.** `usePrefersReducedMotion` read the media query in a `useState`
-initialiser, so for anyone who actually has the preference set, the client's
-first render said `true` while the server had rendered `false`. React logged a
-mismatch and discarded the server markup — the one path built for people who
-asked for less motion was also the one path throwing away its own HTML. Caught
-by the capture script's console listener during the reduced-motion run. Now
-`useSyncExternalStore` with an explicit server snapshot, and there is a test
-that renders through `renderToString` to hold it.
+1. **The keyboard path was dead.** `LightTableCard` rendered a *disabled* button
+   whenever it had nothing to open, which took every card out of the tab order.
+   Any board that was not also click-to-open could not be culled by keyboard at
+   all. There was even a test asserting this: its name said "is not a button
+   when there is nothing to open" and its body required a disabled button, which
+   is still a button and is not focusable. The name was right.
+2. **Hydration.** `usePrefersReducedMotion` read the media query in a `useState`
+   initialiser, so for anyone who actually has the preference set the client's
+   first render disagreed with the server and React discarded the markup — the
+   one path built for people who asked for less motion was the one path throwing
+   away its own HTML. Caught by a console listener in the capture script.
+3. **Contrast.** The token block documented four ratios and three were wrong,
+   measured against the ground while the text sits on the lighter slide.
+   `--ink-human-faint` was shipping at 4.05:1 under a comment claiming 4.6:1 and
+   requiring 4.5:1. Raised; worst case is now 5.0:1.
+4. **Tailwind precedence.** The `lt-` classes sat after `@tailwind utilities` and
+   silently beat every utility, which put the search submit button under the
+   field instead of inside it. Moving them into `@layer components` fixed the
+   class of bug rather than the instance.
 
-**Contrast.** The token block documented four contrast ratios and three were
-wrong, because they were measured against `--lt-ground` while almost all of the
-text sits on `--lt-slide`, which is lighter and therefore worse.
-`--ink-human-faint` was shipping at 4.05:1 while the comment directly above it
-claimed 4.6:1 and said the line had to clear 4.5:1 — and `.lt-catalogue` uses
-that token at 10px, so the smallest text on the board was the only text
-failing. Raised `faint` to 0.58 and `soft` to 0.7; worst case is now 5.0:1 and
-6.5:1. Verified numbers are in the comment, along with which surface they were
-measured on.
-
-A third, smaller one: the `lt-` classes were plain CSS after
-`@tailwind utilities`, so every one of them silently beat every utility. That
-put the search submit button under the field instead of inside it, with no
-warning. Moving the block into `@layer components` fixes the class of bug
-rather than the instance; verified against the built stylesheet.
+`aria-modal="true"` on the compare room was also a false claim until this round:
+without a focus trap, Tab walked out into the grid behind it, which is still
+focusable and now invisible.
 
 ---
 
-## Hooks this lane depends on
+## What I cut, and why
 
-**None of them exist yet on this branch.** I checked
-`galleries.$galleryId.search.tsx` and `app/lib/webmcp/`: nothing sets
-`data-flag`, nothing passes `preservedIds`. Everything above is styled against
-the contract, so nothing here was blocked and nothing here blocks that lane.
+- **Named-axis atlas, drag-to-reorder, real-scale salon** — instructed. The
+  atlas and table views inherited the ground and the fonts and were not
+  redesigned.
+- **Wiring the ledger into `/nga/search`.** The activity panel it would replace
+  is off-limits, and this lane should not unilaterally decide it gets hidden.
+  Built, tested, left as a one-element change. The brief's instruction stands:
+  if the ledger lands, hide the activity panel rather than showing both.
+- **A visible dismiss control in two-up.** Escape, a click on the ground, and a
+  focus-revealed button. A visible × would be the only chrome on a screen whose
+  entire argument is that there is none.
+- **Naming what a compared pair has in common.** The harness pairs on the
+  fixture's `motif` field, but that is the *spotlight a work was drawn from*,
+  not a description of it — two works out of "The Feast of the Gods" are both
+  Madonnas. A label reading "Both are The Feast of the Gods" is false about the
+  pictures under it, so the agent asks the plain optometrist's question instead.
 
-The full contract, with the edges that will go wrong, is in
+---
+
+## What is still wrong
+
+1. **The deal, the ledger and two-up are not in the product.** This is the
+   biggest gap and it is a dependency, not an oversight. They need flag state
+   and `preservedIds` from the shared-state lane.
+2. **120 occurrences of the old palette remain** in the search route — the
+   settings drawer, the image-search panel, the colour rail, most error states.
+   They do not break; they flip correctly in light theme through a
+   compatibility shim. They are still wearing fuchsia, which is a third colour
+   on a page arguing there are two.
+3. **That shim is a pile of `!important` selectors** matching Tailwind class
+   names. It predates this lane and is what keeps the untokenised chrome
+   working. It should die when item 2 is done.
+4. **The site header and the utterance bar are restated from CSS, not fixed at
+   source.** Both belong to other lanes, so `tailwind.css` overrides them scoped
+   to `.lt-ground`. This works and leaves those components unchanged elsewhere,
+   but it is an override block that will rot if they change.
+5. **Quieting the signup CTA was a product decision made by a visuals lane.** A
+   solid white button was the loudest thing on screen after the works, so it is
+   now hairline-outlined. Someone should confirm that.
+6. **Keyboard movement between cards is Tab only.** There is no arrow-key
+   navigation across the grid, so reaching card twelve takes twelve Tabs.
+7. **The atlas view is untouched** beyond ground and fonts.
+
+### Do not misread the screenshots
+
+- The search shots are captured against a **stubbed search endpoint** — the real
+  one needs a bearer token a dev server does not have. The stub replaces the
+  transport only; everything below the fetch is the real page. The fixture sets
+  no `source` field, so the table view's Source column reads "National Gallery
+  Singapore" for NGA works. **That is a capture artefact, not a data bug.**
+- Those shots prove nothing about **retrieval quality**. The ranking is the
+  fixture's order, not the search engine's.
+- The utterance bar appears in those shots only because the capture **stubs the
+  presence of `document.modelContext`** so the bar renders. It does not make the
+  agent work, and the shot is not evidence that it does.
+- The harness's redeal scores works by shared `motif`, a stand-in for Rocchio
+  over CLIP. It demonstrates the *interaction*, not the retrieval.
+
+---
+
+## Hooks needed from the shared-state lane
+
+Full contract, including the edges that will go wrong, is in
 `docs/night/visuals-notes.md`. In short:
 
-- **`data-flag` / `data-hand` / `data-provisional` / `data-agent-active`** on
-  the element carrying `class="lt-slide"`. A `data-flag` with no `data-hand`
-  falls back to graphite and will silently read as the human's mark.
-- **`preservedIds`** on `DealBoard` — the human's picks specifically.
-- **`tray={[]}` vs `tray={undefined}`** are different: an empty array reserves
-  the gutter, `undefined` omits it. A culling board must pass an array from its
-  first deal or the gutter appearing mid-session drags every held pick
-  sideways.
+- `data-flag` / `data-hand` / `data-provisional` / `data-agent-active` on the
+  element carrying `class="lt-slide"`. **A `data-flag` with no `data-hand` falls
+  back to graphite and silently reads as the human's mark.**
+- `preservedIds` on `DealBoard` — the human's picks specifically.
+- `tray={[]}` and `tray={undefined}` differ: an empty array reserves the gutter,
+  `undefined` omits it. A culling board must pass an array from its first deal,
+  or the gutter appearing mid-session drags every held pick sideways.
 
 ---
 
-## What I cut
+## Reproducing any of this
 
-- **Named-axis atlas, drag-to-reorder, real-scale salon** — as instructed. The
-  existing atlas and table views were left on the same tokens but not
-  redesigned.
-- **Wiring the ledger into `/nga/search`** — the activity panel is off-limits
-  and this lane should not be the one to decide it gets hidden. Built, tested,
-  and left as a one-element change.
-- **A visible dismiss control in two-up.** Escape, a click on the ground, and a
-  focus-revealed button. A visible × would have been the only piece of chrome
-  in a screen whose entire argument is that there is none.
+```sh
+pnpm --filter web dev --port 5211
 
----
+node scripts/drive-deal-keyboard.mjs http://localhost:5211   # 21 assertions
+node scripts/capture-board-shots.mjs  http://localhost:5211  # board, both motion prefs
+node scripts/capture-search-shots.mjs http://localhost:5211  # the real page
+node scripts/capture-deal-video.mjs   http://localhost:5211  # the deal, moving
+```
 
-## What still looks bad
-
-Honestly, and in the order I would fix it.
-
-1. **The search page's secondary chrome is not tokenised.** 120 occurrences of
-   `white/…`, `text-white`, `fuchsia-`, `cyan-` and friends remain in that
-   file. The surfaces you see first — ground, cards, rails, search field,
-   result bar, agent note — are done. The settings drawer, the image-search
-   panel, the colour-sort rail and most error states are not. They do not
-   *break*: they still flip correctly in light theme via the
-   `.themeable-surface` compatibility shim in `tailwind.css`. They are just
-   still wearing the old palette, and the fuchsia in the settings drawer is a
-   third colour on a page whose argument is that there are two.
-
-2. **That light-theme shim is a pile of `!important` selectors** matching on
-   Tailwind class names (`[class~='bg-white/[0.04]']`). It predates this lane
-   and I did not remove it, because it is what keeps the untokenised chrome
-   working. It should die when item 1 is done.
-
-3. **The atlas view is untouched.** It inherited the ground and the fonts and
-   nothing else.
-
-4. **The two-up hover dims the opposite work** rather than lighting the hovered
-   one, so the screen never gains brightness. I think this is right, but it is
-   subtle enough that it may read as nothing happening.
-
-5. **The site header is restated from CSS, not fixed at source.**
-   `public-shell.tsx` hard-codes a near-black band and a solid-white signup
-   button, both wrong on this ground. Rather than edit shared site chrome I
-   overrode them from `tailwind.css` scoped to `.lt-ground`. It works and the
-   header is unchanged elsewhere, but it is an override block that will rot if
-   that component changes. Note this also *quiets the signup CTA* on the search
-   page — a deliberate call, since a solid white button was the loudest thing
-   on screen after the works, but it is a product decision made by a visuals
-   lane and someone should confirm it.
-
-### One thing not to misread in the screenshots
-
-The search shots are captured against a stubbed search endpoint (the real one
-needs a bearer token a dev server does not have), and the fixture does not set
-a `source` field. So the table view's Source column reads "National Gallery
-Singapore" for NGA works. **That is an artefact of my capture fixture, not a
-data bug in the page.** The stub replaces the transport only; everything below
-the fetch is the real page. What these shots do not prove is retrieval quality
-— the ranking is the fixture's order, not the search engine's.
-
----
+`/night/deal` is the live harness for the deal, two-up, the ledger and the keys.
 
 ## Where to look, in one minute
 
-1. `docs/night/shots/deal-animation.webm` — the thesis.
+1. `docs/night/shots/deal-animation.webm` — the thesis; a still cannot carry it.
 2. `docs/night/shots/03b-ink-detail.png` — two hands, no legend.
 3. `docs/night/shots/24-two-up-light-theme.png` — the ten-second beat.
 4. `docs/night/shots/22-ledger-detail.png` — the chat, replaced.
-
-`/night/deal` on a dev server is the live harness for all four.
