@@ -534,7 +534,7 @@ describe('describe_artwork', () => {
           artworkId: 'a',
           collectionId: 'nga',
           caption: 'A grey sea under a wide sky, one small sail off centre.',
-          model: 'gpt-4o-mini',
+          model: 'gpt-5.6-luna',
           cached: false,
           persisted: true,
         },
@@ -546,7 +546,7 @@ describe('describe_artwork', () => {
     expect(result.ok).toBe(true);
     expect(result).toMatchObject({
       caption: 'A grey sea under a wide sky, one small sail off centre.',
-      model: 'gpt-4o-mini',
+      model: 'gpt-5.6-luna',
       cached: false,
       persisted: true,
     });
@@ -570,7 +570,7 @@ describe('describe_artwork', () => {
           artworkId: 'a',
           collectionId: 'nga',
           caption: 'A dense still life.',
-          model: 'gpt-4o',
+          model: 'gpt-5.6-terra',
           cached: false,
           persisted: true,
         },
@@ -579,12 +579,12 @@ describe('describe_artwork', () => {
 
     const result = await call('describe_artwork', {
       artwork: 'a',
-      model: 'gpt-4o',
+      model: 'gpt-5.6-terra',
     });
 
-    expect(result.model).toBe('gpt-4o');
+    expect(result.model).toBe('gpt-5.6-terra');
     expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toMatchObject({
-      model: 'gpt-4o',
+      model: 'gpt-5.6-terra',
     });
   });
 

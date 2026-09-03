@@ -184,7 +184,7 @@ export const getSearchQuotaPublic = async (
 export interface DescribeArtworkInput {
   collectionId: string;
   artworkId: string;
-  model?: 'gpt-4o-mini' | 'gpt-4o';
+  model?: 'gpt-5.6-luna' | 'gpt-5.6-terra';
   signal?: AbortSignal;
 }
 

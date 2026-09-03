@@ -8,7 +8,7 @@
  */
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5.6-luna';
 
 export class OpenAiUnavailableError extends Error {
   readonly status: number;
@@ -96,7 +96,6 @@ export type OpenAiCompletionOptions = {
   json?: boolean;
   model?: string;
   maxTokens?: number;
-  temperature?: number;
   signal?: AbortSignal;
 };
 
@@ -128,8 +127,10 @@ export const openaiCompletion = async (
     body: JSON.stringify({
       model: options.model ?? DEFAULT_MODEL,
       messages: options.messages,
-      max_tokens: options.maxTokens ?? 600,
-      temperature: options.temperature ?? 0,
+      // The GPT-5.x family takes max_completion_tokens and rejects the legacy
+      // max_tokens field; temperature is likewise unsupported there, so the
+      // strict-prompt-plus-JSON approach carries the determinism instead.
+      max_completion_tokens: options.maxTokens ?? 600,
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
     signal: options.signal,

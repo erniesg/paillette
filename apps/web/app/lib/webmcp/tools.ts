@@ -622,7 +622,7 @@ const getSearchQuotaTool = (): WebMcpTool => ({
  * The vision model an agent may spend. Mirrors the API route's allowlist —
  * anonymous callers never choose an arbitrary model.
  */
-const DESCRIBE_MODELS = ['gpt-4o-mini', 'gpt-4o'] as const;
+const DESCRIBE_MODELS = ['gpt-5.6-luna', 'gpt-5.6-terra'] as const;
 
 const describeArtworkTool = (): WebMcpTool => ({
   name: 'describe_artwork',
@@ -650,9 +650,9 @@ const describeArtworkTool = (): WebMcpTool => ({
       model: {
         type: 'string',
         enum: [...DESCRIBE_MODELS],
-        default: 'gpt-4o-mini',
+        default: 'gpt-5.6-luna',
         description:
-          'Which vision model to spend. gpt-4o-mini is the default and is tuned for this; use gpt-4o only for a dense composition where the finer read justifies the extra cost.',
+          'Which vision model to spend. gpt-5.6-luna is the default and is tuned for this; use gpt-5.6-terra only for a dense composition where the finer read justifies the extra cost.',
       },
     },
     required: ['artwork'],

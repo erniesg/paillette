@@ -302,7 +302,7 @@ describe('public-describe route', () => {
         provider: 'nga',
         generated_caption: {
           text: 'A stored description of the work.',
-          model: 'gpt-4o',
+          model: 'gpt-5.6-terra',
           prompt_version: 'describe-artwork-v1',
           generated_at: '2026-09-01T00:00:00.000Z',
         },
@@ -319,7 +319,7 @@ describe('public-describe route', () => {
     expect(response.status).toBe(200);
     expect(payload.data).toMatchObject({
       caption: 'A stored description of the work.',
-      model: 'gpt-4o',
+      model: 'gpt-5.6-terra',
       cached: true,
       persisted: true,
     });
@@ -356,13 +356,13 @@ describe('public-describe route', () => {
     const response = await postDescribe(env, {
       collectionId: 'nga',
       artworkId: ARTWORK_ID,
-      model: 'gpt-4o',
+      model: 'gpt-5.6-terra',
     });
     const payload = (await response.json()) as any;
 
     expect(response.status).toBe(200);
-    expect(payload.data.model).toBe('gpt-4o');
-    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body)).model).toBe('gpt-4o');
+    expect(payload.data.model).toBe('gpt-5.6-terra');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body)).model).toBe('gpt-5.6-terra');
   });
 
   it('degrades to 503 when OPENAI_API_KEY is unset, without calling the model', async () => {

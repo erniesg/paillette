@@ -176,7 +176,7 @@ describe('POST /public-index/metadata-map', () => {
     expect(url).toContain('api.openai.com/v1/chat/completions');
     expect(init.method).toBe('POST');
     const body = JSON.parse(init.body);
-    expect(body.model).toBe('gpt-4o-mini');
+    expect(body.model).toBe('gpt-5.6-luna');
     expect(body.response_format).toEqual({ type: 'json_object' });
     expect(body.messages[0]!.role).toBe('system');
     expect(body.messages[1]!.role).toBe('user');

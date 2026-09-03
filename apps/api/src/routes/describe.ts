@@ -22,9 +22,9 @@ import { openaiCompletion } from '../utils/openai';
 import { OPEN_ACCESS_ORG_ID, resolveOpenAccessProviderScope } from '../utils/orgs';
 import { WEBMCP_INDEX_ORG_ID } from './indexing';
 
-export const DESCRIBE_MODELS = ['gpt-4o-mini', 'gpt-4o'] as const;
+export const DESCRIBE_MODELS = ['gpt-5.6-luna', 'gpt-5.6-terra'] as const;
 export type DescribeModel = (typeof DESCRIBE_MODELS)[number];
-export const DEFAULT_DESCRIBE_MODEL: DescribeModel = 'gpt-4o-mini';
+export const DEFAULT_DESCRIBE_MODEL: DescribeModel = 'gpt-5.6-luna';
 
 /**
  * Tighter than the 24/hour indexing-job budget: one vision call costs more
