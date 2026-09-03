@@ -170,7 +170,7 @@ const capture = (results: ArtworkSearchResult[]) => {
 };
 
 const searchPathFor = (collectionId: string) =>
-  getPublicCollection(collectionId)?.searchPath ?? '/collections/nga/search';
+  getPublicCollection(collectionId)?.searchPath ?? '/nga/search';
 
 // ---------------------------------------------------------------------------
 // Tier 1 — read-only wrappers over the public search routes

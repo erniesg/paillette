@@ -703,7 +703,7 @@ export default function TryPaillette() {
           </Link>
           <nav className="flex items-center gap-4 text-sm">
             <Link
-              to="/collections/nga/search"
+              to="/nga/search"
               className="text-neutral-400 transition-colors hover:text-white"
             >
               Search the NGA collection

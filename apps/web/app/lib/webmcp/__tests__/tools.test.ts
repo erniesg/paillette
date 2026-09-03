@@ -310,9 +310,7 @@ describe('search_by_color', () => {
       'warm',
       'cool',
     ]);
-    expect(result.humanSearchUrl).toBe(
-      '/collections/nga/search?colour=rust'
-    );
+    expect(result.humanSearchUrl).toBe('/nga/search?colour=rust');
   });
 
   it('accepts a raw hex and maps it to the page’s custom swatch form', async () => {
@@ -384,7 +382,7 @@ describe('shared canvas', () => {
       colour: 'navy',
     });
     expect(navigate).toHaveBeenCalledWith(
-      '/collections/nga/search?q=moonlight+on+water&colour=navy'
+      '/nga/search?q=moonlight+on+water&colour=navy'
     );
     expect(result.navigatedTo).toContain('q=moonlight');
   });

@@ -28,7 +28,7 @@ export const PUBLIC_COLLECTIONS: PublicCollectionDescriptor[] = [
     name: 'National Gallery of Art, Washington — open access',
     description:
       'Open-access artworks released by the National Gallery of Art, Washington. Every record carries source-labelled catalogue metadata, an extracted colour palette, and a generated visual description that the semantic index searches over.',
-    searchPath: '/collections/nga/search',
+    searchPath: '/nga/search',
     institution: 'National Gallery of Art, Washington',
     institutionUrl: 'https://www.nga.gov/open-access-images.html',
     rights:
