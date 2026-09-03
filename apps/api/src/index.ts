@@ -17,6 +17,7 @@ import mcpRoutes, { getMcpProtectedResourceMetadata } from './routes/mcp';
 import ngsReviewRoutes from './routes/ngs-review';
 import extractRoutes from './routes/extract';
 import indexingRoutes from './routes/indexing';
+import describeRoutes from './routes/describe';
 import metadataMapRoutes from './routes/metadata-map';
 import { requireAuthOrApiKey } from './middleware/auth';
 import {
@@ -222,6 +223,11 @@ api.route('/galleries/:galleryId/collections', collectionRoutes);
 api.route('/galleries/:galleryId', searchRoutes);
 api.route('/galleries/:galleryId', colorSearchRoutes);
 api.route('/galleries/:galleryId', embeddingsRoutes);
+
+// Mounted under /api (not inside the authenticated /api/v1 sub-app) so it
+// stays anonymous: the route enforces its own model allowlist, per-caller
+// budget and read scope, mirroring the public-index surface.
+app.route('/api', describeRoutes);
 
 // Mount API routes
 app.route('/api/v1', api);
