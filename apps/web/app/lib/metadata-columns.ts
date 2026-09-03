@@ -370,18 +370,27 @@ const DISQUALIFYING_TOKENS: Partial<Record<MappedRole, string[]>> = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Drop diacritics but keep the letter. `Künstler` and `Année` are the same
+ * words as `Kunstler` and `Annee`, and requiring the alias list to carry both
+ * spellings of every accented term would guarantee it carries neither. Han,
+ * Kana and Hangul do not decompose, so CJK headings pass through untouched.
+ */
+const foldDiacritics = (value: string) =>
+  value.normalize('NFD').replace(/\p{M}+/gu, '');
+
+/**
  * Fold a header to its comparable form. Unicode letters and digits survive, so
  * a CJK header is still something rather than the empty string it became when
  * this stripped everything outside `[a-z0-9]`.
  */
 export const normalizeColumnName = (value: string) =>
-  value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  foldDiacritics(value.toLowerCase()).replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** `Artist Display Name` and `artistDisplayName` are the same three words. */
 export const tokenizeColumnName = (value: string) =>
-  value
-    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
-    .toLowerCase()
+  foldDiacritics(
+    value.replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2').toLowerCase()
+  )
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
 

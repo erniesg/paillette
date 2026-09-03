@@ -27,6 +27,15 @@ describe('column normalisation', () => {
     // Stripping to [a-z0-9] used to erase these entirely, so a CJK export had
     // no headers left to match at all.
     expect(normalizeColumnName('作者')).toBe('作者');
+    // Diacritics fold to the base letter so the alias list does not have to
+    // carry two spellings of every accented word.
+    expect(normalizeColumnName('Künstler')).toBe('kunstler');
+    expect(normalizeColumnName('Année')).toBe('annee');
+    expect(tokenizeColumnName('Título del objeto')).toEqual([
+      'titulo',
+      'del',
+      'objeto',
+    ]);
   });
 
   it('splits camelCase and separators into the same words', () => {
@@ -228,12 +237,36 @@ describe('synonym columns', () => {
       ['a.jpg', 'Le Déjeuner', 'É. Manet', '1863', 'huile sur toile'],
     ]);
 
-    const { items } = readMetadataCsv(text, { knownFilenames: ['a.jpg'] });
+    const { items, mapping } = readMetadataCsv(text, {
+      knownFilenames: ['a.jpg'],
+    });
     expect(items['a.jpg']).toMatchObject({
       title: 'Le Déjeuner',
       artist: 'É. Manet',
       medium: 'huile sur toile',
       year: 1863,
+    });
+    // From the headings, not inferred from the values.
+    expect(mapping.mapped.year).toBe('Année');
+    expect(mapping.needsReview).toBe(false);
+  });
+
+  it('reads an accented German export without a second spelling in the aliases', () => {
+    const text = csv([
+      ['Object ID', 'Titel', 'Künstler', 'Entstehungsjahr'],
+      ['436535', 'Weizenfeld mit Zypressen', 'Vincent van Gogh', '1889'],
+    ]);
+
+    const { items, mapping } = readMetadataCsv(text, {
+      knownFilenames: ['436535.jpg'],
+    });
+
+    expect(mapping.mapped.artist).toBe('Künstler');
+    expect(mapping.needsReview).toBe(false);
+    expect(items['436535.jpg']).toMatchObject({
+      title: 'Weizenfeld mit Zypressen',
+      artist: 'Vincent van Gogh',
+      year: 1889,
     });
   });
 });
