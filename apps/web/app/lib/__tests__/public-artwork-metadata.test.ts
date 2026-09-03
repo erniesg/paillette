@@ -1029,3 +1029,57 @@ describe('getPublicDescription', () => {
     expect(getPublicThumbnailUrl(artwork)).toBeNull();
   });
 });
+
+describe('open-access source images', () => {
+  const ngaArtwork = {
+    imageUrl: 'https://paillette-api-stg.berlayar.ai/api/v1/assets/abc/content',
+    thumbnailUrl:
+      'https://paillette-api-stg.berlayar.ai/api/v1/assets/def/content',
+    metadata: {
+      provenance: JSON.stringify({
+        source: 'open_access_art_ingest',
+        provider: 'nga',
+        source_image_url:
+          'https://api.nga.gov/iiif/be97df51-1436-4d6c-a5e9-64c443a0e40b/full/843,/0/default.jpg',
+      }),
+    },
+  };
+
+  it('prefers the institution’s public image over the session-gated asset URL', () => {
+    // The asset URL answers 401 to an anonymous visitor, so a public search
+    // grid built on it renders "No image" for every result.
+    expect(getPublicImageUrl(ngaArtwork)).toBe(
+      'https://api.nga.gov/iiif/be97df51-1436-4d6c-a5e9-64c443a0e40b/full/843,/0/default.jpg'
+    );
+  });
+
+  it('asks IIIF for a grid-sized rendering as the thumbnail', () => {
+    expect(getPublicThumbnailUrl(ngaArtwork)).toBe(
+      'https://api.nga.gov/iiif/be97df51-1436-4d6c-a5e9-64c443a0e40b/full/400,/0/default.jpg'
+    );
+  });
+
+  it('leaves records without a provenance source image untouched', () => {
+    const upload = {
+      imageUrl: 'https://example.test/assets/abc/content',
+      thumbnailUrl: 'https://example.test/assets/def/content',
+      metadata: {},
+    };
+    expect(getPublicImageUrl(upload)).toBe(
+      'https://example.test/assets/abc/content'
+    );
+    expect(getPublicThumbnailUrl(upload)).toBe(
+      'https://example.test/assets/def/content'
+    );
+  });
+
+  it('ignores provenance that is not JSON', () => {
+    const artwork = {
+      imageUrl: 'https://example.test/assets/abc/content',
+      metadata: { provenance: 'acquired 1954, gift of the artist' },
+    };
+    expect(getPublicImageUrl(artwork)).toBe(
+      'https://example.test/assets/abc/content'
+    );
+  });
+});

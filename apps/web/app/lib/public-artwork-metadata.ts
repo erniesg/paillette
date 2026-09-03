@@ -450,6 +450,46 @@ const publicCatalogueDetailsFromGroups = (
 export const getPublicMetadata = (artwork: PublicArtwork) =>
   asRecord(artwork.custom_metadata || artwork.metadata);
 
+/**
+ * Open-access ingests keep the holding institution's own IIIF URL in their
+ * provenance blob. That URL is public and CORS-open; Paillette's own asset
+ * URLs (`/api/v1/assets/<id>/content`) require a session and answer 401 to an
+ * anonymous visitor, so on the public search page every tile fell back to the
+ * "No image" placeholder. Prefer the source image wherever a record carries
+ * one — a gallery's own uploads have no provenance source and are unaffected.
+ *
+ * `~/lib/webmcp/artwork-summary` resolves the same field for the agent panel,
+ * for the same reason.
+ */
+const getSourceImageUrl = (artwork: PublicArtwork) => {
+  const provenance = getPublicMetadata(artwork).provenance;
+  const record =
+    typeof provenance === 'string'
+      ? (() => {
+          try {
+            return asRecord(JSON.parse(provenance));
+          } catch {
+            // Not every collection stores provenance as JSON.
+            return {};
+          }
+        })()
+      : asRecord(provenance);
+
+  const url = asText(record.source_image_url);
+  return url && /^https?:\/\//i.test(url) ? url : null;
+};
+
+/** IIIF carries the rendering size in the path; ask for a grid-sized one. */
+const IIIF_FULL_SIZE = /\/full\/[^/]+\/0\//;
+
+const getSourceThumbnailUrl = (artwork: PublicArtwork) => {
+  const url = getSourceImageUrl(artwork);
+  if (!url) return null;
+  return IIIF_FULL_SIZE.test(url)
+    ? url.replace(IIIF_FULL_SIZE, '/full/400,/0/')
+    : url;
+};
+
 const getStandardImageUrl = (artwork: PublicArtwork) =>
   firstPublicText(
     artwork.imageUrl,
@@ -610,6 +650,7 @@ export const getPublicImageUrl = (artwork: PublicArtwork) => {
   }
 
   return (
+    getSourceImageUrl(artwork) ||
     getStandardImageUrl(artwork) ||
     getExplicitNgsImageUrl(artwork) ||
     rootsImageUrl
@@ -628,6 +669,7 @@ export const getPublicThumbnailUrl = (artwork: PublicArtwork) => {
   }
 
   return (
+    getSourceThumbnailUrl(artwork) ||
     getStandardThumbnailUrl(artwork) ||
     getExplicitNgsThumbnailUrl(artwork) ||
     rootsThumbnailUrl
