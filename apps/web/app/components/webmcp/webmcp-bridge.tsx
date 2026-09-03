@@ -26,6 +26,7 @@ import {
 } from '~/lib/webmcp/store';
 import { summariseToolResult } from '~/lib/webmcp/summarise';
 import { createPailletteTools } from '~/lib/webmcp/tools';
+import { installTurnBridge } from '~/lib/webmcp/turn-bridge';
 
 export function WebMcpBridge() {
   const location = useLocation();
@@ -59,6 +60,9 @@ export function WebMcpBridge() {
     // belongs to so the summary can be shaped per tool.
     const toolNameByActivityId = new Map<string, string>();
     const disposeObserver = observePublicSearchResponses();
+    // Installed after the observer and disposed before it, so the two fetch
+    // wrappers unwind in the order they were laid down.
+    const disposeTurnBridge = installTurnBridge();
     const disposeTools = registerTools(
       createPailletteTools({
         navigate: (to, options) => navigateRef.current(to, options),
@@ -102,6 +106,7 @@ export function WebMcpBridge() {
 
     return () => {
       disposeTools();
+      disposeTurnBridge();
       disposeObserver();
       setBridgeAttached(false);
       disposeHarness();
