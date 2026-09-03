@@ -120,9 +120,15 @@ Fifteen tools are registered on `document.modelContext`. All of it was written o
   `searchable: true` legitimately returns nothing for ~15s; both the page and
   `get_index_status` now say so instead of implying an empty collection:
   `b813d13`, 2026-09-03 10:56 +0000.
-- **Auto-generated suggested searches** for a freshly indexed collection, each one
-  validated against the real index before it is offered: `f50d2fc`,
-  2026-09-03 11:40 +0000.
+- **Auto-generated suggested searches** for a freshly indexed collection, derived
+  from the collection's own catalogue metadata (or its filenames when there is no
+  CSV sidecar) and surfaced both as chips on `/try` and on the
+  `get_index_status` payload, so a human and an agent reading the same job see the
+  same suggestions: `73df578`, 2026-09-03 11:11 +0000. Two implementations of this
+  were written in parallel; the route-side one was removed in `c7c69de` and
+  accession numbers were excluded as query candidates in `804bbb2`.
+- **Demo hardening for `/try`** — four failure modes closed (`fe0b212`) and a
+  four-collection picker (`809c7a2`), both 2026-09-03 20:02–20:05 +0800.
 
 All of the above hashes fall after `e4ae3b43` (2026-08-24) and are verifiable with
 the same `git log --since=...` command at the top of this document.
