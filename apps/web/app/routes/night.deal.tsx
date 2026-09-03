@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { MetaFunction } from '@remix-run/cloudflare';
 import {
   DealBoard,
@@ -8,7 +8,14 @@ import {
   LightTableCard,
   type LightTableWork,
 } from '~/components/board/light-table-card';
-import type { BoardMark } from '~/components/board/provenance';
+import type {
+  BoardMark,
+  ProvenanceHand,
+} from '~/components/board/provenance';
+import {
+  LedgerFilmstrip,
+  type LedgerFrame,
+} from '~/components/board/ledger-filmstrip';
 import { TwoUpCompare } from '~/components/board/two-up-compare';
 import { DEMO_WORKS, type DemoWork } from '~/lib/board/demo-works';
 
@@ -56,6 +63,38 @@ const REJECT_WEIGHT = 0.5;
  */
 const COMPARE_QUESTION = 'Which one is closer to what you meant?';
 
+/**
+ * A turn, as the ledger stores it.
+ *
+ * `frame` is what the filmstrip draws; the rest is what restoring needs. They
+ * are kept apart deliberately, so `LedgerFrame` never grows a `flags` field
+ * and the component stays ignorant of what a flag is.
+ */
+interface LedgerEntry {
+  frame: LedgerFrame;
+  boardIds: string[];
+  flags: Record<string, FlagState>;
+}
+
+const OPENING_BOARD = DEMO_WORKS.slice(0, DEFAULT_BOARD_SIZE);
+
+const OPENING_TURN: LedgerEntry = {
+  frame: {
+    id: 'turn-0',
+    hand: 'human',
+    caption: 'Twelve dealt',
+    works: OPENING_BOARD,
+    pickIds: [],
+  },
+  boardIds: OPENING_BOARD.map((work) => work.id),
+  flags: {},
+};
+
+const pickIdsOf = (flags: Record<string, FlagState>) =>
+  Object.entries(flags)
+    .filter(([, state]) => state.flag === 'pick')
+    .map(([id]) => id);
+
 /** Rocchio's shape, with motif membership standing in for a CLIP embedding. */
 function scoreAgainstFlags(
   work: DemoWork,
@@ -86,6 +125,20 @@ export default function NightDealRoute() {
   const [comparePair, setComparePair] = useState<
     readonly [DemoWork, DemoWork] | null
   >(null);
+
+  /*
+   * The ledger.
+   *
+   * The strip needs a frame's worth of data; restoring needs the whole board
+   * state. Keeping the two side by side lets `LedgerFrame` stay the small,
+   * presentational thing it is — the component never learns what a flag is,
+   * and this route never has to invent a field on it to smuggle state through.
+   */
+  const [ledger, setLedger] = useState<LedgerEntry[]>(() => [OPENING_TURN]);
+  const [activeFrameId, setActiveFrameId] = useState<string>(
+    OPENING_TURN.frame.id
+  );
+  const turnSeq = useRef(0);
 
   const byId = useMemo(() => {
     const map = new Map<string, DemoWork>();
@@ -149,41 +202,84 @@ export default function NightDealRoute() {
     });
   }, []);
 
+  /**
+   * Write a turn into the ledger.
+   *
+   * The next board and the next flags are passed in rather than read back out
+   * of state, because a frame has to record what the turn *produced* and React
+   * has not applied the setters yet at the point this is called.
+   *
+   * Flagging on its own is not a turn. Flags do not trigger anything — the
+   * redeal is the beat — so recording every `P` press would fill the strip
+   * with frames whose boards are identical, which is exactly the noise the
+   * ledger exists instead of.
+   */
+  const recordTurn = useCallback(
+    (
+      hand: ProvenanceHand,
+      caption: string,
+      nextBoardIds: string[],
+      nextFlags: Record<string, FlagState>
+    ) => {
+      turnSeq.current += 1;
+      const id = `turn-${turnSeq.current}`;
+      setLedger((current) => [
+        ...current,
+        {
+          frame: {
+            id,
+            hand,
+            caption,
+            works: nextBoardIds
+              .map((workId) => byId.get(workId))
+              .filter((work): work is DemoWork => Boolean(work)),
+            pickIds: pickIdsOf(nextFlags),
+          },
+          boardIds: nextBoardIds,
+          flags: nextFlags,
+        },
+      ]);
+      setActiveFrameId(id);
+    },
+    [byId]
+  );
+
   /** What the agent would do: propose three marks, dashed, with reasons. */
   const proposeAsAgent = useCallback(() => {
     const candidates = boardIds.filter((id) => !flags[id]).slice(0, 3);
     if (!candidates.length) return;
 
-    setAgentActiveIds(candidates);
-    setFlags((current) => {
-      const next = { ...current };
-      candidates.forEach((id, index) => {
-        const work = byId.get(id);
-        next[id] = {
-          flag: index === 0 ? 'reject' : 'pick',
-          hand: 'agent',
-          provisional: true,
-          reason: work ? `the ${work.motif} run` : 'shares the run',
-        };
-      });
-      return next;
+    const nextFlags = { ...flags };
+    candidates.forEach((id, index) => {
+      const work = byId.get(id);
+      nextFlags[id] = {
+        flag: index === 0 ? 'reject' : 'pick',
+        hand: 'agent',
+        provisional: true,
+        reason: work ? `the ${work.motif} run` : 'shares the run',
+      };
     });
-    setNote(
-      'Three provisional marks, dashed until you confirm them. The reject is the one that broke the run.'
-    );
-  }, [boardIds, flags, byId]);
+
+    const agentNote =
+      'Three provisional marks, dashed until you confirm them. The reject is the one that broke the run.';
+
+    setAgentActiveIds(candidates);
+    setFlags(nextFlags);
+    setNote(agentNote);
+    recordTurn('agent', agentNote, boardIds, nextFlags);
+  }, [boardIds, flags, byId, recordTurn]);
 
   const confirmAgentMarks = useCallback(() => {
-    setFlags((current) => {
-      const next: Record<string, FlagState> = {};
-      for (const [id, state] of Object.entries(current)) {
-        next[id] = { ...state, provisional: false };
-      }
-      return next;
-    });
+    const nextFlags: Record<string, FlagState> = {};
+    for (const [id, state] of Object.entries(flags)) {
+      nextFlags[id] = { ...state, provisional: false };
+    }
+
+    setFlags(nextFlags);
     setAgentActiveIds([]);
     setNote('Confirmed. The dashed marks are solid now, still in the agent’s ink.');
-  }, []);
+    recordTurn('human', 'Confirmed the agent’s marks', boardIds, nextFlags);
+  }, [flags, boardIds, recordTurn]);
 
   const redeal = useCallback(() => {
     const positives = pickIds
@@ -212,28 +308,32 @@ export default function NightDealRoute() {
       .slice(0, DEFAULT_BOARD_SIZE - kept.length)
       .map((work) => work.id);
 
-    setBoardIds([...kept, ...filler]);
+    const nextBoardIds = [...kept, ...filler];
+    const agentNote = positives.length
+      ? `Following ${positives.length} pick${positives.length === 1 ? '' : 's'}${
+          negatives.length
+            ? ` and ${negatives.length} reject${negatives.length === 1 ? '' : 's'}`
+            : ''
+        }. Picks held their places.`
+      : 'No flags yet, so this is just a fresh deal. Flag a few and redeal again.';
+
+    setBoardIds(nextBoardIds);
     setDealCount((count) => count + 1);
-    setNote(
-      positives.length
-        ? `Following ${positives.length} pick${positives.length === 1 ? '' : 's'}${
-            negatives.length
-              ? ` and ${negatives.length} reject${negatives.length === 1 ? '' : 's'}`
-              : ''
-          }. Picks held their places.`
-        : 'No flags yet, so this is just a fresh deal. Flag a few and redeal again.'
-    );
-  }, [pickIds, rejectedWorks, byId, dealCount]);
+    setNote(agentNote);
+    // The human pressed redeal; the agent wrote the sentence about it. The
+    // frame is the agent's because the caption is, and the ink has to match
+    // the words it is colouring.
+    recordTurn('agent', agentNote, nextBoardIds, flags);
+  }, [pickIds, rejectedWorks, byId, dealCount, flags, recordTurn]);
 
   /**
    * The agent asks a question with pictures.
    *
-   * The pair has to be two works that are genuinely alike, or the question
-   * between them is a lie and the shot is worthless — a comparison of a
-   * thirteenth-century Madonna against a Federal-period sofa asks nothing. So
-   * this takes the first two unflagged works on the board that share a motif,
-   * and phrases the question from that motif so the words are true of the
-   * pictures underneath them.
+   * The pair has to be two works that are genuinely alike, or there is nothing
+   * to ask about — comparing a thirteenth-century Madonna against a Federal
+   * sofa is not a question, it is two pictures. So this takes the first two
+   * unflagged works on the board that share a motif. What they share is not
+   * named in the question; see `COMPARE_QUESTION` for why.
    *
    * On the real board the pair is whatever `compare_artworks` was called with.
    * The presentation does not care which; this route only exists to drive it.
@@ -263,25 +363,64 @@ export default function NightDealRoute() {
    */
   const answerCompare = useCallback(
     (winner: LightTableWork, loser: LightTableWork) => {
-      setFlags((current) => ({
-        ...current,
+      const nextFlags: Record<string, FlagState> = {
+        ...flags,
         [winner.id]: { flag: 'pick', hand: 'human' },
         [loser.id]: { flag: 'reject', hand: 'human' },
-      }));
+      };
+
+      setFlags(nextFlags);
       setComparePair(null);
       setNote(`Picked ${winner.title ?? 'it'}. The other one is in the tray.`);
+      // The click is the utterance, so the caption is the gesture rather than
+      // a sentence about it.
+      recordTurn(
+        'human',
+        `Chose ${winner.title ?? 'one'}`,
+        boardIds,
+        nextFlags
+      );
     },
-    []
+    [flags, boardIds, recordTurn]
+  );
+
+  /**
+   * Version history, used as the conversation record.
+   *
+   * Restoring is the whole reason the ledger is worth having over a
+   * transcript: you can go back to a board, not just read about it.
+   */
+  const restoreTurn = useCallback(
+    (frame: LedgerFrame) => {
+      const entry = ledger.find((item) => item.frame.id === frame.id);
+      if (!entry) return;
+
+      setBoardIds(entry.boardIds);
+      setFlags(entry.flags);
+      setActiveFrameId(entry.frame.id);
+      setComparePair(null);
+      setAgentActiveIds([]);
+      setNote(entry.frame.caption ?? null);
+    },
+    [ledger]
   );
 
   const reset = useCallback(() => {
     setComparePair(null);
     setFlags({});
-    setBoardIds(DEMO_WORKS.slice(0, DEFAULT_BOARD_SIZE).map((work) => work.id));
+    setBoardIds([...OPENING_TURN.boardIds]);
     setNote(null);
     setAgentActiveIds([]);
     setDealCount(0);
+    setLedger([OPENING_TURN]);
+    setActiveFrameId(OPENING_TURN.frame.id);
+    turnSeq.current = 0;
   }, []);
+
+  const ledgerFrames = useMemo(
+    () => ledger.map((entry) => entry.frame),
+    [ledger]
+  );
 
   const marks = useMemo(() => {
     const out: Record<string, BoardMark> = {};
@@ -380,6 +519,15 @@ export default function NightDealRoute() {
           )}
         />
       </div>
+
+      {/* The ledger runs along the bottom edge, so it bleeds past the page's
+          own padding rather than sitting in a box inside it. */}
+      <LedgerFilmstrip
+        className="-mx-6 -mb-5 mt-4 shrink-0"
+        frames={ledgerFrames}
+        activeId={activeFrameId}
+        onRestore={restoreTurn}
+      />
 
       {/* Two-up takes the whole screen when it is open, so it renders last and
           sits over everything else rather than inside the board's layout. */}
