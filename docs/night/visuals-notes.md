@@ -1,0 +1,165 @@
+# Visuals lane — notes for the other lanes
+
+What this lane needs from other people's files, and what it deliberately did
+not touch. Written because the shared-state lane and this one were editing in
+parallel and the seam between them is an attribute contract rather than a
+shared component.
+
+---
+
+## 1. The attribute contract — for the shared-state lane
+
+**As of this branch these hooks do not exist yet.** I checked
+`galleries.$galleryId.search.tsx` and `app/lib/webmcp/`: nothing sets
+`data-flag` and nothing passes `preservedIds`. So everything below is styled
+against the contract rather than against your code, and none of it needed you
+to have landed first.
+
+The whole of provenance ink is CSS keyed on DOM attributes. Set them on the
+tile and the frame, the badge, the desaturation and the pulse follow. There is
+no component to import and no file of mine you have to edit.
+
+Set these on the element that already carries `class="lt-slide"` — in the
+search route that is the `<article>` in `ResultCard`, around line 5335:
+
+| Attribute | Values | Means |
+| --- | --- | --- |
+| `data-flag` | `pick` \| `reject` \| absent | what was decided |
+| `data-hand` | `human` \| `agent` | who decided it — this picks the ink |
+| `data-provisional` | present \| absent | the agent's mark, not yet confirmed |
+| `data-agent-active` | present \| absent | the agent is touching this card now |
+
+Notes on the edges, because they are the parts that go wrong:
+
+- `data-hand` is what selects the ink. **A `data-flag` with no `data-hand`
+  falls back to graphite**, i.e. it will silently read as the human's mark. If
+  the agent flagged it, you must say so.
+- `data-provisional` only draws differently when `data-hand="agent"`. A human's
+  own mark is never provisional — they made it, so there is nobody left to
+  confirm it. `provenanceAttributes()` in
+  `app/components/board/provenance.ts` already enforces that if you want to
+  generate the attributes rather than write them by hand.
+- Present-but-empty is the convention (`data-provisional=""`), not
+  `="true"`. In React, `data-provisional={cond ? '' : undefined}`.
+- Rejects desaturate **the image**, never the card, because filtering the whole
+  card drains the colour out of the agent's ink along with the painting and an
+  agent's reject becomes indistinguishable from a human's. That only works if
+  the `<img>` is inside an element with `class="lt-slide-well"`. It already is
+  in the search route.
+
+Accessibility is not carried by the attributes. `markLabel()` in
+`provenance.ts` returns the sentence a screen reader needs; put it in an
+`sr-only` span next to the badge, as `LightTableCard` does.
+
+### `preservedIds`
+
+`DealBoard` (`app/components/board/deal-board.tsx`) takes
+`preservedIds?: readonly string[]` and pins those ids to the slot index they
+already occupied, so a held card measures a layout delta of zero and does not
+animate. Pass the human's picks. It is the human's picks specifically — a
+redeal is not allowed to overrule a decision the human already made.
+
+If you pass the agent's provisional picks in there too, provisional marks will
+pin the board, which is probably wrong: they have not been confirmed.
+
+### The tray
+
+`DealBoard` takes `tray?: readonly T[]`. **Passing `[]` and passing `undefined`
+mean different things and the difference is load-bearing.** An array — even
+empty — reserves the gutter. `undefined` omits it entirely.
+
+A board in the culling loop must pass an array from its very first deal. The
+moment the gutter appears mid-session it shifts the whole grid sideways and
+every "held" pick moves with it, which is the exact promise the deal exists to
+keep. Measured in a browser: 27–108px of sideways drift.
+
+---
+
+## 2. The ledger — for whoever wires up the page
+
+`app/components/board/ledger-filmstrip.tsx` is finished, tested and **not wired
+into the real page**. Wiring it in is one element:
+
+```tsx
+<LedgerFilmstrip
+  frames={frames}          // LedgerFrame[]
+  activeId={activeFrameId} // which board is currently on the table
+  onRestore={restoreTurn}  // put that board back
+/>
+```
+
+`LedgerFrame` is `{ id, hand, caption?, works, pickIds? }` and `works` is
+anything with `{ id, thumbnailUrl?, imageUrl? }`. It carries only what the
+strip draws — deliberately. Whatever you need in order to *restore* a board
+(ids, flags, notes) should live in a record you keep beside the frames, not as
+a field added to `LedgerFrame`. `app/routes/night.deal.tsx` does exactly this
+and is the worked example.
+
+Two behaviours worth knowing before you wire it:
+
+- **Flagging is not a turn.** Flags trigger nothing — the redeal is the beat —
+  so recording a frame per `P` press fills the strip with identical boards. The
+  harness records on redeal, agent proposal, confirmation and compare answer.
+- **The caption is one line and it clips.** It is a wall label for a turn. A
+  caption that wraps to three lines is a message, and a strip of messages is a
+  chat, which is the thing this replaces.
+
+**If the ledger lands, hide `agent-activity-panel.tsx` rather than showing
+both.** The brief is explicit that a chat transcript is worse than nothing, and
+two records of the same session side by side is worse than either.
+
+I did not touch `agent-activity-panel.tsx` — a human is editing it locally.
+
+---
+
+## 3. Two-up — for the lane building `compare_artworks`
+
+`app/components/board/two-up-compare.tsx` is the presentation only. It does not
+know what `compare_artworks` is, does not decide who won, and never touches
+flag state.
+
+```tsx
+<TwoUpCompare
+  works={pair}             // readonly [Work, Work] | null — null closes it
+  question={question}      // one sentence, set in the asking hand's ink
+  hand="agent"             // who asked; defaults to agent
+  onChoose={(winner, loser, index) => {/* your call */}}
+  onDismiss={() => {/* closed without answering */}}
+/>
+```
+
+`onChoose` reports **a gesture**, not a decision. Turning "the human clicked
+the left one" into a pick and a reject is yours; the winner/loser naming is a
+convenience, not a policy. That is what keeps the two lanes separable.
+
+It renders `position: fixed` over everything, so render it last and outside any
+`overflow: hidden` container.
+
+One thing learned the hard way and worth passing on: **do not put the reason
+the pair is similar into the question unless you can substantiate it.** The
+demo harness pairs on the fixture's `motif` field, but `motif` is the
+*spotlight a work was drawn from*, not a description of it — two works out of
+"The Feast of the Gods" are both Madonnas. A label reading "Both are The Feast
+of the Gods" is false about the pictures under it, and a viewer who catches one
+false label stops believing the rest of them.
+
+---
+
+## 4. Files this lane touched outside its own components
+
+- `app/tailwind.css` — all tokens and light-table CSS. Owned by this lane.
+- `app/routes/galleries.$galleryId.search.tsx` — restyle only. No logic, no
+  state, no data flow changed. If you are editing this file for flags, the
+  conflict surface is class names on `ResultCard` and `SalonResults`.
+- `app/routes/night.deal.tsx` — the demo harness. Owned by this lane.
+- `scripts/capture-board-shots.mjs`, `capture-search-shots.mjs`,
+  `capture-deal-video.mjs`.
+
+**Not touched:** `app/lib/webmcp/**`, `agent-prompt.tsx`, `speak-button.tsx`,
+`agent-activity-panel.tsx`.
+
+`app/components/site/public-shell.tsx` hard-codes a near-black header band and
+a solid-white signup button. Both are wrong on the light table, and both are
+restated from `tailwind.css` scoped to `.lt-ground` rather than by editing that
+file — the header is unchanged on every other page. If site chrome ever gets
+proper tokens, delete that block.

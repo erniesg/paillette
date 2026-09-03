@@ -157,7 +157,16 @@
  * Chrome is hairlines and nothing else. Anything on this ground that is not a
  * work of art, a provenance mark, or a piece of catalogue data should be doing
  * as little as it can get away with.
+ *
+ * All of it lives in `@layer components`, which is not decoration — it decides
+ * who wins. Left as plain CSS after `@tailwind utilities`, every `lt-` class
+ * silently beat every Tailwind utility at equal specificity, so putting
+ * `absolute` on an `.lt-seg` did nothing and the search button rendered in the
+ * wrong place with no warning. In the components layer a utility always wins,
+ * which is the direction anyone reading the markup would assume.
  * ------------------------------------------------------------------------- */
+
+@layer components {
 
 .lt-ground {
   background: var(--lt-ground);
@@ -835,6 +844,8 @@ html[data-theme='light'] .themeable-surface.lt-ground {
       var(--lt-slide-shadow);
   }
 }
+
+} /* @layer components — end of the light table */
 
 .theme-toggle-control {
   position: fixed;
