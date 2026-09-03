@@ -37,6 +37,31 @@ async function settle(page, ms = 700) {
   await page.waitForTimeout(ms);
 }
 
+/**
+ * Wait for every image matching `selector` to have actually decoded.
+ *
+ * A fixed timeout was screenshotting half-drawn IIIF images: the first run of
+ * the two-up capture saved a picture of a Madonna that was 30% painted, which
+ * is indistinguishable in a report from a layout bug.
+ */
+async function imagesDecoded(page, selector, timeout = 45000) {
+  try {
+    await page.waitForFunction(
+      (sel) => {
+        const images = Array.from(document.querySelectorAll(sel));
+        return (
+          images.length > 0 &&
+          images.every((image) => image.complete && image.naturalWidth > 0)
+        );
+      },
+      selector,
+      { timeout }
+    );
+  } catch {
+    console.log(`  ! images never settled: ${selector}`);
+  }
+}
+
 async function shoot(page, name) {
   const file = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: file });
@@ -110,13 +135,53 @@ async function main() {
     await settle(page, IMAGE_SETTLE_MS);
     await shoot(page, `06-deal-settled${suffix}`);
 
+    /*
+     * Two-up. The whole claim of this screen is that there is nothing on it,
+     * so it is worth a shot of its own rather than a crop of the board.
+     */
+    await page.getByRole('button', { name: 'Agent asks' }).click();
+    await imagesDecoded(page, '.lt-two-up-choice img');
+    await settle(page);
+    await shoot(page, `20-two-up${suffix}`);
+
+    // Answering is a human turn, and it lands in the ledger as one.
+    await page.getByRole('button', { name: /^Choose / }).first().click();
+    await settle(page, IMAGE_SETTLE_MS);
+
+    // One more redeal, so the strip has boards that visibly diverge rather
+    // than six frames of the same twelve works.
+    await page.getByRole('button', { name: 'Redeal' }).click();
+    await settle(page, IMAGE_SETTLE_MS);
+
+    await imagesDecoded(page, '.lt-ledger-thumb img');
+    await settle(page);
+    await shoot(page, `21-ledger${suffix}`);
+
+    const ledger = page.locator('.lt-ledger');
+    if (await ledger.count()) {
+      await ledger.screenshot({
+        path: path.join(outDir, `22-ledger-detail${suffix}.png`),
+      });
+      console.log(`  → ${outDir}/22-ledger-detail${suffix}.png`);
+    }
+
     // Light theme, once, to prove the restyle did not regress it.
     if (variant === 'motion') {
       await page.evaluate(() => {
         document.documentElement.dataset.theme = 'light';
       });
-      await settle(page, 900);
+      await settle(page, 1200);
       await shoot(page, '07-deal-light-theme');
+
+      await ledger.screenshot({
+        path: path.join(outDir, '23-ledger-light-theme.png'),
+      });
+      console.log(`  → ${outDir}/23-ledger-light-theme.png`);
+
+      await page.getByRole('button', { name: 'Agent asks' }).click();
+      await imagesDecoded(page, '.lt-two-up-choice img');
+      await settle(page);
+      await shoot(page, '24-two-up-light-theme');
     }
 
     await context.close();

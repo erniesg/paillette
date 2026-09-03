@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 const QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -15,30 +15,33 @@ const QUERY = '(prefers-reduced-motion: reduce)';
  * Returns `false` during server render and on browsers without `matchMedia`,
  * which is the safe default: the animation is progressive enhancement, and
  * suppressing it for someone who never asked would be the worse mistake.
+ *
+ * `useSyncExternalStore` rather than `useState` + `useEffect`, because the
+ * preference is a value that exists outside React and the naive shape gets
+ * hydration wrong: reading the media query in a `useState` initialiser makes
+ * the client's first render disagree with the server's `false` for anyone who
+ * *has* the preference set, and React logs a mismatch and discards the markup.
+ * Passing a separate server snapshot is how you say "this value is legitimately
+ * unknowable until hydration" without lying about it in either direction.
  */
 export function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(() => read());
+  return useSyncExternalStore(subscribe, read, readOnServer);
+}
 
-  useEffect(() => {
-    const list = matchMediaOrNull();
-    if (!list) return undefined;
+function subscribe(onChange: () => void): () => void {
+  const list = matchMediaOrNull();
+  if (!list) return () => {};
 
-    setReduced(list.matches);
-    const onChange = (event: MediaQueryListEvent) => setReduced(event.matches);
-
-    // Safari below 14 only has the deprecated addListener.
-    if (typeof list.addEventListener === 'function') {
-      list.addEventListener('change', onChange);
-      return () => list.removeEventListener('change', onChange);
-    }
-    if (typeof list.addListener === 'function') {
-      list.addListener(onChange);
-      return () => list.removeListener(onChange);
-    }
-    return undefined;
-  }, []);
-
-  return reduced;
+  // Safari below 14 only has the deprecated addListener.
+  if (typeof list.addEventListener === 'function') {
+    list.addEventListener('change', onChange);
+    return () => list.removeEventListener('change', onChange);
+  }
+  if (typeof list.addListener === 'function') {
+    list.addListener(onChange);
+    return () => list.removeListener(onChange);
+  }
+  return () => {};
 }
 
 function matchMediaOrNull(): MediaQueryList | null {
@@ -53,4 +56,13 @@ function matchMediaOrNull(): MediaQueryList | null {
 
 function read(): boolean {
   return matchMediaOrNull()?.matches ?? false;
+}
+
+/**
+ * The server cannot know the preference, and guessing either way is worse than
+ * admitting it: guess `true` and everyone loses the animation for one frame,
+ * guess `false` and the markup matches what a server can actually produce.
+ */
+function readOnServer(): boolean {
+  return false;
 }
