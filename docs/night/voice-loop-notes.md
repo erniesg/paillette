@@ -11,49 +11,26 @@ on outside `agent-prompt.tsx` and `app/lib/voice/**`.
 > Item 1 below is resolved for `hovered`; item 2 still stands. A new item 5
 > records the one gap that blocks plural deixis.
 
-## 1. `get_view_context` has no `hovered` and no `selection` — RESOLVED
+## 1. `hovered` and `selection` on `get_view_context` — RESOLVED
 
-Deixis resolution ("this one", "these two", "the left one") needs to know what
-the human is pointing at. Today `get_view_context`
-(`apps/web/app/lib/webmcp/tools.ts:869`) reports:
+Asked for in an earlier round; the shared-state lane landed both, plus flags and
+the board. `get_view_context` now returns `hovered`, `selection`, `flags`,
+`board` and `compare`.
 
-- `openArtwork` — from `state.focused`, the artwork dialog someone opened
-- `humanResults.visible` / `agentResults.visible` — the board, in order
-- `humanSearch`, `indexedCollection`, `page`
+One correction to how it was asked for: the store keeps `hovered` as a bare id
+string and `selection` as `string[]`, not as records. The scene reader in
+`app/lib/voice/deixis.ts` originally only understood objects and so silently
+bound nothing. It now takes either, resolving ids through the session index, and
+tests cover both shapes. Nothing further is needed from that lane.
 
-It does **not** report `hovered` or `selection`, and `WebMcpState`
-(`apps/web/app/lib/webmcp/store.ts`) carries neither.
+What resolves today:
 
-So what resolves today, and what does not:
-
-| Phrase | Resolves? | Against what |
+| Phrase | Resolves? | Against |
 | --- | --- | --- |
-| "this one" / "that painting" | yes | the open artwork (`focused`) |
+| "this one" / "that painting" while pointing | yes | `hovered` |
+| "this one" with a work open | yes | `openArtwork` |
 | "the left one" / "the second one" / "the last one" | yes | board order |
-| "these two" / "both of these" / "those three" | **no** | needs `selection` |
-| "this one" while merely hovering a card | **no** | needs `hovered` |
-
-The unresolved cases are reported to the human ("Could not tell what 'these
-two' means — nothing is selected") rather than guessed at, so nothing is
-silently wrong; they are just less useful than they should be.
-
-**The ask:** add `hovered` (a single work) and `selection` (an ordered array) to
-the store, and surface them on `get_view_context`.
-
-**No coordination needed on naming.** `readScene` in
-`apps/web/app/lib/voice/deixis.ts` already reads, defensively:
-
-- `hovered`, `hoveredArtwork`
-- `selection`, `selected`, `selectedArtworks`
-- `openArtwork`, `focused`, `focusedArtwork`
-- `agentResults.items` / `.visible`, `humanResults.items` / `.visible`,
-  `visible`, `board`
-
-and unwraps a `{ artwork: {...} }` envelope at any of them. It needs `id` on
-each record and will use `title`, `artist` and `thumbnailUrl`/`imageUrl` when
-present. Whichever of those spellings you pick, deixis lights up with no edit on
-this side. Tests already cover both the store shape and the
-`get_view_context` shape (`app/lib/voice/__tests__/deixis.test.ts`).
+| "these two" / "both of these" | **no** | needs a selection — see item 5 |
 
 ## 2. `sampleResults` drops `thumbnailUrl` — for the shared-state lane
 
