@@ -13,6 +13,12 @@
  * The archive is opened here, in the browser: entry names and sizes are read
  * to plan the job, then each image is decompressed only when its batch is
  * about to be sent. The Worker never holds the zip.
+ *
+ * That includes the CSV sidecar, which is why the column mapping lives on this
+ * side too (`./metadata-columns`). The server only ever receives the finished
+ * per-file records, so the account of how those records were arrived at — which
+ * column became which field, and which were ignored — is kept here and stitched
+ * back onto `getIndexStatus` for whoever is polling.
  */
 
 import JSZip from 'jszip';
