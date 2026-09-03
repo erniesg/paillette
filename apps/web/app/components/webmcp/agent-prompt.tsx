@@ -185,6 +185,9 @@ export function AgentPrompt({
   const awaitingFlushRef = useRef(false);
   /** The page's voice, or null where the browser has none. */
   const speechRef = useRef<SpeechChannel | null>(null);
+  const fieldRef = useRef<HTMLInputElement | null>(null);
+  /** How far the input has scrolled its own text, for the mirror to match. */
+  const [scrollLeft, setScrollLeft] = useState(0);
 
   useEffect(() => {
     setAvailable(Boolean(getModelContext()));
@@ -476,6 +479,12 @@ export function AgentPrompt({
     [busy, cancelGrace, pendingVoice, resolveAgainstScreen, run]
   );
 
+  // Words arriving from the recogniser scroll the input without a scroll event
+  // that React sees, so the offset is re-read whenever the text changes.
+  useEffect(() => {
+    setScrollLeft(fieldRef.current?.scrollLeft ?? 0);
+  }, [input, interim]);
+
   // Re-pointed every render so the countdown below always commits the sentence
   // as it stands now, not as it stood when the timer was armed.
   composedRef.current = composeUtterance(input, interim);
@@ -604,13 +613,28 @@ export function AgentPrompt({
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-pre rounded-lg border border-transparent px-3 py-2 text-sm"
             >
-              <span className="text-white">
-                {composed.slice(0, settledLength)}
+              {/*
+                Shifted by the input's own scroll offset. Say a whole sentence
+                and the input scrolls its text left; a mirror that stayed put
+                would come apart exactly when someone is speaking at length,
+                which is the shot.
+              */}
+              <span
+                className="flex"
+                style={{ transform: `translateX(${-scrollLeft}px)` }}
+              >
+                <span className="text-white">
+                  {composed.slice(0, settledLength)}
+                </span>
+                <span className="text-neutral-500">{interim}</span>
               </span>
-              <span className="text-neutral-500">{interim}</span>
             </div>
           )}
           <input
+            ref={fieldRef}
+            onScroll={(event) =>
+              setScrollLeft((event.target as HTMLInputElement).scrollLeft)
+            }
             value={composed}
             onChange={(event) => {
               // Typing takes ownership of every word in the field, spoken ones
