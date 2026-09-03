@@ -6,15 +6,24 @@ the brief.
 **Read this section first if you are writing the submission.** The rest of the
 document backs it up.
 
-- Everything this lane built lives on a **demo harness at `/night/deal`**, not
-  on the product page at `/nga/search`. The harness is real, runs in a browser
-  and is driven by a checked-in script — but it is a harness, and it uses a
-  fixed set of 40 works instead of the 63,253-work collection.
-- The **search page restyle is on the real page** and is the one visual change a
-  visitor to `/nga/search` would actually see.
-- **Do not claim the deal animation, the compare room or the ledger appear in
-  the product.** They are components with tested interfaces, proven in a
-  harness, waiting on flag state from the shared-state lane.
+- The **search page restyle is on the real page** and is what a visitor to
+  `/nga/search` sees: charcoal light-table ground, hairline chrome, one serif
+  and one mono, works as the only saturated thing on screen.
+- **The provenance ink now lands on the shared-state lane's tiles.** That lane
+  landed mid-run writing a different attribute vocabulary than this one styles
+  against, so the ink was rendering on nothing. It is bridged and verified —
+  23 browser assertions against their exact markup, in both themes. This is the
+  claim "two hands on one board" depends on, and it is now true on the real
+  page **once the branches are merged**.
+- **This lane's own deal board, compare room and ledger live in a demo harness
+  at `/night/deal`**, not in the product. The harness is real and driven by a
+  checked-in script, but it uses a fixed 40-work fixture, not the 63,253-work
+  collection.
+- **Do not claim this lane's deal animation or ledger appear in the product.**
+  The compare room that ships is the shared-state lane's component wearing this
+  lane's styling, not this lane's `TwoUpCompare`.
+- Nothing here has been merged. Every claim above is "after a human integrates
+  two branches that both edit `galleries.$galleryId.search.tsx`".
 
 ---
 
@@ -25,6 +34,7 @@ document backs it up.
 | `pnpm --filter web test` | **66 files / 677 tests, all passing** |
 | `pnpm --filter web typecheck` | **fails — one error, pre-existing, not this lane's** |
 | `node scripts/drive-deal-keyboard.mjs` | **21 assertions, passing, 3 consecutive runs** |
+| `node scripts/verify-ink-contract.mjs` | **23 assertions, passing** |
 | `pnpm --filter api test` | **not run — this lane touched no API code** |
 
 The typecheck error, in full:
@@ -44,22 +54,74 @@ Test baseline from the brief is 59 files / 593 tests. This lane's branch is at
 
 ---
 
+## The thing that changed this round: the ink was not connected
+
+The shared-state lane landed on `lanes/shared-state` and
+`lanes/shared-state-new`. Both write flag state onto the result tiles, and both
+use a **different attribute vocabulary** than this lane had been styling
+against — `.paillette-card` not `.lt-slide`, `data-flag-by` not `data-hand`,
+`data-flag-provisional="true"` not `data-provisional`.
+
+Their source says the provenance hooks are *"drawn entirely in CSS, with no
+JavaScript here needing to know which colour the agent got"*. They were right
+that it is this lane's job. It just did not exist yet, so:
+
+**Nothing on the real search page carried an attribute this lane's CSS matched.
+The provenance ink rendered on nothing at all.** "Two hands visible in every
+state" — the claim the entire palette exists to make, and one of the five items
+in section 9's definition of done — would have been false on the only page a
+visitor sees, while every unit test stayed green.
+
+It is bridged from this side, additively, in `tailwind.css`. Both vocabularies
+work in any combination, so the merge can land either way. No file belonging to
+another lane was edited.
+
+Also styled, because they arrived on the light table in the old white palette:
+their flag badge and its three one-letter buttons, their wall label, their
+deal-error line, and their compare overlay — which is the one wired to compare
+state, so it is the one that ships. It came as a translucent near-black scrim
+with each work in a bordered box; it is now the opaque ground with the boxes
+off and the question in the serif.
+
+`docs/night/shots/30-flag-lane-markup.png` shows all six flag states on their
+tile markup plus the wall label, so an integrator can judge the merged result
+without resolving a conflict first.
+
+Two mistakes made writing this, both invisible to tests and caught only by
+reading computed styles in a browser:
+
+- The bridge was silently **purged**. Tailwind content-scans `@layer components`
+  and drops classes it cannot find in this branch's source — and every class
+  here is defined in the *other* branch. It survived only where a selector
+  shared a rule with an `lt-` class. It now lives outside the layer.
+- The human default has to be declared **before** the agent rule. Both are one
+  class of specificity, so on a tile carrying `paillette-card` *and*
+  `data-flag-by="agent"` the later rule wins. Backwards, it painted every agent
+  mark in graphite — exactly the failure the palette exists to prevent.
+
+---
+
 ## Where this lane actually is against the brief's triage
 
 Section 8 lists ten items. Four are this lane's.
 
 | # | Item | State |
 | --- | --- | --- |
-| 5 | Provenance ink | **Done.** On the real page and the harness. |
-| 6 | The deal animation | **Done in the harness.** Not on `/nga/search` — needs flag state. |
-| 8 | Compare two-up | **Done in the harness.** Component is complete and separable. |
+| 5 | Provenance ink | **Done, and now actually connected** to the flag lane's tiles. Verified in a browser, both themes. |
+| 6 | The deal animation | **Done in the harness.** Not on `/nga/search`. |
+| 8 | Compare two-up | **Ships as the flag lane's component in this lane's styling.** This lane's own `TwoUpCompare` stays in the harness. |
 | 9 | Ledger filmstrip | **Built and tested. Not wired into any page.** |
 
 Items 1–4 (flags state, gestures-as-turn, `search_by_exemplars`, `redeal`)
-belong to the shared-state lane and **had not landed on this branch** when this
-was written — nothing sets `data-flag`, nothing passes `preservedIds`. That is
-why 6, 8 and 9 stop at the harness: the presentation is finished, the state it
-presents is not this lane's to build.
+belong to the shared-state lane and have now landed on their branches, though
+not on this one — the two branches both edit
+`galleries.$galleryId.search.tsx` and a human integrates.
+
+Item 6 still stops at the harness. Putting the twelve-card deal on the product
+grid means replacing the masonry layout's rendering with `DealBoard` and
+feeding it `preservedIds`, and that is a change to the board's *logic*, which
+this lane was told to style rather than edit. It is the one piece of section 7
+that did not reach the product.
 
 ---
 
@@ -80,6 +142,27 @@ was run three times in a row with identical results.
    answers, read from computed styles rather than from class names.
 7. Over three consecutive redeals the board still deals twelve, never deals the
    same work twice, and picks survive.
+
+And by `scripts/verify-ink-contract.mjs`, which loads the real compiled
+stylesheet in a real browser, injects the exact markup the shared-state lane
+emits, and reads back computed styles — 23 assertions, all passing:
+
+8. A human pick is framed in graphite; an agent pick is framed in the agent
+   ink; **the two are actually different values**, not just different classes.
+9. An agent's unconfirmed mark is dashed, in the agent's ink, and its flag
+   button is outlined rather than filled.
+10. An unflagged tile wears no ink at all — their `none` and `false` sentinels
+    are inert rather than accidentally matching.
+11. A reject desaturates the picture and not the card, so an agent's reject
+    stays distinguishable from a human's.
+12. The wall label takes the ink of whoever wrote it, so a board the *human*
+    redealt is not annotated in the agent's colour.
+13. Their compare overlay is the opaque light-table ground rather than a scrim,
+    with the boxes off the works and the question in the wall serif.
+14. All of the above holds in the light theme, where every token flips.
+15. This lane's original `data-hand` / `data-provisional` vocabulary is
+    unregressed, and a tile carrying both class names and their attributes
+    still reads correctly — which is what a merge will actually produce.
 
 Separately verified by script:
 
@@ -200,27 +283,43 @@ focusable and now invisible.
 
 ## What is still wrong
 
-1. **The deal, the ledger and two-up are not in the product.** This is the
-   biggest gap and it is a dependency, not an oversight. They need flag state
-   and `preservedIds` from the shared-state lane.
-2. **120 occurrences of the old palette remain** in the search route — the
+1. **The twelve-card deal is not in the product.** The animation — the piece
+   the brief calls the money shot — exists only at `/night/deal`. Putting it on
+   the product grid means replacing the masonry rendering with `DealBoard`,
+   which is a change to the board's logic rather than its styling, and this
+   lane was scoped to style. It is the one item of section 7 that did not
+   reach the real page.
+2. **The ledger is not wired into any page**, by choice — see "What I cut".
+3. **We built three things twice.** The shared-state lane has its own culling
+   keys, compare overlay and flag badge; this lane has `useCullingKeys`,
+   `TwoUpCompare` and `lt-mark`. Theirs are wired to real state and should win.
+   Mine are worth reading only for the typing guard (which also suppresses on
+   `role=textbox|combobox|searchbox` and `contenteditable`) and the two-up
+   focus trap. An integrator should delete one set, not merge both.
+4. **Nothing is merged.** Both lanes edited `galleries.$galleryId.search.tsx`.
+   Every claim about the real page is conditional on that merge going well, and
+   `scripts/verify-ink-contract.mjs` is the check that says whether it did.
+5. **120 occurrences of the old palette remain** in the search route — the
    settings drawer, the image-search panel, the colour rail, most error states.
    They do not break; they flip correctly in light theme through a
    compatibility shim. They are still wearing fuchsia, which is a third colour
    on a page arguing there are two.
-3. **That shim is a pile of `!important` selectors** matching Tailwind class
+6. **That shim is a pile of `!important` selectors** matching Tailwind class
    names. It predates this lane and is what keeps the untokenised chrome
    working. It should die when item 2 is done.
-4. **The site header and the utterance bar are restated from CSS, not fixed at
-   source.** Both belong to other lanes, so `tailwind.css` overrides them scoped
+7. **The site header, the utterance bar and the flag lane's controls are
+   restated from CSS, not fixed at source.** Both belong to other lanes, so `tailwind.css` overrides them scoped
    to `.lt-ground`. This works and leaves those components unchanged elsewhere,
    but it is an override block that will rot if they change.
-5. **Quieting the signup CTA was a product decision made by a visuals lane.** A
+8. **Quieting the signup CTA was a product decision made by a visuals lane.** A
    solid white button was the loudest thing on screen after the works, so it is
    now hairline-outlined. Someone should confirm that.
-6. **Keyboard movement between cards is Tab only.** There is no arrow-key
+9. **Keyboard movement between cards is Tab only.** There is no arrow-key
    navigation across the grid, so reaching card twelve takes twelve Tabs.
-7. **The atlas view is untouched** beyond ground and fonts.
+10. **The atlas view is untouched** beyond ground and fonts.
+11. **Their compare puts the question above the works**, where the brief asks
+    for it between them. That is a one-line JSX move in their file, which this
+    lane did not make.
 
 ### Do not misread the screenshots
 
@@ -241,16 +340,23 @@ focusable and now invisible.
 
 ## Hooks needed from the shared-state lane
 
-Full contract, including the edges that will go wrong, is in
-`docs/night/visuals-notes.md`. In short:
+**They have landed, and the ink now speaks their vocabulary as well as this
+lane's.** Nothing further is needed from them for the ink to work. Full detail
+in `docs/night/visuals-notes.md`.
 
-- `data-flag` / `data-hand` / `data-provisional` / `data-agent-active` on the
-  element carrying `class="lt-slide"`. **A `data-flag` with no `data-hand` falls
-  back to graphite and silently reads as the human's mark.**
-- `preservedIds` on `DealBoard` — the human's picks specifically.
-- `tray={[]}` and `tray={undefined}` differ: an empty array reserves the gutter,
-  `undefined` omits it. A culling board must pass an array from its first deal,
-  or the gutter appearing mid-session drags every held pick sideways.
+What still needs a human at merge time:
+
+- **Run `node scripts/verify-ink-contract.mjs` after merging.** It is the only
+  check that catches the two vocabularies drifting apart again, because jsdom
+  does not run the cascade and neither lane imports the other.
+- **A `data-flag` with no `data-flag-by`** falls back to graphite and silently
+  reads as the human's mark.
+- **Pick one of each duplicated component** rather than shipping both.
+- If `DealBoard` is ever put on the product grid: `preservedIds` takes the
+  human's picks specifically, and `tray={[]}` differs from `tray={undefined}` —
+  an empty array reserves the gutter, `undefined` omits it. A culling board must
+  pass an array from its first deal, or the gutter appearing mid-session drags
+  every held pick sideways.
 
 ---
 
@@ -260,6 +366,7 @@ Full contract, including the edges that will go wrong, is in
 pnpm --filter web dev --port 5211
 
 node scripts/drive-deal-keyboard.mjs http://localhost:5211   # 21 assertions
+node scripts/verify-ink-contract.mjs  http://localhost:5211  # 23 assertions
 node scripts/capture-board-shots.mjs  http://localhost:5211  # board, both motion prefs
 node scripts/capture-search-shots.mjs http://localhost:5211  # the real page
 node scripts/capture-deal-video.mjs   http://localhost:5211  # the deal, moving
@@ -273,3 +380,5 @@ node scripts/capture-deal-video.mjs   http://localhost:5211  # the deal, moving
 2. `docs/night/shots/03b-ink-detail.png` — two hands, no legend.
 3. `docs/night/shots/24-two-up-light-theme.png` — the ten-second beat.
 4. `docs/night/shots/22-ledger-detail.png` — the chat, replaced.
+5. `docs/night/shots/30-flag-lane-markup.png` — the ink on the flag lane's
+   tiles, which is the one that reaches the product.

@@ -7,13 +7,58 @@ shared component.
 
 ---
 
-## 1. The attribute contract — for the shared-state lane
+## 0. Read this first — your lane landed and we speak different words
 
-**As of this branch these hooks do not exist yet.** I checked
-`galleries.$galleryId.search.tsx` and `app/lib/webmcp/`: nothing sets
-`data-flag` and nothing passes `preservedIds`. So everything below is styled
-against the contract rather than against your code, and none of it needed you
-to have landed first.
+`lanes/shared-state` and `lanes/shared-state-new` are both on the remote now,
+and they write a **different vocabulary** for the same four facts than the one
+section 1 below describes. Nothing was broken by that, but nothing worked
+either: your tiles carry `data-flag-by`, my CSS matched `data-hand`, so the
+provenance ink rendered on nothing at all on the real page.
+
+**That is fixed from this side.** `tailwind.css` now understands both, in any
+combination, so it does not matter which way the merge lands or which of your
+two branches wins. You do not need to rename anything.
+
+| your name | my name | what it is |
+| --- | --- | --- |
+| `.paillette-card` | `.lt-slide` | the tile |
+| `data-flag="pick\|reject\|none"` | `data-flag="pick\|reject"`, absent when unset | what was decided |
+| `data-flag-by="human\|agent\|none"` | `data-hand="human\|agent"` | who decided it |
+| `data-flag-provisional="true\|false"` | `data-provisional`, present when true | not yet confirmed |
+| `data-provenance` on the wall label | `data-hand` | who wrote the note |
+
+Also now styled against your class names: `.paillette-flag-badge`,
+`.paillette-flag-button`, `.paillette-wall-label`, `.paillette-deal-error`,
+`.paillette-compare`, `.paillette-compare-work`. They were arriving on the
+light table wearing the old white/near-black palette.
+
+`node scripts/verify-ink-contract.mjs` proves it — 23 assertions that load the
+real stylesheet in a real browser, inject your exact markup, and read back
+computed styles. **Run it after the merge.** It is the only check that can
+catch this class of break; jsdom does not run the cascade and neither lane
+imports the other.
+
+### Three things worth knowing
+
+- **We built the same thing twice.** Your `useBoardKeyboard` and my
+  `useCullingKeys`; your `CompareView` and my `TwoUpCompare`; your `FlagBadge`
+  and my `lt-mark`. Yours are wired to real state, so **keep yours** — mine
+  were built when nothing set a flag. Mine are worth reading only for the
+  typing guard (mine suppresses on `role=textbox|combobox|searchbox` and
+  `contenteditable` as well as the obvious tags) and for the two-up focus trap.
+- **Your compare puts the question above the works; the brief asks for it
+  between them.** That is a one-line JSX move in your file — the `<p>` into the
+  middle of the works row — and I have not touched your file to do it. Styled
+  as-is, it still reads as a wall label.
+- **A `data-flag` with no `data-flag-by`** falls back to graphite and will
+  silently read as the human's mark. If the agent flagged it, say so.
+
+---
+
+## 1. The attribute contract — the original form
+
+Still supported, and still what `DealBoard` and `LightTableCard` emit. If you
+are writing a new tile, either vocabulary works.
 
 The whole of provenance ink is CSS keyed on DOM attributes. Set them on the
 tile and the frame, the badge, the desaturation and the pulse follow. There is
