@@ -87,6 +87,55 @@ export interface PendingConfirmation {
 /** How the human's grid is laid out. Mirrors `ViewMode` on the search page. */
 export type CanvasView = 'masonry' | 'salon' | 'atlas' | 'table';
 
+/**
+ * A flag on one work, in Lightroom's vocabulary: keep it, throw it out.
+ *
+ * Flags are the currency both parties spend. The human presses `P`/`X`; the
+ * agent calls `flag_artworks`. The record says which, so the page can draw the
+ * two hands differently and so the deterministic redeal can count only the
+ * human's — an agent must be able to *propose* a judgement without silently
+ * making it.
+ */
+export type FlagValue = 'pick' | 'reject';
+
+export interface FlagRecord {
+  artworkId: string;
+  flag: FlagValue;
+  by: ResultSetOrigin;
+  /** An agent's flag stays provisional until the human confirms it. */
+  provisional: boolean;
+  /** Why, when the flagger said. The agent is required to; the human is not. */
+  reason?: string;
+  at: number;
+}
+
+/**
+ * The twelve works currently hung, and the memory of everything already dealt.
+ *
+ * `dealt` only grows: it is what stops a redeal from handing back a work the
+ * human has already looked at and moved past. `lastChangeBy` is what lets the
+ * page show whose move the current arrangement was.
+ */
+export interface BoardState {
+  /** Ids in the order they are hung. Picks hold their index across a redeal. */
+  order: string[];
+  /** Every id dealt onto this board since the page loaded. */
+  dealt: string[];
+  note: string | null;
+  lastChangeBy: ResultSetOrigin;
+  /** How many redeals this session has run. */
+  redeals: number;
+  at: number;
+}
+
+/** Two works side by side, and the question being asked of them. */
+export interface CompareState {
+  artworkIds: [string, string];
+  question: string | null;
+  askedBy: ResultSetOrigin;
+  at: number;
+}
+
 export interface WebMcpState {
   page: PageContext;
   /**
@@ -101,6 +150,20 @@ export interface WebMcpState {
   /** The result set the agent last pushed onto the canvas. */
   agentResults: AgentResultSet | null;
   focused: FocusedArtwork | null;
+  /**
+   * Every flag laid down this page session, by either party, in the order they
+   * were laid. Deliberately not cleared by a redeal: a judgement about a work
+   * outlives the arrangement it was made in.
+   */
+  flags: FlagRecord[];
+  /** The dealt board, once a redeal has run. Null before the first deal. */
+  board: BoardState | null;
+  /** The two-up currently on screen, if any. */
+  compare: CompareState | null;
+  /** The card under the cursor or keyboard focus — the deictic anchor. */
+  hovered: string | null;
+  /** Shift-clicked ids. What "these" means. */
+  selection: string[];
   /** The most recent indexing job started on this page, by either party. */
   indexJob: IndexJobHandleState | null;
   activity: ActivityEntry[];
@@ -125,6 +188,11 @@ const initialState: WebMcpState = {
   humanResults: null,
   agentResults: null,
   focused: null,
+  flags: [],
+  board: null,
+  compare: null,
+  hovered: null,
+  selection: [],
   indexJob: null,
   activity: [],
   pendingConfirmations: [],
@@ -181,6 +249,24 @@ export const setFocusedArtwork = (focused: FocusedArtwork | null) =>
 
 export const setIndexJob = (indexJob: IndexJobHandleState | null) =>
   update({ indexJob });
+
+/**
+ * Raw setters for the gesture state. The semantics live in `flags.ts` and
+ * `redeal.ts`; this file stays the dumb, observable place the values sit so
+ * that React re-renders for free whoever wrote them.
+ */
+export const setFlagRecords = (flags: FlagRecord[]) => update({ flags });
+
+export const setBoard = (board: BoardState | null) => update({ board });
+
+export const setCompare = (compare: CompareState | null) => update({ compare });
+
+export const setHoveredArtwork = (hovered: string | null) => {
+  if (state.hovered === hovered) return;
+  update({ hovered });
+};
+
+export const setSelection = (selection: string[]) => update({ selection });
 
 export const setBridgeAttached = (bridgeAttached: boolean) =>
   update({ bridgeAttached });

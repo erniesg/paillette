@@ -41,6 +41,7 @@ import {
   getSearchQuotaPublic,
   loadAgentFile,
   loadImageBlob,
+  searchByExemplarsPublic,
   searchImagePublic,
   searchTextPublic,
   INDEX_ARCHIVE_MAX_BYTES,
@@ -63,16 +64,29 @@ import {
   getPublicCollection,
   resolveCollectionId,
 } from './collections';
+import {
+  resolveSearchTarget,
+  searchPathFor,
+  type SearchTarget,
+} from './search-target';
 import { NAMED_COLOURS, NAMED_COLOUR_IDS, resolveColour } from './colours';
 import {
   requestConfirmation,
   setAgentResults,
   setCanvasView,
+  setCompare,
   setFocusedArtwork,
   setIndexJob,
   getWebMcpState,
   type PageContext,
 } from './store';
+import {
+  getExemplars,
+  partitionFlags,
+  setFlag,
+  type FlagIntent,
+} from './flags';
+import { runRedeal, BOARD_SIZE } from './redeal';
 import { INDEX_CAPS } from './caps';
 import { toIndexedArtwork } from './indexed-artwork';
 import { getCollectionSuggestions } from './collection-suggestions';
@@ -148,6 +162,17 @@ const clampNumber = (value: unknown, min: number, max: number, fallback: number)
 const asString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
+/** Ids arrive from a model, so tolerate blanks and duplicates without dropping the call. */
+const readStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const id = asString(entry);
+    if (id) seen.add(id);
+  }
+  return [...seen];
+};
+
 /** Shared schema fragment so `collection` reads identically on every tool. */
 const collectionProperty = {
   type: 'string' as const,
@@ -171,46 +196,8 @@ const capture = (results: ArtworkSearchResult[]) => {
   return results.map(toAgentArtworkSummary);
 };
 
-/**
- * Which collection a search should actually run against.
- *
- * `/try` exists so a visitor can build a collection from their own zip, and
- * while they are looking at it "show me stormy seascapes" means *that*
- * collection — not the published NGA catalogue the tools default to. Reading
- * the live index job off the shared store is what makes the agent's search and
- * the human's grid the same collection.
- *
- * An explicitly named public collection always wins, so an agent can still
- * reach the published catalogue from `/try` by naming it.
- */
-export type SearchTarget =
-  | { kind: 'public'; collectionId: string }
-  | {
-      kind: 'indexed';
-      jobId: string;
-      collectionId: string;
-      collectionName: string;
-    };
-
-export const resolveSearchTarget = (collection: unknown): SearchTarget => {
-  const named = getPublicCollection(collection);
-  if (named) return { kind: 'public', collectionId: named.id };
-
-  const job = getWebMcpState().indexJob;
-  if (job) {
-    return {
-      kind: 'indexed',
-      jobId: job.jobId,
-      collectionId: job.collectionId,
-      collectionName: job.collectionName,
-    };
-  }
-
-  return { kind: 'public', collectionId: DEFAULT_PUBLIC_COLLECTION_ID };
-};
-
-const searchPathFor = (collectionId: string) =>
-  getPublicCollection(collectionId)?.searchPath ?? '/nga/search';
+export { resolveSearchTarget };
+export type { SearchTarget };
 
 // ---------------------------------------------------------------------------
 // Tier 1 — read-only wrappers over the public search routes
@@ -866,11 +853,44 @@ const sampleResults = (items: AgentArtworkSummary[]) =>
     similarity: item.similarity,
   }));
 
+/**
+ * The flags, split three ways so the model can tell a judgement from a
+ * proposal. `provisional` is the agent's own unconfirmed flags — reporting
+ * them separately is what stops a model reading its own suggestions back as
+ * the human's taste and talking itself in a circle.
+ */
+const describeFlags = (boardOrder: readonly string[]) => {
+  const { hung, filed } = partitionFlags(boardOrder);
+  const describe = (flag: (typeof hung)[number]) => {
+    const artwork = recallArtwork(flag.artworkId);
+    const summary = artwork ? toAgentArtworkSummary(artwork) : null;
+    return {
+      id: flag.artworkId,
+      title: summary?.title ?? null,
+      artist: summary?.artist ?? null,
+      by: flag.by,
+      ...(flag.reason ? { reason: flag.reason } : {}),
+      onBoard: boardOrder.includes(flag.artworkId),
+    };
+  };
+
+  const all = [...hung, ...filed];
+  return {
+    picks: all.filter((f) => f.flag === 'pick' && !f.provisional).map(describe),
+    rejects: all
+      .filter((f) => f.flag === 'reject' && !f.provisional)
+      .map(describe),
+    provisional: all.filter((f) => f.provisional).map(describe),
+    exemplars: getExemplars(),
+    hint: 'picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste.',
+  };
+};
+
 const getViewContextTool = (context: ToolContext): WebMcpTool => ({
   name: 'get_view_context',
   title: 'Get view context',
   description:
-    'Read what the human is looking at right now: the route they are on, the collection they are scoped to, the query their own search box committed, the result set their grid is currently showing, and any artwork opened on the shared canvas. Call this before answering "what is this?", "find more like these", or anything else that depends on the screen. The result set reported here is observed from the page\'s own search responses, so it is what is genuinely on screen — not a re-run of the query.',
+    'Read what the human is looking at right now, and what they have done to it: the route, the collection, the query their own search box committed, the result set on screen, any artwork opened on the shared canvas — and the gesture state that matters more than any of it. `flags` is what they have picked and rejected, `board` is the current deal, `selection` and `hovered` are what "this" and "these" refer to.\nCall this before answering "what is this?", "find more like these", or anything that depends on the screen — and call it before you argue with someone, because the flags are the evidence. The result set is observed from the page\'s own search responses, so it is what is genuinely on screen, not a re-run of the query.',
   annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   execute: async () => {
@@ -917,6 +937,39 @@ const getViewContextTool = (context: ToolContext): WebMcpTool => ({
         ? {
             openedBy: state.focused.origin,
             artwork: state.focused.artwork,
+          }
+        : null,
+      // The gesture half of the shared state. Everything below this line is
+      // something the human did with their hands rather than said in words,
+      // and when the two disagree, this is the half that is true.
+      flags: describeFlags(state.board?.order ?? []),
+      board: state.board
+        ? {
+            order: state.board.order,
+            works: sampleResults(
+              recallArtworks(state.board.order).found.map(toAgentArtworkSummary)
+            ),
+            note: state.board.note,
+            lastChangeBy: state.board.lastChangeBy,
+            redeals: state.board.redeals,
+            dealtThisSession: state.board.dealt.length,
+            hint: 'redeal deals from the confirmed flags with picks held in place. dealtThisSession is excluded from the next deal, so the loop keeps moving.',
+          }
+        : null,
+      selection: state.selection.map((id) => ({
+        id,
+        work: flagLabel(id),
+      })),
+      hovered: state.hovered
+        ? { id: state.hovered, work: flagLabel(state.hovered) }
+        : null,
+      compare: state.compare
+        ? {
+            artworkIds: state.compare.artworkIds,
+            works: state.compare.artworkIds.map((id) => flagLabel(id)),
+            question: state.compare.question,
+            askedBy: state.compare.askedBy,
+            resolved: false,
           }
         : null,
       // The human can index their own zip on /try without saying a word to the
@@ -1190,6 +1243,391 @@ const showArtworkTool = (): WebMcpTool => ({
       return ok({
         opened: detail,
         effect: 'This work is now open on the human’s screen.',
+      });
+    }),
+});
+
+// ---------------------------------------------------------------------------
+// Tier 1.6 — the culling loop: flag, deal, compare
+//
+// These are the tools that make this a shared workspace rather than a page an
+// agent can drive. Each one is the agent's half of a gesture the human already
+// has a key for, and both halves land in the same state.
+// ---------------------------------------------------------------------------
+
+/** An agent proposing more than a handful of judgements at once is guessing. */
+const MAX_AGENT_FLAGS_PER_CALL = 3;
+
+const flagLabel = (artworkId: string) => {
+  const artwork = recallArtwork(artworkId);
+  if (!artwork) return artworkId;
+  const summary = toAgentArtworkSummary(artwork);
+  return summary.artist ? `${summary.title} — ${summary.artist}` : summary.title;
+};
+
+const flagArtworksTool = (): WebMcpTool => ({
+  name: 'flag_artworks',
+  title: 'Flag works as picks or rejects',
+  description:
+    'Flag works in the same currency the human uses: pick, reject, or clear. This is how you *disagree* — if their words point one way and their flags point another, say so and flag what you actually think.\nYour flags land as provisional and are drawn dashed until the human confirms them by pressing P or X on the same work. They do not move the exemplars the deterministic redeal runs on; only confirmed flags do. So flagging is a proposal, not a decision, and you cannot overwrite someone\'s judgement by accident.\nAt most three per call, and always give a reason — a flag without one tells the human nothing.',
+  // Not readOnly: badges appear on the human's cards.
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      flags: {
+        type: 'array',
+        minItems: 1,
+        maxItems: MAX_AGENT_FLAGS_PER_CALL,
+        description:
+          'Up to three flags. Fewer, with better reasons, is better than more.',
+        items: {
+          type: 'object',
+          properties: {
+            artworkId: {
+              type: 'string',
+              description: 'Id from any previous search, board, or view context.',
+            },
+            flag: {
+              type: 'string',
+              enum: ['pick', 'reject', 'clear'],
+              description:
+                'pick: worth keeping. reject: worth pushing away — this steers the redeal hardest, because one strong reject moves a whole visual region. clear: withdraw a flag you set.',
+            },
+            reason: {
+              type: 'string',
+              maxLength: 200,
+              description:
+                'One line, written for the human, naming what you saw: "the only one where the horizon is doing the work".',
+            },
+          },
+          required: ['artworkId', 'flag'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['flags'],
+    additionalProperties: false,
+  },
+  execute: async (input) =>
+    guard(async () => {
+      const raw = (input as { flags?: unknown }).flags;
+      if (!Array.isArray(raw) || raw.length === 0) {
+        return fail('INVALID_INPUT', 'flags must be a non-empty array.');
+      }
+      if (raw.length > MAX_AGENT_FLAGS_PER_CALL) {
+        return fail(
+          'TOO_MANY_FLAGS',
+          `At most ${MAX_AGENT_FLAGS_PER_CALL} flags per call.`,
+          'Flag the few you are most confident about, then read the human’s reaction before flagging more.'
+        );
+      }
+
+      const applied: Record<string, unknown>[] = [];
+      const unresolved: string[] = [];
+
+      for (const entry of raw) {
+        const artworkId = asString((entry as { artworkId?: unknown })?.artworkId);
+        const flag = asString((entry as { flag?: unknown })?.flag);
+        const reason = asString((entry as { reason?: unknown })?.reason);
+
+        if (!artworkId || !['pick', 'reject', 'clear'].includes(flag)) {
+          return fail(
+            'INVALID_INPUT',
+            'Each flag needs an artworkId and a flag of pick, reject, or clear.'
+          );
+        }
+        if (!recallArtwork(artworkId)) {
+          unresolved.push(artworkId);
+          continue;
+        }
+        const change = setFlag(artworkId, flag as FlagIntent, {
+          by: 'agent',
+          ...(reason ? { reason } : {}),
+        });
+        if (change) {
+          applied.push({
+            artworkId,
+            work: flagLabel(artworkId),
+            flag: change.to,
+            ...(reason ? { reason } : {}),
+          });
+        }
+      }
+
+      if (!applied.length && unresolved.length) {
+        return fail(
+          'ARTWORK_NOT_IN_SESSION',
+          'None of those ids have been loaded by this page.',
+          'Search or read get_view_context first, then flag ids from what came back.'
+        );
+      }
+
+      const exemplars = getExemplars();
+      return ok({
+        applied,
+        ...(unresolved.length ? { unresolved } : {}),
+        provisional: true,
+        confirmedExemplars: exemplars,
+        effect:
+          'These are on the human’s cards as dashed proposals. They will not steer a redeal until the human confirms them.',
+      });
+    }),
+});
+
+const searchByExemplarsTool = (): WebMcpTool => ({
+  name: 'search_by_exemplars',
+  title: 'Search by example',
+  description:
+    'Find works that look like the ones someone kept and unlike the ones they threw out. Scored server-side over the same visual embeddings the image search uses:\n  score = cos(x, mean(positives)) − 0.5 · max(cos(x, each negative))\nThe negative term takes the worst single match rather than an average, so one emphatic rejection genuinely pushes a whole region of the collection away instead of being diluted by milder ones.\nThis is the engine under `redeal`. Call it directly when you want candidates to reason about without changing what is on the human\'s screen; call `redeal` when you want to actually deal a new board.',
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      positiveIds: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: 32,
+        description:
+          'Works to move toward. Their average is the query. Ids from any previous result.',
+      },
+      negativeIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 32,
+        description:
+          'Works to move away from. One well-chosen rejection does more here than three vague ones.',
+      },
+      excludeIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 400,
+        description:
+          'Ids to leave out of the results — normally everything already dealt this session, so the loop keeps moving instead of returning the same works.',
+      },
+      topK: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 12,
+        description:
+          'How many to return. The board holds 12, so 12 is the useful default.',
+      },
+      collection: collectionProperty,
+    },
+    required: ['positiveIds'],
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const positiveIds = readStringArray(
+        (input as { positiveIds?: unknown }).positiveIds
+      );
+      if (!positiveIds.length) {
+        return fail(
+          'INVALID_INPUT',
+          'positiveIds must contain at least one artwork id.',
+          'Read get_view_context for what the human has picked, or pass ids from a search you just ran.'
+        );
+      }
+      const target = resolveSearchTarget(
+        (input as { collection?: unknown }).collection
+      );
+      if (target.kind === 'indexed') {
+        return fail(
+          'EXEMPLAR_SEARCH_UNAVAILABLE_HERE',
+          'Exemplar search runs against the published vector index; this page is scoped to a collection built in this tab.',
+          'Name a public collection, or use search_by_image with one artworkId instead.'
+        );
+      }
+
+      const response = await searchByExemplarsPublic({
+        collectionId: target.collectionId,
+        positiveIds,
+        negativeIds: readStringArray(
+          (input as { negativeIds?: unknown }).negativeIds
+        ),
+        excludeIds: readStringArray(
+          (input as { excludeIds?: unknown }).excludeIds
+        ),
+        topK: clampInt((input as { topK?: unknown }).topK, 1, 100, 12),
+        signal: options.signal,
+      });
+
+      return ok({
+        collection: target.collectionId,
+        count: response.results.length,
+        scoring:
+          'cos(x, mean(positives)) − 0.5 · max over negatives. Fixed weights, nothing learned; the same exemplars always return the same works.',
+        results: capture(response.results),
+        next: 'Call redeal to put a set like this on the board with the human’s picks held in place, or set_results to pin a chosen subset.',
+      });
+    }),
+});
+
+const redealTool = (): WebMcpTool => ({
+  name: 'redeal',
+  title: 'Deal a new board from the flags',
+  description:
+    'Rearrange the board from what has been picked and rejected. Picks stay exactly where they are, rejects leave, and newcomers fill the gaps — twelve cards, so every move is legible.\nThis is the same function the human runs by pressing Enter on an empty prompt bar. You are a second operator of it, not a layer above it: you add strategy and language, not the mechanism.\nPin survival is enforced here, not by your care — you have no argument that can drop a confirmed pick. Use `note` to say, in one line, what you are following and why; when the human\'s words and their flags disagree, this is where you name the disagreement.',
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      keep: {
+        type: 'string',
+        enum: ['picks'],
+        description:
+          'Only "picks", and it is the default and the only behaviour: confirmed picks always survive a redeal. Accepted so the intent can be stated explicitly.',
+      },
+      strategy: {
+        type: 'string',
+        enum: ['tighten', 'widen'],
+        description:
+          'tighten: weight the rejections harder (0.8) and take the nearest works — use when the picks already share something and you want more of exactly that. widen: weight rejections lightly (0.25) and skip the nearest band, so the board moves further from what is already hung — use when the loop has gone circular. Omit for the steady 0.5.',
+      },
+      count: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 60,
+        default: 12,
+        description:
+          'How many cards to deal. Leave it at 12 unless the human asked for a different size; the loop is legible because the board is small.',
+      },
+      note: {
+        type: 'string',
+        maxLength: 280,
+        description:
+          'One line above the board, written for the human, naming what this deal follows: "You said warm; your picks are all cool and high-contrast. I followed the picks."',
+      },
+      collection: collectionProperty,
+    },
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const strategyInput = asString((input as { strategy?: unknown }).strategy);
+      const strategy =
+        strategyInput === 'tighten' || strategyInput === 'widen'
+          ? strategyInput
+          : undefined;
+      const note = asString((input as { note?: unknown }).note);
+      const countInput = (input as { count?: unknown }).count;
+
+      const result = await runRedeal({
+        by: 'agent',
+        ...(strategy ? { strategy } : {}),
+        ...(countInput === undefined
+          ? {}
+          : { count: clampInt(countInput, 1, 60, BOARD_SIZE) }),
+        ...(note ? { note } : {}),
+        collection: (input as { collection?: unknown }).collection,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+
+      if (!result.ok) {
+        return fail(
+          result.error.code,
+          result.error.message,
+          result.error.hint
+        );
+      }
+
+      return ok({
+        kept: result.kept.map((id) => ({ id, work: flagLabel(id) })),
+        removed: result.removed.map((id) => ({ id, work: flagLabel(id) })),
+        added: result.added.map((id) => ({ id, work: flagLabel(id) })),
+        order: result.order,
+        exemplars: result.exemplars,
+        strategy: result.strategy,
+        ...(result.note ? { note: result.note } : {}),
+        effect:
+          'The board on the human’s screen is now this, with their picks in the positions they were in.',
+      });
+    }),
+});
+
+const compareArtworksTool = (): WebMcpTool => ({
+  name: 'compare_artworks',
+  title: 'Put two works side by side',
+  description:
+    'Ask a question with pictures instead of words. Two works go up large on the human\'s screen with your question between them; they answer with one click.\nThis is the cheapest question you can ask a person who has taste but no vocabulary — "which of these two?" costs them a glance, where "do you prefer higher contrast or a softer tonal range?" costs them an essay they may not be able to write. Use it when you have a real hypothesis to test about what they are after, not to fill a turn.\nTheir click resolves as a pick on the winner and a reject on the loser, and comes back to you as a turn, so the answer lands in the exemplars whether or not they say anything.',
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      artworkIds: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 2,
+        maxItems: 2,
+        description:
+          'Exactly two ids, already loaded by this page. Choose a pair that differs on the one axis you are actually asking about.',
+      },
+      question: {
+        type: 'string',
+        maxLength: 200,
+        description:
+          'The question, set between the two works. Keep it answerable by pointing: "Which one belongs above a sofa?" not "Which do you prefer aesthetically?".',
+      },
+    },
+    required: ['artworkIds'],
+    additionalProperties: false,
+  },
+  execute: async (input) =>
+    guard(async () => {
+      const ids = readStringArray((input as { artworkIds?: unknown }).artworkIds);
+      if (ids.length !== 2) {
+        return fail(
+          'INVALID_INPUT',
+          'artworkIds must contain exactly two ids.',
+          'Two-up is the point: a third work turns a choice back into a search.'
+        );
+      }
+      const [first, second] = ids as [string, string];
+      if (first === second) {
+        return fail('INVALID_INPUT', 'The two ids must be different.');
+      }
+
+      const { found, missing } = recallArtworks(ids);
+      if (missing.length) {
+        return fail(
+          'ARTWORK_NOT_IN_SESSION',
+          `Not loaded by this page: ${missing.join(', ')}.`,
+          'Search first, then compare ids from the results.'
+        );
+      }
+
+      const question = asString((input as { question?: unknown }).question);
+      setCompare({
+        artworkIds: [first, second],
+        question: question || null,
+        askedBy: 'agent',
+        at: Date.now(),
+      });
+
+      return ok({
+        comparing: found.map((artwork) => toAgentArtworkSummary(artwork)),
+        ...(question ? { question } : {}),
+        effect:
+          'Both works are on the human’s screen at full size with your question between them.',
+        next: 'Wait for their click. It arrives as a turn carrying compareChoice, and resolves to a pick and a reject on its own.',
       });
     }),
 });
@@ -1882,6 +2320,10 @@ export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   setResultsTool(context),
   showArtworkTool(),
   setViewTool(),
+  flagArtworksTool(),
+  searchByExemplarsTool(),
+  redealTool(),
+  compareArtworksTool(),
   createCollectionTool(),
   addToCollectionTool(),
   indexZipTool(),
@@ -1902,6 +2344,10 @@ export const PAILLETTE_TOOL_NAMES = [
   'set_results',
   'show_artwork',
   'set_view',
+  'flag_artworks',
+  'search_by_exemplars',
+  'redeal',
+  'compare_artworks',
   'create_collection',
   'add_to_collection',
   'index_zip',

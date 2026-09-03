@@ -132,6 +132,47 @@ export const searchImagePublic = async ({
   return readEnvelope<SearchResponse>(response);
 };
 
+export interface ExemplarSearchInput {
+  collectionId: string;
+  positiveIds: string[];
+  negativeIds?: string[];
+  excludeIds?: string[];
+  topK: number;
+  /** Rocchio's negative pull. 0.5 is the documented default. */
+  negativeWeight?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Relevance feedback over the stored jina-clip-v2 vectors: more like these,
+ * less like those. No embedding call happens — every vector is fetched by id
+ * from the index the human's own searches already query — so this is cheap
+ * enough to sit under a key press.
+ */
+export const searchByExemplarsPublic = async ({
+  collectionId,
+  positiveIds,
+  negativeIds,
+  excludeIds,
+  topK,
+  negativeWeight,
+  signal,
+}: ExemplarSearchInput): Promise<SearchResponse> => {
+  const response = await fetch(publicSearchPath(collectionId, 'exemplars'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      positiveIds,
+      ...(negativeIds?.length ? { negativeIds } : {}),
+      ...(excludeIds?.length ? { excludeIds } : {}),
+      topK,
+      ...(negativeWeight === undefined ? {} : { negativeWeight }),
+    }),
+    signal,
+  });
+  return readEnvelope<SearchResponse>(response);
+};
+
 export interface BrowseInput {
   collectionId: string;
   limit: number;

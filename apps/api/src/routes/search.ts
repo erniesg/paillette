@@ -3914,3 +3914,327 @@ searchRoutes.post('/search/image', async (c) => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /search/exemplars — Rocchio relevance feedback over the stored vectors
+// ---------------------------------------------------------------------------
+
+/** Rocchio's negative pull. Documented, fixed, and not learned from anything. */
+export const DEFAULT_EXEMPLAR_NEGATIVE_WEIGHT = 0.5;
+/** How many candidates to pull per result asked for, before re-scoring. */
+const EXEMPLAR_CANDIDATE_MULTIPLIER = 6;
+/** A request that names more exemplars than this is not relevance feedback. */
+const MAX_EXEMPLARS_PER_SIDE = 32;
+const MAX_EXEMPLAR_EXCLUSIONS = 400;
+
+const readIdList = (value: unknown, limit: number): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const id = entry.trim();
+    if (id) seen.add(id);
+    if (seen.size >= limit) break;
+  }
+  return [...seen];
+};
+
+/**
+ * The centroid of the works someone liked, unit-normalised so it can be handed
+ * straight to Vectorize as a query vector.
+ *
+ * This is the "mean(pos)" half of the score, and it is the whole reason the
+ * loop can run without a model: the direction a person is pulling in is just
+ * the average of the pictures they kept.
+ */
+const meanVector = (vectors: ArrayLike<number>[]): number[] | null => {
+  const first = vectors[0];
+  if (!first || first.length === 0) return null;
+  const dimensions = first.length;
+  const total = new Float64Array(dimensions);
+  let counted = 0;
+
+  for (const vector of vectors) {
+    if (!vector || vector.length !== dimensions) continue;
+    for (let index = 0; index < dimensions; index += 1) {
+      total[index] = (total[index] ?? 0) + (vector[index] ?? 0);
+    }
+    counted += 1;
+  }
+  if (counted === 0) return null;
+
+  let norm = 0;
+  for (let index = 0; index < dimensions; index += 1) {
+    const averaged = (total[index] ?? 0) / counted;
+    total[index] = averaged;
+    norm += averaged * averaged;
+  }
+  norm = Math.sqrt(norm);
+  if (!(norm > 0)) return null;
+
+  return Array.from(total, (value) => value / norm);
+};
+
+/**
+ * POST /search/exemplars
+ *
+ * "More like these, less like those", scored server-side over the jina-clip-v2
+ * vectors already in Vectorize:
+ *
+ *     score(x) = cos(x, mean(positives)) − w · max_j cos(x, negative_j)
+ *
+ * `max` rather than `mean` over the negatives on purpose: averaging lets a
+ * cluster of mild rejects cancel out, so one emphatic `X` would barely move
+ * the board. Taking the worst single match means one strong reject genuinely
+ * pushes a whole region away, which is what the person pressing the key meant.
+ *
+ * Nothing is learned and nothing is stored. The weight is a constant, the
+ * exemplars arrive with every request, and two identical requests return
+ * identical boards.
+ *
+ * Notably this route makes **no embedding call**: every vector it needs is
+ * already indexed, fetched by id. So it costs no Jina quota and is not metered
+ * against the NGA daily search allowance — only the per-minute request limit
+ * applies, which is what makes a fast cull loop affordable.
+ */
+searchRoutes.post('/search/exemplars', async (c) => {
+  const startTime = performance.now();
+
+  try {
+    const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    const isPublicSearchPrincipal = getAuth(c as any).scopes.includes(
+      'public_search'
+    );
+    if (
+      isPublicSearchPrincipal &&
+      !isAllowedPublicSearchRouteScope(requestedOrgId)
+    ) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PUBLIC_SEARCH_SCOPE_NOT_ALLOWED',
+            message: 'This organization is not available to public search',
+          },
+        },
+        403
+      );
+    }
+
+    const { orgId, provider } = await resolveOrgSearchScope(
+      c.env.DB,
+      requestedOrgId
+    );
+
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'Invalid JSON request body.' },
+        },
+        400
+      );
+    }
+
+    const positiveIds = readIdList(body.positiveIds, MAX_EXEMPLARS_PER_SIDE);
+    if (positiveIds.length === 0) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'positiveIds must contain at least one artwork id.',
+          },
+        },
+        400
+      );
+    }
+    const negativeIds = readIdList(body.negativeIds, MAX_EXEMPLARS_PER_SIDE);
+    const excludeIds = readIdList(body.excludeIds, MAX_EXEMPLAR_EXCLUSIONS);
+    const requestedTopK = Number(body.topK ?? 12);
+    const topK = Number.isFinite(requestedTopK)
+      ? Math.min(Math.max(Math.round(requestedTopK), 1), MAX_SEARCH_RESULTS)
+      : 12;
+    const requestedWeight = Number(
+      body.negativeWeight ?? DEFAULT_EXEMPLAR_NEGATIVE_WEIGHT
+    );
+    const negativeWeight = Number.isFinite(requestedWeight)
+      ? Math.min(Math.max(requestedWeight, 0), 1)
+      : DEFAULT_EXEMPLAR_NEGATIVE_WEIGHT;
+
+    if (provider === 'nga') {
+      try {
+        await enforceNgaPublicSearchRequestLimit(c, isPublicSearchPrincipal);
+      } catch (error) {
+        return ngaRateLimitedResponse(c, error as Error);
+      }
+    }
+
+    const vectorize = getImageVectorize(c.env);
+    if (!vectorize) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'IMAGE_INDEX_UNAVAILABLE',
+            message: `No image vector index is configured for embedding version ${getEmbeddingIndexVersion(c.env)}.`,
+          },
+        },
+        501
+      );
+    }
+
+    const canonicalPositives = positiveIds.map(canonicalArtworkId);
+    const canonicalNegatives = negativeIds.map(canonicalArtworkId);
+
+    const [positiveVectors, negativeVectors] = await Promise.all([
+      getImageVectorsByIds(vectorize, canonicalPositives),
+      canonicalNegatives.length
+        ? getImageVectorsByIds(vectorize, canonicalNegatives)
+        : Promise.resolve([]),
+    ]);
+
+    const centroid = meanVector(positiveVectors.map((vector) => vector.values));
+    if (!centroid) {
+      return c.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'EXEMPLARS_NOT_INDEXED',
+            message:
+              'None of the positive exemplars have an image embedding in this collection.',
+          },
+        },
+        422
+      );
+    }
+
+    // Everything already seen is out: the exemplars themselves, the works the
+    // caller says it has already dealt, and anything explicitly rejected.
+    const blocked = new Set<string>([
+      ...canonicalPositives,
+      ...canonicalNegatives,
+      ...excludeIds.map(canonicalArtworkId),
+    ]);
+
+    const candidatePool = Math.min(
+      Math.max(topK * EXEMPLAR_CANDIDATE_MULTIPLIER, 20),
+      MAX_SEARCH_RESULTS
+    );
+    const queryResult = await vectorize.query(centroid, {
+      topK: candidatePool,
+      filter: getVectorFilter(orgId, provider, undefined),
+      returnValues: false,
+      returnMetadata: VECTORIZE_QUERY_METADATA,
+    });
+
+    const candidates = queryResult.matches
+      .map((match) => ({
+        id: canonicalArtworkId(match.id),
+        positiveScore: match.score,
+      }))
+      .filter((candidate) => !blocked.has(candidate.id));
+
+    // With no negatives the Vectorize score already *is* cos(x, centroid), so
+    // there is nothing to re-score and no second round trip to pay for.
+    let scored: { id: string; score: number }[];
+    if (negativeVectors.length === 0 || candidates.length === 0) {
+      scored = candidates.map((candidate) => ({
+        id: candidate.id,
+        score: candidate.positiveScore,
+      }));
+    } else {
+      const candidateVectors = await getImageVectorsByIds(
+        vectorize,
+        candidates.map((candidate) => candidate.id)
+      );
+      const valuesById = new Map(
+        candidateVectors.map((vector) => [
+          canonicalArtworkId(vector.id),
+          vector.values,
+        ])
+      );
+
+      scored = candidates.map((candidate) => {
+        const values = valuesById.get(candidate.id);
+        if (!values) {
+          // No vector came back for this id; fall back to the positive term
+          // alone rather than dropping a real work off the board.
+          return { id: candidate.id, score: candidate.positiveScore };
+        }
+        let worst = -1;
+        for (const negative of negativeVectors) {
+          const similarity = cosineSimilarity(values, negative.values);
+          if (similarity !== null && similarity > worst) worst = similarity;
+        }
+        const penalty = worst > -1 ? negativeWeight * worst : 0;
+        return { id: candidate.id, score: candidate.positiveScore - penalty };
+      });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const selected = scored.slice(0, topK);
+
+    if (selected.length === 0) {
+      return c.json<ApiResponse<SearchResponse>>({
+        success: true,
+        data: {
+          results: [],
+          count: 0,
+          queryTime: performance.now() - startTime,
+        },
+      });
+    }
+
+    const artworkById = await getArtworksByIds(
+      c.env.DB,
+      selected.map((entry) => entry.id),
+      orgId,
+      provider
+    );
+
+    const results: ArtworkSearchResult[] = selected.flatMap((entry) => {
+      const artwork = artworkById.get(entry.id);
+      if (!artwork) return [];
+      return [mapSearchRow(artwork, entry.score)];
+    });
+
+    const queryTime = performance.now() - startTime;
+
+    await recordArtworkResults(
+      c as any,
+      results.map((result, index) => ({
+        artworkId: result.id,
+        galleryId: result.orgId || result.galleryId,
+        rank: index + 1,
+        score: result.similarity,
+      }))
+    );
+
+    return c.json<ApiResponse<SearchResponse>>({
+      success: true,
+      data: {
+        results,
+        count: results.length,
+        queryTime,
+      },
+      meta: { timestamp: new Date().toISOString() },
+    });
+  } catch (error) {
+    console.error('Exemplar search failed:', error);
+    return c.json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'SEARCH_ERROR',
+          message:
+            error instanceof Error ? error.message : 'Exemplar search failed',
+        },
+      },
+      500
+    );
+  }
+});
