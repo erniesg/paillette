@@ -23,6 +23,7 @@ import { Logo } from '~/components/ui/logo';
 import { Button } from '~/components/ui/button';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
+import { SpeakButton } from '~/components/artwork/speak-button';
 import {
   getIndexStatus,
   indexZip,
@@ -646,7 +647,7 @@ export default function TryPaillette() {
   const agentJobId =
     webmcpIndexJob?.origin === 'agent' ? webmcpIndexJob.jobId : null;
   useEffect(() => {
-    if (!agentJobId || startedRef.current || job?.jobId === agentJobId) return;
+    if (!agentJobId || startedRef.current) return;
 
     const controller = new AbortController();
     let live = true;
@@ -691,7 +692,12 @@ export default function TryPaillette() {
       if (timer) clearInterval(timer);
       controller.abort();
     };
-  }, [agentJobId, job?.jobId]);
+    // Deliberately keyed on the job alone. Including `job?.jobId` tore the
+    // poller down the moment its own first read adopted the job — the guard
+    // above then saw job.jobId === agentJobId and returned early, so the page
+    // froze on whatever that first poll said ("queued, 0%") for the rest of
+    // the run and never reached the suggestions.
+  }, [agentJobId]);
 
   const runSearch = useCallback(
     async (raw: string) => {
@@ -1238,18 +1244,37 @@ export default function TryPaillette() {
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => setFocusedArtwork(null)}
-                className="rounded-lg border border-neutral-700 px-3 py-1 text-sm text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {/* The description `describe_artwork` generated, spoken. This is
+                    the point of generating it: a work you cannot see is only
+                    reachable if something says what is in it. */}
+                <SpeakButton
+                  text={
+                    focused.artwork.description ||
+                    [focused.artwork.title, focused.artwork.artist]
+                      .filter(Boolean)
+                      .join(', ')
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => setFocusedArtwork(null)}
+                  className="rounded-lg border border-neutral-700 px-3 py-1 text-sm text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             {focused.note && (
               <p className="border-b border-neutral-800 px-6 py-3 text-sm text-neutral-300">
                 {focused.note}
+              </p>
+            )}
+
+            {focused.artwork.description && (
+              <p className="border-b border-neutral-800 px-6 py-3 text-sm leading-relaxed text-neutral-400">
+                {focused.artwork.description}
               </p>
             )}
 

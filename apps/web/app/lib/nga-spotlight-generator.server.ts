@@ -1,4 +1,8 @@
 import {
+  getPublicImageUrl,
+  getPublicThumbnailUrl,
+} from './public-artwork-metadata';
+import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES,
   PUBLIC_SEARCH_SPOTLIGHT_SCHEMA_VERSION,
@@ -242,9 +246,17 @@ const toSpotlightArtwork = (
     title: asText(artwork.title)!,
     ...(asText(artwork.artist) ? { artist: asText(artwork.artist) } : {}),
     ...(Number.isInteger(artwork.year) ? { year: artwork.year } : {}),
-    ...(asUrl(artwork.imageUrl) ? { imageUrl: asUrl(artwork.imageUrl) } : {}),
-    ...(asUrl(artwork.thumbnailUrl)
-      ? { thumbnailUrl: asUrl(artwork.thumbnailUrl) }
+    // The bundle is served to anonymous visitors straight off the CDN, so the
+    // URLs baked into it have to be publicly fetchable. `artwork.imageUrl` is
+    // Paillette's own asset URL, which requires a session and answers 401 —
+    // every cached spotlight image failed to load. `getPublicImageUrl` prefers
+    // the holding institution's CORS-open IIIF URL out of the record's
+    // provenance, which is exactly what a cached, no-auth bundle needs.
+    ...(asUrl(getPublicImageUrl(artwork))
+      ? { imageUrl: asUrl(getPublicImageUrl(artwork)) }
+      : {}),
+    ...(asUrl(getPublicThumbnailUrl(artwork))
+      ? { thumbnailUrl: asUrl(getPublicThumbnailUrl(artwork)) }
       : {}),
     similarity: artwork.similarity,
     source: {

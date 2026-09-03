@@ -31,6 +31,7 @@ import {
   type QueryIntentFilters,
 } from '../utils/query-intent';
 import { generateJinaQueryEmbedding } from './search';
+import { openaiCompletion } from '../utils/openai';
 
 // ---------------------------------------------------------------------------
 // Sandbox scope + caps
@@ -546,7 +547,8 @@ export const deriveCollectionSuggestions = (
   };
 };
 
-const SUGGESTIONS_CACHE_VERSION = 'v1';
+/** Bumped to v2 when motif suggestions landed, to drop the facet-only bundles. */
+const SUGGESTIONS_CACHE_VERSION = 'v4';
 const SUGGESTIONS_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /**
@@ -554,6 +556,100 @@ const SUGGESTIONS_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30;
  * poll or page view. KV is best-effort, matching `withinJobRateLimit` below —
  * a cache miss just recomputes from D1 rather than failing the request.
  */
+/**
+ * Motif suggestions: what you would actually see in these works.
+ *
+ * `deriveCollectionSuggestions` is deterministic and grounded, but its output
+ * is a facet dump — "Painting works", "oil on canvas pieces". True, and dull:
+ * it tells a visitor what the columns contain, not what the pictures are of,
+ * and nobody's first search is "Print works".
+ *
+ * So one small LLM call reads a sample of this collection's real titles and
+ * proposes subject phrases. It is grounded in titles that exist, and — unlike a
+ * facet query — a motif produces no structured filter, so it cannot cull its
+ * own results to nothing the way "Works by Eadweard Muybridge" once did. Vector
+ * search always returns its nearest neighbours.
+ *
+ * Fail-open in every direction: no key, no budget, bad JSON, slow response —
+ * the caller keeps the deterministic bundle exactly as it was.
+ */
+const MOTIF_TIMEOUT_MS = 12000;
+const MAX_MOTIFS = 4;
+
+const proposeMotifSuggestions = async (
+  env: Env,
+  rows: readonly SuggestionSourceRow[]
+): Promise<CollectionSuggestion[]> => {
+  const titles = rows
+    .map((row) => row.title?.trim())
+    .filter((title): title is string => typeof title === 'string' && title.length >= 4)
+    .slice(0, 60);
+  if (titles.length < 8) return [];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MOTIF_TIMEOUT_MS);
+  try {
+    const completion = await openaiCompletion({
+      env,
+      json: true,
+      maxTokens: 220,
+      signal: controller.signal,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You write search suggestions for an art collection. Given real work titles, propose short phrases describing SUBJECTS OR MOODS a visitor could search for — what is depicted, not the catalogue fields. Never propose an artist name, a medium, a date, or a classification. Two to five words each, lowercase, no punctuation. Only subjects clearly present in the titles given. Reply as JSON: {"motifs":["...","..."]}',
+        },
+        {
+          role: 'user',
+          content: `Titles from this collection:\n${titles.join('\n')}`,
+        },
+      ],
+    });
+
+    // The model is asked for {"motifs": [...]}, but a bare array or a differently
+    // named key is a normal thing for it to return and not worth losing the
+    // whole suggestion set over.
+    const payload = completion as unknown;
+    const motifs: unknown[] = Array.isArray(payload)
+      ? payload
+      : (() => {
+          const record = (payload ?? {}) as Record<string, unknown>;
+          for (const key of ['motifs', 'suggestions', 'queries', 'subjects']) {
+            if (Array.isArray(record[key])) return record[key] as unknown[];
+          }
+          // Any single array value will do — the shape matters, not the name.
+          const firstArray = Object.values(record).find((value) =>
+            Array.isArray(value)
+          );
+          return Array.isArray(firstArray) ? (firstArray as unknown[]) : [];
+        })();
+
+    const seen = new Set<string>();
+    const out: CollectionSuggestion[] = [];
+    for (const raw of motifs) {
+      const query = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+      if (!query || query.length < 3 || query.length > 60) continue;
+      if (query.split(/\s+/).length > 6) continue;
+      if (seen.has(query)) continue;
+      seen.add(query);
+      out.push({
+        id: `subject:${slugifySuggestion(query)}`,
+        type: 'subject',
+        label: query.replace(/^\w/, (c) => c.toUpperCase()),
+        query,
+      });
+      if (out.length >= MAX_MOTIFS) break;
+    }
+    return out;
+  } catch {
+    // Any failure at all: the deterministic suggestions still stand.
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const getCollectionSuggestions = async (
   env: Env,
   collectionId: string
@@ -582,6 +678,17 @@ const getCollectionSuggestions = async (
     .all<SuggestionSourceRow>();
 
   const bundle = deriveCollectionSuggestions(results);
+
+  // Motifs lead, facets follow. A visitor wants somewhere to start; a curator
+  // still gets the artist and medium entries underneath.
+  const motifs = await proposeMotifSuggestions(env, results);
+  if (motifs.length > 0) {
+    const taken = new Set(motifs.map((motif) => motif.id));
+    bundle.suggestions = [
+      ...motifs,
+      ...bundle.suggestions.filter((entry) => !taken.has(entry.id)),
+    ].slice(0, MAX_COLLECTION_SUGGESTIONS);
+  }
 
   if (env.CACHE) {
     try {

@@ -31,3 +31,13 @@ describe('public collection descriptors', () => {
     }
   });
 });
+
+describe('legacy public collection URLs', () => {
+  it('maps a public collection id to its live search path', () => {
+    // `/collections/nga/search` was published in earlier docs and tool output.
+    // It matches the UUID-scoped route, which 404s for a public id, so the
+    // route redirects using exactly this value.
+    const nga = PUBLIC_COLLECTIONS.find((entry) => entry.id === 'nga');
+    expect(nga?.searchPath).toBe('/nga/search');
+  });
+});
