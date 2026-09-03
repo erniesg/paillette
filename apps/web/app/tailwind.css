@@ -19,6 +19,59 @@
     --app-control: rgba(255, 255, 255, 0.055);
     --app-control-strong: rgba(255, 255, 255, 0.12);
     --app-shadow: rgba(0, 0, 0, 0.42);
+
+    /*
+     * The light table.
+     *
+     * Charcoal, not black: a black page makes every work look like it is
+     * floating in nothing, and the dark passages of a painting dissolve into
+     * the background. Charcoal gives the works an edge to sit against, and
+     * leaves the works themselves as the only saturated thing on screen. Every
+     * value below is deliberately desaturated for that reason.
+     */
+    --lt-ground: #1a1a1d;
+    --lt-ground-deep: #141417;
+    /*
+     * The slide is lighter than the ground, because a lit transparency on a
+     * light box is. The well is only a shade below the mount rather than a
+     * black hole: works are contained, never cropped, so a portrait work in a
+     * landscape slot leaves visible margins, and those margins have to read as
+     * part of the slide instead of as a void punched through it.
+     */
+    --lt-slide: #26262b;
+    --lt-slide-well: #1e1e22;
+    --lt-rule: rgba(255, 255, 255, 0.08);
+    --lt-rule-strong: rgba(255, 255, 255, 0.18);
+    --lt-slide-shadow:
+      0 18px 34px -14px rgba(0, 0, 0, 0.92), 0 2px 6px -2px rgba(0, 0, 0, 0.7);
+    --lt-slide-shadow-lifted:
+      0 30px 56px -18px rgba(0, 0, 0, 0.95), 0 3px 10px -3px rgba(0, 0, 0, 0.75);
+
+    /*
+     * Provenance ink — two hands, one board.
+     *
+     * Graphite is the human. It is achromatic on purpose: the human's mark is
+     * not "a colour", it is the absence of one, so the single coloured ink on
+     * screen always means the agent. Graphite is a pencil, so it reads light on
+     * a charcoal ground and near-black on paper; the token flips value between
+     * themes but never gains a hue.
+     */
+    /*
+     * The alphas are set by contrast against `--lt-ground`, not by eye. The
+     * catalogue line uses `faint` at 10px uppercase, so it has to clear 4.5:1
+     * or the quietest thing on the board becomes the least readable:
+     *   human on ground — 14.3:1 · soft 5.2:1 · faint 4.6:1 · agent 9.1:1
+     */
+    --ink-human: #e6e3dc;
+    --ink-human-soft: rgba(230, 227, 220, 0.55);
+    --ink-human-faint: rgba(230, 227, 220, 0.5);
+    --ink-human-wash: rgba(230, 227, 220, 0.07);
+
+    /* The agent gets exactly one ink, and nothing else on the board may use it. */
+    --ink-agent: #5ec8d8;
+    --ink-agent-soft: rgba(94, 200, 216, 0.55);
+    --ink-agent-faint: rgba(94, 200, 216, 0.3);
+    --ink-agent-wash: rgba(94, 200, 216, 0.1);
   }
 
   :root[data-theme='light'] {
@@ -37,6 +90,30 @@
     --app-control: rgba(23, 23, 23, 0.055);
     --app-control-strong: rgba(23, 23, 23, 0.1);
     --app-shadow: rgba(23, 23, 23, 0.12);
+
+    /* The same table under gallery lights: paper-grey ground, lit slides. */
+    --lt-ground: #e8e4dc;
+    --lt-ground-deep: #dcd7cd;
+    --lt-slide: #fffdf8;
+    --lt-slide-well: #eceadf;
+    --lt-rule: rgba(23, 23, 23, 0.14);
+    --lt-rule-strong: rgba(23, 23, 23, 0.32);
+    --lt-slide-shadow:
+      0 14px 28px -14px rgba(23, 20, 14, 0.34), 0 2px 5px -2px rgba(23, 20, 14, 0.2);
+    --lt-slide-shadow-lifted:
+      0 26px 48px -18px rgba(23, 20, 14, 0.4), 0 3px 8px -3px rgba(23, 20, 14, 0.24);
+
+    /* Graphite on paper is what graphite actually is. */
+    /* Same contrast floor against the paper ground: soft 6.2:1, faint 4.6:1. */
+    --ink-human: #17161a;
+    --ink-human-soft: rgba(23, 22, 26, 0.72);
+    --ink-human-faint: rgba(23, 22, 26, 0.62);
+    --ink-human-wash: rgba(23, 22, 26, 0.06);
+
+    --ink-agent: #0a5f6b;
+    --ink-agent-soft: rgba(10, 95, 107, 0.7);
+    --ink-agent-faint: rgba(10, 95, 107, 0.4);
+    --ink-agent-wash: rgba(10, 95, 107, 0.09);
   }
 
   * {
@@ -71,6 +148,247 @@
 
   .card {
     @apply bg-white rounded-lg shadow-md p-6;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * The light table
+ *
+ * Chrome is hairlines and nothing else. Anything on this ground that is not a
+ * work of art, a provenance mark, or a piece of catalogue data should be doing
+ * as little as it can get away with.
+ * ------------------------------------------------------------------------- */
+
+.lt-ground {
+  background: var(--lt-ground);
+  color: var(--ink-human);
+}
+
+/* One mono face for catalogue data — accession numbers, ranks, similarity. */
+.lt-catalogue {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+/* One serif for wall labels — the agent's note, the compare question. */
+.lt-wall-label {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+  color: var(--ink-human-soft);
+}
+
+/* A slide sitting on the table: a mount, a dark well, and real weight. */
+.lt-slide {
+  position: relative;
+  background: var(--lt-slide);
+  /* A hairline mount edge, plus the shadow. Together they are what make a card
+   * an object on a table rather than a region of the page. */
+  box-shadow:
+    inset 0 0 0 1px var(--lt-rule),
+    var(--lt-slide-shadow);
+  transition:
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-slide:hover,
+.lt-slide:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--lt-rule-strong),
+    var(--lt-slide-shadow-lifted);
+  transform: translateY(-2px);
+}
+
+.lt-slide-well {
+  background: var(--lt-slide-well);
+  overflow: hidden;
+}
+
+/* Focus must survive the restyle, so it is defined once, here, in graphite. */
+.lt-slide :focus-visible,
+.lt-focusable:focus-visible {
+  outline: 2px solid var(--ink-human);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Provenance ink
+ *
+ * Styled against the `data-flag` / `data-hand` / `data-provisional` attribute
+ * contract rather than against any component, so the lane that owns flag logic
+ * can set the attributes without either lane editing the other's files.
+ *
+ *   data-flag="pick" | "reject"      what was decided
+ *   data-hand="human" | "agent"      who decided it
+ *   data-provisional                 present while the agent's mark is unconfirmed
+ *   data-agent-active                present while the agent is touching this card
+ * ------------------------------------------------------------------------- */
+
+.lt-slide[data-hand='agent'],
+[data-hand='agent'] {
+  --ink: var(--ink-agent);
+  --ink-soft: var(--ink-agent-soft);
+  --ink-faint: var(--ink-agent-faint);
+  --ink-wash: var(--ink-agent-wash);
+}
+
+.lt-slide,
+[data-hand='human'] {
+  --ink: var(--ink-human);
+  --ink-soft: var(--ink-human-soft);
+  --ink-faint: var(--ink-human-faint);
+  --ink-wash: var(--ink-human-wash);
+}
+
+/*
+ * A pick gains a hairline frame in the ink of whoever picked it. It is the
+ * only border on the board that is not near-invisible, which is the point:
+ * on a quiet ground a single 1px line is enough to carry a decision.
+ */
+.lt-slide[data-flag='pick'] {
+  box-shadow:
+    0 0 0 1px var(--ink),
+    var(--lt-slide-shadow-lifted);
+}
+
+/* Dashed until the human confirms. Same ink, provisional line. */
+.lt-slide[data-flag='pick'][data-provisional] {
+  box-shadow: var(--lt-slide-shadow);
+  outline: 1px dashed var(--ink);
+  outline-offset: -1px;
+}
+
+/*
+ * A reject is not deleted, it is set aside. It loses its saturation and most
+ * of its weight but stays legible, because the tray has to look like a pile
+ * you could go back to rather than a bin.
+ *
+ * The desaturation is applied to the *image*, never to the card. Filtering the
+ * whole card would drain the colour out of the agent's ink along with the
+ * painting, and an agent's reject would become indistinguishable from a
+ * human's — which is the one distinction this entire palette exists to make.
+ */
+.lt-slide[data-flag='reject'] {
+  box-shadow: 0 0 0 1px var(--ink-faint);
+}
+
+.lt-slide[data-flag='reject'] .lt-slide-well img {
+  filter: saturate(0.12) brightness(0.78);
+  transition: filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-slide[data-flag='reject'][data-provisional] {
+  box-shadow: inset 0 0 0 1px var(--lt-rule);
+  outline: 1px dashed var(--ink);
+  outline-offset: -1px;
+}
+
+/* Hovering a reject restores it, so you can see what you are giving up. */
+.lt-slide[data-flag='reject']:hover .lt-slide-well img,
+.lt-slide[data-flag='reject']:focus-within .lt-slide-well img {
+  filter: none;
+}
+
+/* The corner badge carrying the mark. */
+.lt-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: inline-flex;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.3rem;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lt-ground);
+  background: var(--ink);
+}
+
+.lt-mark[data-provisional] {
+  color: var(--ink);
+  background: transparent;
+  border: 1px dashed var(--ink);
+}
+
+/*
+ * A pulse on cards the agent is currently touching. It is the one moving thing
+ * on an otherwise still board, so it needs no label to read as "something else
+ * is working in here".
+ */
+.lt-slide[data-agent-active] {
+  animation: lt-agent-pulse 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes lt-agent-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--ink-agent-faint),
+      var(--lt-slide-shadow);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px var(--ink-agent),
+      0 0 0 6px var(--ink-agent-wash),
+      var(--lt-slide-shadow-lifted);
+  }
+}
+
+/*
+ * The tray of rejects along the left edge. Narrow, but never hidden — and once
+ * reserved it never collapses, because a gutter that appears mid-session drags
+ * the whole board sideways with it.
+ */
+.lt-tray {
+  border-right: 1px solid var(--lt-rule);
+  background: var(--lt-ground-deep);
+}
+
+/* An empty tray still holds its ground, but stops advertising itself. */
+.lt-tray[data-empty] {
+  background: transparent;
+  border-right-color: transparent;
+}
+
+.lt-tray[data-empty] .lt-catalogue {
+  color: var(--ink-human-wash);
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion
+ *
+ * Everything on the board is eased and under 450ms. Nothing overshoots: a
+ * bounce on a board of paintings reads as a toy.
+ * ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-slide,
+  .lt-slide:hover,
+  .lt-slide:focus-within {
+    transition: none;
+    transform: none;
+  }
+
+  .lt-slide[data-agent-active] {
+    animation: none;
+    /* The pulse still has to say "the agent is here", so it holds its bright
+     * frame instead of moving. */
+    box-shadow:
+      0 0 0 1px var(--ink-agent),
+      0 0 0 6px var(--ink-agent-wash),
+      var(--lt-slide-shadow);
   }
 }
 
