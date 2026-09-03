@@ -22,13 +22,16 @@ NGS Try result set", 2026-08-24 16:02:09 +0800), and the first one after it is
 There is a multi-day gap with no commits in between, so the boundary is unambiguous
 and nothing straddles it.
 
-The submission-period work lives on `deploy-nga-open-access`. `master` (the repo's
-default branch) is an ancestor of that branch — it has no commits of its own that
-the branch lacks, so the merge is a fast-forward — but it currently predates all of
-the work described here. That merge to `master` is a separate, tracked step (see
-`docs/webmcp-challenge-plan.md`, eligibility blocker #2) and must happen before
-submission, or neither the licence nor the WebMCP code will be visible on the
-default branch a judge lands on.
+This makes the prior/new split unusually easy to audit. `master` sat at exactly
+`e4ae3b43` — the last pre-period commit — until the submission-period work was
+fast-forwarded onto it as `9536606b` (99 commits). So:
+
+```sh
+git log e4ae3b43..master      # == the submission-period work, and nothing else
+```
+
+There was no merge commit and no rebase: `master` had no commits the branch lacked,
+so every hash below is the original, dated commit as it was authored.
 
 A judge can rerun the command above and check every hash independently.
 
