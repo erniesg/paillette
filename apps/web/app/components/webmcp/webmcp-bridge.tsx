@@ -107,7 +107,6 @@ export function WebMcpBridge() {
       disposeHarness();
     };
     // Mount-once: registration is global to the document, not to a render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <AgentActivityPanel />;
