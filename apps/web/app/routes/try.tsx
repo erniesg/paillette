@@ -49,7 +49,6 @@ import { rememberArtworks } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { setHumanResults, setIndexJob } from '~/lib/webmcp/store';
 import type { ArtworkSearchResult } from '~/types';
-import type { SuggestedQuery } from './__lib/collection-suggestions.server';
 
 export const meta: MetaFunction = () => [
   { title: 'Try Paillette — index your own images' },
@@ -106,49 +105,14 @@ export default function TryPaillette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState('');
 
-  const [suggestions, setSuggestions] = useState<SuggestedQuery[] | null>(null);
-  const [suggestionsGrounded, setSuggestionsGrounded] = useState(false);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  /** One suggestions fetch per completed job, not one per poll tick. */
-  const suggestionsFetchedForRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
       clearInterval(pollRef.current);
       pollRef.current = null;
-    }
-  }, []);
-
-  // Suggested searches are derived from the finished collection, so they are
-  // fetched once a job completes rather than polled. The endpoint itself
-  // caches the result, but this ref keeps this page from asking twice.
-  const loadSuggestions = useCallback(async (jobId: string) => {
-    if (suggestionsFetchedForRef.current === jobId) return;
-    suggestionsFetchedForRef.current = jobId;
-    setSuggestionsLoading(true);
-    try {
-      const response = await fetch(`/api/public-index/${jobId}/suggestions`);
-      const payload = (await response.json()) as {
-        success?: boolean;
-        data?: {
-          ready?: boolean;
-          grounded?: boolean;
-          suggestions?: SuggestedQuery[];
-        };
-      };
-      if (response.ok && payload.success && payload.data?.ready) {
-        setSuggestions(payload.data.suggestions ?? []);
-        setSuggestionsGrounded(Boolean(payload.data.grounded));
-      }
-    } catch {
-      // Suggestions are a nice-to-have on top of a working search box — a
-      // failure here should never block the human from searching by hand.
-    } finally {
-      setSuggestionsLoading(false);
     }
   }, []);
 
@@ -207,10 +171,6 @@ export default function TryPaillette() {
       setStartedAt(null);
       setCollectionName(name);
       setStage('Reading the archive…');
-      setSuggestions(null);
-      setSuggestionsGrounded(false);
-      setSuggestionsLoading(false);
-      suggestionsFetchedForRef.current = null;
 
       let plan: ArchivePreflight;
       try {
@@ -290,9 +250,6 @@ export default function TryPaillette() {
                 'The job finished without indexing anything. See the per-file errors below.'
             );
           }
-          if (next.state === 'complete') {
-            void loadSuggestions(handle.jobId);
-          }
         }
       };
 
@@ -301,7 +258,7 @@ export default function TryPaillette() {
       }, POLL_INTERVAL_MS);
       void poll();
     },
-    [stopPolling, loadSuggestions]
+    [stopPolling]
   );
 
   const startDemo = useCallback(
@@ -682,49 +639,6 @@ export default function TryPaillette() {
                 index will return it, so an early search comes back thin — run
                 it again as the count climbs.
               </p>
-            )}
-
-            {(suggestionsLoading || (suggestions && suggestions.length > 0)) && (
-              <div className="mt-6">
-                <p className="text-xs uppercase tracking-wide text-neutral-500">
-                  {suggestionsLoading
-                    ? 'Finding things to search for…'
-                    : suggestionsGrounded
-                      ? 'Suggested searches, from this collection’s own catalogue metadata'
-                      : 'Suggested searches — not enough catalogue metadata in this collection to ground them, so these are broad starter queries instead'}
-                </p>
-                {suggestions && suggestions.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion.id}
-                        type="button"
-                        onClick={() => {
-                          setQuery(suggestion.query);
-                          void runSearch(suggestion.query);
-                        }}
-                        disabled={!canSearch || searching}
-                        className="flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 transition-colors hover:border-primary-500 hover:text-white disabled:opacity-50"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            suggestion.source === 'metadata'
-                              ? 'bg-emerald-400'
-                              : 'bg-neutral-600'
-                          }`}
-                        />
-                        {suggestion.label}
-                        <span className="sr-only">
-                          {suggestion.source === 'metadata'
-                            ? ' (from catalogue metadata)'
-                            : ' (generic starter query)'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             )}
 
             {searchError && (

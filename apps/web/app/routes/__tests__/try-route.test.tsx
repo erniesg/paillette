@@ -76,20 +76,6 @@ type Stub = {
   searchBody: any;
   /** Flips the job to complete once the client has pushed a batch. */
   processed: number;
-  suggestionsCalls: number;
-};
-
-const DEFAULT_SUGGESTIONS = {
-  grounded: false,
-  suggestions: [
-    {
-      id: 'content:a-wave',
-      label: 'A wave',
-      query: 'a wave',
-      source: 'content',
-      count: 1,
-    },
-  ],
 };
 
 const stubApi = (options: {
@@ -112,7 +98,6 @@ const stubApi = (options: {
     statusCalls: 0,
     searchBody: null,
     processed: 0,
-    suggestionsCalls: 0,
   };
 
   vi.mocked(fetch).mockImplementation((async (
@@ -194,27 +179,6 @@ const stubApi = (options: {
         data: {
           collectionId: 'collection-42',
           results: options.searchResults ?? [],
-        },
-      });
-    }
-
-    if (url.endsWith('/suggestions')) {
-      stub.suggestionsCalls += 1;
-      if (options.suggestions === null) {
-        return Response.json({
-          success: true,
-          data: { ready: false, state: 'running' },
-        });
-      }
-      const chosen = options.suggestions ?? DEFAULT_SUGGESTIONS;
-      return Response.json({
-        success: true,
-        data: {
-          ready: true,
-          jobId: 'job-42',
-          collectionId: 'collection-42',
-          grounded: chosen.grounded,
-          suggestions: chosen.suggestions,
         },
       });
     }
@@ -336,100 +300,6 @@ describe('/try — anonymous indexing flow', () => {
 
     expect(await screen.findByText('wave 01')).toBeInTheDocument();
     expect(screen.getByText(/1 result for/i)).toBeInTheDocument();
-  });
-
-  it('offers a collection-specific suggested search once indexing finishes, and searches it on click', async () => {
-    const user = userEvent.setup();
-    const stub = stubApi({
-      zipBytes: await buildZip(FIXTURE_ENTRIES),
-      searchResults: [SEARCH_HIT],
-    });
-
-    renderTry();
-    await user.click(
-      await screen.findByRole('button', { name: /index demo a/i })
-    );
-
-    await waitFor(
-      () => expect(screen.getByText(/2 of 2 images indexed/i)).toBeInTheDocument(),
-      { timeout: 5000 }
-    );
-
-    const chip = await screen.findByRole(
-      'button',
-      { name: /a wave/i },
-      { timeout: 5000 }
-    );
-    expect(
-      screen.getByText(/not enough catalogue metadata.*broad starter/i)
-    ).toBeInTheDocument();
-    expect(stub.suggestionsCalls).toBeGreaterThan(0);
-
-    await user.click(chip);
-
-    await waitFor(() => expect(stub.searchBody).not.toBeNull());
-    expect(stub.searchBody.query).toBe('a wave');
-    expect(await screen.findByText('wave 01')).toBeInTheDocument();
-  });
-
-  it('tells the visitor when suggestions came from the archive’s own catalogue metadata', async () => {
-    const user = userEvent.setup();
-    stubApi({
-      zipBytes: await buildZip(FIXTURE_ENTRIES),
-      searchResults: [SEARCH_HIT],
-      suggestions: {
-        grounded: true,
-        suggestions: [
-          {
-            id: 'artist:jane-doe',
-            label: 'Works by Jane Doe',
-            query: 'Jane Doe',
-            source: 'metadata',
-            count: 3,
-          },
-        ],
-      },
-    });
-
-    renderTry();
-    await user.click(
-      await screen.findByRole('button', { name: /index demo a/i })
-    );
-
-    await waitFor(
-      () => expect(screen.getByText(/2 of 2 images indexed/i)).toBeInTheDocument(),
-      { timeout: 5000 }
-    );
-
-    expect(
-      await screen.findByRole(
-        'button',
-        { name: /works by jane doe/i },
-        { timeout: 5000 }
-      )
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/from this collection.s own catalogue metadata/i)
-    ).toBeInTheDocument();
-  });
-
-  it('never asks for suggestions while a job is still running', async () => {
-    const user = userEvent.setup();
-    const stub = stubApi({
-      zipBytes: await buildZip(FIXTURE_ENTRIES),
-      searchResults: [],
-      stayRunning: true,
-    });
-
-    renderTry();
-    await user.click(
-      await screen.findByRole('button', { name: /index demo a/i })
-    );
-
-    await waitFor(() =>
-      expect(screen.getByText(/2 of 2 images indexed/i)).toBeInTheDocument()
-    );
-    expect(stub.suggestionsCalls).toBe(0);
   });
 
   it('blames the vector index lag, not the query, when a running job returns nothing', async () => {
