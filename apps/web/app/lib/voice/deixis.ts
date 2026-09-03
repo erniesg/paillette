@@ -327,15 +327,17 @@ export const resolveDeixis = (text: string, scene: DeicticScene): Resolution => 
       continue;
     }
 
+    // One selected work is the most deliberate thing on screen, so it wins.
     if (scene.selection.length === 1) {
       const work = scene.selection[0] as SceneWork;
       referents.push({ phrase, start, end, works: [work], source: 'selection' });
       continue;
     }
-    if (scene.selection.length > 1) {
-      miss(`${scene.selection.length} works are selected — which one?`);
-      continue;
-    }
+    // Several selected works do *not* block a singular referent. A selection
+    // persists until it is cleared, so it is routinely older than the sentence
+    // being spoken — and someone saying "this one" while pointing at a card is
+    // plainly talking about the card, not about a set they picked out earlier.
+    // "These" is how they would have referred to the set.
     if (scene.hovered) {
       referents.push({
         phrase,
@@ -354,6 +356,10 @@ export const resolveDeixis = (text: string, scene: DeicticScene): Resolution => 
         works: [scene.focused],
         source: 'focused',
       });
+      continue;
+    }
+    if (scene.selection.length > 1) {
+      miss(`${scene.selection.length} works are selected — which one?`);
       continue;
     }
     miss('nothing is hovered, selected or open');

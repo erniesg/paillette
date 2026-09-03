@@ -142,6 +142,17 @@ describe('resolveDeixis', () => {
     expect(result.unresolved[0]?.reason).toMatch(/nothing is hovered/i);
   });
 
+  it('lets the cursor win over a selection made earlier', () => {
+    // A selection persists until cleared, so it is routinely older than the
+    // sentence. Someone saying "this one" while pointing means the card.
+    const result = resolveDeixis(
+      'more like this one',
+      scene({ selection: [lane, dusk], hovered: third })
+    );
+    expect(result.referents[0]?.works).toEqual([third]);
+    expect(result.referents[0]?.source).toBe('hovered');
+  });
+
   it('refuses to pick when several works are selected and one is asked for', () => {
     const result = resolveDeixis('this one', scene({ selection: [lane, dusk] }));
     expect(result.referents).toEqual([]);
