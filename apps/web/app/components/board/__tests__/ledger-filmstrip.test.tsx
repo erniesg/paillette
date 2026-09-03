@@ -155,6 +155,69 @@ describe('LedgerFilmstrip', () => {
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
+  /*
+   * A frame is a snapshot of ids taken turns ago, and the caller resolves them
+   * back to works at render time. Ids stop resolving — a session expires, a
+   * board is rehydrated from a URL, a result set is refetched and a record is
+   * gone. The strip has to survive holes rather than throw on `work.id`.
+   */
+  it('survives a frame whose works no longer resolve', () => {
+    const holey = [
+      work('a'),
+      undefined,
+      null,
+      work('d'),
+    ] as unknown as LightTableWork[];
+
+    render(
+      <LedgerFilmstrip
+        frames={[frame({ id: '1', works: holey })]}
+        onRestore={vi.fn()}
+      />
+    );
+
+    const button = screen.getByRole('button');
+    expect(button.querySelectorAll('img')).toHaveLength(2);
+    expect(button).toHaveAccessibleName(/restore 2 works/i);
+  });
+
+  /* Every cell the same size, or the strip stops reading as film. */
+  it('pads a thinned frame back to a full grid', () => {
+    render(
+      <LedgerFilmstrip
+        frames={[frame({ id: '1', works: [work('a'), work('b')] })]}
+        onRestore={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('button').querySelectorAll('.lt-ledger-thumb')
+    ).toHaveLength(6);
+  });
+
+  /*
+   * Restoring a frame with nothing left in it would put an empty board on the
+   * table. The turn still happened, so the frame stays in the record — it just
+   * stops offering to take you back there.
+   */
+  it('keeps a wholly stale frame in the record but not as a button', async () => {
+    const onRestore = vi.fn();
+    render(
+      <LedgerFilmstrip
+        frames={[frame({ id: '1', works: [], caption: 'tighter' })]}
+        onRestore={onRestore}
+      />
+    );
+
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('data-stale');
+    expect(button).toHaveAccessibleName(/no longer available/i);
+
+    await userEvent.click(button);
+    expect(onRestore).not.toHaveBeenCalled();
+  });
+
   it('scrolls to the newest turn without moving the page', () => {
     const scrollTo = vi.fn();
     Element.prototype.scrollTo = scrollTo;

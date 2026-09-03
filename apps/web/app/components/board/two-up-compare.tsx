@@ -93,6 +93,40 @@ export function TwoUpCompare({
       if (event.key === 'ArrowRight') {
         event.preventDefault();
         choose(1);
+        return;
+      }
+
+      /*
+       * Keep Tab inside the room.
+       *
+       * `aria-modal="true"` is a promise that nothing behind this is
+       * reachable, and without a trap it is simply false: tabbing walks
+       * straight out into the search grid underneath, which is still there,
+       * still focusable, and now invisible. A screen reader user would be
+       * reading a page they cannot see.
+       */
+      if (event.key === 'Tab') {
+        const room = roomRef.current;
+        if (!room) return;
+
+        const focusable = Array.from(
+          room.querySelectorAll<HTMLElement>('button:not([disabled])')
+        );
+        if (!focusable.length) return;
+
+        const first = focusable[0]!;
+        const last = focusable[focusable.length - 1]!;
+        const active = document.activeElement;
+
+        // Shift-Tab off the front wraps to the back, and vice versa. Focus
+        // sitting on the room itself counts as "before the first".
+        if (event.shiftKey && (active === first || active === room)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus();
+        }
       }
     };
 
@@ -100,9 +134,20 @@ export function TwoUpCompare({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [works, choose, onDismiss]);
 
-  /* Move focus into the room so the keys land and a screen reader follows. */
+  /*
+   * Move focus into the room, and put it back where it came from on the way
+   * out. Dropping focus to the top of the document after a compare is how a
+   * keyboard user loses their place on the board they were culling.
+   */
   useEffect(() => {
-    if (works) roomRef.current?.focus();
+    if (!works) return undefined;
+
+    const returnTo = document.activeElement as HTMLElement | null;
+    roomRef.current?.focus();
+
+    return () => {
+      if (returnTo && document.contains(returnTo)) returnTo.focus();
+    };
   }, [works]);
 
   if (!works) return null;
@@ -145,11 +190,15 @@ export function TwoUpCompare({
 
       {/*
        * The label hangs between the two works, the way it would on a wall
-       * between two hung pictures.
+       * between two hung pictures — and when there is no question there is no
+       * label, rather than an empty column holding the two works apart for a
+       * caption that never came.
        */}
-      <div className="lt-two-up-label">
-        {question && <p className="lt-wall-label lt-two-up-question">{question}</p>}
-      </div>
+      {question && (
+        <div className="lt-two-up-label">
+          <p className="lt-wall-label lt-two-up-question">{question}</p>
+        </div>
+      )}
 
       <TwoUpSide work={right} onChoose={() => choose(1)} side="right" />
     </div>

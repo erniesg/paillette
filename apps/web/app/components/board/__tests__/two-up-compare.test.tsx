@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TwoUpCompare } from '../two-up-compare';
@@ -147,6 +147,73 @@ describe('TwoUpCompare', () => {
     expect(
       screen.getByRole('dialog', { name: 'Warmer, or quieter?' })
     ).toBeInTheDocument();
+  });
+
+  /*
+   * `aria-modal="true"` is a promise that nothing behind the room is
+   * reachable. Without a trap it is false: tabbing walks out into the grid
+   * underneath, which is still focusable and now invisible.
+   */
+  it('keeps Tab inside the room', async () => {
+    render(<TwoUpCompare works={pair} question="Which?" />);
+
+    const buttons = screen.getAllByRole('button');
+    const last = buttons[buttons.length - 1]!;
+
+    last.focus();
+    await userEvent.tab();
+
+    expect(document.activeElement).toBe(buttons[0]);
+  });
+
+  it('wraps backwards off the front of the room', async () => {
+    render(<TwoUpCompare works={pair} question="Which?" />);
+
+    const buttons = screen.getAllByRole('button');
+    buttons[0]!.focus();
+    await userEvent.tab({ shift: true });
+
+    expect(document.activeElement).toBe(buttons[buttons.length - 1]);
+  });
+
+  /*
+   * Dropping focus to the top of the document after a compare is how a
+   * keyboard user loses their place on the board they were culling.
+   */
+  it('puts focus back where it came from on the way out', () => {
+    const outside = document.createElement('button');
+    outside.textContent = 'on the board';
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const { rerender } = render(<TwoUpCompare works={pair} question="Which?" />);
+    expect(document.activeElement).not.toBe(outside);
+
+    rerender(<TwoUpCompare works={null} question="Which?" />);
+    expect(document.activeElement).toBe(outside);
+
+    outside.remove();
+  });
+
+  /* No question, no label column holding the works apart for a missing caption. */
+  it('omits the label entirely when there is no question', () => {
+    const { container } = render(<TwoUpCompare works={pair} />);
+    expect(container.querySelector('.lt-two-up-label')).toBeNull();
+  });
+
+  it('still hangs both works when an image fails to load', () => {
+    render(<TwoUpCompare works={pair} question="Which?" />);
+
+    const image = screen.getByAltText('Lumber Schooners at Evening');
+    fireEvent.error(image);
+
+    // The side keeps its caption and stays choosable; only the picture is gone.
+    expect(screen.getByText('Lumber Schooners at Evening')).toBeVisible();
+    expect(
+      screen.getByRole('button', {
+        name: 'Choose Lumber Schooners at Evening by Fitz Henry Lane',
+      })
+    ).toBeEnabled();
   });
 
   it('marks the room when motion is reduced', () => {

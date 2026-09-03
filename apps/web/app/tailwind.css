@@ -245,7 +245,11 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   overflow: hidden;
 }
 
-/* Focus must survive the restyle, so it is defined once, here, in graphite. */
+/* Focus must survive the restyle, so it is defined once, here, in graphite.
+ * The card itself is included, not just its contents: the card is a tab stop
+ * because focus is what nominates it for the culling keys, and a tab stop with
+ * no visible ring is the same as no tab stop for anyone driving by keyboard. */
+.lt-slide:focus-visible,
 .lt-slide :focus-visible,
 .lt-focusable:focus-visible {
   outline: 2px solid var(--ink-human);
@@ -519,14 +523,11 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   background: var(--lt-ground-deep);
 }
 
-/* An empty tray still holds its ground, but stops advertising itself. */
+/* An empty tray still holds its ground, but stops advertising itself. With no
+ * heading in it there is nothing left to fade — it is simply reserved space. */
 .lt-tray[data-empty] {
   background: transparent;
   border-right-color: transparent;
-}
-
-.lt-tray[data-empty] .lt-catalogue {
-  color: var(--ink-human-wash);
 }
 
 /* ---------------------------------------------------------------------------
@@ -588,7 +589,14 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 .lt-two-up-choice {
   display: flex;
   width: 100%;
-  min-height: 0;
+  /*
+   * Hold the room's shape while the images are still arriving. An `<img>` with
+   * nothing decoded yet has no intrinsic size, so without this the two sides
+   * collapse to their captions and the whole room snaps open when the picture
+   * lands — which on a slow connection is most of the ten seconds this screen
+   * exists for.
+   */
+  min-height: 40vh;
   flex: 1 1 auto;
   align-items: center;
   justify-content: center;
@@ -753,6 +761,12 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 
 .lt-ledger-frame:hover:not(:disabled) {
   background: var(--ink-human-wash);
+}
+
+/* A turn whose works no longer resolve. It keeps its place in the record and
+ * loses its offer to take you back there. */
+.lt-ledger-frame[data-stale] {
+  opacity: 0.4;
 }
 
 /* The board on the table is marked in graphite, whoever's turn produced it —

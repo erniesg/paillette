@@ -112,16 +112,48 @@ function LedgerFrameButton({
   onRestore?: (frame: LedgerFrame) => void;
 }) {
   const picks = new Set(frame.pickIds ?? []);
-  const thumbs = frame.works.slice(0, THUMBS_PER_FRAME);
-  const hidden = frame.works.length - thumbs.length;
+
+  /*
+   * A frame is a snapshot of ids taken some turns ago, and the caller resolves
+   * those ids back to works at render time. Ids stop resolving — a session
+   * expires, a board is restored from a URL, a result set is refetched and one
+   * record is gone — so a frame can legitimately arrive holding holes, or
+   * holding nothing at all.
+   *
+   * Dropping them here rather than asking every caller to filter means a stale
+   * frame degrades to a thinner miniature instead of throwing on
+   * `work.id` and taking the whole strip down with it.
+   */
+  const resolved = frame.works.filter(
+    (work): work is LightTableWork => Boolean(work && work.id)
+  );
+  const thumbs = resolved.slice(0, THUMBS_PER_FRAME);
+  const hidden = resolved.length - thumbs.length;
+
+  /*
+   * Pad to a full grid. A frame that lost half its works still has to be a
+   * frame — the strip only reads as film if every cell is the same size, and a
+   * three-thumbnail miniature next to a six-thumbnail one reads as a layout
+   * bug rather than as a board that changed.
+   */
+  const blanks = Math.max(0, THUMBS_PER_FRAME - thumbs.length);
+
+  /*
+   * A frame whose ids have all gone stale cannot be restored to anything — it
+   * would put an empty board on the table. It stays in the strip, because the
+   * turn did happen and a record with a hole in it is still the record, but it
+   * is not a button any more.
+   */
+  const restorable = Boolean(onRestore) && resolved.length > 0;
 
   return (
     <button
       type="button"
-      onClick={onRestore ? () => onRestore(frame) : undefined}
-      disabled={!onRestore}
+      onClick={restorable ? () => onRestore?.(frame) : undefined}
+      disabled={!restorable}
       data-hand={frame.hand}
       data-active={active ? '' : undefined}
+      data-stale={resolved.length === 0 ? '' : undefined}
       aria-current={active ? 'true' : undefined}
       className="lt-ledger-frame lt-focusable"
       /*
@@ -129,7 +161,11 @@ function LedgerFrameButton({
        * thumbnails, and a keyboard user restoring a board should know it is
        * restoring twelve works rather than the six they can hear listed.
        */
-      aria-label={`Turn ${turn}${frame.caption ? ` — ${frame.caption}` : ''} — restore ${frame.works.length} works`}
+      aria-label={
+        resolved.length === 0
+          ? `Turn ${turn}${frame.caption ? ` — ${frame.caption}` : ''} — no longer available`
+          : `Turn ${turn}${frame.caption ? ` — ${frame.caption}` : ''} — restore ${resolved.length} works`
+      }
     >
       <span className="lt-ledger-board" aria-hidden="true">
         {thumbs.map((work) => (
@@ -147,6 +183,9 @@ function LedgerFrameButton({
               />
             ) : null}
           </span>
+        ))}
+        {Array.from({ length: blanks }, (_, index) => (
+          <span key={`blank-${index}`} className="lt-ledger-thumb" />
         ))}
       </span>
 

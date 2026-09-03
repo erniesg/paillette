@@ -2817,22 +2817,24 @@ export default function SearchPage() {
             "something calm", then "warmer" — is visible without ChatGPT. */}
         <AgentPrompt
           className="mx-auto mt-6 max-w-3xl"
-          placeholder="Ask the agent — “something warm for above the sofa”"
+          /* The example alone. "Ask the agent —" was narrating the mechanism
+             in the one place the human is about to type into anyway; showing
+             the shape of an utterance is more use than naming the feature. */
+          placeholder="something warm for above the sofa"
         />
 
         {/* The agent's note is a wall label above the board, not a chat bubble:
             set in the serif, in the agent's ink, with a single rule down the
-            side. It says who wrote it by its colour, so it does not have to
-            say so in words twice. */}
+            side. The colour says who wrote it, so nothing else has to — an
+            "assembled by the agent" line used to sit here doing exactly the
+            job the ink was already doing, which is the caption this palette
+            exists to make unnecessary. */}
         {agentBoardNote && (
           <p
             className="lt-wall-label mx-auto mt-6 max-w-3xl border-l pl-4"
             data-hand="agent"
             style={{ borderColor: 'var(--ink-agent)', color: 'var(--ink-agent)' }}
           >
-            <span className="lt-catalogue mr-2 block pb-1">
-              assembled by the agent
-            </span>
             {agentBoardNote}
           </p>
         )}
