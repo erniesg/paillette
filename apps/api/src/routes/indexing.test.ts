@@ -524,6 +524,36 @@ describe('indexing job lifecycle', () => {
     expect(collection.artwork_count).toBe(1);
   });
 
+  it('ignores a re-sent batch instead of indexing the same image twice', async () => {
+    // The client retries a batch when the response is lost, not only when the
+    // server rejected it. Re-indexing would mint a second artwork, a second R2
+    // object and a second vector for one image, and push processed past total.
+    const { payload: created } = await createJob(env, [
+      { name: 'red_barn.jpg', size: 1000 },
+    ]);
+    const files = [{ name: 'red_barn.jpg', type: 'image/jpeg' }];
+
+    await postBatch(env, created.data.jobId, files);
+    const { response, payload } = await postBatch(env, created.data.jobId, files);
+
+    expect(response.status).toBe(200);
+    expect(payload.data.batch[0]).toMatchObject({
+      file: 'red_barn.jpg',
+      ok: true,
+    });
+    // Counted once, so the progress bar can never read more than 100%.
+    expect(payload.data.processed).toBe(1);
+    expect(payload.data.total).toBe(1);
+
+    const artworkCount = sqlite
+      .prepare('SELECT COUNT(*) AS n FROM artworks')
+      .get() as { n: number };
+    expect(artworkCount.n).toBe(1);
+    expect(env.IMAGES.objects.size).toBe(1);
+    expect(env.VECTORIZE_V2.vectors).toHaveLength(1);
+    expect(env.CAPTION_VECTORIZE_V2.vectors).toHaveLength(1);
+  });
+
   it('falls back to a filename title when no sidecar metadata is supplied', async () => {
     const { payload: created } = await createJob(env, [
       { name: 'winter_light.jpg', size: 1000 },

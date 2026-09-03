@@ -1013,8 +1013,33 @@ indexing.post('/jobs/:jobId/items', async (c) => {
     message?: string;
   }> = [];
 
+  // The client resends a batch when a response is lost, not only when the
+  // server rejected the work — so the same file can arrive twice after it was
+  // already indexed. Without this, the retry mints a second artwork row, a
+  // second R2 object and a second Vectorize entry for one image (the same
+  // picture then comes back twice in search) and increments `processed` again,
+  // which can push it past `total` and render "6 of 5 images indexed".
+  const alreadyComplete = new Map<string, string | null>();
+  const { results: completedRows } = await c.env.DB.prepare(
+    `SELECT filename, artwork_id FROM index_job_items
+     WHERE job_id = ? AND state = 'complete'`
+  )
+    .bind(jobId)
+    .all<{ filename: string; artwork_id: string | null }>();
+  for (const row of completedRows ?? []) {
+    alreadyComplete.set(row.filename, row.artwork_id);
+  }
+
   for (const file of files) {
     const filename = file.name || 'untitled';
+    if (alreadyComplete.has(filename)) {
+      results.push({
+        file: filename,
+        ok: true,
+        artworkId: alreadyComplete.get(filename) ?? undefined,
+      });
+      continue;
+    }
     try {
       const mimeType = inferMimeType(filename, file.type);
       if (!mimeType) {

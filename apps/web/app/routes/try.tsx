@@ -70,6 +70,8 @@ const SEARCH_TOP_K = 24;
  * back empty, which reads as "this is broken" unless the page says otherwise.
  */
 const VECTOR_LAG_SECONDS = 15;
+/** Consecutive status-poll failures before the page admits it has lost the job. */
+const MAX_POLL_FAILURES = 5;
 
 /** Anonymous indexing writes only here; the server enforces it. */
 const INDEX_SANDBOX_ORG = 'webmcp-index';
@@ -105,9 +107,22 @@ export default function TryPaillette() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState('');
 
+  /** Set when an empty result is better explained by index lag than by the query. */
+  const [searchLagged, setSearchLagged] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * When an empty search stops being explained by propagation lag. Infinite
+   * while a job is still embedding; once it finishes, the last image still
+   * needs roughly VECTOR_LAG_SECONDS before Vectorize will return it — and
+   * that is exactly when a visitor, watching the page stop moving, types their
+   * first query.
+   */
+  const lagUntilRef = useRef<number>(Number.POSITIVE_INFINITY);
+  /** Consecutive failed status polls, so a dead poll surfaces instead of spinning. */
+  const pollFailuresRef = useRef(0);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -169,6 +184,9 @@ export default function TryPaillette() {
       setUploaded(0);
       setElapsed(0);
       setStartedAt(null);
+      setSearchLagged(false);
+      lagUntilRef.current = Number.POSITIVE_INFINITY;
+      pollFailuresRef.current = 0;
       setCollectionName(name);
       setStage('Reading the archive…');
 
@@ -204,7 +222,8 @@ export default function TryPaillette() {
           signal: controller.signal,
           // Each batch the server confirms moves the bar immediately, rather
           // than waiting for the next poll to notice.
-          onProgress: ({ processed }) => setUploaded(processed),
+          onProgress: ({ processed }) =>
+            setUploaded(Number.isFinite(processed) ? processed : 0),
         });
       } catch (cause) {
         setPhase('failed');
@@ -235,15 +254,28 @@ export default function TryPaillette() {
           });
         } catch {
           // A dropped poll is not a dropped job; the next tick re-reads it.
+          // A poll that keeps failing is a different thing, though: without
+          // this the page polls forever with both picker buttons disabled and
+          // nothing on screen saying anything is wrong.
+          pollFailuresRef.current += 1;
+          if (pollFailuresRef.current >= MAX_POLL_FAILURES) {
+            stopPolling();
+            setPhase('failed');
+            setError(
+              `Lost contact with the indexing job after ${MAX_POLL_FAILURES} attempts. Images already embedded are still in the collection; reload to start again.`
+            );
+          }
           return;
         }
+        pollFailuresRef.current = 0;
         setStatus(next);
         if (next.searchable ?? next.processed > 0) {
           setPhase((current) => (current === 'indexing' ? 'ready' : current));
         }
         if (next.state === 'complete' || next.state === 'failed') {
           stopPolling();
-          if (next.state === 'failed' && next.processed === 0) {
+          lagUntilRef.current = Date.now() + VECTOR_LAG_SECONDS * 1000;
+          if (next.processed === 0) {
             setPhase('failed');
             setError(
               next.notice ||
@@ -315,6 +347,12 @@ export default function TryPaillette() {
         );
         setResults(artworks);
         setLastQuery(trimmed);
+        // Decided here, not at render: whether an empty result is lag or a
+        // genuine miss depends on when the search ran, not on when React
+        // happens to re-render.
+        setSearchLagged(
+          artworks.length === 0 && Date.now() < lagUntilRef.current
+        );
         // The same two calls the public-search observer makes for the NGA
         // grid, so `get_view_context` reports these results as what the human
         // is looking at, and `show_artwork` can resolve their ids.
@@ -337,7 +375,8 @@ export default function TryPaillette() {
   const busy = phase === 'reading' || phase === 'indexing';
   const total = status?.total ?? preflight?.willIndex ?? 0;
   const processed = Math.max(status?.processed ?? 0, uploaded);
-  const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+  const percent =
+    total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   const running = status?.state !== 'complete' && status?.state !== 'failed';
 
   // Searchable the moment the server has embedded anything. Both counts here
@@ -662,8 +701,10 @@ export default function TryPaillette() {
             </h3>
             {results.length === 0 ? (
               <p className="text-neutral-400">
-                {running
-                  ? `Nothing back yet — an image becomes queryable about ${VECTOR_LAG_SECONDS}s after it is embedded, and ${processed} of ${total} are in so far. Search again in a moment.`
+                {searchLagged
+                  ? running
+                    ? `Nothing back yet — an image becomes queryable about ${VECTOR_LAG_SECONDS}s after it is embedded, and ${processed} of ${total} are in so far. Search again in a moment.`
+                    : `Nothing back yet — all ${processed} images are embedded, but the vector index needs about ${VECTOR_LAG_SECONDS}s after the last one before it will return them. Search again in a moment.`
                   : 'Nothing matched. Try a broader description — the index is only as large as the archive you sent.'}
               </p>
             ) : (

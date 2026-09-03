@@ -85,6 +85,8 @@ const stubApi = (options: {
   manifest?: unknown | null;
   /** Hold the job in flight, so partial-result copy can be asserted. */
   stayRunning?: boolean;
+  /** Make every status poll fail, to prove the page stops rather than spins. */
+  statusFails?: boolean;
   /** Only ever returned once the job reports `complete`, like the real API. */
   suggestions?: {
     source: 'metadata' | 'filenames';
@@ -154,6 +156,9 @@ const stubApi = (options: {
 
     if (url.endsWith('/status')) {
       stub.statusCalls += 1;
+      if (options.statusFails) {
+        return new Response('', { status: 502 });
+      }
       return Response.json({
         success: true,
         data: {
@@ -383,6 +388,70 @@ describe('/try — anonymous indexing flow', () => {
     expect(stub.searchBody.query).toBe('A. Painter');
     expect(await screen.findByText('wave 01')).toBeInTheDocument();
   });
+
+  it('explains the index lag on an empty search just after the job completes', async () => {
+    // The last image is embedded about a second before the job reports
+    // complete, so the ~15s Vectorize window straddles that transition. This
+    // is the moment a visitor searches — the page has just stopped moving —
+    // and telling them "nothing matched" blames them for a propagation delay.
+    const user = userEvent.setup();
+    stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      searchResults: [],
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    const box = await screen.findByLabelText(/search this collection/i);
+    await waitFor(() => expect(box).toBeEnabled(), { timeout: 5000 });
+    // The 2s status poll, not the upload, is what flips the job to complete.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/images indexed · complete/i)
+        ).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
+
+    await user.type(box, 'a wave');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+
+    expect(
+      await screen.findByText(/search again in a moment/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/nothing matched/i)).toBeNull();
+  });
+
+  it('gives up and says so when the status poll keeps failing', async () => {
+    // Otherwise the page polls forever with both picker buttons disabled and
+    // nothing on screen admitting anything is wrong — indistinguishable from
+    // a hang.
+    const user = userEvent.setup();
+    stubApi({
+      zipBytes: await buildZip(FIXTURE_ENTRIES),
+      statusFails: true,
+    });
+
+    renderTry();
+    await user.click(
+      await screen.findByRole('button', { name: /index demo a/i })
+    );
+
+    expect(
+      await screen.findByText(/lost contact with the indexing job/i, undefined, {
+        timeout: 20000,
+      })
+    ).toBeInTheDocument();
+    // And the visitor can pick another archive rather than reloading.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /index demo a/i })
+      ).toBeEnabled()
+    );
+  }, 30000);
 
   it('publishes the job and its results onto the shared canvas for the agent', async () => {
     const user = userEvent.setup();

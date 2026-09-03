@@ -565,6 +565,8 @@ const stubIndexingApi = (
     status?: Record<string, unknown>;
     statusResponse?: Response;
     searchResults?: unknown[];
+    /** Non-2xx to prove a failed search does not take the status read down. */
+    searchStatus?: number;
   } = {}
 ) => {
   const remote = new Map<string, { body: BlobPart; type: string }>();
@@ -667,6 +669,12 @@ const stubIndexingApi = (
     if (url.endsWith('/search')) {
       api.searchCalls += 1;
       api.searchBody = JSON.parse(String(init.body));
+      if (options.searchStatus && options.searchStatus >= 400) {
+        return Response.json(
+          { success: false, error: { code: 'INDEX_SEARCH_FAILED' } },
+          { status: options.searchStatus }
+        );
+      }
       return Response.json({
         success: true,
         data: {
@@ -985,7 +993,11 @@ describe('get_index_status', () => {
     expect(result.search.note).toContain('4 of 25');
   });
 
-  it('does not flag propagation lag once the job is finished', async () => {
+  it('still explains the lag on an empty search just after the job finishes', async () => {
+    // The last image is embedded about a second before the job reports
+    // `complete`, so the ~15s Vectorize window straddles that transition. An
+    // agent told "indexing finished" queries straight into it, and without a
+    // note it reports a healthy collection as empty.
     stubIndexingApi({
       status: { state: 'complete', processed: 2, total: 2, searchable: true },
       searchResults: [],
@@ -996,7 +1008,41 @@ describe('get_index_status', () => {
       query: 'blue wave',
     });
     expect(result.search.count).toBe(0);
+    expect(result.search.note).toContain('Repeat it once');
+    expect(result.search.note).not.toContain('of 2 are embedded so far');
+  });
+
+  it('says nothing about lag when the collection embedded nothing at all', async () => {
+    stubIndexingApi({
+      status: { state: 'complete', processed: 0, total: 0, searchable: true },
+      searchResults: [],
+    });
+
+    const result = await call('get_index_status', {
+      jobId: 'job-1',
+      query: 'blue wave',
+    });
+    expect(result.search.count).toBe(0);
     expect(result.search.note).toBeUndefined();
+  });
+
+  it('keeps the status readable when the search itself fails', async () => {
+    stubIndexingApi({
+      status: { state: 'running', processed: 3, total: 8, searchable: true },
+      searchStatus: 502,
+    });
+
+    const result = await call('get_index_status', {
+      jobId: 'job-1',
+      query: 'blue wave',
+    });
+    // The progress read is the point of the tool; a failed search must not
+    // take it down with it.
+    expect(result.ok).not.toBe(false);
+    expect(result.processed).toBe(3);
+    expect(result.total).toBe(8);
+    expect(result.search.count).toBe(0);
+    expect(result.search.error).toBeTruthy();
   });
 
   it('passes the collection-specific suggestions through to the agent once the job is done', async () => {

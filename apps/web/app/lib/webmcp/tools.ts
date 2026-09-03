@@ -1470,31 +1470,48 @@ const getIndexStatusTool = (): WebMcpTool => ({
 
       let search: ToolResult | null = null;
       if (query && searchable) {
-        const response = await searchIndexedCollection(jobId, query, {
-          topK: clampInt((input as { topK?: unknown }).topK, 1, 50, 20),
-          signal: options.signal,
-        });
-        const artworks = response.results.map((result) =>
-          toIndexedArtwork(
-            result,
-            response.collectionId,
-            collectionName ?? 'Indexed collection'
-          )
-        );
-        // Same session index as every other search, so show_artwork and
-        // set_results resolve these ids without a second round trip.
-        search = {
-          query,
-          count: artworks.length,
-          results: capture(artworks),
-          // The one case an agent reliably misreads: a job that is genuinely
-          // working looks like an empty collection for the first few seconds.
-          ...(artworks.length === 0 && !done
-            ? {
-                note: `No hits yet. An image is queryable roughly ${VECTOR_LAG_SECONDS}s after it is embedded, and only ${status.processed} of ${status.total} are embedded so far — this is propagation lag, not an empty collection. Poll again and repeat the query before telling the human anything is wrong.`,
-              }
-            : {}),
-        };
+        try {
+          const response = await searchIndexedCollection(jobId, query, {
+            topK: clampInt((input as { topK?: unknown }).topK, 1, 50, 20),
+            signal: options.signal,
+          });
+          const artworks = response.results.map((result) =>
+            toIndexedArtwork(
+              result,
+              response.collectionId,
+              collectionName ?? 'Indexed collection'
+            )
+          );
+          // Same session index as every other search, so show_artwork and
+          // set_results resolve these ids without a second round trip.
+          search = {
+            query,
+            count: artworks.length,
+            results: capture(artworks),
+            // The one case an agent reliably misreads: a job that is genuinely
+            // working looks like an empty collection. The window does not close
+            // when the job does — the last image is embedded about a second
+            // before `complete`, so the lag straddles that transition and an
+            // agent told "indexing finished" queries straight into it.
+            ...(artworks.length === 0 && status.processed > 0
+              ? {
+                  note: done
+                    ? `No hits yet, but all ${status.processed} images are embedded. Vectorize needs roughly ${VECTOR_LAG_SECONDS}s after the last image before it will return it, so a query this soon after completion can come back empty. Repeat it once before telling the human the collection is empty or that nothing matched.`
+                    : `No hits yet. An image is queryable roughly ${VECTOR_LAG_SECONDS}s after it is embedded, and only ${status.processed} of ${status.total} are embedded so far — this is propagation lag, not an empty collection. Poll again and repeat the query before telling the human anything is wrong.`,
+                }
+              : {}),
+          };
+        } catch (cause) {
+          // A failed search must not cost the agent its progress read: without
+          // this, one 502 from the search route fails the whole status call.
+          search = {
+            query,
+            count: 0,
+            results: [],
+            error: cause instanceof Error ? cause.message : String(cause),
+            note: 'The search failed, but the indexing status above is accurate. Retry the query rather than reporting the job as broken.',
+          };
+        }
       }
 
       return ok({
