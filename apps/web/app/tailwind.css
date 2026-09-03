@@ -57,14 +57,21 @@
      * themes but never gains a hue.
      */
     /*
-     * The alphas are set by contrast against `--lt-ground`, not by eye. The
-     * catalogue line uses `faint` at 10px uppercase, so it has to clear 4.5:1
-     * or the quietest thing on the board becomes the least readable:
-     *   human on ground — 14.3:1 · soft 5.2:1 · faint 4.6:1 · agent 9.1:1
+     * The alphas are set by contrast, not by eye. The catalogue line uses
+     * `faint` at 10px uppercase, so it has to clear 4.5:1 or the quietest
+     * thing on the board becomes the least readable.
+     *
+     * Measured against `--lt-slide`, not `--lt-ground`. The slide is lighter
+     * than the ground, so it is the worse background, and it is where almost
+     * all of this text actually sits — a card's artist line and accession
+     * number are on the mount, not on the table. Checking against the ground
+     * flattered the numbers by about 0.4 and let `faint` ship at 4.05:1.
+     *
+     *   human 11.8:1 · soft 6.5:1 · faint 5.0:1 · agent 7.7:1
      */
     --ink-human: #e6e3dc;
-    --ink-human-soft: rgba(230, 227, 220, 0.55);
-    --ink-human-faint: rgba(230, 227, 220, 0.5);
+    --ink-human-soft: rgba(230, 227, 220, 0.7);
+    --ink-human-faint: rgba(230, 227, 220, 0.58);
     --ink-human-wash: rgba(230, 227, 220, 0.07);
 
     /* The agent gets exactly one ink, and nothing else on the board may use it. */
@@ -104,7 +111,11 @@
       0 26px 48px -18px rgba(23, 20, 14, 0.4), 0 3px 8px -3px rgba(23, 20, 14, 0.24);
 
     /* Graphite on paper is what graphite actually is. */
-    /* Same contrast floor against the paper ground: soft 6.2:1, faint 4.6:1. */
+    /*
+     * Here the ground is the worse background rather than the slide, because
+     * the paper table is darker than the lit slides on it. Measured against
+     * `--lt-ground`: human 14.2:1 · soft 6.3:1 · faint 4.6:1 · agent 5.8:1.
+     */
     --ink-human: #17161a;
     --ink-human-soft: rgba(23, 22, 26, 0.72);
     --ink-human-faint: rgba(23, 22, 26, 0.62);
