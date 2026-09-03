@@ -96,6 +96,13 @@ export type OpenAiCompletionOptions = {
   json?: boolean;
   model?: string;
   maxTokens?: number;
+  /**
+   * The GPT-5.x family spends `max_completion_tokens` on reasoning *before* it
+   * writes anything, so a small budget can be consumed entirely by reasoning
+   * and return an empty completion with `finish_reason: "length"`. Pass 'none'
+   * for calls that want a short structured answer rather than deliberation.
+   */
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
   signal?: AbortSignal;
 };
 
@@ -131,6 +138,9 @@ export const openaiCompletion = async (
       // max_tokens field; temperature is likewise unsupported there, so the
       // strict-prompt-plus-JSON approach carries the determinism instead.
       max_completion_tokens: options.maxTokens ?? 600,
+      ...(options.reasoningEffort
+        ? { reasoning_effort: options.reasoningEffort }
+        : {}),
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
     signal: options.signal,

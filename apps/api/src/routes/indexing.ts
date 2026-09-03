@@ -548,7 +548,7 @@ export const deriveCollectionSuggestions = (
 };
 
 /** Bumped to v2 when motif suggestions landed, to drop the facet-only bundles. */
-const SUGGESTIONS_CACHE_VERSION = 'v4';
+const SUGGESTIONS_CACHE_VERSION = 'v5';
 const SUGGESTIONS_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /**
@@ -592,7 +592,12 @@ const proposeMotifSuggestions = async (
     const completion = await openaiCompletion({
       env,
       json: true,
-      maxTokens: 220,
+      // Enough room for the list, and no reasoning budget to swallow it: this
+      // wants a short structured answer, not deliberation. Without this the
+      // whole allowance went to reasoning tokens and the completion came back
+      // empty with finish_reason "length".
+      maxTokens: 400,
+      reasoningEffort: 'none',
       signal: controller.signal,
       messages: [
         {
