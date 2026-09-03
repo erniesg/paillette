@@ -3,8 +3,8 @@
 > Copy-paste ready. `docs/webmcp-submission-description.md` already answers the four
 > *required* prompts; this covers the rest of the form. Fill the `[bracketed]` spots.
 
-**Tagline:**
-> Let AI be your eyes and ears with Paillette. Until now, art has been hard to discover when you don't know what you're looking for — and nearly impossible if you can't see it. Paillette makes any collection searchable by what it looks like, and readable out loud, to you and your agent together.
+**Tagline (194 chars):**
+> Let AI be your eyes and ears with P[ai]llette. Art is hard to discover when you don't know what you're looking for, or if you can't see it. Paillette makes it searchable — and reads it out loud.
 
 ---
 
@@ -24,25 +24,20 @@ ever on view, and asking "show me a moody seascape" or "works like this one" acr
 tens of thousands of records is impossible for a non-specialist.
 
 Paillette makes a collection searchable in minutes. Drop in **a zip or a folder** and
-it does the rest automatically: every image is embedded into the same search space, an
-optional CSV becomes full catalogue metadata (or titles are pulled from filenames when
-there is none), colours are extracted, and a vision model writes a description of what
-each work depicts. No metadata required. Then you can search the result across the
-**full spectrum**, and it talks back to you:
+it does the rest automatically: every image is embedded and colours are extracted, so
+it's searchable by how it looks. Add a CSV and it becomes full catalogue records —
+artist, medium, classification, date. Without one, the vision model can still describe
+each work aloud on demand. **No metadata required.** Then you can search the result
+across the **full spectrum**, and it talks back to you:
 
-- **By what you can say** — natural language: a subject, a mood, a style, a century,
-  an artist ("stormy seascapes", "portraits of women reading").
-- **By what you can show** — upload an image and find visually similar works.
+- **By description** — a subject, mood, motif, or era, in your own words: "three
+  figures under a stormy sky" or "something that feels like longing".
+- **By image** — upload one and find visually similar works.
 - **By colour** — "everything in this teal", matched against each work's extracted
   palette.
-- **By query parsing** — a natural-language query becomes structured search:
-  "Rembrandt etchings from the 1640s" resolves to *artist=Rembrandt, medium=etching,
-  date 1640–1649* plus a rewritten semantic query, matched against the collection's
-  real records rather than guessed.
-- **By visual motifs** — "three figures under a stormy sky" matches a generated
-  description of what's actually *depicted*, not just title keywords.
-- **By advanced filters** — artist, medium, classification, date range, accession
-  number, and colour, combinable however you like.
+- **By exact match** — artist, medium, classification, date range, accession number.
+  Say "Rembrandt etchings from the 1640s" and it's parsed into those filters
+  automatically, against the collection's real records.
 
 Discoverability is the point, so Paillette also **suggests what to search** — queries
 grounded in the collection's own records, not guessed. And you don't have to know how
@@ -58,34 +53,21 @@ with an LLM step that **parses a natural-language query into structured filters*
 (artist, medium, date range) plus a rewritten semantic query, grounded in the values
 that actually exist in the collection. On top of that sits a **serverless Cloudflare** stack (Remix
 on Workers, D1, R2, Vectorize, Cloudflare AI) and a WebMCP layer of sixteen tools
-registered on `document.modelContext`. Rich interactivity comes from voice in
-(ChatGPT), read-aloud descriptions (speech synthesis), and data enrichment — vision
-captions, colour extraction, and CSV metadata mapping run automatically on everything
-indexed. The page detects WebMCP, so without it nothing changes.
+registered on `document.modelContext`. Rich interactivity comes from OpenAI voice —
+you talk to the agent and it reads descriptions back aloud — plus data enrichment:
+vision captions, colour extraction, and CSV metadata mapping run automatically on
+everything indexed. The page detects WebMCP, so without it nothing changes.
 
 ## Challenges we ran into
 
-1. **MCP wasn't enough.** We already had a working MCP server, so WebMCP looked like
-   a rename. It isn't: a remote MCP server is disconnected from the page a person is
-   looking at — it has no idea what's on screen or what they just selected. The real
-   work was teaching the agent to *read the view and write back to it*
-   (`get_view_context` / `set_results` / `show_artwork`) so human and agent share one
-   state. That's what makes it feel collaborative, and it was the hard part.
-2. **Embedded images that never matched.** Indexed images were embedded with the
-   wrong task type, so they landed in the wrong part of vector space and every
-   semantic search silently returned zero. One config line broke the entire "search
-   anything you index" promise.
-3. **"Indexing complete" was a lie.** Freshly embedded vectors aren't queryable for
-   ~15 seconds, so a search right after completion returned nothing — indistinguishable
-   from a broken collection. We built that propagation lag into the tool's own output
-   so nobody (agent or human) reports a working collection as empty.
-4. **Agents hand over files, not just text.** "Drop in any zip" means the agent has to
-   pass files to the page, and browsers block cross-origin reads. We made `data:` URIs
-   a first-class input so it works regardless of CORS.
-5. **A test bug that faked corruption.** In the test environment, `new File([blob])`
-   silently stringified the Blob to the literal text "[object Blob]" (15 bytes), so a
-   valid zip arrived as corrupt text — indistinguishable from a genuinely broken
-   archive. Fixed by reading raw bytes via `arrayBuffer()`.
+1. **WebMCP is experimental and still moving.** Different browsers expose it under
+   different names (`document.modelContext` vs `navigator.modelContext`),
+   `registerTool` returns different shapes, there's no reliable unregister, and
+   re-registering a name rejects. We built registration to probe all of it defensively
+   — and to degrade to a no-op so the page is identical without the API.
+2. **An agent has to hand over files, and browsers block it.** "Drop in any zip" means
+   the agent must pass files to the page, and cross-origin reads are blocked. We made
+   `data:` URIs a first-class input so it works regardless of where the files live.
 
 ## Accomplishments that we're proud of
 
@@ -102,6 +84,14 @@ indexed. The page detects WebMCP, so without it nothing changes.
 
 ## What we learned
 
+- **Effective human–AI collaboration is the real unlock.** The design came from
+  domain knowledge, not the model: experts usually know the exact work they're after
+  (they need precise, faceted search), while lay users are better served by visual and
+  mood search — and a lot of people are just looking for a colour or a vibe for an
+  occasion. I brought that context from prior innovation work in museums; Codex turned
+  it into the product, and I was genuinely, pleasantly surprised by what came back.
+  Human domain knowledge in, agent-shaped product out — that hand-off is the whole
+  point of WebMCP.
 - **Anticipate the user's needs.** Honesty is a feature: surfacing search quota,
   indexing latency, and "here's what you could search for" is what makes the tool feel
   intelligent, not the model underneath.
@@ -113,18 +103,20 @@ indexed. The page detects WebMCP, so without it nothing changes.
 
 ## What's next for P[ai]llette
 
-- **Rollout for the National Gallery of Art's entire collection** in production.
-- **Real-time interactions** — continuous voice in and read-back, so the eyes-and-ears
-  loop is seamless.
-- **Index from a URL** — point at any open-access collection and Paillette crawls,
-  extracts, and indexes it automatically. No zip needed.
-- Index into *your own* collection (not just the shared sandbox), and image/colour
-  search over freshly indexed collections.
+- **Build your own collection** — index a zip, a folder, or a URL into your own space
+  (not just the shared sandbox), and keep it private or make it public.
+- **Explore** — the full spectrum — description, image, colour, exact — over anything
+  you've built.
+- **Curate with your agent** — assemble works into shortlists and shareable
+  exhibitions, together. The same eyes-and-ears loop that finds the art also helps you
+  tell its story.
+- **Rollout for the National Gallery of Art's entire collection** in production, and
+  **real-time voice** so the loop is seamless.
 
 ## Built with
 
 - **WebMCP** (`document.modelContext`) — the layer being judged
-- **AI**: Codex (build + algorithm design), OpenAI vision models (captions/query intent)
+- **AI**: OpenAI (Codex for build + algorithm design, voice, vision models for captions/query intent)
 - **Frontend**: Remix, React, TypeScript, TanStack, Tailwind CSS, Radix UI
 - **Platform**: Cloudflare Workers & Pages, D1, R2, Vectorize, Cloudflare AI, Hono
 - **Testing**: Vitest, Playwright

@@ -131,8 +131,8 @@ anonymous job routes on the API worker (`apps/api/src/routes/indexing.ts`) behin
 Worker proxy routes (`apps/web/app/routes/api.public-index.*`), and an anonymous
 captioner (`POST /api/public-describe`, `apps/api/src/routes/describe.ts`) behind its
 own proxy (`apps/web/app/routes/api.public-describe.ts`) — per-caller rate-limited,
-pinned to two allowlisted vision models, and scoped to reads of the open-access
-collection only. Because indexing an archive takes minutes,
+pinned to two allowlisted vision models, and scoped to the open-access collection and
+sandboxed, freshly indexed collections only. Because indexing an archive takes minutes,
 `index_zip` returns a pollable job id rather than blocking inside `execute`, and the
 upload pump deliberately outlives the tool call — a host cancelling `execute` does not
 cancel the job. Anonymous writes are sandboxed to a dedicated org and capped
@@ -140,3 +140,30 @@ server-side (100 images per job, 6 jobs per client per hour).
 
 The whole app runs on Cloudflare Workers over HTTPS — the secure context WebMCP
 requires — at https://paillette-stg.berlayar.ai.
+
+## What we learned
+
+**Effective human-AI collaboration matters more than the model underneath.** The
+domain insight came before the code: from prior museum-innovation work we know
+that experts usually arrive knowing the exact work they want — an artist, an
+accession number, a medium — while most visitors arrive with a look or a mood:
+a colour, a feeling, "something for an upcoming occasion." Neither a keyword box
+nor a pure vector search serves both. So the tool surface carries both intents:
+`facet` and inventory-grounded query interpretation for the expert who needs the
+exact thing, and text, image, and colour embeddings for everyone searching by
+vibe. The agent's job is to hear which kind of searcher is in front of it and
+pick the right path — that is the collaboration, and it only works because the
+human's context can steer declared tools instead of being lost in a form.
+
+**Honesty is a feature.** Surfacing the search quota, the indexing progress, and
+"here's what you could search for" is what makes the system feel intelligent to
+the person using it.
+
+**New technology makes the previously exorbitant cheap.** Multimodal search over
+an entire museum once demanded a data-science team and bespoke integrations.
+Today it is a Worker, a Vectorize index, and a list of WebMCP tools — and a zip
+anyone brings.
+
+**Good tool design beats UI scraping.** Clear schemas, honest job objects, and
+recoverable errors are what make an agent reliable in a page; the same agent
+guessing at buttons is not.
