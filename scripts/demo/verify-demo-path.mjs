@@ -306,7 +306,7 @@ const main = async () => {
     );
     const alive = await page.evaluate(() => Boolean(document.body));
     assert(alive, 'page died on an unresolvable id');
-    return { detail: `handled: ${message.slice(0, 60)}` };
+    return { detail: outcome.value?.error?.code ?? 'refused readably' };
   });
 
   await check('resilience.badArgs', async () => {
