@@ -18,7 +18,7 @@ pnpm --filter web dev --port 5199 --strictPort     # one terminal
 node apps/web/scripts/voice-loop-verify.mjs        # another
 ```
 
-**29 checks** against the real page in real Chromium — real board, real store,
+**33 checks** against the real page in real Chromium — real board, real store,
 real tools, real keyboard, real component — with only the network fixtured, so
 it is deterministic and needs no API key. Exits non-zero on any failure. Three
 consecutive clean runs while writing this.
@@ -33,6 +33,16 @@ port being pinned was re-run afterwards.
 ---
 
 ## What this round found
+
+### 0. The shared-state lane moved, and this branch took it
+
+Nine further commits merged (`bdafd28`), three of which land on this lane's
+claims: **selection is now wired**, so plural deixis works; the failure paths
+are hardened; and `turn-bridge.ts` attaches gestures from outside the bar. That
+shim and this lane's wiring were built for the same gap in parallel — it passes
+through untouched when the body already carries `turn`, which the bar now
+always does. **Verified on the wire: the payload appears exactly once**, not
+twice. The shim is inert and its author says it can be deleted.
 
 ### 1. The gesture payload was never sent (the important one)
 
@@ -84,12 +94,22 @@ the board first and asserts focus is not in a field.
 
 Every line is asserted by the verification script unless marked otherwise.
 
+### Deixis, singular and plural
+
+- **"more like this one"** binds to the pointed-at work and draws a chip with
+  its thumbnail — typed, with the mic absent entirely.
+- **"something between these two"** binds to a shift-click selection and draws
+  both thumbnails, with no "2 works" caption: the pictures say two.
+- A stale multi-selection no longer blocks a singular referent. A selection
+  persists until cleared, so it is routinely older than the sentence; someone
+  saying "this one" while pointing means the card.
+- The referent survives the cursor leaving the card.
+- What cannot be bound is marked, not guessed.
+
 ### Text first (section 5b)
 
 - **A typed instruction alone fires the agent.** No microphone involved.
 - **A typed turn is silent.** Nothing spoken.
-- **Deixis works by typing**, with the mic absent entirely — "more like this
-  one" binds to the pointed-at work and draws a chip with its thumbnail.
 - **The lane degrades to a plain text box.** No `SpeechRecognition` → no mic
   button, no hotkey. No `speechSynthesis` → no sound. Nothing else changes.
 
@@ -160,7 +180,21 @@ sentence renders with the painting inside it.
 - A four-second turn disables the field and mic while in flight, and returns
   both after.
 - A deictic phrase pointing at an unresolvable id is marked, not guessed.
+- Leaning on Enter five times during a slow redeal fires **exactly one**
+  redeal, not five.
+- Enter on an empty bar with nothing flagged at all calls neither backend and
+  raises nothing.
 - No uncaught page errors in any of these.
+
+**One failure path is genuinely broken, and it is not in this lane's files.**
+A redeal whose backend refuses is completely silent: the board does not change
+and nothing appears anywhere on the page. `installBoardKeyboard` accepts
+`onTurn` and `onError` for exactly this, but `useBoardKeyboard` in
+`flag-controls.tsx` installs with neither, so the failure is caught and dropped.
+On camera it is indistinguishable from a dead key — and it is section 9's
+headline beat, which depends on a network call. Written up with a suggested
+patch in `voice-loop-notes.md`; not changed here because it is another lane's
+component and they are actively working failure paths.
 
 ---
 
@@ -218,12 +252,10 @@ names from; `facet` is a search *restriction*, not a source of names. It would
 need a new API route or a phonetic matcher, and a name-fixer that is right most
 of the time ruins takes. The valuable half ships: click the word and retype it.
 
-**Plural deixis cannot resolve, because nothing on the page can select.**
-`setSelection` exists and `get_view_context` reports `selection`, but it is
-**called from no UI anywhere** — shift-click multi-select was never wired. So
-"these two" always reports itself unresolved. The resolver is written and
-unit-tested and lights up the moment something selects. **Do not claim
-multi-select.**
+**Plural deixis now works** — this changed late. The shared-state lane wired
+shift-click selection, and "something between these two" resolves to both works
+with their thumbnails, with the selection riding the turn. Earlier drafts of
+this report said not to claim multi-select; that is out of date.
 
 **Hover-deixis has an order.** Caret in the bar first, *then* point. The
 reverse loses the hover, because focusing the bar scrolls the card out from
@@ -239,8 +271,8 @@ both already spoken for by the grace bar.
 ## Checks, exactly as they ran
 
 ```
-pnpm --filter web test      Test Files  1 failed | 66 passed (67)
-                            Tests       751 passed (751)
+pnpm --filter web test      Test Files  1 failed | 71 passed (72)
+                            Tests       819 passed (819)
 
 pnpm --filter api test      Test Files  43 passed (43)
                             Tests       791 passed (791)
@@ -250,8 +282,8 @@ pnpm --filter web typecheck
   worker.ts(2,24): TS2307 Cannot find module './build/server/index.js'
 ```
 
-- **751 web tests pass, 0 fail.** This lane's own suite is 95 tests across 5
-  files. **791 API tests pass** — run because the merge brought API changes;
+- **819 web tests pass, 0 fail.** This lane's own suite is 96 tests across 5
+  files; the rest of the increase is the shared-state merges. **791 API tests pass** — run because the merge brought API changes;
   this lane wrote none of them.
 - **The one failing web test *file* was already failing before this lane
   touched anything.** `worker-cache-control.test.ts` imports
@@ -296,3 +328,12 @@ if preferred.
 | The agent's redeal note refers to the content of what was rejected, three runs | **yes**, three real-model runs; request assembled as the worker does rather than by running the worker |
 | A voice utterance lands in the editable field; the note is spoken only after voice | **yes**, with a fake recogniser and no audio produced on this machine |
 | Two colours of ink visible in every state | **yes within this component**; the board's ink is the shared-state lane's |
+
+### One more thing the submission must not say
+
+The demo path has **two preconditions that are invisible and not this lane's to
+fix**: the search field's `autofocus` makes `P`/`X`/`U`/`C` dead until you
+click once, and the activity panel re-opens on every agent action and
+intercepts clicks on the cards beneath it. Both are in `voice-loop-notes.md`
+with the files and the fixes. Neither is a defect in the keys or in the bar, but
+either will make a take look broken.
