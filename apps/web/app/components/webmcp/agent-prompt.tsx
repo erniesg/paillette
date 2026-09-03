@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getSpeechRecognition,
+  isQuietRecognitionError,
   readTranscripts,
   voiceErrorMessage,
   type SpeechRecognitionLike,
 } from '~/lib/voice/recognition';
-import { composeUtterance, interimOffset } from '~/lib/voice/utterance';
+import {
+  GRACE_MS,
+  composeUtterance,
+  graceProgress,
+  interimOffset,
+} from '~/lib/voice/utterance';
 
 /**
  * An agent, in the page, for visitors who did not bring one.
@@ -98,8 +104,27 @@ export function AgentPrompt({
   const [entries, setEntries] = useState<Entry[]>([]);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  /**
+   * When the released utterance started its countdown, or null when nothing is
+   * pending. Restarted if late words arrive, so the 1.2 s always runs from the
+   * last time the sentence changed.
+   */
+  const [graceStartedAt, setGraceStartedAt] = useState<number | null>(null);
+  const [graceFill, setGraceFill] = useState(0);
+  /**
+   * A spoken utterance is sitting in the field, uncommitted. Outlives the
+   * countdown: touching the field stops the clock but the words are still
+   * waiting on Enter or Esc.
+   */
+  const [pendingVoice, setPendingVoice] = useState(false);
   const historyRef = useRef<AgentMessage[]>([]);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  /** True between press and release, so a stop we caused reads as deliberate. */
+  const holdingRef = useRef(false);
+  /** The field as it stood before this utterance, for Esc to restore. */
+  const beforeUtteranceRef = useRef('');
+  /** Set once per render to a closure over the current text. See the effect. */
+  const commitRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     setAvailable(Boolean(getModelContext()));
@@ -206,35 +231,50 @@ export function AgentPrompt({
     }
   }, []);
 
-  const toggleMic = useCallback(() => {
+  const cancelGrace = useCallback(() => {
+    setGraceStartedAt(null);
+    setGraceFill(0);
+  }, []);
+
+  /**
+   * Hold to talk. Not an open mic: a page that is always listening is a page
+   * you have to remember is listening, and the whole point of the grace bar
+   * below is that the human can see the exact moment the agent is about to act.
+   */
+  const startListening = useCallback(() => {
+    if (holdingRef.current || busy) return;
     const Recognition = getSpeechRecognition();
     if (!Recognition) return;
 
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      return;
-    }
+    cancelGrace();
+    holdingRef.current = true;
 
     const recognition = new Recognition();
     recognition.lang = 'en-GB';
     recognition.interimResults = true;
-    recognition.continuous = false;
+    // The human decides where the sentence ends, not the recogniser's silence
+    // detector. With `continuous = false` a pause mid-thought ends the turn and
+    // the second half of "something warm… for above the sofa" is simply lost.
+    recognition.continuous = true;
     recognition.onresult = (event) => {
       const { final, interim: live } = readTranscripts(event);
-
-      // A settled result is the goal; the interim text was just so the words
-      // appear on camera while the person is still speaking.
       if (final) {
+        // Settled words graduate into the text the human owns, at full
+        // contrast. A flush arriving after release restarts the countdown, so
+        // nobody is asked to react to a sentence that changed under them.
+        setInput((current) => composeUtterance(current, final));
         setInterim('');
-        setInput('');
-        void run(final);
+        setGraceStartedAt((current) => (current === null ? null : Date.now()));
         return;
       }
-      if (live) setInterim(live);
+      setInterim(live);
     };
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
     recognition.onerror = (event) => {
+      if (isQuietRecognitionError(event.error)) return;
       setListening(false);
       setInterim('');
       setEntries((current) => [
@@ -242,10 +282,136 @@ export function AgentPrompt({
         { kind: 'error', text: voiceErrorMessage(event.error) },
       ]);
     };
+
     recognitionRef.current = recognition;
+    beforeUtteranceRef.current = input;
     setListening(true);
     recognition.start();
-  }, [listening, run]);
+  }, [busy, cancelGrace, input]);
+
+  /**
+   * Releasing does not send. It starts a countdown the human can watch, and
+   * interrupt. That determinism is the feature — nothing here is clever about
+   * guessing whether someone had finished talking.
+   */
+  const stopListening = useCallback(() => {
+    if (!holdingRef.current) return;
+    holdingRef.current = false;
+    setListening(false);
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // A recogniser that was never really started does not need stopping.
+    }
+    setPendingVoice(true);
+    setGraceStartedAt(Date.now());
+    setGraceFill(0);
+  }, []);
+
+  /** Esc: the utterance never happened. The field goes back to what it held. */
+  const discardUtterance = useCallback(() => {
+    cancelGrace();
+    setPendingVoice(false);
+    setInterim('');
+    setInput(beforeUtteranceRef.current);
+  }, [cancelGrace]);
+
+  const submit = useCallback(
+    (text: string) => {
+      cancelGrace();
+      setPendingVoice(false);
+      const instruction = text.trim();
+      setInput('');
+      setInterim('');
+      beforeUtteranceRef.current = '';
+      if (!instruction || busy) return;
+      void run(instruction);
+    },
+    [busy, cancelGrace, run]
+  );
+
+  // Re-pointed every render so the countdown below always commits the sentence
+  // as it stands now, not as it stood when the timer was armed.
+  commitRef.current = () => submit(composeUtterance(input, interim));
+
+  useEffect(() => {
+    if (graceStartedAt === null) return undefined;
+
+    const timer = setTimeout(() => commitRef.current(), GRACE_MS);
+    // The bar is a readout of that timer, not decoration, so it is driven from
+    // the clock rather than a CSS animation — there is nothing to switch off
+    // under prefers-reduced-motion, and the same number is assertable.
+    let frame = 0;
+    const tick = () => {
+      setGraceFill(graceProgress(graceStartedAt, Date.now()));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+    };
+  }, [graceStartedAt]);
+
+  /**
+   * Hold Space anywhere on the page to talk — the same single-key grammar the
+   * grid uses for flagging. It cannot fire while someone is typing, because a
+   * field with focus needs the space bar for spaces; there is no ambiguity to
+   * resolve, and therefore no mode to be in.
+   */
+  useEffect(() => {
+    const editable = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      );
+    };
+    const held = (event: KeyboardEvent) =>
+      event.code === 'Space' &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !editable(event.target);
+
+    const down = (event: KeyboardEvent) => {
+      if (!held(event)) return;
+      // Space scrolls, and a page that jumps every time you speak is unusable.
+      event.preventDefault();
+      if (event.repeat) return;
+      startListening();
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      stopListening();
+    };
+    // A key-up lost to a focus change must not leave the mic open.
+    const release = () => stopListening();
+
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', release);
+    };
+  }, [startListening, stopListening]);
+
+  useEffect(
+    () => () => {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // Unmounting is not a good moment to care.
+      }
+    },
+    []
+  );
 
   // Nothing to offer where the page never registered its tools.
   if (!available) return null;
@@ -264,11 +430,7 @@ export function AgentPrompt({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          const instruction = composed.trim();
-          if (!instruction || busy) return;
-          setInput('');
-          setInterim('');
-          void run(instruction);
+          submit(composed);
         }}
         className="flex items-center gap-2"
       >
@@ -300,6 +462,16 @@ export function AgentPrompt({
               // included. Text is the ground truth.
               setInput(event.target.value);
               setInterim('');
+              cancelGrace();
+            }}
+            // Reaching for the field is a request to edit, so the countdown
+            // stops and waits rather than sending out from under the cursor.
+            onFocus={cancelGrace}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && pendingVoice) {
+                event.preventDefault();
+                discardUtterance();
+              }
             }}
             placeholder={placeholder}
             aria-label="Ask the agent"
@@ -308,13 +480,58 @@ export function AgentPrompt({
               interim ? 'text-transparent caret-white' : 'text-white'
             }`}
           />
+          {/*
+            The grace bar: a thin line under the field, draining left to right,
+            after which the utterance commits. It is the only promise this
+            component makes — that you can always see when the agent is about
+            to act — so it is deliberately dumb.
+          */}
+          {graceStartedAt !== null && (
+            <div
+              role="progressbar"
+              aria-label="Sending in a moment"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(graceFill * 100)}
+              className="pointer-events-none absolute inset-x-0 -bottom-0.5 h-0.5 overflow-hidden rounded-full bg-neutral-800"
+            >
+              <div
+                className="h-full bg-primary-400"
+                style={{ width: `${graceFill * 100}%` }}
+              />
+            </div>
+          )}
         </div>
         {micSupported && (
           <button
             type="button"
-            onClick={toggleMic}
-            aria-label={listening ? 'Stop listening' : 'Speak your request'}
-            className={`shrink-0 rounded-lg border px-3 py-2 text-sm transition-colors ${
+            // Push-to-talk. Pointer events rather than click, so the control is
+            // held; the keyboard equivalent is Space or Enter held on the
+            // focused button, because a hold-only control cannot be reached
+            // without a pointer.
+            onPointerDown={(event) => {
+              event.preventDefault();
+              startListening();
+            }}
+            onPointerUp={stopListening}
+            onPointerLeave={stopListening}
+            onPointerCancel={stopListening}
+            onKeyDown={(event) => {
+              if (event.key !== ' ' && event.key !== 'Enter') return;
+              event.preventDefault();
+              if (event.repeat) return;
+              startListening();
+            }}
+            onKeyUp={(event) => {
+              if (event.key !== ' ' && event.key !== 'Enter') return;
+              event.preventDefault();
+              stopListening();
+            }}
+            onBlur={stopListening}
+            disabled={busy}
+            aria-pressed={listening}
+            aria-label={listening ? 'Listening — release to send' : 'Hold to speak'}
+            className={`shrink-0 select-none rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-40 ${
               listening
                 ? 'border-primary-400 bg-primary-500/15 text-primary-200'
                 : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
@@ -343,6 +560,24 @@ export function AgentPrompt({
           {busy ? 'Working…' : 'Ask'}
         </button>
       </form>
+
+      {/*
+        The bar says how long is left; this says what to do about it. Someone
+        who cannot see a two-pixel line draining still gets the whole contract
+        in words, which is the part that has to survive.
+      */}
+      {pendingVoice && (
+        <p aria-live="polite" className="mt-2 text-xs text-neutral-500">
+          {graceStartedAt !== null
+            ? 'Sending in a moment — click in to edit, Enter to send now, Esc to discard.'
+            : 'Waiting on you — Enter to send, Esc to discard.'}
+        </p>
+      )}
+      {micSupported && !pendingVoice && !listening && (
+        <p className="mt-2 text-xs text-neutral-600">
+          Hold the mic, or hold Space, to talk.
+        </p>
+      )}
 
       {entries.length > 0 && (
         <ol className="mt-4 space-y-2 text-sm">
