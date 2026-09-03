@@ -282,14 +282,18 @@ export const buildCaptionText = (
 
 export type CollectionSuggestion = {
   id: string;
-  type: 'artist' | 'classification' | 'medium' | 'era' | 'keyword';
+  type: 'artist' | 'classification' | 'medium' | 'era' | 'keyword' | 'subject';
   label: string;
   query: string;
 };
 
 export type CollectionSuggestions = {
-  /** Whether these came from real catalogue metadata or just filenames. */
-  source: 'metadata' | 'filenames';
+  /**
+   * Where the queries came from: a CSV sidecar's catalogue fields, the image
+   * filenames when those carry real words, or broad subject queries when
+   * neither does.
+   */
+  source: 'metadata' | 'filenames' | 'generic';
   generatedAt: string;
   suggestions: CollectionSuggestion[];
 };
@@ -333,6 +337,31 @@ const GENERIC_TITLE =
   /^(img|dsc|scan|photo|photograph|image|untitled|copy|final)[\s_-]*\d*$/i;
 
 /**
+ * Last-resort queries for a collection whose filenames are opaque. These lean
+ * on the image vectors rather than the caption text, so they work even when a
+ * collection carries no usable words at all — measured against the bundled
+ * 25-image NGA archive (accession-number filenames, no CSV), where every one
+ * of these returns real ranked hits.
+ */
+const SUBJECT_SUGGESTIONS: ReadonlyArray<{ label: string; query: string }> = [
+  { label: 'A painting', query: 'a painting' },
+  { label: 'A portrait', query: 'a portrait' },
+  { label: 'A landscape', query: 'a landscape' },
+  { label: 'A photograph', query: 'a photograph' },
+  { label: 'A drawing or print', query: 'a drawing or print' },
+  { label: 'A building', query: 'a building' },
+];
+
+/**
+ * A filename only makes a usable query if it carries actual words. An
+ * accession number like `nga-140010.jpg` becomes the title "nga 140010",
+ * which clears a naive length check but embeds to noise — and that is exactly
+ * the shape of the archive the demo picker ships.
+ */
+const isWordyTitle = (title: string) =>
+  title.split(/\s+/).filter((word) => /^[a-z]{3,}$/i.test(word)).length >= 2;
+
+/**
  * Grounds suggested queries in whatever real signal a collection has. A CSV
  * sidecar means artist/medium/classification/year are populated, so those
  * facets drive the suggestions. Without one, only filename-derived titles
@@ -347,12 +376,12 @@ export const deriveCollectionSuggestions = (
   const hasMetadata = rows.some(
     (row) => row.artist || row.medium || row.classification
   );
-  const source: CollectionSuggestions['source'] = hasMetadata
+  let source: CollectionSuggestions['source'] = hasMetadata
     ? 'metadata'
     : 'filenames';
   const suggestions: CollectionSuggestion[] = [];
 
-  if (source === 'metadata') {
+  if (hasMetadata) {
     const artistSuggestions = topByFrequency(
       rows.map((row) => row.artist).filter((v): v is string => Boolean(v)),
       2
@@ -425,21 +454,33 @@ export const deriveCollectionSuggestions = (
         (title): title is string =>
           typeof title === 'string' &&
           title.length >= 4 &&
-          !GENERIC_TITLE.test(title)
+          !GENERIC_TITLE.test(title) &&
+          isWordyTitle(title)
       );
-    const distinctTitles = topByFrequency(titles, titles.length);
-    // A title with more than one word reads closer to a usable caption than a
-    // single filename fragment; fall back to whatever exists otherwise.
-    const multiWord = distinctTitles.filter((title) => title.includes(' '));
-    const pool = multiWord.length ? multiWord : distinctTitles;
 
-    for (const title of pool.slice(0, 4)) {
+    for (const title of topByFrequency(titles, titles.length).slice(0, 4)) {
       suggestions.push({
         id: `keyword:${slugifySuggestion(title)}`,
         type: 'keyword',
         label: title.replace(/\b\w/g, (char) => char.toUpperCase()),
         query: title,
       });
+    }
+
+    // Opaque filenames leave nothing worth suggesting. Offering "Nga 140010"
+    // as a query would be worse than offering nothing: it looks like a real
+    // suggestion and returns noise. An empty collection is different — there
+    // is genuinely nothing to search, so it still gets no suggestions.
+    if (suggestions.length === 0 && rows.length > 0) {
+      source = 'generic';
+      for (const subject of SUBJECT_SUGGESTIONS) {
+        suggestions.push({
+          id: `subject:${slugifySuggestion(subject.query)}`,
+          type: 'subject',
+          label: subject.label,
+          query: subject.query,
+        });
+      }
     }
   }
 

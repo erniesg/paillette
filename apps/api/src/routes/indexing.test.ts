@@ -392,6 +392,34 @@ describe('collection suggestions', () => {
     );
   });
 
+  it('offers broad subject queries when filenames are accession numbers', () => {
+    // The archive the demo picker ships is exactly this shape: no CSV, and
+    // filenames like `nga-140010.jpg`. "Nga 140010" clears a length check but
+    // embeds to noise, so it must never reach a visitor as a suggestion.
+    const opaqueRows: SuggestionSourceRow[] = [
+      'nga 140010',
+      'nga 54131',
+      'nga 167057',
+      'nga 214115',
+    ].map((title) => ({
+      title,
+      artist: null,
+      year: null,
+      medium: null,
+      classification: null,
+    }));
+
+    const bundle = deriveCollectionSuggestions(opaqueRows);
+
+    expect(bundle.source).toBe('generic');
+    expect(bundle.suggestions.every((s) => s.type === 'subject')).toBe(true);
+    expect(bundle.suggestions.map((s) => s.query)).toContain('a landscape');
+    for (const suggestion of bundle.suggestions) {
+      expect(suggestion.query).not.toMatch(/\d/);
+      expect(suggestion.query).not.toMatch(/nga/i);
+    }
+  });
+
   it('is honest about having nothing to suggest rather than inventing queries', () => {
     const bundle = deriveCollectionSuggestions([]);
     expect(bundle.source).toBe('filenames');

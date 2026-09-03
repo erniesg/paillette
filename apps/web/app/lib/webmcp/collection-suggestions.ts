@@ -10,14 +10,18 @@
 
 export type CollectionSuggestion = {
   id: string;
-  type: 'artist' | 'classification' | 'medium' | 'era' | 'keyword';
+  type: 'artist' | 'classification' | 'medium' | 'era' | 'keyword' | 'subject';
   label: string;
   query: string;
 };
 
 export type CollectionSuggestions = {
-  /** Whether these came from real catalogue metadata or just filenames. */
-  source: 'metadata' | 'filenames';
+  /**
+   * Where the queries came from: a CSV sidecar's catalogue fields, the image
+   * filenames when those carry real words, or broad subject queries when
+   * neither does.
+   */
+  source: 'metadata' | 'filenames' | 'generic';
   generatedAt: string;
   suggestions: CollectionSuggestion[];
 };

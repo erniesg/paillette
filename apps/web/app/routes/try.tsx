@@ -603,7 +603,9 @@ export default function TryPaillette() {
                   Suggested searches —{' '}
                   {suggestions.source === 'metadata'
                     ? 'grounded in this collection’s catalogue metadata'
-                    : 'no metadata sidecar, so these come from filenames instead'}
+                    : suggestions.source === 'filenames'
+                      ? 'no metadata sidecar, so these come from filenames instead'
+                      : 'no metadata sidecar and no readable filenames, so these search the images themselves'}
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {suggestions.suggestions.map((suggestion) => (

@@ -1420,7 +1420,7 @@ const getIndexStatusTool = (): WebMcpTool => ({
   name: 'get_index_status',
   title: 'Get indexing status',
   description:
-    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, and any per-file errors. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results. Once the job is done, the payload also carries `suggestions`: queries grounded in this collection\'s own catalogue metadata (or, failing that, its filenames) — the same ones shown to the human on the page, so offer them rather than guessing a first query.',
+    'Read the progress of an indexing job started by index_zip or index_folder: state, how many images are processed out of the total, the collection it is building, and any per-file errors. Poll this rather than waiting — nothing blocks. It is also the way in: once it reports searchable:true (which happens as soon as the first image lands, before the job finishes), pass a "query" and this call runs semantic search over the collection the job just built and returns artwork records in the same shape as search_artworks — ids you can then hand to lookup_artwork, show_artwork or set_results. Once the job is done, the payload also carries `suggestions`: queries grounded in this collection\'s own catalogue metadata, or failing that its filenames, or failing that broad subject queries against the images — the same ones shown to the human on the page, so offer them rather than guessing a first query. `suggestions.source` says which.',
   // A pure read of job progress, like get_search_quota: it writes nothing, but
   // the answer changes between calls, so it is not idempotent.
   annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
@@ -1522,7 +1522,7 @@ const getIndexStatusTool = (): WebMcpTool => ({
           ? searchable
             ? `Indexing finished: ${status.processed} of ${status.total} images are in "${collectionName ?? status.collectionId}". ${
                 suggestions?.suggestions.length
-                  ? `Try one of \`suggestions\` (grounded in this collection's ${suggestions.source === 'metadata' ? 'catalogue metadata' : 'filenames — it had no metadata sidecar'}), or call this tool again with your own "query".`
+                  ? `Try one of \`suggestions\` (${suggestions.source === 'metadata' ? "grounded in this collection's catalogue metadata" : suggestions.source === 'filenames' ? 'derived from its filenames — it had no metadata sidecar' : 'broad subject queries — it had neither a metadata sidecar nor readable filenames'}), or call this tool again with your own "query".`
                   : 'Call this tool again with a "query" to search them.'
               } Then show_artwork or set_results to put one on the human's screen.`
             : 'The job finished without indexing anything. Read `errors` and `notice` and tell the human what went wrong rather than retrying blindly.'
