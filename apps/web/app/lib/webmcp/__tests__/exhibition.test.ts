@@ -676,6 +676,32 @@ describe('annotate_atlas', () => {
     expect(result.notVisible).toContain('atlas');
   });
 
+  it('names back the regions the atlas will not draw', async () => {
+    board(['a', 'b']);
+    const result = await call('annotate_atlas', {
+      regions: [
+        { label: 'On the board', artworkIds: ['a'] },
+        // Every work in this one has been redealt away, so the view draws
+        // nothing for it. The agent has to be told, or it believes it named
+        // something the human can see.
+        { label: 'Redealt away', artworkIds: ['gone-1', 'gone-2'] },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.notDrawn).toEqual(['Redealt away']);
+    expect(result.notDrawnReason).toContain('not drawn');
+  });
+
+  it('says nothing about undrawn regions when they all draw', async () => {
+    board(['a', 'b']);
+    const result = await call('annotate_atlas', {
+      regions: [{ label: 'On the board', artworkIds: ['a'] }],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.notDrawn).toBeUndefined();
+  });
+
   it('refuses a region with no works', async () => {
     const result = await call('annotate_atlas', {
       regions: [{ label: 'Leaving', artworkIds: [] }],
