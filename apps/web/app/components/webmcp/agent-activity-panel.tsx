@@ -150,7 +150,6 @@ export function AgentActivityPanel() {
     const entry = burst[index];
     if (entry) stepByEntryId.set(entry.id, burst.length - index);
   }
-  const runningEntry = burst.find((entry) => entry.status === 'running');
 
   // Nothing has happened and no host is present: stay completely out of the
   // way. The page must look untouched without WebMCP.
