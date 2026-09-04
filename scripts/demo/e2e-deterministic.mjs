@@ -14,13 +14,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const PLAYWRIGHT_CORE =
-  process.env.PLAYWRIGHT_CORE ??
-  new URL(
-    '../../node_modules/.pnpm/playwright-core@1.56.1/node_modules/playwright-core/index.mjs',
-    import.meta.url
-  ).pathname;
-const { chromium } = await import(PLAYWRIGHT_CORE);
+import { chromium } from './browser.mjs';
 
 const BASE = process.argv[2] ?? 'https://paillette-stg.berlayar.ai';
 const OUT = process.argv[3] ?? '/tmp/e2e-det';
@@ -52,31 +46,47 @@ const boxes = (page) =>
     return {
       grid: g ? { x: Math.round(g.x), y: Math.round(g.y + window.scrollY) } : null,
       cards: Object.fromEntries(
-        [...document.querySelectorAll('[data-artwork-id]')].map((el) => {
-          const r = el.getBoundingClientRect();
-          return [
-            el.getAttribute('data-artwork-id'),
-            {
-              page: { x: Math.round(r.x), y: Math.round(r.y + window.scrollY) },
-              board: g
-                ? { x: Math.round(r.x - g.x), y: Math.round(r.y - g.y) }
-                : null,
-              w: Math.round(r.width),
-            },
-          ];
-        })
+        // The tray carries `data-artwork-id` too, and must not be counted as
+        // the board. A reject that has left the board and is sitting in the
+        // tray is precisely what §7.1 asks for; counting it here would report
+        // the tray working as the deal failing.
+        [...document.querySelectorAll('[data-artwork-id]')]
+          .filter((el) => !el.closest('.lt-tray'))
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            return [
+              el.getAttribute('data-artwork-id'),
+              {
+                page: { x: Math.round(r.x), y: Math.round(r.y + window.scrollY) },
+                board: g
+                  ? { x: Math.round(r.x - g.x), y: Math.round(r.y - g.y) }
+                  : null,
+                w: Math.round(r.width),
+              },
+            ];
+          })
       ),
     };
   });
 
+/** What is in the tray, which is where a reject is supposed to end up. */
+const trayIds = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('.lt-tray [data-artwork-id]')].map((el) =>
+      el.getAttribute('data-artwork-id')
+    )
+  );
+
 const flagsOnScreen = (page) =>
   page.evaluate(() =>
-    [...document.querySelectorAll('[data-artwork-id]')].map((el) => ({
-      id: el.getAttribute('data-artwork-id'),
-      flag: el.getAttribute('data-flag'),
-      by: el.getAttribute('data-flag-by'),
-      provisional: el.getAttribute('data-flag-provisional'),
-    }))
+    [...document.querySelectorAll('[data-artwork-id]')]
+      .filter((el) => !el.closest('.lt-tray'))
+      .map((el) => ({
+        id: el.getAttribute('data-artwork-id'),
+        flag: el.getAttribute('data-flag'),
+        by: el.getAttribute('data-flag-by'),
+        provisional: el.getAttribute('data-flag-provisional'),
+      }))
   );
 
 /**
@@ -281,14 +291,46 @@ const main = async () => {
     'the pick survives the redeal',
     `pick=${pickId} board=${afterIds.length} works`
   );
-  const rejectsGone = targets
-    .filter((t) => t.want === 'reject')
-    .every((t) => !afterIds.includes(t.id));
+  const rejected = targets.filter((t) => t.want === 'reject');
+  const rejectsGone = rejected.every((t) => !afterIds.includes(t.id));
   note(rejectsGone, 'both rejects leave the board');
+  // §7.1: rejects slide to a narrow visible tray at the left edge, still
+  // restorable. Off screen entirely is the degraded version, and it makes
+  // "still restorable" a claim the docs make and the viewer cannot see.
+  const inTray = await trayIds(page);
+  note(
+    rejected.every((t) => inTray.includes(t.id)),
+    'the rejects are in the visible tray, not gone',
+    `tray holds ${inTray.length}: ${inTray.join(', ') || 'nothing'}`
+  );
   note(
     after.grid !== null,
     'the redeal renders the deal board, not the browsing masonry',
     after.grid ? 'data-testid="deal-board-grid" present' : 'no deal-board-grid in the DOM'
+  );
+
+  // §4: twelve cards, so every move reads on video. Two thirds of the deal
+  // happening below the fold is the legibility argument gone.
+  const fit = await page.evaluate(() => {
+    const grid = document.querySelector('[data-testid="deal-board-grid"]');
+    if (!grid) return null;
+    const cards = [...grid.querySelectorAll('[data-artwork-id]')];
+    const visible = cards.filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.bottom <= window.innerHeight;
+    });
+    const g = grid.getBoundingClientRect();
+    return {
+      cards: cards.length,
+      visible: visible.length,
+      gridHeight: Math.round(g.height),
+      viewport: window.innerHeight,
+    };
+  });
+  note(
+    Boolean(fit) && fit.visible === fit.cards,
+    'every dealt card is on screen at once',
+    JSON.stringify(fit)
   );
 
   const moved = (a, b, id) =>
@@ -439,6 +481,34 @@ const main = async () => {
             return `${Math.round(r.width)}x${Math.round(r.height)}`;
           })()
         : null,
+      // Where it actually is. `fixed` is relative to the viewport only until
+      // an ancestor has a transform, and a finished GSAP tween leaves an
+      // identity matrix on the results section — which put this room 2,500px
+      // below the fold. Portalled to <body>, so the numbers are the viewport's.
+      box: el
+        ? (() => {
+            const r = el.getBoundingClientRect();
+            return {
+              top: Math.round(r.top),
+              left: Math.round(r.left),
+              w: Math.round(r.width),
+              h: Math.round(r.height),
+            };
+          })()
+        : null,
+      portalled: el?.parentElement === document.body,
+      // §7.3 asks for a room with nothing else on screen. Anything still
+      // visible outside it is the interface narrating over the pictures.
+      chromeVisible: [
+        'header',
+        'input[aria-label="Ask the agent"]',
+        '[data-testid="deal-board-grid"]',
+      ].filter((selector) => {
+        const node = document.querySelector(selector);
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        return style.visibility !== 'hidden' && style.display !== 'none';
+      }),
     };
   });
   note(
@@ -455,6 +525,19 @@ const main = async () => {
     compareOnScreen.question === 'Which one holds the wall better?',
     "the agent's question is set between the two works",
     JSON.stringify(compareOnScreen.question)
+  );
+  note(
+    compareOnScreen.box?.top === 0 && compareOnScreen.box?.left === 0,
+    'the two-up is at the top of the viewport, not below the fold',
+    JSON.stringify({
+      box: compareOnScreen.box,
+      portalled: compareOnScreen.portalled,
+    })
+  );
+  note(
+    compareOnScreen.chromeVisible?.length === 0,
+    'nothing else is on screen while the two-up is open',
+    `still visible: ${compareOnScreen.chromeVisible?.join(', ') || 'nothing'}`
   );
   await shot('05-compare');
 
@@ -495,13 +578,15 @@ const main = async () => {
   );
   await shot('06-after-choice');
 
-  // --- the layout the agent picks decides whether any of this is visible ---
+  // --- the layout the agent picks must not be able to delete the board -----
   //
-  // The system prompt tells the agent to choose a layout with set_view, and
-  // `ResultsLayout` answers salon/atlas/table *before* it checks whether a
-  // deal put these works on the table. So a board dealt into salon is not a
-  // board.
-  for (const layout of ['salon', 'atlas', 'masonry']) {
+  // `ResultsLayout` used to answer salon/atlas/table before it checked whether
+  // a deal had put these works on the table, and the system prompt was
+  // recommending "salon for a curated hang" — so on a cold run the model could
+  // choose a layout with no pinned picks, no FLIP and no deal grid, and the
+  // money shot simply would not exist. A dealt board now outranks every one of
+  // them, whoever asked.
+  for (const layout of ['salon', 'atlas', 'table', 'masonry']) {
     await page.evaluate(
       (view) => window.__paillette_webmcp.call('set_view', { view }),
       layout
@@ -511,8 +596,8 @@ const main = async () => {
       Boolean(document.querySelector('[data-testid="deal-board-grid"]'))
     );
     note(
-      layout === 'masonry' ? grid : !grid,
-      `set_view "${layout}": deal board ${grid ? 'renders' : 'does NOT render'}`,
+      grid,
+      `set_view "${layout}" cannot take the dealt board away`,
       `deal-board-grid present=${grid} while a dealt board is on the table`
     );
     await shot(`07-view-${layout}`);

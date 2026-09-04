@@ -95,7 +95,7 @@ contains, so it can never invent a filter the data cannot satisfy.
 Embeddings are **Jina** (`jina-clip-v2` for the shared image/text space,
 `jina-embeddings-v5-text-small` for captions). On top sits a **serverless
 Cloudflare** stack — Remix on Workers, D1, R2, Vectorize, Workers AI and Queues —
-and a WebMCP layer of **17 tools** registered on `document.modelContext`.
+and a WebMCP layer of **25 tools** registered on `document.modelContext`.
 
 Two of those tools write the page's own React state, which is what makes the
 shared canvas real: `set_results` pins a set together with the agent's note, and

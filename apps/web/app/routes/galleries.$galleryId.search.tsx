@@ -1190,6 +1190,10 @@ export default function SearchPage() {
     ? (webmcpState.agentResults?.note ?? null)
     : null;
 
+  // Confirmed only: an agent's proposal is dashed until the human takes it,
+  // and Enter runs on their judgements, not on suggestions.
+  const hasConfirmedFlags = webmcpState.flags.some((flag) => !flag.provisional);
+
   /**
    * `show_artwork` is how an agent points at one work — "look at this one". It
    * writes the focused artwork to the shared store, and `/try` renders it, but
@@ -2536,13 +2540,10 @@ export default function SearchPage() {
               <span>{gallery.name}</span>
               <span>/</span>
               <span>collection search</span>
-              {hasActiveSearch &&
-                currentQuery.data?.queryTime !== undefined && (
-                  <>
-                    <span>/</span>
-                    <span>{Math.round(currentQuery.data.queryTime)}ms</span>
-                  </>
-                )}
+              {/* The query time used to sit here as a third crumb. On a cached
+                  page it read "/ 0MS", which is the interface reporting on its
+                  own plumbing and getting it wrong. Nobody came here to find
+                  out how fast the search was. */}
             </div>
 
             <div className="space-y-4">
@@ -2671,8 +2672,10 @@ export default function SearchPage() {
                     data-catalogue=""
                     aria-label="Search text"
                   >
+                    {/* The magnifier is the label. It sat beside the word
+                        "Search", inside a field that already has a magnifier
+                        in it, which is the same thing said three times. */}
                     <Search className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Search</span>
                   </button>
                 </form>
               )}
@@ -2860,11 +2863,40 @@ export default function SearchPage() {
              and restating it from `tailwind.css` keeps the seam out of their
              file — the bar is unchanged anywhere else it is used. */
           className="lt-agent-bar mx-auto mt-6 max-w-3xl"
-          /* The example alone. "Ask the agent —" was narrating the mechanism
-             in the one place the human is about to type into anyway; showing
-             the shape of an utterance is more use than naming the feature. */
-          placeholder="something warm for above the sofa"
+          /* No placeholder. An italic example sentence is helper text — it
+             was the longest string on the page that nobody typed, and it
+             taught the wrong thing: this bar's headline behaviour is Enter on
+             an *empty* field, which the example is standing in the way of.
+             The board carries that affordance instead, as a mark. */
+          placeholder=""
         />
+
+        {/*
+          Enter is armed, said as a mark.
+
+          The headline beat of the whole build is Enter on an empty bar, and
+          nothing on screen said so — a judge who did not already know had no
+          way to find it. A sentence explaining it would be the exact chrome
+          §5b forbids, and it would be on screen permanently for a key that
+          only does something once a flag exists.
+
+          So: a hairline in the human's ink under the bar, with the return
+          glyph resting on it, appearing the moment the first flag is
+          confirmed and going away when the flags do. It is the same `↵` the
+          submit button carries, so the two read as one key. Nothing to read.
+        */}
+        {hasConfirmedFlags && (
+          <div className="lt-enter-armed mx-auto max-w-3xl" aria-hidden>
+            <span>↵</span>
+          </div>
+        )}
+        {/* The same fact in words, for anyone the mark cannot reach. Off
+            screen, where a sentence costs nothing. */}
+        <p className="sr-only" role="status">
+          {hasConfirmedFlags
+            ? 'Enter on the empty bar redeals the board from your flags.'
+            : ''}
+        </p>
 
         {/* The one case where silence is the wrong answer. Enter is cheap to
             press and a dead key is unreadable — the person cannot tell a

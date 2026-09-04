@@ -355,7 +355,11 @@ describe('AgentPrompt', () => {
     release();
     await act(async () => {
       fireEvent.submit(
-        screen.getByRole('button', { name: 'Ask' }).closest('form')!
+        // The button is a return mark now, not the word "Ask"; its accessible
+        // name is the sentence, which is where a sentence belongs.
+        screen
+          .getByRole('button', { name: 'Send to the agent' })
+          .closest('form')!
       );
     });
 

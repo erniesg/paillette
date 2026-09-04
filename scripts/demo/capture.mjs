@@ -32,24 +32,96 @@
  *   beats.json    — timestamped list of every tool the activity panel showed
  *   steps/        — one screenshot per tool step
  *
- * No new dependencies. playwright-core is resolved from a machine-local npx
- * cache (override with PLAYWRIGHT_CORE); ffmpeg (for webm -> mp4) is from PATH.
+ * No new dependencies. The browser driver is found in the workspace, the pnpm
+ * store or an npx cache, in that order (override with PLAYWRIGHT_CORE, which
+ * must point at an index.mjs); ffmpeg (for webm -> mp4) is from PATH.
  */
 
 import { spawn } from 'node:child_process';
+import { readdir as readdirSync } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { mkdir, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
-// playwright-core is not a workspace dependency; resolve it from a machine-local
-// npx cache (override with PLAYWRIGHT_CORE if yours lives elsewhere).
-const PLAYWRIGHT_CORE =
-  process.env.PLAYWRIGHT_CORE ??
-  '/Users/erniesg/.npm/_npx/e41f203b7505f1fb/node_modules/playwright-core/index.mjs';
+/**
+ * Find a browser driver, on whichever machine this is.
+ *
+ * This used to be one hardcoded path into one person's npx cache, so the
+ * script ran on exactly one laptop and nowhere else — including the VM the
+ * footage is captured on, where it failed at the first import with a
+ * `Cannot find package` and no video was ever produced.
+ *
+ * Order: an explicit override, the workspace's own dependency, whatever pnpm
+ * put in the store, then the npx caches. `~/.cache/ms-playwright` is where the
+ * *browsers* live rather than the library, and is Playwright's own default, so
+ * it is honoured by leaving `PLAYWRIGHT_BROWSERS_PATH` alone unless someone
+ * has set it.
+ */
+const findFirstMatch = async (root, matches) => {
+  if (!existsSync(root)) return null;
+  let entries;
+  try {
+    entries = await readdirSync(root);
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    const candidate = matches(path.join(root, entry));
+    if (candidate && existsSync(candidate)) return candidate;
+  }
+  return null;
+};
 
-const { chromium } = await import(PLAYWRIGHT_CORE);
+const resolveBrowserDriver = async () => {
+  const tried = [];
+
+  const explicit = process.env.PLAYWRIGHT_CORE;
+  if (explicit) {
+    tried.push(explicit);
+    if (existsSync(explicit)) return await import(pathToFileURL(explicit).href);
+    // An override that points at nothing is a typo, not a reason to guess.
+    throw new Error(`PLAYWRIGHT_CORE is set but does not exist: ${explicit}`);
+  }
+
+  for (const specifier of ['playwright-core', '@playwright/test', 'playwright']) {
+    tried.push(specifier);
+    try {
+      return await import(specifier);
+    } catch {
+      // Not installed here; keep looking.
+    }
+  }
+
+  const stores = [
+    // pnpm's virtual store, which is where this workspace's copy actually is.
+    await findFirstMatch(path.join(REPO_ROOT, 'node_modules', '.pnpm'), (dir) =>
+      path.basename(dir).startsWith('playwright-core@')
+        ? path.join(dir, 'node_modules', 'playwright-core', 'index.mjs')
+        : null
+    ),
+    // npx, where a `npx playwright` run leaves it.
+    await findFirstMatch(path.join(homedir(), '.npm', '_npx'), (dir) =>
+      path.join(dir, 'node_modules', 'playwright-core', 'index.mjs')
+    ),
+  ].filter(Boolean);
+
+  for (const store of stores) {
+    tried.push(store);
+    return await import(pathToFileURL(store).href);
+  }
+
+  throw new Error(
+    `Could not find playwright-core. Tried:\n  ${tried.join('\n  ')}\n` +
+      'Set PLAYWRIGHT_CORE to its index.mjs, or run `pnpm add -D playwright-core`.'
+  );
+};
+
+const { chromium } = await resolveBrowserDriver();
 
 const WIDTH = 1440;
 const HEIGHT = 900;
@@ -185,13 +257,18 @@ const main = async () => {
     if (speak) {
       // Deliver the transcript the way the recogniser's onresult would: the
       // words land in the input as interim text, then a final submit fires.
-      const chunks = instruction.split(/\s+/);
-      const interim = [];
-      const chunk = Math.max(1, Math.ceil(chunks.length / 3));
-      for (let i = 0; i < chunks.length; i += chunk) {
-        interim.push(chunks.slice(i, i + chunk).join(' '));
+      // A recogniser's interim results are cumulative: each one is the whole
+      // sentence heard so far, not the newest fragment. This wrote each chunk
+      // over the last, so an 88-character instruction arrived as its final 29
+      // characters and the agent silently answered a third of the sentence —
+      // one baffling take and no explanation for it. Send the running total.
+      const words = instruction.split(/\s+/);
+      const chunk = Math.max(1, Math.ceil(words.length / 3));
+      const growing = [];
+      for (let i = 0; i < words.length; i += chunk) {
+        growing.push(words.slice(0, Math.min(i + chunk, words.length)).join(' '));
       }
-      for (const part of interim) {
+      for (const heardSoFar of growing) {
         await page.evaluate((value) => {
           const el = document.querySelector(
             'input[aria-label="Ask the agent"]'
@@ -203,8 +280,18 @@ const main = async () => {
           )?.set;
           setter?.call(el, value);
           el.dispatchEvent(new Event('input', { bubbles: true }));
-        }, part);
+        }, heardSoFar);
         await sleep(450);
+      }
+
+      // The field has to hold the whole sentence before Enter, whatever the
+      // page did with the interim events. Checked rather than assumed: this
+      // is the exact failure the loop above used to have.
+      const delivered = await input.inputValue();
+      if (delivered.trim() !== instruction.trim()) {
+        throw new Error(
+          `--speak delivered a truncated instruction.\n  wanted: ${instruction}\n  got:    ${delivered}`
+        );
       }
       await input.press('Enter');
       beats.push({

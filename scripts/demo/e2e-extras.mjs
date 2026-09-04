@@ -15,13 +15,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const PLAYWRIGHT_CORE =
-  process.env.PLAYWRIGHT_CORE ??
-  new URL(
-    '../../node_modules/.pnpm/playwright-core@1.56.1/node_modules/playwright-core/index.mjs',
-    import.meta.url
-  ).pathname;
-const { chromium } = await import(PLAYWRIGHT_CORE);
+import { chromium } from './browser.mjs';
 
 const BASE = process.argv[2] ?? 'https://paillette-stg.berlayar.ai';
 const OUT = process.argv[3] ?? '/tmp/e2e-extras';

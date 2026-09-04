@@ -2880,4 +2880,16 @@ export const PAILLETTE_TOOL_NAMES = [
   'get_index_status',
 ] as const;
 
+/**
+ * How many tools this page puts on `document.modelContext`.
+ *
+ * Exported because it is a load-bearing number in the README, the devpost copy
+ * and the submission pack, and it has been wrong in all of them twice — first
+ * 17 when it was 21, then 21 when the exhibition tools took it to 25. A number
+ * repeated in five documents and computed in none of them will drift, so this
+ * is the one place it is derived, and the registry test asserts the list and
+ * the factory agree.
+ */
+export const PAILLETTE_TOOL_COUNT = PAILLETTE_TOOL_NAMES.length;
+
 export { NAMED_COLOURS };

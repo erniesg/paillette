@@ -11,6 +11,11 @@ import {
   waitForWebMcpRegistry,
   invokeRegisteredTool,
 } from '../registry';
+import {
+  createPailletteTools,
+  PAILLETTE_TOOL_COUNT,
+  PAILLETTE_TOOL_NAMES,
+} from '../tools';
 
 const makeTool = (
   name: string,
@@ -390,5 +395,32 @@ describe('invoking a registered tool from the page', () => {
     await waitForWebMcpRegistry();
 
     expect(await invokeRegisteredTool('not_a_tool', {})).toBeNull();
+  });
+});
+
+/**
+ * The number in the README, the devpost copy and the submission pack.
+ *
+ * It has been wrong twice — 17 when it was 21, then 21 when the exhibition
+ * tools took it to 25 — because it lives in five documents and was computed in
+ * none of them. This is what makes a stale number a failing test rather than a
+ * line somebody has to notice.
+ */
+describe('the tool surface a judge can count', () => {
+  it('registers exactly the tools it says it does', () => {
+    const built = createPailletteTools({
+      navigate: () => {},
+      getPageContext: () => ({
+        pathname: '/nga/search',
+        search: '',
+        collectionId: 'nga',
+        query: '',
+        facet: null,
+        colour: null,
+      }),
+    });
+
+    expect(built.map((tool) => tool.name)).toEqual([...PAILLETTE_TOOL_NAMES]);
+    expect(PAILLETTE_TOOL_COUNT).toBe(25);
   });
 });

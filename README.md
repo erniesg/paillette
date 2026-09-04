@@ -68,7 +68,7 @@ Two LLM steps sit in front of retrieval, both fail-open:
 
 ## The WebMCP layer
 
-**17 tools** registered on `document.modelContext`.
+**25 tools** registered on `document.modelContext`.
 
 ```
 apps/web/app/lib/webmcp/
@@ -121,7 +121,7 @@ to a real browser agent — use the staging URL.
   then open a staging URL.
 
 Gate check in the console: `await document.modelContext.getTools()` should list
-17 tools.
+25 tools.
 
 Sample archives for the sandbox live in `data/samples/` (mirrored to
 `apps/web/public/samples/`, listed by `manifest.json`): a 25-image set with no

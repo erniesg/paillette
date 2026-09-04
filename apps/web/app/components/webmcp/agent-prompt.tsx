@@ -867,12 +867,24 @@ export function AgentPrompt({
             )}
           </button>
         )}
+        {/*
+          The return mark, not the word "Ask".
+
+          "Ask" sat beside a bar whose whole job is obvious from the caret in
+          it, so it named the feature rather than telling anyone anything —
+          and it named the wrong one, because the beat that matters here is
+          Enter on an *empty* field, which a button labelled "Ask" actively
+          argues against. `↵` is the key you press, so the control and the
+          shortcut stop being two separate things to learn. The accessible
+          name stays a sentence, where a screen reader wants one.
+        */}
         <button
           type="submit"
           disabled={busy || !composed.trim()}
+          aria-label={busy ? 'Working' : 'Send to the agent'}
           className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:opacity-40"
         >
-          {busy ? 'Working…' : 'Ask'}
+          <span aria-hidden>↵</span>
         </button>
       </form>
 

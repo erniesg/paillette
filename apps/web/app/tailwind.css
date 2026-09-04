@@ -605,6 +605,58 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 }
 
 /*
+ * Enter is armed.
+ *
+ * A hairline in the human's ink, drawn under the bar the moment their first
+ * flag is confirmed, with the return glyph resting on its right end. It is the
+ * only thing on the page that says the headline beat exists, and it says it
+ * without a word — the same `↵` the send button carries, so the key and the
+ * control read as one thing. Gone again when the flags are.
+ */
+.lt-enter-armed {
+  position: relative;
+  height: 1px;
+  margin-top: 0.75rem;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--ink-human-faint) 12%,
+    var(--ink-human-faint) 88%,
+    transparent
+  );
+  animation: lt-enter-armed-in 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lt-enter-armed span {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  padding-left: 0.5rem;
+  background: var(--lt-ground);
+  color: var(--ink-human);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1;
+}
+
+@keyframes lt-enter-armed-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-enter-armed {
+    animation: none;
+  }
+}
+
+/*
  * The board fills the screen it is on and stops. Twelve cards that do not fit
  * on one screen are not twelve cards — two thirds of the deal happens off
  * camera and the continuity the FLIP exists to show is invisible.
