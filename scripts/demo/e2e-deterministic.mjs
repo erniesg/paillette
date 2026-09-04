@@ -232,11 +232,16 @@ const main = async () => {
     window.__sampling = true;
     const tick = () => {
       if (!window.__sampling) return;
+      // The board, not the page. The tray animates too and the two-up is
+      // portalled to <body>, so a document-wide sample mixes three separate
+      // animations into one number and the deal's own count then moves around
+      // between runs for reasons that have nothing to do with the deal.
+      const grid = document.querySelector('[data-testid="deal-board-grid"]');
       window.__layouts.push(
-        [...document.querySelectorAll('[data-artwork-id]')]
+        [...(grid ?? document).querySelectorAll('[data-artwork-id]')]
           .map((el) => {
             const r = el.getBoundingClientRect();
-            return `${Math.round(r.x)},${Math.round(r.y)}`;
+            return `${el.getAttribute('data-artwork-id')}@${Math.round(r.x)},${Math.round(r.y)}`;
           })
           .join('|')
       );
@@ -265,7 +270,10 @@ const main = async () => {
     )
     .catch(() => {});
   const redealMs = Date.now() - enterAt;
-  await sleep(1500);
+  // Long enough for the whole tween. The deal comes back from the exemplar
+  // engine in about two seconds and then takes 350-450ms to land, so a shorter
+  // window measures the wait rather than the animation.
+  await sleep(4000);
   await page.evaluate(() => {
     window.__sampling = false;
   });
@@ -379,11 +387,16 @@ const main = async () => {
     window.__sampling = true;
     const tick = () => {
       if (!window.__sampling) return;
+      // The board, not the page. The tray animates too and the two-up is
+      // portalled to <body>, so a document-wide sample mixes three separate
+      // animations into one number and the deal's own count then moves around
+      // between runs for reasons that have nothing to do with the deal.
+      const grid = document.querySelector('[data-testid="deal-board-grid"]');
       window.__layouts.push(
-        [...document.querySelectorAll('[data-artwork-id]')]
+        [...(grid ?? document).querySelectorAll('[data-artwork-id]')]
           .map((el) => {
             const r = el.getBoundingClientRect();
-            return `${Math.round(r.x)},${Math.round(r.y)}`;
+            return `${el.getAttribute('data-artwork-id')}@${Math.round(r.x)},${Math.round(r.y)}`;
           })
           .join('|')
       );
@@ -417,7 +430,10 @@ const main = async () => {
       { timeout: 45_000 }
     )
     .catch(() => {});
-  await sleep(1500);
+  // Long enough for the whole tween. The deal comes back from the exemplar
+  // engine in about two seconds and then takes 350-450ms to land, so a shorter
+  // window measures the wait rather than the animation.
+  await sleep(4000);
   await page.evaluate(() => {
     window.__sampling = false;
   });

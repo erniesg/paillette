@@ -100,12 +100,12 @@
     {
       "ok": true,
       "label": "first redeal (masonry -> board) is a cut, not a deal",
-      "detail": "7 distinct layouts across 229 frames — a jump cut measures 4–5"
+      "detail": "7 distinct layouts across 343 frames — a jump cut measures 4–5"
     },
     {
       "ok": true,
       "label": "redeal latency",
-      "detail": "2257ms from Enter to a changed board"
+      "detail": "1656ms from Enter to a changed board"
     },
     {
       "ok": true,
@@ -130,7 +130,7 @@
     {
       "ok": true,
       "label": "board-to-board deal animates",
-      "detail": "14 distinct layouts across 129 frames"
+      "detail": "28 distinct layouts across 272 frames"
     },
     {
       "ok": true,
@@ -140,7 +140,7 @@
     {
       "ok": true,
       "label": "the two-up is on screen as a room",
-      "detail": "{\"present\":true,\"label\":\"Which one holds the wall better?\",\"askedBy\":\"agent\",\"question\":\"Which one holds the wall better?\",\"choices\":[{\"id\":\"open-access-art:nga:144846\",\"side\":\"left\",\"label\":\"Choose The Dawn of Creation\"},{\"id\":\"open-access-art:nga:74927\",\"side\":\"right\",\"label\":\"Choose Moonlit Night (Mondnacht): pl. 4\"}],\"fullScreen\":\"1440x1000\",\"box\":{\"top\":0,\"left\":0,\"w\":1440,\"h\":1000},\"portalled\":true,\"chromeVisible\":[]}"
+      "detail": "{\"present\":true,\"label\":\"Which one holds the wall better?\",\"askedBy\":\"agent\",\"question\":\"Which one holds the wall better?\",\"choices\":[{\"id\":\"open-access-art:nga:144846\",\"side\":\"left\",\"label\":\"Choose The Dawn of Creation\"},{\"id\":\"open-access-art:nga:69344\",\"side\":\"right\",\"label\":\"Choose Desert Sunset\"}],\"fullScreen\":\"1440x1000\",\"box\":{\"top\":0,\"left\":0,\"w\":1440,\"h\":1000},\"portalled\":true,\"chromeVisible\":[]}"
     },
     {
       "ok": true,
@@ -170,7 +170,7 @@
     {
       "ok": true,
       "label": "the loser becomes a human reject",
-      "detail": "{\"id\":\"open-access-art:nga:74927\",\"title\":\"Moonlit Night (Mondnacht): pl. 4\",\"artist\":\"Max Klinger\",\"palette\":[\"#5E5B52\",\"#F3ECDD\",\"#89837C\",\"#B4B4A6\"],\"medium\":\"etching and aquatint\",\"year\":1857,\"classification\":\"Print\",\"by\":\"human\",\"onBoard\":false}"
+      "detail": "{\"id\":\"open-access-art:nga:69344\",\"title\":\"Desert Sunset\",\"artist\":\"George Elbert Burr\",\"palette\":[\"#807E75\",\"#DDDBCA\",\"#4D4C47\"],\"medium\":\"etching with plate tone in greenish-black on wove paper\",\"year\":1921,\"classification\":\"Print\",\"by\":\"human\",\"onBoard\":true}"
     },
     {
       "ok": false,
