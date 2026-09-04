@@ -26,6 +26,7 @@ import {
 import {
   buildExhibitionPage,
   loadExhibitionByCode,
+  PREVIEW_DEADLINE_MS,
 } from '../exhibition-page.server';
 
 /** `/e/:code`, and nothing that merely starts that way. */
@@ -71,7 +72,16 @@ export const handleShareRequest = async (
   if (!crawler && !probe) return null;
 
   try {
-    const payload = await loadExhibitionByCode(code, env, request.signal);
+    // An unfurler abandons the fetch after a few seconds and caches the empty
+    // result, so this path runs on a tighter deadline than the page does. A
+    // card built from the works that answered in time beats a bare URL that
+    // stays bare.
+    const payload = await loadExhibitionByCode(
+      code,
+      env,
+      request.signal,
+      PREVIEW_DEADLINE_MS
+    );
     if (!payload) return null;
 
     const canonicalUrl = new URL(shareCodePath(code), url.origin).toString();
@@ -81,6 +91,7 @@ export const handleShareRequest = async (
       code,
       canonicalUrl,
       signal: request.signal,
+      deadlineMs: PREVIEW_DEADLINE_MS,
     });
     if (!page) return null;
 
