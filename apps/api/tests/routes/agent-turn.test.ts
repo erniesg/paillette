@@ -101,7 +101,16 @@ describe('describeHumanTurn', () => {
     expect(described).toContain('the exhibition statement now reads');
     expect(described).toContain('It is about leaving.');
     expect(described).toContain('they are now the brief');
-    expect(described).toContain('Re-select the works and rewrite the labels');
+    // Naming the tool, and naming it first, is the part that matters. Three
+    // by-hand runs against the real model on a softer wording ("re-select the
+    // works and rewrite the labels") had two of them re-select and never
+    // relabel, leaving every label written against the theme the human had
+    // just rejected.
+    expect(described).toContain('first tool call now is write_labels');
+    expect(described).toContain('before you search, redeal or set_results');
+    // Three runs relabelled correctly and left the room called "Weather at
+    // Sea" under a statement about leaving.
+    expect(described).toContain('Check the title in the same pass');
   });
 
   it('names the work a rewritten label belongs to', () => {

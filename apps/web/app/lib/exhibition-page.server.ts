@@ -210,7 +210,10 @@ export const buildExhibitionPage = async ({
     canonicalUrl,
     institution: 'National Gallery of Art, Washington',
     institutionUrl: 'https://www.nga.gov/open-access-images.html',
+    // "CC0" is the curation lane's correction, carried across when the page
+    // build moved out of the route. Naming the licence is the part a reuser
+    // acts on; "open access" alone is a posture, not a permission.
     rights:
-      'Open access. The Gallery believes these works are in the public domain in the United States.',
+      'CC0 open access. The Gallery believes these works are in the public domain in the United States.',
   };
 };

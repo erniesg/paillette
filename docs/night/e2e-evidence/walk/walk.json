@@ -20,8 +20,8 @@
     "open-access-art:nga:127567"
   ],
   "flip": {
-    "frames": 317,
-    "distinct": 25
+    "frames": 339,
+    "distinct": 22
   },
   "beforeSlots": {
     "open-access-art:nga:184225": {
@@ -212,7 +212,7 @@
     {
       "ok": true,
       "what": "the deal actually animates rather than cutting",
-      "detail": "25 distinct layouts across 317 sampled frames"
+      "detail": "22 distinct layouts across 339 sampled frames"
     },
     {
       "ok": true,
