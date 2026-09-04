@@ -1735,6 +1735,32 @@ export default function SearchPage() {
   );
 
   /**
+   * Let go of the caret when a board arrives.
+   *
+   * `autoFocus` above is a mount-time prop, so the condition it is guarded by
+   * — "no query yet" — is only ever evaluated on a cold load. A visitor who
+   * lands on an empty `/nga/search` and then gets a deal (from the bar, from
+   * an agent's `set_results`, from a share link rehydrating) still has the
+   * caret parked in the catalogue field, and every single-letter binding is
+   * swallowed by it: measured on the merged build, hovering a card and
+   * pressing `P` left `data-flag="none"`, and one `Escape` first made it
+   * `pick`. That is the first beat of the demo, dead, with no cue that the
+   * keypress went anywhere. The chrome already folds away on `boardIsDealt`,
+   * which also means the field holding focus may not be on screen at all.
+   *
+   * Only when the field is empty: a half-typed query is the human doing
+   * something, and taking focus off it mid-word would be worse than the bug.
+   */
+  const catalogueFieldRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!boardIsDealt) return;
+    const field = catalogueFieldRef.current;
+    if (!field || document.activeElement !== field) return;
+    if (field.value.trim().length > 0) return;
+    field.blur();
+  }, [boardIsDealt]);
+
+  /**
    * Is a wall label on screen at all?
    *
    * Both places it can hang are below the results bar in the flow — above the
@@ -2746,12 +2772,15 @@ export default function SearchPage() {
                     style={{ color: 'var(--ink-human-faint)' }}
                   />
                   <input
+                    ref={catalogueFieldRef}
                     value={textQuery}
                     onChange={(event) => updateTextDraft(event.target.value)}
                     // Only when there is nothing else to do. Arriving with a
-                    // query means there are cards on screen, and parking the
-                    // caret here would make the culling keys dead on arrival.
-                    autoFocus={!textQuery}
+                    // query, or with a board already dealt, means there are
+                    // cards on screen, and parking the caret here would make
+                    // the culling keys dead on arrival. The effect beside
+                    // `boardIsDealt` handles the deal that arrives later.
+                    autoFocus={!textQuery && !boardIsDealt}
                     placeholder="search by feeling, era, subject..."
                     disabled={isSearchDisabled}
                     className="lt-search-field w-full py-5 pl-10 pr-20 font-wall text-3xl italic sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:opacity-45"
