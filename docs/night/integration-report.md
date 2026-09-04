@@ -112,6 +112,13 @@ still moving. Proceeding captured all of its code, and I re-checked afterwards
 **This is a deviation from the instruction and I am flagging it as one.** If
 the lane commits code after this report, the next iteration must re-merge.
 
+**Afterwards:** the lane committed twice more while I was deploying and
+writing — `ba94917` and `ec21303`, both touching only
+`docs/night/curation-report.md`. Both are merged and pushed. Neither is code,
+so the deployed build is unchanged by them. At the time of the final push
+`git rev-list --count HEAD..night/curation` is **0**, and the lane was still
+running.
+
 ---
 
 ## 2. Green
