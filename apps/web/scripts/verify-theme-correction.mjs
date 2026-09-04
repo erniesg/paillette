@@ -301,16 +301,36 @@ await browser.close();
 writeFileSync(`${SHOTS}/runs.json`, JSON.stringify(runs, null, 2));
 console.log(`\nTranscripts written to ${SHOTS}/runs.json, screenshots alongside.`);
 
-// The check is whether the loop turned: a statement the human owns after the
-// correction, and a board that moved because of it.
-const turned = runs.filter(
-  (run) =>
-    run.after?.statement?.by === 'human' &&
-    (run.after?.works ?? []).length > 0 &&
-    run.correctionCalls.length > 0
-);
+/**
+ * The check is whether **the wall changed**, and nothing weaker.
+ *
+ * An earlier version of this passed when the human's statement survived and
+ * the agent made any tool call at all, and it duly reported 3/3 on a batch
+ * where two runs re-selected works and left every label written against the
+ * old theme. "The statement changed and the wall did not" is the precise
+ * failure this lane exists to prevent, so a run only counts if at least one
+ * work that was hanging before the correction is hanging after it with a
+ * different label on it.
+ */
+const turned = runs.filter((run) => {
+  if (run.after?.statement?.by !== 'human') return false;
+  const before = labelsOf(run.before);
+  return (run.after?.works ?? []).some((work) => {
+    const was = before.get(work.artworkId)?.label;
+    return was && work.label && work.label !== was;
+  });
+});
+
 console.log(
-  `\n${turned.length}/${runs.length} runs kept the human's statement and acted on it. ` +
-    'Read the labels above and judge whether they are about this show.'
+  `\n${turned.length}/${runs.length} runs kept the human's statement AND rewrote the labels under it.`
 );
+for (const [index, run] of runs.entries()) {
+  if (turned.includes(run)) continue;
+  const relabelled = run.correctionCalls.some((c) => c.name === 'write_labels');
+  console.log(
+    `   run ${index + 1} did not turn: ${
+      relabelled ? 'write_labels ran but no label changed' : 'write_labels was never called'
+    } (tools: ${run.correctionCalls.map((c) => c.name).join(' → ') || 'none'})`
+  );
+}
 process.exit(turned.length === runs.length ? 0 : 1);

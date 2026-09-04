@@ -210,7 +210,7 @@ export const describeHumanTurn = (turn: HumanTurnPayload): string | null => {
       ? `The human has rewritten the show in their own words: ${corrections.join('; ')}.`
       : null,
     corrections.length
-      ? 'Those are their words and they are now the brief. Do not restate them, do not paraphrase them back, and do not write over them. Re-select the works and rewrite the labels so that they are true of what the human just said.'
+      ? 'Those are their words and they are now the brief. Do not restate them, do not paraphrase them back, and do not write over them. Your first tool call now is write_labels over the works already hanging, because every label on the wall was written against the old theme and is now wrong. Do that before you search, redeal or set_results — a reply that re-selects works but leaves the old labels in place has changed the statement and not the wall, which is the same as having done nothing.'
       : null,
   ]
     .filter(Boolean)
