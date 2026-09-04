@@ -19,10 +19,17 @@
  *    laid down since the last turn (`drainFlagChanges`), so a click is an
  *    utterance even when nothing was typed.
  *
- * Page-session scoped, in memory. Nothing here is persisted: this is a working
- * surface, not a saved document.
+ * Scoped to the tab. The map is the live copy and `sessionStorage` is its
+ * shadow, so a reload restores what was on the board and closing the tab throws
+ * it away — which is what §9 means by "flags persist per session", and what
+ * this module's own comment used to deny by calling itself "a working surface,
+ * not a saved document". It is still a working surface; it just no longer loses
+ * the work to a refresh. See `flag-storage`, and note that the *journal* is
+ * deliberately not restored.
  */
 
+import { recallArtwork, rememberArtworks } from './artwork-index';
+import { clearStoredFlags, loadFlags, saveFlags } from './flag-storage';
 import {
   getWebMcpState,
   setFlagRecords,
@@ -55,7 +62,48 @@ const flags = new Map<string, FlagRecord>();
 let journal: FlagChange[] = [];
 
 const publish = () => {
-  setFlagRecords([...flags.values()]);
+  const records = [...flags.values()];
+  setFlagRecords(records);
+  // The one write point, so the one place persistence belongs. See
+  // `flag-storage`: this is what makes §9's "flags persist per session" true
+  // across a reload rather than only across a re-render. The catalogue records
+  // go with them, because the session index does not survive either and a
+  // restored flag with no record reaches the agent as a bare id.
+  saveFlags(
+    records,
+    records
+      .map((entry) => recallArtwork(entry.artworkId))
+      .filter((work): work is NonNullable<typeof work> => Boolean(work))
+  );
+};
+
+/**
+ * Restore the standing flags from the session, once.
+ *
+ * Called at module load on the client and skipped entirely on the server, where
+ * `sessionStorage` does not exist. Existing in-memory flags win: hydration is
+ * for a cold page, and clobbering a flag someone has already pressed this tick
+ * would be a race with the human's own hands.
+ *
+ * **The journal is not restored, on purpose.** It carries what the human did
+ * *since the last turn*, and it is drained into the next agent turn — so
+ * rehydrating it would open the first typed sentence after a reload by telling
+ * the agent the human had just flagged everything on the board. Standing state
+ * survives a reload; a delta does not.
+ */
+export const hydrateFlags = (): number => {
+  const { records: restored, works } = loadFlags();
+  // The works first, so that by the time anything reads a restored flag the
+  // catalogue record behind it is already in the index.
+  if (works.length) rememberArtworks(works);
+  let added = 0;
+  for (const record of restored) {
+    if (flags.has(record.artworkId)) continue;
+    flags.set(record.artworkId, record);
+    added += 1;
+  }
+  if (added) publish();
+  return added;
 };
 
 const record = (change: FlagChange) => {
@@ -195,10 +243,23 @@ export const __resetFlagsForTest = () => {
   flags.clear();
   journal = [];
   setFlagRecords([]);
+  // Otherwise one test's flags hydrate into the next one's cold page.
+  clearStoredFlags();
 };
 
 /** Re-hydrate the store from the map. The bridge calls this on mount. */
 export const republishFlags = publish;
+
+/*
+ * Restore on load, client only.
+ *
+ * `storage()` returns null on the server, so this costs nothing during SSR and
+ * cannot desynchronise the rendered HTML. On the client the store is read
+ * through `useSyncExternalStore` with a server snapshot, which is precisely the
+ * hook for a client-side store whose value differs from the server's: it
+ * renders the server snapshot while hydrating and re-renders once.
+ */
+hydrateFlags();
 
 /** Current state of the board, read straight off the shared store. */
 export const getBoardOrder = (): string[] => getWebMcpState().board?.order ?? [];
