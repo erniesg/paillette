@@ -1,14 +1,39 @@
 # Sharing lane — report
 
-Branch `night/sharing`, cut from `night/integration`.
+Branch `night/sharing`. Cut from `night/integration`, and merged back up to it
+at iteration 2 so this branch contains their work as well as mine.
 
-**A real, working, cold-openable short link on staging:**
+**Real, working, cold-openable short links on staging:**
 
+> ## https://paillette-stg.berlayar.ai/e/exYNx8X
+> Three works, mixed provenance — two labels the agent wrote, one the human
+> did — so both inks are visible on one page.
+>
+> ## https://paillette-stg.berlayar.ai/e/QWwJnL5
+> Twelve works. Assembled by **typing** *"something warm for above the sofa,
+> and write me a title and statement"* into the prompt bar with the speech
+> APIs deleted from the page, then clicking Copy link. Title *"The Warm Side
+> of Light"* and its statement are the agent's.
+>
 > ## https://paillette-stg.berlayar.ai/e/MKwsxHy
+> Six works, four agent labels. Screenshot:
+> `docs/night/shots/share-cold-open.png`.
 
-Six works, four agent-written labels, opened in a browser profile with no
-session, no cookies and no local storage. Screenshot:
-`docs/night/shots/share-cold-open.png`.
+All opened in browser contexts with no session, no cookies and no local
+storage.
+
+### For the submission lane — the one-paragraph version
+
+> An exhibition assembled in Paillette gets a permanent seven-character URL.
+> Anyone can open it — no account, no session, nothing carried over — and it
+> renders the full show server-side: title, statement, every work with its
+> catalogue data, every wall label, and a credit line saying how many of those
+> labels an agent wrote. Pasted into Slack or WhatsApp the link unfurls with
+> the exhibition's title, its statement and its lead artwork.
+
+Every clause of that is measured below. Do not extend it — in particular do
+not call these links private or say anything was tested in a real Slack
+workspace, because neither is true. See §6 and §9.
 
 ---
 
@@ -159,11 +184,11 @@ returned `{"works":1,"dropped":1}`.
 Copied from aether's design, not its code. `/e/:code` is three things depending
 on who asks, resolved in `worker.ts` **ahead of Remix**:
 
-| Caller | Response | Measured on staging |
+| Caller | Response | Measured on staging (`/e/exYNx8X`) |
 | --- | --- | --- |
-| Chrome UA + `Accept: text/html` | The app | `200 text/html`, 17,605 bytes |
-| `Slackbot-LinkExpanding` | Preview document | `200 text/html`, **3,622 bytes** |
-| `Accept: application/json` | The facts | `200 application/json`, 2,772 bytes |
+| Chrome UA + `Accept: text/html` | The app | `200 text/html`, 12,313 bytes, 1.96 s |
+| `Slackbot-LinkExpanding` | Preview document | `200 text/html`, **2,649 bytes**, 0.32 s |
+| `Accept: application/json` | The facts | `200 application/json`, 1,452 bytes, 0.11 s |
 
 A bot unfurling a link is not a browser: it fetches once, reads the `<head>`,
 runs no scripts and gives up quickly. Serving it the app shell mostly works and
@@ -201,6 +226,95 @@ The statement is prose a stranger typed and it lands inside `content="…"`. One
 unescaped double quote there ends the attribute and the rest becomes markup on
 a page served from this domain. It is escaped, with a test that says why.
 
+### The budget, and the bug staging found in it
+
+Deadlines were added in iteration 2 because every fetch on these paths was
+unbounded: a catalogue that accepted the connection and then stopped talking
+would hold twenty-four concurrent requests and the whole page behind them — a
+blank tab until the browser gave up, which is worse than any error page. A slow
+record now drops out and is counted in `missing`, exactly like an absent one.
+
+The first version of the crawler budget was **wrong, and only measuring caught
+it**. It was 1500 ms applied *per fetch*, which failed in both directions:
+
+- The preview makes two calls in sequence, so the real worst case was double
+  the number written down.
+- Against staging the lookup alone ran 0.13–1.50 s, so ordinary traffic was
+  tripping its own deadline. Roughly **1 request in 6** silently fell through
+  and served the 12 kB app shell instead of the 2.6 kB preview.
+
+It is now one wall clock over the whole path (2.5 s), shared by both calls, so
+a slow lookup leaves the records less time rather than adding to it. Re-measured
+after the fix, **0 fall-throughs in 20 crawler fetches and 0 in 20 probe
+fetches**, where the same measurement before the fix caught it repeatedly.
+
+That failure mode was always a *degradation* rather than a break — the route
+server-renders the same tags, so the card still worked, just slower and bigger.
+But it defeated the point of having the fast path at all.
+
+---
+
+## 5b. Text first, and cutting the words
+
+Both constraints arrived mid-run and both were applied to work already built.
+
+### Text first — verified, not assumed
+
+Nothing in this lane touches speech: `grep -niE "speech|speak|voice|mic|utterance|recognition"`
+across all nine files of the lane returns nothing. The share control is a
+button, publishing is a `fetch`, the page is server-rendered HTML.
+
+That is the weak version of the claim, so the strong one was measured. In a
+headless Chromium with `webkitSpeechRecognition`, `SpeechRecognition` and
+`speechSynthesis` **deleted before any app code ran**:
+
+1. `window` reports no speech APIs (`false`).
+2. Typed *"something warm for above the sofa, and write me a title and
+   statement"* into the prompt bar and pressed Enter. No microphone permission
+   was granted in the run and no speech control was clicked.
+3. The agent assembled a twelve-work board and wrote the title *"The Warm Side
+   of Light"* and a statement.
+4. The share button appeared, was clicked, returned `201`, and the clipboard
+   held `https://paillette-stg.berlayar.ai/e/QWwJnL5`.
+5. That URL opens cold: 12 works, agent-inked statement.
+
+So every beat of the share half works by typing with voice absent.
+
+**One honest caveat:** that run produced 0 wall labels — the agent wrote a
+title and statement but did not call `write_labels` for this instruction. The
+mixed-provenance rendering was therefore verified on a separately published
+show (`/e/exYNx8X`) rather than on the typed one.
+
+### Cutting the words — §5b applied to my own surfaces
+
+Audited against §5b after re-reading how museum labels and Lightroom's culling
+view handle density. The finding that mattered: **every agent-written label
+carried a `··` glyph with both `title` and `aria-label` reading "Label written
+by an agent"** — a tooltip restating a mark that existed only in order to need
+the tooltip. Two pieces of chrome for one bit of information, and exactly what
+§5b rules out.
+
+Provenance is **ink** now, which is what §7.2 asks for. The rule down the left
+of each label is drawn in the agent's ink or the human's, off the same
+`data-provenance` attribute the statement, the wall label and the region heads
+already use — a convention learned long before anyone reaches this page, so it
+needs no legend. Verified on staging: 2 agent-inked labels, 1 human-inked, and
+`exhibition-mark` / "Label written by an agent" both absent from the served
+HTML. Both inks captured in one page:
+`docs/night/shots/share-provenance-ink.png`.
+
+| Was | Is | Why |
+| --- | --- | --- |
+| `··` + `title` + `aria-label` on every agent label | coloured rule on the label | A mark and a colour, not a word. §5b, §7.2 |
+| "N works in this link could not be resolved in the catalogue" | "2 works unavailable" | Narrated a mechanism the visitor cannot act on |
+| Button: `Copy link → Copying… → Copied → Copy link` | `Copy link → Copied → Copy link` | "Copying…" narrated the round trip and made one click flicker through three words in under a second. It is dimmed and disabled while working — a state, not a word |
+
+**Not cut, deliberately:** the rights line stays long. It is the institution's
+own credit line rather than our chrome, and the licence is the part a reuser
+acts on. The colophon's "2 of 3 labels written by an agent" also stays — a
+museum prints who wrote its labels once, at the bottom, and it doubles as the
+non-colour statement of a fact the ink otherwise carries by colour alone.
+
 ---
 
 ## 6. Unguessable is not private
@@ -228,19 +342,21 @@ That is what a link you can paste *is* — but it means:
 
 ## 7. Tests
 
-Baseline (before this lane) vs. now, both measured on this machine:
+Baseline (before this lane) vs. now, both measured on this machine. "Now" is
+after merging `night/integration`, so it includes other lanes' tests too:
 
 | Suite | Baseline | Now |
 | --- | --- | --- |
-| `pnpm --filter web test` | 92 files / 1157 tests, **1 file failed to collect** | **94 files / 1171 tests, all pass** |
+| `pnpm --filter web test` | 92 files / 1157 tests, **1 file failed to collect** | **95 files / 1181 tests, all pass** |
 | `pnpm --filter api test` | 44 files / 815 tests, all pass | **46 files / 849 tests, all pass** |
 | `pnpm --filter web typecheck` | 1 error | **clean** |
 
 Two notes on the baseline:
 
-- `HANDOFF.md` §2 records the baseline as "web 59 files / 593 tests · api 41 /
-  770". Those numbers are stale; the figures above are what the commands
-  actually printed.
+- The brief and `HANDOFF.md` §2 both record the baseline as "web 59 files / 593
+  tests · api 41 / 770". Those numbers are stale by a wide margin; the figures
+  above are what the commands actually printed on this machine, before and
+  after. Nothing regressed.
 - The failing web file was `__tests__/worker-cache-control.test.ts`, which
   imports `worker.ts`, which imports `./build/server/index.js`. It fails to
   collect on a tree that has not been built and passes after `pnpm --filter web
@@ -266,13 +382,21 @@ New coverage, all of it requested by the brief:
 - **The clipboard fallback** — `app/components/exhibition/__tests__/share-link.test.tsx`
   (12): the field appears, holds the URL, is read-only, is selected, persists,
   and is absent on success.
+- **Deadlines and hangs** — `app/lib/__tests__/exhibition-page-deadline.test.ts`
+  (7): a record that never answers drops out while the rest render; the hang
+  being *first* does not block the ones behind it; all-hang gives null not an
+  empty room; the lookup hanging gives up; and the crawler budget caps the
+  whole path once rather than per hop. The stubs honour the abort signal the
+  way a real socket does, and the first test asserts the promise is **still
+  pending** just before the deadline and settled just after — without both
+  halves it would pass against a stub that never hung and prove nothing.
 - **Cold open, live** — `apps/web/e2e/cold-share-link.spec.ts`, 4 tests, run
   against staging and passing. Not part of the default suites (it needs a
   published code):
-  `PAILLETTE_SHARE_CODE=MKwsxHy npx playwright test e2e/cold-share-link.spec.ts`.
+  `PAILLETTE_SHARE_CODE=exYNx8X npx playwright test e2e/cold-share-link.spec.ts`.
 
-Two bugs were caught by tests I had just written, before any of this shipped,
-and both were mine:
+Three bugs were caught by tests I had just written, before any of this shipped,
+and all three were mine:
 
 - The glyph "repair" in §3.1 — the normaliser mapped `0`/`O` onto `o`, which is
   a valid character, so it would have resolved a mistyped code to a real
@@ -281,6 +405,13 @@ and both were mine:
   than returning `undefined`, so `c.executionCtx?.waitUntil(…)` turned every
   successful `GET` into a 500 off-Worker. Caught because the read test asserted
   a status rather than just parsing the body.
+- A test asserting the deadline "worked" would have passed against a stub that
+  never hung at all. Adding the still-pending-just-before assertion is what
+  made it mean anything.
+
+A fourth was caught only by **measuring staging**, and no unit test would ever
+have found it: the crawler budget was too tight and silently fell through on
+roughly 1 request in 6. See §5.
 
 ---
 
@@ -298,8 +429,8 @@ with empty `storageState`:
 - All **6** works render; all 6 `<img>` reached `complete === true` with
   `naturalWidth > 0` — actually decoded, not just present in the markup.
 - All **6** labels render, with per-field provenance intact: the colophon reads
-  "·· 4 of 6 labels written by an agent", matching the 4 sent as agent-written.
-- Colophon carries the institution and the open-access rights line.
+  "4 of 6 labels written by an agent", matching the 4 sent as agent-written.
+- Colophon carries the institution and the CC0 rights line.
 - Hanging order preserved end to end (checked against the JSON probe).
 - `GET /e/zzzzzzz` → 404. `GET /exhibition` → 302 → `/nga/search`.
 - `GET /exhibition?e=<old payload>` → 200, renders. The fallback is intact.
@@ -312,8 +443,9 @@ show through the WebMCP debug hook (`?webmcp-debug` → `search_artworks` →
 `set_results` → `set_exhibition`) and then clicking the actual control:
 
 - Button is absent with nothing hanging, and appears once a show exists.
-- Label sequence on click: **`Copying… → Copied → Copy link`** — the working
-  state is visible, and the success state resets after 2.4s as designed.
+- Label sequence on click was **`Copying… → Copied → Copy link`**. The middle
+  state has since been cut to `Copy link (dimmed) → Copied → Copy link` — see
+  §5b.
 - One `POST /api/exhibitions` → **201**.
 - `navigator.clipboard.readText()` returned
   **`https://paillette-stg.berlayar.ai/e/wycy7SS`**.
@@ -324,6 +456,29 @@ One correction against my own working notes: an intermediate check appeared to
 show this link rendering only 1 of 3 works. That was a bad measurement —
 `grep -c` counts matching *lines*, and the served HTML is a single line, so it
 returns 1 for any page with at least one work. Counted properly, all 3 render.
+
+### Iteration 2, re-measured after the merge and the fixes
+
+Re-deployed both workers and re-ran everything against `/e/exYNx8X`:
+
+| Check | Result |
+| --- | --- |
+| Three request paths | app 12,313 B / preview 2,649 B / JSON 1,452 B — all `200`, correct content types |
+| Crawler fall-through rate | **0 / 20** (was ~1 in 6 before the budget fix) |
+| Probe fall-through rate | **0 / 20** |
+| `og:title`, `og:image` (1200px), `twitter:card` | present and correct in the preview document |
+| Provenance ink | 2 agent-inked labels, 1 human-inked; `exhibition-mark` and "Label written by an agent" both **absent** |
+| `/e/zzzzzzz`, `/e/abcdef0`, `/e/abc`, `/e/abcdefghij` | all `404` |
+| `/exhibition` | `302` → `/nga/search` |
+| Legacy `/exhibition?e=…` | `200`, renders |
+| Cold e2e, 4 tests | all pass |
+
+**One thing worth knowing rather than fixing:** `/e/..` returns `200` and the
+home page rather than a `404`. Cloudflare's edge normalises the path to `/`
+before the Worker ever sees it, so the code never receives `..` as a code. Not
+a traversal — it resolves to a legitimate route — and the unit test asserting
+`readShortLinkCode('/e/..')` is null still holds for the case where such a
+string does reach the function.
 
 ---
 
@@ -350,4 +505,37 @@ returns 1 for any page with at least one work. Counted properly, all 3 render.
    hits, so it counts unfurls as visits.
 7. **The pre-existing `worker.ts` → `build/server/index.js` coupling** still
    makes `typecheck` and one test file fail on an unbuilt tree. Not mine, not
-   fixed.
+   fixed. Run `pnpm --filter web build` first and both go green.
+8. **Provenance ink is colour-only per label.** The agent/human distinction on
+   an individual wall label is carried by the colour of its left rule and
+   nothing else, which is the app-wide convention (`data-provenance` on the
+   statement, the wall label, the region heads) rather than something this lane
+   introduced. The colophon states the count in text, so the fact is not
+   *only* in colour on the page — but a colour-blind visitor cannot tell which
+   specific label came from which hand. A dashed-vs-solid rule would fix it
+   without adding a word; not done tonight.
+9. **The typed end-to-end run produced no wall labels**, because the agent did
+   not call `write_labels` for that instruction. Labels and their ink were
+   verified on a separately published show instead. The two have not been
+   demonstrated in a single unbroken run.
+
+---
+
+## 10. Where this lane stands against the brief
+
+§8's triage list and §9's definition of done are the **culling loop** — flags,
+`get_view_context`, Enter-on-empty-bar redeal, gesture payloads, the deal
+animation, compare, the ledger. None of those are this lane, and this lane has
+not touched them. This lane is the last bullet of §5c: *"what is left is a
+shareable, properly designed exhibition page"*, and the §5.4 item in
+`HANDOFF.md`.
+
+Measured against the six things this lane was actually asked for, all six are
+done and demonstrable on staging: D1-backed exhibitions, short codes, the
+routes including `/e/:code` and the `/exhibition` fix, OG tags with a crawler
+branch, the one-control share affordance with a working no-clipboard fallback,
+and an end-to-end proof from a cold browser.
+
+Iteration 2 added no scope. It merged `night/integration`, applied the two
+mid-run constraints to what already existed, hardened the failure paths that
+had no deadlines, and fixed the one bug that only appeared under real latency.
