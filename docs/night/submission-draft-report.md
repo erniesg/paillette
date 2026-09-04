@@ -58,23 +58,33 @@ sentence also carries the said/chose gap — *"You said warm… following the
 picks"* — which is §3 of the brief, on real NGA works rather than a fixture
 corpus.
 
-### 2.2 An inversion on one work, archived
+### 2.2 The inversion, shot live — both conditions, one session
 
-Better evidence than the negative control, and nobody had noticed it was in the
-tree. Berthe Morisot, *Landscape*, `open-access-art:nga:52306`, colored pencils,
-palette `#D4C7A2 #B6A385 #9A886C`. In `iteration-2/run3-loop.json` it is
-`"to":"pick"`; in `run4-loop.json` it is `"to":"reject"`:
+WANTED-ABSENT item 2 from the previous round, now done. Same three works, flags
+swapped between two conditions, both turns HTTP 200, both frames committed
+(`shots/55-note-inverted-A.png`, `-B.png`; raw in `e2e-evidence/note-inversion.json`):
 
-> *picked* — "You kept the pale ochre pencil landscape and rejected the darker
-> peach palette — following its quiet, airy warmth."
+> **A** — *A Rocky Pond* (the etching) **picked**:
+> "You said warm, but you kept the **bone-and-umber etching** and rejected the
+> darker ochre palettes — following the pick."
 >
-> *rejected* — "Following your warm oil-on-wood fruit pick and moving away from
-> the pale colored-pencil landscape you rejected."
+> **B** — the same etching **rejected**:
+> "You kept the **pale ochre drawing** and rejected **darker olive and brown
+> palettes**; this deal follows its luminous warmth."
 
-Same work, same palette, described the same way, moved to the other side of the
-sentence. **This supersedes the negative-control pair** the earlier draft used,
-which survived only as a console transcript because its JSON was overwritten
-before archiving. The scripts and the Devpost now cite the archived pair.
+`open-access-art:nga:127567` moves from *the thing you kept* to inside *the
+palettes you rejected*, and the swatch strips show it: the strip that sits whole
+in A is struck through in B. The words track the hexes — `184225` is
+`#B89E81 #644F3F #F4E8D6` and earns "pale ochre drawing"; `195765` leads on
+`#47502B` and earns "olive".
+
+**Condition A also reproduces §2.1's capture almost exactly** — same works, same
+sentence shape, "darker ochre" where the earlier run said "darker, greener".
+That is a reproducibility result and it is worth having: the behaviour is not a
+lucky sentence.
+
+The archived Morisot pair from `iteration-2/run3-loop.json` / `run4-loop.json`
+still stands as a second, independent instance.
 
 ### 2.3 Verified first-hand against the deployed build
 
@@ -191,7 +201,26 @@ I am recording this at length because a claim the build does not support is the
 worst outcome of the night, and I nearly shipped one — from a grep, without
 opening the file it pointed at.
 
-### 3.2 The swatch strips do not say whose flag they draw
+### 3.2 The opening turn writes no wall labels — and my beat 5 said it did
+
+The iteration-2 critique reports that a typed instruction produces a title, a
+statement and six works with `label: null`, with zero POSTs to
+`/api/public-labels`. **It is right, and I checked it rather than taking it.**
+The sharing lane's own flagship typed run, `/e/QWwJnL5`, returns 200 with
+**twelve works, twelve catalogue blocks — title, artist, year, medium, accession
+number, catalogue link — and no wall label on any of them.**
+
+My beat 5 said *"a title, a statement, and a label under every work."* That was
+wrong. Corrected in all four documents: the first turn drafts **a title and a
+statement**, and the labels arrive **with the human's correction** — 18 of 18 in
+the recorded walk, and `curation-walk.json` only asserts "every hung work has a
+wall label" *after* the edit.
+
+This makes the beat better, not worse. The labels being a consequence of the
+human's sentence is exactly §5c's argument, and now the film shows it rather
+than asserting it.
+
+### 3.3 The swatch strips do not say whose flag they draw
 
 `NoteSwatches` renders `data-artwork-id` and `data-flag` but not `data-flag-by`,
 so a strip shows *that* a work was flagged and not by which hand — the one place
@@ -199,7 +228,7 @@ on the page where the two-colour provenance contract is not carried. Read off
 the component, and independently found by the e2e lane (iteration 2 §7.1).
 Invisible in the film; a real gap in the design.
 
-### 3.3 One thing that is correct and worth knowing
+### 3.4 One thing that is correct and worth knowing
 
 **A deterministic redeal produces no wall label**, so the swatch strips only ever
 appear beside an agent note. That is right — the human's own redeal should not
@@ -306,7 +335,7 @@ describe the tree the e2e lane measured.
 | | Brief's baseline | This tree |
 | --- | --- | --- |
 | `pnpm --filter web typecheck` | — | **clean** — *after a build; see below* |
-| `pnpm --filter web test` | 59 files / 593 tests | **91 files / 1115 tests, all pass** |
+| `pnpm --filter web test` | 59 files / 593 tests | **91 files / 1115 tests, all pass** (re-run this round) |
 | `pnpm --filter api test` | 41 files / 770 tests | **44 files / 815 tests, all pass** |
 
 The brief's baseline predates the `night/curation`, `night/activity`,
@@ -324,6 +353,10 @@ all 1113 tests in the other 90 files passing. It did not reproduce: the final
 clean run is **91 files / 1115 tests, all pass**, matching the integration
 lane's iteration-2 figure exactly. Intermittent, never a failing test — only a
 collect — and not caused by this lane, which touched no source.
+
+**Note on `api test` stderr.** The run prints `INTERNAL_TEXT_SEARCH_SENTINEL`,
+`NGA quota storage unavailable` and similar. Those are the tests' own stubbed
+failures being exercised, not breakage — they appear on a passing run.
 
 ### 8.1 The demo path, run repeatedly
 
@@ -401,17 +434,21 @@ Both fixed; the corrected run is the one in `demo-path.json`.
 
 ## 9. For whoever picks this up
 
-The three things that would most improve the submission, in order, are all in
-`submission-evidence.md` §4 and none of them is a doc:
+Two claims were corrected this round, one mine and one the critique's, and both
+by measuring rather than arguing. That is the pattern this file wants continued.
 
-1. **Widen the exemplar candidate pool** so Enter does not go dead after five
-   redeals — because the `↵` affordance now invites a judge to sit and press it.
-   Diagnosed precisely in e2e iteration 2 §4.
-2. **Two agent turns in a fresh budget hour** to frame the inversion. The text is
-   archived on both sides; only the picture is missing.
-3. **`data-flag-by` on the swatch strips**, so the two-colour contract holds
-   everywhere it is drawn.
+The three things that would most improve the submission, in order, and none is a
+doc:
 
-The evidence file is the working surface. If a claim in the script ever stops
-being true, it is because a row in `submission-evidence.md` changed — fix the row
+1. **Collapse the empty exhibition head.** Two empty form fields, 61 px, sitting
+   between the agent's sentence and the board it describes. Removing them takes
+   the money frame from 8 of 12 cards to 12 of 12 at 1440 × 900. §2.4.
+2. **Widen the exemplar candidate pool** so Enter does not go dead after five
+   redeals — the `↵` affordance now invites a judge to sit and press it.
+3. **Write labels on the opening turn**, or give the label field a control a
+   human can press. Today a judge who does not correct the statement never sees a
+   wall label, and the same change closes the `write_labels` agent-only dent.
+
+The evidence file is the working surface. If a claim in the script stops being
+true, it is because a row in `submission-evidence.md` changed — fix the row
 first, then the sentence.

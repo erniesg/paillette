@@ -317,67 +317,81 @@ Marked in the script. **The shot may not exist.**
 # 4. WANTED, ABSENT
 
 Things I would have written and did not. **This list is a deliverable.** Ordered
-by what it buys. Three items from earlier drafts are struck: the note frame was
-captured tonight, the inversion is archived as text, and *"a UI branch for
-`AGENT_RATE_LIMITED`"* was **my error** — the page does render the message. See
-`submission-draft-report.md` §3.1.
+by what it buys. Four items from earlier drafts are struck: the note frame and
+**the inversion frames** were captured, the *"no UI branch for
+`AGENT_RATE_LIMITED`"* item was **my error**, and *"the note and the board cannot
+share a frame"* was **the critique's** — both refuted by measurement. See
+`submission-draft-report.md` §2.4 and §3.1.
 
-1. **A bigger exemplar candidate pool.** Five clean redeals per pick set per tab,
-   then the board thins to one card and Enter goes dead. Diagnosed precisely in
-   e2e iteration 2 §4: `topK × 6` capped at 100, minus a growing exclusion list.
-   Filmable as-is if you reload; not survivable by a judge who sits and presses
-   Enter, which is exactly what the `↵` affordance now invites them to do.
+1. **Collapse the empty exhibition head.** Two empty form fields — a title
+   `INPUT` and a statement `TEXTAREA`, 61 px — sit between the agent's sentence
+   and the board it describes, before anyone has curated anything. They are §5b's
+   complaint in the one gap where the film needs none, and removing them takes
+   the money frame from **8 of 12 cards to 12 of 12** at 1440 × 900. Smallest
+   high-value fix on this list.
 
-2. **The inverted note, framed.** The text is archived on both sides
-   (`run3-loop.json` / `run4-loop.json`, the same Morisot at pick and at reject).
-   Two agent turns in a fresh budget hour and beat 3's second card is real.
+2. **A bigger exemplar candidate pool.** Five clean redeals per pick set per tab,
+   then the board thins to one card and Enter goes dead (e2e iteration 2 §4:
+   `topK × 6` capped at 100, minus a growing exclusion list). Filmable if you
+   reload; not survivable by a judge who sits and presses Enter, which is what
+   the `↵` affordance now invites.
 
-3. **`data-flag-by` on the swatch strips.** The one place on the page where the
-   two-colour contract is not carried. Invisible in the film; a real gap.
+3. **Labels on the opening turn, or a "draft these" affordance.** The first turn
+   writes a title and a statement and no labels, so a judge who does not go on to
+   correct the statement never sees a wall label at all. Either have the opening
+   turn call `write_labels`, or give the label field a control a human can press
+   — which also closes item 6.
 
-4. **The agent actually looking at a work.** `lookup_artwork` and
+4. **`data-flag-by` on the swatch strips.** The one place on the page where the
+   two-colour contract is not carried.
+
+5. **The agent actually looking at a work.** `lookup_artwork` and
    `describe_artwork` were called **zero** times across every recorded run, in
    both iterations. The narration is grounded in indexed colour, medium, year and
    classification — a real improvement on titles, and not the same as seeing the
-   picture. Today I cannot write "the agent looks at the work" and I have not.
+   picture. I cannot write "the agent looks at the work" and have not.
 
-5. **The ledger filmstrip on `/nga/search`.** Built, tested, imported only by
-   `/night/deal`. It is §7.5 — *"version history reused as conversation record"* —
-   and the answer to "where did the chat go". Until it is on the product page it
-   cannot be filmed.
-
-6. **An affordance for `P`/`X`/`U`.** Enter has one now and it is good. The keys
-   that arm it have nothing, so a judge still cannot find the loop cold.
-
-7. **A human control behind `write_labels` and `annotate_atlas`.** The only two
+6. **A human control behind `write_labels` and `annotate_atlas`.** The only two
    of twenty-five with no key or click behind them, and the one dent in "the loop
-   has no agent-only path". A *draft this* button closes it.
+   has no agent-only path".
 
-8. **A read-aloud take on a work that has a caption.** The control is real and
-   the argument is good, but on the NGA collection most rows have no caption and
-   the button does not render (V23). Find one, or cut the beat.
+7. **The ledger filmstrip on `/nga/search`.** Built, tested, imported only by
+   `/night/deal`. Until it is on the product page it cannot be filmed.
 
-9. **A visible failure for push-to-talk with no microphone.** It enters
+8. **An affordance for `P`/`X`/`U`.** Enter has one now. The keys that arm it
+   have nothing, so a judge still cannot find the loop cold.
+
+9. **Tile fit and title truncation on the deal board.** Works occupy roughly
+   40–60% of their tile with dead charcoal around them, and long titles clip
+   mid-word without an ellipsis — both visible in
+   `shots/54-note-and-board-1440x900.png`. The critique is right about this.
+
+10. **A read-aloud take on a work that has a caption.** The control is real but
+    renders only where a caption exists, and most NGA rows have none (V23).
+
+11. **A deployment whose branch is known.** Staging is running `night/sharing`,
+    not `night/integration` — `/e/:code` resolves and 404s correctly, which only
+    sharing has. The e2e report's "the page under test is the page that is
+    deployed" is no longer true. Nothing I measured tonight depends on which
+    branch it is, because I measured it on the deployed page — but the film
+    should be shot against a build somebody can name.
+
+12. **A visible failure for push-to-talk with no microphone.** It enters
     *"Listening — release to send"* and on release nothing lands and nothing is
-    reported (e2e iteration 2 §6). Same silent-failure shape as item 1.
+    reported (e2e iteration 2 §6).
 
-10. **A spoken take.** Not shootable on this VM. Nothing in the script depends on
-    it — but a submission about human–agent collaboration with no human voice is
-    leaving something on the table.
+13. **A spoken take.** Not shootable on this VM. Nothing in the script depends on
+    it.
 
-11. **A raised model cap for the filming machine.** 40/hour, 5–7 per cold
-    instruction, 8–12 per loop: three or four takes an hour. It blocked me
-    tonight and it blocked the fix lane's third negative-control run.
+14. **A raised model cap for the filming machine.** 40/hour, 5–7 per cold
+    instruction, 8–12 per loop.
 
-12. **A social unfurl, rendered.** Tags right, image real, nobody has pasted it
-    into Slack.
+15. **A social unfurl, rendered.** Tags right, image real, never pasted anywhere.
 
-13. **`prefers-reduced-motion` with a pick starting at slot 5.**
+16. **`prefers-reduced-motion` with a pick starting at slot 5.**
 
-14. **A compare choice that sends a turn immediately.** The build defers it to the
-    next turn, which I think is right and the brief's P4 says otherwise. Known and
-    documented — but on camera a compare answered in silence needs the next
-    utterance to become visible.
+17. **A compare choice that sends a turn immediately.** The build defers it; the
+    brief's P4 says otherwise. Known and documented.
 
 # 5. Claims I dropped rather than softened
 
