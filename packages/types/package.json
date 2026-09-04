@@ -6,7 +6,8 @@
     ".": "./src/index.ts",
     "./nga-date-range": "./src/nga-date-range.mjs",
     "./public-search": "./src/public-search.ts",
-    "./public-search-core": "./src/public-search-core.ts"
+    "./public-search-core": "./src/public-search-core.ts",
+    "./share-codes": "./src/share-codes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
