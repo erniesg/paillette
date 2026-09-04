@@ -8,14 +8,13 @@
  * So this is that sequence, in a real browser, typed — no speech anywhere in
  * the path.
  *
- * The one design decision worth defending: after editing the statement the
- * human types a **content-free nudge** ("Again.") rather than restating the
- * correction in the prompt bar. If the nudge carried the new direction, this
- * would only prove the agent can read a sentence. Typing nothing meaningful
- * means the word "leaving" exists in exactly one place — the statement the
- * human rewrote, travelling in `turn.exhibitionEdits` — so a board and a set
- * of labels that come back about leaving are attributable to the edit and to
- * nothing else.
+ * The one design decision worth defending: the correction is never restated in
+ * the prompt bar. Committing the edit is now itself a turn — the human's own
+ * sentence goes up as the instruction — and where that does not fire, the
+ * human types a **content-free nudge** ("Again.") instead. Either way the word
+ * "leaving" reaches the model from the statement the human rewrote and from
+ * nowhere else, so a board and a set of labels that come back about leaving
+ * are attributable to the edit alone.
  *
  *   node apps/web/scripts/verify-theme-correction.mjs [baseUrl] [runs]
  *
@@ -87,6 +86,22 @@ const settle = async (page, since, quietMs = 12_000, capMs = 240_000) => {
     await page.waitForTimeout(500);
   }
 };
+
+/**
+ * The prompt bar is disabled for exactly as long as the loop is running, which
+ * makes it the page's own "am I finished" signal — and a better one than
+ * network quiet, because the state the tools write lands after the response
+ * that carried them.
+ *
+ * Without this the run reads the exhibition between the agent's last tool call
+ * and the effect of it, and then mistakes a still-running first turn for the
+ * statement edit having fired a second one. Both happened before it was here.
+ */
+const idle = (page) =>
+  page
+    .locator('input[aria-label="Ask the agent"]:not([disabled])')
+    .waitFor({ timeout: 120_000 })
+    .catch(() => {});
 
 const runOnce = async (browser, index, works) => {
   const page = await browser.newPage({ viewport: { width: 1500, height: 1150 } });
@@ -178,6 +193,7 @@ const runOnce = async (browser, index, works) => {
   since.at = Date.now();
   await page.keyboard.press('Enter');
   await settle(page, since);
+  await idle(page);
 
   const before = await readExhibition(page);
   const callsBefore = toolCalls.length;
@@ -193,14 +209,39 @@ const runOnce = async (browser, index, works) => {
     await page.locator('h1, body').first().click({ position: { x: 5, y: 5 } });
     await page.waitForTimeout(400);
     edited = true;
+    // The commit may itself be the turn, so the clock starts here.
+    since.at = Date.now();
+    await page.waitForTimeout(1200);
   }
 
-  // ---- 3. hand it back, saying nothing ------------------------------------
-  await bar.click();
-  await bar.fill(NUDGE);
-  since.at = Date.now();
-  await page.keyboard.press('Enter');
-  await settle(page, since);
+  /*
+   * ---- 3. hand it back -----------------------------------------------------
+   *
+   * A rewritten statement is now a turn on its own: committing the edit with
+   * nothing in the prompt bar sends the human's own sentence as the
+   * instruction. So the correction usually hands itself over, and the bar is
+   * disabled while the agent works on it.
+   *
+   * Only if nothing fired does the nudge get typed. Keeping the fallback is
+   * what makes this check independent of that behaviour — it measures whether
+   * the correction reaches the wall, either way.
+   */
+  const firedOnCommit = await page
+    .locator('input[aria-label="Ask the agent"]:not([disabled])')
+    .waitFor({ state: 'detached', timeout: 4000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (firedOnCommit) {
+    await settle(page, since);
+  } else {
+    await bar.click();
+    await bar.fill(NUDGE);
+    since.at = Date.now();
+    await page.keyboard.press('Enter');
+    await settle(page, since);
+  }
+  await idle(page);
 
   const after = await readExhibition(page);
   await page.screenshot({ path: `${SHOTS}/run-${index}-b-corrected.png` });
@@ -210,6 +251,7 @@ const runOnce = async (browser, index, works) => {
     edited,
     before,
     after,
+    firedOnCommit,
     sentTurns,
     openingCalls: toolCalls.slice(0, callsBefore),
     correctionCalls: toolCalls.slice(callsBefore),
@@ -256,7 +298,11 @@ for (let index = 1; index <= RUNS; index += 1) {
 
   console.log('\n── 2. the human rewrites the statement ─────────────────────');
   console.log(outcome.edited ? `   “${CORRECTION}”` : '   !! the field was not on the page');
-  console.log(`   then types: “${NUDGE}”  (no direction in the words)`);
+  console.log(
+    outcome.firedOnCommit
+      ? '   committing the edit was itself the turn; nothing typed'
+      : `   nothing fired, so they type: “${NUDGE}” (no direction in the words)`
+  );
 
   const correctionTurn = outcome.sentTurns[1];
   const sentEdits = correctionTurn?.exhibitionEdits ?? [];
