@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  findShowGap,
-  type ShowGap,
-  type ShowState,
-} from '../unfinished-show';
+import { findShowGap, type ShowState } from '../unfinished-show';
 
-const none = new Set<ShowGap>();
+const none = new Set<string>();
 
 const show = (overrides: Partial<ShowState> = {}): ShowState => ({
   statement: 'Sixty-eight words about weather at sea.',
@@ -69,9 +65,58 @@ describe('findShowGap — labels', () => {
     expect(gap).toBeNull();
   });
 
-  it('does not ask twice in one turn', () => {
+  it('does not ask twice for the same works', () => {
     const state = show({ hung: [{ artworkId: 'a', label: null }] });
-    expect(findShowGap(state, new Set<ShowGap>(['labels']))).toBeNull();
+    const first = findShowGap(state, none);
+
+    expect(first?.gap).toBe('labels');
+    expect(findShowGap(state, new Set([first!.key]))).toBeNull();
+  });
+
+  it('asks again when different works turn up unlabelled', () => {
+    // The defect this exists for: a correction turn labels the six works
+    // hanging, is satisfied, then drops four and hangs six others — and those
+    // six were never labelled, because the gap had already had its go. Four of
+    // seven published /e/:code pages carried no wall label at all.
+    const labelled = show({ hung: [{ artworkId: 'a', label: null }] });
+    const asked = new Set([findShowGap(labelled, none)!.key]);
+
+    const afterTheSwap = findShowGap(
+      show({
+        hung: [
+          { artworkId: 'a', label: 'Written against the new statement.' },
+          { artworkId: 'x', label: null },
+          { artworkId: 'y', label: null },
+        ],
+      }),
+      asked
+    );
+
+    expect(afterTheSwap?.gap).toBe('labels');
+    expect(afterTheSwap?.message).toContain('x, y');
+  });
+
+  it('keys on which works, not on what order the hang reports them', () => {
+    const one = findShowGap(
+      show({
+        hung: [
+          { artworkId: 'b', label: null },
+          { artworkId: 'a', label: null },
+        ],
+      }),
+      none
+    );
+    const other = findShowGap(
+      show({
+        hung: [
+          { artworkId: 'a', label: null },
+          { artworkId: 'b', label: null },
+        ],
+      }),
+      none
+    );
+
+    expect(one?.key).toBe(other?.key);
   });
 });
 
@@ -99,8 +144,11 @@ describe('findShowGap — title', () => {
     expect(findShowGap(show({ statementCorrected: false }), none)).toBeNull();
   });
 
-  it('does not ask twice in one turn', () => {
-    expect(findShowGap(corrected(), new Set<ShowGap>(['title']))).toBeNull();
+  it('does not ask twice for the same title', () => {
+    const first = findShowGap(corrected(), none);
+
+    expect(first?.gap).toBe('title');
+    expect(findShowGap(corrected(), new Set([first!.key]))).toBeNull();
   });
 
   it('takes the labels first — the wall before the name over the door', () => {

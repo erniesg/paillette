@@ -2,8 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
-import { setFocusedArtwork, setSelection } from '~/lib/webmcp/store';
+import {
+  setFocusedArtwork,
+  setHumanResults,
+  setSelection,
+  __resetWebMcpStateForTest,
+} from '~/lib/webmcp/store';
 import { setFlag, __resetFlagsForTest } from '~/lib/webmcp/flags';
+import {
+  writeExhibition,
+  __resetExhibitionForTest,
+} from '~/lib/webmcp/exhibition';
 import { rememberArtworks, __resetArtworkIndexForTest } from '~/lib/webmcp/artwork-index';
 
 const PLACEHOLDER = 'Ask for what you want to see…';
@@ -118,6 +127,8 @@ const heard = (transcript: string, isFinal = false) =>
 
 afterEach(() => {
   setFocusedArtwork(null);
+  __resetWebMcpStateForTest();
+  __resetExhibitionForTest();
   __resetFlagsForTest();
   setSelection([]);
   __resetArtworkIndexForTest();
@@ -826,5 +837,279 @@ describe('AgentPrompt', () => {
     });
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The post-conditions.
+ *
+ * These are the mechanism the census asked for. A prompt telling the model to
+ * propose has been in the build since iteration 3 and produced `flag_artworks`
+ * 0 across 508 tool calls, so what is tested here is what the *page* does when
+ * the model tries to walk away — not what it was asked to do.
+ */
+describe('AgentPrompt — a turn that answers gestures', () => {
+  /**
+   * A model that replies with `scripted[n]` on the nth request, and records
+   * every request body so the census can be read off it.
+   */
+  const scriptModel = (scripted: unknown[]) => {
+    const bodies: {
+      messages: { role: string; content?: string }[];
+      turn?: unknown;
+    }[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body));
+      const message = scripted[bodies.length - 1] ?? {
+        role: 'assistant',
+        content: 'Done.',
+      };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: { message } }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return bodies;
+  };
+
+  /** Two works, loaded and on screen — the board a proposal would land on. */
+  const twoWorks = () => {
+    setHumanResults({
+      origin: 'human',
+      label: 'harbours',
+      items: [{ id: 'nga-2' }, { id: 'nga-3' }] as never,
+      at: 1,
+    });
+    return rememberArtworks([
+      {
+        id: 'nga-2',
+        galleryId: 'nga',
+        title: "Estuary at Day's End",
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      },
+      {
+        id: 'nga-3',
+        galleryId: 'nga',
+        title: 'A Corner of the Room',
+        artist: 'Someone Else',
+        imageUrl: null,
+        similarity: 1,
+      },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+  };
+
+  const type = async (text: string) => {
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: text } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+  };
+
+  /** The system messages the page appended, in order. */
+  const nudgesIn = (
+    bodies: { messages: { role: string; content?: string }[] }[]
+  ) =>
+    (bodies.at(-1)?.messages ?? [])
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content ?? '');
+
+  it('refuses to end on a sentence when only the human has marked the board', async () => {
+    setModelContext({ getTools: async () => [] });
+    twoWorks();
+    setFlag('nga-2', 'pick', { by: 'human' });
+    // What the model does today, every time: read, redeal, narrate.
+    const bodies = scriptModel([
+      { role: 'assistant', content: 'Following the greys.' },
+      {
+        role: 'assistant',
+        tool_calls: [
+          { id: 't1', function: { name: 'flag_artworks', arguments: '{}' } },
+        ],
+      },
+    ]);
+
+    render(<AgentPrompt />);
+    await type('something warm');
+
+    expect(bodies.length).toBeGreaterThan(1);
+    expect(nudgesIn(bodies).join(' ')).toContain('flag_artworks');
+    // And the work it can propose on is named, so it need not search again.
+    expect(nudgesIn(bodies).join(' ')).toContain('nga-3');
+  });
+
+  it('lets the turn end once the model has proposed something', async () => {
+    setModelContext({ getTools: async () => [] });
+    twoWorks();
+    setFlag('nga-2', 'pick', { by: 'human' });
+    const bodies = scriptModel([
+      {
+        role: 'assistant',
+        tool_calls: [
+          {
+            id: 't1',
+            function: {
+              name: 'flag_artworks',
+              arguments: JSON.stringify({
+                flags: [{ artworkId: 'nga-3', flag: 'reject', reason: 'darker' }],
+              }),
+            },
+          },
+        ],
+      },
+      { role: 'assistant', content: 'Following the greys.' },
+    ]);
+
+    render(<AgentPrompt />);
+    await type('something warm');
+
+    expect(bodies).toHaveLength(2);
+    expect(nudgesIn(bodies).join(' ')).not.toContain('flag_artworks');
+  });
+
+  it('asks nothing of a turn the human never put a hand on', async () => {
+    setModelContext({ getTools: async () => [] });
+    twoWorks();
+    const bodies = scriptModel([
+      { role: 'assistant', content: 'Twelve harbours.' },
+    ]);
+
+    render(<AgentPrompt />);
+    await type('harbour scenes');
+
+    expect(bodies).toHaveLength(1);
+  });
+});
+
+/**
+ * §5c step 4, and the reason it was landing 1 in 3.
+ *
+ * The prompt has said "do the labels first and the searching last" since
+ * iteration 3. Measured by hand on staging afterwards: 0 labels changed and 0
+ * works changed in 180s, twice in four runs, because the turn spent itself
+ * hunting for candidates and ran out. So the ordering is made true rather than
+ * requested.
+ */
+describe('AgentPrompt — after the human rewrites the statement', () => {
+  const searchCall = {
+    id: 't1',
+    function: {
+      name: 'search_artworks',
+      arguments: JSON.stringify({ query: 'leaving' }),
+    },
+  };
+
+  /** A page with one work hanging under a statement, and a search tool on it. */
+  const aShow = () => {
+    rememberArtworks([
+      {
+        id: 'nga-2',
+        galleryId: 'nga',
+        title: "Estuary at Day's End",
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    setFlag('nga-2', 'pick', { by: 'human' });
+    writeExhibition(
+      {
+        title: 'Weather at Sea',
+        statement: 'Sixty-eight words about weather at sea.',
+        works: [{ artworkId: 'nga-2', label: 'A weather label.' }],
+      },
+      { by: 'agent' }
+    );
+  };
+
+  /** Their correction, journalled the way the editable paragraph journals it. */
+  const correctTheStatement = () =>
+    writeExhibition(
+      {
+        statement:
+          'It is not about weather. It is about leaving — the hour before someone goes.',
+      },
+      { by: 'human' }
+    );
+
+  const runWith = async (scripted: unknown[]) => {
+    const search = vi.fn(async () => ({ ok: true, results: [] }));
+    setModelContext({
+      getTools: async () => [{ name: 'search_artworks', execute: search }],
+    });
+    const results: string[] = [];
+    let call = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const body = JSON.parse(init.body) as {
+          messages: { role: string; content?: string }[];
+        };
+        for (const message of body.messages) {
+          if (message.role === 'tool') results.push(message.content ?? '');
+        }
+        const message = scripted[call] ?? { role: 'assistant', content: 'Done.' };
+        call += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { message } }),
+        };
+      })
+    );
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'go on then' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+    return { search, results };
+  };
+
+  it('closes the searches until the wall has been rewritten', async () => {
+    aShow();
+    correctTheStatement();
+
+    const { search, results } = await runWith([
+      { role: 'assistant', tool_calls: [searchCall] },
+    ]);
+
+    expect(search).not.toHaveBeenCalled();
+    expect(results.join(' ')).toContain('RELABEL_FIRST');
+  });
+
+  it('opens them again the moment write_labels has run', async () => {
+    aShow();
+    correctTheStatement();
+
+    const { search } = await runWith([
+      {
+        role: 'assistant',
+        tool_calls: [
+          {
+            id: 't0',
+            function: { name: 'write_labels', arguments: '{}' },
+          },
+        ],
+      },
+      { role: 'assistant', tool_calls: [searchCall] },
+    ]);
+
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an ordinary turn\u2019s searches alone', async () => {
+    aShow();
+
+    const { search } = await runWith([
+      { role: 'assistant', tool_calls: [searchCall] },
+    ]);
+
+    expect(search).toHaveBeenCalledTimes(1);
   });
 });
