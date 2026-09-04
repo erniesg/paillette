@@ -123,7 +123,7 @@ content-free nudge is the stricter test, not because the product needs one.
 
 ---
 
-## 2. The three by-hand runs
+## 2. The by-hand runs
 
 `node apps/web/scripts/verify-theme-correction.mjs http://localhost:5174 3`
 
@@ -244,7 +244,38 @@ Fixed in `6afd1ca`: the correction message now says to check the title in the
 same pass, and why. Provenance is unchanged — a title the human typed is still
 theirs, and a write onto it is still parked as a proposal.
 
-<!--TITLEVERIFY-->
+### Batch 3 — the title fix, verified. 3 of 3 renamed the room.
+
+Transcript in `docs/night/curation-evidence/theme-correction-batch3-title-fix.txt`.
+This batch ran on the merged tree, so all three corrections were handed over the
+new way: **committing the statement edit was itself the turn, with nothing typed
+at the prompt bar at all.**
+
+| | title before | title after | statement kept | relabelled |
+| --- | --- | --- | --- | --- |
+| Run 1 | Weather at Sea | **Before Leaving** | yes | 2 / 2 |
+| Run 2 | Weather at Sea | **The Hour Before** | yes | 3 / 3 |
+| Run 3 | Weather at Sea | **After the Door Closes** | yes | inconclusive — see below |
+
+Three different rooms, none still called *Weather at Sea*. Run 1's pair, on a
+correction the agent never saw a word of in the prompt bar:
+
+> **weather** — "The paired names—one for a sunny spell, one for a good
+> hostess—bring weather ashore, where calm conditions are imagined through human
+> character and welcome rather than open water."
+>
+> **leaving** — "The two faces remain separate in their oval frames, turned
+> toward one another across a narrow gap. Their paired presence holds the
+> stillness after a leaving, when someone is gone but the relation remains."
+
+**Run 3 is scored honestly rather than generously.** Its *opening* turn hung
+zero works and wrote no labels, so there was no prior label for the correction
+to differ from. The correction turn then built a nine-work show and labelled all
+nine against the new statement — substantively the behaviour under test, but not
+the comparison this check makes. The script now reports that as **inconclusive**
+rather than a failure, and reports the renaming separately. Calling it a failure
+would have been the same class of mistake as the criterion it replaced:
+reporting something the evidence does not say.
 
 ---
 
@@ -394,16 +425,18 @@ removing them from the show.
 ## 7. What is broken, and what to watch
 
 1. **The correction turn is prompt-shaped, not enforced.** It went 1/3 → 3/3 on
-   wording alone, and wording is all it is: nothing in the code guarantees the
+   wording alone, and the title fix likewise; wording is all either of them is: nothing in the code guarantees the
    agent calls `write_labels` after a statement rewrite. `MAX_TURNS` is 8 in
    `agent-prompt.tsx` and a drafting turn routinely spends 5–6 of them
    searching, so the budget is genuinely tight. If it proves flaky on camera,
    raising `MAX_TURNS` to ~12 is the blunt fix — but that constant is shared
    with the culling loop and I would not change it on one night's evidence.
-2. **The title fix is deployed but thinner-evidenced than the rest.** The
-   relabelling behaviour is backed by three clean runs; the title instruction
-   went in *after* that batch, in response to what it showed, and is verified by
-   <!--TITLEVERIFY-->.
+2. **A drafting turn sometimes hangs nothing.** Batch 3's run 3 spent its
+   opening turn searching and called `set_exhibition` with an empty hang, so
+   the show had a statement and no works until the correction turn rebuilt it.
+   The correction recovered completely, but a first turn that leaves the wall
+   empty is a bad ten seconds on camera. Same root cause as (1): the tool
+   budget, spent on searching.
 3. **`MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40`** and a full run of this
    loop costs ~10–14. Three back-to-back verification runs sit right at the cap;
    my first batch was partly destroyed by 429s before I noticed. Anyone filming

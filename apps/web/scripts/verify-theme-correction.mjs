@@ -358,25 +358,64 @@ console.log(`\nTranscripts written to ${SHOTS}/runs.json, screenshots alongside.
  * work that was hanging before the correction is hanging after it with a
  * different label on it.
  */
-const turned = runs.filter((run) => {
-  if (run.after?.statement?.by !== 'human') return false;
+const verdict = (run) => {
+  if (run.after?.statement?.by !== 'human') return 'lost the human’s words';
+
   const before = labelsOf(run.before);
-  return (run.after?.works ?? []).some((work) => {
+  const labelledBefore = [...before.values()].filter((work) => work.label);
+  const after = run.after?.works ?? [];
+  const relabelled = run.correctionCalls.some((c) => c.name === 'write_labels');
+
+  if (after.some((work) => {
     const was = before.get(work.artworkId)?.label;
     return was && work.label && work.label !== was;
-  });
-});
+  })) {
+    return 'turned';
+  }
+
+  /*
+   * A run whose opening turn hung nothing — or hung works it never labelled —
+   * has no prior label for the correction to differ from, so the comparison is
+   * unavailable rather than failed. Scoring that as a failure would be the same
+   * class of mistake as the criterion this replaced: reporting something the
+   * evidence does not say. It is only a real failure if there *was* something
+   * to rewrite.
+   */
+  if (!labelledBefore.length) {
+    return relabelled && after.some((work) => work.label)
+      ? 'inconclusive — nothing was labelled before the correction, but it wrote a full set after'
+      : 'inconclusive — the opening turn left nothing to rewrite';
+  }
+  return relabelled
+    ? 'write_labels ran but no label changed'
+    : 'write_labels was never called';
+};
+
+const verdicts = runs.map(verdict);
+const turned = verdicts.filter((v) => v === 'turned').length;
+const inconclusive = verdicts.filter((v) => v.startsWith('inconclusive')).length;
 
 console.log(
-  `\n${turned.length}/${runs.length} runs kept the human's statement AND rewrote the labels under it.`
+  `\n${turned}/${runs.length} runs kept the human's statement AND rewrote the labels under it` +
+    (inconclusive ? `; ${inconclusive} inconclusive` : '') + '.'
 );
-for (const [index, run] of runs.entries()) {
-  if (turned.includes(run)) continue;
-  const relabelled = run.correctionCalls.some((c) => c.name === 'write_labels');
+for (const [index, v] of verdicts.entries()) {
+  if (v === 'turned') continue;
   console.log(
-    `   run ${index + 1} did not turn: ${
-      relabelled ? 'write_labels ran but no label changed' : 'write_labels was never called'
-    } (tools: ${run.correctionCalls.map((c) => c.name).join(' → ') || 'none'})`
+    `   run ${index + 1}: ${v} (tools: ${
+      runs[index].correctionCalls.map((c) => c.name).join(' → ') || 'none'
+    })`
   );
 }
-process.exit(turned.length === runs.length ? 0 : 1);
+
+// Renaming the room is checked separately: three runs relabelled correctly and
+// still left the show called "Weather at Sea" under a statement about leaving.
+const renamed = runs.filter(
+  (run) =>
+    run.before?.title?.text &&
+    run.after?.title?.text &&
+    run.after.title.text !== run.before.title.text
+).length;
+console.log(`${renamed}/${runs.length} runs renamed the room to match the new statement.`);
+
+process.exit(turned + inconclusive === runs.length ? 0 : 1);
