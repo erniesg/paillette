@@ -1,0 +1,88 @@
+{
+  "verdict": "FAIL",
+  "confidence": "high",
+  "one_line": "The mechanism is genuinely excellent and now provably grounded — 27 model-free redeals, notes that read the flags' palettes, and a theme correction that relabels six works around the human's own sentence on staging — but the agent's sentence and the board it describes cannot be on screen at the same time at any scroll position, so the submission's defining image does not exist, and staging is no longer running the branch the e2e report attests to.",
+  "blocking": [
+    {
+      "what": "The agent's note and the board it describes cannot be on screen together. Measured on the deployed build at 1440x900: at scrollY=0 the wall label is at y=479 and 0 of 12 cards are fully visible; at scrollY=689 all 12 cards are framed and the wall label is at y=-210 and the utterance bar at y=-284, both off screen. The deal grid starts at y=814 and is 650px tall, so the note-plus-board stack needs 1464px of a 900px viewport.",
+      "why_it_matters": "The thesis is 'the human points, the agent narrates, the board is the transcript'. Every screenshot in docs/night/shots/ shows one half or the other — including the two files literally named e2e2-06-step1-board-and-note.png and e2e2-12-step4-agent-note-names-the-reject.png, neither of which contains a note. On video the sentence scrolls away the moment you frame the deal, and so does the bar you press Enter in. The narration is real and invisible, which reads to a judge exactly like it being fake.",
+      "fix": "Move the wall label from normal flow above the grid (galleries.$galleryId.search.tsx:2922) into the board itself — either occupying one of the twelve slots, or pinned to the top edge of the [data-testid=\"deal-board-grid\"] container so it travels with the FLIP. Then collapse the 814px of stack above the grid: the hero, the query chip and the duplicated query line are not needed once a board is dealt. Target: label, twelve cards and the utterance bar all inside 900px. Re-shoot e2e2-06 and e2e2-12 and check the note is actually in the frame this time.",
+      "effort": "medium"
+    },
+    {
+      "what": "Staging is not running night/integration. GET /e/exYNx8X returns 200 with a real D1-backed exhibition and GET /e/zzzzzzz returns 404; the /e/:code route exists only on night/sharing, which is 13 commits unmerged. The sharing lane deployed over the integration build after the e2e report was written.",
+      "why_it_matters": "The e2e report's foundational sentence — 'apps/ and packages/ on this branch are byte-identical to the commit staging was deployed from (2680f51) ... the page under test is the page that is deployed, and the page the next phase films' — is now false. There is no reproducible build to film. This is the second time tonight (integration report §7 records curation doing the same thing to the API). Worse, the next deploy from night/integration will silently delete the two share links sharing's report publishes as its evidence.",
+      "fix": "Merge night/sharing and night/capfix into night/integration, redeploy web and API from the merged branch, and re-run e2e2-preflight.mjs plus one full e2e2-loop.mjs --full to confirm nothing regressed. Then lock staging: nobody deploys except from night/integration. Record the deployed version id in the report and re-check it immediately before filming.",
+      "effort": "medium"
+    },
+    {
+      "what": "The deal board — the money shot — has a layout bug. Tiles are forced equal (auto-rows-fr) but each image keeps its natural size aligned top-left, so works occupy roughly 30-60% of their tile with all the dead charcoal on the right and below. On the same boards three of twelve titles hard-clip mid-word with no ellipsis ('The Sabine Hills and Rocca Santo Stefano, S', 'Lake View, near Waymart, Del. & Hudson C', 'A Gleamy Effect—Hollidaysburg, Pennsylva'). Two orphan vertical hairlines draw beside nothing (the empty exhibition head's title and statement rules). The reject tray renders as two 60px grey ghosts in the left margin.",
+      "why_it_matters": "In the browsing masonry images fill their card exactly, so this is specific to the one view the submission is built around. Visible in e2e2-10, e2e2-12, crit-02 and crit-03 — every board screenshot ever taken. Section 7 asks for a light table where 'the works are the only saturated thing on screen'; what a judge sees is a dark grid with images stuck in the corners of their slots and text falling off the edge.",
+      "fix": "Centre the image in its slot and let it scale to fit the slot's shorter dimension rather than only its width; the slot is already square-ish so a contained, centred work reads as hung. Truncate titles with an ellipsis or allow two lines. Suppress the exhibition-head rules when both fields are empty. Give the tray a mount and a visible edge so it reads as a tray rather than an artifact — DealBoard already supports it, it just looks unfinished.",
+      "effort": "medium"
+    },
+    {
+      "what": "The opening turn writes no wall labels, so the exhibition has no 'before'. Measured on staging: a typed instruction produced a title, a 68-word statement and six works with label: null and labelBy: null on every one, and zero POSTs to /api/public-labels. Confirmed independently by the sharing lane's flagship 12-work link /e/QWwJnL5, which has twelve works and zero labels; its own report admits 'the typed end-to-end run produced no wall labels'.",
+      "why_it_matters": "The one thing that proves the curation feature is not decorative is the same work carrying two different labels under two different statements. That comparison exists only inside verify-contextual-labels.mjs. In the product there is nothing to compare against, because the first draft never has labels. A judge trying it gets a title, a statement and an unlabelled list, and has no way to see that the labels are contextual at all.",
+      "fix": "Make write_labels part of the drafting turn, not only the correction turn — the same prompt change that took the correction turn from 1/3 to 3/3 (put write_labels first and name it as a tool). Verify on staging that a cold typed instruction comes back with a label on every work, and re-publish a share link that has them.",
+      "effort": "small"
+    },
+    {
+      "what": "The title does not follow the correction, and the evidence for the fix is an unreplaced template placeholder. Measured on staging: statement rewritten to 'It is not about weather. It is about leaving...', all 6 labels rewrote around leaving, title stayed 'Sea Change' (by: agent, so a set_exhibition write would have landed — the agent simply never touched it). curation-report.md section 7.2 says the fix went in at 6afd1ca and is 'verified by <!--TITLEVERIFY-->' — literally an unfilled HTML comment.",
+      "why_it_matters": "On a shared page the title is the first thing a reader sees, so the show is still named after the theme the human explicitly rejected. And a report citing a template variable as its evidence is exactly the failure mode the brief warns about — a claim outrunning the evidence — in the same document that correctly caught two of its own.",
+      "fix": "Either strengthen the correction message so the title is checked in the same pass and verify it on staging across three runs with the outputs quoted verbatim, or park an agent title proposal under the human's field the way statement proposals already work so the human takes it with one click. Then replace <!--TITLEVERIFY--> with the actual runs or delete the claim.",
+      "effort": "small"
+    },
+    {
+      "what": "The correction turn re-labels but does not re-select. Measured on staging: six works before the correction, the same six after, KEPT 6 / RELABELLED 6. Section 5c step 4 asks the agent to 're-select and re-label around that correction'. curation's batch 2 showed the board moving by one to three works, but that batch ran on localhost:5174 where, in the lane's own words, 'the ranking is not real' — search and exemplars were answered from the credential-free browse endpoint.",
+      "why_it_matters": "Half of the promised loop is unproven with real retrieval, and the half that is unproven is the one that shows the correction changed what is on the wall rather than only what is written under it. On camera, a correction that rewrites six captions and moves nothing looks like a text edit.",
+      "fix": "Run the theme correction on staging three times with real retrieval and record what the board did each time. If it genuinely never re-selects, either say the correction re-labels and leave selection to the human's flags (which is defensible and honest), or make the correction message call redeal or search_by_exemplars against the new statement before write_labels. Do not ship the section 5c wording unless the behaviour is there.",
+      "effort": "medium"
+    },
+    {
+      "what": "A judge opening staging cold does not find the agent. Measured on /nga/search with no query at 1440x900: the utterance bar is present in the DOM but at y=926 — below the fold — with an empty placeholder. Above the fold: a search field, a '698 free searches left' pill, three tabs, a 'Try / motif / stormy seas and ships' chip. Nothing announces the agent, P/X/U, or Enter-on-empty-bar.",
+      "why_it_matters": "The e2e harness reaches the bar because clicking a selector scrolls to it; a person will not. The headline beat of the submission has no affordance anywhere on the page. Iteration 1's version of this blocker was 'no bar without ?webmcp-debug' and that is genuinely fixed — the bar existing and the bar being found are different claims, and only the first is now supported.",
+      "fix": "Add a seeded demo route — /nga/search?demo=sofa lands with a query already run, two rejects and one pick already laid down from a fixed id list, deterministically and with no model call — so a judge's first keystroke is Enter and the board deals under their hands. That fixes it without adding a sentence of onboarding, which is what section 5b asks for. Separately, bring the bar above the fold on the empty state and give it a placeholder; an empty 1px underline with a mic glyph is cryptic, which the brief names as its own failure.",
+      "effort": "small"
+    }
+  ],
+  "nice_to_have": [
+    {
+      "what": "Two shareable exhibition pages exist — /exhibition?e=<blob> (curation, merged, no server dependency, cannot rot) and /e/:code (sharing, D1-backed, Open Graph unfurls, unmerged but live on staging). Both are well designed. The submission has to pick one.",
+      "fix": "Decide on the trade — sharing's unfurls in Slack and survives long shows but has no delete, no expiry and no moderation for anonymous prose published under this domain; curation's has no server to rot but cannot unfurl. Merge one, remove the other's entry point, and say which in the write-up.",
+      "effort": "medium"
+    },
+    {
+      "what": "The interface still narrates itself in six places: '697 free searches left' (a quota meter in the centre of the page), the query printed three times, the P/X/U hover chip (a permanent legend, on a design section 7.2 says should need none), fourteen words of Sort/View menu offering four ways to rearrange a grid on the screen that argues there is one board, and two contradicting counts three inches apart ('11 works' in the exhibition rail, '12 / 12 works' in the toolbar). Counted: 53 chrome words above the fold with a query, 84 cold.",
+      "fix": "Drop Masonry/Salon/Atlas/Table from the toolbar once flags exist. Move the quota into the settings affordance. Print the query once. Reconcile the two counts. Replace the P/X/U chip with the mark alone once the human has used a key.",
+      "effort": "small"
+    },
+    {
+      "what": "The board runs out after about five redeals in one tab and the seventh collapses to a single card. Well diagnosed: the exemplar candidate pool is fixed at topK x 6 ~ 66 while the exclusion list grows, so 66/12 ~ 5.5.",
+      "fix": "Grow the candidate pool with the exclusion list rather than fixing it at topK x 6, in apps/api/src/routes/search.ts, with a test. Until then, reload between takes.",
+      "effort": "small"
+    },
+    {
+      "what": "night/capfix raises the anonymous ceiling from 40 to 600 model calls per hour on staging and is unmerged. A full loop costs 8-14 calls, so three takes exhausts the budget — it already destroyed part of curation's first batch and blocked iteration 1's third negative control.",
+      "fix": "Merge night/capfix and redeploy the API before filming.",
+      "effort": "small"
+    },
+    {
+      "what": "Push-to-talk on a machine with no microphone enters the listening state, says 'Listening — release to send', and on release does nothing at all — no words, no error, no visible failure.",
+      "fix": "Feature-detect an actual audio input, or surface a one-word failure state on release with an empty transcript. A judge on a locked-down laptop will read silence as broken.",
+      "effort": "small"
+    },
+    {
+      "what": "Small correctness items: NoteSwatches renders data-flag but not data-flag-by, the one place the two-colour contract is dropped; provenance on the shared page is colour-only so a colour-blind reader cannot tell an agent label from a human one; the compare choice resolves to pick/reject but does not send a turn until the next utterance; three assertions in the checked-in e2e-extras.mjs now fail because the product moved rather than broke; and the e2e report's advice to 'wait on tools().length > 0' is wrong — on the deployed build __paillette_webmcp.tools() returns a Promise.",
+      "fix": "Carry data-flag-by onto the swatch; make the agent's rule dashed as well as coloured on the shared page; retire the superseded assertions; correct the harness note.",
+      "effort": "small"
+    },
+    {
+      "what": "Nobody captured the best screenshot in the project — the board after a theme correction, six works each with a serif wall label in the agent's ink beneath it and the human's corrected statement above them. It is on staging today and appears in no report.",
+      "fix": "Shoot it. Committed here as docs/night/shots/crit-03-labelled-board-after-correction.png.",
+      "effort": "small"
+    }
+  ],
+  "strongest": "Enter on an empty bar, and the fact that the loop keeps working when the agent leaves. 27 redeals across five independent harnesses, every one carrying a negatively-written assertion so it fails if a model call ever appears, and zero POSTs to /api/public-agent/turn in any of them — each one instead making exactly one call to the deterministic Rocchio engine, with the human's picks holding their slots at zero pixels of displacement and 16 to 28 distinct layouts of FLIP between boards. I reproduced it myself tonight. And with no ?webmcp-debug and no host on the page at all, P and X still flag and Enter still redeals. That is the whole WebMCP argument in one testable sentence: there is no agent-only path in the culling loop, there is one workspace with two operators, and one of them can leave. Every competitor's entry stops working when their agent stops. Film that, then film the compare two-up, then film six wall labels rewriting themselves around a sentence the human typed.",
+  "weakest": "The board a judge is looking at during the money shot: works floating at 30-60% of their slots aligned top-left with all the dead charcoal on the right, three of twelve titles hard-clipped mid-word with no ellipsis, two hairlines drawn beside nothing, a reject tray that reads as two grey artifacts in the margin — and, 210 pixels above the top of the frame, the agent's sentence that was supposed to be the entire point."
+}
