@@ -330,13 +330,24 @@ what this session knew (the prose) and the **loader re-fetches every record by
 id, on the server, before a pixel is sent**. There is no session to depend on
 and nothing to hydrate, which is what makes a cold open work.
 
-Verified rather than asserted, in a browser context with no storage: 200, all
-five images actually loaded from the Gallery's own IIIF endpoint, labels and
-colophon in the markup, **zero localStorage keys read**, no page errors and no
-failed requests. At 390×844 there is no horizontal overflow, which matters
-because a link in a message is usually opened on a phone. Every malformed
-`?e=` — empty, garbage, wrong version, non-base64 — returns 404 rather than a
-stack trace or a half-drawn show.
+Verified as a whole chain rather than in pieces. On `/nga/search`: flag four
+works, `set_exhibition` writes the title, statement and four labels, the human
+presses the single **Copy link** control in the rail, and the URL is read back
+off the real clipboard. A **second browser context that has never seen this
+session** then opens exactly that URL:
+
+```
+copied URL length: 368
+h1            : The Hour Before Leaving
+works         : 4        images loaded : 4        labels : 4
+colophon      : "4 of 4 labels"        http 200        page errors: 0
+```
+
+Also verified separately: **zero localStorage keys read**, images served from
+the Gallery's own IIIF endpoint rather than Paillette's asset URLs, no failed
+requests, no horizontal overflow at 390×844 — a link in a message is usually
+opened on a phone — and every malformed `?e=` (empty, garbage, wrong version,
+non-base64) returning 404 rather than a stack trace or a half-drawn show.
 
 Design: charcoal ground, `EB Garamond` for the prose, `IBM Plex Mono` for
 catalogue data, the works the only saturated thing. The colophon names the
