@@ -78,9 +78,13 @@ import {
   useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
-import { ExhibitionHead } from '~/components/exhibition/exhibition-head';
+import {
+  ExhibitionHead,
+  useExhibition,
+} from '~/components/exhibition/exhibition-head';
 import { WallLabel } from '~/components/exhibition/wall-label';
 import { ShareExhibitionLink } from '~/components/exhibition/share-link';
+import { RegionedAtlas } from '~/components/exhibition/atlas-regions';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
@@ -5330,6 +5334,42 @@ function SalonResults({
   );
 }
 
+/** One work on the atlas, drawn the same way whether or not it has a region. */
+function AtlasWork({
+  result,
+  rank,
+}: {
+  result: ArtworkSearchResult;
+  rank: string;
+}) {
+  const image = getArtworkImageSources(result, 'thumbnail');
+  const title = getDisplayTitle(result);
+
+  return (
+    <>
+      <div className="relative aspect-[4/5] overflow-hidden bg-[#17171b] shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)] transition-transform duration-300 group-hover:scale-125">
+        <span className="absolute left-1 top-1 z-10 rounded-sm bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-white/75">
+          #{rank}
+        </span>
+        <ImageWithFallback
+          src={image.src}
+          fallbackSrc={image.fallbackSrc}
+          alt={title}
+          protectFromDownload
+          loading="lazy"
+          className="h-full w-full object-cover"
+          fallback={
+            <NoImagePlaceholder iconClassName="h-4 w-4" showLabel={false} />
+          }
+        />
+      </div>
+      <span className="lt-catalogue mt-1.5 block truncate normal-case tracking-normal">
+        {title}
+      </span>
+    </>
+  );
+}
+
 function AtlasResults({
   results,
   onSelectArtwork,
@@ -5337,6 +5377,29 @@ function AtlasResults({
   results: ArtworkSearchResult[];
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
+  /*
+   * Naming a grouping changes the arrangement rather than adding a caption to
+   * it. The scattered atlas positions come from a hash of the id and mean
+   * nothing, so a name floating over them would claim a relationship the
+   * layout does not have — which is worse than no name at all. When regions
+   * exist the works in them are drawn together, under their name.
+   */
+  const { regions } = useExhibition();
+  if (regions.length) {
+    return (
+      <RegionedAtlas
+        results={results}
+        onSelectArtwork={onSelectArtwork}
+        renderWork={(work) => (
+          <AtlasWork
+            result={work}
+            rank={(results.indexOf(work) + 1).toString().padStart(2, '0')}
+          />
+        )}
+      />
+    );
+  }
+
   return (
     <div className="relative mt-6 h-[70vh] min-h-[460px] overflow-hidden rounded-lg border border-white/[0.07] bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:64px_64px]">
       {results.map((result, index) => {

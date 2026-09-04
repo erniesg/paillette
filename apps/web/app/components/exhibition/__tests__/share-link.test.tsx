@@ -7,7 +7,7 @@
  * the one bug on this page that a stranger could see and the curator could not.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtworkSearchResult } from '~/types';
@@ -64,7 +64,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/*
+ * Copying deflates the payload through a real CompressionStream, so the result
+ * lands several ticks after the click resolves rather than on the next
+ * microtask. Every assertion here waits on the outcome instead of reading it
+ * synchronously: the first version passed alone and lost the race under a
+ * loaded suite.
+ */
 const linkPayload = async () => {
+  await waitFor(() => expect(copied).toHaveLength(1));
   const url = new URL(copied[0]!);
   return decodeExhibitionLink(url.searchParams.get('e')!);
 };
@@ -122,7 +130,7 @@ describe('the link', () => {
     render(<ShareExhibitionLink />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
-    expect(screen.getByRole('button')).toHaveTextContent('Copied');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 
   it('says so rather than doing nothing when the clipboard is unavailable', async () => {
@@ -132,6 +140,8 @@ describe('the link', () => {
     render(<ShareExhibitionLink />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
-    expect(screen.getByRole('button')).toHaveTextContent('Copy failed');
+    expect(
+      await screen.findByRole('button', { name: 'Copy failed' })
+    ).toBeInTheDocument();
   });
 });

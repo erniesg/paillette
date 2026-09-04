@@ -1900,3 +1900,95 @@ html[data-theme='light'] .themeable-surface code {
     animation: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Named regions on the atlas
+ *
+ * The condition on this feature was that the atlas has to be able to *show* a
+ * name legibly, and a scatter positioned by a hash of the id cannot: a label
+ * over it would claim a relationship the layout does not have. So a name
+ * changes the arrangement — its works are drawn together under it — and the
+ * styling's whole job is to make the band read as one thing.
+ * ------------------------------------------------------------------------- */
+
+.paillette-atlas-regions {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2.5rem, 6vh, 4.5rem);
+}
+
+.paillette-region-head {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.paillette-region-head[data-provenance='human'] {
+  --ink: var(--ink-human-faint);
+}
+
+/* A region the agent named wears the agent's ink, like every other thing it
+ * wrote. Renaming it makes it the human's, and the rule changes with it. */
+.paillette-region-head[data-provenance='agent'] {
+  --ink: var(--ink-agent-faint);
+}
+
+.paillette-region-name {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.125rem;
+  line-height: 1.3;
+  color: var(--ink-human);
+}
+
+.paillette-region-head[data-provenance='agent'] .paillette-region-name {
+  color: var(--ink-agent);
+}
+
+.paillette-region-note {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+/* Quiet until you are in the band, like the flag badge on a card. */
+.paillette-region-dissolve {
+  order: 99;
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.875rem;
+  color: var(--ink-human-faint);
+  opacity: 0;
+}
+
+.paillette-region:hover .paillette-region-dissolve,
+.paillette-region-dissolve:focus-visible {
+  opacity: 1;
+}
+
+.paillette-region-cluster {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem 1.25rem;
+}
+
+/* An unassigned band has no name, so it is set back from the ones that do —
+ * the indent is the only thing saying it is a leftover, and it says it without
+ * a word. */
+.paillette-region[data-unassigned='true'] {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--lt-rule);
+  opacity: 0.82;
+}
+
+.paillette-region-work {
+  cursor: pointer;
+}
