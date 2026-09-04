@@ -23,7 +23,9 @@ import {
   __resetTurnStateForTest,
   isEmptyTurn,
   peekTurn,
+  pendingProseInstruction,
   prepareTurn,
+  submitHumanTurn,
   toTurnPayload,
 } from '../turn';
 import {
@@ -481,6 +483,48 @@ describe('a correction rides the next turn', () => {
     // peekTurn is what a redeal assembles; it must not drain.
     peekTurn();
     expect(prepareTurn('now tell the agent').exhibitionEdits).toHaveLength(1);
+  });
+
+  /*
+   * §5c step 4. Before this, a bare statement edit fell through the "did they
+   * type anything?" check into the deterministic redeal — which runs on flags
+   * and has never read a word of the statement — so the most consequential
+   * gesture in the lane's own framing moved the board according to something
+   * nobody had just said, and moved no label at all.
+   */
+  it('sends a rewritten statement to the agent rather than the redeal', async () => {
+    board(['a']);
+    setFlag('a', 'pick', { by: 'human' });
+    writeExhibition({ statement: 'About weather.' }, { by: 'agent' });
+    writeExhibition(
+      { statement: 'It is not about weather. It is about leaving.' },
+      { by: 'human' }
+    );
+
+    const outcome = await submitHumanTurn();
+
+    expect(outcome.kind).toBe('agent');
+    // Their sentence, verbatim. A correction paraphrased back is not a
+    // correction.
+    expect(outcome.turn.text).toBe(
+      'It is not about weather. It is about leaving.'
+    );
+    expect(outcome.turn.exhibitionEdits).toMatchObject([
+      {
+        field: 'statement',
+        value: 'It is not about weather. It is about leaving.',
+      },
+    ]);
+  });
+
+  it('leaves Enter deterministic when only the agent has written', () => {
+    board(['a']);
+    setFlag('a', 'pick', { by: 'human' });
+    // The agent's own draft is not the human correcting anything, and must not
+    // cost a model call on the beat whose whole claim is that it makes none.
+    writeExhibition({ statement: 'About weather.' }, { by: 'agent' });
+
+    expect(pendingProseInstruction()).toBeNull();
   });
 });
 

@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
@@ -94,6 +95,34 @@ const NeitherControl = ({
 
 export const CompareView = () => {
   const compare = useCompare();
+  /*
+   * Portalled to <body>, and the page marked while it is open.
+   *
+   * `position: fixed` is relative to the viewport only until an ancestor has a
+   * transform on it, at which point that ancestor becomes the containing
+   * block. The results section carries a finished GSAP tween, and a completed
+   * tween leaves `transform: matrix(1,0,0,1,0,0)` behind — an identity
+   * transform, visually nothing, and enough to move this room 2,500px down a
+   * 900px window. Measured 1216×4566 inside a 1440×900 viewport, with both
+   * works below the fold and a question in serif floating over an empty page.
+   *
+   * Portalling is the fix rather than clearing the transform, because it
+   * survives the next person adding one. `data-compare-open` on the root is
+   * what takes the nav, the sticky bar and the utterance field off screen, so
+   * this really is "nothing else on screen" and not "an opaque rectangle with
+   * the interface still above it".
+   */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (!compare || !mounted) return;
+    const root = document.documentElement;
+    root.dataset.compareOpen = 'true';
+    return () => {
+      delete root.dataset.compareOpen;
+    };
+  }, [compare, mounted]);
+
   if (!compare) return null;
 
   const [leftId, rightId] = compare.artworkIds;
@@ -118,9 +147,11 @@ export const CompareView = () => {
     },
   ];
 
-  return (
+  const room = (
     <div
-      className="paillette-compare fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-neutral-950/95 p-8"
+      className="paillette-compare fixed inset-0 z-[90] flex flex-col items-center justify-center gap-6 bg-neutral-950/95 p-8"
+      /* The one body child the "hide everything" rule spares. */
+      data-compare-room=""
       role="dialog"
       aria-modal="true"
       aria-label={compare.question ?? 'Compare two works'}
@@ -172,4 +203,8 @@ export const CompareView = () => {
       />
     </div>
   );
+
+  // Rendered in place until the first client effect runs, so a test or a
+  // server render still sees the room rather than nothing at all.
+  return mounted ? createPortal(room, document.body) : room;
 };

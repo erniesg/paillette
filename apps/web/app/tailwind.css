@@ -585,6 +585,39 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   border-right-color: transparent;
 }
 
+/*
+ * A declined work, in the tray. Desaturated and small: still there, still
+ * restorable, and visibly not in the running. The treatment is the caption.
+ */
+.lt-tray-card {
+  border: 1px solid var(--lt-rule);
+  filter: saturate(0.25);
+  opacity: 0.7;
+  transition:
+    filter 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.lt-tray-card:hover,
+.lt-tray-card:focus-visible {
+  filter: saturate(1);
+  opacity: 1;
+}
+
+/*
+ * The board fills the screen it is on and stops. Twelve cards that do not fit
+ * on one screen are not twelve cards — two thirds of the deal happens off
+ * camera and the continuity the FLIP exists to show is invisible.
+ */
+.lt-deal-viewport {
+  display: flex;
+  flex-direction: column;
+}
+
+.lt-deal-viewport > * {
+  min-height: 0;
+}
+
 /* ---------------------------------------------------------------------------
  * Two-up, as a room
  *
@@ -1096,6 +1129,46 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   --ink: var(--ink-human);
 }
 
+/*
+ * The evidence for the note, under the note and inside its rule.
+ *
+ * A wall label that names a colour is only checkable if the colours are there,
+ * so the swatches the agent was handed sit beneath the sentence: one strip per
+ * flagged work, picks first, rejects struck through. Nothing here is a legend
+ * — a mark and a position carry which is which, and after one deal nobody
+ * needs telling that the struck ones are the ones that left.
+ */
+.lt-note-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-left: 1rem;
+}
+
+.lt-note-swatch {
+  position: relative;
+  display: inline-flex;
+  height: 10px;
+  border: 1px solid var(--ink-human-faint);
+}
+
+.lt-note-swatch i {
+  display: block;
+  width: 14px;
+  height: 100%;
+}
+
+/* Struck, not faded: a reject is a decision, and a decision should read at a
+ * glance rather than look like a rendering failure. */
+.lt-note-swatch[data-flag='reject']::after {
+  content: '';
+  position: absolute;
+  inset: calc(50% - 1px) -2px auto -2px;
+  height: 1px;
+  background: var(--ink-human);
+}
+
 /* One sentence when a deal did not run. Catalogue mono, graphite, no box: the
  * system reporting a fact, not the agent saying something. */
 .paillette-deal-error {
@@ -1250,6 +1323,27 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 .paillette-compare {
   background: var(--lt-ground);
   padding: clamp(1.5rem, 4vh, 4rem) clamp(1.5rem, 4vw, 5rem);
+}
+
+/*
+ * "Nothing else on screen" (§7.3), meant literally.
+ *
+ * An opaque overlay is not enough on its own: the site nav is `sticky` at
+ * z-40, the search chrome at z-30 and the agent's glyph at 65, so a scrim
+ * covers the page and leaves the interface stacked on top of it. While the
+ * two-up is open the app is simply not drawn — the room is portalled to
+ * <body>, so hiding everything else in the tree costs nothing and cannot
+ * hide the room with it.
+ *
+ * `visibility` rather than `display`, so nothing reflows and the page is
+ * exactly as it was when the answer closes it.
+ */
+html[data-compare-open] body > *:not([data-compare-room]) {
+  visibility: hidden;
+}
+
+html[data-compare-open] {
+  overflow: hidden;
 }
 
 .paillette-compare > p {

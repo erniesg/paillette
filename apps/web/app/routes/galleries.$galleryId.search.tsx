@@ -9,11 +9,13 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type PointerEvent,
+  type RefObject,
 } from 'react';
 import {
   useInfiniteQuery,
@@ -78,6 +80,7 @@ import {
   useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
+import { NoteSwatches } from '~/components/board/note-swatches';
 import {
   DealBoard,
   DEFAULT_BOARD_SIZE as DEAL_BOARD_SIZE,
@@ -2886,12 +2889,17 @@ export default function SearchPage() {
             hook the palette matches; the sentence stands on its own without
             it. */}
         {agentBoardNote && (
-          <p
-            className="paillette-wall-label mx-auto mt-6 max-w-3xl"
-            data-provenance={webmcpState.agentResults?.origin ?? 'agent'}
-          >
-            {agentBoardNote}
-          </p>
+          <div className="mx-auto mt-6 max-w-3xl">
+            <p
+              className="paillette-wall-label"
+              data-provenance={webmcpState.agentResults?.origin ?? 'agent'}
+            >
+              {agentBoardNote}
+            </p>
+            {/* The swatches the note was written from, so a claim about
+                colour can be checked without leaving the sentence. */}
+            <NoteSwatches />
+          </div>
         )}
 
         {/* The show. Title and statement, both editable in place, in the ink
@@ -5159,6 +5167,31 @@ function ResultsLayout({
     return { preservedIds };
   }, [board, flags, results]);
 
+  // A board is on the table when a deal put these exact works there, and a
+  // dealt board outranks every layout choice — including the agent's own.
+  //
+  // This check used to sit last, under table/salon/atlas, and a model that had
+  // read "salon for a curated hang" chose salon on the first cold run of the
+  // demo instruction. That answered a question of taste by throwing away the
+  // thing the taste was expressed in: no pinned picks, no FLIP, no deal grid.
+  // The picks holding their slots is not a presentation of the board, it is
+  // the board, so nothing gets to replace it while one is dealt. Anything else
+  // — a text search, a colour search, an agent's `set_results` — is browsing,
+  // and browsing is what the other layouts are for.
+  if (dealtBoard) {
+    return (
+      <DealResults
+        results={results}
+        preservedIds={dealtBoard.preservedIds}
+        selectedColours={selectedColours}
+        showSimilarity={showSimilarity}
+        onFacetSearch={onFacetSearch}
+        onPaletteColourSelect={onPaletteColourSelect}
+        onSelectArtwork={onSelectArtwork}
+      />
+    );
+  }
+
   if (view === 'table') {
     return (
       <TableResults
@@ -5185,23 +5218,6 @@ function ResultsLayout({
 
   if (view === 'atlas') {
     return <AtlasResults results={results} onSelectArtwork={onSelectArtwork} />;
-  }
-
-  // A board is on the table when a deal put these exact works there. Anything
-  // else — a text search, a colour search, an agent's `set_results` — is
-  // browsing, and browsing is what the masonry is for.
-  if (dealtBoard) {
-    return (
-      <DealResults
-        results={results}
-        preservedIds={dealtBoard.preservedIds}
-        selectedColours={selectedColours}
-        showSimilarity={showSimilarity}
-        onFacetSearch={onFacetSearch}
-        onPaletteColourSelect={onPaletteColourSelect}
-        onSelectArtwork={onSelectArtwork}
-      />
-    );
   }
 
   return (
@@ -5249,11 +5265,53 @@ function DealResults({
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
+  const { flags } = useWebMcpState();
+  const shellRef = useRef<HTMLDivElement>(null);
+  const available = useViewportBoardHeight(shellRef, results.length);
+
+  /*
+   * The considered-and-declined pile, at the left edge.
+   *
+   * Without it a reject slides off screen and is gone, and "still restorable"
+   * becomes a thing the docs assert rather than a thing the viewer can see.
+   * Most recent first, because the one you just threw out is the one you might
+   * want back.
+   */
+  const trayItems = useMemo(() => {
+    const onBoard = new Set(results.map((result) => result.id));
+    return flags
+      .filter(
+        (flag) =>
+          flag.flag === 'reject' &&
+          !flag.provisional &&
+          !onBoard.has(flag.artworkId)
+      )
+      .slice()
+      .reverse()
+      .map((flag) => recallArtwork(flag.artworkId))
+      .filter((result): result is ArtworkSearchResult => Boolean(result))
+      .slice(0, DEAL_TRAY_LIMIT);
+  }, [flags, results]);
+
   return (
-    <div className="pt-6">
+    <div
+      ref={shellRef}
+      /*
+       * §4: twelve cards, so every move reads on video. On an unbounded page
+       * the grid ran to 2000px and four of the twelve were visible at
+       * 1440×900 — two thirds of the deal happening off camera, which is the
+       * whole legibility argument gone. The board takes what is left of the
+       * viewport and no more; the grid is already `h-full auto-rows-fr`, so it
+       * sizes its own rows down to fit.
+       */
+      className="lt-deal-viewport pt-6"
+      style={available ? { height: `${available}px` } : undefined}
+    >
       <DealBoard
+        className="h-full"
         items={results}
         preservedIds={preservedIds}
+        tray={trayItems}
         size={Math.max(results.length, DEAL_BOARD_SIZE)}
         renderCard={(result, context) => (
           <ResultCard
@@ -5267,8 +5325,85 @@ function DealResults({
             onSelectArtwork={onSelectArtwork}
           />
         )}
+        renderTrayCard={(result) => (
+          <TrayCard result={result} onSelectArtwork={onSelectArtwork} />
+        )}
       />
     </div>
+  );
+}
+
+/** Enough to show the pile is a pile; more is a second board. */
+const DEAL_TRAY_LIMIT = 8;
+/** Below this the cards are thumbnails and the deal stops being readable. */
+const MIN_BOARD_PX = 380;
+/** So the last row is not flush against the bottom edge of the window. */
+const BOARD_BOTTOM_GUTTER = 24;
+
+/**
+ * How much viewport is left below wherever the board starts.
+ *
+ * Measured rather than assumed, because what sits above the board changes
+ * through a session — the wall label arrives with the first note, the
+ * exhibition head with the first pick — and a hard-coded allowance is wrong
+ * for most of them. Re-measured when the window resizes and when the deal
+ * changes; not on scroll, because a board that resizes under a scrolling
+ * cursor is worse than one that is slightly too tall.
+ */
+function useViewportBoardHeight(
+  ref: RefObject<HTMLDivElement | null>,
+  dealSignature: number
+) {
+  const [available, setAvailable] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const element = ref.current;
+      if (!element) return;
+      const top = Math.max(element.getBoundingClientRect().top, 0);
+      setAvailable(
+        Math.max(MIN_BOARD_PX, window.innerHeight - top - BOARD_BOTTOM_GUTTER)
+      );
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [ref, dealSignature]);
+
+  return available;
+}
+
+/**
+ * A rejected work in the tray: the picture, smaller and desaturated, and
+ * nothing else. It is legible as "one of the ones I threw out" from its
+ * position and its treatment, so a caption saying so would be the chrome §5b
+ * forbids. Clicking it opens the work, which is how it gets restored.
+ */
+function TrayCard({
+  result,
+  onSelectArtwork,
+}: {
+  result: ArtworkSearchResult;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  const title = getPublicTitle(result);
+  return (
+    <button
+      type="button"
+      className="lt-tray-card block w-full overflow-hidden"
+      data-artwork-id={result.id}
+      onClick={() => onSelectArtwork(result)}
+      aria-label={`Set aside: ${title}`}
+      title={title}
+    >
+      <ImageWithFallback
+        src={getPublicThumbnailUrl(result)}
+        fallbackSrc={getPublicImageUrl(result)}
+        fallback={<div className="h-16 w-full" aria-hidden />}
+        alt=""
+        className="block h-full w-full object-cover"
+      />
+    </button>
   );
 }
 

@@ -24,7 +24,11 @@ import {
   peekExhibitionEdits,
   type ExhibitionEdit,
 } from './exhibition';
-import { toAgentArtworkSummary } from './artwork-summary';
+import {
+  toAgentArtworkSummary,
+  toAgentVisualFacts,
+  type AgentVisualFacts,
+} from './artwork-summary';
 import {
   drainFlagChanges,
   peekFlagChanges,
@@ -207,6 +211,34 @@ export const peekTurn = (text?: string): HumanTurn =>
     peekExhibitionEdits()
   );
 
+/**
+ * The human's own words, when the thing they committed was prose rather than a
+ * sentence typed at the agent.
+ *
+ * §5c step 4 is the beat where meaning changes what the agent does: they cross
+ * out the drafted statement and write *"it's not about weather, it's about
+ * leaving"*, and the wall has to move. A rewritten statement is an
+ * instruction. Sent verbatim, because the correction is the point and
+ * paraphrasing someone's correction back at them is the one thing the prompt
+ * already forbids.
+ *
+ * The deterministic redeal cannot serve this: it runs on flags and has never
+ * read a word of the statement, so routing prose into it changes the board
+ * according to something the human did not just say.
+ */
+export const pendingProseInstruction = (): string | null => {
+  const edits = peekExhibitionEdits();
+  const written = edits.filter((edit) => edit.value.trim());
+  if (!written.length) return null;
+  // The statement carries the brief; a bare title change is thinner but it is
+  // still their words, and still the only thing they did.
+  const lead =
+    written.find((edit) => edit.field === 'statement') ??
+    written.find((edit) => edit.field === 'title') ??
+    written[0];
+  return lead?.value.trim() ?? null;
+};
+
 /** Does this turn have anything in it at all? */
 export const isEmptyTurn = (turn: HumanTurn) =>
   !turn.text &&
@@ -233,6 +265,13 @@ export const submitHumanTurn = async (
 ): Promise<HumanTurnOutcome> => {
   if (text?.trim()) return { kind: 'agent', turn: prepareTurn(text) };
 
+  // Nothing typed at the bar, but they rewrote the statement. That is prose,
+  // and prose is the half of this the redeal cannot read: it runs on flags,
+  // so sending an edit there would change the board according to something
+  // nobody just said. Their sentence becomes the instruction.
+  const prose = pendingProseInstruction();
+  if (prose) return { kind: 'agent', turn: prepareTurn(prose) };
+
   // No words. If anything is picked, the picks are the whole instruction, and
   // no model is involved — so the gestures are only reported, not spent.
   const result = await runRedeal({
@@ -256,11 +295,11 @@ export const submitHumanTurn = async (
  */
 export interface HumanTurnPayload {
   text?: string;
-  flagsDelta: {
+  flagsDelta: ({
     artworkId: string;
     title?: string;
     to: 'pick' | 'reject' | null;
-  }[];
+  } & Partial<AgentVisualFacts>)[];
   selection: { id: string; title?: string }[];
   hovered: { id: string; title?: string } | null;
   compareChoice:
@@ -295,6 +334,23 @@ const namedId = (id: string) => {
   return title ? { id, title } : { id };
 };
 
+/**
+ * The swatches, medium and date the card is showing, for a work the human just
+ * flagged. A name alone tells the model who painted it; this tells it what
+ * they were looking at when they threw it out.
+ */
+const visualsOf = (id: string): Partial<AgentVisualFacts> => {
+  const artwork = recallArtwork(id);
+  if (!artwork) return {};
+  const facts = toAgentVisualFacts(toAgentArtworkSummary(artwork));
+  return {
+    ...(facts.palette.length ? { palette: facts.palette } : {}),
+    ...(facts.medium ? { medium: facts.medium } : {}),
+    ...(facts.year !== null ? { year: facts.year } : {}),
+    ...(facts.classification ? { classification: facts.classification } : {}),
+  };
+};
+
 export const toTurnPayload = (turn: HumanTurn): HumanTurnPayload => ({
   ...(turn.text ? { text: turn.text } : {}),
   flagsDelta: turn.flagsDelta.map((change) => {
@@ -302,6 +358,7 @@ export const toTurnPayload = (turn: HumanTurn): HumanTurnPayload => ({
     return {
       artworkId: change.artworkId,
       ...(title ? { title } : {}),
+      ...visualsOf(change.artworkId),
       to: change.to,
     };
   }),

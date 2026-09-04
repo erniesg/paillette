@@ -31,6 +31,7 @@ import {
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
+import { onAgentTurnRequest } from '~/lib/webmcp/agent-request';
 import { submitHumanTurn, toTurnPayload } from '~/lib/webmcp/turn';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
@@ -223,6 +224,8 @@ export function AgentPrompt({
   const awaitingFlushRef = useRef(false);
   /** `pendingVoice`, readable from the window key handler. */
   const pendingVoiceRef = useRef(false);
+  /** `busy`, readable from the turn-request subscription. */
+  const busyRef = useRef(false);
   /** The last work pointed at, held for the length of one utterance. */
   const lastHoverRef = useRef<SceneWork | null>(null);
   /** The page's voice, or null where the browser has none. */
@@ -281,7 +284,15 @@ export function AgentPrompt({
   const run = useCallback(async (
     instruction: string,
     pointing: Resolution,
-    channel: TurnChannel
+    channel: TurnChannel,
+    /**
+     * A turn someone else already assembled — today, a rewritten exhibition
+     * statement, which is an instruction that arrives from an editable
+     * paragraph rather than from this field. Passed through rather than
+     * re-derived, because `prepareTurn` drains the gesture journals and
+     * draining them twice reports an empty set for a turn that had plenty.
+     */
+    prepared?: ReturnType<typeof toTurnPayload>
   ) => {
     setBusy(true);
     setEntries((current) => [
@@ -308,12 +319,14 @@ export function AgentPrompt({
       // Drained exactly once, here, before the loop: `prepareTurn` empties the
       // gesture journal, so calling it per iteration would report the same
       // flags repeatedly and then report none.
-      let gestures: ReturnType<typeof toTurnPayload> | null = null;
-      try {
-        const outcome = await submitHumanTurn(instruction);
-        if (outcome.kind === 'agent') gestures = toTurnPayload(outcome.turn);
-      } catch {
-        // Gestures are an enrichment. Losing them must not lose the sentence.
+      let gestures: ReturnType<typeof toTurnPayload> | null = prepared ?? null;
+      if (!gestures) {
+        try {
+          const outcome = await submitHumanTurn(instruction);
+          if (outcome.kind === 'agent') gestures = toTurnPayload(outcome.turn);
+        } catch {
+          // Gestures are an enrichment. Losing them must not lose the sentence.
+        }
       }
 
       const context = getModelContext();
@@ -565,6 +578,29 @@ export function AgentPrompt({
     [busy, cancelGrace, pendingVoice, resolveAgainstScreen, run]
   );
 
+  /**
+   * A turn that started somewhere other than this field.
+   *
+   * Rewriting the exhibition statement is §5c's fourth step and the most
+   * consequential thing the human can do: it is a correction, in prose, and
+   * the board and the labels have to move around it. It happens in an editable
+   * paragraph, so the bar hears about it here rather than reading it out of
+   * the field. Text channel, always — the statement was typed.
+   */
+  useEffect(
+    () =>
+      onAgentTurnRequest(({ instruction, gestures }) => {
+        if (busyRef.current) return;
+        void run(
+          instruction,
+          resolveAgainstScreen(instruction),
+          'text',
+          gestures
+        );
+      }),
+    [resolveAgainstScreen, run]
+  );
+
   // Words arriving from the recogniser scroll the input without a scroll event
   // that React sees, so the offset is re-read whenever the text changes.
   useEffect(() => {
@@ -576,6 +612,7 @@ export function AgentPrompt({
   composedRef.current = composeUtterance(input, interim);
   commitRef.current = () => submit(composedRef.current);
   pendingVoiceRef.current = pendingVoice;
+  busyRef.current = busy;
 
   // Chips track the field, typed or spoken. Gating this on a pending voice
   // utterance made pointing a feature of the microphone, which is exactly

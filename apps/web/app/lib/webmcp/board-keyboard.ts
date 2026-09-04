@@ -18,10 +18,15 @@
  * page-level keyboard contract instead of two that have to agree.
  */
 
+import { requestAgentTurn } from './agent-request';
 import { getPinnedIds, toggleFlag } from './flags';
 import { clearSelection } from './selection';
 import { getWebMcpState, setCompare } from './store';
-import { submitHumanTurn, type HumanTurnOutcome } from './turn';
+import {
+  submitHumanTurn,
+  toTurnPayload,
+  type HumanTurnOutcome,
+} from './turn';
 
 /**
  * The utterance bar, identified by its accessible name.
@@ -108,7 +113,21 @@ export const handleBoardKey = (
   ) {
     event.preventDefault();
     void submitHumanTurn()
-      .then((outcome) => options.onTurn?.(outcome))
+      .then((outcome) => {
+        // Enter usually redeals and never leaves the page. The exception is a
+        // rewritten statement: that is prose, the redeal cannot read it, and
+        // it has to reach the model. The turn is already assembled and its
+        // journals already drained, so it is handed over whole rather than
+        // re-derived — deriving it twice is how the second turn arrives with
+        // no gestures on it.
+        if (outcome.kind === 'agent' && outcome.turn.text) {
+          requestAgentTurn({
+            instruction: outcome.turn.text,
+            gestures: toTurnPayload(outcome.turn),
+          });
+        }
+        options.onTurn?.(outcome);
+      })
       .catch((error) => options.onError?.(error));
     return true;
   }

@@ -33,6 +33,7 @@ import {
   getReadableImageUrl,
   toAgentArtworkDetail,
   toAgentArtworkSummary,
+  toAgentVisualFacts,
   type AgentArtworkSummary,
 } from './artwork-summary';
 import {
@@ -886,6 +887,12 @@ const describeFlags = (boardOrder: readonly string[]) => {
       id: flag.artworkId,
       title: summary?.title ?? null,
       artist: summary?.artist ?? null,
+      // What the work looks like, not only what it is called. Without this
+      // the entire payload about a rejected work is two proper nouns, and
+      // anything the note says about the picture is recall about the artist.
+      ...(summary
+        ? toAgentVisualFacts(summary)
+        : { palette: [], medium: null, year: null, classification: null }),
       by: flag.by,
       ...(flag.reason ? { reason: flag.reason } : {}),
       onBoard: boardOrder.includes(flag.artworkId),
@@ -900,7 +907,7 @@ const describeFlags = (boardOrder: readonly string[]) => {
       .map(describe),
     provisional: all.filter((f) => f.provisional).map(describe),
     exemplars: getExemplars(),
-    hint: 'picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste.',
+    hint: 'picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist.',
   };
 };
 
