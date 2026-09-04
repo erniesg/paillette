@@ -180,6 +180,19 @@ export interface WebMcpState {
   /** True once the bridge has registered tools with a real host. */
   bridgeAttached: boolean;
   panelOpen: boolean;
+  /**
+   * The human closed the panel and meant it.
+   *
+   * A turn is five or six tool calls, and each one used to reopen the panel, so
+   * closing it lasted about 300ms. The panel is a fixed overlay across the
+   * lower-left of the board, which is where the picks sit — so on camera the
+   * one thing the interface exists to show was being covered up by a list of
+   * the calls that produced it, and there was no way to stop it.
+   *
+   * A confirmation still overrides this: something waiting on an answer cannot
+   * be allowed to hide.
+   */
+  panelDismissed: boolean;
 }
 
 const MAX_ACTIVITY = 40;
@@ -209,6 +222,7 @@ const initialState: WebMcpState = {
   pendingConfirmations: [],
   bridgeAttached: false,
   panelOpen: false,
+  panelDismissed: false,
 };
 
 let state: WebMcpState = initialState;
@@ -287,7 +301,12 @@ export const setSelection = (selection: string[]) => update({ selection });
 export const setBridgeAttached = (bridgeAttached: boolean) =>
   update({ bridgeAttached });
 
-export const setPanelOpen = (panelOpen: boolean) => update({ panelOpen });
+/**
+ * Closing the panel is a decision, not a gesture that lasts until the next
+ * tool call. Reopening it clears the decision, so nothing is one-way.
+ */
+export const setPanelOpen = (panelOpen: boolean) =>
+  update({ panelOpen, panelDismissed: !panelOpen });
 
 let activitySequence = 0;
 
@@ -307,8 +326,9 @@ export const startActivity = (toolName: string, input: unknown): string => {
       },
       ...state.activity,
     ].slice(0, MAX_ACTIVITY),
-    // A tool firing is the moment the panel earns its space on screen.
-    panelOpen: true,
+    // A tool firing is the moment the panel earns its space on screen — but
+    // only if the human has not already said they do not want it there.
+    panelOpen: state.panelDismissed ? state.panelOpen : true,
   });
   return id;
 };
@@ -370,7 +390,10 @@ export const requestConfirmation = (request: {
           resolve: finish,
         },
       ],
+      // A question waiting on the human overrides their dismissal: the panel
+      // is the only place the answer can be given.
       panelOpen: true,
+      panelDismissed: false,
     });
   });
 };

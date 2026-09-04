@@ -310,6 +310,29 @@ const main = async () => {
   note(Boolean(labelInk), 'and it carries an ink', String(labelInk));
   await page.screenshot({ path: `${SHOTS}/5-agent-redeal.png` });
 
+  // ---- 5b. the panel stays where the human put it ----------------------
+  //
+  // It is a fixed overlay across the lower-left of the board, which is where
+  // the picks are. Every tool call used to reopen it, and a turn is five or
+  // six calls, so on camera it covered the one thing the board is for.
+  await page.click('[aria-label="Collapse agent activity"]');
+  await page.waitForTimeout(200);
+  await call('get_view_context', {});
+  await call('flag_artworks', { flags: [{ artworkId: liveIds[2], flag: 'reject', reason: 'busier' }] });
+  await page.waitForTimeout(300);
+  const panelCovers = await page.evaluate(() => {
+    const panel = Array.from(document.querySelectorAll('div,aside,section')).find(
+      (node) =>
+        getComputedStyle(node).position === 'fixed' &&
+        node.textContent?.includes('TOOL CALLS')
+    );
+    if (!panel) return null;
+    const box = panel.getBoundingClientRect();
+    return { w: Math.round(box.width), h: Math.round(box.height) };
+  });
+  note(panelCovers === null, 'the activity panel stays closed through the rest of the turn', panelCovers ? `still ${panelCovers.w}x${panelCovers.h}` : 'closed');
+  await page.screenshot({ path: `${SHOTS}/5b-panel-dismissed.png` });
+
   const nowIds = (await board(page)).map((entry) => entry.id).filter(Boolean);
   const compared = await call('compare_artworks', {
     artworkIds: [nowIds[0], nowIds[1]],
