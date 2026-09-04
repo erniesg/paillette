@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
 import {
+  setBoard,
   setFocusedArtwork,
   setHumanResults,
   setSelection,
@@ -593,6 +594,46 @@ describe('AgentPrompt', () => {
     });
 
     expect(spoken).toEqual(['Five warm, calm options.']);
+  });
+
+  /**
+   * The case that made a spoken turn silent in practice.
+   *
+   * The system prompt tells the model never to repeat its note as its reply
+   * and to say nothing at all if it has nothing to add — which, correctly, is
+   * most turns. Speech was gated on the reply, so §5's "the note is spoken
+   * only if the human's last turn was spoken" almost never happened. Measured
+   * on staging: the utterance landed in the field, the turn ran, the note was
+   * written, and nothing came out of the speakers.
+   */
+  it('speaks the wall label when the model adds nothing to it', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { spoken } = installSynthesis();
+    // A turn that wrote a note and then said nothing, which is the shape the
+    // prompt asks for.
+    setBoard({
+      order: ['nga-2'],
+      note: 'You said warm; you picked the grey harbour. Following the picks.',
+      by: 'agent',
+      at: 1,
+      dealt: [],
+    } as never);
+    stubFetch('');
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something quieter', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    expect(spoken).toEqual([
+      'You said warm; you picked the grey harbour.',
+    ]);
   });
 
   it('stays silent after a typed turn — text in, text out', async () => {

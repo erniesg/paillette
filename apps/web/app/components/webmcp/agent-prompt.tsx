@@ -604,12 +604,33 @@ export function AgentPrompt({
           const said = (message.content ?? '').trim();
           if (said) {
             setEntries((current) => [...current, { kind: 'agent', text: said }]);
-            // The note is always shown. Whether it is also *heard* depends on
-            // one thing: how the human's last turn arrived. Text in, text out;
-            // voice in, voice out. That single rule is what makes typing and
-            // talking feel like one conversation, and it needs nothing as
-            // heavy as a manager deciding whose go it is.
-            if (shouldSpeakReply(channel)) speechRef.current?.speak(said);
+          }
+          /*
+           * Text in, text out; voice in, voice out — and the thing that gets
+           * spoken is whatever the agent actually said, which is usually the
+           * note.
+           *
+           * This used to speak `said` alone, and a spoken turn was therefore
+           * answered in silence nearly every time. Two rules in the build were
+           * pulling against each other: §5 says the *note* is "spoken only if
+           * the human's last turn was spoken", while the system prompt tells
+           * the model never to repeat its note as its reply and to "say
+           * nothing at all" if it has nothing to add — which it usually does
+           * not, correctly. So `message.content` came back empty, and the one
+           * sentence the human was owed sat on the wall unread.
+           *
+           * Measured on staging: the utterance landed in the field, the turn
+           * ran, the note was written — *"You asked for warmth; you kept the
+           * spare monochrome sailor and rejected storm ships…"* — and nothing
+           * was spoken.
+           *
+           * The reply wins when there is one, because it is the sentence that
+           * adds something the wall does not already carry. `firstSentence`
+           * caps either at one sentence: the board is the rest of the answer.
+           */
+          if (shouldSpeakReply(channel)) {
+            const aloud = said || getWebMcpState().board?.note?.trim() || '';
+            if (aloud) speechRef.current?.speak(aloud);
           }
           return;
         }
