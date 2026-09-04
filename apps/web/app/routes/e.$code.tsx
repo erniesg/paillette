@@ -37,7 +37,15 @@ export const loader = async ({ context, params, request }: LoaderFunctionArgs) =
   if (!code) throw new Response('Not found', { status: 404 });
 
   const env = getServerEnv(context);
-  const payload = await loadExhibitionByCode(code, env, request.signal);
+  // The one caller that is a visit. Crawlers and probes are answered in
+  // `worker.ts` before this loader runs and do not count.
+  const payload = await loadExhibitionByCode(
+    code,
+    env,
+    request.signal,
+    undefined,
+    true
+  );
   if (!payload) throw new Response('Not found', { status: 404 });
   if (!isAllowedPublicSearchRouteId(payload.collectionId)) {
     throw new Response('Not found', { status: 404 });
