@@ -128,6 +128,55 @@ export interface BoardState {
   at: number;
 }
 
+/**
+ * One writable piece of prose, and whose hand wrote it.
+ *
+ * `by` is who chose the words, and it never changes when the other party
+ * accepts them — the ink on the page and the credit on the shared URL should
+ * both say who actually wrote a sentence. `heldByHuman` is the separate,
+ * narrower question of who may overwrite it, and accepting the agent's wording
+ * counts as an edit: from then on the field is the human's.
+ */
+export interface AuthoredText {
+  value: string;
+  by: ResultSetOrigin;
+  heldByHuman: boolean;
+  at: number;
+}
+
+/** What is on the wall, plus the agent's unaccepted alternative. */
+export interface ExhibitionField {
+  current: AuthoredText | null;
+  proposed: AuthoredText | null;
+}
+
+/** A named grouping on the atlas: "these four are the ones about leaving". */
+export interface AtlasRegion {
+  id: string;
+  label: string;
+  artworkIds: string[];
+  note?: string;
+  by: ResultSetOrigin;
+}
+
+/**
+ * The exhibition. A title, a statement, a label per work, and a hang — every
+ * field writable by both parties, with the provenance rules in
+ * `./exhibition` deciding which writes land and which become proposals.
+ */
+export interface ExhibitionState {
+  title: ExhibitionField;
+  statement: ExhibitionField;
+  /** Keyed by artwork id so a label outlives the deal it was written on. */
+  labels: Record<string, ExhibitionField>;
+  /** Explicit hang order. Empty means "follow the board". */
+  order: string[];
+  /** Works taken off the wall regardless of what the board is showing. */
+  withdrawn: string[];
+  regions: AtlasRegion[];
+  updatedAt: number;
+}
+
 /** Two works side by side, and the question being asked of them. */
 export interface CompareState {
   artworkIds: [string, string];
@@ -169,6 +218,12 @@ export interface WebMcpState {
   dealError: { code: string; message: string } | null;
   /** The two-up currently on screen, if any. */
   compare: CompareState | null;
+  /**
+   * The show being assembled out of the board. Always present, usually empty:
+   * a document nobody has written in yet is not the same as no document, and
+   * the difference would otherwise have to be checked at every read.
+   */
+  exhibition: ExhibitionState;
   /** The card under the cursor or keyboard focus — the deictic anchor. */
   hovered: string | null;
   /** Shift-clicked ids. What "these" means. */
@@ -202,6 +257,15 @@ const initialState: WebMcpState = {
   dealing: false,
   dealError: null,
   compare: null,
+  exhibition: {
+    title: { current: null, proposed: null },
+    statement: { current: null, proposed: null },
+    labels: {},
+    order: [],
+    withdrawn: [],
+    regions: [],
+    updatedAt: 0,
+  },
   hovered: null,
   selection: [],
   indexJob: null,
@@ -276,6 +340,9 @@ export const setDealError = (dealError: WebMcpState['dealError']) =>
   update({ dealError });
 
 export const setCompare = (compare: CompareState | null) => update({ compare });
+
+export const setExhibition = (exhibition: ExhibitionState) =>
+  update({ exhibition });
 
 export const setHoveredArtwork = (hovered: string | null) => {
   if (state.hovered === hovered) return;

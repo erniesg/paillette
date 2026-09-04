@@ -78,6 +78,8 @@ import {
   useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
+import { ExhibitionHead } from '~/components/exhibition/exhibition-head';
+import { WallLabel } from '~/components/exhibition/wall-label';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
@@ -2883,6 +2885,12 @@ export default function SearchPage() {
           </p>
         )}
 
+        {/* The show. Title and statement, both editable in place, in the ink
+            of whoever wrote them. It appears once someone has begun to curate
+            — a confirmed pick, or a draft the agent has already written — so a
+            plain search never carries a title block. */}
+        <ExhibitionHead />
+
         {hasActiveSearch && (
           <section
             ref={resultsAreaRef}
@@ -5300,6 +5308,11 @@ function SalonResults({
               </button>{' '}
               / {getDateText(result) || 'undated'}
             </p>
+            {/* Salon is the layout an agent picks for a curated hang, so it is
+                the one that most often has labels to carry. */}
+            <div className="mx-auto mt-2 max-w-[26ch] text-left">
+              <WallLabel artworkId={result.id} title={title} />
+            </div>
           </article>
         );
       })}
@@ -5487,6 +5500,10 @@ function ResultCard({
           </span>
         </div>
       </div>
+      {/* The wall label, if this show has one for this work. Beside the
+          picture, because that is the only place a label means anything —
+          and editable in place, because it is the human's show. */}
+      <WallLabel artworkId={result.id} title={title} />
     </article>
   );
 }

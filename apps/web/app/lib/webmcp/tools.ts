@@ -88,6 +88,21 @@ import {
   setFlag,
   type FlagIntent,
 } from './flags';
+import {
+  listHungWorks,
+  setRegions,
+  writeExhibition,
+  EXHIBITION_MAX_WORKS,
+  LABEL_MAX_CHARS,
+  REGION_LABEL_MAX_CHARS,
+  STATEMENT_MAX_CHARS,
+  TITLE_MAX_CHARS,
+  type ExhibitionField,
+  type ExhibitionPatch,
+  type ExhibitionWorkPatch,
+  type HungWork,
+  type RegionPatch,
+} from './exhibition';
 import { runRedeal, BOARD_SIZE } from './redeal';
 import { INDEX_CAPS } from './caps';
 import { toIndexedArtwork } from './indexed-artwork';
@@ -958,6 +973,11 @@ const getViewContextTool = (context: ToolContext): WebMcpTool => ({
             hint: 'redeal deals from the confirmed flags with picks held in place. dealtThisSession is excluded from the next deal, so the loop keeps moving.',
           }
         : null,
+      // The show, and — the part that matters — whose words are in it. An
+      // agent that cannot tell which sentences it wrote from which ones the
+      // human wrote will eventually paraphrase someone's meaning back at them
+      // and call it a draft.
+      exhibition: readExhibitionForAgent(),
       selection: state.selection.map((id) => ({
         id,
         work: flagLabel(id),
@@ -1696,6 +1716,301 @@ const compareArtworksTool = (): WebMcpTool => ({
 });
 
 // ---------------------------------------------------------------------------
+// Tier 1.7 — the exhibition: the object both parties write
+//
+// Culling decides which pictures. This decides what they are *about*, and it is
+// the half neither party can do alone: the human cannot write it without the
+// collection, and the agent cannot write it without knowing what the human
+// means. So every field here is writable by both, and every field remembers
+// whose hand wrote it.
+// ---------------------------------------------------------------------------
+
+/** A work with everything the wall needs: catalogue line plus label. */
+const describeHungWork = (work: HungWork) => {
+  const artwork = recallArtwork(work.artworkId);
+  const summary = artwork ? toAgentArtworkSummary(artwork) : null;
+  return {
+    artworkId: work.artworkId,
+    position: work.position,
+    title: summary?.title ?? null,
+    artist: summary?.artist ?? null,
+    year: summary?.year ?? null,
+    label: work.label,
+    labelBy: work.labelBy,
+    ...(work.labelHeldByHuman ? { labelIsTheirs: true } : {}),
+    ...(work.proposedLabel ? { yourUnacceptedProposal: work.proposedLabel } : {}),
+  };
+};
+
+const describeExhibitionField = (field: ExhibitionField) => ({
+  text: field.current?.value ?? null,
+  by: field.current?.by ?? null,
+  ...(field.current?.heldByHuman ? { theirs: true } : {}),
+  ...(field.proposed ? { yourUnacceptedProposal: field.proposed.value } : {}),
+});
+
+/**
+ * The exhibition as an agent should read it: the prose, who owns each piece of
+ * it, and the hang. Shared by `get_exhibition` and `get_view_context` so the
+ * two can never drift into describing the document differently.
+ */
+const readExhibitionForAgent = () => {
+  const state = getWebMcpState().exhibition;
+  const works = listHungWorks(state).map(describeHungWork);
+  const unlabelled = works.filter((work) => !work.label).length;
+  return {
+    title: describeExhibitionField(state.title),
+    statement: describeExhibitionField(state.statement),
+    works,
+    regions: state.regions.map((region) => ({
+      label: region.label,
+      artworkIds: region.artworkIds,
+      ...(region.note ? { note: region.note } : {}),
+      by: region.by,
+    })),
+    unlabelled,
+    updatedAt: state.updatedAt
+      ? new Date(state.updatedAt).toISOString()
+      : null,
+    hint: 'Anything marked "theirs" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show.',
+  };
+};
+
+const getExhibitionTool = (): WebMcpTool => ({
+  name: 'get_exhibition',
+  title: 'Read the exhibition',
+  description:
+    'Read the show as it currently stands: the title, the statement, the works in hanging order, and the label on each one.\nEvery field says who wrote it. A field marked as the human’s is one they typed or accepted, and it is theirs — read it, work around it, and do not restate it back at them in your own words. Call this before write_labels so the labels you write are labels for *this* show.',
+  annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  execute: async () => ok(readExhibitionForAgent()),
+});
+
+const setExhibitionTool = (): WebMcpTool => ({
+  name: 'set_exhibition',
+  title: 'Write the exhibition',
+  description:
+    'Write the title, the statement, the hanging order, or any single label. Everything is optional and writes merge, so changing one label restates one label and leaves the rest of the show alone.\nThe statement is what the exhibition is about, in 60–100 words — short enough to read standing up. A label is one or two sentences about *that work in this show*: the same painting in a show about weather and a show about grief does not get the same label.\nThe human owns anything they have edited. A write onto a field they hold does not overwrite it — it is parked as a proposal they can accept with one click, and comes back to you under `deferred` with their wording, so you can revise around what they actually said. Do not keep re-sending the same proposal.',
+  // Not readOnly: this is the human's document and it is on their screen.
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: {
+        type: 'string',
+        maxLength: TITLE_MAX_CHARS,
+        description:
+          'The show’s title. A few words, the way a museum names a room — not a sentence describing what you did.',
+      },
+      statement: {
+        type: 'string',
+        maxLength: STATEMENT_MAX_CHARS,
+        description:
+          'What the exhibition is about, 60–100 words. This is the theme, and it is what the labels have to be written against. If the human has edited it, keep their words and build on them rather than replacing them.',
+      },
+      works: {
+        type: 'array',
+        maxItems: EXHIBITION_MAX_WORKS,
+        description:
+          'Works to label or to move. Naming a work with no label puts it in the show; the hang otherwise follows the board.',
+        items: {
+          type: 'object',
+          properties: {
+            artworkId: {
+              type: 'string',
+              description: 'Id from the board, a search, or get_view_context.',
+            },
+            label: {
+              type: 'string',
+              maxLength: LABEL_MAX_CHARS,
+              description:
+                'The wall label: one or two sentences, about this work in this show. Use write_labels to draft several at once.',
+            },
+            position: {
+              type: 'integer',
+              minimum: 0,
+              maximum: EXHIBITION_MAX_WORKS - 1,
+              description:
+                'Where it hangs, counting from zero. Omit unless the sequence itself is doing work.',
+            },
+          },
+          required: ['artworkId'],
+          additionalProperties: false,
+        },
+      },
+      removeArtworkIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: EXHIBITION_MAX_WORKS,
+        description:
+          'Take these off the wall. They stay on the board and in the collection; they are just not in the show.',
+      },
+    },
+    additionalProperties: false,
+  },
+  execute: async (input) =>
+    guard(async () => {
+      const raw = input as {
+        title?: unknown;
+        statement?: unknown;
+        works?: unknown;
+        removeArtworkIds?: unknown;
+      };
+      const patch: ExhibitionPatch = {};
+      if (typeof raw.title === 'string') patch.title = raw.title;
+      if (typeof raw.statement === 'string') patch.statement = raw.statement;
+
+      if (raw.works !== undefined) {
+        if (!Array.isArray(raw.works)) {
+          return fail('INVALID_INPUT', 'works must be an array.');
+        }
+        const works: ExhibitionWorkPatch[] = [];
+        for (const entry of raw.works) {
+          const artworkId = asString((entry as { artworkId?: unknown })?.artworkId);
+          if (!artworkId) {
+            return fail('INVALID_INPUT', 'Every entry in works needs an artworkId.');
+          }
+          const label = (entry as { label?: unknown })?.label;
+          const position = (entry as { position?: unknown })?.position;
+          works.push({
+            artworkId,
+            ...(typeof label === 'string' ? { label } : {}),
+            ...(typeof position === 'number' && Number.isFinite(position)
+              ? { position }
+              : {}),
+          });
+        }
+        patch.works = works;
+      }
+
+      const removeArtworkIds = readStringArray(raw.removeArtworkIds);
+      if (removeArtworkIds.length) patch.removeArtworkIds = removeArtworkIds;
+
+      if (
+        patch.title === undefined &&
+        patch.statement === undefined &&
+        !patch.works &&
+        !patch.removeArtworkIds
+      ) {
+        return fail(
+          'INVALID_INPUT',
+          'Nothing to write.',
+          'Pass at least one of title, statement, works, or removeArtworkIds.'
+        );
+      }
+
+      const result = writeExhibition(patch, { by: 'agent' });
+      const view = readExhibitionForAgent();
+      return ok({
+        ...view,
+        changed: result.changed,
+        ...(result.deferred.length
+          ? {
+              deferred: result.deferred,
+              deferredHint:
+                'These fields are the human’s. Your wording is on their screen as a dashed proposal they can accept; it is not on the wall. Take what they wrote as the brief and work with it.',
+            }
+          : {}),
+      });
+    }),
+});
+
+const annotateAtlasTool = (): WebMcpTool => ({
+  name: 'annotate_atlas',
+  title: 'Name the groupings on the atlas',
+  description:
+    'Name the clusters in the atlas view — "these four are the ones about leaving" — so the arrangement carries meaning rather than just position. Each region draws its works together under its name.\nPass every region you want in one call: this replaces the whole arrangement rather than merging, because half an arrangement is not one. An empty array dissolves them all. Works you leave out sit unlabelled below the named regions, which is the honest place for anything that has not found its group yet.\nOnly useful once the board is in atlas view; call set_view with "atlas" first, or the human will not see it.',
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      regions: {
+        type: 'array',
+        maxItems: 6,
+        description:
+          'Two to four regions reads; six is the most the atlas can carry legibly.',
+        items: {
+          type: 'object',
+          properties: {
+            label: {
+              type: 'string',
+              maxLength: REGION_LABEL_MAX_CHARS,
+              description:
+                'A few words naming what these share — "the ones about leaving", not "Group 1".',
+            },
+            artworkIds: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 1,
+              description:
+                'The works in this region. A work belongs to one region; a repeat is dropped from the later one.',
+            },
+            note: {
+              type: 'string',
+              maxLength: 200,
+              description:
+                'One optional line saying why, shown under the name.',
+            },
+          },
+          required: ['label', 'artworkIds'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['regions'],
+    additionalProperties: false,
+  },
+  execute: async (input) =>
+    guard(async () => {
+      const raw = (input as { regions?: unknown }).regions;
+      if (!Array.isArray(raw)) {
+        return fail('INVALID_INPUT', 'regions must be an array.');
+      }
+      const patches: RegionPatch[] = [];
+      for (const entry of raw) {
+        const label = asString((entry as { label?: unknown })?.label);
+        const artworkIds = readStringArray(
+          (entry as { artworkIds?: unknown })?.artworkIds
+        );
+        if (!label || !artworkIds.length) {
+          return fail(
+            'INVALID_INPUT',
+            'Every region needs a label and at least one artworkId.'
+          );
+        }
+        const note = asString((entry as { note?: unknown })?.note);
+        patches.push({ label, artworkIds, ...(note ? { note } : {}) });
+      }
+
+      const regions = setRegions(patches, { by: 'agent' });
+      const view = getWebMcpState().view;
+      return ok({
+        regions: regions.map((region) => ({
+          label: region.label,
+          artworkIds: region.artworkIds,
+          ...(region.note ? { note: region.note } : {}),
+        })),
+        ...(regions.length && view !== 'atlas'
+          ? {
+              notVisible:
+                'The board is not in atlas view, so these are not on screen. Call set_view with "atlas".',
+            }
+          : {}),
+      });
+    }),
+});
+
+// ---------------------------------------------------------------------------
 // Tier 2 — mutating tools, gated on visible in-page consent
 // ---------------------------------------------------------------------------
 
@@ -2387,6 +2702,9 @@ export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   searchByExemplarsTool(),
   redealTool(),
   compareArtworksTool(),
+  getExhibitionTool(),
+  setExhibitionTool(),
+  annotateAtlasTool(),
   createCollectionTool(),
   addToCollectionTool(),
   indexZipTool(),
@@ -2411,6 +2729,9 @@ export const PAILLETTE_TOOL_NAMES = [
   'search_by_exemplars',
   'redeal',
   'compare_artworks',
+  'get_exhibition',
+  'set_exhibition',
+  'annotate_atlas',
   'create_collection',
   'add_to_collection',
   'index_zip',

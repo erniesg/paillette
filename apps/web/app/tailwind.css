@@ -1104,6 +1104,111 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   text-align: left;
 }
 
+/* ---------------------------------------------------------------------------
+ * The exhibition — the same two inks, on prose
+ *
+ * Everything here follows one rule the rest of the board already follows: who
+ * wrote something is ink, never a caption. A statement the human typed carries
+ * a graphite rule; one the agent drafted carries the agent's. The dashed
+ * proposal is the provisional flag, in words — an alternative offered and not
+ * yet taken, drawn exactly as an unconfirmed mark on a card is.
+ *
+ * The fields are inputs with every input affordance taken off. No box, no
+ * border, no corner radius, no button: the text on the wall is the field, and
+ * the only thing that changes on focus is a rule appearing under it. A museum
+ * label does not sit in a form control.
+ * ------------------------------------------------------------------------- */
+
+.paillette-exhibition-field {
+  border-left: 1px solid var(--ink);
+  padding-left: 1rem;
+}
+
+.paillette-exhibition-field[data-provenance='human'] {
+  --ink: var(--ink-human);
+}
+
+.paillette-exhibition-field[data-provenance='agent'] {
+  --ink: var(--ink-agent);
+}
+
+/* Nothing written yet: a rule at the faintest weight that still reads. */
+.paillette-exhibition-field[data-provenance='none'] {
+  --ink: var(--ink-human-faint);
+}
+
+.paillette-editable {
+  color: var(--ink);
+  caret-color: var(--ink-human);
+}
+
+.paillette-editable::placeholder {
+  color: var(--ink-human-faint);
+  opacity: 1;
+}
+
+/* Focus is a rule under the words, in the human's own ink, because from the
+ * moment they touch it the field is theirs. */
+.paillette-editable:focus {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--ink-human);
+}
+
+.paillette-exhibition-title {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.paillette-exhibition-statement {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--ink-human-soft);
+}
+
+.paillette-exhibition-field[data-provenance='agent'] .paillette-exhibition-statement {
+  color: var(--ink-agent);
+}
+
+.paillette-label-text {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+/* The agent's unaccepted wording. Dashed, in its ink, clickable — the same
+ * gesture as confirming a dashed flag, and the same drawing of it. */
+.paillette-proposal-text {
+  border-left: 1px dashed var(--ink-agent);
+  padding-left: 1rem;
+  margin-left: -1rem;
+  color: var(--ink-agent);
+  cursor: pointer;
+}
+
+.paillette-proposal-text:hover,
+.paillette-proposal-text:focus-visible {
+  color: var(--ink-agent);
+  border-left-style: solid;
+}
+
+.paillette-proposal-decline {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.875rem;
+  color: var(--ink-human-faint);
+}
+
+.paillette-proposal-decline:hover {
+  color: var(--ink-human);
+}
+
+/* A label under a work sits inside the slide's mount, not on the ground. */
+.paillette-wall-label-slot {
+  border-top: 1px solid var(--lt-rule);
+}
+
 /*
  * Their compare overlay, made into a room.
  *
