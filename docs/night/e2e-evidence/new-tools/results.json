@@ -1,0 +1,112 @@
+[
+  {
+    "ok": true,
+    "what": "document.modelContext carries 25 tools",
+    "detail": "25 registered"
+  },
+  {
+    "ok": true,
+    "what": "all eight new tools are registered",
+    "detail": "flag_artworks, search_by_exemplars, redeal, compare_artworks, get_exhibition, set_exhibition, write_labels, annotate_atlas"
+  },
+  {
+    "ok": true,
+    "what": "the board loaded works for \"warm landscape\"",
+    "detail": "30 cards"
+  },
+  {
+    "ok": true,
+    "what": "flag_artworks accepts its own schema",
+    "detail": "{\"ok\":true,\"applied\":[{\"artworkId\":\"open-access-art:nga:184225\",\"work\":\"Environs de Cremieu — François-Auguste Ravier\",\"flag\":\"pick\",\"reason\":\"the agent proposing a pick, for the ink\"},{\"artworkId\":\"open-access-art:nga:195765\",\"work\":\"Flying Shadows — Kenyon Cox\",\"flag\":\"reject\",\"reason\":\"the agent "
+  },
+  {
+    "ok": true,
+    "what": "the agent flag renders in agent ink and dashed (provisional)",
+    "detail": "{\"id\":\"open-access-art:nga:184225\",\"flag\":\"pick\",\"by\":\"agent\",\"provisional\":\"true\"}"
+  },
+  {
+    "ok": true,
+    "what": "search_by_exemplars returns scored candidates",
+    "detail": "6 works back"
+  },
+  {
+    "ok": true,
+    "what": "search_by_exemplars did not throw",
+    "detail": ""
+  },
+  {
+    "ok": true,
+    "what": "redeal accepts its own schema",
+    "detail": "{\"ok\":true,\"kept\":[{\"id\":\"open-access-art:nga:127567\",\"work\":\"A Rocky Pond — Laurent de La Hyre\"}],\"removed\":[],\"added\":[{\"id\":\"open-access-art:nga:127566\",\"work\":\"A Rocky Pond — Laurent de La Hyre\"},{\"id\":\"open-access-art:nga:53731\",\"work\":\"Two Peasants Seated on a Hill — Allart van Everdingen\"},{\"id\":\"open-access-art:nga:53692\",\"work\":\"Horseman on a Bridge — Allart van Everdingen\"},{\"id\":\"open-a"
+  },
+  {
+    "ok": true,
+    "what": "redeal puts a deal board on the table",
+    "detail": ""
+  },
+  {
+    "ok": true,
+    "what": "the human pick survives an agent-driven redeal",
+    "detail": "pick open-access-art:nga:127567"
+  },
+  {
+    "ok": true,
+    "what": "the pick holds the same pixels board-to-board",
+    "detail": "{\"x\":220,\"y\":36} -> {\"x\":220,\"y\":36}"
+  },
+  {
+    "ok": true,
+    "what": "compare_artworks accepts its own schema",
+    "detail": "{\"ok\":true,\"comparing\":[{\"id\":\"open-access-art:nga:127567\",\"title\":\"A Rocky Pond\",\"artist\":\"Laurent de La Hyre\",\"year\":1640,\"dateText\":\"1640\",\"medium\":\"etching on laid paper\",\"classification\":\"Print\",\"similarity\":0.652,\"palette\":[\"#EBD8BC\",\"#907F6A\",\"#695949\",\"#B9A68D\"],\"thumbnailUrl\":\"https://api.n"
+  },
+  {
+    "ok": true,
+    "what": "the two-up renders",
+    "detail": "{\"box\":{\"top\":0,\"left\":0,\"w\":1440,\"h\":1000},\"portalled\":true,\"question\":\"Which one belongs above a sofa?\",\"works\":2}"
+  },
+  {
+    "ok": true,
+    "what": "the two-up is on screen, not below the fold",
+    "detail": "{\"top\":0,\"left\":0,\"w\":1440,\"h\":1000}"
+  },
+  {
+    "ok": true,
+    "what": "set_exhibition accepts title, statement and works",
+    "detail": "{\"ok\":true,\"title\":{\"text\":\"Leaving\",\"by\":\"agent\"},\"statement\":{\"text\":\"These works are held together by departure rather than by weather. Each one keeps a shoreline, a road or a threshold in view, and each one puts the figure at the edge of it rather than at its centre. Hung in sequence they read a"
+  },
+  {
+    "ok": true,
+    "what": "get_exhibition reads back what set_exhibition wrote",
+    "detail": "{\"ok\":true,\"title\":{\"text\":\"Leaving\",\"by\":\"agent\"},\"statement\":{\"text\":\"These works are held together by departure rather than by weather. Each one keeps a shoreline, a road or a threshold in view, and each one puts the figure at the edge of it rather than at its centre. Hung in sequence they read as a single movement outward: the light thins, the horizon opens, and what is being left behind falls"
+  },
+  {
+    "ok": true,
+    "what": "get_exhibition reports per-field provenance",
+    "detail": ""
+  },
+  {
+    "ok": true,
+    "what": "write_labels skipped (--no-model)",
+    "detail": "costs one model call against the 40/hour budget"
+  },
+  {
+    "ok": true,
+    "what": "the atlas view is reachable when no board is dealt",
+    "detail": "dealBoardPresent=false"
+  },
+  {
+    "ok": true,
+    "what": "annotate_atlas accepts named regions",
+    "detail": "{\"ok\":true,\"regions\":[{\"label\":\"the ones about leaving\",\"artworkIds\":[\"open-access-art:nga:184225\",\"open-access-art:nga:195765\",\"open-access-art:nga:127567\"],\"note\":\"edges and thresholds\"},{\"label\":\"the ones that stay\",\"artworkIds\":[\"open-access-art:nga:198119\",\"open-access-art:nga:139234\",\"open-access-art:nga:69343\"]}]}"
+  },
+  {
+    "ok": true,
+    "what": "the named regions are drawn on the page, works grouped under their name",
+    "detail": "{\"container\":true,\"names\":[\"the ones about leaving\",\"the ones that stay\"],\"clusters\":3}"
+  },
+  {
+    "ok": true,
+    "what": "no uncaught page errors during the run",
+    "detail": ""
+  }
+]
