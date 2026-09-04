@@ -28,33 +28,39 @@ watching rather than a paragraph of claiming.
 ```sh
 pnpm --filter web dev --port 5222 --strictPort            # one shell
 
+node apps/web/scripts/verify-activity-log.mjs   http://localhost:5222   # 53 checks
 node apps/web/scripts/capture-activity-shots.mjs http://localhost:5222 \
-     docs/night/shots/activity                            # 32 checks + 29 PNGs
+     docs/night/shots/activity                                          # 32 checks + 30 PNGs
 ```
 
-The capture script is a verifier as well as a camera. It drives the real
-`/nga/search` with the real tools registered on `document.modelContext`, calling
-them the way a host does through `window.__paillette_webmcp.call`, and exits
-non-zero on any failure. **32 checks, all passed.**
+Both drive the real `/nga/search` with the real tools registered on
+`document.modelContext`, calling them the way a host does, and exit non-zero on
+any failure. `verify-activity-log` is the unhappy paths; `capture-activity-shots`
+is a camera that also checks what it is photographing.
 
-The cross-lane harnesses, all run against this branch on the same server:
+**Every harness on this branch, run three consecutive times:**
 
-| Harness | Owner | Result on this branch |
-| --- | --- | --- |
-| `voice-loop-verify.mjs` | voice | **33 checks, 0 failures** |
-| `verify-plain-browser.mjs` | shared-state | **all checks passed** |
-| `verify-culling-loop.mjs` | shared-state | **all checks passed** |
-| `verify-failure-paths.mjs` | shared-state | **all checks passed** |
-| `verify-agentless-loop.mjs` | shared-state | **all checks passed** |
-| `integration-walkthrough.mjs` | integration | **32 passed, 1 failed** |
+| Harness | Owner | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- | --- |
+| `verify-activity-log.mjs` | this lane | **53/53** | **53/53** | **53/53** |
+| `capture-activity-shots.mjs` | this lane | **32/32** | **32/32** | **32/32** |
+| `voice-loop-verify.mjs` | voice | **0 failures** | **0 failures** | **0 failures** |
+| `verify-plain-browser.mjs` | shared-state | **pass** | **pass** | **pass** |
+| `verify-culling-loop.mjs` | shared-state | **pass** | **pass** | **pass** |
+| `verify-failure-paths.mjs` | shared-state | **pass** | **pass** | **pass** |
+| `verify-agentless-loop.mjs` | shared-state | **pass** | **pass** | **pass** |
+| `integration-walkthrough.mjs` | integration | **32 pass / 1 fail** | **32 / 1** | **32 / 1** |
 
-That one failure — *"each pick is in the same place on screen as before"* — is
-**pre-existing and not this lane's**. It was reproduced on `51f389d`, the commit
-this branch starts from, by checking `apps/web/app` out at that commit and
-re-running the same script: identical failure, identical numbers. It is the
-known gap the visuals lane recorded, that the twelve-card `DealBoard` is not on
-the product grid, so a pick keeps its index in the board order but not its
-coordinates in the masonry layout.
+That one failure is the same one every time — *"each pick is in the same place
+on screen as before"* — and it is **pre-existing and not this lane's**. It was
+reproduced on `51f389d`, the commit this branch starts from, by checking
+`apps/web/app` out at that commit and re-running the same script: identical
+failure, identical coordinates. It is the gap the visuals lane recorded, that
+the twelve-card `DealBoard` is not on the product grid, so a pick keeps its
+index in the board order but not its position in the masonry layout.
+
+Nothing in this lane is flaky across those runs. Every number above is the same
+on all three.
 
 ---
 
@@ -149,11 +155,22 @@ Collapsed by default. Nothing the agent does opens it.
   something is in flight.
 - **Errors** carry the failure rule and the message the tool actually wrote,
   including refusals that were returned rather than thrown.
-- **Click a row** for the full arguments and the captured result, pretty-printed.
-  This is the part a judge should be shown.
+- **Click a row** for the full arguments, an arrow, and the captured result.
+  This is the part a judge should be shown. There are no field labels on those
+  two blocks: a wall label gives artist, title, date and medium and never names
+  the fields, because position says which is which, and a REPL prints what went
+  in, an arrow, and what came back. Same principle, one character.
 - A gap of more than ten seconds between calls draws a heavier rule: one
   operation ended and another began. A mark, not a heading.
-- 120 entries of session history, which survives collapsing and reopening.
+- 120 entries of session history, which survives collapsing and reopening and a
+  client-side navigation. When a session runs past that, the top of the log says
+  **`… 15 earlier`** — a count, because a truncated list that says nothing reads
+  as a complete one.
+- **Reaching for anything else closes it.** The log is opaque and it sits over
+  the lower-left of the board, which is where the cards are. A pointer going
+  down outside it closes it, in the capture phase and preventing nothing, so the
+  click still lands where it was aimed — no gesture is spent dismissing, and
+  there is one fewer control to find. A pending confirmation is exempt.
 
 **Before anything has run**, the log shows the tool surface instead of an empty
 box explaining that it is empty: `document.modelContext · 21` and the names,
@@ -211,6 +228,78 @@ Each line is asserted by `capture-activity-shots.mjs` unless marked.
 - On a browser with **no WebMCP at all** there is no glyph, no panel, nothing —
   `.pa-activity` does not exist in the document.
 
+### The unhappy paths, driven in a browser
+
+All from `verify-activity-log.mjs`. **53 checks, three consecutive clean runs.**
+
+- **A slow connection.** A call held open for nine seconds: the glyph is still
+  animating four seconds in rather than having given up, the row shows `···` and
+  no duration while it is in flight, and when it lands the duration it reports
+  is **9.0s** — the real one, not a rounding of zero.
+- **Cancellation is not failure.** An aborted call rests the glyph at **idle**,
+  is logged with status `aborted`, and is **not** drawn in the failure ink.
+- **Ids that no longer resolve**, across six tools — `show_artwork`,
+  `describe_artwork`, `search_by_exemplars`, `flag_artworks`,
+  `compare_artworks`, `lookup_artwork`. Every one renders as a failure carrying
+  **the message that tool actually wrote**, asserted by matching the row text
+  against the error the call returned, not against a fixed string. So the log
+  shows *"No artwork "ghost-1" has been loaded by this page."* rather than
+  *"error"*.
+- **`redeal` with nothing picked** refuses with `NO_EXEMPLARS` and is drawn as a
+  failure rather than as a successful call that did nothing.
+- **A backend answering 503** reaches the log as a readable failure, and the
+  glyph rests as one.
+- **Three calls in flight at once**: the glyph counts three, plays the newest
+  one's motion, three rows are marked running simultaneously, and none is left
+  marked running when they settle.
+- **A 60-work result** is captured capped at 2,535 characters rather than pasted
+  whole.
+- **A client-side navigation** — asserted to be client-side and not a reload,
+  via a marker on `window` — leaves the glyph mounted and the session intact,
+  14 rows before and 14 after.
+- **130 calls into a 120-call buffer**: exactly 120 rows, `… 24 earlier` at the
+  top, and the newest call still the last row.
+- **Reaching for a card beside the open log** closes the log *and* flags the
+  card — the click is not spent on the dismissal.
+- **Keyboard**: Enter on the focused glyph opens the log, Escape closes it.
+- **No uncaught page errors** in any of it.
+
+### A host shaped like Chrome's
+
+**Read the caveat first.** The Chromium on this VM is **141**, and
+`await LanguageModel` aside, it exposes **no `document.modelContext` at all** —
+checked directly, with and without `--enable-features=WebMCPTesting`. So nothing
+in this lane has met a real WebMCP host, and nothing here should be described as
+if it had.
+
+What *can* be said: the debug harness is not spec-shaped in the one way that
+matters. It hands the page's own tool objects back out of `getTools()`, `execute`
+included. `docs/HANDOFF.md` records that a real host does not — Chrome 152
+returns **descriptors**, and running one means
+`executeTool(toolObject, JSON.stringify(args))`, an object and a JSON string.
+
+So `verify-activity-log.mjs` installs a host with exactly that contract before
+any of the page's script runs, which is where a real one would be, and asserts:
+
+- the page registers **21 tools** with it rather than falling back to a stub;
+- `getTools()` returns descriptors and **none of them carries `execute`**;
+- `executeTool(descriptor, '{"query":"driven by the host"}')` runs the tool;
+- **the log records that call, with the arguments the host sent**;
+- passing a *name* instead of the object fails with *"not of type
+  RegisteredTool"*, the way Chrome fails.
+
+That is a simulation of the documented contract, not Chrome. It closes the gap
+as far as this machine allows and no further.
+
+### Text first
+
+No part of this surface touches speech. `grep -niE
+"speech|speak|recogni[sz]|microphone|utterance|voice"` across
+`activity-glyph.ts`, `activity-format.ts`, `activity-glyph.tsx`,
+`agent-activity-panel.tsx`, `summarise.ts` and both capture scripts returns
+**nothing**. Every check in this report was driven by typed calls and clicks;
+none of it degrades if `SpeechRecognition` is absent, because none of it looks.
+
 ### Under `prefers-reduced-motion: reduce`
 
 - For `scan`, `look` and `deal`: the mark **does not change over 1.2 seconds**,
@@ -221,8 +310,8 @@ Each line is asserted by `capture-activity-shots.mjs` unless marked.
 
 `app/lib/webmcp/__tests__/activity-glyph.test.ts` (19),
 `activity-format.test.ts` (14), `summarise.test.ts` (9),
-`activity-panel-state.test.ts` (5),
-`app/components/webmcp/__tests__/agent-activity-panel.test.tsx` (17) — **64 new
+`activity-panel-state.test.ts` (7),
+`app/components/webmcp/__tests__/agent-activity-panel.test.tsx` (21) — **70 new
 tests**.
 
 - Every one of the 21 registered tools maps to a kind.
@@ -235,8 +324,14 @@ tests**.
   by advancing two seconds after settle and finding the text unchanged.
 - Searching and describing share **no frame at all** on the rendered component,
   not only in the table.
-- History survives collapse; Escape closes; a turn of three calls does not open
-  anything.
+- History survives collapse; Escape closes; a pointer down outside closes but a
+  pointer down inside does not; a pending confirmation cannot be dismissed by
+  clicking away; a turn of three calls does not open anything.
+- 130 calls into a 120-call buffer leaves 120 rows and `… 10 earlier`, and
+  nothing is dropped until the buffer is genuinely full.
+- The expanded row carries a `→` marked `aria-hidden`, and the words
+  "arguments" and "result" appear in the accessible tree but **not** in anything
+  painted.
 - `previewJson` survives a cycle, a BigInt, a function, a 9,000-character base64
   string and a 40-element array, and caps the whole payload at 2,500 characters.
 
@@ -246,7 +341,7 @@ tests**.
 
 | Command | Baseline at `51f389d` | This branch |
 | --- | --- | --- |
-| `pnpm --filter web test` | 80 files · **912 passed** · 1 file failed | 84 files · **972 passed** · 1 file failed |
+| `pnpm --filter web test` | 80 files · **912 passed** · 1 file failed | 84 files · **978 passed** · 1 file failed |
 | `pnpm --filter web typecheck` | **1 error** | **1 error** |
 | `npx eslint` over the changed files | — | clean |
 
@@ -284,6 +379,9 @@ the same reason, and it is what breaks both the typecheck and
 - **A live elapsed timer on running rows.** The glyph already says something is
   in flight; a second clock is a second thing to read. Running rows show `···`.
 - **A tooltip on the glyph.** §5b, explicitly.
+- **The words `arguments` and `result`** above the two JSON blocks in an
+  expanded row. They were a legend for something position already says. Replaced
+  with one `→`; the words survive only in the accessible tree.
 - **Prose anywhere.** No sentence in this surface narrates the mechanism. The
   only words that ship are the tool names, the JSON, the tools' own summaries
   and error messages, `arguments` / `result` as field labels, and
@@ -302,14 +400,15 @@ the same reason, and it is what breaks both the typecheck and
 
 ## 8. What is still wrong
 
-1. **The glyph is a fixed overlay in the lower-left corner.** It is 69×33 px
-   including its hit padding — measured, not estimated — but it is still on top
-   of the board rather than in the layout. The open log is up to
-   `min(460px, 100vw-24px)` wide and `min(58vh, 520px)` tall and does cover the
-   left of the board while it is open. That is now only ever the human's choice,
-   or a consent gate.
-2. **The log's history is capped at 120 calls.** Raised from 40, but a long
-   rehearsal will still roll off the top. Nothing warns you when it does.
+1. **Cards underneath the open log cannot be clicked.** That is true of every
+   overlay ever drawn, and the log now closes the moment the pointer goes down
+   anywhere outside it — so a click *beside* it is never lost. But while it is
+   open it is opaque, up to `min(460px, 100vw-24px)` wide and `min(58vh, 520px)`
+   tall, and the cards it covers are unreachable until it closes. The glyph
+   itself is 69×33 px including hit padding, measured.
+2. **The log's history is capped at 120 calls.** A long rehearsal still rolls
+   off the top. It now says how many it dropped, so the record is honest about
+   being partial — but the dropped calls are gone, not paged.
 3. **`flag_artworks` and `get_view_context` have never been photographed
    animating.** Neither touches the network, so both settle in about a
    millisecond and cannot be held open — their motion is on the contact sheet,
@@ -338,20 +437,26 @@ the same reason, and it is what breaks both the typecheck and
    *motion* only exists for a slow connection.
 9. **Nothing persists.** Refresh and the session's log is gone, like every other
    piece of state on this page.
-10. **The log is complete only where `execute` is ours to wrap.** Instrumentation
-    lives in `registry.instrument`, which wraps the `execute` of every tool
-    handed to the host — so anything that runs that function is logged. Checked
-    rather than assumed: reproducing exactly what `agent-prompt.tsx`'s own local
-    `callTool` does (`getTools()`, then `tool.execute`) put a row in the log, so
-    **in-page prompt-bar turns are logged** under `?webmcp-debug`. An earlier
-    draft of this report said the opposite; it was wrong.
+10. **No tool call has ever reached this log from a real WebMCP host**, because
+    there is no real host on this machine to try. The Chromium available here is
+    **141** and exposes no `document.modelContext`, with or without
+    `--enable-features=WebMCPTesting` — checked directly, not inferred from the
+    version number.
 
-    What is genuinely untested is a **real** WebMCP host. On Chrome 152
-    `getTools()` returns descriptors with no `execute`, per `docs/HANDOFF.md`, so
-    the host must call `executeTool` — which invokes the instrumented function we
-    registered, and should therefore log. Should, not does: **no tool call has
-    ever been observed reaching this log from a real host.** Everything in §4 was
-    driven through the debug harness.
+    Two things narrow the gap and neither closes it. Reproducing exactly what
+    `agent-prompt.tsx`'s own local `callTool` does put a row in the log, so
+    in-page prompt-bar turns are logged. And a host implementing Chrome 152's
+    documented contract — descriptors out of `getTools()`,
+    `executeTool(object, jsonString)` in — also logs, with the arguments it sent.
+    But that host is one this lane wrote from `docs/HANDOFF.md`. **Someone with
+    the Chrome flag should run one tool and look.** It is the only claim in the
+    lane resting on the documentation rather than on the browser.
+11. **`agent-prompt.tsx` cannot reach a real host at all**, per the voice lane:
+    its local `callTool` calls `tool.execute` on whatever `getTools()` returns,
+    and a real host returns descriptors with no `execute`. That is pre-existing,
+    is not this lane's file, and is a bug in the prompt bar rather than in the
+    log — but if it bites, the in-page agent stops working before the log has
+    anything to miss.
 
 ---
 
@@ -367,7 +472,8 @@ apps/web/app/lib/webmcp/summarise.ts                  the culling tools' results
 apps/web/app/components/webmcp/webmcp-bridge.tsx      capture the payload; refusals are failures
 apps/web/app/lib/webmcp/__tests__/{activity-glyph,activity-format,summarise,activity-panel-state}.test.ts
 apps/web/app/components/webmcp/__tests__/agent-activity-panel.test.tsx
-apps/web/scripts/capture-activity-shots.mjs           new — 21 checks, 29 PNGs
+apps/web/scripts/capture-activity-shots.mjs           new — 32 checks, 30 PNGs
+apps/web/scripts/verify-activity-log.mjs              new — 53 checks, the unhappy paths
 apps/web/scripts/{voice-loop-verify,integration-walkthrough}.mjs   the panel control they clicked is gone
 ```
 
@@ -380,9 +486,10 @@ receives, so no tool semantics moved.
 
 ## 10. For whoever integrates
 
-- **`panelDismissed` is gone from `WebMcpState`.** It existed only to fight the
-  panel reopening itself, and nothing reopens itself now. `setPanelOpen` is a
-  plain setter.
+- **`panelDismissed` is gone from `WebMcpState`**, and `activityDropped` is new.
+  The first existed only to fight the panel reopening itself, and nothing
+  reopens itself now; `setPanelOpen` is a plain setter. The second counts what
+  rolled off the end of the bounded activity buffer.
 - **`settleActivity` takes an optional fourth argument.** Existing three-argument
   calls behave exactly as before.
 - **`ActivityStatus` is unchanged.** A returned `{ok:false}` still settles as
@@ -398,8 +505,34 @@ receives, so no tool semantics moved.
   per tool call, with the payload. They answer different questions and the brief
   asks for both.
 - **The one thing worth doing on a machine with the Chrome flag** is §8 item 10:
-  drive a tool from a real host and confirm the row appears. Everything in this
-  report was driven through `?webmcp-debug`. The instrumentation is on the
-  `execute` we hand the host, so it should hold — but "should" is not what the
-  ground rules ask for, and this is the only claim in the lane that rests on
-  reading the code rather than watching it.
+  open `/nga/search`, run one tool from the host, open the glyph, and check the
+  row is there. Two minutes. It is the only claim in the lane resting on
+  `docs/HANDOFF.md` rather than on a browser.
+- **Run `node apps/web/scripts/verify-activity-log.mjs` after merging.** It is
+  the check that catches the log and the board fighting over the same corner of
+  the screen, which is how the panel this replaced went wrong in the first
+  place, and jsdom cannot see it.
+
+---
+
+## 11. For the submission lane
+
+Four sentences that are safe to write, each backed by something in §4:
+
+- *The agent's presence on the page is a five-character mark in the corner,
+  quiet when nothing is happening, and the way it moves says which kind of tool
+  is running — searching, describing, dealing, weighing.* Backed by the contact
+  sheet and by 53 browser checks.
+- *Click it and it opens on the live tool log: every call in order, with the JSON
+  that went in, the JSON that came back, and how long it took.* Backed by
+  `08-log-row-expanded.png` and the tests.
+- *That log is how the WebMCP implementation is shown rather than described —
+  the tools are registered on `document.modelContext` and called against the page
+  in front of you.* Backed by the registered-tool listing and the spec-shaped
+  host check, **with the caveat in §8 item 10**.
+- *Nothing about it depends on speech, and it degrades to nothing at all on a
+  browser without WebMCP.* Backed by the grep in §4 and by `12-no-host.png`.
+
+**Do not write** that this has been seen working in Chrome with the WebMCP flag.
+It has not. **Do not write** that the deal animation appears on the product
+grid — that is the visuals lane's, and it does not.
