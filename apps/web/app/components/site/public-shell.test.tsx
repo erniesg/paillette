@@ -69,3 +69,23 @@ describe('PublicSiteHeader', () => {
     expect(login.parentElement).toHaveClass('gap-1', 'sm:gap-2');
   });
 });
+
+describe('PublicSiteHeader — while a board is dealt', () => {
+  it('stands the account chrome down but keeps the way back', () => {
+    // Five of the 48 chrome words on a dealt board were an invitation to leave,
+    // sitting directly above the one image the submission is made of.
+    render(
+      <PublicSiteHeader
+        active="search"
+        quiet
+        onLogin={vi.fn()}
+        onSignup={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
+    expect(screen.queryByText('About')).toBeNull();
+    expect(screen.getByLabelText('Paillette search')).toBeInTheDocument();
+  });
+});

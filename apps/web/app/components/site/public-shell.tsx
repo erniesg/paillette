@@ -19,6 +19,20 @@ type PublicSiteHeaderProps = {
   onLogoClick?: () => void;
   onLogin?: () => void;
   onSignup?: () => void;
+  /**
+   * A board is dealt: the account chrome stands down.
+   *
+   * Measured on a dealt board at 1440×900, the visible chrome came to 48 words
+   * excluding the artwork data and the agent's sentence, and five of them —
+   * About, Log in, Create account — were an invitation to leave, sitting above
+   * the one image the submission is made of. §7 says the works are the only
+   * saturated thing on screen and §5b says prefer a mark to a word.
+   *
+   * The logo stays: it is the way back, it is a mark rather than a word, and a
+   * page with no way out is a worse answer than a page with five extra words.
+   * The state ends the moment the flags are cleared.
+   */
+  quiet?: boolean;
 };
 
 export function PublicSiteHeader({
@@ -28,6 +42,7 @@ export function PublicSiteHeader({
   onLogoClick,
   onLogin,
   onSignup,
+  quiet = false,
 }: PublicSiteHeaderProps) {
   const canShowAuthActions = Boolean(onLogin && onSignup);
 
@@ -47,21 +62,23 @@ export function PublicSiteHeader({
               className="text-base leading-none sm:text-xl [&>span:last-child]:hidden sm:[&>span:last-child]:inline"
             />
           </Link>
-          <Link
-            to="/about"
-            aria-current={active === 'about' ? 'page' : undefined}
-            className={`inline-flex min-h-11 min-w-11 items-center rounded-sm px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0e] ${
-              active === 'about'
-                ? 'text-white/75'
-                : 'text-white/55 hover:text-white'
-            }`}
-          >
-            About
-          </Link>
+          {!quiet && (
+            <Link
+              to="/about"
+              aria-current={active === 'about' ? 'page' : undefined}
+              className={`inline-flex min-h-11 min-w-11 items-center rounded-sm px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0e] ${
+                active === 'about'
+                  ? 'text-white/75'
+                  : 'text-white/55 hover:text-white'
+              }`}
+            >
+              About
+            </Link>
+          )}
         </div>
 
         <nav className="flex items-center gap-1 sm:gap-2" aria-label="Primary">
-          {isAuthenticated ? (
+          {quiet ? null : isAuthenticated ? (
             <UserMenu />
           ) : canShowAuthActions ? (
             <>

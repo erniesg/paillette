@@ -2596,6 +2596,10 @@ export default function SearchPage() {
         onLogoClick={resetSearchHome}
         onLogin={() => void login({ returnTo: getCurrentReturnTo() })}
         onSignup={() => void signup({ returnTo: getCurrentReturnTo() })}
+        /* The header is a sibling of `main`, so it is outside the
+           `data-board-mode` subtree the rest of the fold hangs off. Passed
+           rather than reached for with CSS. */
+        quiet={boardIsDealt}
       />
 
       <main
@@ -3239,7 +3243,25 @@ export default function SearchPage() {
                       Palette order: {selectedPalette?.name || sortColours[0]}
                     </span>
                   )}
-                  <div className="flex flex-wrap items-center gap-2">
+                  {/*
+                    Sort, View and Settings fold away with the rest of the
+                    search form once a deal is on the table.
+
+                    Two reasons, and the second is not cosmetic. The chrome
+                    census on a dealt board was 48 visible words excluding the
+                    artwork data and the note, 23 of them in this one band
+                    between the human's bar and the agent's sentence — against
+                    §7's two inks and §5b's whole argument. And the View row was
+                    offering Masonry, Salon, Atlas and Table over a board where
+                    choosing any of them destroys the deal: a live control whose
+                    only effect is to throw away the human's work.
+
+                    Sorting a hang is meaningless anyway — the order is the
+                    curation — so nothing here is a capability being taken away.
+                    The search field stays, and clearing the flags brings the
+                    rail straight back.
+                  */}
+                  <div className="lt-board-fold flex flex-wrap items-center gap-2">
                     <div className="lt-rail">
                       <span className="lt-rail-legend lt-catalogue">Sort</span>
                       <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
