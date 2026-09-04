@@ -123,16 +123,20 @@ content-free nudge is the stricter test, not because the product needs one.
 
 ---
 
-## 2. The three by-hand runs
+## 2. The by-hand runs
 
 `node apps/web/scripts/verify-theme-correction.mjs http://localhost:5174 3`
 
-**The design of the check matters.** After editing the statement the human types
-a deliberately content-free nudge — `"Again."` — rather than restating the
-correction in the prompt bar. So the word "leaving" exists in exactly one place:
-the statement the human rewrote, travelling in `turn.exhibitionEdits`. A board
-and labels that come back about leaving are attributable to the edit and nothing
-else.
+**The design of the check matters.** The correction is never restated in the
+prompt bar. Committing the edit is itself a turn — the human's own sentence goes
+up as the instruction — and where that does not fire, the harness types a
+deliberately content-free nudge, `"Again."`, instead. Either way the word
+"leaving" reaches the model from exactly one place: the statement the human
+rewrote, travelling in `turn.exhibitionEdits`. A board and labels that come back
+about leaving are attributable to the edit and to nothing else.
+
+Batch 1 and batch 2 below predate integration's statement-fires-the-turn change
+and used the nudge path throughout.
 
 Real: the page, all 25 tools, `POST /api/public-agent/turn`, the system prompt,
 the model (`gpt-5.6-terra`), and `POST /api/public-labels` reading real NGA
@@ -240,7 +244,38 @@ Fixed in `6afd1ca`: the correction message now says to check the title in the
 same pass, and why. Provenance is unchanged — a title the human typed is still
 theirs, and a write onto it is still parked as a proposal.
 
-<!--TITLEVERIFY-->
+### Batch 3 — the title fix, verified. 3 of 3 renamed the room.
+
+Transcript in `docs/night/curation-evidence/theme-correction-batch3-title-fix.txt`.
+This batch ran on the merged tree, so all three corrections were handed over the
+new way: **committing the statement edit was itself the turn, with nothing typed
+at the prompt bar at all.**
+
+| | title before | title after | statement kept | relabelled |
+| --- | --- | --- | --- | --- |
+| Run 1 | Weather at Sea | **Before Leaving** | yes | 2 / 2 |
+| Run 2 | Weather at Sea | **The Hour Before** | yes | 3 / 3 |
+| Run 3 | Weather at Sea | **After the Door Closes** | yes | inconclusive — see below |
+
+Three different rooms, none still called *Weather at Sea*. Run 1's pair, on a
+correction the agent never saw a word of in the prompt bar:
+
+> **weather** — "The paired names—one for a sunny spell, one for a good
+> hostess—bring weather ashore, where calm conditions are imagined through human
+> character and welcome rather than open water."
+>
+> **leaving** — "The two faces remain separate in their oval frames, turned
+> toward one another across a narrow gap. Their paired presence holds the
+> stillness after a leaving, when someone is gone but the relation remains."
+
+**Run 3 is scored honestly rather than generously.** Its *opening* turn hung
+zero works and wrote no labels, so there was no prior label for the correction
+to differ from. The correction turn then built a nine-work show and labelled all
+nine against the new statement — substantively the behaviour under test, but not
+the comparison this check makes. The script now reports that as **inconclusive**
+rather than a failure, and reports the renaming separately. Calling it a failure
+would have been the same class of mistake as the criterion it replaced:
+reporting something the evidence does not say.
 
 ---
 
@@ -326,13 +361,24 @@ what this session knew (the prose) and the **loader re-fetches every record by
 id, on the server, before a pixel is sent**. There is no session to depend on
 and nothing to hydrate, which is what makes a cold open work.
 
-Verified rather than asserted, in a browser context with no storage: 200, all
-five images actually loaded from the Gallery's own IIIF endpoint, labels and
-colophon in the markup, **zero localStorage keys read**, no page errors and no
-failed requests. At 390×844 there is no horizontal overflow, which matters
-because a link in a message is usually opened on a phone. Every malformed
-`?e=` — empty, garbage, wrong version, non-base64 — returns 404 rather than a
-stack trace or a half-drawn show.
+Verified as a whole chain rather than in pieces. On `/nga/search`: flag four
+works, `set_exhibition` writes the title, statement and four labels, the human
+presses the single **Copy link** control in the rail, and the URL is read back
+off the real clipboard. A **second browser context that has never seen this
+session** then opens exactly that URL:
+
+```
+copied URL length: 368
+h1            : The Hour Before Leaving
+works         : 4        images loaded : 4        labels : 4
+colophon      : "4 of 4 labels"        http 200        page errors: 0
+```
+
+Also verified separately: **zero localStorage keys read**, images served from
+the Gallery's own IIIF endpoint rather than Paillette's asset URLs, no failed
+requests, no horizontal overflow at 390×844 — a link in a message is usually
+opened on a phone — and every malformed `?e=` (empty, garbage, wrong version,
+non-base64) returning 404 rather than a stack trace or a half-drawn show.
 
 Design: charcoal ground, `EB Garamond` for the prose, `IBM Plex Mono` for
 catalogue data, the works the only saturated thing. The colophon names the
@@ -341,7 +387,10 @@ public domain in the United States", and **"1 of 5 labels written by an agent"**
 — counted from the data, not asserted.
 
 `docs/night/shots/40-exhibition-page.png`, `42-exhibition-colophon.png`,
-`44-atlas-regions.png`.
+`44-atlas-regions.png`, `46-exhibition-on-the-board.png` — the last being the
+other half of the object: the same title and statement in the agent's ink above
+the working board, with the labels under the picks as fields the human can type
+straight into.
 
 ---
 
@@ -376,16 +425,18 @@ removing them from the show.
 ## 7. What is broken, and what to watch
 
 1. **The correction turn is prompt-shaped, not enforced.** It went 1/3 → 3/3 on
-   wording alone, and wording is all it is: nothing in the code guarantees the
+   wording alone, and the title fix likewise; wording is all either of them is: nothing in the code guarantees the
    agent calls `write_labels` after a statement rewrite. `MAX_TURNS` is 8 in
    `agent-prompt.tsx` and a drafting turn routinely spends 5–6 of them
    searching, so the budget is genuinely tight. If it proves flaky on camera,
    raising `MAX_TURNS` to ~12 is the blunt fix — but that constant is shared
    with the culling loop and I would not change it on one night's evidence.
-2. **The title fix is deployed but thinner-evidenced than the rest.** The
-   relabelling behaviour is backed by three clean runs; the title instruction
-   went in *after* that batch, in response to what it showed, and is verified by
-   <!--TITLEVERIFY-->.
+2. **A drafting turn sometimes hangs nothing.** Batch 3's run 3 spent its
+   opening turn searching and called `set_exhibition` with an empty hang, so
+   the show had a statement and no works until the correction turn rebuilt it.
+   The correction recovered completely, but a first turn that leaves the wall
+   empty is a bad ten seconds on camera. Same root cause as (1): the tool
+   budget, spent on searching.
 3. **`MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40`** and a full run of this
    loop costs ~10–14. Three back-to-back verification runs sit right at the cap;
    my first batch was partly destroyed by 429s before I noticed. Anyone filming

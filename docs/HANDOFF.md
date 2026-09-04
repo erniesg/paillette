@@ -35,7 +35,7 @@ as fact without checking it first.
 
 | Claim | Value | Where it came from |
 | --- | --- | --- |
-| Tools on `document.modelContext` | **17** | count `PAILLETTE_TOOL_NAMES` in `apps/web/app/lib/webmcp/tools.ts` |
+| Tools on `document.modelContext` | **25** | count `PAILLETTE_TOOL_NAMES` in `apps/web/app/lib/webmcp/tools.ts` |
 | NGA open-access corpus | **63,253** works | paged `/api/public-search/nga/browse` to the last record |
 | Demo zip | 100 works, CC0, ships `metadata.csv` | `apps/web/public/samples/` |
 | Goes searchable | ~10s — **at 1 image of 100** | never say "searchable in 10 seconds"; say "as it loads" |
@@ -70,7 +70,7 @@ as fact without checking it first.
 | **Agentic by default** | the "try several interpretations, merge them, write a note, pick a layout" instruction lives in that route's SYSTEM PROMPT, not in what the user types. A bare *"something warm for above the sofa"* is enough. |
 | **Speech in** | `webkitSpeechRecognition` in `agent-prompt.tsx` |
 | **Speech out** | `speak-button.tsx`, `speechSynthesis`, over the caption `describe_artwork` persists |
-| **`set_view`** (17th tool) | the agent picks masonry / salon / atlas / table; layout was React state it could not reach |
+| **`set_view`** | the agent picks masonry / salon / atlas / table; layout was React state it could not reach |
 | **Agent board owns the canvas** | `set_results` with ids takes over `/nga/search`, its note rendered across the page |
 | **`show_artwork`** | opens the page's own artwork dialog; it previously did nothing on `/nga/search` |
 | **`callTool`** in `registry.ts` | prefers a real host's `executeTool`, falls back to this page's registered implementation |
