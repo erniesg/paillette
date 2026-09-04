@@ -342,7 +342,7 @@ describe('Enter on an empty bar', () => {
     await submitHumanTurn();
 
     expect(getWebMcpState().agentResults?.label).toBe(
-      'One reject out — “Work g2”. One work dealt away from it.'
+      'One reject out — “Work g2”.'
     );
   });
 
@@ -378,7 +378,7 @@ describe('Enter on an empty bar', () => {
 
     const state = getWebMcpState();
     expect(state.board?.note).toBe(
-      'One pick holds — “Work keep”. One work dealt to sit with it.'
+      'One pick holds — “Work keep”.'
     );
     // The same string the board renders, so the row cannot collapse.
     expect(state.agentResults?.note).toBe(state.board?.note);
@@ -438,6 +438,45 @@ describe('widening when the collection runs out', () => {
 });
 
 describe('when the deal cannot run', () => {
+  /**
+   * The flag the interface hangs its "in flight" mark on.
+   *
+   * `dealing` was only ever asserted *false* after a deal, which is true of a
+   * deal that never set it. The mark under the utterance bar reads this while
+   * the request is out — on a slow connection it is the only thing that says
+   * Enter did anything — so the mid-flight value is the contract.
+   */
+  it('reports the deal as in flight while the request is out', async () => {
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+
+    let release: (value: unknown) => void = () => {};
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await gate;
+        const results = [artwork('n1')];
+        rememberArtworks(results);
+        return Response.json({
+          success: true,
+          data: { results, count: 1, queryTime: 1 },
+        });
+      })
+    );
+
+    expect(getWebMcpState().dealing).toBe(false);
+    const inFlight = runRedeal({ by: 'human' });
+    await Promise.resolve();
+    expect(getWebMcpState().dealing).toBe(true);
+
+    release(null);
+    await inFlight;
+    expect(getWebMcpState().dealing).toBe(false);
+  });
+
   it('refuses a second deal while one is in flight, rather than racing it', async () => {
     // Enter is cheap to press and a slow deal is not fast. Two in flight write
     // the board twice from two reads of the same state — the later wins and

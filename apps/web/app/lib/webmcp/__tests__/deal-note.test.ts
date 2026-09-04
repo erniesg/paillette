@@ -52,7 +52,7 @@ describe('composeDealNote', () => {
       added: ['n1', 'n2'],
     });
 
-    expect(note).toBe('Two picks hold — rust. Two works dealt to sit with them.');
+    expect(note).toBe('Two picks hold — rust.');
   });
 
   it('names what was thrown out when nothing was picked', () => {
@@ -63,7 +63,7 @@ describe('composeDealNote', () => {
         exemplars: { positive: [], negative: ['r1'] },
         added: ['n1'],
       })
-    ).toBe('One reject out — navy. One work dealt away from it.');
+    ).toBe('One reject out — navy.');
   });
 
   it('falls back to the titles when nothing has an extracted palette', () => {
@@ -76,7 +76,7 @@ describe('composeDealNote', () => {
         exemplars: { positive: ['p1'], negative: [] },
         added: ['n1', 'n2'],
       })
-    ).toBe('One pick holds — “The Wave”. Two works dealt to sit with it.');
+    ).toBe('One pick holds — “The Wave”.');
   });
 
   it('still writes a line when the works are not in the session index', () => {
@@ -86,7 +86,7 @@ describe('composeDealNote', () => {
         exemplars: { positive: ['unknown'], negative: [] },
         added: ['n1'],
       })
-    ).toBe('One pick holds. One work dealt to sit with it.');
+    ).toBe('One pick holds.');
   });
 
   it('describes the board when nothing is flagged at all', () => {
@@ -100,7 +100,7 @@ describe('composeDealNote', () => {
         exemplars: { positive: [], negative: [] },
         added: ['n1'],
       })
-    ).toBe('One work dealt — gold.');
+    ).toBe('One work — gold.');
   });
 
   it('says nothing when nothing was dealt and nothing is flagged', () => {
@@ -120,6 +120,31 @@ describe('composeDealNote', () => {
         exemplars: { positive: ['p1'], negative: [] },
         added: ['n1'],
       })
-    ).toBe('One pick holds — “Untitled”. One work dealt to sit with it.');
+    ).toBe('One pick holds — “Untitled”.');
+  });
+
+  /**
+   * §5b, checked rather than asserted in a comment.
+   *
+   * The first version of this wrote two sentences, and the second one reported
+   * the deal back to someone who had just watched it happen — "Eleven works
+   * dealt to sit with it", over eleven cards that had visibly just arrived. A
+   * wall label does not do that, so neither does this.
+   */
+  it('is one sentence and never says what just happened', () => {
+    rememberArtworks([
+      work('p1', { palette: ['#bd5732'] }),
+      work('n1', { palette: ['#cda636'] }),
+    ]);
+
+    for (const input of [
+      { exemplars: { positive: ['p1'], negative: [] }, added: ['n1', 'n2'] },
+      { exemplars: { positive: [], negative: ['p1'] }, added: ['n1', 'n2'] },
+      { exemplars: { positive: [], negative: [] }, added: ['n1', 'n2'] },
+    ]) {
+      const note = composeDealNote(input)!;
+      expect(note.match(/\./g)).toHaveLength(1);
+      expect(note).not.toMatch(/dealt|redeal|search|following|\bnow\b|\bI\b/i);
+    }
   });
 });

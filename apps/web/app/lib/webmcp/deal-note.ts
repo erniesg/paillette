@@ -129,20 +129,30 @@ export interface DealNoteInput {
 }
 
 /**
- * One line for a board nobody named, or null when no deal happened at all.
+ * One line for a board nobody named, or null when there is nothing to name.
  *
  * Shapes, in the order they are reached:
  *
- *   Three picks hold — bone and steel. Nine works dealt to sit with them.
- *   Two rejects out — rust and gold. Ten works dealt away from them.
- *   One pick holds. Eleven works dealt to sit with it.
- *   Twelve works dealt — umber and gold.
+ *   Three picks hold — bone and steel.
+ *   Two rejects out — rust and gold.
+ *   One pick holds.
+ *   Twelve works — umber and gold.
  *
  * The last one is the case with nothing flagged, which still deals: the works
- * left alone are the direction, so the line describes the board that arrived
- * rather than a judgement nobody made. It matters because it is the state a
- * board is in *before* the first flag — without it the sentence arrives on the
- * first pick and the cards move then instead.
+ * left alone are the direction, so the line names the board that arrived rather
+ * than a judgement nobody made. It matters because it is the state a board is
+ * in *before* the first flag — without it the sentence arrives on the first
+ * pick and the cards move then instead.
+ *
+ * **One sentence, and it never says what just happened.** The first version of
+ * this wrote two — "One pick holds — bone. Eleven works dealt to sit with it."
+ * — and the second half is §5b's "never narrate the mechanism" exactly: eleven
+ * new cards had just arrived on screen, so the sentence was telling the human
+ * something the board had already shown them, in the register of software
+ * explaining itself. What is left is what a wall label carries: what is being
+ * held or thrown out, and what it looks like. The swatches underneath are the
+ * evidence for the second half and the marks on the cards are the evidence for
+ * the first, so nothing here needs a legend.
  */
 export const composeDealNote = ({
   exemplars,
@@ -151,29 +161,23 @@ export const composeDealNote = ({
   const picks = exemplars.positive.length;
   const rejects = exemplars.negative.length;
 
-  const dealt = added.length
-    ? `${spell(added.length)} ${added.length === 1 ? 'work' : 'works'} dealt`
-    : null;
-
   if (picks) {
     const held = `${spell(picks)} ${picks === 1 ? 'pick holds' : 'picks hold'}`;
     const look = describe(exemplars.positive);
-    const opening = look ? `${held} — ${look}.` : `${held}.`;
-    return dealt
-      ? `${opening} ${dealt} to sit with ${picks === 1 ? 'it' : 'them'}.`
-      : opening;
+    return look ? `${held} — ${look}.` : `${held}.`;
   }
 
   if (rejects) {
     const out = `${spell(rejects)} ${rejects === 1 ? 'reject' : 'rejects'} out`;
     const look = describe(exemplars.negative);
-    const opening = look ? `${out} — ${look}.` : `${out}.`;
-    return dealt
-      ? `${opening} ${dealt} away from ${rejects === 1 ? 'it' : 'them'}.`
-      : opening;
+    return look ? `${out} — ${look}.` : `${out}.`;
   }
 
-  if (!dealt) return null;
+  // Nothing marked by anyone. The board is all there is to name, so the count
+  // is a description of it rather than a report on the deal — and it is the
+  // only fact available when no palette resolves.
+  if (!added.length) return null;
+  const board = `${spell(added.length)} ${added.length === 1 ? 'work' : 'works'}`;
   const look = describe(added);
-  return look ? `${dealt} — ${look}.` : `${dealt}.`;
+  return look ? `${board} — ${look}.` : `${board}.`;
 };
