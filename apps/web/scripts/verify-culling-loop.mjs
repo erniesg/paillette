@@ -280,11 +280,31 @@ const pairedWith = await page
   .getAttribute('data-artwork-id');
 check('the pick is the work it is weighed against', pairedWith === firstId);
 await page.keyboard.press('Escape');
+/*
+ * "Neither" is two steps, and this used to assert the first one's result.
+ *
+ * Clicking the word turns it into a line you can write on; the refusal is only
+ * committed on Enter or on clicking away. So reading the flags straight after
+ * the click found nothing flagged and concluded that declining flags nothing —
+ * which was then true of the moment sampled and false of the feature. The
+ * refusal itself rejects *both* works, deliberately: two negatives on the same
+ * axis is the strongest single move the culling loop has, which is the whole
+ * reason the third door is worth having.
+ *
+ * Enter with no words is a legal commit, and that is the path taken here.
+ */
 await page.locator('.paillette-compare button:has-text("Neither")').click();
+await page.waitForSelector('input[aria-label="Why neither?"]', { timeout: 5000 });
+await page.keyboard.press('Enter');
+await page.waitForTimeout(500);
+const declined = await context();
 check(
-  'declining closes it and flags nothing',
+  'declining closes it and rejects both works',
   (await page.locator('.paillette-compare').count()) === 0 &&
-    (await context()).flags.rejects.length === 1
+    [firstId, pairedWith].every((id) =>
+      declined.flags.rejects.some((reject) => reject.id === id)
+    ),
+  JSON.stringify(declined.flags.rejects.map((r) => r.id))
 );
 
 console.log('\ntwo-up, resolved');
