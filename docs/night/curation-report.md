@@ -230,12 +230,17 @@ And on the stereoscopic card, where the correction changes what the picture is
 > with a missing center. What remains readable—place, title, repeated
 > translations—circles an absence it cannot restore."
 
-**One caveat, stated plainly.** The title stayed *Weather at Sea* in all three
-runs. The agent rewrote the statement's works and every label around "leaving"
-and left the room's name describing the theme the human had rejected. Nothing
-in the prompt tells it the title is downstream of the statement, and I did not
-add it after the batch rather than claim a fix I had not re-run three times.
-It is a one-line prompt change for whoever picks this up.
+**What this batch exposed.** The title stayed *Weather at Sea* in all three
+runs. The agent re-selected works and rewrote every label around "leaving", and
+left the room's name still describing the theme the human had just rejected —
+which on a shared page is the first thing a reader sees. Nothing in the prompt
+connected the two, so the agent had no reason to touch it.
+
+Fixed in `6afd1ca`: the correction message now says to check the title in the
+same pass, and why. Provenance is unchanged — a title the human typed is still
+theirs, and a write onto it is still parked as a proposal.
+
+<!--TITLEVERIFY-->
 
 ---
 
