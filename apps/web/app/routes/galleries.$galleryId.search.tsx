@@ -9,7 +9,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -5299,7 +5298,7 @@ function DealResults({
 }) {
   const { flags } = useWebMcpState();
   const shellRef = useRef<HTMLDivElement>(null);
-  const available = useViewportBoardHeight(shellRef, results.length);
+  useBoardOnCamera(shellRef, results.map((result) => result.id).join(' '));
 
   /*
    * The considered-and-declined pile, at the left edge.
@@ -5336,8 +5335,7 @@ function DealResults({
        * viewport and no more; the grid is already `h-full auto-rows-fr`, so it
        * sizes its own rows down to fit.
        */
-      className="lt-deal-viewport pt-6"
-      style={available ? { height: `${available}px` } : undefined}
+      className="lt-deal-viewport"
     >
       <DealBoard
         className="h-full"
@@ -5352,6 +5350,7 @@ function DealResults({
             selectedColours={selectedColours}
             showSimilarity={showSimilarity}
             imageRole="thumbnail"
+            compact
             onFacetSearch={onFacetSearch}
             onPaletteColourSelect={onPaletteColourSelect}
             onSelectArtwork={onSelectArtwork}
@@ -5367,42 +5366,36 @@ function DealResults({
 
 /** Enough to show the pile is a pile; more is a second board. */
 const DEAL_TRAY_LIMIT = 8;
-/** Below this the cards are thumbnails and the deal stops being readable. */
-const MIN_BOARD_PX = 380;
-/** So the last row is not flush against the bottom edge of the window. */
-const BOARD_BOTTOM_GUTTER = 24;
 
 /**
- * How much viewport is left below wherever the board starts.
+ * Put the board where it can be seen, when the deal changes it.
  *
- * Measured rather than assumed, because what sits above the board changes
- * through a session — the wall label arrives with the first note, the
- * exhibition head with the first pick — and a hard-coded allowance is wrong
- * for most of them. Re-measured when the window resizes and when the deal
- * changes; not on scroll, because a board that resizes under a scrolling
- * cursor is worse than one that is slightly too tall.
+ * The board is sized to the viewport in CSS, which only helps if it is *in*
+ * the viewport — and a deal usually happens after someone has scrolled down a
+ * masonry to find the card they wanted to reject. Measured on staging with the
+ * height alone: twelve cards, none of them fully on screen, because the board
+ * they were dealt onto was above the fold.
+ *
+ * Deliberately tied to the board's contents rather than to every render: this
+ * fires when a deal replaces the works, not when a hover repaints a card.
+ * `scroll-margin-top` on the container keeps it clear of the sticky chrome.
  */
-function useViewportBoardHeight(
+function useBoardOnCamera(
   ref: RefObject<HTMLDivElement | null>,
-  dealSignature: number
+  dealSignature: string
 ) {
-  const [available, setAvailable] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    const measure = () => {
-      const element = ref.current;
-      if (!element) return;
-      const top = Math.max(element.getBoundingClientRect().top, 0);
-      setAvailable(
-        Math.max(MIN_BOARD_PX, window.innerHeight - top - BOARD_BOTTOM_GUTTER)
-      );
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof window === 'undefined') return;
+    const box = element.getBoundingClientRect();
+    // Already watchable: leave it alone. Scrolling a board that is on screen
+    // is the interface fidgeting.
+    if (box.top >= 0 && box.bottom <= window.innerHeight) return;
+    // Instant, never smooth. A smooth scroll runs for roughly as long as the
+    // deal does, and two things moving the same cards at once is how a FLIP
+    // that holds a pick at zero pixels ends up looking like a stutter.
+    element.scrollIntoView({ block: 'start', behavior: 'auto' });
   }, [ref, dealSignature]);
-
-  return available;
 }
 
 /**
@@ -5721,6 +5714,14 @@ function ResultCard({
   selectedColours,
   showSimilarity,
   imageRole,
+  /**
+   * On the board rather than in the masonry: one slot of twelve, sized to a
+   * share of the screen. The picture is the card there, so the catalogue
+   * apparatus — the metadata line, the palette dots, the rank, the accession
+   * — is left to browsing, where there is room for it. Keeping all of it made
+   * every card overflow its slot and overlap its neighbour.
+   */
+  compact = false,
   onFacetSearch,
   onPaletteColourSelect,
   onSelectArtwork,
@@ -5730,6 +5731,7 @@ function ResultCard({
   selectedColours: string[];
   showSimilarity: boolean;
   imageRole: ArtworkImageRole;
+  compact?: boolean;
   onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
@@ -5757,6 +5759,7 @@ function ResultCard({
      */
     <article
       {...flagProps}
+      data-compact={compact ? '' : undefined}
       className="paillette-card lt-slide relative break-inside-avoid"
     >
       <div className="absolute right-2 top-2 z-10">
@@ -5807,33 +5810,39 @@ function ResultCard({
               {artist}
             </button>
           </div>
-          <span className="lt-catalogue">
-            #{rank.toString().padStart(2, '0')}
-          </span>
+          {!compact && (
+            <span className="lt-catalogue">
+              #{rank.toString().padStart(2, '0')}
+            </span>
+          )}
         </div>
 
-        <MetadataLine result={result} onFacetSearch={onFacetSearch} />
+        {!compact && (
+          <>
+            <MetadataLine result={result} onFacetSearch={onFacetSearch} />
 
-        <div className="flex items-center justify-between gap-3">
-          <PaletteDots
-            colours={palette}
-            onColourSelect={onPaletteColourSelect}
-          />
-          <span
-            className="lt-catalogue"
-            title={
-              selectedColours.length
-                ? getColourMatchTitle(result, selectedColours)
-                : undefined
-            }
-          >
-            {showSimilarity
-              ? selectedColours.length
-                ? `Colour ${formatColourMatch(result, selectedColours)}`
-                : `${Math.round(result.similarity * 100)}%`
-              : getAccession(result) || 'Collection'}
-          </span>
-        </div>
+            <div className="flex items-center justify-between gap-3">
+              <PaletteDots
+                colours={palette}
+                onColourSelect={onPaletteColourSelect}
+              />
+              <span
+                className="lt-catalogue"
+                title={
+                  selectedColours.length
+                    ? getColourMatchTitle(result, selectedColours)
+                    : undefined
+                }
+              >
+                {showSimilarity
+                  ? selectedColours.length
+                    ? `Colour ${formatColourMatch(result, selectedColours)}`
+                    : `${Math.round(result.similarity * 100)}%`
+                  : getAccession(result) || 'Collection'}
+              </span>
+            </div>
+          </>
+        )}
       </div>
       {/* The wall label, if this show has one for this work. Beside the
           picture, because that is the only place a label means anything —

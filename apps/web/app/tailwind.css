@@ -664,10 +664,67 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 .lt-deal-viewport {
   display: flex;
   flex-direction: column;
+  /*
+   * A fixed share of the window, not a measured remainder. Measuring what was
+   * left below the board's own top sounded more correct and was worse: the
+   * answer depends on the scroll position at the instant it is taken, so a
+   * deal made halfway down a masonry produced a 356px board with nothing on
+   * screen at all. This is the same on every deal, and the page scrolls the
+   * board under the chrome rather than the board shrinking to reach it.
+   */
+  height: min(74svh, 820px);
+  min-height: 380px;
+  /* Clear of the sticky header and the search bar when scrolled into view. */
+  scroll-margin-top: 8rem;
+  padding-top: 1rem;
 }
 
 .lt-deal-viewport > * {
   min-height: 0;
+}
+
+/*
+ * A card on the board fills its slot, and the picture takes whatever is left
+ * after the title.
+ *
+ * The card was designed for a masonry, where it can be as tall as it likes.
+ * Dropped into one of twelve equal slots it overflowed — measured on staging
+ * with a squeezed board, the images of neighbouring cards overlapped and
+ * intercepted each other's pointer events, so hovering a card to press X hit
+ * the wrong one. The catalogue apparatus is hidden in `compact`; this is what
+ * makes what is left fit.
+ */
+.lt-deal-viewport .paillette-card[data-compact] {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lt-deal-viewport .paillette-card[data-compact] > button {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.lt-deal-viewport .paillette-card[data-compact] .lt-slide-well {
+  height: 100%;
+  /* The frame style sets an aspect ratio for the masonry; on the board the
+     slot decides the height and the ratio has to give way. */
+  aspect-ratio: auto;
+}
+
+.lt-deal-viewport .paillette-card[data-compact] .lt-slide-well img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+}
+
+.lt-deal-viewport .paillette-card[data-compact] h2 {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------------------

@@ -553,17 +553,27 @@ const main = async () => {
     Boolean(document.querySelector('.paillette-compare'))
   );
   const turnSent = since(chooseMark).filter((n) => n.url.includes('/public-agent/turn'));
-  const mark = (id) => afterChoice.find((m) => m.id === id) ?? null;
   note(!stillOpen, 'choosing closes the two-up');
+  // Read the judgement from the state the agent reads, not from the DOM. A
+  // rejected work leaves the board for the tray, so a card that is no longer
+  // under the grid is the reject *working*, and asserting on the grid alone
+  // reported that as the flag never having been set.
+  const afterFlags = unwrap(
+    await page.evaluate(() =>
+      window.__paillette_webmcp.call('get_view_context', {})
+    )
+  )?.flags;
+  const judged = (id, list) =>
+    (afterFlags?.[list] ?? []).find((entry) => entry.id === id) ?? null;
   note(
-    mark(winner)?.flag === 'pick' && mark(winner)?.by === 'human',
+    judged(winner, 'picks')?.by === 'human',
     'the winner becomes a human pick',
-    JSON.stringify(mark(winner))
+    JSON.stringify(judged(winner, 'picks') ?? afterChoice.find((m) => m.id === winner))
   );
   note(
-    mark(loser)?.flag === 'reject' && mark(loser)?.by === 'human',
+    judged(loser, 'rejects')?.by === 'human',
     'the loser becomes a human reject',
-    JSON.stringify(mark(loser))
+    JSON.stringify(judged(loser, 'rejects') ?? afterChoice.find((m) => m.id === loser))
   );
   // The brief's P4 says the click "is sent as a human turn". The build does
   // not send it: `resolveCompare` records the choice and lets it ride the next
