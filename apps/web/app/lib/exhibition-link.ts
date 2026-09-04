@@ -19,12 +19,22 @@
  * cannot be deleted out from under the person who shared it, and it works the
  * first time it is opened, cold, by someone who has never used Paillette.
  *
- * The cost is length, and it is real — but measured rather than feared. With
- * twelve distinct labels and a hundred-word statement the deflated payload is
- * about 900 bytes, so the whole URL is ~1250 characters. At the documented cap
- * of twenty-four works (`EXHIBITION_MAX_WORKS`) it is ~1900. Both sit inside
- * the ~2 kB that every browser and every chat client will carry without
- * truncating, which is what the cap on the hang is for.
+ * The cost is length, and it is real. An earlier version of this comment put a
+ * twelve-work show at ~1250 characters and the full hang at ~1900, and both
+ * numbers were wrong, because they were measured against fixture labels of
+ * about 85 characters. Labels this app actually writes average **204** — the
+ * museum discipline is one or two sentences, and two sentences is 200-odd
+ * characters, not 85. Re-measured against 22 real `write_labels` outputs and a
+ * real 70-word statement:
+ *
+ *   12 works → 3.5 kB of JSON → 1.6 kB deflated → **~2150 character URL**
+ *   24 works → 6.4 kB of JSON → 2.4 kB deflated → **~3280 character URL**
+ *
+ * That is longer than the folklore 2 kB ceiling and still entirely fine: that
+ * number comes from Internet Explorer's 2083-character limit and has not bound
+ * anything for a decade. The real constraints are Chrome's ~32 kB address bar,
+ * Cloudflare's 16 kB request line, and chat clients, none of which are near
+ * 3.3 kB. `EXHIBITION_MAX_WORKS` is what keeps it bounded at all.
  *
  * Ids stay session-resolvable, exactly as `docs/HANDOFF.md` §5.4 says, so the
  * page's loader re-fetches each record by id from the public NGA route on the
@@ -42,8 +52,16 @@ const PLAIN = '0';
 export const EXHIBITION_LINK_PARAM = 'e';
 export const EXHIBITION_PATH = '/exhibition';
 
-/** Beyond this a URL stops being something you can paste into a message. */
-export const EXHIBITION_LINK_SOFT_LIMIT = 2000;
+/**
+ * Beyond this a URL stops being something you can paste into a message.
+ *
+ * 8000, not 2000. Nothing enforces this — it is the budget the length tests
+ * hold the format to — so setting it below what a normal show actually
+ * produces made it a false comfort rather than a guard. A full 24-work hang
+ * with real labels encodes to ~3.2 kB, so this leaves better than 2× headroom
+ * while still failing loudly if the format ever stops compressing.
+ */
+export const EXHIBITION_LINK_SOFT_LIMIT = 8000;
 
 export interface ExhibitionLinkWork {
   artworkId: string;

@@ -205,12 +205,27 @@ prose strangers can publish under this domain. It needs KV. And it can rot: a
 link that resolves to a record somebody has to keep is a link that stops
 working.
 
-The cost is length, and it is measured rather than feared: twelve labels plus a
-hundred-word statement deflates to ~900 bytes, so the URL is ~1250 characters;
-at the `EXHIBITION_MAX_WORKS` cap of 24 it is ~1900. Both sit inside the ~2 kB
-every browser and chat client carries without truncating. That cap on the hang
-is what keeps the URL inside the budget, which is the honest answer to
-`docs/HANDOFF.md` §5.4's warning that ids run out of room around 60.
+**The cost is length, and the first numbers I wrote for it were wrong.** The
+module claimed ~1250 characters for a twelve-work show and ~1900 for the full
+hang. Both were measured against fixture labels averaging 85 characters, and
+labels this app actually writes average **204** — "one or two sentences" of
+museum prose is two hundred characters, not eighty. Re-measured against 22 real
+`write_labels` outputs and a real 70-word statement:
+
+| hang | JSON | deflated | URL |
+| --- | --- | --- | --- |
+| 12 works | 3.5 kB | 1.6 kB | **~2150 chars** |
+| 24 works (`EXHIBITION_MAX_WORKS`) | 6.4 kB | 2.4 kB | **~3280 chars** |
+
+So a normal show was quietly exceeding the module's own 2000-character soft
+limit. That limit is now 8000, with the reasoning written down: the 2 kB
+ceiling is Internet Explorer folklore and has not bound anything in a decade,
+while the real constraints — Chrome's ~32 kB address bar, Cloudflare's 16 kB
+request line — are nowhere near 3.3 kB. The length tests now use real model
+output, assert a band rather than a ceiling, and guard the fixture's own mean
+length so that swapping in shorter prose cannot silently make them vacuous
+again. `EXHIBITION_MAX_WORKS` is what bounds it at all, which is the honest
+answer to `docs/HANDOFF.md` §5.4's warning that ids run out of room around 60.
 
 On §5.4's other point — ids are session-resolvable today — the link carries only
 what this session knew (the prose) and the **loader re-fetches every record by
