@@ -24,6 +24,7 @@ import {
   settleActivity,
   startActivity,
 } from '~/lib/webmcp/store';
+import { previewJson, shapedError } from '~/lib/webmcp/activity-format';
 import { summariseToolResult } from '~/lib/webmcp/summarise';
 import { createPailletteTools } from '~/lib/webmcp/tools';
 import { installTurnBridge } from '~/lib/webmcp/turn-bridge';
@@ -89,18 +90,28 @@ export function WebMcpBridge() {
             const toolName = toolNameByActivityId.get(id) ?? '';
             toolNameByActivityId.delete(id);
             if (outcome.status === 'ok') {
+              // `ok` here means `execute` returned rather than threw. The tools
+              // answer refusals — a stale id, an exhausted collection — as a
+              // returned `{ok:false}`, so the payload is what decides whether
+              // this reads as an error, not the absence of an exception.
               settleActivity(
                 id,
                 'ok',
-                summariseToolResult(toolName, outcome.result)
+                summariseToolResult(toolName, outcome.result),
+                {
+                  detail: previewJson(outcome.result),
+                  error: shapedError(outcome.result),
+                }
               );
               return;
             }
-            settleActivity(
-              id,
-              outcome.status,
-              outcome.status === 'error' ? outcome.message : 'cancelled'
-            );
+            if (outcome.status === 'error') {
+              settleActivity(id, 'error', outcome.message, {
+                error: outcome.message,
+              });
+              return;
+            }
+            settleActivity(id, outcome.status, 'cancelled');
           },
         },
       }

@@ -72,6 +72,24 @@ export interface ActivityEntry {
   status: ActivityStatus;
   /** One line describing what came back, for the on-camera panel. */
   summary: string | null;
+  /**
+   * The result itself, as clipped JSON.
+   *
+   * A summary says how many works came back; this says which, with the fields
+   * the tool actually returned. It is what makes the log an answer to "how was
+   * WebMCP implemented" rather than a claim about it — the payload is there to
+   * read, in the shape it crossed the boundary in.
+   */
+  detail: string | null;
+  /**
+   * The failure, if there was one, in the words the tool used.
+   *
+   * Set both when `execute` threw and when a tool answered
+   * `{ok:false,error:{…}}` — the second is by far the more common way this
+   * codebase fails, and a log that styled only thrown errors as errors would
+   * show a stale id as a successful call.
+   */
+  error: string | null;
   startedAt: number;
   endedAt: number | null;
 }
@@ -179,23 +197,29 @@ export interface WebMcpState {
   pendingConfirmations: PendingConfirmation[];
   /** True once the bridge has registered tools with a real host. */
   bridgeAttached: boolean;
-  panelOpen: boolean;
   /**
-   * The human closed the panel and meant it.
+   * Whether the tool-call log is expanded.
    *
-   * A turn is five or six tool calls, and each one used to reopen the panel, so
-   * closing it lasted about 300ms. The panel is a fixed overlay across the
-   * lower-left of the board, which is where the picks sit — so on camera the
-   * one thing the interface exists to show was being covered up by a list of
-   * the calls that produced it, and there was no way to stop it.
+   * Collapsed is the resting state and nothing the agent does opens it. The
+   * glyph carries the presence; the log is what you open when you want to know
+   * exactly what happened, and it keeps its history while closed.
    *
-   * A confirmation still overrides this: something waiting on an answer cannot
-   * be allowed to hide.
+   * One thing still forces it open: a mutating tool waiting on consent. The
+   * panel is the only place that answer can be given, so it cannot be allowed
+   * to hide.
    */
-  panelDismissed: boolean;
+  panelOpen: boolean;
 }
 
-const MAX_ACTIVITY = 40;
+/**
+ * How much of the session the log can show.
+ *
+ * A single agentic turn is five or six tool calls, so forty was about seven
+ * turns — less than one rehearsal, and the log is meant to be scrollable
+ * history rather than a recent-items list. The ceiling stays because each entry
+ * now carries a clipped copy of the result it got back.
+ */
+const MAX_ACTIVITY = 120;
 
 const initialState: WebMcpState = {
   page: {
@@ -222,7 +246,6 @@ const initialState: WebMcpState = {
   pendingConfirmations: [],
   bridgeAttached: false,
   panelOpen: false,
-  panelDismissed: false,
 };
 
 let state: WebMcpState = initialState;
@@ -301,12 +324,8 @@ export const setSelection = (selection: string[]) => update({ selection });
 export const setBridgeAttached = (bridgeAttached: boolean) =>
   update({ bridgeAttached });
 
-/**
- * Closing the panel is a decision, not a gesture that lasts until the next
- * tool call. Reopening it clears the decision, so nothing is one-way.
- */
-export const setPanelOpen = (panelOpen: boolean) =>
-  update({ panelOpen, panelDismissed: !panelOpen });
+/** Expand or collapse the log. Only ever called by the human, or by consent. */
+export const setPanelOpen = (panelOpen: boolean) => update({ panelOpen });
 
 let activitySequence = 0;
 
@@ -321,14 +340,17 @@ export const startActivity = (toolName: string, input: unknown): string => {
         input,
         status: 'running' as const,
         summary: null,
+        detail: null,
+        error: null,
         startedAt: Date.now(),
         endedAt: null,
       },
       ...state.activity,
     ].slice(0, MAX_ACTIVITY),
-    // A tool firing is the moment the panel earns its space on screen — but
-    // only if the human has not already said they do not want it there.
-    panelOpen: state.panelDismissed ? state.panelOpen : true,
+    // Deliberately does not open the log. The glyph is what a tool call earns:
+    // it is already animating, in the agent's ink, in the corner. Throwing a
+    // panel over the board every time a tool fires — five or six times a turn —
+    // covered the picks with a list of the calls that produced them.
   });
   return id;
 };
@@ -336,12 +358,20 @@ export const startActivity = (toolName: string, input: unknown): string => {
 export const settleActivity = (
   id: string,
   status: Exclude<ActivityStatus, 'running'>,
-  summary: string | null
+  summary: string | null,
+  captured: { detail?: string | null; error?: string | null } = {}
 ) =>
   update({
     activity: state.activity.map((entry) =>
       entry.id === id
-        ? { ...entry, status, summary, endedAt: Date.now() }
+        ? {
+            ...entry,
+            status,
+            summary,
+            detail: captured.detail ?? null,
+            error: captured.error ?? null,
+            endedAt: Date.now(),
+          }
         : entry
     ),
   });
@@ -390,10 +420,9 @@ export const requestConfirmation = (request: {
           resolve: finish,
         },
       ],
-      // A question waiting on the human overrides their dismissal: the panel
-      // is the only place the answer can be given.
+      // The one thing that opens the log by itself: a question waiting on the
+      // human, which has nowhere else to be asked.
       panelOpen: true,
-      panelDismissed: false,
     });
   });
 };
