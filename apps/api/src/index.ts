@@ -19,6 +19,7 @@ import extractRoutes from './routes/extract';
 import indexingRoutes from './routes/indexing';
 import describeRoutes from './routes/describe';
 import agentRoutes from './routes/agent';
+import liveRoutes from './routes/live';
 import labelRoutes from './routes/labels';
 import exhibitionRoutes from './routes/exhibitions';
 import metadataMapRoutes from './routes/metadata-map';
@@ -58,6 +59,18 @@ export interface Env {
   AUTH_CLIENT_ID?: string;
   /** Per-caller hourly ceiling on agent model calls. Defaults to 40 when unset. */
   AGENT_MODEL_CALLS_PER_HOUR?: string;
+  /**
+   * The live-audio meter. Separate from the one above because a realtime
+   * session is billed by seconds of connection, not by requests, so the
+   * model-call counter reads zero for the whole of it. Defaults live in
+   * `utils/live-audio-budget.ts`: 180s per caller per hour, 3600s site-wide
+   * per day, 90s per grant.
+   */
+  LIVE_AUDIO_SECONDS_PER_CALLER_PER_HOUR?: string;
+  LIVE_AUDIO_SECONDS_PER_DAY?: string;
+  LIVE_SESSION_MAX_SECONDS?: string;
+  /** Realtime model id. Defaults to `gpt-realtime-2.1`. */
+  LIVE_SESSION_MODEL?: string;
   SEARCH_ACCESS_MODE?: string;
   SEARCH_ACCESS_BOOTSTRAP_EMAIL?: string;
   /** Immutable WorkOS subject for the one bootstrap administrator. */
@@ -236,6 +249,11 @@ api.route('/galleries/:galleryId', embeddingsRoutes);
 // budget and read scope, mirroring the public-index surface.
 app.route('/api', describeRoutes);
 app.route('/api', agentRoutes);
+// The live session's four metered moments. Anonymous like its neighbours, and
+// the only one of them whose cost is measured in seconds rather than requests
+// — which is why it carries a meter of its own rather than sharing the
+// model-call ceiling, and why the mint refuses rather than degrading.
+app.route('/api', liveRoutes);
 app.route('/api', labelRoutes);
 // Publishing and opening a shareable exhibition. Anonymous for the same
 // reason the rest of the NGA surface is — there is no account in this flow —

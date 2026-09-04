@@ -91,10 +91,20 @@ JINA_TEXT_MODEL = "jina-embeddings-v5-text-small"
 JINA_TEXT_EMBEDDING_DIMENSIONS = "1024"
 
 # Staging environment (deploy from 'staging' branch)
+#
+# Staging raises the live-audio ceilings for the same reason it raises the
+# model-call one: to a counter a filmed take is indistinguishable from abuse,
+# and an agent that dies mid-take reads on camera as a bug rather than as a
+# budget. Thirty minutes per caller per hour and two hours a day across
+# everybody — about $14 at the rates verified on 2026-09-04 — which covers a
+# day of retakes without being an open tap. Production is deliberately absent
+# from this list and runs on the code defaults (180s per caller per hour,
+# 3600s site-wide per day, 90s per grant), exactly as it does for
+# AGENT_MODEL_CALLS_PER_HOUR.
 [env.staging]
 name = "paillette-api-stg"
 routes = [{ pattern = "paillette-api-stg.berlayar.ai", custom_domain = true }]
-vars = { ENVIRONMENT = "staging", API_VERSION = "v1", SEARCH_ACCESS_MODE = "authenticated", SEARCH_ACCESS_BOOTSTRAP_EMAIL = "hello@ernie.sg", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EXTRACT_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024", QUERY_EMBEDDING_API_URL = "https://embeddings.129-150-32-215.sslip.io/v1/embeddings", AGENT_MODEL_CALLS_PER_HOUR = "600", OPENAI_DAILY_CALL_LIMIT = "5000" }
+vars = { ENVIRONMENT = "staging", API_VERSION = "v1", SEARCH_ACCESS_MODE = "authenticated", SEARCH_ACCESS_BOOTSTRAP_EMAIL = "hello@ernie.sg", LOGTO_ISSUER = "https://m2fmae.logto.app/oidc", LOGTO_JWKS_URI = "https://m2fmae.logto.app/oidc/jwks", LOGTO_API_RESOURCE = "https://paillette-api-stg.berlayar.ai", DAILY_FREE_QUERY_LIMIT = "1000", TRANSLATION_FREE_LIFETIME_LIMIT = "10", EXTRACT_FREE_LIFETIME_LIMIT = "10", EMBEDDING_INDEX_VERSION = "v2", SEARCH_FUSION_MODE = "hybrid", JINA_MULTIMODAL_MODEL = "jina-clip-v2", JINA_EMBEDDING_DIMENSIONS = "1024", CAPTION_VECTOR_SEARCH_ENABLED = "true", CAPTION_EMBEDDING_PROVIDER = "jina", JINA_TEXT_MODEL = "jina-embeddings-v5-text-small", JINA_TEXT_EMBEDDING_DIMENSIONS = "1024", QUERY_EMBEDDING_API_URL = "https://embeddings.129-150-32-215.sslip.io/v1/embeddings", AGENT_MODEL_CALLS_PER_HOUR = "600", OPENAI_DAILY_CALL_LIMIT = "5000", LIVE_AUDIO_SECONDS_PER_CALLER_PER_HOUR = "1800", LIVE_AUDIO_SECONDS_PER_DAY = "7200", LIVE_SESSION_MAX_SECONDS = "300" }
 
 # Staging resources (separate from production)
 [[env.staging.d1_databases]]

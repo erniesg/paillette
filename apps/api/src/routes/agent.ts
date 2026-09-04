@@ -22,6 +22,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
 import { openaiChat, type OpenAiToolMessage } from '../utils/openai';
+import { getClientHash } from '../utils/client-hash';
 
 /**
  * One conversation should not be able to spend the whole daily budget.
@@ -258,21 +259,6 @@ export const describeHumanTurn = (
     .join(' ');
 };
 
-const toHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, '0')
-  ).join('');
-
-const getClientHash = async (connectingIp: string | undefined) => {
-  const candidate = connectingIp?.trim();
-  if (!candidate || candidate.length > 45) return null;
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`webmcp-agent:${candidate}`)
-  );
-  return toHex(digest);
-};
-
 const withinAgentRateLimit = async (
   env: Env,
   clientHash: string | null
@@ -354,7 +340,8 @@ agent.post('/public-agent/turn', async (c) => {
       : null;
 
   const clientHash = await getClientHash(
-    c.req.header('CF-Connecting-IP') || undefined
+    c.req.header('CF-Connecting-IP') || undefined,
+    'webmcp-agent'
   );
   if (!(await withinAgentRateLimit(c.env, clientHash))) {
     return c.json(
