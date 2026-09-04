@@ -37,6 +37,22 @@ import { openaiChat, type OpenAiToolMessage } from '../utils/openai';
  * an empty bar never reaches this route.
  */
 export const MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40;
+
+/**
+ * Rehearsing a demo is not abuse, but to the counter it looks identical: one
+ * filmed take costs five or six calls, so an afternoon of retakes exhausts the
+ * default long before the shoot is done — and the agent then dies mid-take,
+ * which reads on camera as a bug rather than as a budget.
+ *
+ * So the ceiling is configurable per environment. The default is unchanged, so
+ * production keeps exactly the protection it has always had; staging raises it,
+ * because staging is where the film gets made.
+ */
+export const agentCallsPerHour = (env: Env): number => {
+  const raw = Number(env.AGENT_MODEL_CALLS_PER_HOUR);
+  if (!Number.isFinite(raw) || raw <= 0) return MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR;
+  return Math.floor(raw);
+};
 /** Beyond this the loop is not converging and should be stopped. */
 export const MAX_MESSAGES_PER_REQUEST = 60;
 const MAX_BODY_CHARS = 120_000;
@@ -242,7 +258,7 @@ const withinAgentRateLimit = async (
   const key = `webmcp-agent:v1:${bucket}:${clientHash}`;
   try {
     const used = Number((await env.CACHE.get(key)) || '0');
-    if (Number.isFinite(used) && used >= MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR) {
+    if (Number.isFinite(used) && used >= agentCallsPerHour(env)) {
       return false;
     }
     await env.CACHE.put(key, String((Number.isFinite(used) ? used : 0) + 1), {

@@ -7,7 +7,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { describeHumanTurn } from '../../src/routes/agent';
+import {
+  describeHumanTurn,
+  agentCallsPerHour,
+  MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR,
+} from '../../src/routes/agent';
 
 describe('describeHumanTurn', () => {
   it('says nothing when nothing was done', () => {
@@ -165,5 +169,30 @@ describe('describeHumanTurn', () => {
 
     expect(described).toContain('refused both A and B');
     expect(described).not.toContain('saying');
+  });
+});
+
+describe('agent hourly ceiling', () => {
+  // Filming a demo is not abuse, but it spends the counter the same way. The
+  // ceiling is configurable so staging can be raised for a shoot without
+  // loosening production, which keeps the original default.
+  it('falls back to the built-in default when unset', () => {
+    expect(agentCallsPerHour({} as never)).toBe(MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR);
+  });
+
+  it('honours a configured ceiling', () => {
+    expect(agentCallsPerHour({ AGENT_MODEL_CALLS_PER_HOUR: '600' } as never)).toBe(600);
+  });
+
+  it('ignores values that are not a usable number', () => {
+    for (const bad of ['', 'lots', '0', '-5', 'NaN']) {
+      expect(agentCallsPerHour({ AGENT_MODEL_CALLS_PER_HOUR: bad } as never)).toBe(
+        MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR
+      );
+    }
+  });
+
+  it('floors a fractional ceiling rather than comparing against a fraction', () => {
+    expect(agentCallsPerHour({ AGENT_MODEL_CALLS_PER_HOUR: '99.7' } as never)).toBe(99);
   });
 });
