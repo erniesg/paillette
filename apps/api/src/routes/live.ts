@@ -27,6 +27,7 @@
 
 import { Hono } from 'hono';
 import type { Env } from '../index';
+import { SYSTEM_PROMPT } from './agent';
 import { getClientHash } from '../utils/client-hash';
 import {
   readLiveAudioBudget,
@@ -44,6 +45,28 @@ import {
 
 /** Marin reads as a gallery voice rather than an assistant one. */
 const LIVE_VOICE = 'marin';
+
+/**
+ * The same agent, out loud.
+ *
+ * Built on `/public-agent/turn`'s prompt rather than beside it, because two
+ * prompts for one agent is how the spoken half and the typed half start
+ * disagreeing about what a pick means — and the whole argument of this feature
+ * is that there is one conversation, not two.
+ *
+ * What is added is only what changes when the reply is audible. A wall label
+ * read aloud is still one sentence; a wall label read aloud that runs to a
+ * paragraph is the software talking over the room.
+ */
+const LIVE_ADDENDUM = [
+  'This conversation is live: the person can speak to you or type to you, in either order, and you can answer in speech or in text. It is one conversation and they are not choosing a mode — do not mention which one they used, and never ask them to switch.',
+  'Everything you say aloud is one sentence. Not two short ones, not a sentence with a clause of explanation bolted on. The board is the rest of the answer and it is already in front of them; say the one thing the board cannot say for itself, and stop.',
+  'Do the work before you speak. Call the tools first and answer once the board has moved — a spoken sentence describing what you are about to do is the mechanism narrating itself, out loud, which is worse than in text.',
+  'Never read out a list. If the answer is six paintings, the answer is six paintings on the screen and a sentence about what they have in common.',
+  'Speech misspells names and always will. When you are unsure of an artist or a title, search for what you heard rather than asking them to repeat it; a wrong search they can see is faster to fix than a question they have to answer.',
+].join(' ');
+
+const liveInstructions = () => `${SYSTEM_PROMPT} ${LIVE_ADDENDUM}`;
 
 /** An SDP offer for one audio track is a couple of kilobytes. */
 const MAX_SDP_CHARS = 32_000;
@@ -242,6 +265,7 @@ live.post('/public-live/token', async (c) => {
     secret = await mintClientSecret(c.env, {
       model,
       voice: LIVE_VOICE,
+      instructions: liveInstructions(),
       signal: c.req.raw.signal,
     });
   } catch (error) {

@@ -360,9 +360,12 @@ export function AgentActivityPanel() {
     pendingConfirmations,
     panelOpen,
     bridgeAttached,
+    live,
   } = useWebMcpState();
   const reducedMotion = usePrefersReducedMotion();
-  const glyph = readGlyphState(activity);
+  // The connection joins the same five cells the tool motions already use.
+  // Not a second indicator beside them — one mark, two facts.
+  const glyph = readGlyphState(activity, live);
 
   const [expanded, setExpanded] = useState<readonly string[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);

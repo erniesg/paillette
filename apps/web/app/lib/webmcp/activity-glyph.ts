@@ -42,12 +42,32 @@ export type GlyphKind = 'scan' | 'look' | 'deal' | 'mark' | 'build' | 'read';
  */
 export type GlyphPhase = 'idle' | 'running' | 'failed';
 
+/**
+ * Whether a live session is up, and what it is doing.
+ *
+ * Orthogonal to `phase`, not another value of it: a session can be connected
+ * *and* running a tool, and collapsing the two would mean the glyph could only
+ * ever report one of the two true things.
+ *
+ * `off` is the whole of today's behaviour, and it is the default everywhere.
+ * The typed path never leaves it, which is the point — a page with no session
+ * open looks exactly as it looked before this existed.
+ */
+export type LiveGlyphState = 'off' | 'connecting' | 'on' | 'listening';
+
 export interface GlyphState {
   phase: GlyphPhase;
   /** Which motion to play. Null only when nothing has ever run. */
   kind: GlyphKind | null;
   /** How many calls are in flight. The log shows them; the glyph does not. */
   running: number;
+  /**
+   * The live connection, on the same five cells rather than in a panel of its
+   * own. A labelled control announcing "live mode" would be the interface
+   * explaining itself, which is the one thing the house rules forbid outright;
+   * a mark that is awake instead of asleep needs no legend after one second.
+   */
+  live: LiveGlyphState;
 }
 
 /**
@@ -184,6 +204,50 @@ export const GLYPH_STILLS: Record<GlyphKind, string> = {
 /** Nothing is happening. Five dim dots — the field the marks move through. */
 export const IDLE_FRAME = '·····';
 
+/**
+ * The same field, awake.
+ *
+ * A live session at rest is not a sixth kind of work — nothing is running —
+ * so it does not get a motion of its own competing with the six that mean
+ * something. It gets weight: the middle three cells fill in, and the mark
+ * stops reading as five dots of nothing. Sitting beside `·····` the difference
+ * is unmistakable, and it is the same width, so nothing on the row moves when
+ * a session opens.
+ */
+export const LIVE_IDLE_FRAME = '·∙∙∙·';
+
+/**
+ * Connecting: one cell breathing in the centre. Deliberately slower and
+ * smaller than any tool motion — this is not work being done, it is a door
+ * opening, and it should not compete for attention with a search that is
+ * actually running.
+ */
+export const LIVE_CONNECTING: GlyphAnimation = {
+  ms: 400,
+  frames: ['··∙··', '··•··', '··∙··', '·····'],
+};
+
+/**
+ * Listening: the field gathering inward, towards the person talking.
+ *
+ * The direction is the meaning. `scan` travels across the field because the
+ * agent is casting about; this converges because something is arriving. At
+ * 12px across a room those two read as opposites, which is exactly right —
+ * one of them is the page working and the other is the page waiting on you.
+ */
+export const LIVE_LISTENING: GlyphAnimation = {
+  ms: 150,
+  frames: ['█···█', '·█·█·', '··█··', '·█·█·'],
+};
+
+export const LIVE_STILLS: Record<Exclude<LiveGlyphState, 'off'>, string> = {
+  connecting: '··∙··',
+  on: LIVE_IDLE_FRAME,
+  // Two poles pointing in, held. Distinguishable from `mark`'s two poles
+  // because those sit at full height and never move together.
+  listening: '▶···◀',
+};
+
 /** The last call came back an error, and nothing has run since. */
 export const FAILED_FRAME = '··×··';
 
@@ -218,7 +282,15 @@ export const GLYPH_ANNOUNCEMENT: Record<GlyphKind, string> = {
  *   resting as a cross.
  * - An aborted call is not a failure. Someone cancelled; nothing is wrong.
  */
-export const readGlyphState = (activity: ActivityEntry[]): GlyphState => {
+export const readGlyphState = (
+  activity: ActivityEntry[],
+  /**
+   * Defaulted, so every existing caller and every existing test describes the
+   * same glyph it always did. A page with no live session is not a page in a
+   * new state.
+   */
+  live: LiveGlyphState = 'off'
+): GlyphState => {
   let newestRunning: ActivityEntry | null = null;
   let running = 0;
 
@@ -235,23 +307,58 @@ export const readGlyphState = (activity: ActivityEntry[]): GlyphState => {
       phase: 'running',
       kind: kindForTool(newestRunning.toolName),
       running,
+      live,
     };
   }
 
   const newest = activity[0];
-  if (!newest) return { phase: 'idle', kind: null, running: 0 };
+  if (!newest) return { phase: 'idle', kind: null, running: 0, live };
 
   const failed = newest.status === 'error' || newest.error !== null;
   return {
     phase: failed ? 'failed' : 'idle',
     kind: kindForTool(newest.toolName),
     running: 0,
+    live,
   };
+};
+
+/**
+ * Which motion, if any, the glyph should be playing.
+ *
+ * Tool work outranks connection state, and that ordering is a judgement worth
+ * stating: a session being open is a standing fact the human can check any
+ * time, while a search in flight is the thing they are waiting on. The
+ * connection does not stop being visible — the still frame and the data
+ * attribute both still say so — it just stops animating over the top of work.
+ */
+export const glyphAnimationFor = (state: GlyphState): GlyphAnimation | null => {
+  if (state.phase === 'running' && state.kind) return GLYPH_ANIMATIONS[state.kind];
+  if (state.phase === 'failed') return null;
+  if (state.live === 'listening') return LIVE_LISTENING;
+  if (state.live === 'connecting') return LIVE_CONNECTING;
+  return null;
 };
 
 /** The single frame to paint given a state and whether motion is allowed. */
 export const stillFrameFor = (state: GlyphState): string => {
   if (state.phase === 'failed') return FAILED_FRAME;
   if (state.phase === 'running' && state.kind) return GLYPH_STILLS[state.kind];
+  if (state.live !== 'off') return LIVE_STILLS[state.live];
   return IDLE_FRAME;
+};
+
+/**
+ * One word for the connection, for a reader who is not looking at the screen.
+ *
+ * `on` is silent on purpose. A screen reader announcing "live session open"
+ * every time the glyph re-renders is the audible form of helper text, and the
+ * two states worth interrupting someone for are the one that is changing and
+ * the one where the microphone is hot.
+ */
+export const LIVE_ANNOUNCEMENT: Record<LiveGlyphState, string> = {
+  off: '',
+  connecting: 'connecting',
+  on: '',
+  listening: 'listening',
 };

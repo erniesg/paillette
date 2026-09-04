@@ -16,6 +16,12 @@ import {
   GLYPH_ANNOUNCEMENT,
   GLYPH_STILLS,
   IDLE_FRAME,
+  LIVE_ANNOUNCEMENT,
+  LIVE_CONNECTING,
+  LIVE_IDLE_FRAME,
+  LIVE_LISTENING,
+  LIVE_STILLS,
+  glyphAnimationFor,
   kindForTool,
   readGlyphState,
   stillFrameFor,
@@ -118,6 +124,7 @@ describe('readGlyphState', () => {
       phase: 'idle',
       kind: null,
       running: 0,
+      live: 'off',
     });
   });
 
@@ -127,7 +134,7 @@ describe('readGlyphState', () => {
         entry({ toolName: 'describe_artwork', status: 'running', endedAt: null })
       )
     );
-    expect(state).toEqual({ phase: 'running', kind: 'look', running: 1 });
+    expect(state).toEqual({ phase: 'running', kind: 'look', running: 1, live: 'off' });
   });
 
   it('follows the most recently started call when several are in flight', () => {
@@ -140,7 +147,7 @@ describe('readGlyphState', () => {
         entry({ toolName: 'search_artworks', status: 'running', startedAt: 1_000, endedAt: null })
       )
     );
-    expect(state).toEqual({ phase: 'running', kind: 'deal', running: 3 });
+    expect(state).toEqual({ phase: 'running', kind: 'deal', running: 3, live: 'off' });
   });
 
   it('keeps running while one of several calls has settled', () => {
@@ -158,7 +165,7 @@ describe('readGlyphState', () => {
     const state = readGlyphState(
       newestFirst(entry({ toolName: 'search_artworks', status: 'ok' }))
     );
-    expect(state).toEqual({ phase: 'idle', kind: 'scan', running: 0 });
+    expect(state).toEqual({ phase: 'idle', kind: 'scan', running: 0, live: 'off' });
   });
 
   it('rests as a failure when the last call threw', () => {
@@ -197,16 +204,92 @@ describe('readGlyphState', () => {
   });
 });
 
+describe('the live connection, on the same five cells', () => {
+  it('changes nothing at all when no session is open', () => {
+    // The typed path is the path. If this ever stops being true, the feature
+    // has cost the thing it was meant to sit on top of.
+    expect(readGlyphState([]).live).toBe('off');
+    expect(
+      stillFrameFor({ phase: 'idle', kind: null, running: 0, live: 'off' })
+    ).toBe(IDLE_FRAME);
+    expect(
+      glyphAnimationFor({ phase: 'idle', kind: null, running: 0, live: 'off' })
+    ).toBeNull();
+  });
+
+  it('wakes the resting mark without changing its width', () => {
+    const state = readGlyphState([], 'on');
+    expect(stillFrameFor(state)).toBe(LIVE_IDLE_FRAME);
+    expect(stillFrameFor(state)).not.toBe(IDLE_FRAME);
+    // Nothing on the row may move when a session opens.
+    expect([...LIVE_IDLE_FRAME].length).toBe(CELLS);
+    for (const frame of [...LIVE_CONNECTING.frames, ...LIVE_LISTENING.frames]) {
+      expect([...frame].length).toBe(CELLS);
+    }
+    for (const still of Object.values(LIVE_STILLS)) {
+      expect([...still].length).toBe(CELLS);
+    }
+  });
+
+  it('lets tool work outrank the connection, both in motion and in words', () => {
+    const searching = readGlyphState(
+      newestFirst(
+        entry({ toolName: 'search_artworks', status: 'running', endedAt: null })
+      ),
+      'listening'
+    );
+    // Both facts survive — the connection is still on the state — but the
+    // thing the human is waiting on is the thing that animates.
+    expect(searching.live).toBe('listening');
+    expect(glyphAnimationFor(searching)).toBe(GLYPH_ANIMATIONS.scan);
+    expect(stillFrameFor(searching)).toBe(GLYPH_STILLS.scan);
+  });
+
+  it('animates connecting and listening when nothing else is running', () => {
+    expect(glyphAnimationFor(readGlyphState([], 'connecting'))).toBe(
+      LIVE_CONNECTING
+    );
+    expect(glyphAnimationFor(readGlyphState([], 'listening'))).toBe(
+      LIVE_LISTENING
+    );
+    // An open session at rest is a standing fact, not an event. Motion for it
+    // would be the page fidgeting about its own plumbing.
+    expect(glyphAnimationFor(readGlyphState([], 'on'))).toBeNull();
+  });
+
+  it('gives the live stills marks no tool kind already owns', () => {
+    // Same promise the six kinds make to each other, extended: under
+    // prefers-reduced-motion these are the only thing distinguishing the
+    // states, so a collision is a state some people simply cannot perceive.
+    const marks = [
+      ...Object.values(GLYPH_STILLS),
+      ...Object.values(LIVE_STILLS),
+      IDLE_FRAME,
+      FAILED_FRAME,
+    ];
+    expect(new Set(marks).size).toBe(marks.length);
+  });
+
+  it('says nothing aloud about a session that is merely open', () => {
+    // A screen reader announcing "live session open" on every re-render is the
+    // audible form of helper text. Only the transitions are worth an interrupt.
+    expect(LIVE_ANNOUNCEMENT.on).toBe('');
+    expect(LIVE_ANNOUNCEMENT.off).toBe('');
+    expect(LIVE_ANNOUNCEMENT.connecting).toBeTruthy();
+    expect(LIVE_ANNOUNCEMENT.listening).toBeTruthy();
+  });
+});
+
 describe('stillFrameFor', () => {
   it('draws the field when nothing is happening', () => {
-    expect(stillFrameFor({ phase: 'idle', kind: 'scan', running: 0 })).toBe(
-      IDLE_FRAME
-    );
+    expect(
+      stillFrameFor({ phase: 'idle', kind: 'scan', running: 0, live: 'off' })
+    ).toBe(IDLE_FRAME);
   });
 
   it('draws the kind when something is', () => {
-    expect(stillFrameFor({ phase: 'running', kind: 'deal', running: 1 })).toBe(
-      GLYPH_STILLS.deal
-    );
+    expect(
+      stillFrameFor({ phase: 'running', kind: 'deal', running: 1, live: 'off' })
+    ).toBe(GLYPH_STILLS.deal);
   });
 });

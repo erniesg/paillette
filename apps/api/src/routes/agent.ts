@@ -71,7 +71,7 @@ const AGENT_MODEL = 'gpt-5.6-terra';
  * when the two disagree — and the answer is not "ask", it is "follow the hands
  * and say so out loud".
  */
-const SYSTEM_PROMPT = [
+export const SYSTEM_PROMPT = [
   'You operate a museum art-search page through the tools it exposes.',
   'Work on the page, not in text: put what you find on the screen with set_results, and open a single work with show_artwork.',
   'Most requests are goals, not queries — "something warm for above the sofa", "a room about storms at sea". Treat a goal as your problem to interpret.',

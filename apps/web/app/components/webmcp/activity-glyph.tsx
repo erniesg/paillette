@@ -16,8 +16,9 @@
 
 import { useEffect, useRef } from 'react';
 import {
-  GLYPH_ANIMATIONS,
   GLYPH_ANNOUNCEMENT,
+  LIVE_ANNOUNCEMENT,
+  glyphAnimationFor,
   stillFrameFor,
   type GlyphState,
 } from '~/lib/webmcp/activity-glyph';
@@ -34,16 +35,17 @@ export function ActivityGlyph({
   reducedMotion: boolean;
 }) {
   const cellsRef = useRef<HTMLSpanElement>(null);
-  const { phase, kind } = state;
+  const { phase, kind, live } = state;
   const still = stillFrameFor(state);
-  const animated = phase === 'running' && kind !== null && !reducedMotion;
+  const motion = glyphAnimationFor(state);
+  const animated = motion !== null && !reducedMotion;
 
   useEffect(() => {
-    if (!animated || !kind) return;
+    if (!animated || !motion) return;
     const node = cellsRef.current;
     if (!node) return;
 
-    const { frames, ms } = GLYPH_ANIMATIONS[kind];
+    const { frames, ms } = motion;
     let index = 0;
     node.textContent = frames[0]!;
     const timer = window.setInterval(() => {
@@ -52,17 +54,24 @@ export function ActivityGlyph({
     }, ms);
 
     return () => window.clearInterval(timer);
-  }, [animated, kind]);
+    // `motion` is one of a handful of module-level constants, so its identity
+    // is stable per state and this is a real dependency rather than a new
+    // object every render.
+  }, [animated, motion]);
 
   return (
     <>
       <span
         // Remount on every state change; see the note at the top of the file.
-        key={`${phase}:${kind ?? 'none'}:${animated}`}
+        key={`${phase}:${kind ?? 'none'}:${live}:${animated}`}
         ref={cellsRef}
         className="pa-activity-cells"
         data-phase={phase}
         data-kind={kind ?? 'none'}
+        // The connection as an attribute rather than as a word. Styling can
+        // give a live glyph its own weight without anything on the page
+        // acquiring a label that says "live mode".
+        data-live={live}
         aria-hidden="true"
       >
         {still}
@@ -71,13 +80,17 @@ export function ActivityGlyph({
         The accessible rendering of a signal that is otherwise only a picture.
         Never painted: a state you can only perceive through motion, or only
         through colour, is a state some people do not have.
+
+        Tool work is announced ahead of connection state for the same reason it
+        animates ahead of it — one is what you are waiting on, the other is a
+        standing fact.
       */}
       <span className="pa-activity-sr" role="status">
         {phase === 'running' && kind
           ? GLYPH_ANNOUNCEMENT[kind]
           : phase === 'failed'
             ? 'last tool call failed'
-            : ''}
+            : LIVE_ANNOUNCEMENT[live]}
       </span>
     </>
   );

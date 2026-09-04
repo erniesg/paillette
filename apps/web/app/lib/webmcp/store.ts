@@ -13,6 +13,7 @@ import type {
   AgentArtworkDetail,
   AgentArtworkSummary,
 } from './artwork-summary';
+import type { LiveGlyphState } from './activity-glyph';
 
 export type ResultSetOrigin = 'human' | 'agent';
 
@@ -262,6 +263,14 @@ export interface WebMcpState {
   /** True once the bridge has registered tools with a real host. */
   bridgeAttached: boolean;
   /**
+   * Whether a live session is up, and what it is doing.
+   *
+   * Kept here rather than in the prompt component so the glyph can read it the
+   * same way it reads tool activity — one source, one mark. `'off'` is the
+   * resting state and the only one the typed path ever sees.
+   */
+  live: LiveGlyphState;
+  /**
    * Whether the tool-call log is expanded.
    *
    * Collapsed is the resting state and nothing the agent does opens it. The
@@ -319,6 +328,7 @@ const initialState: WebMcpState = {
   activityDropped: 0,
   pendingConfirmations: [],
   bridgeAttached: false,
+  live: 'off',
   panelOpen: false,
 };
 
@@ -397,6 +407,11 @@ export const setHoveredArtwork = (hovered: string | null) => {
 };
 
 export const setSelection = (selection: string[]) => update({ selection });
+
+export const setLiveState = (live: LiveGlyphState) => {
+  if (state.live === live) return;
+  update({ live });
+};
 
 export const setBridgeAttached = (bridgeAttached: boolean) =>
   update({ bridgeAttached });

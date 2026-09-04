@@ -30,7 +30,14 @@ import {
   type SpeechChannel,
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
-import { getWebMcpState } from '~/lib/webmcp/store';
+import {
+  isLiveSupported,
+  openLiveSession,
+  type LiveConnectionState,
+  type LiveSession,
+} from '~/lib/voice/live-session';
+import type { LiveEvent } from '~/lib/voice/live-protocol';
+import { getWebMcpState, setLiveState } from '~/lib/webmcp/store';
 import { listHungWorks } from '~/lib/webmcp/exhibition';
 import {
   findShowGap,
@@ -256,6 +263,38 @@ export function AgentPrompt({
   const lastHoverRef = useRef<SceneWork | null>(null);
   /** The page's voice, or null where the browser has none. */
   const speechRef = useRef<SpeechChannel | null>(null);
+  /**
+   * The live session, once one is open.
+   *
+   * Null is the ordinary state and everything below is written so that null
+   * changes nothing: with no session the component is exactly the two-path
+   * cascade it has always been. That is not a fallback bolted on afterwards —
+   * it is the path the demo runs on when the network is bad, the microphone is
+   * refused, the budget is spent, or the browser has never heard of WebRTC.
+   */
+  const liveRef = useRef<LiveSession | null>(null);
+  /** True between asking for a session and getting one, so holds do not stack. */
+  const liveOpeningRef = useRef(false);
+  /**
+   * A session that failed once is not retried on every press. One connection
+   * attempt per page load is enough to learn the answer, and a button that
+   * silently re-dials on every hold is a button that stutters.
+   */
+  const liveRefusedRef = useRef(false);
+  /**
+   * The conversation item holding the audio the human just spoke, waiting out
+   * the grace window. This is what makes speaking and typing one conversation:
+   * until it is answered it can still be withdrawn and replaced by text.
+   */
+  const spokenItemRef = useRef<string | null>(null);
+  /** The transcript exactly as it arrived, to tell "sent as heard" from "edited". */
+  const spokenTextRef = useRef('');
+  /** Tool calls from the response being read, flushed when it completes. */
+  const liveToolsRef = useRef<
+    { callId: string; name: string; args: Record<string, unknown> }[]
+  >([]);
+  /** How the human's last live turn arrived, deciding how the reply comes back. */
+  const liveChannelRef = useRef<TurnChannel>('text');
   const fieldRef = useRef<HTMLInputElement | null>(null);
   /** How far the input has scrolled its own text, for the mirror to match. */
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -275,7 +314,14 @@ export function AgentPrompt({
     // Interruptible, and cheaply: a click anywhere is somebody's attention
     // moving on, and a note that keeps talking through that is a note nobody
     // asked for. Cancelling is a no-op unless this component is the speaker.
-    const interrupt = () => speechRef.current?.cancel();
+    // Both voices stop, because from here there is only one: `speechSynthesis`
+    // when the reply came back as text through the old path, and the session's
+    // own audio when it did not. Clearing the output buffer is what makes the
+    // live half stop within a frame rather than finishing its sentence.
+    const interrupt = () => {
+      speechRef.current?.cancel();
+      liveRef.current?.interrupt();
+    };
     document.addEventListener('pointerdown', interrupt, true);
     return () => {
       document.removeEventListener('pointerdown', interrupt, true);
@@ -552,17 +598,207 @@ export function AgentPrompt({
   }, []);
 
   /**
+   * Run the tool calls one live response asked for, and hand the results back.
+   *
+   * The same `callTool` the typed loop uses, against the same
+   * `document.modelContext`, in the same browser. There is no agent-only path:
+   * the session is another operator of the tool surface the human drives by
+   * hand, which is the entire argument this project rests on. A second,
+   * privileged route for the voice agent would quietly make that claim false.
+   */
+  const runLiveTools = useCallback(async () => {
+    const session = liveRef.current;
+    const calls = liveToolsRef.current;
+    liveToolsRef.current = [];
+    if (!session) return;
+
+    // No calls means the response was the answer. Nothing to hand back.
+    if (calls.length === 0) return;
+
+    const runOne = async (call: (typeof calls)[number]) => {
+      try {
+        return await callTool(call.name, call.args);
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    };
+
+    // Reads together, writes in order — the same rule as the typed loop, and
+    // for the same reason: two `set_results` in flight leave the board showing
+    // whichever returned last rather than what was asked for.
+    let batch: typeof calls = [];
+    const flush = async () => {
+      if (batch.length === 0) return;
+      const running = batch;
+      batch = [];
+      const results = await Promise.all(running.map(runOne));
+      running.forEach((call, index) =>
+        session.sendToolResult(call.callId, results[index], false, false)
+      );
+    };
+
+    for (const call of calls) {
+      if (PAILLETTE_READ_ONLY_TOOL_NAMES.has(call.name)) {
+        batch.push(call);
+        continue;
+      }
+      await flush();
+      session.sendToolResult(call.callId, await runOne(call), false, false);
+    }
+    await flush();
+
+    // One reply, after every result is in. Asking for it per tool would have
+    // the agent talking over its own work.
+    session.commitSpoken(liveChannelRef.current === 'voice');
+  }, []);
+
+  const handleLiveEvent = useCallback(
+    (event: LiveEvent) => {
+      switch (event.kind) {
+        case 'transcript':
+          // The transcript lands in the same field the keyboard writes to, and
+          // starts the same 1.2s countdown. Speaking and typing are not two
+          // inputs here — they are two ways of filling one field.
+          spokenItemRef.current = event.itemId;
+          spokenTextRef.current = event.text;
+          setInput((current) => composeUtterance(current, event.text));
+          setInterim('');
+          setPendingVoice(true);
+          setGraceFill(0);
+          setGraceStartedAt(Date.now());
+          return;
+
+        case 'reply': {
+          // Shown whether it was spoken or typed. The audio, when there is
+          // any, is already playing through the peer connection — the board
+          // and the wall label above it do not become optional just because
+          // the answer happened to be audible.
+          const said = event.text.trim();
+          if (said) setEntries((current) => [...current, { kind: 'agent', text: said }]);
+          return;
+        }
+
+        case 'tool':
+          liveToolsRef.current = [...liveToolsRef.current, event];
+          return;
+
+        case 'response-done':
+          setBusy(false);
+          void runLiveTools();
+          return;
+
+        case 'error':
+          setEntries((current) => [
+            ...current,
+            { kind: 'error', text: event.message },
+          ]);
+          setBusy(false);
+          return;
+
+        default:
+          return;
+      }
+    },
+    [runLiveTools]
+  );
+
+  /**
+   * Open a session, once, quietly.
+   *
+   * Everything about the failure path is deliberate. A refusal is not an error
+   * dialog and not a disabled control — the microphone keeps working through
+   * the recogniser it has always used, and the only visible difference is that
+   * the glyph never wakes up. A budget refusal *is* shown, because "you have
+   * used this hour's live audio" is a fact about the visitor's own session
+   * that they can act on; a WebRTC failure is not, and saying it would be the
+   * page narrating its own plumbing.
+   */
+  const ensureLive = useCallback(async () => {
+    if (liveRef.current || liveOpeningRef.current || liveRefusedRef.current) return;
+    if (!isLiveSupported()) {
+      liveRefusedRef.current = true;
+      return;
+    }
+
+    liveOpeningRef.current = true;
+    setLiveState('connecting');
+    try {
+      const context = getModelContext();
+      const registered = (await context?.getTools?.()) ?? [];
+      liveRef.current = await openLiveSession(registered, {
+        onState: (state: LiveConnectionState) => {
+          setLiveState(
+            state === 'listening'
+              ? 'listening'
+              : state === 'connecting'
+                ? 'connecting'
+                : state === 'open' || state === 'speaking'
+                  ? 'on'
+                  : 'off'
+          );
+        },
+        onEvent: handleLiveEvent,
+        onClosed: (reason) => {
+          liveRef.current = null;
+          // Told once, in one sentence, and only when there is something the
+          // human could not have worked out from the glyph going dark.
+          if (reason) {
+            setEntries((current) => [...current, { kind: 'error', text: reason }]);
+          }
+          setLiveState('off');
+        },
+      });
+    } catch (error) {
+      liveRefusedRef.current = true;
+      setLiveState('off');
+      const message = error instanceof Error ? error.message : '';
+      // The Worker's budget refusals are written to be read by a person and
+      // are the visitor's own business. Everything else — a refused microphone
+      // permission, a failed negotiation — degrades in silence.
+      if (message.includes('budget') || message.includes('Typing still works')) {
+        setEntries((current) => [...current, { kind: 'error', text: message }]);
+      }
+    } finally {
+      liveOpeningRef.current = false;
+    }
+  }, [handleLiveEvent]);
+
+  /**
    * Hold to talk. Not an open mic: a page that is always listening is a page
    * you have to remember is listening, and the whole point of the grace bar
    * below is that the human can see the exact moment the agent is about to act.
    */
   const startListening = useCallback(() => {
     if (holdingRef.current || busy) return;
-    const Recognition = getSpeechRecognition();
-    if (!Recognition) return;
 
     // Talking over the human is the one thing a voice interface cannot do.
     speechRef.current?.cancel();
+
+    // The first hold is also what opens the session, so there is one
+    // affordance rather than a connect control beside a talk control. It is
+    // not awaited: connecting takes about a second, and a human already
+    // speaking must not lose those words. This hold runs on the recogniser
+    // that has always been here; the next one runs on the session.
+    void ensureLive();
+
+    const session = liveRef.current;
+    if (session) {
+      cancelGrace();
+      holdingRef.current = true;
+      beforeUtteranceRef.current = input;
+      // Anything still in the field is the previous turn's; a hold starts a
+      // new utterance the same way the recogniser path does.
+      session.startTalking();
+      setListening(true);
+      return;
+    }
+
+    const Recognition = getSpeechRecognition();
+    if (!Recognition) return;
+
     cancelGrace();
     awaitingFlushRef.current = false;
     holdingRef.current = true;
@@ -618,7 +854,7 @@ export function AgentPrompt({
     beforeUtteranceRef.current = input;
     setListening(true);
     recognition.start();
-  }, [busy, cancelGrace, input]);
+  }, [busy, cancelGrace, ensureLive, input]);
 
   /**
    * Releasing does not send. It starts a countdown the human can watch, and
@@ -629,6 +865,17 @@ export function AgentPrompt({
     if (!holdingRef.current) return;
     holdingRef.current = false;
     setListening(false);
+
+    const session = liveRef.current;
+    if (session) {
+      // Closes the microphone and commits the audio *without* asking for a
+      // reply. The gap is the feature: committing is what produces the
+      // transcript, and the transcript is what the grace bar gives the human
+      // 1.2 seconds to rewrite before anything is answered.
+      session.stopTalking();
+      return;
+    }
+
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -658,6 +905,14 @@ export function AgentPrompt({
     setResolution(emptyResolution());
     setInterim('');
     setInput(beforeUtteranceRef.current);
+    // "Never happened" has to be true inside the session too. Audio left in
+    // the conversation is a version of the sentence they withdrew, and the
+    // next thing they say would be answered with it still standing.
+    if (spokenItemRef.current) {
+      liveRef.current?.discardSpoken(spokenItemRef.current);
+      spokenItemRef.current = null;
+      spokenTextRef.current = '';
+    }
   }, [cancelGrace]);
 
   const submit = useCallback(
@@ -666,18 +921,50 @@ export function AgentPrompt({
       setPendingVoice(false);
       setResolution(emptyResolution());
       const instruction = text.trim();
+      const spokenItem = spokenItemRef.current;
+      const heardAs = spokenTextRef.current;
+      spokenItemRef.current = null;
+      spokenTextRef.current = '';
       setInput('');
       setInterim('');
       beforeUtteranceRef.current = '';
       if (!instruction || busy) return;
+
       // A turn counts as spoken if the mic put words into it. Correcting the
       // transcript by hand before sending does not demote it: the sentence
       // started in someone's mouth, so the reply belongs in their ears.
-      void run(
-        instruction,
-        resolveAgainstScreen(instruction),
-        pendingVoice ? 'voice' : 'text'
-      );
+      const channel: TurnChannel = pendingVoice ? 'voice' : 'text';
+
+      const session = liveRef.current;
+      if (session) {
+        liveChannelRef.current = channel;
+        setEntries((current) => [
+          ...current,
+          {
+            kind: 'you',
+            text: instruction,
+            referents: resolveAgainstScreen(instruction).referents,
+          },
+        ]);
+        setBusy(true);
+
+        if (spokenItem && instruction === heardAs) {
+          // Sent exactly as heard. The audio the session already holds is the
+          // turn — re-sending it as text would throw away everything the model
+          // can hear that a transcript cannot carry.
+          session.commitSpoken(channel === 'voice');
+        } else {
+          // Started by speaking, finished by typing. The audio is withdrawn
+          // and the edited sentence takes its place, so the session answers
+          // what they meant rather than what the recogniser heard. This is the
+          // whole reason the grace window survived into the live path.
+          if (spokenItem) session.discardSpoken(spokenItem);
+          session.sendText(instruction, channel === 'voice');
+        }
+        return;
+      }
+
+      void run(instruction, resolveAgainstScreen(instruction), channel);
     },
     [busy, cancelGrace, pendingVoice, resolveAgainstScreen, run]
   );
@@ -813,14 +1100,33 @@ export function AgentPrompt({
       } catch {
         // Unmounting is not a good moment to care.
       }
+      // A session left open by a navigation keeps its grant debited until the
+      // server sweeps it. Closing here is what makes the unused seconds
+      // available again immediately, to this visitor and to everyone else.
+      void liveRef.current?.close();
     },
     []
   );
 
+  /**
+   * A tab that closes mid-session settles on the next sweep, which can be
+   * minutes. `pagehide` with a keepalive request settles it now — the same
+   * refund, taken at the moment it becomes true rather than the moment
+   * somebody else happens to ask.
+   */
+  useEffect(() => {
+    const hangUp = () => void liveRef.current?.close();
+    window.addEventListener('pagehide', hangUp);
+    return () => window.removeEventListener('pagehide', hangUp);
+  }, []);
+
   // Nothing to offer where the page never registered its tools.
   if (!available) return null;
 
-  const micSupported = getSpeechRecognition() !== null;
+  // Either way in counts. A browser with no `webkitSpeechRecognition` but with
+  // WebRTC — which is most of them that are not Chrome — used to get no
+  // microphone at all; it now gets the better one.
+  const micSupported = getSpeechRecognition() !== null || isLiveSupported();
   // One string, two contrasts: what the human owns, then what is still being
   // heard. Both live in the same field because there is only one field.
   const composed = composeUtterance(input, interim);

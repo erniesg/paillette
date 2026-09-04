@@ -73,16 +73,23 @@ export type ClientSecret = { value: string; expiresAt: number };
 /**
  * Mint an ephemeral client credential.
  *
- * The session's instructions, tools and modalities are deliberately *not* set
- * here. Tools live on `document.modelContext` in the browser and are only
- * known once the page has registered them, so the page configures the session
- * over the data channel after connecting. What this pins is the model and the
- * voice — the two things a client should not be able to choose, because both
- * are priced.
+ * The model, the voice and the instructions are pinned here, server-side, and
+ * travel bound to the token. The tools are not: they live on
+ * `document.modelContext` and are only knowable once the page has registered
+ * them, so the page adds those over the data channel after connecting.
+ *
+ * The split is not arbitrary. What is pinned here is what costs money or sets
+ * behaviour; what the page supplies is the list of things it is willing to let
+ * the session do to itself.
  */
 export const mintClientSecret = async (
   env: RealtimeEnv,
-  options: { model: string; voice: string; signal?: AbortSignal }
+  options: {
+    model: string;
+    voice: string;
+    instructions: string;
+    signal?: AbortSignal;
+  }
 ): Promise<ClientSecret> => {
   const response = await fetch(`${REALTIME_ROOT}/client_secrets`, {
     method: 'POST',
@@ -95,6 +102,7 @@ export const mintClientSecret = async (
       session: {
         type: 'realtime',
         model: options.model,
+        instructions: options.instructions,
         audio: { output: { voice: options.voice } },
       },
     }),
