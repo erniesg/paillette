@@ -329,6 +329,66 @@ describe('a live session, holding both modalities', () => {
   });
 });
 
+describe('interrupting', () => {
+  it('lets the human cut in by reaching for the microphone mid-reply', async () => {
+    const session = makeSession();
+    await connect(session);
+
+    // A reply is in flight: the field is disabled and the agent is talking.
+    const field = screen.getByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'warmer' } });
+    fireEvent.submit(field.closest('form')!);
+    await waitFor(() => expect(field).toBeDisabled());
+
+    await hold();
+
+    // `busy` gates a second turn on the turn-based path, where one really is
+    // nonsense. Here it is the human cutting in, which is what a live session
+    // is for — so the press has to reach the microphone.
+    expect(session.sent.some((entry) => entry.call === 'interrupt')).toBe(true);
+    expect(session.sent.some((entry) => entry.call === 'startTalking')).toBe(true);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(PLACEHOLDER)).not.toBeDisabled()
+    );
+  });
+
+  it('keeps the field disabled while the tools a reply asked for are running', async () => {
+    let release: (value: unknown) => void = () => {};
+    setModelContext([
+      {
+        name: 'set_results',
+        execute: () => new Promise((resolve) => (release = resolve)),
+      },
+    ]);
+
+    const session = makeSession();
+    await connect(session);
+
+    const field = screen.getByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'storms' } });
+    fireEvent.submit(field.closest('form')!);
+    await waitFor(() => expect(field).toBeDisabled());
+
+    await act(async () => {
+      handlers?.onEvent({ kind: 'tool', callId: 'a', name: 'set_results', args: {} });
+      handlers?.onEvent({ kind: 'response-done' });
+    });
+
+    // The response is done; the turn is not. Re-enabling here reads as "your
+    // turn" while the board is still moving.
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toBeDisabled();
+
+    await act(async () => {
+      release({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        session.sent.some((entry) => entry.call === 'sendToolResult')
+      ).toBe(true)
+    );
+  });
+});
+
 describe('the session driving the page’s own tools', () => {
   it('runs a tool call in the browser and hands the result back', async () => {
     const executed: { name: string; args: unknown }[] = [];

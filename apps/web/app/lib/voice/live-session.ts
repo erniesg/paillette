@@ -143,19 +143,42 @@ export const openLiveSession = async (
   };
 
   const track = microphone.getAudioTracks()[0] ?? null;
+  if (!track) {
+    microphone.getTracks().forEach((entry) => entry.stop());
+    connection.close();
+    await closeOnServer(minted.sessionId);
+    throw new Error('The microphone produced no audio track.');
+  }
   // Muted from the first instant it exists. Between `openLiveSession` and the
   // first press there is no moment at which this page is listening.
-  if (track) track.enabled = false;
-  connection.addTrack(track as MediaStreamTrack, microphone);
+  track.enabled = false;
+  connection.addTrack(track, microphone);
 
   const channel = connection.createDataChannel('oai-events');
 
   let closed = false;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Whether a response is in flight.
+   *
+   * Tracked because `response.cancel` with nothing to cancel comes back as an
+   * `error` event, and this page shows error events to the human. Interrupting
+   * silence would put "Cancellation failed: no active response" on screen
+   * every time somebody pressed the button to speak.
+   */
+  let responding = false;
 
   const send = (message: unknown) => {
     if (channel.readyState !== 'open') return;
     channel.send(JSON.stringify(message));
+  };
+
+  /** Stop whatever is being said, if anything is. */
+  const cancelReply = () => {
+    if (!responding) return;
+    responding = false;
+    send({ type: 'response.cancel' });
+    send({ type: 'output_audio_buffer.clear' });
   };
 
   const stop = async (reason: string | null) => {
@@ -184,6 +207,7 @@ export const openLiveSession = async (
     for (const live of readLiveEvent(parsed)) {
       if (live.kind === 'ignored') continue;
       if (live.kind === 'ready') handlers.onState('open');
+      if (live.kind === 'response-done') responding = false;
       handlers.onEvent(live);
     }
   };
@@ -238,15 +262,14 @@ export const openLiveSession = async (
 
     startTalking: () => {
       // Anything the agent is still saying stops the moment the human speaks.
-      send({ type: 'response.cancel' });
-      send({ type: 'output_audio_buffer.clear' });
+      cancelReply();
       send({ type: 'input_audio_buffer.clear' });
-      if (track) track.enabled = true;
+      track.enabled = true;
       handlers.onState('listening');
     },
 
     stopTalking: () => {
-      if (track) track.enabled = false;
+      track.enabled = false;
       // Commit without `response.create`. That gap is the whole feature: the
       // commit is what produces a transcript, and the transcript is what the
       // grace bar gives the human 1.2 seconds to rewrite before anything is
@@ -257,11 +280,13 @@ export const openLiveSession = async (
 
     sendText: (text, speak) => {
       send(buildUserText(text));
+      responding = true;
       send(buildResponseCreate(speak));
       if (speak) handlers.onState('speaking');
     },
 
     commitSpoken: (speak) => {
+      responding = true;
       send(buildResponseCreate(speak));
       if (speak) handlers.onState('speaking');
     },
@@ -270,12 +295,15 @@ export const openLiveSession = async (
 
     sendToolResult: (callId, result, thenReply, speak) => {
       send(buildToolResult(callId, result));
-      if (thenReply) send(buildResponseCreate(speak));
+      if (thenReply) {
+        responding = true;
+        send(buildResponseCreate(speak));
+      }
     },
 
     interrupt: () => {
-      send({ type: 'response.cancel' });
-      send({ type: 'output_audio_buffer.clear' });
+      if (!responding) return;
+      cancelReply();
       handlers.onState('open');
     },
 

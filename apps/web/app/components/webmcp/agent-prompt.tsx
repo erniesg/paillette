@@ -295,6 +295,12 @@ export function AgentPrompt({
   >([]);
   /** How the human's last live turn arrived, deciding how the reply comes back. */
   const liveChannelRef = useRef<TurnChannel>('text');
+  /**
+   * The current interrupt, for the document-level listener installed once at
+   * mount. Re-pointed every render so the listener never closes over a stale
+   * session, which is what a dependency array here would have cost.
+   */
+  const interruptRef = useRef<() => void>(() => {});
   const fieldRef = useRef<HTMLInputElement | null>(null);
   /** How far the input has scrolled its own text, for the mirror to match. */
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -318,10 +324,7 @@ export function AgentPrompt({
     // when the reply came back as text through the old path, and the session's
     // own audio when it did not. Clearing the output buffer is what makes the
     // live half stop within a frame rather than finishing its sentence.
-    const interrupt = () => {
-      speechRef.current?.cancel();
-      liveRef.current?.interrupt();
-    };
+    const interrupt = () => interruptRef.current();
     document.addEventListener('pointerdown', interrupt, true);
     return () => {
       document.removeEventListener('pointerdown', interrupt, true);
@@ -655,6 +658,22 @@ export function AgentPrompt({
     session.commitSpoken(liveChannelRef.current === 'voice');
   }, []);
 
+  /**
+   * Stop the agent talking, wherever the sound is coming from.
+   *
+   * Also clears `busy`. Interruption that leaves the field disabled is not
+   * interruption — the human stopped it in order to say something else, and a
+   * bar they cannot type into is the software still holding the floor.
+   */
+  const interruptAgent = useCallback(() => {
+    speechRef.current?.cancel();
+    if (liveRef.current) {
+      liveRef.current.interrupt();
+      liveToolsRef.current = [];
+      setBusy(false);
+    }
+  }, []);
+
   const handleLiveEvent = useCallback(
     (event: LiveEvent) => {
       switch (event.kind) {
@@ -686,7 +705,11 @@ export function AgentPrompt({
           return;
 
         case 'response-done':
-          setBusy(false);
+          // A response carrying tool calls is not the end of the turn: the
+          // work runs next and the reply comes after it. Releasing the field
+          // here would re-enable it mid-deal, which reads as "your turn" while
+          // the board is still moving.
+          if (liveToolsRef.current.length === 0) setBusy(false);
           void runLiveTools();
           return;
 
@@ -772,10 +795,15 @@ export function AgentPrompt({
    * below is that the human can see the exact moment the agent is about to act.
    */
   const startListening = useCallback(() => {
-    if (holdingRef.current || busy) return;
+    if (holdingRef.current) return;
+    // A live session may be interrupted by reaching for the microphone, so
+    // `busy` gates only the turn-based path — there, a second turn on top of
+    // an unfinished one really is nonsense. Here it is the human cutting in,
+    // which is the thing a live session is for.
+    if (busy && !liveRef.current) return;
 
     // Talking over the human is the one thing a voice interface cannot do.
-    speechRef.current?.cancel();
+    interruptAgent();
 
     // The first hold is also what opens the session, so there is one
     // affordance rather than a connect control beside a talk control. It is
@@ -854,7 +882,7 @@ export function AgentPrompt({
     beforeUtteranceRef.current = input;
     setListening(true);
     recognition.start();
-  }, [busy, cancelGrace, ensureLive, input]);
+  }, [busy, cancelGrace, ensureLive, input, interruptAgent]);
 
   /**
    * Releasing does not send. It starts a countdown the human can watch, and
@@ -1004,6 +1032,7 @@ export function AgentPrompt({
   commitRef.current = () => submit(composedRef.current);
   pendingVoiceRef.current = pendingVoice;
   busyRef.current = busy;
+  interruptRef.current = interruptAgent;
 
   // Chips track the field, typed or spoken. Gating this on a pending voice
   // utterance made pointing a feature of the microphone, which is exactly
