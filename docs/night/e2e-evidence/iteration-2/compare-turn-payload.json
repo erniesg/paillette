@@ -1,0 +1,47 @@
+{
+  "text": "what do these have in common?",
+  "flagsDelta": [
+    {
+      "artworkId": "open-access-art:nga:50295",
+      "title": "Peaceful Valley (Alexander Helwig Wyant)",
+      "palette": [
+        "#DEB585",
+        "#3B2F1F",
+        "#715023",
+        "#B09176"
+      ],
+      "medium": "oil on canvas",
+      "year": 1872,
+      "classification": "Painting",
+      "to": "pick"
+    },
+    {
+      "artworkId": "open-access-art:nga:184224",
+      "title": "Vicinity of Morestal (François-Auguste Ravier)",
+      "palette": [
+        "#967B62",
+        "#B6874F",
+        "#574136",
+        "#8D6634"
+      ],
+      "medium": "watercolor and fabricated charcoal",
+      "year": 1885,
+      "classification": "Drawing",
+      "to": "reject"
+    }
+  ],
+  "selection": [],
+  "hovered": null,
+  "compareChoice": {
+    "winner": {
+      "id": "open-access-art:nga:50295",
+      "title": "Peaceful Valley (Alexander Helwig Wyant)"
+    },
+    "loser": {
+      "id": "open-access-art:nga:184224",
+      "title": "Vicinity of Morestal (François-Auguste Ravier)"
+    },
+    "question": "Which one holds the wall better?"
+  },
+  "exhibitionEdits": []
+}

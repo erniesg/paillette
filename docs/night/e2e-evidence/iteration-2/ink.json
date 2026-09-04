@@ -1,0 +1,75 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "human": {
+    "flag": "pick",
+    "by": "human",
+    "provisional": "false",
+    "ink": "#e6e3dc",
+    "boxShadow": "rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px 30px 56px -18px, rgba(0, 0, 0, 0.75) 0px 3px 10px -3px",
+    "outlineColor": "rgb(230, 227, 220)",
+    "outlineStyle": "none",
+    "outlineWidth": "0px"
+  },
+  "agent": {
+    "flag": "pick",
+    "by": "agent",
+    "provisional": "true",
+    "ink": "#5ec8d8",
+    "boxShadow": "rgba(0, 0, 0, 0.92) 0px 18px 34px -14px, rgba(0, 0, 0, 0.7) 0px 2px 6px -2px",
+    "outlineColor": "rgb(94, 200, 216)",
+    "outlineStyle": "dashed",
+    "outlineWidth": "1px"
+  },
+  "agentResult": {
+    "ok": true,
+    "applied": [
+      {
+        "artworkId": "open-access-art:nga:195765",
+        "work": "Flying Shadows — Kenyon Cox",
+        "flag": "pick",
+        "reason": "the warmest thing on the board"
+      }
+    ],
+    "provisional": true,
+    "confirmedExemplars": {
+      "positive": [
+        "open-access-art:nga:184225"
+      ],
+      "negative": []
+    },
+    "effect": "These are on the human’s cards as dashed proposals. They will not steer a redeal until the human confirms them."
+  },
+  "swatches": [],
+  "results": [
+    {
+      "ok": true,
+      "label": "the two hands are distinguishable on the card",
+      "detail": "{\"human\":{\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\",\"ink\":\"#e6e3dc\",\"boxShadow\":\"rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px 30px 56px -18px, rgba(0, 0, 0, 0.75) 0px 3px 10px -3px\",\"outlineColor\":\"rgb(230, 227, 220)\",\"outlineStyle\":\"none\",\"outlineWidth\":\"0px\"},\"agent\":{\"flag\":\"pick\",\"by\":\"agent\",\"provisional\":\"true\",\"ink\":\"#5ec8d8\",\"boxShadow\":\"rgba(0, 0, 0, 0.92) 0px 18px 34px -14px, rgba(0, 0, 0, 0.7) 0px 2px 6px -2px\",\"outlineColor\":\"rgb(94, 200, 216)\",\"outlineStyle\":\"dashed\",\"outlineWidth\":\"1px\"}}"
+    },
+    {
+      "ok": true,
+      "label": "and they are two different colours, read off computed styles",
+      "detail": "--ink resolves to #e6e3dc on the human's card and #5ec8d8 on the agent's"
+    },
+    {
+      "ok": true,
+      "label": "the human's confirmed mark is a solid ring, drawn with box-shadow, not an outline",
+      "detail": "human box-shadow: rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px 30px 56px -18px, rgba(0, 0, 0, 0.75) 0px 3px 10px -3px"
+    },
+    {
+      "ok": true,
+      "label": "the agent's proposal is dashed until the human confirms it",
+      "detail": "agent outline-style=dashed; human outline-style=none"
+    },
+    {
+      "ok": true,
+      "label": "the note swatches say whose flag they are drawing",
+      "detail": "[]"
+    },
+    {
+      "ok": true,
+      "label": "no model call was spent",
+      "detail": "0"
+    }
+  ]
+}

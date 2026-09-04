@@ -1,0 +1,897 @@
+{
+  "label": "run3-full",
+  "mode": "full",
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "sunset landscape",
+  "step1": {
+    "quietMs": 40290,
+    "elapsedMs": 43977,
+    "modelCalls": 5,
+    "toolTraffic": [
+      "4732ms POST /api/public-agent/turn",
+      "7531ms POST /api/public-agent/turn",
+      "11168ms POST /api/public-search/nga/text",
+      "17142ms POST /api/public-search/nga/text",
+      "23245ms POST /api/public-search/nga/text",
+      "29102ms POST /api/public-search/nga/text",
+      "32054ms GET /api/public-search/nga/quota",
+      "33332ms POST /api/public-agent/turn",
+      "36747ms POST /api/public-agent/turn",
+      "38841ms POST /api/public-agent/turn"
+    ],
+    "board": {
+      "wallLabel": "Warm, low-clutter pictures held together by ochre, peach, and quiet open space.",
+      "provenance": "agent",
+      "dealError": null,
+      "view": "deal-board",
+      "onBoard": [
+        {
+          "id": "open-access-art:nga:214119",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:29928",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:52306",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:93047",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:50295",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:66406",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:134163",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:166460",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:117802",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:69403",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        }
+      ],
+      "tray": [],
+      "transcript": [
+        "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+      ]
+    }
+  },
+  "step2": {
+    "targets": [
+      {
+        "id": "open-access-art:nga:214119",
+        "key": "x"
+      },
+      {
+        "id": "open-access-art:nga:29928",
+        "key": "x"
+      },
+      {
+        "id": "open-access-art:nga:52306",
+        "key": "p"
+      }
+    ],
+    "flags": {
+      "picks": [
+        {
+          "id": "open-access-art:nga:52306",
+          "title": "Landscape",
+          "artist": "Berthe Morisot",
+          "palette": [
+            "#D4C7A2",
+            "#B6A385",
+            "#9A886C"
+          ],
+          "medium": "colored pencils on wove paper",
+          "year": 1841,
+          "classification": "Drawing",
+          "by": "human",
+          "onBoard": true
+        }
+      ],
+      "rejects": [
+        {
+          "id": "open-access-art:nga:214119",
+          "title": "A Peach, Seville",
+          "artist": "George Henry Hall",
+          "palette": [
+            "#C3803A",
+            "#7E3F0F",
+            "#6C443C"
+          ],
+          "medium": "oil on canvas",
+          "year": 1866,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": true
+        },
+        {
+          "id": "open-access-art:nga:29928",
+          "title": "Flask",
+          "artist": "John Tarantino",
+          "palette": [
+            "#E4D8BA",
+            "#BF894D",
+            "#885E39",
+            "#C2B194"
+          ],
+          "medium": "watercolor and graphite on paperboard",
+          "year": 1935,
+          "classification": "Index of American Design",
+          "by": "human",
+          "onBoard": true
+        }
+      ],
+      "provisional": [],
+      "exemplars": {
+        "positive": [
+          "open-access-art:nga:52306"
+        ],
+        "negative": [
+          "open-access-art:nga:214119",
+          "open-access-art:nga:29928"
+        ]
+      },
+      "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+    },
+    "visibleMarks": [
+      {
+        "id": "open-access-art:nga:214119",
+        "key": "x",
+        "onScreen": true,
+        "flag": "reject",
+        "by": null,
+        "badge": null,
+        "outline": "rgb(230, 227, 220)"
+      },
+      {
+        "id": "open-access-art:nga:29928",
+        "key": "x",
+        "onScreen": true,
+        "flag": "reject",
+        "by": null,
+        "badge": null,
+        "outline": "rgb(230, 227, 220)"
+      },
+      {
+        "id": "open-access-art:nga:52306",
+        "key": "p",
+        "onScreen": true,
+        "flag": "pick",
+        "by": null,
+        "badge": null,
+        "outline": "rgb(230, 227, 220)"
+      }
+    ]
+  },
+  "step3": {
+    "redealMs": 35,
+    "sampled": {
+      "layouts": 12,
+      "frames": 125
+    },
+    "board": {
+      "wallLabel": null,
+      "provenance": null,
+      "dealError": null,
+      "view": "deal-board",
+      "onBoard": [
+        {
+          "id": "open-access-art:nga:52307",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:76077",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:52306",
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:159673",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:184356",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:182685",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:182689",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:139929",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:75881",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:41488",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:124955",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:57484",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        }
+      ],
+      "tray": [
+        "open-access-art:nga:29928",
+        "open-access-art:nga:214119"
+      ],
+      "transcript": [
+        "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+      ]
+    },
+    "traffic": [
+      "49368ms POST /api/public-search/nga/exemplars"
+    ],
+    "modelCalls": 0,
+    "allRequestsAfterEnter": 14,
+    "pickHeld": {
+      "dxPage": 0,
+      "dyPage": -70,
+      "dxBoard": 0,
+      "dyBoard": -2
+    }
+  },
+  "step6": {
+    "first": {
+      "layouts": 12,
+      "frames": 125
+    },
+    "second": {
+      "layouts": 16,
+      "frames": 113
+    },
+    "held": [
+      {
+        "id": "open-access-art:nga:52306",
+        "dxPage": 0,
+        "dyPage": 0,
+        "dxBoard": 0,
+        "dyBoard": 0
+      }
+    ]
+  },
+  "step4": {
+    "flagsBefore": {
+      "picks": [
+        {
+          "id": "open-access-art:nga:52306",
+          "title": "Landscape",
+          "artist": "Berthe Morisot",
+          "palette": [
+            "#D4C7A2",
+            "#B6A385",
+            "#9A886C"
+          ],
+          "medium": "colored pencils on wove paper",
+          "year": 1841,
+          "classification": "Drawing",
+          "by": "human",
+          "onBoard": true
+        }
+      ],
+      "rejects": [
+        {
+          "id": "open-access-art:nga:214119",
+          "title": "A Peach, Seville",
+          "artist": "George Henry Hall",
+          "palette": [
+            "#C3803A",
+            "#7E3F0F",
+            "#6C443C"
+          ],
+          "medium": "oil on canvas",
+          "year": 1866,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": false
+        },
+        {
+          "id": "open-access-art:nga:29928",
+          "title": "Flask",
+          "artist": "John Tarantino",
+          "palette": [
+            "#E4D8BA",
+            "#BF894D",
+            "#885E39",
+            "#C2B194"
+          ],
+          "medium": "watercolor and graphite on paperboard",
+          "year": 1935,
+          "classification": "Index of American Design",
+          "by": "human",
+          "onBoard": false
+        }
+      ],
+      "provisional": [],
+      "exemplars": {
+        "positive": [
+          "open-access-art:nga:52306"
+        ],
+        "negative": [
+          "open-access-art:nga:214119",
+          "open-access-art:nga:29928"
+        ]
+      },
+      "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+    },
+    "rejectedTitles": [
+      {
+        "title": "A Peach, Seville",
+        "artist": "George Henry Hall"
+      },
+      {
+        "title": "Flask",
+        "artist": "John Tarantino"
+      }
+    ],
+    "pickedTitles": [
+      {
+        "title": "Landscape",
+        "artist": "Berthe Morisot"
+      }
+    ],
+    "quietMs": 31502,
+    "elapsedMs": 36096,
+    "modelCalls": 5,
+    "turnPayloads": [
+      {
+        "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+        "flagsDelta": [
+          {
+            "artworkId": "open-access-art:nga:214119",
+            "title": "A Peach, Seville (George Henry Hall)",
+            "palette": [
+              "#C3803A",
+              "#7E3F0F",
+              "#6C443C"
+            ],
+            "medium": "oil on canvas",
+            "year": 1866,
+            "classification": "Painting",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:29928",
+            "title": "Flask (John Tarantino)",
+            "palette": [
+              "#E4D8BA",
+              "#BF894D",
+              "#885E39",
+              "#C2B194"
+            ],
+            "medium": "watercolor and graphite on paperboard",
+            "year": 1935,
+            "classification": "Index of American Design",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:52306",
+            "title": "Landscape (Berthe Morisot)",
+            "palette": [
+              "#D4C7A2",
+              "#B6A385",
+              "#9A886C"
+            ],
+            "medium": "colored pencils on wove paper",
+            "year": 1841,
+            "classification": "Drawing",
+            "to": "pick"
+          }
+        ],
+        "selection": [],
+        "hovered": null,
+        "compareChoice": null,
+        "exhibitionEdits": []
+      },
+      null,
+      null,
+      null,
+      null
+    ],
+    "note": "You kept the pale ochre pencil landscape and rejected the darker peach palette—following its quiet, airy warmth.",
+    "provenance": "agent",
+    "view": "deal-board",
+    "transcript": [
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    ],
+    "board": [
+      {
+        "id": "open-access-art:nga:52306",
+        "flag": "pick",
+        "by": null,
+        "provisional": null
+      },
+      {
+        "id": "open-access-art:nga:214119",
+        "flag": "reject",
+        "by": null,
+        "provisional": null
+      },
+      {
+        "id": "open-access-art:nga:29928",
+        "flag": "reject",
+        "by": null,
+        "provisional": null
+      },
+      {
+        "id": "open-access-art:nga:194567",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:42561",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:52306",
+        "flag": "pick",
+        "by": "human",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:219364",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:143885",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:34609",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:206553",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:139254",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:66480",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:183501",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:6003",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:154326",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      }
+    ]
+  },
+  "results": [
+    {
+      "ok": true,
+      "label": "the utterance bar is on the page",
+      "detail": "1"
+    },
+    {
+      "ok": true,
+      "label": "voice is off — nothing is listening",
+      "detail": "{\"micPresent\":true,\"micPressed\":\"false\",\"listening\":false}"
+    },
+    {
+      "ok": true,
+      "label": "the sofa instruction is in the bar, verbatim, typed",
+      "detail": "88 chars"
+    },
+    {
+      "ok": true,
+      "label": "STEP 1 — a board comes back",
+      "detail": "10 works, view=deal-board, 44s from Enter"
+    },
+    {
+      "ok": true,
+      "label": "STEP 1 — with a written note",
+      "detail": "\"Warm, low-clutter pictures held together by ochre, peach, and quiet open space.\""
+    },
+    {
+      "ok": true,
+      "label": "STEP 1 — the note is in the agent's ink",
+      "detail": "data-provenance=agent"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — two rejects and one pick land",
+      "detail": "{\"rejects\":[\"A Peach, Seville — George Henry Hall\",\"Flask — John Tarantino\"],\"picks\":[\"Landscape — Berthe Morisot\"]}"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — every flag is the human's, none provisional",
+      "detail": "[{\"by\":\"human\",\"flag\":null},{\"by\":\"human\",\"flag\":null},{\"by\":\"human\",\"flag\":null}]"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — the flags are visible on the cards themselves",
+      "detail": "[{\"id\":\"open-access-art:nga:214119\",\"key\":\"x\",\"onScreen\":true,\"flag\":\"reject\",\"by\":null,\"badge\":null,\"outline\":\"rgb(230, 227, 220)\"},{\"id\":\"open-access-art:nga:29928\",\"key\":\"x\",\"onScreen\":true,\"flag\":\"reject\",\"by\":null,\"badge\":null,\"outline\":\"rgb(230, 227, 220)\"},{\"id\":\"open-access-art:nga:52306\",\"key\":\"p\",\"onScreen\":true,\"flag\":\"pick\",\"by\":null,\"badge\":null,\"outline\":\"rgb(230, 227, 220)\"}]"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — flagging fires no model call",
+      "detail": "0"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — the bar is empty before Enter",
+      "detail": "\"\""
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — the board redeals to twelve",
+      "detail": "12 cards, view=deal-board"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — NO MODEL CALL: zero POSTs to /public-agent/turn",
+      "detail": "0 of 14 requests after Enter; API traffic was /api/public-search/nga/exemplars"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — it hit the deterministic engine instead",
+      "detail": "/api/public-search/nga/exemplars"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — the pick is still on the board after the redeal",
+      "detail": "{\"dxPage\":0,\"dyPage\":-70,\"dxBoard\":0,\"dyBoard\":-2}"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — both rejects have left the board",
+      "detail": "{\"tray\":[\"open-access-art:nga:29928\",\"open-access-art:nga:214119\"]}"
+    },
+    {
+      "ok": true,
+      "label": "STEP 6 — the deal animates board to board",
+      "detail": "16 distinct layouts across 113 frames (a jump cut is 4–5; the first redeal measured 12)"
+    },
+    {
+      "ok": true,
+      "label": "STEP 6 — the picks visibly hold position, to the pixel",
+      "detail": "[{\"id\":\"open-access-art:nga:52306\",\"dxPage\":0,\"dyPage\":0,\"dxBoard\":0,\"dyBoard\":0}]"
+    },
+    {
+      "ok": true,
+      "label": "STEP 4 — the agent wrote a note",
+      "detail": "\"You kept the pale ochre pencil landscape and rejected the darker peach palette—following its quiet, airy warmth.\""
+    },
+    {
+      "ok": true,
+      "label": "STEP 4 — the board is still a deal board after the agent turn",
+      "detail": "deal-board"
+    },
+    {
+      "ok": true,
+      "label": "STEP 4 — the human's pick is still on the board",
+      "detail": "[{\"id\":\"open-access-art:nga:52306\",\"flag\":\"pick\",\"by\":null,\"provisional\":null},{\"id\":\"open-access-art:nga:214119\",\"flag\":\"reject\",\"by\":null,\"provisional\":null},{\"id\":\"open-access-art:nga:29928\",\"flag\":\"reject\",\"by\":null,\"provisional\":null},{\"id\":\"open-access-art:nga:194567\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:42561\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:52306\",\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:219364\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:143885\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:34609\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:206553\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:139254\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:66480\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:183501\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:6003\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:154326\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"}]"
+    },
+    {
+      "ok": true,
+      "label": "no uncaught page errors",
+      "detail": "[]"
+    }
+  ],
+  "errors": [],
+  "turns": [
+    {
+      "at": 4733,
+      "turn": {
+        "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+        "flagsDelta": [],
+        "selection": [],
+        "hovered": null,
+        "compareChoice": null,
+        "exhibitionEdits": []
+      },
+      "messages": 1
+    },
+    {
+      "at": 7531,
+      "turn": null,
+      "messages": 3
+    },
+    {
+      "at": 33333,
+      "turn": null,
+      "messages": 8
+    },
+    {
+      "at": 36748,
+      "turn": null,
+      "messages": 10
+    },
+    {
+      "at": 38841,
+      "turn": null,
+      "messages": 12
+    },
+    {
+      "at": 60196,
+      "turn": {
+        "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+        "flagsDelta": [
+          {
+            "artworkId": "open-access-art:nga:214119",
+            "title": "A Peach, Seville (George Henry Hall)",
+            "palette": [
+              "#C3803A",
+              "#7E3F0F",
+              "#6C443C"
+            ],
+            "medium": "oil on canvas",
+            "year": 1866,
+            "classification": "Painting",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:29928",
+            "title": "Flask (John Tarantino)",
+            "palette": [
+              "#E4D8BA",
+              "#BF894D",
+              "#885E39",
+              "#C2B194"
+            ],
+            "medium": "watercolor and graphite on paperboard",
+            "year": 1935,
+            "classification": "Index of American Design",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:52306",
+            "title": "Landscape (Berthe Morisot)",
+            "palette": [
+              "#D4C7A2",
+              "#B6A385",
+              "#9A886C"
+            ],
+            "medium": "colored pencils on wove paper",
+            "year": 1841,
+            "classification": "Drawing",
+            "to": "pick"
+          }
+        ],
+        "selection": [],
+        "hovered": null,
+        "compareChoice": null,
+        "exhibitionEdits": []
+      },
+      "messages": 14
+    },
+    {
+      "at": 62179,
+      "turn": null,
+      "messages": 16
+    },
+    {
+      "at": 66703,
+      "turn": null,
+      "messages": 18
+    },
+    {
+      "at": 71567,
+      "turn": null,
+      "messages": 20
+    },
+    {
+      "at": 86128,
+      "turn": null,
+      "messages": 22
+    }
+  ],
+  "net": [
+    {
+      "at": 1547,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 4732,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 7531,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 11168,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 17142,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 23245,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 29102,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 32054,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 33332,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 36747,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 38841,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 49368,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    },
+    {
+      "at": 53779,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    },
+    {
+      "at": 60192,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 62108,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 62179,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 64607,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    },
+    {
+      "at": 66703,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 71565,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 75303,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-labels"
+    },
+    {
+      "at": 86127,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 92184,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    }
+  ]
+}
