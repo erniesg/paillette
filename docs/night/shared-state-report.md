@@ -20,7 +20,7 @@ and must not go past it.
 | "Gestures outrank words" rule in the agent system prompt | shipped, verified live on 9 runs |
 | `search_by_exemplars` — Rocchio, server-side | shipped; formula verified over the real index |
 | `redeal`, 12 cards, picks held in place | shipped |
-| Enter on an empty prompt bar redeals with no model call | shipped, verified in a browser |
+| Enter redeals with no model call | shipped; verified in a browser, **and with no WebMCP host at all** |
 | `compare_artworks` two-up | shipped; `C` verified in a browser |
 | Multi-select (shift-click), P5 "Point" | shipped |
 | Pin survival in `set_results` as well as `redeal` | shipped |
@@ -28,6 +28,8 @@ and must not go past it.
 | The loop still working with the agent refusing | verified, 9 checks |
 | Terseness pass on this lane's own surfaces | shipped — see §6 |
 | Flags surviving a new search | shipped, verified in a browser |
+| Three deals in a row without the board shrinking | verified in a browser |
+| The loop working with no host and no debug flag | verified, 13 checks |
 
 Four new tools, so `document.modelContext` now carries **21**, not 17. Anywhere
 the docs or the video script says 17, it is now wrong.
@@ -81,7 +83,8 @@ just failed — `lastDealFailed` and `dealing`.
 The four verification harnesses, all runnable by hand:
 
 ```
-apps/web/scripts/verify-culling-loop.mjs     29 checks, the loop end to end
+apps/web/scripts/verify-plain-browser.mjs    13 checks, no host and no debug flag
+apps/web/scripts/verify-culling-loop.mjs     37 checks, the loop end to end
 apps/web/scripts/verify-failure-paths.mjs    25 checks, every way it can refuse
 apps/web/scripts/verify-agentless-loop.mjs    9 checks, the loop with no agent
 apps/web/scripts/verify-sofa-run.mjs         the brief's definition of done, live
@@ -151,6 +154,29 @@ closes that, and is the first thing to do at integration.
 
 ## 4. What is demonstrably true
 
+### Verified in a plain browser — no flag, no host, nothing installed
+
+**Read this before writing anything about who can use this.** Every other
+browser check runs with `?webmcp-debug`, which installs a stub WebMCP host.
+That is correct for exercising the tools and wrong for describing what an
+ordinary visitor gets. `apps/web/scripts/verify-plain-browser.mjs` loads
+`/nga/search?q=…` with no flag and no host, may not touch
+`window.__paillette_webmcp` because it does not exist there, and asserts only
+against the DOM. **13 checks, all passed, three times in a row.**
+
+On that page there is **no prompt bar** — it only renders where a WebMCP host
+exists, and that is unchanged. What works anyway:
+
+- `P` picks the hovered card, `X` rejects it
+- **Enter on the board deals twelve**, carrying the human's positive and
+  negative exemplars, with **no model call**
+- **the pick is the first work on the wall afterwards, still marked**
+- a focused button keeps its own Enter
+
+So the deterministic loop is available to anyone, and the agent is the part
+that needs a host. Say that; do not say the page needs Chrome's flag to be
+useful, and do not say the prompt bar is there for everyone.
+
 ### Verified in a real browser
 
 `apps/web/scripts/verify-culling-loop.mjs` drives Chromium against a stubbed
@@ -161,7 +187,7 @@ pnpm --filter web dev                                   # in another shell
 node apps/web/scripts/verify-culling-loop.mjs http://localhost:5173
 ```
 
-Last run: **29 checks, all passed**, three times in a row. What it proves:
+Last run: **37 checks, all passed**, three times in a row. What it proves:
 
 - hover sets the deictic anchor; `P` picks the hovered card, `X` rejects it,
   drawn in the human's ink, with `aria-pressed` on the badge
@@ -173,8 +199,11 @@ Last run: **29 checks, all passed**, three times in a row. What it proves:
   ever appears**
 - the request carries the human's positive and negative exemplars
 - the board deals **12**
-- the pick is still in the seat it was in; the reject has left; the board is
-  marked as the human's move
+- the pick is still in the seat it was in **and is the first card actually
+  rendered** — asserted on the DOM, not only on the state
+- the reject has left; the board is marked as the human's move
+- **three deals in a row**: a full twelve each time, the pick held at the front,
+  and the exclusion list growing so the loop keeps moving instead of circling
 - **the flags and the exemplars survive the human running a different search**
   — the definition-of-done clause "flags persist per session"
 - the next *typed* turn carries the gestures, with titles resolved
@@ -357,7 +386,7 @@ typed instruction alone, and the deterministic loop fires from a keypress.
 
 ---
 
-## 5. Four bugs the browser found that the tests could not
+## 5. Six bugs the browser found that the tests could not
 
 Each is a claim about wiring rather than about a function, which is why jsdom
 could not see them. All four are fixed and now have tests.
@@ -379,19 +408,36 @@ could not see them. All four are fixed and now have tests.
    host rejected the duplicate, and the unregister then removed the survivor.
    All 21 tools gone, every one reported as already registered. The old test
    awaited between dispose and re-register, so it could never see it.
-4. **The debug host arrived too late to be believed.** A real host exists before
+4. **The human's first pick vanished from their first deal.** Not from the
+   state — that was right throughout — but from the screen. The board is drawn
+   from records the session index can resolve; the index was only ever filled
+   by the fetch observer; and a first load of `/nga/search?q=…` is served by
+   the route loader. So the works a visitor sees first were unknown to the
+   page's own tools, `get_view_context` named them as bare ids, and a pick made
+   on that grid was held in state and silently missing from the wall. Every
+   existing check passed straight through it, because they all asserted on
+   `get_view_context`. The grid now puts what it renders into the index, and
+   the harness asserts the pick is the first *rendered* card.
+5. **The headline was reachable only under a debug flag** — see below.
+6. **The debug host arrived too late to be believed.** A real host exists before
    the page's script runs; the stub was installed from an effect, effects run
    child-first, and the in-page prompt bar had already concluded there was no
    host and rendered nothing. `?webmcp-debug` had a full tool surface and no way
    to talk to it. The harness now claims `document.modelContext` as its module
    loads.
 
-**Item 4 has a consequence the submission lane should know:** the in-page prompt
-bar only renders when a WebMCP host is present at mount. In a plain browser with
-no host and no `?webmcp-debug`, there is no bar — and therefore no
-Enter-on-empty-bar. That is pre-existing behaviour in `agent-prompt.tsx`, which
-belongs to the voice lane; I did not change it. Film with `?webmcp-debug` or
-with the Chrome flag.
+**Items 5 and 6 have a consequence, and it has since been dealt with.** The in-page
+prompt bar only renders when a WebMCP host is present at mount — still true,
+still `agent-prompt.tsx`, still not mine. What I had wrongly concluded from
+that is that the headline was therefore debug-flag-only.
+
+It is not, because the bar was never the mechanism; it was only the place to
+press the key. Enter now falls back to the board when there is no bar: claimed
+only when nothing is focused that Enter already operates — buttons, links,
+summaries, anything with an activating role — and only when there is a pick to
+deal from. Verified with no host and no flag (§4). **You can film this in an
+ordinary browser.** The agent path still needs a host; the culling loop does
+not.
 
 ---
 
@@ -493,10 +539,15 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
   not changed, so the next press would read the same thing — but on a slow
   connection it will feel like a missed keypress until the visual pass marks
   `dealing`.
-- **The deal is not animated and picks do not visibly hold their seats.** The
-  data is correct — `order` keeps a pick at its index — but with no FLIP
-  animation a redeal is a jump cut. That is the visuals lane's money shot, and
-  it is not in this branch.
+- **The deal is not animated.** A pick does hold its seat and is now verified
+  to be the first card actually rendered, three deals running — but with no
+  FLIP animation the redeal is a jump cut rather than something you can watch.
+  That is the visuals lane's money shot, and it is not in this branch.
+- **A visitor with no host gets no prompt bar, so the agent is unavailable to
+  them.** The culling loop is not — Enter falls back to the board and is
+  verified there. But "ask the agent for something warm" needs Chrome's flag,
+  `?webmcp-debug`, or an external WebMCP host. Do not describe the in-page
+  agent as something every visitor sees.
 - **The fixture corpus is not the collection, on the model side.** Every live
   model run used eight invented works, so nothing shows the *agent* reasoning
   about real NGA pictures. The engine underneath it has now been run against
@@ -514,9 +565,10 @@ Baseline was web 59 files / 593 tests, api 41 / 770.
 | Command | Result |
 | --- | --- |
 | `pnpm --filter api test` | **43 files, 791 tests, all passed** |
-| `pnpm --filter web test` | **68 files, 732 tests, all passed** |
+| `pnpm --filter web test` | **68 files, 737 tests, all passed** |
 | `pnpm --filter web typecheck` | **1 error, pre-existing, not mine** |
-| `verify-culling-loop.mjs` | **29 checks, all passed, 3 runs** |
+| `verify-plain-browser.mjs` | **13 checks, all passed, 3 runs** |
+| `verify-culling-loop.mjs` | **37 checks, all passed, 3 runs** |
 | `verify-failure-paths.mjs` | **25 checks, all passed, 3 runs** |
 | `verify-agentless-loop.mjs` | **9 checks, all passed, 3 runs** |
 | `verify-exemplars-live.mjs` | **ran; output is for reading, not a pass/fail** |

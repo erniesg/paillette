@@ -91,13 +91,19 @@ before the stub existed and `?webmcp-debug` showed a page with 21 registered
 tools and no bar. It now claims `document.modelContext` as its module loads,
 and the bar renders. Verified in Chromium.
 
-What is left is the no-host case. Two options, your call:
+**Update — the loop no longer depends on you fixing this.** Enter now falls
+back to the board when there is no bar to press it in, guarded so it never
+takes Enter from a focused button, link or summary, and only when there is a
+pick to deal from. Verified in a plain browser with no host and no debug flag:
+`apps/web/scripts/verify-plain-browser.mjs`, 13 checks.
+
+The agent path still needs a host, so the bar question is still worth
+answering, and it is still yours. Two options:
 
 - subscribe to `bridgeAttached` from the store instead of checking once on
   mount, so the bar appears whenever a host turns up; or
-- render the bar unconditionally — the loop that matters (Enter on an empty
-  bar) never touches `document.modelContext` at all, so it works with no host.
-  Only the agent path needs one.
+- render the bar unconditionally — the deterministic loop never touches
+  `document.modelContext`, so only the agent path needs one.
 
 ## Two more things, one each
 
