@@ -132,12 +132,10 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
        "message":"You have used this hour’s shared agent budget. Try again shortly."}}
   ```
   Raw: `docs/night/e2e-evidence/note-swatches-inverted.json`.
-- **⚠⚠ And nothing appeared on screen.** No note, no error, no page error — the
-  board simply did not change. There is no UI branch for `AGENT_RATE_LIMITED`
-  anywhere in `apps/web/app`. The deterministic path *does* have one
-  (`paillette-deal-error`, *"The deal didn't run; your flags are unchanged."*);
-  the agent path does not. **This is the most likely way a take gets wasted**:
-  the operator will read a silent board as a slow one and keep waiting.
+- **The page does say so, clearly.** *"You have used this hour's shared agent
+  budget. Try again shortly."* renders in red under the utterance bar,
+  `role="alert"`. So a spent budget is visible on camera and an operator will
+  know. **Probe it with one throwaway instruction before rolling.**
 
 ---
 
@@ -454,9 +452,9 @@ slot 5 is untested.
    → **25**.
 4. Raise the model cap for the filming IP, or film with a key. 40/hour is not
    enough for retakes — a cold instruction is 5–7 calls and a full loop 8–12.
-   **Verify the budget is not already spent before rolling**, because when it is
-   exhausted the page gives no sign: the turn 429s with `AGENT_RATE_LIMITED` and
-   the board just does not change. Probe it with one throwaway instruction.
+   **Verify the budget is not already spent before rolling.** When it is, the
+   turn 429s and the page says so in red under the bar — legible, but not
+   something you want in a take. One throwaway instruction tells you.
 5. **Reload the tab between takes.** Five clean redeals per pick set, then the
    board thins and by the seventh Enter is dead.
 6. After any Enter typed *inside* the utterance bar, press Escape. Otherwise the

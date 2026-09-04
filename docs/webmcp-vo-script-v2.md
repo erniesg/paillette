@@ -568,11 +568,11 @@ Nothing was made cryptic to be short. Every beat still names its subject.
 model calls per client per hour, keyed on IP. A cold instruction costs 5–7 and a
 full loop 8–12 — **three or four complete takes an hour.**
 
-When it runs out the turn returns `429 AGENT_RATE_LIMITED` and **the page shows
-nothing at all**: no note, no error, no page error. There is no UI branch for it.
-I hit this mid-capture tonight and it cost me the beat-3 inversion frame. **Probe
-the budget with one throwaway instruction before rolling**, and film with a
-raised cap or a key.
+When it runs out the turn returns `429` and the page says so in red under the
+bar — *"You have used this hour's shared agent budget."* Legible, and not
+something you want in a take. I hit it mid-capture tonight and it cost me the
+beat-3 inversion frame. **Probe the budget with one throwaway instruction before
+rolling**, and film with a raised cap or a key.
 
 **Reload between takes.** Five clean redeals per pick set in one tab; by the
 seventh Enter is a dead key.

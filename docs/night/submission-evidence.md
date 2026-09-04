@@ -58,7 +58,7 @@ are the strongest rows in the table because they were not taken from a report.
 | V24 | A **deterministic** redeal produces no wall label | `{"label":null,"swatches":0}` — so the swatch strips only ever appear beside an agent note. Correct per §5b, and it means the frame costs model calls. |
 | V25 | The note with its swatches, captured | `shots/50-note-with-swatches.png`. Note verbatim, swatch colours, strip flags in `e2e-evidence/note-swatches.json`. 3 model calls, 0 page errors. |
 | V26 | The inverted condition | flags set correctly (`by: human`), turn returned **`429 AGENT_RATE_LIMITED`** — *"You have used this hour's shared agent budget."* No frame. `e2e-evidence/note-swatches-inverted.json`. |
-| V27 | What the page shows on a 429 | **nothing.** No note, no error, no `pageerror`. `grep -r AGENT_RATE_LIMITED apps/web/app` → no UI branch. |
+| V27 | What the page shows on a 429 | **the server's sentence, in red, under the bar.** `[role="alert"]`, visible: *"You have used this hour's shared agent budget. Try again shortly."* Established by fulfilling the route with the production 429 body — zero model calls. `agent-prompt.tsx:965`. |
 | V28 | `U` clears a flag it set | `{"flag":"none","by":"none"}` — the one key no earlier harness pressed |
 | V29 | Flags survive an **in-page** search | `{"picks":1,"rejects":2,"modelCalls":0}`. A `page.goto` is a reload and loses them, which is documented behaviour, not a defect. |
 | V30 | `get_view_context` flag entries carry visual facts | `{"picks":1,"rejects":2,"palette":["#B89E81","#644F3F","#F4E8D6","#DCB17F"],"medium":"watercolor and graphite on laid paper"}` |
@@ -241,7 +241,7 @@ Staging only. Do not imply production-readiness.
 | A tool called with ids the page never loaded fails loudly | V32. `flag_artworks` → `{"ok":false,"error":{"code":"ARTWORK_NOT_IN_SESSION","message":"None of those ids have been loaded by this page.","hint":"Search or read get_view_context first…"}}`. `compare_artworks` names both offending ids and does **not** open an empty room. |
 | Pressing the headline key before it means anything costs nothing | V33 — Enter with no flags makes **zero requests**, shows no error, and the `↵` affordance is correctly absent until a flag exists. |
 | A deterministic redeal that fails says so in one sentence | `paillette-deal-error`, *"The deal didn't run; your flags are unchanged."* `galleries.$galleryId.search.tsx:2905`. |
-| ⚠ **An agent turn that fails says nothing at all** | V26, V27. `429 AGENT_RATE_LIMITED` → no note, no error, no page error. No UI branch exists. The asymmetry with the row above is the finding. |
+| An agent turn that fails says so too | V27. A `429` renders as `<p role="alert">` under the utterance bar with the server's own sentence. **An earlier draft of this file claimed it was silent; that was wrong** — the grep looked for the error *code* and the UI renders the *message*. Corrected rather than softened. |
 
 ## 2.7 Accessibility
 
@@ -310,71 +310,64 @@ Marked in the script. **The shot may not exist.**
 # 4. WANTED, ABSENT
 
 Things I would have written and did not. **This list is a deliverable.** Ordered
-by what it buys. Items 1 and 2 of the previous draft are struck — the frame was
-captured tonight and the inversion is archived.
+by what it buys. Three items from earlier drafts are struck: the note frame was
+captured tonight, the inversion is archived as text, and *"a UI branch for
+`AGENT_RATE_LIMITED`"* was **my error** — the page does render the message. See
+`submission-draft-report.md` §3.1.
 
-1. **A UI branch for `AGENT_RATE_LIMITED`.** When the hourly budget is spent the
-   turn 429s and **the page shows nothing at all** — no note, no error, no page
-   error. `grep -r AGENT_RATE_LIMITED apps/web/app` finds no handler. The
-   deterministic path already has exactly this affordance
-   (`paillette-deal-error`: *"The deal didn't run; your flags are unchanged."*),
-   so the fix is one branch in the same shape. **This is the most likely way a
-   take gets wasted, and the most likely way a judge concludes the demo is
-   broken.** I hit it myself tonight, mid-capture. *One line of UI.*
-
-2. **A bigger exemplar candidate pool.** Five clean redeals per pick set per tab,
+1. **A bigger exemplar candidate pool.** Five clean redeals per pick set per tab,
    then the board thins to one card and Enter goes dead. Diagnosed precisely in
    e2e iteration 2 §4: `topK × 6` capped at 100, minus a growing exclusion list.
    Filmable as-is if you reload; not survivable by a judge who sits and presses
    Enter, which is exactly what the `↵` affordance now invites them to do.
 
-3. **The inverted note, framed.** The text is archived on both sides
+2. **The inverted note, framed.** The text is archived on both sides
    (`run3-loop.json` / `run4-loop.json`, the same Morisot at pick and at reject).
    Two agent turns in a fresh budget hour and beat 3's second card is real.
 
-4. **`data-flag-by` on the swatch strips.** The one place on the page where the
+3. **`data-flag-by` on the swatch strips.** The one place on the page where the
    two-colour contract is not carried. Invisible in the film; a real gap.
 
-5. **The agent actually looking at a work.** `lookup_artwork` and
+4. **The agent actually looking at a work.** `lookup_artwork` and
    `describe_artwork` were called **zero** times across every recorded run, in
    both iterations. The narration is grounded in indexed colour, medium, year and
    classification — a real improvement on titles, and not the same as seeing the
    picture. Today I cannot write "the agent looks at the work" and I have not.
 
-6. **The ledger filmstrip on `/nga/search`.** Built, tested, imported only by
+5. **The ledger filmstrip on `/nga/search`.** Built, tested, imported only by
    `/night/deal`. It is §7.5 — *"version history reused as conversation record"* —
    and the answer to "where did the chat go". Until it is on the product page it
    cannot be filmed.
 
-7. **An affordance for `P`/`X`/`U`.** Enter has one now and it is good. The keys
+6. **An affordance for `P`/`X`/`U`.** Enter has one now and it is good. The keys
    that arm it have nothing, so a judge still cannot find the loop cold.
 
-8. **A human control behind `write_labels` and `annotate_atlas`.** The only two
+7. **A human control behind `write_labels` and `annotate_atlas`.** The only two
    of twenty-five with no key or click behind them, and the one dent in "the loop
    has no agent-only path". A *draft this* button closes it.
 
-9. **A read-aloud take on a work that has a caption.** The control is real and
+8. **A read-aloud take on a work that has a caption.** The control is real and
    the argument is good, but on the NGA collection most rows have no caption and
    the button does not render (V23). Find one, or cut the beat.
 
-10. **A visible failure for push-to-talk with no microphone.** It enters
+9. **A visible failure for push-to-talk with no microphone.** It enters
     *"Listening — release to send"* and on release nothing lands and nothing is
     reported (e2e iteration 2 §6). Same silent-failure shape as item 1.
 
-11. **A spoken take.** Not shootable on this VM. Nothing in the script depends on
+10. **A spoken take.** Not shootable on this VM. Nothing in the script depends on
     it — but a submission about human–agent collaboration with no human voice is
     leaving something on the table.
 
-12. **A raised model cap for the filming machine.** 40/hour, 5–7 per cold
+11. **A raised model cap for the filming machine.** 40/hour, 5–7 per cold
     instruction, 8–12 per loop: three or four takes an hour. It blocked me
     tonight and it blocked the fix lane's third negative-control run.
 
-13. **A social unfurl, rendered.** Tags right, image real, nobody has pasted it
+12. **A social unfurl, rendered.** Tags right, image real, nobody has pasted it
     into Slack.
 
-14. **`prefers-reduced-motion` with a pick starting at slot 5.**
+13. **`prefers-reduced-motion` with a pick starting at slot 5.**
 
-15. **A compare choice that sends a turn immediately.** The build defers it to the
+14. **A compare choice that sends a turn immediately.** The build defers it to the
     next turn, which I think is right and the brief's P4 says otherwise. Known and
     documented — but on camera a compare answered in silence needs the next
     utterance to become visible.

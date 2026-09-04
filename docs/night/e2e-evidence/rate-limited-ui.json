@@ -1,0 +1,12 @@
+{
+  "what": "What the page does when the anonymous agent budget is spent",
+  "how": "Playwright route fulfilled with the production 429 body. Zero model calls: the request never leaves the browser.",
+  "route": "**/api/public-agent/turn",
+  "status": 429,
+  "body": {"success": false, "error": {"code": "AGENT_RATE_LIMITED", "message": "You have used this hour’s shared agent budget. Try again shortly."}},
+  "rendered": [{"role": "alert", "text": "You have used this hour’s shared agent budget. Try again shortly.", "visible": true}],
+  "wallLabel": null,
+  "renderedAt": "apps/web/app/components/webmcp/agent-prompt.tsx:965",
+  "shot": "docs/night/shots/53-rate-limited-message.png",
+  "note": "This corrects an earlier claim in this lane's report that the page showed nothing. The grep that produced that claim searched for the error code; the UI renders the message."
+}

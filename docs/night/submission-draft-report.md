@@ -96,39 +96,49 @@ bearing ones:
 
 ---
 
-## 3. Two defects found by running it, not by reading it
+## 3. One defect found, and one I got wrong
 
-Both are silent failures, both spoil takes, and neither was in any report before
-tonight.
+### 3.1 The rate-limit error — **I was wrong, and here is the correction**
 
-### 3.1 `AGENT_RATE_LIMITED` has no UI branch — **the most likely way a take is wasted**
+While capturing the inverted frame the turn came back
+`429 AGENT_RATE_LIMITED`, the board did not change, and no note appeared. I
+grepped `apps/web/app` for `AGENT_RATE_LIMITED`, found nothing, and wrote that
+the page shows nothing at all when the budget runs out — calling it the most
+likely way a take gets wasted.
 
-Capturing the inverted frame, the flags set correctly (`by: human`) and the turn
-returned:
+**That was wrong on both counts.** The grep failed because the UI renders
+`error.message`, not the error *code*; and my capture script only queried for
+the wall label, so it never looked where the error actually is.
+
+Established properly, by fulfilling the agent route with the exact production
+429 body — **zero model calls, because the request never leaves the browser**:
 
 ```
-429 {"success":false,"error":{"code":"AGENT_RATE_LIMITED",
-     "message":"You have used this hour’s shared agent budget. Try again shortly."}}
+alerts: [{"text":"You have used this hour’s shared agent budget. Try again shortly.",
+          "visible":true}]
 ```
 
-**The page showed nothing.** No note, no error, no `pageerror`. The board simply
-did not change. `grep -r AGENT_RATE_LIMITED apps/web/app` finds no handler.
+`agent-prompt.tsx:965` renders it as `<p role="alert">` in the entry list
+directly under the utterance bar, in red, carrying the server's own sentence.
+The screenshot shows it plainly under the typed instruction. **The product
+behaves correctly and the message is a good one.**
 
-The asymmetry is exact and the fix is one branch in a shape that already exists:
-the deterministic path renders `paillette-deal-error` — *"The deal didn't run;
-your flags are unchanged."* — for precisely this case. The agent path does not.
+What survives as useful for filming is much smaller: the budget failure is
+visible and legible, so probe it with one throwaway instruction before rolling
+and you will know. The scripts have been corrected; the earlier wording is gone
+from all four documents rather than softened.
 
-An operator will read a silent board as a slow one and keep waiting. So will a
-judge, and a judge will conclude the agent is broken. Raw:
-`e2e-evidence/note-swatches-inverted.json`.
+I am recording this at length because a claim the build does not support is the
+worst outcome of the night, and I nearly shipped one — from a grep, without
+opening the file it pointed at.
 
 ### 3.2 The swatch strips do not say whose flag they draw
 
 `NoteSwatches` renders `data-artwork-id` and `data-flag` but not `data-flag-by`,
 so a strip shows *that* a work was flagged and not by which hand — the one place
-on the page where the two-colour provenance contract is not carried. Confirmed
-against the component and against the e2e lane's independent finding
-(iteration 2 §7.1). Invisible in the film; a real gap in the design.
+on the page where the two-colour provenance contract is not carried. Read off
+the component, and independently found by the e2e lane (iteration 2 §7.1).
+Invisible in the film; a real gap in the design.
 
 ### 3.3 One thing that is correct and worth knowing
 
@@ -236,8 +246,8 @@ describe the tree the e2e lane measured.
 
 | | Brief's baseline | This tree |
 | --- | --- | --- |
-| `pnpm --filter web typecheck` | — | **clean** — *but see below* |
-| `pnpm --filter web test` | 59 files / 593 tests | **1113 tests passed, 0 failed. 90 of 91 files passed; 1 file failed to collect.** |
+| `pnpm --filter web typecheck` | — | **clean** — *after a build; see below* |
+| `pnpm --filter web test` | 59 files / 593 tests | **91 files / 1115 tests, all pass** |
 | `pnpm --filter api test` | 41 files / 770 tests | **44 files / 815 tests, all pass** |
 
 The brief's baseline predates the `night/curation`, `night/activity`,
@@ -250,14 +260,11 @@ with `worker.ts(2,24): error TS2307: Cannot find module './build/server/index.js
 `pnpm --filter web build` then `typecheck` exits **0**. Not a regression; worth
 knowing, because a clean checkout will report a false failure.
 
-**One web test file sometimes fails to collect**, on a Vite transform error,
-with every one of the 1113 tests in the other 90 files passing. **It is
-intermittent** — across four runs tonight it appeared in some and not others,
-which is why no file name is given here: the reporter names the error and not
-the file, and a run that reproduces it is needed to catch one. The same shape is
-recorded in the sharing lane's report, which fixed it on `night/sharing`, a
-branch not merged here. Not caused by this lane, which touched no source. It
-never failed a *test* — only a collect.
+**One earlier run had a file fail to collect** on a Vite transform error, with
+all 1113 tests in the other 90 files passing. It did not reproduce: the final
+clean run is **91 files / 1115 tests, all pass**, matching the integration
+lane's iteration-2 figure exactly. Intermittent, never a failing test — only a
+collect — and not caused by this lane, which touched no source.
 
 ### 8.1 The demo path, run repeatedly
 
@@ -338,12 +345,13 @@ Both fixed; the corrected run is the one in `demo-path.json`.
 The three things that would most improve the submission, in order, are all in
 `submission-evidence.md` §4 and none of them is a doc:
 
-1. **One UI branch for `AGENT_RATE_LIMITED`.** One line, in a shape that already
-   exists three hundred lines up the same file.
-2. **Widen the exemplar candidate pool** so Enter does not go dead after five
+1. **Widen the exemplar candidate pool** so Enter does not go dead after five
    redeals — because the `↵` affordance now invites a judge to sit and press it.
-3. **Two agent turns in a fresh budget hour** to frame the inversion. The text is
+   Diagnosed precisely in e2e iteration 2 §4.
+2. **Two agent turns in a fresh budget hour** to frame the inversion. The text is
    archived on both sides; only the picture is missing.
+3. **`data-flag-by` on the swatch strips**, so the two-colour contract holds
+   everywhere it is drawn.
 
 The evidence file is the working surface. If a claim in the script ever stops
 being true, it is because a row in `submission-evidence.md` changed — fix the row
