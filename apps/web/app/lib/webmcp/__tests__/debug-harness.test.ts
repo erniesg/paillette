@@ -137,10 +137,23 @@ describe('the driver window.__paillette_webmcp', () => {
   });
 
   it('says "(none)" rather than trailing off when nothing is registered', async () => {
+    // Slower than the others on purpose: an empty list is waited out before it
+    // is reported, because on a real page it usually means the bridge has not
+    // mounted yet rather than that the surface is empty.
     await expect(window.__paillette_webmcp!.call('nope')).rejects.toThrow(
       /Registered: \(none\)/
     );
-  });
+  }, 10_000);
+
+  it('waits out the registration window rather than reporting an empty surface', async () => {
+    // The driver is installed as its module evaluates and the tools register
+    // from a mount effect, so a caller on load genuinely arrives first. It
+    // should get the tools, not `[]`.
+    const listed = window.__paillette_webmcp!.tools();
+    setTimeout(() => void register('redeal', () => ({})), 120);
+
+    await expect(listed).resolves.toMatchObject([{ name: 'redeal' }]);
+  }, 10_000);
 
   it('rejects a duplicate registration, as the spec requires', async () => {
     await register('flag_artworks', () => ({}));

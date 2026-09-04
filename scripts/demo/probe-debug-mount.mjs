@@ -43,6 +43,28 @@ for (let i = 1; i <= Number(loads); i += 1) {
   const seen = await page.evaluate(async () => {
     const driver = window.__paillette_webmcp;
     if (!driver) return { driver: false };
+    const count = async () =>
+      ((await document.modelContext?.getTools?.()) ?? []).length;
+
+    // The count the instant the handle appears — this is what the race is
+    // about — and then the count once the page has settled. A handle that is
+    // briefly empty is fine; a handle that is *permanently* empty is the bug.
+    const atHandle = await count();
+    const t0 = performance.now();
+    const deadline = Date.now() + 20_000;
+    let settled = atHandle;
+    while (settled === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      settled = await count();
+    }
+    const msToSettle = Math.round(performance.now() - t0);
+
+    // The back door's own answer, which is the one a judge in the console
+    // gets. It waits out the registration window rather than reporting an
+    // empty surface as fact, so this should be the full list even when
+    // `getTools()` was empty a moment ago.
+    const throughDriver = (await driver.tools()).length;
+
     const tools = (await document.modelContext?.getTools?.()) ?? [];
     let called = null;
     try {
@@ -53,9 +75,13 @@ for (let i = 1; i <= Number(loads); i += 1) {
     return {
       driver: true,
       hasCall: typeof driver.call === 'function',
-      toolCount: tools.length,
+      toolCountAtHandle: atHandle,
+      toolCount: settled,
+      toolCountThroughDriver: throughDriver,
+      msToSettle,
       names: tools.map((tool) => tool.name).sort(),
       callOk: Boolean(called?.ok),
+      callError: called?.ok ? null : JSON.stringify(called).slice(0, 200),
       onSearchPage: called?.data?.page?.onSearchPage ?? null,
     };
   });
