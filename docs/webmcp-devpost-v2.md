@@ -104,11 +104,13 @@ Same painting, described the same way, moved to the other side of the sentence.
 ⚠ One of the four runs produced a note that was accurate but generic — *"darker,
 crowded scenes"* — so this is a strong tendency rather than a guarantee.
 
-The second improvement is that the words are two-way. The agent drafts a title,
-a statement and a wall label for every work. The human rewrites the statement —
+The second improvement is that the words are two-way. The agent drafts a title
+and a statement — and deliberately no labels yet. The human rewrites the
+statement —
 *"it is not about weather, it is about leaving"* — and committing that edit is
-itself the turn. The agent re-selects the works and rewrites all eighteen labels
-against the human's sentence, and does not touch the sentence: a field the human
+itself the turn. The agent re-selects the works and **writes a wall label for
+every one of them against the human's sentence** — eighteen of eighteen in the
+recorded walk — and does not touch the sentence: a field the human
 has edited comes back `theirs: true`, and an agent write onto it is parked as a
 proposal rather than landing. The same painting under two different statements
 gets two genuinely different labels — same six works, two statements, live

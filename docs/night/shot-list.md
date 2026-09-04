@@ -193,12 +193,16 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
 
 ## Beat 5 — The show, and the correction · 1:12–1:50
 
-### S11 · Title, statement, labels
+### S11 · Title and statement
 
 - **On screen.** The exhibition head above the board: title and statement in
-  serif. A label under every work.
-- **Said.** *"Keep going and there's a show on the table. A title, a statement,
-  and a label under every work."*
+  serif. **No labels yet** — that is correct, and it is what makes S13 land.
+- **Said.** *"Keep going and there's a show on the table. A title, and a
+  statement."*
+- **⚠ Do not say "a label under every work" here.** The opening turn writes
+  none: `label: null` on all six works and zero POSTs to `/api/public-labels`,
+  and the sharing lane's flagship link `/e/QWwJnL5` has 12 works and no label on
+  any of them. The labels arrive with the correction, in S13.
 - **Page + input.** `node scripts/demo/e2e-curation.mjs https://paillette-stg.berlayar.ai`.
 - **Headless** yes. **Exists** yes — `fix-iteration-1/01-drafted.png`.
   **Calls** ~5.
@@ -219,8 +223,8 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
 
 - **On screen.** The board re-selects. Every label rewrites. The human's
   sentence sits untouched above it.
-- **Said.** *"It re-selects. It rewrites every label against my sentence. It
-  doesn't touch my sentence."*
+- **Said.** *"It re-selects. It writes a label under every work, against my
+  sentence. And it doesn't touch my sentence."*
 - **Headless** yes. **Exists** yes — `fix-iteration-1/02-after-correction.png`.
   Measured: 2 POSTs to `/public-agent/turn` after the edit, 18 of 18 labels
   rewritten, statement returns `by: "human", theirs: true`. **Calls** ~5–8.

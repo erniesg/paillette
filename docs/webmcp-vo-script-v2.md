@@ -73,13 +73,12 @@ in `docs/night/shot-list.md`.
 
 **1:12 · The show**
 
-> Keep going and there's a show on the table. A title, a statement, a label
-> under every work.
+> Keep going and there's a show on the table. A title, and a statement.
 >
 > The statement is wrong. It isn't about weather.
 >
-> It re-selects. It rewrites every label against my sentence. It doesn't touch
-> my sentence.
+> It re-selects. It writes a label under every work, against my sentence. And it
+> doesn't touch my sentence.
 
 **1:50 · It leaves the tab**
 
@@ -307,9 +306,9 @@ rhetorical.
 
 ## Beat 5 — The show, and the correction · 1:12–1:50
 
-**On screen.** Title and statement above the board, in serif. A label under
-every work. The human selects the statement, types over it, commits. The board
-changes. The labels change. The statement does not.
+**On screen.** Title and statement above the board, in serif — **and no labels
+yet**. The human selects the statement, types over it, commits. The board
+changes. The labels *arrive*. The statement does not move.
 
 **Cards:** the statement before and after, then one label before and after.
 
@@ -331,7 +330,8 @@ with Ctrl+Enter. The correction used in the recorded walk:
 
 | Claim | Tier | Source |
 | --- | --- | --- |
-| The agent drafts a title, a statement and a label per work | **[P]** | Curation walk on the deployed build, **11 of 11 pass** (fix log §5). `curation-walk.json` holds six drafted labels verbatim. |
+| The agent drafts a title and a statement | **[P]** | Curation walk on the deployed build, **11 of 11 pass** (fix log §5). |
+| ⚠ **The opening turn writes no labels** | **[P], and it corrects an earlier draft of this file** | Iteration-2 critique, measured on staging: `label: null` and `labelBy: null` on all six works, zero POSTs to `/api/public-labels`. Confirmed independently — the sharing lane's flagship link `/e/QWwJnL5` has **12 works and 12 catalogue blocks with no wall label on any of them**. The labels come with the *correction*, which is a better beat and is what the VO now says. |
 | Committing the statement is itself a turn | **[P]** | Fix log §7. Verified on staging: **2 POSTs to `/public-agent/turn` after the edit.** Before the fix, nothing called `submitHumanTurn` at all. |
 | It re-selects and rewrites every label against the correction | **[P]** | Fix log §7: **18 of 18 labels rewritten.** Curation report Batch 2: 3 of 3 runs. `curation-walk.json` holds both label sets verbatim. |
 | It does not overwrite the human's sentence | **[P]** | Fix log §7. Curation report: the statement comes back `by: "human", theirs: true` in every run; an agent write onto it is parked under `deferred`. |

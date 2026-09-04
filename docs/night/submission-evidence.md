@@ -63,6 +63,8 @@ are the strongest rows in the table because they were not taken from a report.
 | V28b | The note and the board **do** fit one frame | 1440×900: label at y=114 below the nav, **8 of 12 cards fully visible, 12 partly**. 1440×1400: **12 of 12 fully**. Frame: `shots/54-note-and-board-1440x900.png`. Raw: `e2e-evidence/note-and-board-geometry.json`. **Refutes iteration-2 critique blocking item 1.** |
 | V28c | What is actually in the way | **291 px** between the swatches (ends y=523) and the grid (starts y=814): an empty title `INPUT` (34px), an empty statement `TEXTAREA` (27px), the `12 works · Copy link` rail, then a repeated results header and toolbar. Plus 159 px of sticky chrome above (57 header + 102 search). |
 | V28d | `redeal` accepts a `note` and renders it as the wall label | Driven through `?webmcp-debug`, **zero model calls** — so beat 3's *framing* can be rehearsed for free. The *text* must still come from a real run. |
+| V28f | The inversion, shot live, both conditions | Same three works, flags swapped, both HTTP 200. A (etching picked): *"You said warm, but you kept the bone-and-umber etching and rejected the darker ochre palettes—following the pick."* B (etching rejected): *"You kept the pale ochre drawing and rejected darker olive and brown palettes; this deal follows its luminous warmth."* Frames: `shots/55-note-inverted-A.png`, `-B.png`. Raw: `e2e-evidence/note-inversion.json`. |
+| V28g | The opening turn writes no wall labels | `/e/QWwJnL5` → 200, **12 works, 12 catalogue blocks, zero wall labels**. Confirms iteration-2 critique item 4. |
 | V28e | Deployed build, re-checked this round | **25 tools**; `/e/MKwsxHy` → `200`; `/e/zzzzzzz` → `404`. The `/e/:code` route exists only on `night/sharing`, so **staging is running sharing, not integration** — the critique is right about that. |
 | V29 | Flags survive an **in-page** search | `{"picks":1,"rejects":2,"modelCalls":0}`. A `page.goto` is a reload and loses them, which is documented behaviour, not a defect. |
 | V30 | `get_view_context` flag entries carry visual facts | `{"picks":1,"rejects":2,"palette":["#B89E81","#644F3F","#F4E8D6","#DCB17F"],"medium":"watercolor and graphite on laid paper"}` |
@@ -190,9 +192,10 @@ three NGA e2e runs are the ones to cite for real works.
 
 | Claim | Source |
 | --- | --- |
-| The agent drafts a title, a statement and a label per work | Curation walk on the deployed build, **11 of 11 pass** (fix log §5). `curation-walk.json`. |
+| The agent drafts a title and a statement | Curation walk on the deployed build, **11 of 11 pass** (fix log §5). |
+| ⚠ **The opening turn writes no labels** | Iteration-2 critique, measured on staging: `label: null`, `labelBy: null` on all six, **zero POSTs to `/api/public-labels`**. Confirmed first-hand: `/e/QWwJnL5` (the sharing lane's flagship typed run) returns 200 with **12 works, 12 catalogue blocks, no wall label on any**. An earlier draft of this file said otherwise; corrected. |
 | Committing the statement is itself the turn | Fix log §7 — **2 POSTs to `/public-agent/turn`** after the edit. Before the fix nothing called `submitHumanTurn` at all; the correction sat in the journal. |
-| It re-selects and rewrites every label against the correction | Fix log §7: **18 of 18 rewritten**. Curation report Batch 2: **3 of 3** runs. `curation-walk.json` holds both label sets verbatim. |
+| The correction is what produces the labels | Fix log §7: **18 of 18** written against the corrected statement. `curation-walk.json` asserts *"every hung work has a wall label — 6 of 6"* only after the edit. Curation report Batch 2: **3 of 3** runs. |
 | It does not overwrite the human's sentence | Fix log §7. Curation report: statement returns `by:"human", theirs:true`; an agent write onto an edited field is parked under `deferred`. |
 | The same work gets a different label under a different statement | `labels-ab.json` — same six works, two statements, live model, **0 of 6 byte-identical**, and not paraphrases. |
 | A captioned work produces a picture-grounded contextual pair | `curation-report.md`, Bruegel, `source: caption`. |
