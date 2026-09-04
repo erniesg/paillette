@@ -65,8 +65,9 @@ the board thins, and by the seventh Enter is a dead key. A fresh page resets it.
 - **⚠ 12–33 s** from Enter to the label, and **the board arrives before the
   sentence does**. A cut at 15 s will sometimes catch a board with no label on it.
   Cut the wait, not the sentence.
-- **⚠ Do not say "twelve" here.** The agent's first board measured 8, 10, 11 and
-  12 across runs. Twelve is a property of Enter.
+- **⚠ Do not say "twelve" here** — even though it probably will be. 12 in **7 of
+  7** iteration-5 runs, but 8, 12, 10 and 12 across iteration 2's four. Twelve is
+  guaranteed of Enter and only likely of the agent's first board.
 
 ### S03 · X, X, P
 

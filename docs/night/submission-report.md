@@ -42,8 +42,9 @@ than on my own work.
 | `pnpm --filter web test` | 59 files / 593 tests | **97 files / 1204 tests, all pass** |
 | `pnpm --filter api test` | 41 files / 770 tests | **46 files / 857 tests, all pass** |
 
-Both figures match the integration lane's iteration-5 numbers exactly. The
-`api` run prints `INTERNAL_TEXT_SEARCH_SENTINEL` and `NGA quota storage
+The api figure matches the integration lane's iteration-5 number exactly; its
+web figure appears as both 1203 and 1204 in different sections of that report, so
+1204 here is my own run rather than a quotation. The `api` run prints `INTERNAL_TEXT_SEARCH_SENTINEL` and `NGA quota storage
 unavailable` to stderr; those are the tests' own stubbed failures being
 exercised, and they appear on a passing run.
 

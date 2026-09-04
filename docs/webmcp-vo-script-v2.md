@@ -185,8 +185,10 @@ arrives before the sentence does, so a take cut at 15 s will sometimes catch a
 board with no label on it. The follow-up costs 3 more calls and 8–14 s. Cut both
 waits.
 
-**⚠ Do not say "twelve" here.** The agent's first board measured 8, 10, 11 and 12
-across runs. Twelve belongs to Enter, not to the agent's first board.
+**⚠ Do not say "twelve" here** — even though it probably will be. The agent's
+first board was 12 in **7 of 7** iteration-5 runs, but 8, 12, 10 and 12 across
+iteration 2's four. Twelve is guaranteed of Enter and only likely of the agent's
+first board. Beat 2 can say the number; this beat cannot.
 
 **⚠ Do not name a screenshot that does not contain what you say it does.**
 `e2e5-02-board-and-note.png` has the cyan label and **all twelve cards** but
