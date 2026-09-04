@@ -13,7 +13,7 @@ read this.
 
 Paillette makes an art collection searchable by what its pictures *look* like
 rather than by what a catalogue happens to record. It is a **WebMCP Challenge**
-submission: **17 tools registered on `document.modelContext`**, so an agent can
+submission: **25 tools registered on `document.modelContext`**, so an agent can
 search, filter, open and curate on the same page the human is using.
 
 - Repo `~/code/erniesg/paillette`, branch **`deploy-nga-open-access`**
@@ -93,7 +93,7 @@ as fact without checking it first.
 
 Chrome 152 with `--enable-features=WebMCPTesting`:
 
-- `document.modelContext` is real; all 17 tools register with it.
+- `document.modelContext` is real; all 25 tools register with it.
 - `getTools()` returns **descriptors** — none carry `execute`. Executing is the
   host's job.
 - The host API is:

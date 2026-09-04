@@ -1,0 +1,272 @@
+[
+  {
+    "run": 1,
+    "steps": [
+      {
+        "label": "flags laid down",
+        "picks": [
+          "The Dawn of Creation"
+        ],
+        "rejects": [
+          "Peaceful Valley",
+          "Vicinity of Morestal"
+        ]
+      },
+      {
+        "label": "deterministic redeal",
+        "modelCallsDuring": 0,
+        "board": {
+          "view": "deal-board",
+          "cards": 12
+        }
+      },
+      {
+        "label": "instruction in the bar",
+        "chars": 88,
+        "verbatim": true
+      },
+      {
+        "label": "agent turn",
+        "quietMs": 13763,
+        "elapsedMs": 15369,
+        "modelCalls": 3,
+        "wallLabel": "Warm, spare, and luminous: a quiet horizon-led hang, leaving the darker pastoral mood behind.",
+        "provenance": "agent",
+        "view": "deal-board",
+        "cards": 12,
+        "picksHeld": 1,
+        "dealError": null,
+        "transcript": [
+          "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+        ]
+      }
+    ],
+    "turns": [
+      {
+        "messages": 1,
+        "turn": {
+          "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "flagsDelta": [
+            {
+              "artworkId": "open-access-art:nga:50295",
+              "title": "Peaceful Valley (Alexander Helwig Wyant)",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:184224",
+              "title": "Vicinity of Morestal (François-Auguste Ravier)",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:144846",
+              "title": "The Dawn of Creation (Samuel Jackson)",
+              "to": "pick"
+            }
+          ],
+          "selection": [],
+          "hovered": {
+            "id": "open-access-art:nga:144846",
+            "title": "The Dawn of Creation (Samuel Jackson)"
+          },
+          "compareChoice": null
+        },
+        "lastRole": "user"
+      },
+      {
+        "messages": 3,
+        "turn": null,
+        "lastRole": "tool"
+      },
+      {
+        "messages": 5,
+        "turn": null,
+        "lastRole": "tool"
+      }
+    ],
+    "errors": [],
+    "note": "Warm, spare, and luminous: a quiet horizon-led hang, leaving the darker pastoral mood behind.",
+    "transcript": [
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    ]
+  },
+  {
+    "run": 2,
+    "steps": [
+      {
+        "label": "flags laid down",
+        "picks": [
+          "The Dawn of Creation"
+        ],
+        "rejects": [
+          "Peaceful Valley",
+          "Vicinity of Morestal"
+        ]
+      },
+      {
+        "label": "deterministic redeal",
+        "modelCallsDuring": 0,
+        "board": {
+          "view": "deal-board",
+          "cards": 12
+        }
+      },
+      {
+        "label": "instruction in the bar",
+        "chars": 88,
+        "verbatim": true
+      },
+      {
+        "label": "agent turn",
+        "quietMs": 17510,
+        "elapsedMs": 19145,
+        "modelCalls": 3,
+        "wallLabel": "You said warm and calm; you kept the luminous dawn and rejected the darker landscapes—following the light.",
+        "provenance": "agent",
+        "view": "deal-board",
+        "cards": 12,
+        "picksHeld": 1,
+        "dealError": null,
+        "transcript": [
+          "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+        ]
+      }
+    ],
+    "turns": [
+      {
+        "messages": 1,
+        "turn": {
+          "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "flagsDelta": [
+            {
+              "artworkId": "open-access-art:nga:50295",
+              "title": "Peaceful Valley (Alexander Helwig Wyant)",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:184224",
+              "title": "Vicinity of Morestal (François-Auguste Ravier)",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:144846",
+              "title": "The Dawn of Creation (Samuel Jackson)",
+              "to": "pick"
+            }
+          ],
+          "selection": [],
+          "hovered": {
+            "id": "open-access-art:nga:144846",
+            "title": "The Dawn of Creation (Samuel Jackson)"
+          },
+          "compareChoice": null
+        },
+        "lastRole": "user"
+      },
+      {
+        "messages": 3,
+        "turn": null,
+        "lastRole": "tool"
+      },
+      {
+        "messages": 5,
+        "turn": null,
+        "lastRole": "tool"
+      }
+    ],
+    "errors": [],
+    "note": "You said warm and calm; you kept the luminous dawn and rejected the darker landscapes—following the light.",
+    "transcript": [
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    ]
+  },
+  {
+    "run": 3,
+    "steps": [
+      {
+        "label": "flags laid down",
+        "picks": [
+          "The Dawn of Creation"
+        ],
+        "rejects": [
+          "Peaceful Valley",
+          "Vicinity of Morestal"
+        ]
+      },
+      {
+        "label": "deterministic redeal",
+        "modelCallsDuring": 0,
+        "board": {
+          "view": "deal-board",
+          "cards": 12
+        }
+      },
+      {
+        "label": "instruction in the bar",
+        "chars": 88,
+        "verbatim": true
+      },
+      {
+        "label": "agent turn",
+        "quietMs": 11964,
+        "elapsedMs": 13570,
+        "modelCalls": 3,
+        "wallLabel": "You said warm and calm; you picked a glowing horizon and rejected the darker landscapes—following that light.",
+        "provenance": "agent",
+        "view": "deal-board",
+        "cards": 12,
+        "picksHeld": 1,
+        "dealError": null,
+        "transcript": [
+          "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+        ]
+      }
+    ],
+    "turns": [
+      {
+        "messages": 1,
+        "turn": {
+          "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "flagsDelta": [
+            {
+              "artworkId": "open-access-art:nga:50295",
+              "title": "Peaceful Valley (Alexander Helwig Wyant)",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:184224",
+              "title": "Vicinity of Morestal (François-Auguste Ravier)",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:144846",
+              "title": "The Dawn of Creation (Samuel Jackson)",
+              "to": "pick"
+            }
+          ],
+          "selection": [],
+          "hovered": {
+            "id": "open-access-art:nga:144846",
+            "title": "The Dawn of Creation (Samuel Jackson)"
+          },
+          "compareChoice": null
+        },
+        "lastRole": "user"
+      },
+      {
+        "messages": 3,
+        "turn": null,
+        "lastRole": "tool"
+      },
+      {
+        "messages": 5,
+        "turn": null,
+        "lastRole": "tool"
+      }
+    ],
+    "errors": [],
+    "note": "You said warm and calm; you picked a glowing horizon and rejected the darker landscapes—following that light.",
+    "transcript": [
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    ]
+  }
+]

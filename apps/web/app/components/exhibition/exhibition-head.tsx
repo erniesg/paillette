@@ -25,6 +25,7 @@ import {
   subscribeWebMcpState,
   type ExhibitionState,
 } from '~/lib/webmcp/store';
+import { commitHumanTurn } from '~/lib/webmcp/turn';
 import { EditableText } from './editable-text';
 
 export const useExhibition = (): ExhibitionState =>
@@ -63,7 +64,12 @@ export const ExhibitionHead = ({ trailing }: { trailing?: React.ReactNode }) => 
         onCommit={(value) => writeExhibition({ title: value }, { by: 'human' })}
         onAccept={() => acceptProposal('title')}
         onDecline={() => declineProposal('title')}
-        placeholder="Untitled"
+        /* No placeholder. "Untitled" over "What it's about." is an empty state
+           lecturing — two lines of serif that nobody wrote, sitting where the
+           show's own words go, on the first pick of every session. The rule
+           down the left is the mark, the count in the rail underneath says
+           what the block is, and the accessible name carries the sentence for
+           anyone who needs one. */
         textClassName="paillette-exhibition-title"
       />
 
@@ -72,12 +78,26 @@ export const ExhibitionHead = ({ trailing }: { trailing?: React.ReactNode }) => 
         value={exhibition.statement.current?.value ?? ''}
         by={exhibition.statement.current?.by ?? null}
         proposed={exhibition.statement.proposed?.value ?? null}
-        onCommit={(value) =>
-          writeExhibition({ statement: value }, { by: 'human' })
-        }
+        /*
+         * The one gesture on this page that is an instruction.
+         *
+         * §5c step 4: they cross out the draft, write "it's not about weather,
+         * it's about leaving", and the wall has to move. This used to write the
+         * field and stop — the correction sat in the edit journal until the
+         * human happened to type something unrelated at the agent, so the most
+         * consequential thing they can do had no automatic consequence at all.
+         * Committing it *is* the turn now.
+         *
+         * Only the statement. A title is a few words and a label is about one
+         * work; neither is a brief, and neither should cost a model call every
+         * time somebody fixes a typo. Those still ride the next turn.
+         */
+        onCommit={(value) => {
+          writeExhibition({ statement: value }, { by: 'human' });
+          void commitHumanTurn();
+        }}
         onAccept={() => acceptProposal('statement')}
         onDecline={() => declineProposal('statement')}
-        placeholder="What it’s about."
         multiline
         className="mt-3"
         textClassName="paillette-exhibition-statement"

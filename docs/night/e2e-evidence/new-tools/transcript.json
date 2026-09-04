@@ -1,0 +1,778 @@
+{
+  "flag_artworks": {
+    "args": {
+      "flags": [
+        {
+          "artworkId": "open-access-art:nga:184225",
+          "flag": "pick",
+          "reason": "the agent proposing a pick, for the ink"
+        },
+        {
+          "artworkId": "open-access-art:nga:195765",
+          "flag": "reject",
+          "reason": "the agent proposing a reject"
+        }
+      ]
+    },
+    "result": {
+      "ok": true,
+      "applied": [
+        {
+          "artworkId": "open-access-art:nga:184225",
+          "work": "Environs de Cremieu — François-Auguste Ravier",
+          "flag": "pick",
+          "reason": "the agent proposing a pick, for the ink"
+        },
+        {
+          "artworkId": "open-access-art:nga:195765",
+          "work": "Flying Shadows — Kenyon Cox",
+          "flag": "reject",
+          "reason": "the agent proposing a reject"
+        }
+      ],
+      "provisional": true,
+      "confirmedExemplars": {
+        "positive": [],
+        "negative": []
+      },
+      "effect": "These are on the human’s cards as dashed proposals. They will not steer a redeal until the human confirms them."
+    }
+  },
+  "search_by_exemplars": {
+    "args": {
+      "positiveIds": [
+        "open-access-art:nga:127567"
+      ],
+      "negativeIds": [
+        "open-access-art:nga:198119"
+      ],
+      "topK": 6
+    },
+    "result": {
+      "ok": true,
+      "collection": "nga",
+      "count": 6,
+      "scoring": "cos(x, mean(positives)) − 0.5 · max over negatives. Fixed weights, nothing learned; the same exemplars always return the same works.",
+      "results": [
+        {
+          "id": "open-access-art:nga:127566",
+          "title": "A Rocky Pond",
+          "artist": "Laurent de La Hyre",
+          "year": 1640,
+          "dateText": "1640",
+          "medium": "etching on laid paper",
+          "classification": "Print",
+          "similarity": 0.523,
+          "palette": [
+            "#EBD9BC",
+            "#655748",
+            "#94836C",
+            "#BEAA90"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/2ab99d6f-8d21-4b60-a25f-1b9840fa75df/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/2ab99d6f-8d21-4b60-a25f-1b9840fa75df/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.127566.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        },
+        {
+          "id": "open-access-art:nga:53692",
+          "title": "Horseman on a Bridge",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "dateText": "probably c. 1645/1656",
+          "medium": "etching",
+          "classification": "Print",
+          "similarity": 0.508,
+          "palette": [
+            "#A79073",
+            "#67543D",
+            "#D8C2A6",
+            "#C4B494"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/8e7674b9-f999-410b-af98-64f018f3d834/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/8e7674b9-f999-410b-af98-64f018f3d834/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.53692.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        },
+        {
+          "id": "open-access-art:nga:53657",
+          "title": "Large Rock at the River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "dateText": "probably c. 1645/1656",
+          "medium": "etching with engraving",
+          "classification": "Print",
+          "similarity": 0.504,
+          "palette": [
+            "#594C3C",
+            "#D2BD9E",
+            "#907F68",
+            "#AC947B",
+            "#332213"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/fd5da81e-6046-409d-b83f-08554c198114/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/fd5da81e-6046-409d-b83f-08554c198114/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.53657.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        },
+        {
+          "id": "open-access-art:nga:53734",
+          "title": "The Pointed Rock",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "dateText": "probably c. 1645/1656",
+          "medium": "etching",
+          "classification": "Print",
+          "similarity": 0.5,
+          "palette": [
+            "#BDA991",
+            "#504336",
+            "#91816E"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/c101692d-a831-40b5-bddd-af5be93abb14/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/c101692d-a831-40b5-bddd-af5be93abb14/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.53734.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        },
+        {
+          "id": "open-access-art:nga:53709",
+          "title": "Two Boats on a Wide River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "dateText": "probably c. 1645/1656",
+          "medium": "etching",
+          "classification": "Print",
+          "similarity": 0.5,
+          "palette": [
+            "#A8957F",
+            "#D9C5AB",
+            "#5D4E3F",
+            "#CCBCA1"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/6defdf6f-5f44-4daa-be2c-a895f760d58f/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/6defdf6f-5f44-4daa-be2c-a895f760d58f/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.53709.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        },
+        {
+          "id": "open-access-art:nga:53735",
+          "title": "The Pointed Rock",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "dateText": "probably c. 1645/1656",
+          "medium": "etching",
+          "classification": "Print",
+          "similarity": 0.5,
+          "palette": [
+            "#A18C70",
+            "#D7C3A6",
+            "#524433",
+            "#C4B493"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/d05f8474-c56b-49ae-83c9-cf3391d6ba6f/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/d05f8474-c56b-49ae-83c9-cf3391d6ba6f/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.53735.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        }
+      ],
+      "next": "Call redeal to put a set like this on the board with the human’s picks held in place, or set_results to pin a chosen subset."
+    }
+  },
+  "redeal": {
+    "args": {
+      "keep": "picks",
+      "strategy": "tighten",
+      "count": 12,
+      "note": "following the pick"
+    },
+    "result": {
+      "ok": true,
+      "kept": [
+        {
+          "id": "open-access-art:nga:127567",
+          "work": "A Rocky Pond — Laurent de La Hyre"
+        }
+      ],
+      "removed": [],
+      "added": [
+        {
+          "id": "open-access-art:nga:127566",
+          "work": "A Rocky Pond — Laurent de La Hyre"
+        },
+        {
+          "id": "open-access-art:nga:53731",
+          "work": "Two Peasants Seated on a Hill — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53692",
+          "work": "Horseman on a Bridge — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53739",
+          "work": "Branch in the Water — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53735",
+          "work": "The Pointed Rock — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53648",
+          "work": "Three Men on a Rock — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:139200",
+          "work": "A Path through a Hilly Landscape — Carl Friedrich Ludwig Felix von Rumohr"
+        },
+        {
+          "id": "open-access-art:nga:37563",
+          "work": "Boulder in the Woods — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:127371",
+          "work": "Classical Landscape with a Waterfall — Wilhelm von Bemmel"
+        },
+        {
+          "id": "open-access-art:nga:53730",
+          "work": "Two Peasants Seated on a Hill — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:41810",
+          "work": "The Parable of the Good Samaritan — Sébastien Bourdon"
+        }
+      ],
+      "order": [
+        "open-access-art:nga:127567",
+        "open-access-art:nga:127566",
+        "open-access-art:nga:53731",
+        "open-access-art:nga:53692",
+        "open-access-art:nga:53739",
+        "open-access-art:nga:53735",
+        "open-access-art:nga:53648",
+        "open-access-art:nga:139200",
+        "open-access-art:nga:37563",
+        "open-access-art:nga:127371",
+        "open-access-art:nga:53730",
+        "open-access-art:nga:41810"
+      ],
+      "exemplars": {
+        "positive": [
+          "open-access-art:nga:127567"
+        ],
+        "negative": []
+      },
+      "strategy": "tighten",
+      "note": "following the pick",
+      "effect": "The board on the human’s screen is now this, with their picks in the positions they were in."
+    }
+  },
+  "redeal:second": {
+    "args": {
+      "keep": "picks"
+    },
+    "result": {
+      "ok": true,
+      "kept": [
+        {
+          "id": "open-access-art:nga:127567",
+          "work": "A Rocky Pond — Laurent de La Hyre"
+        }
+      ],
+      "removed": [
+        {
+          "id": "open-access-art:nga:127566",
+          "work": "A Rocky Pond — Laurent de La Hyre"
+        },
+        {
+          "id": "open-access-art:nga:53731",
+          "work": "Two Peasants Seated on a Hill — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53692",
+          "work": "Horseman on a Bridge — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53739",
+          "work": "Branch in the Water — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53735",
+          "work": "The Pointed Rock — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53648",
+          "work": "Three Men on a Rock — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:139200",
+          "work": "A Path through a Hilly Landscape — Carl Friedrich Ludwig Felix von Rumohr"
+        },
+        {
+          "id": "open-access-art:nga:37563",
+          "work": "Boulder in the Woods — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:127371",
+          "work": "Classical Landscape with a Waterfall — Wilhelm von Bemmel"
+        },
+        {
+          "id": "open-access-art:nga:53730",
+          "work": "Two Peasants Seated on a Hill — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:41810",
+          "work": "The Parable of the Good Samaritan — Sébastien Bourdon"
+        }
+      ],
+      "added": [
+        {
+          "id": "open-access-art:nga:53734",
+          "work": "The Pointed Rock — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:79326",
+          "work": "The Isar with Boulders on the Isarhohe — Franz Innocenz Josef Kobell"
+        },
+        {
+          "id": "open-access-art:nga:53709",
+          "work": "Two Boats on a Wide River — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:53755",
+          "work": "Boulder in the Woods — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:132954",
+          "work": "A Waterfall between Rocky Cliffs — Jonas Umbach"
+        },
+        {
+          "id": "open-access-art:nga:53657",
+          "work": "Large Rock at the River — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:62952",
+          "work": "A Young Couple Seated near a Massive Rock Formation — Johann August Nahl II"
+        },
+        {
+          "id": "open-access-art:nga:53108",
+          "work": "Landscape with a Wooded Ravine — Anthonie Waterloo"
+        },
+        {
+          "id": "open-access-art:nga:53716",
+          "work": "Pointed Boulder at the Bank of a River — Allart van Everdingen"
+        },
+        {
+          "id": "open-access-art:nga:222647",
+          "work": "A t Pontchéry, Isère (A Pontcheruy , Isère, vue d’une chute d’eau) — Louis Hector François Allemand"
+        },
+        {
+          "id": "open-access-art:nga:53892",
+          "work": "The Stump near the River — Herman van Swanevelt"
+        }
+      ],
+      "order": [
+        "open-access-art:nga:127567",
+        "open-access-art:nga:53734",
+        "open-access-art:nga:79326",
+        "open-access-art:nga:53709",
+        "open-access-art:nga:53755",
+        "open-access-art:nga:132954",
+        "open-access-art:nga:53657",
+        "open-access-art:nga:62952",
+        "open-access-art:nga:53108",
+        "open-access-art:nga:53716",
+        "open-access-art:nga:222647",
+        "open-access-art:nga:53892"
+      ],
+      "exemplars": {
+        "positive": [
+          "open-access-art:nga:127567"
+        ],
+        "negative": []
+      },
+      "strategy": "steady",
+      "note": "again, from the same pick",
+      "effect": "The board on the human’s screen is now this, with their picks in the positions they were in."
+    }
+  },
+  "compare_artworks": {
+    "args": {
+      "artworkIds": [
+        "open-access-art:nga:127567",
+        "open-access-art:nga:53734"
+      ],
+      "question": "Which one belongs above a sofa?"
+    },
+    "result": {
+      "ok": true,
+      "comparing": [
+        {
+          "id": "open-access-art:nga:127567",
+          "title": "A Rocky Pond",
+          "artist": "Laurent de La Hyre",
+          "year": 1640,
+          "dateText": "1640",
+          "medium": "etching on laid paper",
+          "classification": "Print",
+          "similarity": 0.652,
+          "palette": [
+            "#EBD8BC",
+            "#907F6A",
+            "#695949",
+            "#B9A68D"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/50633e48-5f25-4565-8133-4f3f222da80f/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/50633e48-5f25-4565-8133-4f3f222da80f/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.127567.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        },
+        {
+          "id": "open-access-art:nga:53734",
+          "title": "The Pointed Rock",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "dateText": "probably c. 1645/1656",
+          "medium": "etching",
+          "classification": "Print",
+          "similarity": 0.844,
+          "palette": [
+            "#BDA991",
+            "#504336",
+            "#91816E"
+          ],
+          "thumbnailUrl": "https://api.nga.gov/iiif/c101692d-a831-40b5-bddd-af5be93abb14/full/400,/0/default.jpg",
+          "imageUrl": "https://api.nga.gov/iiif/c101692d-a831-40b5-bddd-af5be93abb14/full/843,/0/default.jpg",
+          "sourceUrl": "https://www.nga.gov/collection/art-object-page.53734.html",
+          "sourceInstitution": "National Gallery of Art, Washington"
+        }
+      ],
+      "question": "Which one belongs above a sofa?",
+      "effect": "Both works are on the human’s screen at full size with your question between them.",
+      "next": "Wait for their answer. It arrives as a turn carrying compareChoice — either a winner and a loser, or a refusal of both with the reason they gave — and flags itself either way."
+    }
+  },
+  "set_exhibition": {
+    "args": {
+      "title": "Leaving",
+      "statement": "These works are held together by departure rather than by weather. Each one keeps a shoreline, a road or a threshold in view, and each one puts the figure at the edge of it rather than at its centre. Hung in sequence they read as a single movement outward: the light thins, the horizon opens, and what is being left behind falls out of the frame entirely. Nothing here arrives anywhere. The show is about the moment before that.",
+      "works": [
+        {
+          "artworkId": "open-access-art:nga:127567"
+        },
+        {
+          "artworkId": "open-access-art:nga:53734"
+        },
+        {
+          "artworkId": "open-access-art:nga:79326"
+        },
+        {
+          "artworkId": "open-access-art:nga:53709"
+        },
+        {
+          "artworkId": "open-access-art:nga:53755"
+        }
+      ]
+    },
+    "result": {
+      "ok": true,
+      "title": {
+        "text": "Leaving",
+        "by": "agent"
+      },
+      "statement": {
+        "text": "These works are held together by departure rather than by weather. Each one keeps a shoreline, a road or a threshold in view, and each one puts the figure at the edge of it rather than at its centre. Hung in sequence they read as a single movement outward: the light thins, the horizon opens, and what is being left behind falls out of the frame entirely. Nothing here arrives anywhere. The show is about the moment before that.",
+        "by": "agent"
+      },
+      "works": [
+        {
+          "artworkId": "open-access-art:nga:127567",
+          "position": 0,
+          "title": "A Rocky Pond",
+          "artist": "Laurent de La Hyre",
+          "year": 1640,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53734",
+          "position": 1,
+          "title": "The Pointed Rock",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:79326",
+          "position": 2,
+          "title": "The Isar with Boulders on the Isarhohe",
+          "artist": "Franz Innocenz Josef Kobell",
+          "year": 1809,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53709",
+          "position": 3,
+          "title": "Two Boats on a Wide River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53755",
+          "position": 4,
+          "title": "Boulder in the Woods",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:132954",
+          "position": 5,
+          "title": "A Waterfall between Rocky Cliffs",
+          "artist": "Jonas Umbach",
+          "year": 1624,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53657",
+          "position": 6,
+          "title": "Large Rock at the River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:62952",
+          "position": 7,
+          "title": "A Young Couple Seated near a Massive Rock Formation",
+          "artist": "Johann August Nahl II",
+          "year": 1752,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53108",
+          "position": 8,
+          "title": "Landscape with a Wooded Ravine",
+          "artist": "Anthonie Waterloo",
+          "year": 1609,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53716",
+          "position": 9,
+          "title": "Pointed Boulder at the Bank of a River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:222647",
+          "position": 10,
+          "title": "A t Pontchéry, Isère (A Pontcheruy , Isère, vue d’une chute d’eau)",
+          "artist": "Louis Hector François Allemand",
+          "year": 1857,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53892",
+          "position": 11,
+          "title": "The Stump near the River",
+          "artist": "Herman van Swanevelt",
+          "year": 1600,
+          "label": null,
+          "labelBy": null
+        }
+      ],
+      "regions": [],
+      "unlabelled": 12,
+      "updatedAt": "2026-09-04T05:12:24.153Z",
+      "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show.",
+      "changed": [
+        "title",
+        "statement"
+      ]
+    }
+  },
+  "get_exhibition": {
+    "args": {},
+    "result": {
+      "ok": true,
+      "title": {
+        "text": "Leaving",
+        "by": "agent"
+      },
+      "statement": {
+        "text": "These works are held together by departure rather than by weather. Each one keeps a shoreline, a road or a threshold in view, and each one puts the figure at the edge of it rather than at its centre. Hung in sequence they read as a single movement outward: the light thins, the horizon opens, and what is being left behind falls out of the frame entirely. Nothing here arrives anywhere. The show is about the moment before that.",
+        "by": "agent"
+      },
+      "works": [
+        {
+          "artworkId": "open-access-art:nga:127567",
+          "position": 0,
+          "title": "A Rocky Pond",
+          "artist": "Laurent de La Hyre",
+          "year": 1640,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53734",
+          "position": 1,
+          "title": "The Pointed Rock",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:79326",
+          "position": 2,
+          "title": "The Isar with Boulders on the Isarhohe",
+          "artist": "Franz Innocenz Josef Kobell",
+          "year": 1809,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53709",
+          "position": 3,
+          "title": "Two Boats on a Wide River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53755",
+          "position": 4,
+          "title": "Boulder in the Woods",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:132954",
+          "position": 5,
+          "title": "A Waterfall between Rocky Cliffs",
+          "artist": "Jonas Umbach",
+          "year": 1624,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53657",
+          "position": 6,
+          "title": "Large Rock at the River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:62952",
+          "position": 7,
+          "title": "A Young Couple Seated near a Massive Rock Formation",
+          "artist": "Johann August Nahl II",
+          "year": 1752,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53108",
+          "position": 8,
+          "title": "Landscape with a Wooded Ravine",
+          "artist": "Anthonie Waterloo",
+          "year": 1609,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53716",
+          "position": 9,
+          "title": "Pointed Boulder at the Bank of a River",
+          "artist": "Allart van Everdingen",
+          "year": 1645,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:222647",
+          "position": 10,
+          "title": "A t Pontchéry, Isère (A Pontcheruy , Isère, vue d’une chute d’eau)",
+          "artist": "Louis Hector François Allemand",
+          "year": 1857,
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "artworkId": "open-access-art:nga:53892",
+          "position": 11,
+          "title": "The Stump near the River",
+          "artist": "Herman van Swanevelt",
+          "year": 1600,
+          "label": null,
+          "labelBy": null
+        }
+      ],
+      "regions": [],
+      "unlabelled": 12,
+      "updatedAt": "2026-09-04T05:12:24.153Z",
+      "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show."
+    }
+  },
+  "annotate_atlas": {
+    "args": {
+      "regions": [
+        {
+          "label": "the ones about leaving",
+          "artworkIds": [
+            "open-access-art:nga:184225",
+            "open-access-art:nga:195765",
+            "open-access-art:nga:127567"
+          ],
+          "note": "edges and thresholds"
+        },
+        {
+          "label": "the ones that stay",
+          "artworkIds": [
+            "open-access-art:nga:198119",
+            "open-access-art:nga:139234",
+            "open-access-art:nga:69343"
+          ]
+        }
+      ]
+    },
+    "result": {
+      "ok": true,
+      "regions": [
+        {
+          "label": "the ones about leaving",
+          "artworkIds": [
+            "open-access-art:nga:184225",
+            "open-access-art:nga:195765",
+            "open-access-art:nga:127567"
+          ],
+          "note": "edges and thresholds"
+        },
+        {
+          "label": "the ones that stay",
+          "artworkIds": [
+            "open-access-art:nga:198119",
+            "open-access-art:nga:139234",
+            "open-access-art:nga:69343"
+          ]
+        }
+      ]
+    }
+  }
+}

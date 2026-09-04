@@ -248,19 +248,62 @@ const main = async () => {
   const moved = pickIds
     .map((id) => ({ id, from: positionsBefore[id], to: positionsAfter[id] }))
     .filter((entry) => entry.from && entry.to && (entry.from.x !== entry.to.x || entry.from.y !== entry.to.y));
-  note(
-    moved.length === 0,
-    'and each pick is in the same place on screen as before',
-    moved.length === 0
-      ? 'none moved'
-      : moved.map((entry) => `${entry.id.split(':').pop()} ${entry.from.x},${entry.from.y} -> ${entry.to.x},${entry.to.y}`).join(' · ')
+  // Expected to move: this deal replaced the browsing masonry with a board.
+  // Recorded rather than asserted; the board-to-board case is below.
+  console.log(
+    `      (first deal moved ${moved.length} of ${pickIds.length} picks on screen — ` +
+      'a browsing grid becoming a board, so this is not the claim)'
   );
 
+  // ---- 4. the second redeal, which is the one the claim is about --------
+  //
+  // The first deal replaces a browsing grid with a board, so of course
+  // everything moves. Board to board is where "your picks stay put" has to be
+  // true, and where the FLIP has something to animate.
+  const positionsBeforeSecond = await positionsOf();
+  const motionSecond = page.evaluate(async () => {
+    const sample = () =>
+      Array.from(document.querySelectorAll('.paillette-card'))
+        .map((card) => {
+          const box = card.getBoundingClientRect();
+          return `${card.getAttribute('data-artwork-id')}@${Math.round(box.x)},${Math.round(box.y)}`;
+        })
+        .join(' ');
+    const frames = [];
+    const start = performance.now();
+    while (performance.now() - start < 4000) {
+      frames.push(sample());
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    const distinct = [];
+    for (const frame of frames) if (frame !== distinct[distinct.length - 1]) distinct.push(frame);
+    return { frames: frames.length, distinct: distinct.length };
+  });
+  await page.mouse.move(700, 700);
+  await page.keyboard.press('Enter');
+  const secondMotion = await motionSecond;
+  await page.waitForTimeout(600);
+
+  const positionsAfterSecond = await positionsOf();
+  const movedSecond = pickIds
+    .map((id) => ({ id, from: positionsBeforeSecond[id], to: positionsAfterSecond[id] }))
+    .filter((entry) => entry.from && entry.to && (entry.from.x !== entry.to.x || entry.from.y !== entry.to.y));
   note(
-    motion.distinct > 2,
-    'the cards move between frames rather than cutting (FLIP)',
-    `${motion.distinct} distinct layouts across ${motion.frames} frames`
+    movedSecond.length === 0,
+    'board to board: each pick is in exactly the same place on screen',
+    movedSecond.length === 0
+      ? 'none moved'
+      : movedSecond
+          .map((entry) => `${entry.id.split(':').pop()} ${entry.from.x},${entry.from.y} -> ${entry.to.x},${entry.to.y}`)
+          .join(' · ')
   );
+  note(
+    secondMotion.distinct > 8,
+    'board to board: the cards animate rather than cutting (FLIP)',
+    `${secondMotion.distinct} distinct layouts across ${secondMotion.frames} frames ` +
+      `(first deal was ${motion.distinct}; /night/deal measures ~23)`
+  );
+  await page.screenshot({ path: `${SHOTS}/3b-second-deal.png` });
 
   // ---- 5. the tools, driven directly -----------------------------------
   await page.goto(`${BASE}/nga/search?q=storm%20at%20sea&webmcp-debug=1`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
@@ -309,6 +352,31 @@ const main = async () => {
     .catch(() => null);
   note(Boolean(labelInk), 'and it carries an ink', String(labelInk));
   await page.screenshot({ path: `${SHOTS}/5-agent-redeal.png` });
+
+  // ---- 5b. the agent's presence never covers the board -----------------
+  //
+  // There used to be a fixed panel across the lower-left of the board, which is
+  // where the picks are, and every tool call reopened it — a turn is five or
+  // six calls, so on camera it covered the one thing the board is for. It is
+  // now a five-character glyph, and the log behind it opens only when a human
+  // asks. This asserts that nothing opens itself through a whole turn.
+  await call('get_view_context', {});
+  await call('flag_artworks', { flags: [{ artworkId: liveIds[2], flag: 'reject', reason: 'busier' }] });
+  await page.waitForTimeout(300);
+  const logOpen = await page.$('.pa-activity-log');
+  note(logOpen === null, 'the tool-call log does not open itself during a turn', logOpen ? 'it opened' : 'closed');
+  const glyphBox = await page.evaluate(() => {
+    const glyph = document.querySelector('.pa-activity');
+    if (!glyph) return null;
+    const box = glyph.getBoundingClientRect();
+    return { w: Math.round(box.width), h: Math.round(box.height) };
+  });
+  note(
+    Boolean(glyphBox) && glyphBox.w < 120 && glyphBox.h < 80,
+    'the agent is present as a mark rather than a panel',
+    glyphBox ? `${glyphBox.w}x${glyphBox.h}` : 'missing'
+  );
+  await page.screenshot({ path: `${SHOTS}/5b-glyph-not-a-panel.png` });
 
   const nowIds = (await board(page)).map((entry) => entry.id).filter(Boolean);
   const compared = await call('compare_artworks', {

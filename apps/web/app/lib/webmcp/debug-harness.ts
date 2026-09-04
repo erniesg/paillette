@@ -1,17 +1,22 @@
 /**
- * A dev-only stand-in for a WebMCP host, so the tool surface can be exercised
- * end-to-end in an ordinary browser.
+ * A stand-in for a WebMCP host, so the page's own tools are usable in an
+ * ordinary browser — and, under `?webmcp-debug`, drivable from the console.
  *
- * We cannot run ChatGPT's in-app browser from CI or from a script, and Chrome
- * 149's flag needs a restart. Without something like this the first time the
- * tools ever ran would be on camera. Activating `?webmcp-debug` installs a
- * `document.modelContext` that enforces the parts of the spec we depend on —
- * unique names, duplicate registration rejects, `execute` receives an
- * `AbortSignal` — and exposes `window.__paillette_webmcp` for driving each tool
- * against the real endpoints.
+ * Two separate things, and they used to be one, which is the bug.
  *
- * It is inert unless that query parameter is present, so it cannot affect a
- * normal visit or shadow a genuine host.
+ * The **stub host** claims `document.modelContext` when nothing else has. It
+ * enforces the parts of the spec we depend on — unique names, duplicate
+ * registration rejects, `execute` receives an `AbortSignal` — and it is what
+ * the page's own prompt bar talks to. Without it there is no host, so the
+ * tools never register and the bar never renders: a visitor who arrives at
+ * staging with an ordinary browser saw a search page with no agent on it and
+ * no sign that the rest of the build existed. Gating that on an undocumented
+ * query parameter meant the submission only worked if you knew the incantation.
+ * It never shadows a genuine host, so a real WebMCP browser is unaffected.
+ *
+ * The **debug driver** is `window.__paillette_webmcp`, for calling a tool by
+ * name with arguments from the console or from a capture script. That is a
+ * developer's back door into the page and stays behind `?webmcp-debug`.
  */
 
 import type { ModelContext, ModelContextTool } from '~/types/webmcp';
@@ -78,13 +83,16 @@ const createStubHost = (): ModelContext => {
 };
 
 /**
- * Installs the stub (if no real host exists) and the `window.__paillette_webmcp`
- * driver. Returns a disposer. Safe to call more than once.
+ * Claim `document.modelContext` if nothing else has.
+ *
+ * Idempotent and never destructive: a genuine host is left exactly as it is,
+ * and calling this twice is a no-op. Returns true if a real host was already
+ * there, which is the only thing callers need to know.
  */
-export const installWebMcpDebugHarness = (): (() => void) => {
-  if (typeof document === 'undefined') return () => {};
-
-  const hadRealHost = 'modelContext' in document && Boolean(document.modelContext);
+export const installModelContextStub = (): boolean => {
+  if (typeof document === 'undefined') return false;
+  const hadRealHost =
+    'modelContext' in document && Boolean(document.modelContext);
   if (!hadRealHost) {
     Object.defineProperty(document, 'modelContext', {
       value: createStubHost(),
@@ -92,6 +100,17 @@ export const installWebMcpDebugHarness = (): (() => void) => {
       writable: true,
     });
   }
+  return hadRealHost;
+};
+
+/**
+ * Installs the stub (if no real host exists) and the `window.__paillette_webmcp`
+ * driver. Returns a disposer. Safe to call more than once.
+ */
+export const installWebMcpDebugHarness = (): (() => void) => {
+  if (typeof document === 'undefined') return () => {};
+
+  const hadRealHost = installModelContextStub();
 
   const context = document.modelContext;
   const findTool = async (name: string) => {
@@ -147,12 +166,12 @@ export const installWebMcpDebugHarness = (): (() => void) => {
 
   window.__paillette_webmcp = api;
 
+  // Only the driver is taken down. The host stays: it is the page's own, the
+  // prompt bar is talking to it, and pulling it out from under a live bar was
+  // the sort of teardown that only ever shows up on camera.
   return () => {
     if (window.__paillette_webmcp === api) {
       delete window.__paillette_webmcp;
-    }
-    if (!hadRealHost) {
-      delete (document as { modelContext?: unknown }).modelContext;
     }
   };
 };
@@ -169,6 +188,38 @@ export const installWebMcpDebugHarness = (): (() => void) => {
  * already decided there was none. The result was a page with the whole tool
  * surface registered and no way to talk to it.
  *
- * Still inert without `?webmcp-debug`, and still refuses to shadow a real host.
+ * Unconditional, because the host is not a debugging aid: it is what the
+ * page's own agent runs on, and a visitor who arrives without a WebMCP browser
+ * is the common case rather than the exception. `?webmcp-debug` still gates
+ * `window.__paillette_webmcp`, which is a back door and stays one.
  */
-if (isWebMcpDebugRequested()) installWebMcpDebugHarness();
+installModelContextStub();
+
+let ensured = false;
+
+/**
+ * The debug driver, installed at module-evaluation time rather than from an
+ * effect. `night/review`'s fix for the mount-order race, kept whole.
+ *
+ * Ordering is the whole point. React runs a route subtree's effects *before*
+ * those of a later sibling in the tree, and `WebMcpBridge` is rendered after
+ * `<Outlet />` in `root.tsx`, so anything that reads `document.modelContext`
+ * from its own mount effect looked before the bridge's effect had installed
+ * anything, found nothing, and latched off for the lifetime of the page.
+ *
+ * The host half of that race is gone — the stub is claimed above, on every
+ * visit — but a capture script reaching for `window.__paillette_webmcp` on
+ * load hits the same ordering problem, so the driver is installed the same
+ * way. Still gated on the query parameter, and still a no-op on the server.
+ */
+export const ensureWebMcpDebugHarness = (): void => {
+  if (ensured || !isWebMcpDebugRequested()) return;
+  ensured = true;
+  installWebMcpDebugHarness();
+};
+
+export const __resetWebMcpDebugHarnessForTest = () => {
+  ensured = false;
+};
+
+ensureWebMcpDebugHarness();

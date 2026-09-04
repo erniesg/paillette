@@ -1,0 +1,4 @@
+# Runtime output — never commit recordings or run artefacts.
+captures/
+verify-shots/
+verify.json

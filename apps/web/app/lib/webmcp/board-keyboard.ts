@@ -21,7 +21,7 @@
 import { getPinnedIds, toggleFlag } from './flags';
 import { clearSelection } from './selection';
 import { getWebMcpState, setCompare } from './store';
-import { submitHumanTurn, type HumanTurnOutcome } from './turn';
+import { commitHumanTurn, type HumanTurnOutcome } from './turn';
 
 /**
  * The utterance bar, identified by its accessible name.
@@ -107,7 +107,10 @@ export const handleBoardKey = (
     isBareBoardEnter(event)
   ) {
     event.preventDefault();
-    void submitHumanTurn()
+    // Enter usually redeals and never leaves the page. The exception is a
+    // rewritten statement: that is prose, the redeal cannot read it, and it
+    // has to reach the model — which is what `commitHumanTurn` does with it.
+    void commitHumanTurn()
       .then((outcome) => options.onTurn?.(outcome))
       .catch((error) => options.onError?.(error));
     return true;

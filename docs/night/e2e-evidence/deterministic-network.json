@@ -1,0 +1,22 @@
+[
+  {
+    "at": 855,
+    "method": "GET",
+    "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+  },
+  {
+    "at": 856,
+    "method": "POST",
+    "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+  },
+  {
+    "at": 3111,
+    "method": "POST",
+    "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+  },
+  {
+    "at": 7520,
+    "method": "POST",
+    "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+  }
+]

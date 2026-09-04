@@ -405,6 +405,50 @@ describe('get_view_context reports the gestures', () => {
     });
   });
 
+  /*
+   * The note has to say what the flags had in common. Given a title and an
+   * artist and nothing else, a model answers out of what it remembers about
+   * that artist — a claim about training data rather than about the board, and
+   * confidently wrong the moment the titles do not telegraph the pictures.
+   * These are the fields the card was already showing the human.
+   */
+  it('carries what the flagged works look like, not only what they are called', async () => {
+    rememberArtworks([
+      {
+        ...artwork('dark'),
+        year: 1875,
+        metadata: {
+          medium: 'oil on canvas',
+          classification: 'Painting',
+          dominantColors: [
+            '#221c14',
+            '#3a3020',
+            '#54452c',
+            '#6b5838',
+            '#7d6a45',
+          ],
+        },
+      } as unknown as ArtworkSearchResult,
+    ]);
+    setFlag('dark', 'reject', { by: 'human' });
+
+    const result = await call('get_view_context');
+
+    expect(result.flags.rejects[0]).toMatchObject({
+      id: 'dark',
+      medium: 'oil on canvas',
+      classification: 'Painting',
+      year: 1875,
+    });
+    // Four swatches, because four is what the card shows.
+    expect(result.flags.rejects[0].palette).toEqual([
+      '#221C14',
+      '#3A3020',
+      '#54452C',
+      '#6B5838',
+    ]);
+  });
+
   it('reports the board, whose move it was, and what is used up', async () => {
     setBoard({
       order: ['a', 'b'],

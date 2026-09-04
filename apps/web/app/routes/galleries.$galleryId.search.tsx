@@ -14,6 +14,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent,
+  type RefObject,
 } from 'react';
 import {
   useInfiniteQuery,
@@ -78,6 +79,11 @@ import {
   useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
+import { NoteSwatches } from '~/components/board/note-swatches';
+import {
+  DealBoard,
+  DEFAULT_BOARD_SIZE as DEAL_BOARD_SIZE,
+} from '~/components/board/deal-board';
 import {
   ExhibitionHead,
   useExhibition,
@@ -1182,6 +1188,10 @@ export default function SearchPage() {
   const agentBoardNote = agentBoardResults
     ? (webmcpState.agentResults?.note ?? null)
     : null;
+
+  // Confirmed only: an agent's proposal is dashed until the human takes it,
+  // and Enter runs on their judgements, not on suggestions.
+  const hasConfirmedFlags = webmcpState.flags.some((flag) => !flag.provisional);
 
   /**
    * `show_artwork` is how an agent points at one work — "look at this one". It
@@ -2529,13 +2539,10 @@ export default function SearchPage() {
               <span>{gallery.name}</span>
               <span>/</span>
               <span>collection search</span>
-              {hasActiveSearch &&
-                currentQuery.data?.queryTime !== undefined && (
-                  <>
-                    <span>/</span>
-                    <span>{Math.round(currentQuery.data.queryTime)}ms</span>
-                  </>
-                )}
+              {/* The query time used to sit here as a third crumb. On a cached
+                  page it read "/ 0MS", which is the interface reporting on its
+                  own plumbing and getting it wrong. Nobody came here to find
+                  out how fast the search was. */}
             </div>
 
             <div className="space-y-4">
@@ -2664,8 +2671,10 @@ export default function SearchPage() {
                     data-catalogue=""
                     aria-label="Search text"
                   >
+                    {/* The magnifier is the label. It sat beside the word
+                        "Search", inside a field that already has a magnifier
+                        in it, which is the same thing said three times. */}
                     <Search className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Search</span>
                   </button>
                 </form>
               )}
@@ -2853,11 +2862,40 @@ export default function SearchPage() {
              and restating it from `tailwind.css` keeps the seam out of their
              file — the bar is unchanged anywhere else it is used. */
           className="lt-agent-bar mx-auto mt-6 max-w-3xl"
-          /* The example alone. "Ask the agent —" was narrating the mechanism
-             in the one place the human is about to type into anyway; showing
-             the shape of an utterance is more use than naming the feature. */
-          placeholder="something warm for above the sofa"
+          /* No placeholder. An italic example sentence is helper text — it
+             was the longest string on the page that nobody typed, and it
+             taught the wrong thing: this bar's headline behaviour is Enter on
+             an *empty* field, which the example is standing in the way of.
+             The board carries that affordance instead, as a mark. */
+          placeholder=""
         />
+
+        {/*
+          Enter is armed, said as a mark.
+
+          The headline beat of the whole build is Enter on an empty bar, and
+          nothing on screen said so — a judge who did not already know had no
+          way to find it. A sentence explaining it would be the exact chrome
+          §5b forbids, and it would be on screen permanently for a key that
+          only does something once a flag exists.
+
+          So: a hairline in the human's ink under the bar, with the return
+          glyph resting on it, appearing the moment the first flag is
+          confirmed and going away when the flags do. It is the same `↵` the
+          submit button carries, so the two read as one key. Nothing to read.
+        */}
+        {hasConfirmedFlags && (
+          <div className="lt-enter-armed mx-auto max-w-3xl" aria-hidden>
+            <span>↵</span>
+          </div>
+        )}
+        {/* The same fact in words, for anyone the mark cannot reach. Off
+            screen, where a sentence costs nothing. */}
+        <p className="sr-only" role="status">
+          {hasConfirmedFlags
+            ? 'Enter on the empty bar redeals the board from your flags.'
+            : ''}
+        </p>
 
         {/* The one case where silence is the wrong answer. Enter is cheap to
             press and a dead key is unreadable — the person cannot tell a
@@ -2882,12 +2920,17 @@ export default function SearchPage() {
             hook the palette matches; the sentence stands on its own without
             it. */}
         {agentBoardNote && (
-          <p
-            className="paillette-wall-label mx-auto mt-6 max-w-3xl"
-            data-provenance={webmcpState.agentResults?.origin ?? 'agent'}
-          >
-            {agentBoardNote}
-          </p>
+          <div className="mx-auto mt-6 max-w-3xl">
+            <p
+              className="paillette-wall-label"
+              data-provenance={webmcpState.agentResults?.origin ?? 'agent'}
+            >
+              {agentBoardNote}
+            </p>
+            {/* The swatches the note was written from, so a claim about
+                colour can be checked without leaving the sentence. */}
+            <NoteSwatches />
+          </div>
         )}
 
         {/* The show. Title and statement, both editable in place, in the ink
@@ -5136,6 +5179,50 @@ function ResultsLayout({
   onPaletteColourSelect,
   onSelectArtwork,
 }: ResultsViewProps) {
+  const { board, flags } = useWebMcpState();
+  const dealtBoard = useMemo(() => {
+    if (!board?.order.length) return null;
+    // The board has to be *these* works, not a board that happens to exist —
+    // running a fresh text search after a deal must go back to browsing.
+    const onScreen = new Set(results.map((result) => result.id));
+    if (board.order.length !== onScreen.size) return null;
+    if (!board.order.every((id) => onScreen.has(id))) return null;
+
+    // Only confirmed human picks pin a slot. An agent's proposal is dashed
+    // until the human takes it, and a proposal must not be able to nail a
+    // card to the board.
+    const preservedIds = flags
+      .filter((flag) => flag.flag === 'pick' && !flag.provisional)
+      .map((flag) => flag.artworkId)
+      .filter((id) => onScreen.has(id));
+    return { preservedIds };
+  }, [board, flags, results]);
+
+  // A board is on the table when a deal put these exact works there, and a
+  // dealt board outranks every layout choice — including the agent's own.
+  //
+  // This check used to sit last, under table/salon/atlas, and a model that had
+  // read "salon for a curated hang" chose salon on the first cold run of the
+  // demo instruction. That answered a question of taste by throwing away the
+  // thing the taste was expressed in: no pinned picks, no FLIP, no deal grid.
+  // The picks holding their slots is not a presentation of the board, it is
+  // the board, so nothing gets to replace it while one is dealt. Anything else
+  // — a text search, a colour search, an agent's `set_results` — is browsing,
+  // and browsing is what the other layouts are for.
+  if (dealtBoard) {
+    return (
+      <DealResults
+        results={results}
+        preservedIds={dealtBoard.preservedIds}
+        selectedColours={selectedColours}
+        showSimilarity={showSimilarity}
+        onFacetSearch={onFacetSearch}
+        onPaletteColourSelect={onPaletteColourSelect}
+        onSelectArtwork={onSelectArtwork}
+      />
+    );
+  }
+
   if (view === 'table') {
     return (
       <TableResults
@@ -5174,6 +5261,174 @@ function ResultsLayout({
       onPaletteColourSelect={onPaletteColourSelect}
       onSelectArtwork={onSelectArtwork}
     />
+  );
+}
+
+/**
+ * The deal, on the product grid.
+ *
+ * A masonry packs by estimated height into the shortest column, so a work's
+ * position depends on its neighbours. That is right for browsing and wrong for
+ * a cull: replace four cards and a pick two rows down moves across the screen,
+ * which breaks the one promise the loop makes — that what you kept is still
+ * where you left it. Measured on staging, a pick held its seat in the board
+ * order and still travelled 308px sideways.
+ *
+ * So once a deal has actually happened, the grid becomes a board: twelve equal
+ * slots, picks pinned to the index they already had, newcomers arriving from
+ * the right. Until then nothing changes — an ordinary search is still a
+ * masonry, because an ordinary search is browsing.
+ */
+function DealResults({
+  results,
+  preservedIds,
+  selectedColours,
+  showSimilarity,
+  onFacetSearch,
+  onPaletteColourSelect,
+  onSelectArtwork,
+}: {
+  results: ArtworkSearchResult[];
+  preservedIds: string[];
+  selectedColours: string[];
+  showSimilarity: boolean;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
+  onPaletteColourSelect: (hex: string) => void;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  const { flags } = useWebMcpState();
+  const shellRef = useRef<HTMLDivElement>(null);
+  useBoardOnCamera(shellRef, results.map((result) => result.id).join(' '));
+
+  /*
+   * The considered-and-declined pile, at the left edge.
+   *
+   * Without it a reject slides off screen and is gone, and "still restorable"
+   * becomes a thing the docs assert rather than a thing the viewer can see.
+   * Most recent first, because the one you just threw out is the one you might
+   * want back.
+   */
+  const trayItems = useMemo(() => {
+    const onBoard = new Set(results.map((result) => result.id));
+    return flags
+      .filter(
+        (flag) =>
+          flag.flag === 'reject' &&
+          !flag.provisional &&
+          !onBoard.has(flag.artworkId)
+      )
+      .slice()
+      .reverse()
+      .map((flag) => recallArtwork(flag.artworkId))
+      .filter((result): result is ArtworkSearchResult => Boolean(result))
+      .slice(0, DEAL_TRAY_LIMIT);
+  }, [flags, results]);
+
+  return (
+    <div
+      ref={shellRef}
+      /*
+       * §4: twelve cards, so every move reads on video. On an unbounded page
+       * the grid ran to 2000px and four of the twelve were visible at
+       * 1440×900 — two thirds of the deal happening off camera, which is the
+       * whole legibility argument gone. The board takes what is left of the
+       * viewport and no more; the grid is already `h-full auto-rows-fr`, so it
+       * sizes its own rows down to fit.
+       */
+      className="lt-deal-viewport"
+    >
+      <DealBoard
+        className="h-full"
+        items={results}
+        preservedIds={preservedIds}
+        tray={trayItems}
+        size={Math.max(results.length, DEAL_BOARD_SIZE)}
+        renderCard={(result, context) => (
+          <ResultCard
+            result={result}
+            rank={context.rank}
+            selectedColours={selectedColours}
+            showSimilarity={showSimilarity}
+            imageRole="thumbnail"
+            compact
+            onFacetSearch={onFacetSearch}
+            onPaletteColourSelect={onPaletteColourSelect}
+            onSelectArtwork={onSelectArtwork}
+          />
+        )}
+        renderTrayCard={(result) => (
+          <TrayCard result={result} onSelectArtwork={onSelectArtwork} />
+        )}
+      />
+    </div>
+  );
+}
+
+/** Enough to show the pile is a pile; more is a second board. */
+const DEAL_TRAY_LIMIT = 8;
+
+/**
+ * Put the board where it can be seen, when the deal changes it.
+ *
+ * The board is sized to the viewport in CSS, which only helps if it is *in*
+ * the viewport — and a deal usually happens after someone has scrolled down a
+ * masonry to find the card they wanted to reject. Measured on staging with the
+ * height alone: twelve cards, none of them fully on screen, because the board
+ * they were dealt onto was above the fold.
+ *
+ * Deliberately tied to the board's contents rather than to every render: this
+ * fires when a deal replaces the works, not when a hover repaints a card.
+ * `scroll-margin-top` on the container keeps it clear of the sticky chrome.
+ */
+function useBoardOnCamera(
+  ref: RefObject<HTMLDivElement | null>,
+  dealSignature: string
+) {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof window === 'undefined') return;
+    const box = element.getBoundingClientRect();
+    // Already watchable: leave it alone. Scrolling a board that is on screen
+    // is the interface fidgeting.
+    if (box.top >= 0 && box.bottom <= window.innerHeight) return;
+    // Instant, never smooth. A smooth scroll runs for roughly as long as the
+    // deal does, and two things moving the same cards at once is how a FLIP
+    // that holds a pick at zero pixels ends up looking like a stutter.
+    element.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }, [ref, dealSignature]);
+}
+
+/**
+ * A rejected work in the tray: the picture, smaller and desaturated, and
+ * nothing else. It is legible as "one of the ones I threw out" from its
+ * position and its treatment, so a caption saying so would be the chrome §5b
+ * forbids. Clicking it opens the work, which is how it gets restored.
+ */
+function TrayCard({
+  result,
+  onSelectArtwork,
+}: {
+  result: ArtworkSearchResult;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  const title = getPublicTitle(result);
+  return (
+    <button
+      type="button"
+      className="lt-tray-card block w-full overflow-hidden"
+      data-artwork-id={result.id}
+      onClick={() => onSelectArtwork(result)}
+      aria-label={`Set aside: ${title}`}
+      title={title}
+    >
+      <ImageWithFallback
+        src={getPublicThumbnailUrl(result)}
+        fallbackSrc={getPublicImageUrl(result)}
+        fallback={<div className="h-16 w-full" aria-hidden />}
+        alt=""
+        className="block h-full w-full object-cover"
+      />
+    </button>
   );
 }
 
@@ -5459,6 +5714,14 @@ function ResultCard({
   selectedColours,
   showSimilarity,
   imageRole,
+  /**
+   * On the board rather than in the masonry: one slot of twelve, sized to a
+   * share of the screen. The picture is the card there, so the catalogue
+   * apparatus — the metadata line, the palette dots, the rank, the accession
+   * — is left to browsing, where there is room for it. Keeping all of it made
+   * every card overflow its slot and overlap its neighbour.
+   */
+  compact = false,
   onFacetSearch,
   onPaletteColourSelect,
   onSelectArtwork,
@@ -5468,6 +5731,7 @@ function ResultCard({
   selectedColours: string[];
   showSimilarity: boolean;
   imageRole: ArtworkImageRole;
+  compact?: boolean;
   onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
@@ -5495,6 +5759,7 @@ function ResultCard({
      */
     <article
       {...flagProps}
+      data-compact={compact ? '' : undefined}
       className="paillette-card lt-slide relative break-inside-avoid"
     >
       <div className="absolute right-2 top-2 z-10">
@@ -5545,33 +5810,39 @@ function ResultCard({
               {artist}
             </button>
           </div>
-          <span className="lt-catalogue">
-            #{rank.toString().padStart(2, '0')}
-          </span>
+          {!compact && (
+            <span className="lt-catalogue">
+              #{rank.toString().padStart(2, '0')}
+            </span>
+          )}
         </div>
 
-        <MetadataLine result={result} onFacetSearch={onFacetSearch} />
+        {!compact && (
+          <>
+            <MetadataLine result={result} onFacetSearch={onFacetSearch} />
 
-        <div className="flex items-center justify-between gap-3">
-          <PaletteDots
-            colours={palette}
-            onColourSelect={onPaletteColourSelect}
-          />
-          <span
-            className="lt-catalogue"
-            title={
-              selectedColours.length
-                ? getColourMatchTitle(result, selectedColours)
-                : undefined
-            }
-          >
-            {showSimilarity
-              ? selectedColours.length
-                ? `Colour ${formatColourMatch(result, selectedColours)}`
-                : `${Math.round(result.similarity * 100)}%`
-              : getAccession(result) || 'Collection'}
-          </span>
-        </div>
+            <div className="flex items-center justify-between gap-3">
+              <PaletteDots
+                colours={palette}
+                onColourSelect={onPaletteColourSelect}
+              />
+              <span
+                className="lt-catalogue"
+                title={
+                  selectedColours.length
+                    ? getColourMatchTitle(result, selectedColours)
+                    : undefined
+                }
+              >
+                {showSimilarity
+                  ? selectedColours.length
+                    ? `Colour ${formatColourMatch(result, selectedColours)}`
+                    : `${Math.round(result.similarity * 100)}%`
+                  : getAccession(result) || 'Collection'}
+              </span>
+            </div>
+          </>
+        )}
       </div>
       {/* The wall label, if this show has one for this work. Beside the
           picture, because that is the only place a label means anything —

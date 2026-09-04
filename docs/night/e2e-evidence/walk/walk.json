@@ -1,0 +1,223 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "picks": [
+    "open-access-art:nga:184225",
+    "open-access-art:nga:195765"
+  ],
+  "rejects": [
+    "open-access-art:nga:127567",
+    "open-access-art:nga:198119"
+  ],
+  "board": {
+    "count": 12,
+    "fullyVisible": 12,
+    "gridHeight": 724,
+    "viewport": 1000
+  },
+  "tray": [
+    "open-access-art:nga:198119",
+    "open-access-art:nga:127567"
+  ],
+  "flip": {
+    "frames": 317,
+    "distinct": 25
+  },
+  "beforeSlots": {
+    "open-access-art:nga:184225": {
+      "x": 220,
+      "y": 144
+    },
+    "open-access-art:nga:195765": {
+      "x": 500,
+      "y": 144
+    },
+    "open-access-art:nga:152342": {
+      "x": 780,
+      "y": 144
+    },
+    "open-access-art:nga:50295": {
+      "x": 1060,
+      "y": 144
+    },
+    "open-access-art:nga:92999": {
+      "x": 220,
+      "y": 389
+    },
+    "open-access-art:nga:178273": {
+      "x": 500,
+      "y": 387
+    },
+    "open-access-art:nga:195026": {
+      "x": 780,
+      "y": 389
+    },
+    "open-access-art:nga:141327": {
+      "x": 1060,
+      "y": 389
+    },
+    "open-access-art:nga:164962": {
+      "x": 220,
+      "y": 635
+    },
+    "open-access-art:nga:184224": {
+      "x": 500,
+      "y": 635
+    },
+    "open-access-art:nga:176904": {
+      "x": 780,
+      "y": 635
+    },
+    "open-access-art:nga:178311": {
+      "x": 1060,
+      "y": 635
+    }
+  },
+  "afterSlots": {
+    "open-access-art:nga:184225": {
+      "x": 220,
+      "y": 144
+    },
+    "open-access-art:nga:195765": {
+      "x": 500,
+      "y": 144
+    },
+    "open-access-art:nga:152321": {
+      "x": 780,
+      "y": 144
+    },
+    "open-access-art:nga:133452": {
+      "x": 1060,
+      "y": 144
+    },
+    "open-access-art:nga:53813": {
+      "x": 220,
+      "y": 389
+    },
+    "open-access-art:nga:46426": {
+      "x": 500,
+      "y": 387
+    },
+    "open-access-art:nga:125748": {
+      "x": 780,
+      "y": 389
+    },
+    "open-access-art:nga:52216": {
+      "x": 1060,
+      "y": 389
+    },
+    "open-access-art:nga:143883": {
+      "x": 220,
+      "y": 635
+    },
+    "open-access-art:nga:98647": {
+      "x": 500,
+      "y": 635
+    },
+    "open-access-art:nga:177895": {
+      "x": 780,
+      "y": 635
+    },
+    "open-access-art:nga:111773": {
+      "x": 1060,
+      "y": 635
+    }
+  },
+  "results": [
+    {
+      "ok": true,
+      "what": "the utterance bar is on the page",
+      "detail": "count=1"
+    },
+    {
+      "ok": true,
+      "what": "the search dealt works for \"warm landscape\"",
+      "detail": "30 cards"
+    },
+    {
+      "ok": true,
+      "what": "P marks 184225 as a human pick",
+      "detail": "{\"id\":\"open-access-art:nga:184225\",\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "what": "P marks 195765 as a human pick",
+      "detail": "{\"id\":\"open-access-art:nga:195765\",\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "what": "X marks 127567 as a human reject",
+      "detail": "{\"id\":\"open-access-art:nga:127567\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "what": "X marks 198119 as a human reject",
+      "detail": "{\"id\":\"open-access-art:nga:198119\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "what": "flagging fires no model call",
+      "detail": "3 requests while flagging"
+    },
+    {
+      "ok": true,
+      "what": "the bar is empty before Enter",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "what": "Enter on an empty bar makes NO model call",
+      "detail": "0 model calls, 10 requests total"
+    },
+    {
+      "ok": true,
+      "what": "Enter on an empty bar hits the deterministic exemplar engine",
+      "detail": "1 calls"
+    },
+    {
+      "ok": true,
+      "what": "the board is twelve cards",
+      "detail": "{\"count\":12,\"fullyVisible\":12,\"gridHeight\":724,\"viewport\":1000}"
+    },
+    {
+      "ok": true,
+      "what": "every card on the board is fully on screen",
+      "detail": "12/12 visible in 1000px"
+    },
+    {
+      "ok": true,
+      "what": "both rejects are in the visible tray, still restorable",
+      "detail": "tray holds 2: 198119, 127567"
+    },
+    {
+      "ok": true,
+      "what": "both picks are on the dealt board before the second deal",
+      "detail": "{\"open-access-art:nga:184225\":{\"x\":220,\"y\":144},\"open-access-art:nga:195765\":{\"x\":500,\"y\":144}}"
+    },
+    {
+      "ok": true,
+      "what": "the second Enter also makes NO model call",
+      "detail": "0 model calls"
+    },
+    {
+      "ok": true,
+      "what": "both picks hold the exact same pixels across the redeal",
+      "detail": "184225: {\"x\":220,\"y\":144} -> {\"x\":220,\"y\":144}  |  195765: {\"x\":500,\"y\":144} -> {\"x\":500,\"y\":144}"
+    },
+    {
+      "ok": true,
+      "what": "the rejects are gone from the board",
+      "detail": "127567=gone, 198119=gone"
+    },
+    {
+      "ok": true,
+      "what": "the deal actually animates rather than cutting",
+      "detail": "25 distinct layouts across 317 sampled frames"
+    },
+    {
+      "ok": true,
+      "what": "no uncaught page errors across the walk",
+      "detail": ""
+    }
+  ]
+}

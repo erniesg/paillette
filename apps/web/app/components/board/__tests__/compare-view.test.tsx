@@ -180,4 +180,36 @@ describe('CompareView', () => {
     const { container } = render(<CompareView />);
     expect(container.firstChild).toBeNull();
   });
+
+  /*
+   * `position: fixed` is relative to the viewport only until an ancestor has a
+   * transform on it. The results section carries a GSAP tween, and a *finished*
+   * tween leaves `transform: matrix(1,0,0,1,0,0)` behind — visually nothing,
+   * and enough to make that section the containing block. Measured on staging:
+   * the room rendered 1216x4566 inside a 900px window, with both works 2,500px
+   * below the fold and a question in serif floating over an empty page.
+   * Portalling is the fix, rather than clearing the transform, because it
+   * survives the next person adding one.
+   */
+  it('hangs the room off <body>, out of reach of any ancestor transform', () => {
+    openCompare();
+    const { container } = render(<CompareView />);
+
+    expect(container.querySelector('.paillette-compare')).toBeNull();
+    const room = document.body.querySelector(':scope > [data-compare-room]');
+    expect(room).not.toBeNull();
+    expect(room).toHaveClass('paillette-compare');
+  });
+
+  it('marks the page while it is open, and unmarks it on the answer', () => {
+    openCompare();
+    const { unmount } = render(<CompareView />);
+
+    // The mark is what takes the nav, the sticky bar and the utterance field
+    // off screen. An opaque overlay is not enough on its own: they are sticky
+    // and stacked above it.
+    expect(document.documentElement.dataset.compareOpen).toBe('true');
+    unmount();
+    expect(document.documentElement.dataset.compareOpen).toBeUndefined();
+  });
 });

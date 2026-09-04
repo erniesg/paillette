@@ -211,6 +211,36 @@ export const toAgentArtworkSummary = (
   };
 };
 
+/** The card shows four swatches, so the agent gets the same four. */
+export const VISIBLE_SWATCHES = 4;
+
+/**
+ * What a flagged work looks like, as the index actually recorded it.
+ *
+ * A flag is the human's judgement and the note has to say what the flags had
+ * in common. Given a title and an artist and nothing else, a model says what
+ * it remembers about that artist — a claim about training data, not about the
+ * board, and confidently wrong the moment the titles do not telegraph the
+ * pictures. These are the fields Paillette computed or the catalogue recorded,
+ * and they are the ones already printed on the card the human was looking at.
+ */
+export interface AgentVisualFacts {
+  /** Dominant hex colours, most prominent first — the card's own swatches. */
+  palette: string[];
+  medium: string | null;
+  year: number | null;
+  classification: string | null;
+}
+
+export const toAgentVisualFacts = (
+  summary: AgentArtworkSummary
+): AgentVisualFacts => ({
+  palette: summary.palette.slice(0, VISIBLE_SWATCHES),
+  medium: summary.medium,
+  year: summary.year,
+  classification: summary.classification,
+});
+
 /** Long descriptions are useful but not worth 2KB each; cap them. */
 const DESCRIPTION_LIMIT = 900;
 

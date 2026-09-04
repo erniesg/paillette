@@ -1,0 +1,123 @@
+{
+  "url": "https://paillette-stg.berlayar.ai/nga/search",
+  "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+  "mode": "type",
+  "startedAt": "2026-09-04T02:30:34.000Z",
+  "durationMs": 45571,
+  "toolsFired": [
+    "list_collections",
+    "get_search_quota",
+    "search_by_color",
+    "search_by_color",
+    "search_by_color",
+    "search_by_color",
+    "search_artworks",
+    "search_artworks",
+    "search_artworks",
+    "search_artworks",
+    "set_view",
+    "set_results"
+  ],
+  "screenshots": [
+    "steps/step-1.png",
+    "steps/step-2.png",
+    "steps/step-3.png",
+    "steps/step-4.png",
+    "steps/step-5.png",
+    "steps/step-6.png",
+    "steps/step-7.png",
+    "steps/step-8.png"
+  ],
+  "beats": [
+    {
+      "t": "2026-09-04T02:30:35.077Z",
+      "elapsedMs": 1077,
+      "event": "type",
+      "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    },
+    {
+      "t": "2026-09-04T02:30:38.684Z",
+      "elapsedMs": 4684,
+      "event": "tool",
+      "tool": "list_collections",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:30:40.717Z",
+      "elapsedMs": 6717,
+      "event": "tool",
+      "tool": "get_search_quota",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:30:44.949Z",
+      "elapsedMs": 10949,
+      "event": "tool",
+      "tool": "search_by_color",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T02:30:48.826Z",
+      "elapsedMs": 14826,
+      "event": "tool",
+      "tool": "search_by_color",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:30:49.507Z",
+      "elapsedMs": 15507,
+      "event": "tool",
+      "tool": "search_by_color",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T02:30:52.932Z",
+      "elapsedMs": 18932,
+      "event": "tool",
+      "tool": "search_by_color",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:30:54.227Z",
+      "elapsedMs": 20227,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T02:30:57.613Z",
+      "elapsedMs": 23613,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:30:58.400Z",
+      "elapsedMs": 24400,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T02:31:02.645Z",
+      "elapsedMs": 28645,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:31:05.670Z",
+      "elapsedMs": 31670,
+      "event": "tool",
+      "tool": "set_view",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T02:31:09.020Z",
+      "elapsedMs": 35020,
+      "event": "tool",
+      "tool": "set_results",
+      "status": "ok"
+    }
+  ]
+}
