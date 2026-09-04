@@ -78,6 +78,15 @@ const SYSTEM_PROMPT = [
   'On a redeal after they have flagged something, the note is where the disagreement gets named, in that one sentence: "You said warm; you picked the grey harbour and rejected the golds — following the picks." Name what they threw out, not only what you kept.',
   'Use flag_artworks to disagree in their own currency, at most three at a time and always with a reason. Your flags arrive provisional and do not steer the redeal until they confirm them; that is deliberate, so propose freely.',
   'Use compare_artworks when you have a real hypothesis about what they want and two works that differ on exactly that axis. One click from them is worth more than a paragraph of questions, and it is the only question you may ask.',
+  'They can also refuse the pair outright, with or without saying why. Read that as the most useful answer you have had: your hypothesis about the axis was wrong, both works are now rejected, and the next move is a different question rather than the same one with new pictures.',
+
+  // --- The exhibition ----------------------------------------------------
+  'Once a board has settled into something, it is an exhibition and not a search result. Draft it: set_exhibition with a title and a statement, then write_labels for the works on the board. Do this without being asked — a board with no title is a pile.',
+  'The statement is 60 to 100 words on what the show is about. Not what you did, not how you found them: what the room is about. The title is a few words, the way a museum names a room.',
+  'A wall label is one or two sentences about that work in this show. The same painting in a show about weather and a show about grief does not get the same label; if your labels would read the same under any other statement, they are captions and you have not done the work. write_labels writes them all against the statement, so write the statement first.',
+  'The human edits the title, the statement and any label directly on the page, and anything they have touched is theirs. get_view_context and get_exhibition mark those fields. You may propose an alternative — a set_exhibition write onto a held field is parked as a proposal they can accept with one click — but you may not restate their sentence in your own words and call it a draft.',
+  'When they rewrite the statement, that is the most important thing that has happened. Take their words as the brief and act: redeal or search to find works that fit what they actually said, drop the ones that no longer belong with removeArtworkIds, and rewrite your own labels against the new statement. Words alone are the wrong answer here — if the statement changed and the wall did not, nothing happened.',
+  'Never argue with a correction and never explain that you had understood it differently. They know. Change the show.',
 
   'Be decisive and never ask clarifying questions.',
   'Never repeat your note as your reply. The note is already on the wall above the board; saying the same sentence twice on one screen is the thing people hate about talkative software. Either add one sentence the note does not say, or say nothing at all — the board is the rest of the answer.',
@@ -105,11 +114,25 @@ export interface HumanTurnPayload {
   }[];
   selection?: { id: string; title?: string }[];
   hovered?: { id: string; title?: string } | null;
-  compareChoice?: {
-    winner: { id: string; title?: string };
-    loser: { id: string; title?: string };
-    question?: string | null;
-  } | null;
+  compareChoice?:
+    | {
+        winner: { id: string; title?: string };
+        loser: { id: string; title?: string };
+        question?: string | null;
+      }
+    | {
+        /** They refused both. The strongest answer a two-up can get. */
+        neither: { id: string; title?: string }[];
+        reason?: string | null;
+        question?: string | null;
+      }
+    | null;
+  /** What the human rewrote in the exhibition since the last turn. */
+  exhibitionEdits?: {
+    field: 'title' | 'statement' | 'label';
+    work?: string;
+    value: string;
+  }[];
 }
 
 const named = (entry: { id?: string; artworkId?: string; title?: string }) =>
@@ -136,23 +159,62 @@ export const describeHumanTurn = (turn: HumanTurnPayload): string | null => {
   if (rejected.length) parts.push(`rejected ${rejected.map(named).join('; ')}`);
   if (cleared.length) parts.push(`unflagged ${cleared.map(named).join('; ')}`);
   if (turn.compareChoice) {
-    parts.push(
-      `chose ${named(turn.compareChoice.winner)} over ${named(turn.compareChoice.loser)}` +
-        (turn.compareChoice.question
-          ? ` when asked "${turn.compareChoice.question}"`
-          : '')
-    );
+    const asked = turn.compareChoice.question
+      ? ` when asked "${turn.compareChoice.question}"`
+      : '';
+    if ('neither' in turn.compareChoice) {
+      // A refusal is worth more than either choice would have been: it names
+      // the axis rather than picking a point on it. Both works are already
+      // rejected, so say what it means rather than what was clicked.
+      parts.push(
+        `refused both ${turn.compareChoice.neither.map(named).join(' and ')}${asked}` +
+          (turn.compareChoice.reason
+            ? `, saying "${turn.compareChoice.reason}"`
+            : '') +
+          ' — that is a stronger signal than either choice, and both are now rejected'
+      );
+    } else {
+      parts.push(
+        `chose ${named(turn.compareChoice.winner)} over ${named(turn.compareChoice.loser)}${asked}`
+      );
+    }
   }
   if (turn.selection?.length) {
     parts.push(`selected ${turn.selection.map(named).join('; ')}`);
   }
   if (turn.hovered) parts.push(`is pointing at ${named(turn.hovered)}`);
 
-  if (!parts.length) return null;
+  // The corrections, kept separate and put last.
+  //
+  // A rewritten statement is not one gesture among several — it is the human
+  // telling you what the show is actually about, and it outranks the
+  // instruction they typed three turns ago. Folding it into the same sentence
+  // as "is pointing at" would bury the loudest thing on the page.
+  const edits = (turn.exhibitionEdits ?? []).filter((edit) => edit.value);
+  const corrections = edits.map((edit) =>
+    edit.field === 'label'
+      ? `the label on ${edit.work || 'a work'} now reads: "${edit.value}"`
+      : `the exhibition ${edit.field} now reads: "${edit.value}"`
+  );
+
+  if (!parts.length && !corrections.length) return null;
+
   return [
-    `Since the last turn the human ${parts.join(', and ')}.`,
-    'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so.',
-  ].join(' ');
+    parts.length
+      ? `Since the last turn the human ${parts.join(', and ')}.`
+      : null,
+    parts.length
+      ? 'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so.'
+      : null,
+    corrections.length
+      ? `The human has rewritten the show in their own words: ${corrections.join('; ')}.`
+      : null,
+    corrections.length
+      ? 'Those are their words and they are now the brief. Do not restate them, do not paraphrase them back, and do not write over them. Re-select the works and rewrite the labels so that they are true of what the human just said.'
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
 };
 
 const toHex = (value: ArrayBuffer) =>

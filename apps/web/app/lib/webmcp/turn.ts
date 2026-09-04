@@ -19,6 +19,11 @@
  */
 
 import { recallArtwork } from './artwork-index';
+import {
+  drainExhibitionEdits,
+  peekExhibitionEdits,
+  type ExhibitionEdit,
+} from './exhibition';
 import { toAgentArtworkSummary } from './artwork-summary';
 import {
   drainFlagChanges,
@@ -29,11 +34,29 @@ import {
 import { runRedeal, type RedealResult } from './redeal';
 import { getWebMcpState, setCompare } from './store';
 
-export interface CompareChoice {
-  winnerId: string;
-  loserId: string;
-  question: string | null;
-}
+/**
+ * The answer to a two-up.
+ *
+ * Three doors, not two. Forcing a choice between two works the human does not
+ * want is a lie about taste, and the lie is expensive: "neither, they're both
+ * too busy" is a stronger signal than either choice would have been, because
+ * it names the axis rather than picking a point on it. So the refusal is a
+ * real answer that gets flagged, journalled and sent, not a dismissal.
+ */
+export type CompareChoice =
+  | {
+      kind: 'winner';
+      winnerId: string;
+      loserId: string;
+      question: string | null;
+    }
+  | {
+      kind: 'neither';
+      artworkIds: [string, string];
+      /** What they said was wrong with both, if they said. */
+      reason: string | null;
+      question: string | null;
+    };
 
 /** Everything the human's turn carries, whether or not they typed anything. */
 export interface HumanTurn {
@@ -43,6 +66,16 @@ export interface HumanTurn {
   selection: string[];
   hovered: string | null;
   compareChoice: CompareChoice | null;
+  /**
+   * What the human rewrote in the show since the last turn.
+   *
+   * A correction to the statement is the most consequential gesture on this
+   * page and the quietest: it happens by typing into a field. Carrying it in
+   * the turn is what makes "it's not about weather, it's about leaving" a
+   * thing the agent is *told*, rather than something it finds if it happens to
+   * look.
+   */
+  exhibitionEdits: ExhibitionEdit[];
   board: {
     order: string[];
     note: string | null;
@@ -77,14 +110,46 @@ export const resolveCompare = (
 ) => {
   setFlag(winnerId, 'pick', { by: 'human' });
   setFlag(loserId, 'reject', { by: 'human' });
-  recordCompareChoice({ winnerId, loserId, question });
+  recordCompareChoice({ kind: 'winner', winnerId, loserId, question });
+  setCompare(null);
+};
+
+/**
+ * Answering "neither".
+ *
+ * Both works are rejected, in the human's own ink, with whatever they said as
+ * the reason — so the refusal reaches the exemplar engine as two negatives on
+ * the same axis, which is the strongest single move the culling loop has. The
+ * reason is optional: a person who cannot say why still means it, and asking
+ * them to justify a refusal before it counts is the mistake the two-up exists
+ * to avoid.
+ */
+export const refuseCompare = (
+  artworkIds: [string, string],
+  reason: string | null = null,
+  question: string | null = null
+) => {
+  const trimmed = reason?.trim() || null;
+  for (const artworkId of artworkIds) {
+    setFlag(artworkId, 'reject', {
+      by: 'human',
+      ...(trimmed ? { reason: trimmed } : {}),
+    });
+  }
+  recordCompareChoice({
+    kind: 'neither',
+    artworkIds,
+    reason: trimmed,
+    question,
+  });
   setCompare(null);
 };
 
 const buildTurn = (
   text: string | undefined,
   flagsDelta: FlagChange[],
-  compareChoice: CompareChoice | null
+  compareChoice: CompareChoice | null,
+  exhibitionEdits: ExhibitionEdit[]
 ): HumanTurn => {
   const state = getWebMcpState();
   const trimmed = text?.trim();
@@ -94,6 +159,7 @@ const buildTurn = (
     selection: [...state.selection],
     hovered: state.hovered,
     compareChoice,
+    exhibitionEdits,
     board: state.board
       ? {
           order: [...state.board.order],
@@ -116,7 +182,12 @@ const buildTurn = (
 export const prepareTurn = (text?: string): HumanTurn => {
   const compareChoice = pendingCompareChoice;
   pendingCompareChoice = null;
-  return buildTurn(text, drainFlagChanges(), compareChoice);
+  return buildTurn(
+    text,
+    drainFlagChanges(),
+    compareChoice,
+    drainExhibitionEdits()
+  );
 };
 
 /**
@@ -129,13 +200,19 @@ export const prepareTurn = (text?: string): HumanTurn => {
  * precisely the behaviour the payload exists to prevent.
  */
 export const peekTurn = (text?: string): HumanTurn =>
-  buildTurn(text, peekFlagChanges(), pendingCompareChoice);
+  buildTurn(
+    text,
+    peekFlagChanges(),
+    pendingCompareChoice,
+    peekExhibitionEdits()
+  );
 
 /** Does this turn have anything in it at all? */
 export const isEmptyTurn = (turn: HumanTurn) =>
   !turn.text &&
   turn.flagsDelta.length === 0 &&
   turn.selection.length === 0 &&
+  turn.exhibitionEdits.length === 0 &&
   !turn.compareChoice;
 
 export type HumanTurnOutcome =
@@ -186,11 +263,23 @@ export interface HumanTurnPayload {
   }[];
   selection: { id: string; title?: string }[];
   hovered: { id: string; title?: string } | null;
-  compareChoice: {
-    winner: { id: string; title?: string };
-    loser: { id: string; title?: string };
-    question?: string | null;
-  } | null;
+  compareChoice:
+    | {
+        winner: { id: string; title?: string };
+        loser: { id: string; title?: string };
+        question?: string | null;
+      }
+    | {
+        neither: { id: string; title?: string }[];
+        reason?: string | null;
+        question?: string | null;
+      }
+    | null;
+  exhibitionEdits: {
+    field: 'title' | 'statement' | 'label';
+    work?: string;
+    value: string;
+  }[];
 }
 
 const titleOf = (id: string): string | undefined => {
@@ -218,13 +307,27 @@ export const toTurnPayload = (turn: HumanTurn): HumanTurnPayload => ({
   }),
   selection: turn.selection.map(namedId),
   hovered: turn.hovered ? namedId(turn.hovered) : null,
-  compareChoice: turn.compareChoice
-    ? {
-        winner: namedId(turn.compareChoice.winnerId),
-        loser: namedId(turn.compareChoice.loserId),
-        question: turn.compareChoice.question,
-      }
-    : null,
+  compareChoice: !turn.compareChoice
+    ? null
+    : turn.compareChoice.kind === 'winner'
+      ? {
+          winner: namedId(turn.compareChoice.winnerId),
+          loser: namedId(turn.compareChoice.loserId),
+          question: turn.compareChoice.question,
+        }
+      : {
+          neither: turn.compareChoice.artworkIds.map(namedId),
+          reason: turn.compareChoice.reason,
+          question: turn.compareChoice.question,
+        },
+  exhibitionEdits: turn.exhibitionEdits.map((edit) => {
+    const title = edit.artworkId ? titleOf(edit.artworkId) : undefined;
+    return {
+      field: edit.field,
+      ...(title ? { work: title } : edit.artworkId ? { work: edit.artworkId } : {}),
+      value: edit.value,
+    };
+  }),
 });
 
 export const __resetTurnStateForTest = () => {

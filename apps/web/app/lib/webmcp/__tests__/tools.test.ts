@@ -109,6 +109,10 @@ describe('tool surface', () => {
       'search_by_exemplars',
       'redeal',
       'compare_artworks',
+      'get_exhibition',
+      'set_exhibition',
+      'write_labels',
+      'annotate_atlas',
       'create_collection',
       'add_to_collection',
       'index_zip',
@@ -150,6 +154,8 @@ describe('tool surface', () => {
       // Proposing candidates changes nothing; redeal, which deals them onto
       // the board, is honestly not readOnly.
       'search_by_exemplars',
+      // Reading the show is a read; writing it is on the human's screen.
+      'get_exhibition',
       // Polling a job writes nothing; the two tools that upload images do.
       'get_index_status',
     ]);

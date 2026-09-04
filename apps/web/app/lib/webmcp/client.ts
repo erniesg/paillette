@@ -257,6 +257,59 @@ export const describeArtworkPublic = async ({
   return readEnvelope<DescribeArtworkResponse>(response);
 };
 
+export interface WriteLabelsInput {
+  collectionId: string;
+  artworkIds: string[];
+  statement: string;
+  title?: string;
+  voice?: string;
+  signal?: AbortSignal;
+}
+
+export interface WrittenLabel {
+  artworkId: string;
+  label: string;
+  /** Whether the label was written from a vision caption or the catalogue. */
+  source: 'caption' | 'catalogue';
+}
+
+export interface WriteLabelsResponse {
+  collectionId: string;
+  model: string;
+  labels: WrittenLabel[];
+  missing: string[];
+}
+
+/**
+ * Wall labels for a set of works, written against the exhibition statement.
+ *
+ * One request for the whole wall rather than one per work: labels written
+ * together do not all open with the same clause, and it is one model call
+ * instead of twelve.
+ */
+export const writeLabelsPublic = async ({
+  collectionId,
+  artworkIds,
+  statement,
+  title,
+  voice,
+  signal,
+}: WriteLabelsInput): Promise<WriteLabelsResponse> => {
+  const response = await fetch('/api/public-labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      collectionId,
+      artworkIds,
+      statement,
+      ...(title ? { title } : {}),
+      ...(voice ? { voice } : {}),
+    }),
+    signal,
+  });
+  return readEnvelope<WriteLabelsResponse>(response);
+};
+
 /**
  * Turns an image reference into a Blob the image-search route will accept,
  * enforcing the route's own limits here so the agent gets a precise, actionable

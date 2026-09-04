@@ -1104,6 +1104,134 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   text-align: left;
 }
 
+/* ---------------------------------------------------------------------------
+ * The exhibition — the same two inks, on prose
+ *
+ * Everything here follows one rule the rest of the board already follows: who
+ * wrote something is ink, never a caption. A statement the human typed carries
+ * a graphite rule; one the agent drafted carries the agent's. The dashed
+ * proposal is the provisional flag, in words — an alternative offered and not
+ * yet taken, drawn exactly as an unconfirmed mark on a card is.
+ *
+ * The fields are inputs with every input affordance taken off. No box, no
+ * border, no corner radius, no button: the text on the wall is the field, and
+ * the only thing that changes on focus is a rule appearing under it. A museum
+ * label does not sit in a form control.
+ * ------------------------------------------------------------------------- */
+
+.paillette-exhibition-field {
+  border-left: 1px solid var(--ink);
+  padding-left: 1rem;
+}
+
+.paillette-exhibition-field[data-provenance='human'] {
+  --ink: var(--ink-human);
+}
+
+.paillette-exhibition-field[data-provenance='agent'] {
+  --ink: var(--ink-agent);
+}
+
+/* Nothing written yet: a rule at the faintest weight that still reads. */
+.paillette-exhibition-field[data-provenance='none'] {
+  --ink: var(--ink-human-faint);
+}
+
+.paillette-editable {
+  color: var(--ink);
+  caret-color: var(--ink-human);
+}
+
+.paillette-editable::placeholder {
+  color: var(--ink-human-faint);
+  opacity: 1;
+}
+
+/* Focus is a rule under the words, in the human's own ink, because from the
+ * moment they touch it the field is theirs. */
+.paillette-editable:focus {
+  outline: none;
+  box-shadow: 0 1px 0 0 var(--ink-human);
+}
+
+.paillette-exhibition-title {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.paillette-exhibition-statement {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--ink-human-soft);
+}
+
+.paillette-exhibition-field[data-provenance='agent'] .paillette-exhibition-statement {
+  color: var(--ink-agent);
+}
+
+.paillette-label-text {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+/* The agent's unaccepted wording. Dashed, in its ink, clickable — the same
+ * gesture as confirming a dashed flag, and the same drawing of it. */
+.paillette-proposal-text {
+  border-left: 1px dashed var(--ink-agent);
+  padding-left: 1rem;
+  margin-left: -1rem;
+  color: var(--ink-agent);
+  cursor: pointer;
+}
+
+.paillette-proposal-text:hover,
+.paillette-proposal-text:focus-visible {
+  color: var(--ink-agent);
+  border-left-style: solid;
+}
+
+.paillette-proposal-decline {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.875rem;
+  color: var(--ink-human-faint);
+}
+
+.paillette-proposal-decline:hover {
+  color: var(--ink-human);
+}
+
+/* A label under a work sits inside the slide's mount, not on the ground. */
+.paillette-wall-label-slot {
+  border-top: 1px solid var(--lt-rule);
+}
+
+/* The link. Catalogue mono at the quietest weight, underlined so it reads as
+ * a thing you can press, and no border — a box around it would make it the
+ * loudest object in a rail whose other occupant is a word count. */
+.paillette-share-link {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.paillette-share-link:hover {
+  color: var(--ink-human);
+}
+
+/* It says it worked in its own ink and its own place, and then stops. */
+.paillette-share-link[data-share-state='copied'] {
+  color: var(--ink-human);
+}
+
+.paillette-share-link[data-share-state='failed'] {
+  color: var(--ink-human);
+  text-decoration-style: dashed;
+}
+
 /*
  * Their compare overlay, made into a room.
  *
@@ -1182,6 +1310,22 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 .paillette-compare > button:hover {
   border-color: var(--ink-human) !important;
   color: var(--ink-human) !important;
+}
+
+/*
+ * …and once it is clicked, the word becomes a line you can write on: same
+ * place, same width, the caret where the letters were. "Neither, they're both
+ * too busy" is a stronger signal than either choice would have been, so the
+ * refusal gets somewhere to put its reason. In the wall serif, because it is
+ * the human speaking, and with the same focus rule the exhibition fields use.
+ */
+.paillette-compare-reason {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ink-human);
+  caret-color: var(--ink-human);
+  box-shadow: 0 1px 0 0 var(--ink-human);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1497,4 +1641,354 @@ html[data-theme='light'] .themeable-surface textarea::placeholder {
 html[data-theme='light'] .themeable-surface pre,
 html[data-theme='light'] .themeable-surface code {
   border-color: var(--app-line) !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * The shareable exhibition page
+ *
+ * A gallery's own microsite, not an app screenshot. No header, no navigation,
+ * no controls — the only interactive things on the page are the links in the
+ * colophon and the catalogue record under each work, because there is nothing
+ * else a visitor could usefully do here.
+ *
+ * The measure is the design decision that does the most work. A wall label is
+ * read standing up at arm's length, so it is set short: the statement runs to
+ * about 62 characters a line and the labels to about 46, which is why the
+ * caption sits beside the picture on a wide screen rather than under it. Under
+ * it, at full width, a two-sentence label reads as a caption on a slide.
+ *
+ * Everything is unlayered and prefixed, so Tailwind cannot purge it and the
+ * rest of the app cannot inherit it.
+ * ------------------------------------------------------------------------- */
+
+.exhibition-page {
+  --exhibition-gutter: clamp(1.5rem, 6vw, 6rem);
+  min-height: 100vh;
+  /* Charcoal, not black: a black page makes every work look like it is
+   * floating in nothing and the dark passages of a painting dissolve. */
+  background: var(--lt-ground);
+  color: var(--ink-human);
+  padding: clamp(3rem, 12vh, 9rem) var(--exhibition-gutter)
+    clamp(3rem, 10vh, 7rem);
+  font-family: 'EB Garamond', Georgia, serif;
+}
+
+/* The masthead shares the hang's left edge rather than being centred on its
+ * own. Two different centres on one page reads as an accident. */
+.exhibition-masthead {
+  max-width: 74rem;
+  margin: 0 auto clamp(4rem, 14vh, 10rem);
+}
+
+.exhibition-masthead > * {
+  max-width: 34rem;
+}
+
+.exhibition-title {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.06;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+  color: var(--ink-human);
+}
+
+/*
+ * The statement sits under the title with a rule in the ink of whoever wrote
+ * it — the same provenance vocabulary the working page uses, so a show that is
+ * shared looks like the show that was made.
+ */
+.exhibition-statement {
+  margin-top: clamp(1.5rem, 4vh, 2.5rem);
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--ink);
+  font-size: 1.0625rem;
+  line-height: 1.66;
+  color: var(--ink-human-soft);
+  text-wrap: pretty;
+}
+
+.exhibition-statement[data-provenance='human'] {
+  --ink: var(--ink-human);
+}
+
+.exhibition-statement[data-provenance='agent'] {
+  --ink: var(--ink-agent);
+}
+
+.exhibition-count {
+  margin-top: clamp(1.5rem, 4vh, 2.5rem);
+}
+
+.exhibition-hang {
+  max-width: 74rem;
+  margin: 0 auto;
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Space is the only thing standing between one work and the next, so there
+   * is a lot of it. A rule between them would be a third mark on a page whose
+   * argument is that the pictures are the marks. */
+  gap: clamp(5rem, 16vh, 11rem);
+}
+
+.exhibition-work figure {
+  margin: 0;
+  display: grid;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+@media (min-width: 60rem) {
+  /*
+   * Named areas rather than `order`, which was the bug worth recording: grid
+   * auto-placement follows order-modified document order, so reordering the
+   * caption put it in the picture's column and squeezed every second work
+   * into the label's measure.
+   *
+   * The label column is a fixed measure because a wall label is. It does not
+   * get wider because the painting next to it did.
+   */
+  .exhibition-work figure {
+    grid-template-areas: 'work label';
+    grid-template-columns: minmax(0, 1fr) 19rem;
+    /* Bottom-aligned, the way a label is hung: level with the foot of the
+     * frame rather than its head. Pinned to the top, a tall work leaves its
+     * label a screen and a half above the point where you finish looking. */
+    align-items: end;
+  }
+
+  .exhibition-work figure > :first-child {
+    grid-area: work;
+  }
+
+  .exhibition-work figcaption {
+    grid-area: label;
+  }
+
+  /* Alternate the side the label hangs on, the way a real hang alternates, so
+   * a page of twelve works has a rhythm rather than a margin. */
+  .exhibition-work:nth-child(even) figure {
+    grid-template-areas: 'label work';
+    grid-template-columns: 19rem minmax(0, 1fr);
+  }
+
+  .exhibition-work:nth-child(even) figcaption {
+    text-align: right;
+  }
+
+  .exhibition-work:nth-child(even) .exhibition-line,
+  .exhibition-work:nth-child(even) .exhibition-accession {
+    justify-content: flex-end;
+  }
+
+  .exhibition-work:nth-child(even) .exhibition-label {
+    border-left: 0;
+    border-right: 1px solid var(--ink-human-faint);
+    padding-left: 0;
+    padding-right: 1rem;
+  }
+
+  /* Odd rows hang from the left edge of their column, even rows from the
+   * right, so the pictures track the labels instead of drifting. */
+  .exhibition-work:nth-child(even) .exhibition-image {
+    margin-left: auto;
+  }
+}
+
+/*
+ * Bounded, not stretched.
+ *
+ * `width: 100%` hangs every work at the same width, which is a contact sheet
+ * rather than a hang: a small etching comes out the size of a history
+ * painting. Capping both dimensions and letting the intrinsic aspect decide
+ * the rest means a tall work is tall and a wide one is wide, which is most of
+ * what makes a page of pictures look like a room.
+ */
+.exhibition-image {
+  display: block;
+  max-width: 100%;
+  max-height: 78vh;
+  width: auto;
+  height: auto;
+  /* Shadow rather than a border: a drawn frame competes with the frame that is
+   * already in the picture. */
+  box-shadow: var(--lt-slide-shadow-lifted);
+}
+
+.exhibition-image-missing {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--lt-slide-well);
+  box-shadow: inset 0 0 0 1px var(--lt-rule);
+}
+
+.exhibition-caption {
+  padding-top: clamp(0.25rem, 2vh, 1.5rem);
+}
+
+/* Artist, title, date, medium — a wall label's four facts, in the catalogue
+ * mono, separated by space rather than by punctuation. */
+.exhibition-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+.exhibition-work-title {
+  color: var(--ink-human);
+}
+
+.exhibition-label {
+  margin-top: 1rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--ink-human-faint);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink-human-soft);
+  text-wrap: pretty;
+}
+
+/* Who wrote the label is a mark, not a caption. The colophon says what it
+ * means, once, at the bottom, where a credit line belongs. */
+.exhibition-mark {
+  color: var(--ink-agent);
+  letter-spacing: 0.1em;
+}
+
+.exhibition-accession {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+}
+
+.exhibition-accession a,
+.exhibition-colophon a {
+  color: var(--ink-human-faint);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.exhibition-accession a:hover,
+.exhibition-colophon a:hover {
+  color: var(--ink-human);
+}
+
+.exhibition-colophon {
+  max-width: 34rem;
+  margin: clamp(6rem, 18vh, 12rem) auto 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--lt-rule);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-transform: none;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exhibition-page * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Named regions on the atlas
+ *
+ * The condition on this feature was that the atlas has to be able to *show* a
+ * name legibly, and a scatter positioned by a hash of the id cannot: a label
+ * over it would claim a relationship the layout does not have. So a name
+ * changes the arrangement — its works are drawn together under it — and the
+ * styling's whole job is to make the band read as one thing.
+ * ------------------------------------------------------------------------- */
+
+.paillette-atlas-regions {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2.5rem, 6vh, 4.5rem);
+}
+
+.paillette-region-head {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.paillette-region-head[data-provenance='human'] {
+  --ink: var(--ink-human-faint);
+}
+
+/* A region the agent named wears the agent's ink, like every other thing it
+ * wrote. Renaming it makes it the human's, and the rule changes with it. */
+.paillette-region-head[data-provenance='agent'] {
+  --ink: var(--ink-agent-faint);
+}
+
+.paillette-region-name {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.125rem;
+  line-height: 1.3;
+  color: var(--ink-human);
+}
+
+.paillette-region-head[data-provenance='agent'] .paillette-region-name {
+  color: var(--ink-agent);
+}
+
+.paillette-region-note {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+/* Quiet until you are in the band, like the flag badge on a card. */
+.paillette-region-dissolve {
+  order: 99;
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.875rem;
+  color: var(--ink-human-faint);
+  opacity: 0;
+}
+
+.paillette-region:hover .paillette-region-dissolve,
+.paillette-region-dissolve:focus-visible {
+  opacity: 1;
+}
+
+.paillette-region-cluster {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem 1.25rem;
+}
+
+/* An unassigned band has no name, so it is set back from the ones that do —
+ * the indent is the only thing saying it is a leftover, and it says it without
+ * a word. */
+.paillette-region[data-unassigned='true'] {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--lt-rule);
+  opacity: 0.82;
+}
+
+.paillette-region-work {
+  cursor: pointer;
 }

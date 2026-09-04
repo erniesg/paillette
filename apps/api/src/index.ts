@@ -19,6 +19,7 @@ import extractRoutes from './routes/extract';
 import indexingRoutes from './routes/indexing';
 import describeRoutes from './routes/describe';
 import agentRoutes from './routes/agent';
+import labelRoutes from './routes/labels';
 import metadataMapRoutes from './routes/metadata-map';
 import { requireAuthOrApiKey } from './middleware/auth';
 import {
@@ -232,6 +233,7 @@ api.route('/galleries/:galleryId', embeddingsRoutes);
 // budget and read scope, mirroring the public-index surface.
 app.route('/api', describeRoutes);
 app.route('/api', agentRoutes);
+app.route('/api', labelRoutes);
 
 // Mount API routes
 app.route('/api/v1', api);
