@@ -1,5 +1,294 @@
 # Integration — what merged, what runs, what does not
 
+# Iteration 5
+
+Branch `night/integration`, `148b7b1` at the start of this run, `4e79c6c` at the
+end, pushed. Staging redeployed from it:
+
+- web `paillette-stg` version `579886d4-2009-4e19-90c0-e398e951e499`
+- api `paillette-api-stg` version `9995af12-2cdc-4691-94a8-01377710f031`
+- **https://paillette-stg.berlayar.ai** — the walk below was run against it after
+  that deploy, not against a dev server.
+
+## 0. The curation lane is not running; it died in the reboot
+
+The brief says to wait up to two hours for `curation`, `activity` and `sharing`
+to write `lane-done`. `activity` and `sharing` had. `curation` had not — its
+state file stops at `round=1 status=ok 2026-09-04T07:08:34`, and its log's last
+line is `round 2 attempt 1`, written at 07:08:34.
+
+It is not slow. It is gone. `uptime` reports the box came up at about 07:41, the
+pipeline log has `pipeline2 restarted after reboot` at 07:46:23, and `ps` shows
+no curation process. Nothing has written to `curation.log` in the seven hours
+since. Waiting the full two hours would have bought nothing, so I stopped the
+loop after establishing that and proceeded — recorded here as the brief asks.
+
+Nothing is lost by it. `night/curation`'s head `b552fd6` is already an ancestor
+of `night/integration`, and the curation worktree is clean — `git status` there
+is empty, so there is no uncommitted round-2 work sitting on disk.
+
+## 1. I did not reset to `origin/deploy-nga-open-access`, and here is why
+
+The brief says a later run re-integrating should reset and redo the merges
+cleanly rather than pile merges on merges. That instruction assumes every commit
+worth keeping lives on a lane branch. It does not.
+
+```
+$ git log --oneline --no-merges HEAD --not night/shared-state night/visuals \
+    night/voice-loop night/review night/curation night/activity night/sharing \
+    night/capfix origin/deploy-nga-open-access
+```
+
+returns **20 commits that exist only on `night/integration`** — every fix-phase
+commit from iterations 1 through 4. Among them `f16b622` (X on two pictures and
+Enter now deals), `fb24929` (the agent's sentence and the board it describes on
+one screen), `db495a5` (staging's own agent budget), `76a2b57` (the debug back
+door waiting out registration). A reset would have deleted the entire response
+to four rounds of critique. So the merges were run onto the existing head.
+
+## 2. The merges
+
+All eight, in the brief's order:
+
+| branch | result |
+| --- | --- |
+| `night/shared-state` | Already up to date |
+| `night/visuals` | Already up to date |
+| `night/voice-loop` | Already up to date |
+| `night/review` | Already up to date |
+| `night/curation` | Already up to date |
+| `night/activity` | Already up to date |
+| `night/sharing` | Already up to date |
+| `night/capfix` | Already up to date |
+
+Nothing fought, because nothing was outstanding. The result-tile collision the
+brief warns about was resolved in an earlier iteration and has stayed resolved.
+
+Verified rather than assumed:
+
+- **`928b5dc` is present and its fix is live.** `git merge-base --is-ancestor`
+  says yes, and `debug-harness.ts:253` still calls `ensureWebMcpDebugHarness()`
+  at module evaluation rather than from an effect. On staging,
+  `window.__paillette_webmcp.call` is a function and reports `stubbed=false`.
+- **`night/capfix` is in.** `apps/api/wrangler.toml:97` carries
+  `AGENT_MODEL_CALLS_PER_HOUR = "600"` for staging, and it is in the deployed
+  binding list printed by wrangler above.
+- **No lane lost a test file.** For each of the eight branches, every path
+  matching `*.test.*` / `*.spec.*` in that branch's tree is also in `HEAD`;
+  the set difference is empty for all eight.
+
+## 3. Typecheck and tests
+
+```
+$ pnpm --filter web typecheck
+> tsc --noEmit
+(no output, exit 0)
+
+$ pnpm --filter web test
+ Test Files  97 passed (97)
+      Tests  1204 passed (1204)
+
+$ pnpm --filter api test
+ Test Files  46 passed (46)
+      Tests  857 passed (857)
+```
+
+Against the brief's baseline of web 59 files / 593 tests and api 41 / 770, and
+against the highest figure any lane reported (sharing, web 95 / 1183 and api
+46 / 851): nothing regressed and nothing disappeared. Zero failures, zero
+skips, and the typecheck is fully clean — the `worker.ts` error several lane
+reports call "baseline" no longer reproduces.
+
+One of those 1204 is new and is mine (§5.2).
+
+## 4. The demo loop, walked by hand
+
+`apps/web/scripts/integration-walk-iter5.mjs`, written for this run rather than
+re-using a lane's harness, run against **https://paillette-stg.berlayar.ai**
+after the final deploy. Shots and raw frames in `/tmp/int5/shots-final`.
+
+It withholds two courtesies earlier passes granted, because both are how green
+reports were produced for a page that did not work:
+
+- it never presses Escape before the culling keys, and
+- it refuses to score the animation unless the board actually changed.
+
+| step | what happened |
+| --- | --- |
+| `?webmcp-debug` installs the driver | **worked** — `call` is a function, `stubbed=false` |
+| 25 tools on `document.modelContext` | **worked** — 25, matching `PAILLETTE_TOOL_NAMES` |
+| the utterance bar is on the page | **worked** |
+| deal a board | **worked** — `set_results` with 12 real NGA ids, 12 cards on screen |
+| `P` on two hovered works | **worked, after a fix** — both `data-flag="pick"`, `data-flag-by="human"` |
+| `X` on two others | **worked, after a fix** — both `reject`/`human` |
+| `get_view_context` returns the flags | **worked** — picks and rejects come back with titles and palettes |
+| Enter on an empty bar makes no model call | **worked** — `POST /api/public-agent/turn` count 0 → 0 |
+| the board redeals | **worked** — 10 left, 10 arrived |
+| the picks stay in place | **worked in the running order** — both still on the board, still `pick`, at positions 0 and 1 |
+| the rejects leave | **worked** — neither is on the board; the tray holds 2 |
+| the FLIP animates | **worked** — 22 of 22 cards passed through intermediate positions inside the grid, over 299 frames; the new board landed at 2253 ms |
+| the picks visibly stay put | **did not work** — see §6.1 |
+| each new tool called directly | **worked** — all ten probes below |
+
+Every tool driven straight through `window.__paillette_webmcp.call(name, args)`
+on staging, each returning `ok: true`:
+
+`flag_artworks` · `redeal` · `search_by_exemplars` · `compare_artworks` ·
+`set_exhibition` · `get_exhibition` · `write_labels` · `set_view` ·
+`annotate_atlas` · `get_view_context`
+
+Worth quoting, because it is the submission's engine answering for itself:
+
+```
+search_by_exemplars → "scoring": "cos(x, mean(positives)) − 0.5 · max over
+negatives. Fixed weights, nothing learned; the same exemplars always return
+the same works.", "seededBy": "picks", "count": 6
+```
+
+Zero uncaught page errors across the whole walk.
+
+**The same walk against a local dev server cannot judge the redeal half**, and
+says so rather than passing: a dev server holds no public-search credential, so
+`redeal` answers `REDEAL_FAILED: A valid bearer token or API key is required`
+and `search_by_exemplars` answers `UNAUTHORIZED`. Everything else — the
+harness, the keyboard, the flags, the exhibition tools, the two inks — passes
+locally too.
+
+## 5. What I fixed
+
+### 5.1 The culling keys were dead on the page the demo is filmed on
+
+`P`, `X`, `U` and `C` did nothing. Hover a card on a dealt board, press `P`,
+and `data-flag` stayed `"none"`. One `Escape` first and the same keypress made
+it `"pick"`.
+
+The cause: `board-keyboard.ts` correctly refuses bare-letter bindings while a
+text field holds focus, and the catalogue search field was holding it. Its
+guard, `autoFocus={!textQuery}`, carried the right intent — "only when there is
+nothing else to do" — but `autoFocus` is a mount-time prop, so that condition
+was only ever evaluated on a cold load. Anyone who landed on an empty
+`/nga/search` and *then* got a board, from the bar or from an agent's
+`set_results` or from a share link rehydrating, still had the caret parked
+there. And because the chrome folds away on `boardIsDealt`, the field eating
+the keystrokes was not necessarily even on screen.
+
+Fixed in `7dd250c`: blur it when a board arrives, and only when it is empty — a
+half-typed query is the human doing something. Verified before and after on the
+deployed build, not in a test harness.
+
+This is the voice-loop lane's first ask of integration, filed as "P/X/U/C dead
+on cold load (autofocus search field)". It had survived four iterations of
+green test suites and four end-to-end reports, because every harness that ever
+exercised those keys clicked or pressed Escape first.
+
+### 5.2 Escape did not leave the two-up
+
+Measured on staging: `compare_artworks` opened the room, Escape did nothing,
+and it was still there a second later. Every other exit is an answer — either
+picture resolves as a pick and a reject, "Neither" refuses both and is read as
+naming the axis — so the only way out of an unwanted two-up was to lie about
+two works.
+
+Fixed in `4e79c6c`, with a test. Re-verified on the deployed build:
+`opened=true`, `still open after Escape=false`, and the flags afterwards are
+the two human picks and nothing else. The reason field keeps its own Escape,
+which goes back to the word.
+
+**While doing this I found that two compare components survived the merge.**
+`/nga/search` renders `CompareView`; the `/night/deal` harness renders
+`TwoUpCompare`, which already had Escape and is the one styled as a room. The
+product got the plainer one. That is the visuals lane's warning — "pick one set
+of duplicated components, not both" — coming true in the direction that costs
+the most.
+
+## 6. What is broken and I did not fix
+
+### 6.1 The board pumps up and down under the cards — the picks do not visibly stay put
+
+This is the one that matters for the film, and it is precise. Measuring the
+grid container's top edge on staging through the loop:
+
+| moment | `.lt-deal-viewport` top | what is above it |
+| --- | --- | --- |
+| board dealt, nothing flagged | **128 px** | nav, sort/view rail |
+| after `P`,`P`,`X`,`X` | **313 px** | *plus* an exhibition strip — two empty fields, "10 works", "Copy link" |
+| after the redeal lands | **176 px** | the same strip, now reading "12 works" |
+
+So flagging four cards pushes the whole board down 185 px, and the redeal pulls
+it back up 137 px. The cards themselves animate correctly — 22 of 22 tween, and
+they tween *within* the grid — but a pick measured against the grid still slides
+from y 72 to y 16, and against the viewport from 539 to 192.
+
+§7.1 calls the deal "the single most important visual in the submission" and its
+whole content is that the picks do not move. On camera they move 347 px, along
+with everything else, because the container is resizing in the same beat. The
+FLIP is not the problem; the exhibition strip growing and shrinking above it is.
+
+I did not fix it. It is a layout decision straddling the curation lane's
+exhibition header and the visuals lane's board, and guessing at it hours before
+filming is worse than handing over the measurement. The cheapest fix is
+probably to reserve the strip's height so it is the same whether zero, four or
+twelve works are flagged; moving it below the board also works and is closer to
+§7's light table.
+
+### 6.2 A redeal sweeps the agent's proposal off the board before anyone can answer it
+
+Measured deliberately, not incidentally. `flag_artworks` put a provisional
+reject on `open-access-art:nga:11481` in the agent's ink, dashed, alongside two
+confirmed human picks — the two-hands frame, in the DOM, exactly as §7.2 wants
+it. The next `redeal` removed 11481 along with every other non-pick.
+
+It is not a stray bug in a filter: `redeal.ts:290` is
+`previousOrder.filter((id) => !pinned.has(id))`, and `pinned` is confirmed
+picks only. With twelve slots and two picks, ten newcomers arrive and every
+non-pick leaves, an agent's dashed proposal included. The flag record itself
+survives in the store; the *work* leaves the wall, so the human never gets the
+chance to press `P` on it and turn the proposal into a decision.
+
+I did not fix it, and I think that is the right call rather than a shortfall.
+Making provisional flags survive a deal means letting the model keep works on
+the board by flagging them — which is precisely the write access the pin
+guarantee in `flags.ts` exists to deny, and its comment says so: "the model
+never had write access to this list". That trade belongs to whoever owns the
+loop, on more than one measurement. The iteration-4 critique's own suggestion —
+let a dashed agent flag share a card with a confirmed human flag — reaches the
+same photograph without handing the model a pin.
+
+### 6.3 The critique's chrome complaint is unaddressed
+
+Iteration 4's fourth blocking item asked for the account chrome and the
+SORT/VIEW rows to be hidden while a board is dealt. They are still there. My
+own sweep of everything above the grid on a dealt board, on today's staging,
+finds: `Create account`, `Sort`, `Relevance`, `Newest`, `View`, `Masonry`,
+`Settings`, `30 / 20`. Reported, not fixed — same reason as §6.1, and it is the
+same strip.
+
+### 6.4 The dev server cannot exercise the loop
+
+`redeal` and `search_by_exemplars` need a public-search credential the dev
+server does not hold, so the deterministic redeal — the single behaviour the
+submission rests on — cannot be run locally at all. Everyone testing this has
+to deploy first. Worth someone's time to give the dev path a credential or a
+recorded fixture; it is why the first staging walk I ran was against a stale
+edge bundle and reported four failures that were not real.
+
+## 7. Deployed
+
+- **web** — `pnpm --filter web deploy:staging`, `paillette-stg`, version
+  `579886d4-2009-4e19-90c0-e398e951e499`, at **https://paillette-stg.berlayar.ai**
+- **api** — `npx wrangler deploy --env staging` from `apps/api`,
+  `paillette-api-stg`, version `9995af12-2cdc-4691-94a8-01377710f031`, at
+  `https://paillette-api-stg.berlayar.ai`
+
+Both from `4e79c6c`. Production untouched. The api redeploy is the curation
+lane's ask — the agent system prompt there now carries the exhibition
+instructions from the merged branch rather than from that lane's own deploy.
+
+One caution for the next phase: **wait about 45 seconds after a web deploy
+before driving it.** My first staging run went out seconds after the upload
+finished and got the previous bundle, which reported the keyboard fix as
+missing when it was not.
+
 # Iteration 4
 
 Branch `night/integration`, head `28a37ee` at the start of this run, pushed.
