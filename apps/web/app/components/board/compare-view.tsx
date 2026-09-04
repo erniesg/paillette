@@ -20,6 +20,7 @@ import { recallArtwork } from '~/lib/webmcp/artwork-index';
 import {
   getWebMcpServerState,
   getWebMcpState,
+  setCompare,
   subscribeWebMcpState,
   type CompareState,
 } from '~/lib/webmcp/store';
@@ -122,6 +123,34 @@ export const CompareView = () => {
       delete root.dataset.compareOpen;
     };
   }, [compare, mounted]);
+
+  /*
+   * Escape leaves, and answers nothing.
+   *
+   * Every other way out of this room is an answer — either picture is a pick
+   * and a reject, "Neither" refuses both — so an unwanted two-up could only be
+   * left by lying about two works. Escape is the reflex anyone tries first on
+   * something that has taken over the screen, and it has meant "never mind"
+   * since before any of this; on camera an agent's question that cannot be
+   * waved away is a question that has to be answered on film.
+   *
+   * Deliberately not the same as "Neither": that is a real answer the agent
+   * reads as naming the axis, and it belongs to the human's ink. This leaves
+   * the flags exactly as they were.
+   */
+  useEffect(() => {
+    if (!compare) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // The reason field handles its own Escape, to go back to the word.
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement) return;
+      event.preventDefault();
+      setCompare(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [compare]);
 
   if (!compare) return null;
 

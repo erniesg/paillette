@@ -168,6 +168,24 @@ describe('CompareView', () => {
     expect(getExemplars()).toEqual({ positive: [], negative: [] });
   });
 
+  /*
+   * Every other way out of this room is an answer, so without this the only
+   * way to leave an unwanted two-up is to lie about two works. Measured on
+   * staging before the fix: the room opened, Escape did nothing, and it was
+   * still on screen a second later.
+   */
+  it('Escape leaves the room without answering', async () => {
+    openCompare();
+    render(<CompareView />);
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(getWebMcpState().compare).toBeNull();
+    expect(getExemplars()).toEqual({ positive: [], negative: [] });
+    expect(getFlag('a')).toBeNull();
+    expect(getFlag('b')).toBeNull();
+  });
+
   it('shows nothing rather than half a question when a work has been evicted', () => {
     setCompare({
       artworkIds: ['a', 'gone'],

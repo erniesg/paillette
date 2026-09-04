@@ -147,17 +147,36 @@ const main = async () => {
     cards.filter((c) => pickIds.includes(c.id)).map((c) => [c.id, c.rect]));
   const agentTurnsBefore = calls.agentTurn;
 
+  /*
+   * Five seconds, and every card's position recorded twice: against the
+   * viewport, and against the board's own container.
+   *
+   * Both numbers are needed and they answer different questions. The redeal is
+   * a network round trip to the exemplars endpoint — measured at 1590ms on
+   * staging — so a 1.2s window closes before the animation starts and reports
+   * a still board. And a card can hold its slot while the whole grid slides
+   * under it, which reads on video as everything moving; only the position
+   * relative to the grid can tell those apart.
+   */
   await page.evaluate(() => {
     window.__flip = [];
     const t0 = performance.now();
     const tick = () => {
       const now = performance.now() - t0;
-      if (now > 1200) return;
+      if (now > 5000) return;
+      const grid = document.querySelector('.lt-deal-viewport') ?? document.body;
+      const g = grid.getBoundingClientRect();
       window.__flip.push({
         t: Math.round(now),
+        gridY: Math.round(g.y),
         cards: [...document.querySelectorAll('.paillette-card')].map((c) => {
           const r = c.getBoundingClientRect();
-          return { id: c.getAttribute('data-artwork-id'), x: Math.round(r.x), y: Math.round(r.y) };
+          return {
+            id: c.getAttribute('data-artwork-id'),
+            x: Math.round(r.x),
+            y: Math.round(r.y),
+            ry: Math.round(r.y - g.y),
+          };
         }),
       });
       requestAnimationFrame(tick);
@@ -167,7 +186,7 @@ const main = async () => {
 
   await (await page.$(UTTERANCE)).click();
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(6000);
 
   cards = await board(page);
   const after = cards.map((c) => c.id);
@@ -191,26 +210,31 @@ const main = async () => {
 
   // The animation, judged only if there was something to animate.
   const flip = await page.evaluate(() => window.__flip ?? []);
-  const seen = {};
+  const rel = {};
   for (const frame of flip) {
-    for (const c of frame.cards) (seen[c.id] ??= []).push(`${c.x},${c.y}`);
+    for (const c of frame.cards) (rel[c.id] ??= []).push(c.ry);
   }
-  const positions = (id) => new Set(seen[id] ?? []).size;
+  const positions = (id) => new Set(rel[id] ?? []).size;
   if (!redealt) {
     say(null,
       'FLIP not judged: the board did not change, so any movement sampled is the page settling, not a deal');
   } else {
-    const tweened = Object.keys(seen).filter((id) => positions(id) > 2);
+    const membership = (f) => f.cards.map((c) => c.id).join();
+    const landedAt = flip.findIndex((f) => membership(f) !== membership(flip[0]));
+    const tweened = Object.keys(rel).filter((id) => positions(id) > 2);
     say(tweened.length > 0,
-      `FLIP: ${tweened.length} of ${Object.keys(seen).length} cards passed through intermediate positions`,
-      `${flip.length} frames sampled over ${flip.at(-1)?.t ?? 0}ms`);
+      `FLIP: ${tweened.length} of ${Object.keys(rel).length} cards passed through intermediate positions inside the grid`,
+      `${flip.length} frames over ${flip.at(-1)?.t ?? 0}ms; the new board landed at ${landedAt < 0 ? 'never' : `${flip[landedAt].t}ms`}`);
+    const gridTops = [...new Set(flip.map((f) => f.gridY))];
+    say(Math.abs(gridTops.at(-1) - gridTops[0]) < 24,
+      'the board itself held still while its cards moved',
+      `grid top ${gridTops[0]} -> ${gridTops.at(-1)}`);
     say(pickIds.every((id) => {
-      const b = pickRectsBefore[id];
-      const a = at(id)?.rect;
-      return b && a && Math.abs(b.x - a.x) < 8 && Math.abs(b.y - a.y) < 8;
+      const seq = rel[id] ?? [];
+      return seq.length > 0 && Math.abs(seq.at(-1) - seq[0]) < 12;
     }),
-      'the picks visibly stayed put across the redeal',
-      pickIds.map((id) => `${id}: ${JSON.stringify(pickRectsBefore[id])} -> ${JSON.stringify(at(id)?.rect)}, ${positions(id)} sampled positions`).join(' | '));
+      'the picks stayed put in the board, not just in the running order',
+      pickIds.map((id) => `${id}: y-in-grid ${rel[id]?.[0]} -> ${rel[id]?.at(-1)}, viewport ${pickRectsBefore[id]?.y} -> ${at(id)?.rect?.y}`).join(' | '));
   }
   writeFileSync(`${SHOTS}/flip.json`, JSON.stringify(flip, null, 2));
   await page.screenshot({ path: `${SHOTS}/03-redealt.png` });
