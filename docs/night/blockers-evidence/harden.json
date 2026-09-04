@@ -1,0 +1,50 @@
+{
+  "slow": {
+    "pass": true,
+    "inFlightMark": "true",
+    "boardHeldStill": true,
+    "liveRegionDuring": "Dealing.",
+    "dealtInTheEnd": true,
+    "markCleared": "false",
+    "errors": []
+  },
+  "dead": {
+    "pass": true,
+    "dealError": "The deal didn’t run; your flags are unchanged.",
+    "dealErrorCode": "REDEAL_FAILED",
+    "boardUnchanged": true,
+    "markCleared": "false",
+    "errors": []
+  },
+  "empty": {
+    "pass": true,
+    "dealt": true,
+    "note": "Twelve works — umber and bone.",
+    "dealError": null,
+    "bareEnterLeftAlone": true,
+    "errors": []
+  },
+  "spent": {
+    "pass": true,
+    "rejectedEverything": 12,
+    "dealt": true,
+    "dealError": null,
+    "dealErrorCode": null,
+    "note": "Twelve rejects out — olive and sage.",
+    "errors": []
+  },
+  "phantom": {
+    "pass": true,
+    "code": "ARTWORK_NOT_IN_SESSION",
+    "message": "None of those ids have been loaded by this page.",
+    "phantomMarksLeftOnBoard": 0,
+    "errors": []
+  },
+  "phantom2": {
+    "pass": true,
+    "refused": true,
+    "code": "ARTWORK_NOT_IN_SESSION",
+    "roomOpen": false,
+    "errors": []
+  }
+}

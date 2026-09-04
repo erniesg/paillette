@@ -615,11 +615,23 @@ const main = async () => {
       if (box) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
-        await sleep(400);
-        await page.evaluate(
-          (said) => window.__recognisers.at(-1)?.__say(said),
-          SPOKEN
+        await sleep(600);
+        // Diagnostics, because "the field was empty" has several causes and
+        // they are not the same finding: no recogniser means the hold never
+        // started, a recogniser with no transcript means the drive did not
+        // reach `onresult`.
+        record.clauses.four.recognisersAfterHold = await page.evaluate(
+          () => window.__recognisers.length
         );
+        record.clauses.four.drove = await page.evaluate((said) => {
+          const recogniser = window.__recognisers.at(-1);
+          if (!recogniser) return 'no recogniser was constructed';
+          if (typeof recogniser.onresult !== 'function') {
+            return 'recogniser has no onresult handler';
+          }
+          recogniser.__say(said);
+          return 'said';
+        }, SPOKEN);
         await sleep(500);
         const inFieldBeforeSend = await page
           .locator('input[aria-label="Ask the agent"]')

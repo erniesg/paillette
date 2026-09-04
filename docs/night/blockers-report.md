@@ -11,9 +11,12 @@ a harness reads through it — `get_view_context` for the flag counts,
 JSON so it can never be mistaken for the census. The harnesses are in
 `scripts/demo/` and the raw output is in `docs/night/blockers-evidence/`.
 
+A second round follows the five, from §6 onward: the two constraints added
+mid-run applied back over this work, and §9 run end to end as one sequence.
+
 **Deployed and measured on** api `501e3889-e4cc-4555-bbd4-7e20c317739e` and web
-`9ab4735d-8b8e-49e6-ae56-7440aa4db303`, then re-verified on web
-`fb739583-2c73-4c05-b305-89c1b1eec121` after the last fix. Staging only.
+`9ab4735d` → `fb739583` → `e52ef6a3` → **`756a665b`**, which is what the §9 and
+hardening numbers below were taken on. Staging only; production never touched.
 
 ---
 
@@ -188,18 +191,21 @@ Not a reserved row. **The deal writes its own line**
 (`apps/web/app/lib/webmcp/deal-note.ts`), composed from the flags and the
 palettes already printed on the cards, with no model call anywhere in the path:
 
-Two lines it actually wrote on staging, in consecutive deals of the same
-session:
+Four lines it actually wrote on staging, all of them reached by pressing keys:
 
 ```
-One pick holds — bone. Eleven works dealt to sit with it.
-Three picks hold — bone and umber. Nine works dealt to sit with them.
+One pick holds — bone.                        one pick
+Three picks hold — bone and umber.            three picks, second deal
+Twelve rejects out — olive and sage.          everything thrown out
+Twelve works — umber and bone.                nothing flagged at all
 ```
 
-There are two more shapes in the code — one for a board with rejects and no
-picks (*"Two rejects out — rust and gold. Ten works dealt away from them."*) and
-one for a board with nothing flagged at all — which are covered by unit tests in
-`deal-note.test.ts` and which I did not reach by hand.
+**This was two sentences until the last round, and the second one was wrong.**
+It read *"One pick holds — bone. Eleven works dealt to sit with it."* — and the
+second half is §5b's "never narrate the mechanism" exactly: eleven cards had
+just arrived on screen and the sentence was reporting that back to the person
+who had watched it happen. Cut. A test now counts the full stops and greps for
+mechanism words, because a comment saying "one sentence" is not a check.
 
 Museum discipline per §5b: one line, no preamble, never names the mechanism. It
 names what was kept or thrown out, which is what the human just did and what the
@@ -216,11 +222,15 @@ underneath it: **the board still speaks with the model switched off.**
 (`docs/night/blockers-evidence/deal-geometry.json`):
 
 ```
-first deal (grid → board)   note "One pick holds — bone. Eleven works dealt to sit with it."
+first deal (grid → board)   note "One pick holds — bone."
                             provenance human · noteHeight 44 · 12 cards · dealError null
-after the second Enter      note "Three picks hold — bone and umber. Nine works dealt to sit with them."
+after the second Enter      note "Three picks hold — bone and umber."
                             picks moved 0px, 0px, 0px · boardChanged true · modelCalls 0
 ```
+
+Re-measured after the note was cut to one sentence: **the row is still 44px and
+the picks still move 0px**, so shortening it did not reopen the defect it was
+written to close.
 
 `modelCalls 0` is the point: no request reached `/api/public-agent/turn` in
 either deal. The note is in the human's ink, because a human redeal put that
@@ -440,6 +450,173 @@ silent.
 
 ---
 
+# Round two — the two new constraints, and §9 end to end
+
+The five blockers above were the work order. This section is what came after
+it: my own work audited against **text first** and **cut the words**, and then
+the §9 demo path run as one sequence instead of five separate claims.
+
+## 6. Cut the words, applied to what I had just built
+
+Two findings, both in my own work from earlier tonight.
+
+**The deal's own line was two sentences, and the second one narrated the
+mechanism.** It read *"One pick holds — bone. Eleven works dealt to sit with
+it."* Eleven cards had visibly just arrived; the sentence was reporting that
+back to the person who had watched it happen, which is §5b's "never narrate the
+mechanism" almost word for word. Cut to one sentence — see §2 above for the
+four shapes it now writes and the re-measured geometry. A unit test counts the
+full stops and greps for mechanism words, because a comment saying "one
+sentence" is not a check.
+
+**The count was on screen twice.** The frame attestation in §5 listed
+`12 works` (the exhibition rail) and `12 / 12 works` (the results rail) in one
+1440×900 frame — the same twelve pictures counted twice, two inches apart. And
+on a dealt board the results number is not even about what is on screen: it is
+the size of the search result the deal replaced. The hang's count belongs to the
+show and stays; the results count now folds away with the rest of the rail and
+comes back when the flags are cleared.
+
+I also measured the model's own note every run rather than trusting the prompt's
+"one sentence, under about twenty-five words": **1 sentence, 13 and 20 words**
+on the two runs that reached it.
+
+## 7. Text first
+
+The whole §9 sequence is run with `SpeechRecognition`, `webkitSpeechRecognition`,
+`speechSynthesis` and `SpeechSynthesisUtterance` **deleted before the page
+loads** — not stubbed, deleted, so the page's own feature detection sees what a
+browser without the API would show it.
+
+- Every beat works. Flags, `P`/`X`/`U`/`C`, Enter, the deterministic deal, the
+  typed instruction and the agent's reply all run with no speech API present.
+- The push-to-talk control is not rendered, which is the page's own
+  `getSpeechRecognition()` answering correctly rather than something the harness
+  arranged.
+- **Nothing is spoken after a typed turn**, asserted every run by recording
+  every call to `speechSynthesis.speak`.
+- No page errors attributable to the missing APIs.
+
+The agentic trigger fires from a typed instruction alone; that is what the
+census in §1 measures and what the sofa prompt does in clause 3.
+
+Nothing this lane built touches speech. The deal note, the two post-conditions,
+the in-flight mark and the chrome fold are all reached by keys and typing, and
+all of them were measured with the speech APIs deleted. **What I did *not*
+establish is the voice-in-voice-out direction** — see clause 4b in §9.
+
+## 8. The deal beat when things go wrong
+
+`scripts/demo/harden.mjs`, six cases, all on staging by typing and keying
+(`docs/night/blockers-evidence/harden.json`):
+
+| case | what it does | result |
+| --- | --- | --- |
+| `slow` | exemplars route held open 8s | **pass** — mark reads dealing, board holds still, deal lands, mark clears |
+| `dead` | exemplars route refused | **pass** — `REDEAL_FAILED` draws, board unchanged, mark clears |
+| `empty` | Enter with nothing flagged | **pass** — deals and names the board: *"Twelve works — umber and bone."* |
+| `spent` | Enter with all twelve rejected | **pass** — deals: *"Twelve rejects out — olive and sage."* |
+| `phantom` | `flag_artworks` on ids never loaded | **pass** — `ARTWORK_NOT_IN_SESSION`, no phantom marks |
+| `phantom2` | `compare_artworks` on an unresolvable id | **pass** — refuses, room stays shut |
+
+Two of these were real defects when first run, and both are fixed:
+
+**A deal in flight was completely silent.** `setDealing` had been written to the
+store since the loop was built — carrying a comment that a slow deal "has to be
+visibly in progress rather than look ignored" — and **no component ever read
+it**. On a slow connection Enter did nothing observable until the board changed,
+which on a filmed take reads as a dead key. The hairline the human's own Enter
+armed now travels while the deal is out. No text: "Redealing…" is the chrome
+§5b forbids and would need a slot that stands empty the rest of the time. Under
+`prefers-reduced-motion` the rule brightens and holds instead of moving. The
+screen-reader line says "Dealing.", because a moving hairline is no use there.
+
+**Rejects alone were not an instruction to one of the two Enters.** The
+bare-board binding tested picks only, so someone who threw out the worst things
+on screen and pressed Enter with no caret in the bar got nothing — no deal, no
+refusal, no mark — while the same keystroke *inside* the bar dealt correctly.
+Two Enters on one page disagreeing about whether rejects count, decided by where
+the caret happened to be. Fixed; `spent` above is the proof on staging.
+
+With nothing flagged at all, a bare Enter is still deliberately left alone, and
+the harness asserts that too (`bareEnterLeftAlone`). Before anyone has marked
+anything the key should keep whatever meaning it had.
+
+**Two of the six "failures" on the first run were my harness, not the build.**
+The phantom cases asserted a top-level `success: false` that the tool's error
+envelope does not carry, so a correctly-refusing tool was scored as broken. Said
+here because a harness that is red for the wrong reason is worse than one that
+is green for the wrong reason — it gets believed.
+
+## 9. §9 as one sequence
+
+`scripts/demo/section-9.mjs`, three runs, `--voice=off` — no speech API in the
+browser at all — on web `756a665b`
+(`docs/night/blockers-evidence/section-9.json`):
+
+| clause | | result |
+| --- | --- | --- |
+| 1 | `P`/`X`/`U`/`C` and Enter on the grid; `get_view_context` returns the flags | **3/3** |
+| 1b | flags persist across a **page reload** | **0/3** — see *Still open* |
+| 2 | Enter on an empty bar redeals, picks in place, no LLM call | **3/3** |
+| 3 | the note refers to the content of what was rejected | **3/3**, judged by hand |
+| 4 | nothing is spoken after a typed turn; no mic control without the API | **3/3** |
+| 4b | a spoken utterance lands in the field and is answered aloud | **not verified by me** — see below |
+| 5 | two colours of ink | **3/3** after the agent turn — read on |
+
+Zero page errors across all three runs.
+
+**Clause 2, three times:** `modelCallsDuring: 0`, the pick moved `0px`, and the
+board wrote its own line. No request reached `/api/public-agent/turn` during
+either Enter of any run.
+
+**Clause 3, the three notes, quoted in full so the judgement can be checked:**
+
+> You rejected the darker storm seascapes and kept Moran's bone-and-umber
+> coast—following the pick. *(1 sentence, 13 words)*
+
+> You picked Moran's bone-and-umber sea and rejected shipwrecks, boats, and
+> darker coastal views—following the quieter palette. *(1 sentence, 16 words)*
+
+> You asked warm and quiet; the picked bone-toned sea stays, while the darker
+> storm scenes and busier boats leave. *(1 sentence, 19 words)*
+
+The two works thrown out were *Sea Pasture* and *The Bell Buoy*. All three notes
+describe what left — storm seascapes, shipwrecks and boats, darker coastal views
+— and none of them shares a word with either title. **That is why this is judged
+by hand and not by the harness:** an earlier version scored the overlap with a
+token matcher and marked a plainly correct note wrong. The matcher survives as a
+hint that reports nothing here; the notes and the catalogue records are printed
+side by side in the JSON so anyone can disagree with my reading.
+
+**Clause 4b — the voice direction — I could not verify, and I am not claiming
+it.** `--voice=stub` installs a fake recogniser and records everything the page
+speaks. The half that matters for the new text-first constraint passed: the mic
+control *is* rendered when the API exists (`micRendered: true`), and nothing was
+spoken after the typed turn. But my stub never got a transcript into the field
+(`utteranceLandedInField: ""`), and a re-run with diagnostics flaked on an
+unrelated timeout before reaching the clause. I do not know whether that is my
+stub failing to drive the page's recogniser or the page failing to read it, and
+I ran out of runway to find out.
+
+The voice lane reports this clause as met — `docs/night/voice-loop-report.md`
+§"A voice utterance lands in the editable field; the note is spoken only after
+voice", *"yes, with a fake recogniser and no audio produced on this machine"*.
+**That is their evidence, not mine, and the submission should cite it as
+theirs.** What this lane establishes is the other half: with the speech APIs
+absent the page is whole, silent and fully operable by typing.
+
+**Clause 5 needs one qualification and the submission should keep it.** On a
+board dealt entirely by the human, before any agent turn, there is **one** ink
+on screen — 3 human marks, 0 agent marks — because the agent has not done
+anything yet. After the agent's turn both are present in all three runs (3
+human against 3, 7 and 5 agent marks). So the honest sentence is *"once both
+operators have acted, both inks are on the board"*, not *"two inks in every
+state"*. A screenshot of the deterministic beat is a one-handed board on
+purpose, and that is the point of that beat rather than a defect in it.
+
+---
+
 ## Tests
 
 Baseline, from the integration report: web 97 files / 1203 tests, api 46 / 857.
@@ -448,10 +625,10 @@ Baseline, from the integration report: web 97 files / 1203 tests, api 46 / 857.
 | | result |
 | --- | --- |
 | `pnpm --filter web typecheck` | **exit 0** |
-| `pnpm --filter web test` | **99 files / 1234 tests passed**, 0 failed |
+| `pnpm --filter web test` | **99 files / 1237 tests passed**, 0 failed |
 | `pnpm --filter api test` | **46 files / 857 tests passed**, 0 failed |
 
-+2 files, +31 tests on web. Nothing skipped, nothing deleted.
++2 files, +34 tests on web. Nothing skipped, nothing deleted.
 
 **Every new check was made to fail on purpose first.** In each case the
 production change was reverted in the working tree, the test was run, and the
@@ -465,6 +642,9 @@ change was restored:
 | `RELABEL_FIRST` disabled | `closes the searches until the wall has been rewritten` — `spy … called 1 times` |
 | labels nudge keyed on `'labels'` again | `asks again when different works turn up unlabelled` |
 | `quiet` ignored in `PublicSiteHeader` | `stands the account chrome down but keeps the way back` |
+| `setDealing(true)` out of `runRedeal` | `reports the deal as in flight while the request is out` — `expected false to be true` |
+| `isBareBoardEnter` back to picks-only | `deals from rejects alone, the way the bar already does` — `expected false to be true` |
+| the second sentence back on the deal note | `is one sentence and never says what just happened` |
 
 ---
 
@@ -482,11 +662,29 @@ through it, the read is named in the output.
 | `scripts/demo/frame-attest.mjs` | shoots the frame and then attests it from the file's own pixels |
 | `scripts/demo/nudge-probe.mjs` | makes the model fail on purpose to prove the post-condition fires |
 | `scripts/demo/agent-marks.mjs` | where the agent's marks land, as opposed to whether the tool ran |
+| `scripts/demo/section-9.mjs` | the five clauses of §9 as one sequence, `--voice=off` or `--voice=stub` |
+| `scripts/demo/harden.mjs` | the deal beat slow, dead, empty, spent, and called with ids that do not resolve |
+
+The two `phantom` cases in `harden.mjs` are the one exception to the rule above:
+they drive `flag_artworks` and `compare_artworks` through the debug console
+because they are testing what those tools do with **bad input**, which is not
+behaviour being demonstrated and cannot be reached by typing.
 
 ---
 
 ## Still open
 
+- **Flags do not survive a page reload, and the submission must not say they
+  do.** §9's first clause says "flags persist per session", and that holds only
+  if *session* means the page as it stands. The flag store is explicitly
+  in-memory — its own docblock calls it "a working surface, not a saved
+  document" — so a reload empties it: measured at 3 flags before and **0
+  after**, with `get_view_context` reporting 0 picks and 0 rejects. Everything
+  else in clause 1 passes. I did not add `sessionStorage` persistence: it is a
+  deliberate design decision by whoever built that module, changing it on the
+  last round would put stale flags from one query onto the results of another,
+  and nothing in the demo reloads. **Safe phrasing for the submission: "flags
+  live for as long as the page is open." Unsafe: "flags persist", unqualified.**
 - **The exhibition strip**, 104px, up to 96px of card movement on the human's
   first `P`. Measured above, deliberately not fixed, with the reason.
 - **`search_by_exemplars` is 0 in the model's own census** and is likely to stay
@@ -497,3 +695,12 @@ through it, the read is named in the output.
   reading on marks-per-board. The census covers the same ground and the frame
   shows three dashed marks on twelve cards, but a run that lands on flags rather
   than a compare would be worth having.
+- **The voice direction of §9 clause 4 is unverified by this lane.** My stub
+  recogniser did not put a transcript in the field and the diagnostic re-run
+  flaked before reaching the clause. The voice lane reports it as met; cite them,
+  not me. Everything text-first passed 3/3.
+- **Two harness flakes worth knowing about before a filmed take**, both
+  environmental rather than product: the `?webmcp-debug` harness occasionally
+  takes longer than 30s to mount (which is why `harden.mjs` only loads it for
+  the two cases that need it), and the staging agent route returned 429 twice
+  under parallel load. Neither reproduced when the harnesses were run serially.

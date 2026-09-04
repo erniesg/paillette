@@ -3,7 +3,7 @@
   "steps": [
     {
       "label": "first deal (grid → board)",
-      "note": "One pick holds — bone. Eleven works dealt to sit with it.",
+      "note": "One pick holds — bone.",
       "provenance": "human",
       "noteHeight": 44,
       "cards": 12,
@@ -12,7 +12,7 @@
     },
     {
       "label": "before the second Enter",
-      "note": "One pick holds — bone. Eleven works dealt to sit with it.",
+      "note": "One pick holds — bone.",
       "noteHeight": 44,
       "picks": [
         {
@@ -31,7 +31,7 @@
     },
     {
       "label": "after the second Enter",
-      "note": "Three picks hold — bone and umber. Nine works dealt to sit with them.",
+      "note": "Three picks hold — bone and umber.",
       "provenance": "human",
       "noteHeight": 44,
       "dealError": null,
