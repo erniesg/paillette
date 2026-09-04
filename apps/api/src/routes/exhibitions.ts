@@ -4,9 +4,12 @@
  * The board used to die with the tab, then it travelled in the URL, and both
  * were honest attempts at the same promise. The URL version works — it is
  * still here as a fallback — but it pays for statelessness twice: the hang is
- * capped at whatever a messaging client will carry, and the link is 1,900
- * characters of base64 that nobody reads as a link. This route stores the show
- * and hands back seven characters.
+ * capped at whatever a messaging client will carry, and the link is kilobytes
+ * of base64 that nobody reads as a link. A full 24-work hang encodes to about
+ * **3,280 characters** — the curation lane re-measured this against real
+ * `write_labels` output after an earlier estimate of ~1,900 turned out to have
+ * been taken against fixture labels a third the length of the real ones. This
+ * route stores the show and hands back seven characters.
  *
  * Anonymous, like the rest of the NGA surface, which is the constraint that
  * shapes everything below. There is no account to hang the show off and no

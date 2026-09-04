@@ -1424,8 +1424,8 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 /* The link itself, when the clipboard would not take it. Selected on sight, so
  * the next keystroke is the copy — the field is the affordance, not an
  * instruction about one. Sized to the rail rather than the URL, because the
- * long fallback link is 1,900 characters and would otherwise set the width of
- * the page it sits on. */
+ * self-contained fallback link runs to a few thousand characters (~3,280 for a
+ * full hang) and would otherwise set the width of the page it sits on. */
 .paillette-share-fallback {
   display: block;
   width: 100%;
