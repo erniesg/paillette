@@ -1,0 +1,449 @@
+{
+  "ok": true,
+  "page": {
+    "path": "/nga/search",
+    "collection": "nga",
+    "collectionName": "National Gallery of Art, Washington — open access",
+    "onSearchPage": true
+  },
+  "humanSearch": {
+    "query": null,
+    "facet": null,
+    "colour": null,
+    "active": false
+  },
+  "humanResults": {
+    "describedAs": "search (40 results)",
+    "count": 40,
+    "total": null,
+    "observedAt": "2026-09-04T15:25:42.535Z",
+    "visible": [
+      {
+        "id": "open-access-art:nga:16519",
+        "title": "Armchair",
+        "artist": "Elisabeth Fulda",
+        "year": 1937,
+        "similarity": 1
+      },
+      {
+        "id": "open-access-art:nga:25618",
+        "title": "Shaker Infirmary Cap",
+        "artist": "Alice Stearns",
+        "year": 1936,
+        "similarity": 0.971
+      },
+      {
+        "id": "open-access-art:nga:24943",
+        "title": "Decorative Panel from Rail Car Interior",
+        "artist": "Wellington Blewett",
+        "year": 1936,
+        "similarity": 0.955
+      },
+      {
+        "id": "open-access-art:nga:20892",
+        "title": "Ship's Billethead from Richard S. Leaming",
+        "artist": "Frances Cohen",
+        "year": 1939,
+        "similarity": 0.94
+      },
+      {
+        "id": "open-access-art:nga:24890",
+        "title": "Painted Glass - Mariner's Church",
+        "artist": "James McLellan",
+        "year": 1937,
+        "similarity": 0.933
+      },
+      {
+        "id": "open-access-art:nga:21775",
+        "title": "Door Knocker",
+        "artist": "Janet Riza",
+        "year": 1936,
+        "similarity": 0.925
+      },
+      {
+        "id": "open-access-art:nga:20355",
+        "title": "Andirons",
+        "artist": "Dana Bartlett",
+        "year": 1937,
+        "similarity": 0.911
+      },
+      {
+        "id": "open-access-art:nga:20893",
+        "title": "Billethead",
+        "artist": "Marian Page",
+        "year": 1939,
+        "similarity": 0.884
+      },
+      {
+        "id": "open-access-art:nga:227730",
+        "title": "Back cover from Kirchner Zeichnungen (Kirchner Drawings)",
+        "artist": "Ernst Ludwig Kirchner",
+        "year": 1925,
+        "similarity": 0.871
+      },
+      {
+        "id": "open-access-art:nga:52237",
+        "title": "Woman in Black",
+        "artist": "Edouard Vuillard",
+        "year": 1891,
+        "similarity": 0.858
+      },
+      {
+        "id": "open-access-art:nga:27194",
+        "title": "Tie-back",
+        "artist": "Harry Jennings",
+        "year": 1938,
+        "similarity": 0.846
+      },
+      {
+        "id": "open-access-art:nga:24939",
+        "title": "Decorative Panels",
+        "artist": "Wellington Blewett",
+        "year": 1936,
+        "similarity": 0.834
+      }
+    ],
+    "truncated": true
+  },
+  "agentResults": {
+    "describedAs": "Honeyed still lifes, sunset horizons, and gilded interiors for an inviting room.",
+    "note": "Honeyed still lifes, sunset horizons, and gilded interiors for an inviting room.",
+    "count": 12,
+    "visible": [
+      {
+        "id": "open-access-art:nga:69403",
+        "title": "Harvesters by Firelight",
+        "artist": "Samuel Palmer",
+        "year": 1830,
+        "similarity": 0.773
+      },
+      {
+        "id": "open-access-art:nga:50497",
+        "title": "An Indian Encampment at Sunset",
+        "artist": "George Catlin",
+        "year": 1861,
+        "similarity": 0.709
+      },
+      {
+        "id": "open-access-art:nga:62309",
+        "title": "Clouds at Sunset",
+        "artist": "James Hamilton Shegogue",
+        "year": 1806,
+        "similarity": 0.967
+      },
+      {
+        "id": "open-access-art:nga:19590",
+        "title": "Pottery Molds",
+        "artist": "Joseph Shapiro",
+        "year": 1935,
+        "similarity": 0.984
+      },
+      {
+        "id": "open-access-art:nga:23090",
+        "title": "Table Glass",
+        "artist": "Emilio Zito",
+        "year": 1940,
+        "similarity": 0.753
+      },
+      {
+        "id": "open-access-art:nga:75030",
+        "title": "Mound of Butter",
+        "artist": "Antoine Vollon",
+        "year": 1875,
+        "similarity": 0.763
+      },
+      {
+        "id": "open-access-art:nga:164939",
+        "title": "The Melon",
+        "artist": "Edouard Manet",
+        "year": 1880,
+        "similarity": 0.781
+      },
+      {
+        "id": "open-access-art:nga:24943",
+        "title": "Decorative Panel from Rail Car Interior",
+        "artist": "Wellington Blewett",
+        "year": 1936,
+        "similarity": 0.955
+      },
+      {
+        "id": "open-access-art:nga:42053",
+        "title": "Loge with the Gilt Mask (La loge au mascaron doré)",
+        "artist": "Henri de Toulouse-Lautrec",
+        "year": 1893,
+        "similarity": 0.8
+      },
+      {
+        "id": "open-access-art:nga:182257",
+        "title": "The Afterglow, Grand Canyon, Arizona",
+        "artist": "Lucien Whiting Powell",
+        "year": 1899,
+        "similarity": 1
+      },
+      {
+        "id": "open-access-art:nga:54130",
+        "title": "Te Pape Nave Nave (Delectable Waters)",
+        "artist": "Paul Gauguin",
+        "year": 1898,
+        "similarity": 0.806
+      },
+      {
+        "id": "open-access-art:nga:130607",
+        "title": "Northern Landscape Fantasy Evoking Tivoli",
+        "artist": "Nicolaes Pietersz Berchem",
+        "year": 1660,
+        "similarity": 0.444
+      }
+    ]
+  },
+  "openArtwork": null,
+  "flags": {
+    "picks": [],
+    "rejects": [],
+    "provisional": [],
+    "exemplars": {
+      "positive": [],
+      "negative": []
+    },
+    "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+  },
+  "board": {
+    "order": [
+      "open-access-art:nga:69403",
+      "open-access-art:nga:50497",
+      "open-access-art:nga:62309",
+      "open-access-art:nga:19590",
+      "open-access-art:nga:23090",
+      "open-access-art:nga:75030",
+      "open-access-art:nga:164939",
+      "open-access-art:nga:24943",
+      "open-access-art:nga:42053",
+      "open-access-art:nga:182257",
+      "open-access-art:nga:54130",
+      "open-access-art:nga:130607"
+    ],
+    "works": [
+      {
+        "id": "open-access-art:nga:69403",
+        "title": "Harvesters by Firelight",
+        "artist": "Samuel Palmer",
+        "year": 1830,
+        "similarity": 0.773
+      },
+      {
+        "id": "open-access-art:nga:50497",
+        "title": "An Indian Encampment at Sunset",
+        "artist": "George Catlin",
+        "year": 1861,
+        "similarity": 0.709
+      },
+      {
+        "id": "open-access-art:nga:62309",
+        "title": "Clouds at Sunset",
+        "artist": "James Hamilton Shegogue",
+        "year": 1806,
+        "similarity": 0.967
+      },
+      {
+        "id": "open-access-art:nga:19590",
+        "title": "Pottery Molds",
+        "artist": "Joseph Shapiro",
+        "year": 1935,
+        "similarity": 0.984
+      },
+      {
+        "id": "open-access-art:nga:23090",
+        "title": "Table Glass",
+        "artist": "Emilio Zito",
+        "year": 1940,
+        "similarity": 0.753
+      },
+      {
+        "id": "open-access-art:nga:75030",
+        "title": "Mound of Butter",
+        "artist": "Antoine Vollon",
+        "year": 1875,
+        "similarity": 0.763
+      },
+      {
+        "id": "open-access-art:nga:164939",
+        "title": "The Melon",
+        "artist": "Edouard Manet",
+        "year": 1880,
+        "similarity": 0.781
+      },
+      {
+        "id": "open-access-art:nga:24943",
+        "title": "Decorative Panel from Rail Car Interior",
+        "artist": "Wellington Blewett",
+        "year": 1936,
+        "similarity": 0.955
+      },
+      {
+        "id": "open-access-art:nga:42053",
+        "title": "Loge with the Gilt Mask (La loge au mascaron doré)",
+        "artist": "Henri de Toulouse-Lautrec",
+        "year": 1893,
+        "similarity": 0.8
+      },
+      {
+        "id": "open-access-art:nga:182257",
+        "title": "The Afterglow, Grand Canyon, Arizona",
+        "artist": "Lucien Whiting Powell",
+        "year": 1899,
+        "similarity": 1
+      },
+      {
+        "id": "open-access-art:nga:54130",
+        "title": "Te Pape Nave Nave (Delectable Waters)",
+        "artist": "Paul Gauguin",
+        "year": 1898,
+        "similarity": 0.806
+      },
+      {
+        "id": "open-access-art:nga:130607",
+        "title": "Northern Landscape Fantasy Evoking Tivoli",
+        "artist": "Nicolaes Pietersz Berchem",
+        "year": 1660,
+        "similarity": 0.444
+      }
+    ],
+    "note": "Honeyed still lifes, sunset horizons, and gilded interiors for an inviting room.",
+    "lastChangeBy": "agent",
+    "redeals": 0,
+    "dealtThisSession": 12,
+    "hint": "redeal deals from the confirmed flags with picks held in place. dealtThisSession is excluded from the next deal, so the loop keeps moving."
+  },
+  "exhibition": {
+    "title": {
+      "text": null,
+      "by": null
+    },
+    "statement": {
+      "text": null,
+      "by": null
+    },
+    "works": [
+      {
+        "artworkId": "open-access-art:nga:69403",
+        "position": 0,
+        "title": "Harvesters by Firelight",
+        "artist": "Samuel Palmer",
+        "year": 1830,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:50497",
+        "position": 1,
+        "title": "An Indian Encampment at Sunset",
+        "artist": "George Catlin",
+        "year": 1861,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:62309",
+        "position": 2,
+        "title": "Clouds at Sunset",
+        "artist": "James Hamilton Shegogue",
+        "year": 1806,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:19590",
+        "position": 3,
+        "title": "Pottery Molds",
+        "artist": "Joseph Shapiro",
+        "year": 1935,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:23090",
+        "position": 4,
+        "title": "Table Glass",
+        "artist": "Emilio Zito",
+        "year": 1940,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:75030",
+        "position": 5,
+        "title": "Mound of Butter",
+        "artist": "Antoine Vollon",
+        "year": 1875,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:164939",
+        "position": 6,
+        "title": "The Melon",
+        "artist": "Edouard Manet",
+        "year": 1880,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:24943",
+        "position": 7,
+        "title": "Decorative Panel from Rail Car Interior",
+        "artist": "Wellington Blewett",
+        "year": 1936,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:42053",
+        "position": 8,
+        "title": "Loge with the Gilt Mask (La loge au mascaron doré)",
+        "artist": "Henri de Toulouse-Lautrec",
+        "year": 1893,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:182257",
+        "position": 9,
+        "title": "The Afterglow, Grand Canyon, Arizona",
+        "artist": "Lucien Whiting Powell",
+        "year": 1899,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:54130",
+        "position": 10,
+        "title": "Te Pape Nave Nave (Delectable Waters)",
+        "artist": "Paul Gauguin",
+        "year": 1898,
+        "label": null,
+        "labelBy": null
+      },
+      {
+        "artworkId": "open-access-art:nga:130607",
+        "position": 11,
+        "title": "Northern Landscape Fantasy Evoking Tivoli",
+        "artist": "Nicolaes Pietersz Berchem",
+        "year": 1660,
+        "label": null,
+        "labelBy": null
+      }
+    ],
+    "regions": [],
+    "unlabelled": 12,
+    "updatedAt": null,
+    "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show."
+  },
+  "selection": [],
+  "hovered": {
+    "id": "open-access-art:nga:182257",
+    "work": "The Afterglow, Grand Canyon, Arizona — Lucien Whiting Powell"
+  },
+  "compare": null,
+  "indexedCollection": null,
+  "hint": "Use lookup_artwork on any id above for the full record, or search_by_image with an id for visually similar works."
+}

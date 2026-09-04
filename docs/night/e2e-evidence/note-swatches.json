@@ -1,0 +1,46 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "instruction": "something warm for above the sofa",
+  "instructionInBar": "something warm for above the sofa",
+  "note": {
+    "text": "You said warm; you kept the bone-and-umber etching and rejected the darker, greener palettes—following the picks.",
+    "provenance": "agent",
+    "strips": [
+      {
+        "flag": "pick",
+        "id": "open-access-art:nga:127567",
+        "aria": "A Rocky Pond: picked",
+        "colours": [
+          "rgb(235, 216, 188)",
+          "rgb(144, 127, 106)",
+          "rgb(105, 89, 73)",
+          "rgb(185, 166, 141)"
+        ]
+      },
+      {
+        "flag": "reject",
+        "id": "open-access-art:nga:184225",
+        "aria": "Environs de Cremieu: rejected",
+        "colours": [
+          "rgb(184, 158, 129)",
+          "rgb(100, 79, 63)",
+          "rgb(244, 232, 214)",
+          "rgb(220, 177, 127)"
+        ]
+      },
+      {
+        "flag": "reject",
+        "id": "open-access-art:nga:195765",
+        "aria": "Flying Shadows: rejected",
+        "colours": [
+          "rgb(71, 80, 43)",
+          "rgb(154, 139, 87)",
+          "rgb(189, 184, 155)"
+        ]
+      }
+    ]
+  },
+  "modelCalls": 3,
+  "pageErrors": []
+}

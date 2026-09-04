@@ -1,0 +1,131 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "instruction": "something warm for above the sofa",
+  "query": "warm landscape",
+  "conditions": [
+    {
+      "name": "A",
+      "pick": "open-access-art:nga:127567",
+      "rejects": [
+        "open-access-art:nga:184225",
+        "open-access-art:nga:195765"
+      ],
+      "flags": [
+        {
+          "id": "open-access-art:nga:184225",
+          "flag": "reject",
+          "by": "human"
+        },
+        {
+          "id": "open-access-art:nga:195765",
+          "flag": "reject",
+          "by": "human"
+        },
+        {
+          "id": "open-access-art:nga:127567",
+          "flag": "pick",
+          "by": "human"
+        }
+      ],
+      "note": {
+        "text": "You said warm, but you kept the bone-and-umber etching and rejected the darker ochre palettes—following the pick.",
+        "strips": [
+          {
+            "flag": "pick",
+            "aria": "A Rocky Pond: picked",
+            "colours": [
+              "rgb(235, 216, 188)",
+              "rgb(144, 127, 106)",
+              "rgb(105, 89, 73)",
+              "rgb(185, 166, 141)"
+            ]
+          },
+          {
+            "flag": "reject",
+            "aria": "Environs de Cremieu: rejected",
+            "colours": [
+              "rgb(184, 158, 129)",
+              "rgb(100, 79, 63)",
+              "rgb(244, 232, 214)",
+              "rgb(220, 177, 127)"
+            ]
+          },
+          {
+            "flag": "reject",
+            "aria": "Flying Shadows: rejected",
+            "colours": [
+              "rgb(71, 80, 43)",
+              "rgb(154, 139, 87)",
+              "rgb(189, 184, 155)"
+            ]
+          }
+        ]
+      },
+      "httpStatus": 200,
+      "pageErrors": [],
+      "gotLabel": true
+    },
+    {
+      "name": "B",
+      "pick": "open-access-art:nga:184225",
+      "rejects": [
+        "open-access-art:nga:127567",
+        "open-access-art:nga:195765"
+      ],
+      "flags": [
+        {
+          "id": "open-access-art:nga:184225",
+          "flag": "pick",
+          "by": "human"
+        },
+        {
+          "id": "open-access-art:nga:195765",
+          "flag": "reject",
+          "by": "human"
+        },
+        {
+          "id": "open-access-art:nga:127567",
+          "flag": "reject",
+          "by": "human"
+        }
+      ],
+      "note": {
+        "text": "You kept the pale ochre drawing and rejected darker olive and brown palettes; this deal follows its luminous warmth.",
+        "strips": [
+          {
+            "flag": "pick",
+            "aria": "Environs de Cremieu: picked",
+            "colours": [
+              "rgb(184, 158, 129)",
+              "rgb(100, 79, 63)",
+              "rgb(244, 232, 214)",
+              "rgb(220, 177, 127)"
+            ]
+          },
+          {
+            "flag": "reject",
+            "aria": "A Rocky Pond: rejected",
+            "colours": [
+              "rgb(235, 216, 188)",
+              "rgb(144, 127, 106)",
+              "rgb(105, 89, 73)",
+              "rgb(185, 166, 141)"
+            ]
+          },
+          {
+            "flag": "reject",
+            "aria": "Flying Shadows: rejected",
+            "colours": [
+              "rgb(71, 80, 43)",
+              "rgb(154, 139, 87)",
+              "rgb(189, 184, 155)"
+            ]
+          }
+        ]
+      },
+      "httpStatus": 200,
+      "pageErrors": [],
+      "gotLabel": true
+    }
+  ]
+}
