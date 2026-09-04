@@ -267,11 +267,49 @@ const main = async () => {
   });
 
   await check('agent.noMicWithoutSpeech', async () => {
-    const mic = await page.getByRole('button', { name: /speak your request/i }).count();
-    assert(mic === 0, `mic button rendered with no SpeechRecognition (${mic})`);
+    // This used to look for a control named "speak your request" and assert
+    // there were none. No such control exists, or ever did, so it passed on
+    // every build regardless — including ones that render a microphone. A
+    // check that cannot fail is worse than no check, because it reports PASS
+    // into a submission.
+    //
+    // It is also no longer true that "no recogniser" means "no microphone":
+    // a browser with WebRTC can take speech through a live session, so a mic
+    // there is honest. What must hold is the weaker, real invariant — with
+    // *neither* way in, there is no microphone and the bar still works.
     const input = await page.locator(AGENT_INPUT).count();
     assert(input === 1, 'agent input missing when speech is unavailable');
-    return { detail: 'no mic, input still there' };
+
+    const bare = await browser.newContext({
+      viewport: { width: 1024, height: 768 },
+    });
+    await bare.addInitScript(() => {
+      delete window.webkitSpeechRecognition;
+      delete window.SpeechRecognition;
+      delete window.RTCPeerConnection;
+    });
+    const barePage = await bare.newPage();
+    try {
+      await barePage.goto(withDebugParam(url), {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
+      await barePage.locator(AGENT_INPUT).waitFor({ timeout: 20_000 });
+      // Scoped to the prompt: the page has other toggles (the search-mode
+      // switch, for one) and counting those made this fail for the wrong
+      // reason. Inside the prompt the mic is the only aria-pressed control.
+      const mics = await barePage
+        .locator('section[aria-label="Ask the agent"] button[aria-pressed]')
+        .count();
+      assert(mics === 0, `mic rendered with no way to capture speech (${mics})`);
+      assert(
+        await barePage.locator(AGENT_INPUT).isEnabled(),
+        'the bar is not typeable without speech'
+      );
+      return { detail: 'no speech, no WebRTC: no mic, bar still typeable' };
+    } finally {
+      await bare.close();
+    }
   });
 
   await check('context.readable', async () => {
