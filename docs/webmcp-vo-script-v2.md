@@ -1,7 +1,7 @@
 # Paillette — WebMCP demo voiceover, v2
 
-Runtime **≈2:52**. **236 spoken words** across eight beats — about 1:35 of
-speech, so nearly half the film is silence. The board carries the rest.
+Runtime **≈2:52**. **259 spoken words** across eight beats — 1:44 of speech at
+150 wpm, so 40% of the film is silence. The board carries the rest.
 
 This is a **revision** of the draft lane's v2, not a new script. What changed and
 why is in §0. `docs/webmcp-vo-script-final.md` is superseded and must not be
@@ -148,8 +148,18 @@ marks. Then one word typed, and the board deals again under a new label.
 > `I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.`
 
 Enter. Wait for the label. Hover, `x`. Hover, `x`. Hover, `p`. Then type `again`
-and Enter. This is exactly the walk the e2e lane ran three times in iteration 5,
-on the deployed build.
+and Enter.
+
+Every piece of that is from the walk the e2e lane ran three times in iteration 5
+on the deployed build, with one deliberate omission: **their walk pressed Enter on
+the empty bar between the flags and the `again`.** The film moves that Enter to
+beat 2, where it belongs, so beat 1 goes label → `again` → label with no
+collapse in between.
+
+**⚠ `again` produces a redeal because the model chose one** — `redeal` appears 15
+times in the night's tool-call census, so it does choose it, but it is a choice
+and not a guarantee. If a take comes back with a search instead of a deal, run it
+again.
 
 **The label to hold**, iteration-5 run 3, verbatim:
 
@@ -634,8 +644,8 @@ before any page script ran.
 | 7 WebMCP on screen | one click | no |
 | 8 End card | — | no |
 
-**Cut the words.** 236 spoken words in a 2:52 film. What went this round, and
-why:
+**Cut the words.** 259 spoken words in a 2:52 film — 1:44 of speech, so 40% of
+the runtime is silence. What went this round, and why:
 
 - *"It re-selects. It writes a label under every work."* — **untrue on today's
   deploy.** Cut for being wrong, which is the best reason available.

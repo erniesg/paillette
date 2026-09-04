@@ -1,6 +1,6 @@
 # Shot list
 
-In order. Companion to `docs/webmcp-vo-script-v2.md`. **21 shots plus three in
+In order. Companion to `docs/webmcp-vo-script-v2.md`. **22 shots plus three in
 reserve.**
 
 Everything is `https://paillette-stg.berlayar.ai/nga/search` against the live
@@ -92,7 +92,12 @@ the board thins, and by the seventh Enter is a dead key. A fresh page resets it.
   **3 of 3 notes had no wrong word in them**, checked against each named work's
   medium, classification and palette. **Calls** 3, and 8–14 s.
 - **Why this and not a deterministic Enter here.** A label is on screen before and
-  after, so nothing collapses. See the ⚠ under S06.
+  after, so nothing collapses. See the 🚫 under S06. **The e2e walk pressed Enter
+  on the empty bar between the flags and the `again`; the film moves that Enter to
+  beat 2.**
+- **⚠ `again` deals because the model chose to deal.** `redeal` appears 15 times
+  in the night's tool-call census, so it does choose it — but it is a choice, not
+  a guarantee. If a take comes back with a search instead of a deal, run it again.
 - **⚠ A weak note is possible.** An earlier round produced *"darker, crowded
   scenes"* — accurate but generic — and one run called a drawing a painting. **If
   you get one of those, shoot it again.**
