@@ -1414,6 +1414,48 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   text-decoration-style: dashed;
 }
 
+/* In flight. Dimmed rather than replaced by a spinner: the word already
+ * changed, and a second moving thing for a round trip this short is noise. */
+.paillette-share-link[data-share-state='working'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The link itself, when the clipboard would not take it. Selected on sight, so
+ * the next keystroke is the copy — the field is the affordance, not an
+ * instruction about one. Sized to the rail rather than the URL, because the
+ * self-contained fallback link runs to a few thousand characters (~3,280 for a
+ * full hang) and would otherwise set the width of the page it sits on. */
+.paillette-share-fallback {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--lt-rule);
+  background: transparent;
+  color: var(--ink-human);
+  text-overflow: ellipsis;
+  /*
+   * The one place `.lt-catalogue` must not have its way.
+   *
+   * Catalogue mono is uppercase everywhere else, and everywhere else that is
+   * a typographic choice about accession numbers. Here it is a lie: share
+   * codes are deliberately case-sensitive (mixed-case base62, see
+   * `@paillette/types/share-codes`), so `sfT4685` was being displayed as
+   * `SFT4685`. Ctrl+C copies the value and survives that, but this field
+   * exists precisely for the person who is going to read it off the screen
+   * and type it somewhere else — and they would have typed a dead link.
+   */
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+.paillette-share-fallback:focus {
+  outline: none;
+  border-bottom-color: var(--ink-human);
+}
+
 /*
  * Their compare overlay, made into a room.
  *
@@ -2046,21 +2088,25 @@ html[data-theme='light'] .themeable-surface code {
   color: var(--ink-human);
 }
 
+/* The rule down the left carries who wrote it, in the same two inks and off
+ * the same attribute as the statement above it and the wall label on the
+ * board. The `··` glyph and its tooltip that used to do this job are gone. */
 .exhibition-label {
   margin-top: 1rem;
   padding-left: 1rem;
-  border-left: 1px solid var(--ink-human-faint);
+  border-left: 1px solid var(--ink);
   font-size: 1rem;
   line-height: 1.6;
   color: var(--ink-human-soft);
   text-wrap: pretty;
 }
 
-/* Who wrote the label is a mark, not a caption. The colophon says what it
- * means, once, at the bottom, where a credit line belongs. */
-.exhibition-mark {
-  color: var(--ink-agent);
-  letter-spacing: 0.1em;
+.exhibition-label[data-provenance='human'] {
+  --ink: var(--ink-human-faint);
+}
+
+.exhibition-label[data-provenance='agent'] {
+  --ink: var(--ink-agent);
 }
 
 .exhibition-accession {

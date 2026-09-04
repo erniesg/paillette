@@ -1,6 +1,7 @@
 import { createRequestHandler } from '@remix-run/cloudflare';
 import * as build from './build/server/index.js';
 import type { ServerBuild } from '@remix-run/cloudflare';
+import { handleShareRequest } from './app/lib/share/crawler.server';
 
 type Env = {
   APP_ENV?: string;
@@ -47,6 +48,14 @@ const handleRemixRequest = createRequestHandler(serverBuild, 'production');
 
 export default {
   async fetch(request: Request, env: Env, context: ExecutionContext) {
+    // Short links are answered before the app for the two callers that do not
+    // want an app: a social crawler unfurling the link, and a probe asking for
+    // the facts as JSON. Returns null for everything else — including every
+    // human on a short link — so the app is unaffected. It cannot throw; a
+    // failure falls through and Remix renders the same tags the slow way.
+    const share = await handleShareRequest(request, env);
+    if (share) return share;
+
     const response = await handleRemixRequest(request, {
       cloudflare: { env, context },
     });
