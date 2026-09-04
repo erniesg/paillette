@@ -248,19 +248,62 @@ const main = async () => {
   const moved = pickIds
     .map((id) => ({ id, from: positionsBefore[id], to: positionsAfter[id] }))
     .filter((entry) => entry.from && entry.to && (entry.from.x !== entry.to.x || entry.from.y !== entry.to.y));
-  note(
-    moved.length === 0,
-    'and each pick is in the same place on screen as before',
-    moved.length === 0
-      ? 'none moved'
-      : moved.map((entry) => `${entry.id.split(':').pop()} ${entry.from.x},${entry.from.y} -> ${entry.to.x},${entry.to.y}`).join(' · ')
+  // Expected to move: this deal replaced the browsing masonry with a board.
+  // Recorded rather than asserted; the board-to-board case is below.
+  console.log(
+    `      (first deal moved ${moved.length} of ${pickIds.length} picks on screen — ` +
+      'a browsing grid becoming a board, so this is not the claim)'
   );
 
+  // ---- 4. the second redeal, which is the one the claim is about --------
+  //
+  // The first deal replaces a browsing grid with a board, so of course
+  // everything moves. Board to board is where "your picks stay put" has to be
+  // true, and where the FLIP has something to animate.
+  const positionsBeforeSecond = await positionsOf();
+  const motionSecond = page.evaluate(async () => {
+    const sample = () =>
+      Array.from(document.querySelectorAll('.paillette-card'))
+        .map((card) => {
+          const box = card.getBoundingClientRect();
+          return `${card.getAttribute('data-artwork-id')}@${Math.round(box.x)},${Math.round(box.y)}`;
+        })
+        .join(' ');
+    const frames = [];
+    const start = performance.now();
+    while (performance.now() - start < 4000) {
+      frames.push(sample());
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    const distinct = [];
+    for (const frame of frames) if (frame !== distinct[distinct.length - 1]) distinct.push(frame);
+    return { frames: frames.length, distinct: distinct.length };
+  });
+  await page.mouse.move(700, 700);
+  await page.keyboard.press('Enter');
+  const secondMotion = await motionSecond;
+  await page.waitForTimeout(600);
+
+  const positionsAfterSecond = await positionsOf();
+  const movedSecond = pickIds
+    .map((id) => ({ id, from: positionsBeforeSecond[id], to: positionsAfterSecond[id] }))
+    .filter((entry) => entry.from && entry.to && (entry.from.x !== entry.to.x || entry.from.y !== entry.to.y));
   note(
-    motion.distinct > 2,
-    'the cards move between frames rather than cutting (FLIP)',
-    `${motion.distinct} distinct layouts across ${motion.frames} frames`
+    movedSecond.length === 0,
+    'board to board: each pick is in exactly the same place on screen',
+    movedSecond.length === 0
+      ? 'none moved'
+      : movedSecond
+          .map((entry) => `${entry.id.split(':').pop()} ${entry.from.x},${entry.from.y} -> ${entry.to.x},${entry.to.y}`)
+          .join(' · ')
   );
+  note(
+    secondMotion.distinct > 8,
+    'board to board: the cards animate rather than cutting (FLIP)',
+    `${secondMotion.distinct} distinct layouts across ${secondMotion.frames} frames ` +
+      `(first deal was ${motion.distinct}; /night/deal measures ~23)`
+  );
+  await page.screenshot({ path: `${SHOTS}/3b-second-deal.png` });
 
   // ---- 5. the tools, driven directly -----------------------------------
   await page.goto(`${BASE}/nga/search?q=storm%20at%20sea&webmcp-debug=1`, { waitUntil: 'domcontentloaded', timeout: 60_000 });

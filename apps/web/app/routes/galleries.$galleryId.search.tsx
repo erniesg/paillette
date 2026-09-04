@@ -78,6 +78,10 @@ import {
   useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
+import {
+  DealBoard,
+  DEFAULT_BOARD_SIZE as DEAL_BOARD_SIZE,
+} from '~/components/board/deal-board';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
@@ -5114,6 +5118,25 @@ function ResultsLayout({
   onPaletteColourSelect,
   onSelectArtwork,
 }: ResultsViewProps) {
+  const { board, flags } = useWebMcpState();
+  const dealtBoard = useMemo(() => {
+    if (!board?.order.length) return null;
+    // The board has to be *these* works, not a board that happens to exist —
+    // running a fresh text search after a deal must go back to browsing.
+    const onScreen = new Set(results.map((result) => result.id));
+    if (board.order.length !== onScreen.size) return null;
+    if (!board.order.every((id) => onScreen.has(id))) return null;
+
+    // Only confirmed human picks pin a slot. An agent's proposal is dashed
+    // until the human takes it, and a proposal must not be able to nail a
+    // card to the board.
+    const preservedIds = flags
+      .filter((flag) => flag.flag === 'pick' && !flag.provisional)
+      .map((flag) => flag.artworkId)
+      .filter((id) => onScreen.has(id));
+    return { preservedIds };
+  }, [board, flags, results]);
+
   if (view === 'table') {
     return (
       <TableResults
@@ -5142,6 +5165,23 @@ function ResultsLayout({
     return <AtlasResults results={results} onSelectArtwork={onSelectArtwork} />;
   }
 
+  // A board is on the table when a deal put these exact works there. Anything
+  // else — a text search, a colour search, an agent's `set_results` — is
+  // browsing, and browsing is what the masonry is for.
+  if (dealtBoard) {
+    return (
+      <DealResults
+        results={results}
+        preservedIds={dealtBoard.preservedIds}
+        selectedColours={selectedColours}
+        showSimilarity={showSimilarity}
+        onFacetSearch={onFacetSearch}
+        onPaletteColourSelect={onPaletteColourSelect}
+        onSelectArtwork={onSelectArtwork}
+      />
+    );
+  }
+
   return (
     <MasonryResults
       results={results}
@@ -5152,6 +5192,61 @@ function ResultsLayout({
       onPaletteColourSelect={onPaletteColourSelect}
       onSelectArtwork={onSelectArtwork}
     />
+  );
+}
+
+/**
+ * The deal, on the product grid.
+ *
+ * A masonry packs by estimated height into the shortest column, so a work's
+ * position depends on its neighbours. That is right for browsing and wrong for
+ * a cull: replace four cards and a pick two rows down moves across the screen,
+ * which breaks the one promise the loop makes — that what you kept is still
+ * where you left it. Measured on staging, a pick held its seat in the board
+ * order and still travelled 308px sideways.
+ *
+ * So once a deal has actually happened, the grid becomes a board: twelve equal
+ * slots, picks pinned to the index they already had, newcomers arriving from
+ * the right. Until then nothing changes — an ordinary search is still a
+ * masonry, because an ordinary search is browsing.
+ */
+function DealResults({
+  results,
+  preservedIds,
+  selectedColours,
+  showSimilarity,
+  onFacetSearch,
+  onPaletteColourSelect,
+  onSelectArtwork,
+}: {
+  results: ArtworkSearchResult[];
+  preservedIds: string[];
+  selectedColours: string[];
+  showSimilarity: boolean;
+  onFacetSearch: (query: string, facet?: SearchFacet | null) => void;
+  onPaletteColourSelect: (hex: string) => void;
+  onSelectArtwork: (artwork: ArtworkSearchResult) => void;
+}) {
+  return (
+    <div className="pt-6">
+      <DealBoard
+        items={results}
+        preservedIds={preservedIds}
+        size={Math.max(results.length, DEAL_BOARD_SIZE)}
+        renderCard={(result, context) => (
+          <ResultCard
+            result={result}
+            rank={context.rank}
+            selectedColours={selectedColours}
+            showSimilarity={showSimilarity}
+            imageRole="thumbnail"
+            onFacetSearch={onFacetSearch}
+            onPaletteColourSelect={onPaletteColourSelect}
+            onSelectArtwork={onSelectArtwork}
+          />
+        )}
+      />
+    </div>
   );
 }
 
