@@ -14,8 +14,9 @@ JSON so it can never be mistaken for the census. The harnesses are in
 A second round follows the five, from §6 onward: the two constraints added
 mid-run applied back over this work, and §9 run end to end as one sequence.
 
-A third round follows at §10: the one §9 clause I declined to fix last round,
-finished.
+A third round follows at §10 and §11: the one §9 clause I declined to fix last
+round, finished — and a silence I chased through three deploys before finding it
+in my own instrument.
 
 **Deployed and measured on** api `501e3889-e4cc-4555-bbd4-7e20c317739e` and web
 `9ab4735d` → `fb739583` → `e52ef6a3` → `756a665b` → `0c76f553` → `9197880b` →
@@ -568,7 +569,7 @@ browser at all — on web `756a665b`
 | 3 | the note refers to the content of what was rejected | **3/3**, judged by hand |
 | 4 | nothing is spoken after a typed turn; no mic control without the API | **3/3** |
 | 4b | a spoken utterance lands in the field | **verified**, §11 |
-| 4c | …and the note is spoken back | **not observed on staging**, §11 |
+| 4c | …and the note is spoken back | **verified**, 2/2, §11 |
 | 5 | two colours of ink | **3/3** after the agent turn — read on |
 
 **Every clause 3/3, exit 0, zero page errors**, re-run on web `9197880b`. The
@@ -598,11 +599,9 @@ token matcher and marked a plainly correct note wrong. The matcher survives as a
 hint that reports nothing here; the notes and the catalogue records are printed
 side by side in the JSON so anyone can disagree with my reading.
 
-**The voice direction is in §11, and it is half done.** The utterance
-demonstrably lands in the editable field on staging, and the "spoken *only*
-after voice" half has always held. The "and *is* spoken" half found a real
-defect, took two fixes, and is still not observed working on a real page — I am
-not claiming it.
+**The voice direction is in §11, and it is now done** — but the story of how is
+worth more than the result: two real fixes, and three rounds of chasing a
+silence that turned out to be my own harness.
 
 **Clause 5 needs one qualification and the submission should keep it.** On a
 board dealt entirely by the human, before any agent turn, there is **one** ink
@@ -777,39 +776,63 @@ it was still silent on staging for exactly the shape of turn that had failed.
 It now takes whichever of the two is actually on the wall, newest first, with a
 test for each and a negative control for both.
 
-### And it is still silent on staging. I am not claiming it works.
+### It was my instrument, and I should have looked there three attempts sooner
 
-Three builds, two fixes, and the stub run still comes back
-`heardBackAfterSpeaking: []`. Both fixes are real and unit-tested with negative
-controls, and neither is sufficient, so something else in the live turn path is
-in the way. My best remaining hypothesis — untested, and I am flagging it as a
-hypothesis — is the channel itself: `commit` passes `pendingVoice ? 'voice' :
-'text'`, and it is the grace timer that fires the commit, so a stale closure
-there would deliver a spoken turn to the model labelled as typed and the reply
-would be correctly silent. The unit test does not reproduce it because it has no
-preceding turn.
+Two fixes shipped, three staging round-trips spent, and the stub run still came
+back `heardBackAfterSpeaking: []`. I had a fourth hypothesis about the code and
+was about to act on it. Instead I made the harness record what the *page* had
+logged during the turn, and got this:
 
-I stopped there rather than ship a fourth speculative change at the end of the
-night on the half of a clause the brief itself calls an accelerant.
+```
+Failed to execute 'speak' on 'SpeechSynthesis':
+parameter 1 is not of type 'SpeechSynthesisUtterance'.
+```
 
-**So, precisely:**
+`window.speechSynthesis` is a **read-only accessor** in Chrome. My harness
+installed its recorder with a plain assignment, which fails silently — so the
+getter kept returning the native object, the page handed it my fake utterance,
+and the browser refused it. The page had been calling `speak` correctly the
+whole time. Every "silence" reading in the previous two rounds was my
+instrument, not the build. `Object.defineProperty` fixes it.
 
-| | |
-| --- | --- |
-| a voice utterance lands in the editable field | **verified on staging**, this round |
-| nothing is spoken after a *typed* turn | **verified on staging**, 3/3 plus every stub run |
-| the mic control is absent when the API is | **verified on staging** |
-| the note is spoken after a *spoken* turn | **not observed on staging.** Unit-tested only |
+### With the instrument working
 
-The voice lane reports the last line as met in
-`docs/night/voice-loop-report.md` — *"yes, with a fake recogniser and no audio
-produced on this machine"*. **If the submission claims voice out, it is citing
-their evidence and not mine.** What this lane can stand behind is the text-first
-path, which is whole.
+`--voice=stub`, two runs, on web `e111d748`:
 
-**Nothing here touches that path.** The branch is only reachable when the last
-turn arrived by voice; a typed turn stays silent, which has its own test either
-side of these two and passed 3/3 in every `--voice=off` run.
+| | run 1 | run 2 |
+| --- | --- | --- |
+| utterance in the editable field | *"Something quieter, please."* | same |
+| spoken after the *typed* turn | none | none |
+| spoken after the *spoken* turn | the wall label | the wall label |
+| spoken text is the note **verbatim** | yes | yes |
+| page errors | 0 | 0 |
+
+**Every clause 2/2, exit 0.** §9 now passes end to end in both modes.
+
+> Following the picked boat and Breton port scenes, and moving away from the
+> rejected tempest: quieter water, fewer dramatic gestures.
+
+That sentence was on the wall and in the air, and nowhere else — the model
+returned no reply of its own, which is what the prompt asks of it.
+
+### The two fixes were load-bearing. The evidence I gave for them was not.
+
+The spoken text being the note *verbatim* in both runs is the proof: `said` was
+empty, so it is the `|| note` branch doing the work. Without it those turns
+would have been silent for real. And the second fix matters because the note on
+a `set_results` board lives on `agentResults`, not `board`.
+
+**But the commit messages for both claim staging measurements that were
+artefacts of the broken stub** — "measured on staging… nothing was spoken",
+"was still silent on staging for the exact turn shape that had failed". Those
+sentences describe my instrument. The changes are right and are now properly
+evidenced by the table above; the reasoning I recorded at the time was not, and
+that is worth more to whoever reads this next than a tidy history would be.
+
+**Nothing here touches the text-first path.** The branch is only reachable when
+the last turn arrived by voice; a typed turn stays silent, which has its own
+test either side of these two and passed 3/3 in every `--voice=off` run and 2/2
+here.
 
 ---
 
@@ -821,10 +844,10 @@ Baseline, from the integration report: web 97 files / 1203 tests, api 46 / 857.
 | | result |
 | --- | --- |
 | `pnpm --filter web typecheck` | **exit 0** |
-| `pnpm --filter web test` | **100 files / 1254 tests passed**, 0 failed |
+| `pnpm --filter web test` | **100 files / 1255 tests passed**, 0 failed |
 | `pnpm --filter api test` | **46 files / 857 tests passed**, 0 failed |
 
-+3 files, +51 tests on web. Nothing skipped, nothing deleted.
++3 files, +52 tests on web. Nothing skipped, nothing deleted.
 
 **Every new check was made to fail on purpose first.** In each case the
 production change was reverted in the working tree, the test was run, and the
@@ -863,6 +886,7 @@ through it, the read is named in the output.
 | `scripts/demo/nudge-probe.mjs` | makes the model fail on purpose to prove the post-condition fires |
 | `scripts/demo/agent-marks.mjs` | where the agent's marks land, as opposed to whether the tool ran |
 | `scripts/demo/section-9.mjs` | the five clauses of §9 as one sequence, `--voice=off` or `--voice=stub` |
+| | …and it records what the *page* logged during a turn, which is the only reason the voice silence was ever traced |
 | `scripts/demo/harden.mjs` | the deal beat slow, dead, empty, spent, refreshed, and called with ids that do not resolve |
 
 The two `phantom` cases in `harden.mjs` are the one exception to the rule above:
@@ -890,12 +914,10 @@ behaviour being demonstrated and cannot be reached by typing.
   reading on marks-per-board. The census covers the same ground and the frame
   shows three dashed marks on twelve cards, but a run that lands on flags rather
   than a compare would be worth having.
-- **The voice reply is fixed and unit-tested; the last staging re-run of it is
-  the one number in this report I did not personally watch land.** See §11: the
-  utterance reaching the field *is* verified on staging, the "silent after
-  typing" half is verified 3/3, and speaking the wall label is covered by two
-  tests with negative controls. If the submission wants to claim voice out,
-  cite the voice lane's own report as well as this one.
+- ~~**The voice reply is unverified.**~~ **Verified 2/2 in §11**, once the
+  harness stopped lying: the utterance lands in the field, the wall label is
+  spoken back verbatim, and a typed turn stays silent. Safe phrasing: *"speak
+  and the agent answers aloud; type and it answers in writing."*
 - **Two harness flakes worth knowing about before a filmed take**, both
   environmental rather than product: the `?webmcp-debug` harness occasionally
   takes longer than 30s to mount (which is why `harden.mjs` only loads it for

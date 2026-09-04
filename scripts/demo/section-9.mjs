@@ -88,12 +88,21 @@ const voiceHarness = (mode) => `
       }
     }
     window.SpeechRecognition = FakeRecognition;
-    window.speechSynthesis = {
-      speaking: false,
-      pending: false,
-      cancel() {},
-      speak(utterance) { window.__spoken.push(String(utterance.text ?? '')); },
-    };
+    // defineProperty, not assignment. window.speechSynthesis is a read-only
+    // accessor in Chrome, so assigning to it fails silently
+    // and the getter keeps returning the native object — which then rejects
+    // the fake utterance with "parameter 1 is not of type
+    // SpeechSynthesisUtterance". Three staging round-trips went into that
+    // before this script was asked what the page had actually logged.
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      get: () => ({
+        speaking: false,
+        pending: false,
+        cancel() {},
+        speak(utterance) { window.__spoken.push(String(utterance.text ?? '')); },
+      }),
+    });
     window.SpeechSynthesisUtterance = function (text) { this.text = text; };
   }
 `;
@@ -637,6 +646,7 @@ const main = async () => {
        * release — and the release starts the 1.2s grace bar rather than
        * sending, which is the whole design, so this waits it out.
        */
+      const repliesBeforeVoice = modelReplies.length;
       const mic = page.locator('[aria-label="Hold to speak"]').first();
       // Scroll it under the cursor first. `boundingBox()` is viewport-relative,
       // and by this point the board is dealt and the bar may be well off the
@@ -677,6 +687,28 @@ const main = async () => {
         const quiet = await waitForQuiet(page);
         await sleep(1500);
         const spoken = await page.evaluate(() => window.__spoken ?? []);
+        /*
+         * What the voice turn actually did, because three fixes aimed at the
+         * speaking code have all left it silent and the next step is to stop
+         * guessing at that code. If the turn was refused, or ended with an
+         * error entry, or left no sentence anywhere on the page, then nothing
+         * was ever going to be spoken and the fault is not in the speaking.
+         */
+        record.clauses.four.turnReplies = modelReplies.slice(repliesBeforeVoice);
+        record.clauses.four.pageAfterVoiceTurn = await page.evaluate(() => {
+          const label = document.querySelector('.paillette-wall-label');
+          const entries = [
+            ...document.querySelectorAll('section[aria-label="Ask the agent"] ol li p'),
+          ].map((p) => ({
+            provenance: p.getAttribute('data-provenance'),
+            text: (p.textContent ?? '').trim().slice(0, 120),
+          }));
+          return {
+            note: label?.textContent?.trim() ?? null,
+            entries: entries.slice(-4),
+            errorEntries: entries.filter((entry) => !entry.provenance).length,
+          };
+        });
         record.clauses.four.utteranceLandedInField = inFieldBeforeSend;
         record.clauses.four.heardBackAfterSpeaking = spoken.slice(
           spokenAfterTyping.length

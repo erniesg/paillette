@@ -60,11 +60,11 @@
             "stem": "ship"
           }
         ],
-        "quietMs": 21504,
-        "note": "You asked for warm calm; the pick is a bone-and-charcoal sailor, while stormy ship scenes were rejected—following the flags.",
+        "quietMs": 15429,
+        "note": "You asked warm, but kept the bone-toned Sailor and rejected stormy ship prints; following the pick.",
         "noteShape": {
           "sentences": 1,
-          "words": 19
+          "words": 16
         },
         "rejected": [
           {
@@ -92,10 +92,181 @@
         },
         "recognisersAfterHold": 1,
         "drove": "said",
+        "turnReplies": [
+          {
+            "status": 200
+          },
+          {
+            "status": 200
+          },
+          {
+            "status": 200
+          },
+          {
+            "status": 200
+          }
+        ],
+        "pageAfterVoiceTurn": {
+          "note": "Following the picked boat and Breton port scenes, and moving away from the rejected tempest: quieter water, fewer dramatic gestures.",
+          "entries": [
+            {
+              "provenance": "human",
+              "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+            },
+            {
+              "provenance": "human",
+              "text": "Something quieter, please."
+            }
+          ],
+          "errorEntries": 0
+        },
         "utteranceLandedInField": "Something quieter, please.",
-        "heardBackAfterSpeaking": [],
-        "quietMs": 17175,
-        "pass": false
+        "heardBackAfterSpeaking": [
+          "Following the picked boat and Breton port scenes, and moving away from the rejected tempest: quieter water, fewer dramatic gestures."
+        ],
+        "quietMs": 14171,
+        "pass": true
+      },
+      "five": {
+        "pass": true,
+        "onDeterministicBoard": {
+          "human": 5,
+          "agent": 0,
+          "both": false
+        },
+        "afterTheAgentTurn": {
+          "human": 5,
+          "agent": 7,
+          "both": true
+        }
+      }
+    },
+    "errors": [],
+    "pass": true
+  },
+  {
+    "run": 2,
+    "voice": "stub",
+    "clauses": {
+      "one": {
+        "pass": true,
+        "pickSetByP": "pick",
+        "clearedByU": "none",
+        "compareOpenedByC": true,
+        "flagsOnScreen": 3,
+        "viewContextBeforeReload": {
+          "picks": 1,
+          "rejects": 2
+        }
+      },
+      "onePersistence": {
+        "pass": true,
+        "inViewContextBefore": 3,
+        "inViewContextAfter": 3,
+        "picksAfter": 1,
+        "rejectsAfter": 2,
+        "markedOnScreenBefore": 3,
+        "markedOnScreenAfter": 1
+      },
+      "two": {
+        "pass": true,
+        "modelCallsDuring": 0,
+        "picksBeforeDeal": 2,
+        "picksHeld": [
+          {
+            "id": "open-access-art:nga:148513",
+            "before": 248,
+            "after": 248,
+            "moved": 0
+          },
+          {
+            "id": "open-access-art:nga:7764",
+            "before": 248,
+            "after": 248,
+            "moved": 0
+          }
+        ],
+        "note": {
+          "text": "Two picks hold — bone.",
+          "provenance": "human",
+          "sentences": 1
+        }
+      },
+      "three": {
+        "pass": true,
+        "referenceIsAJudgement": "read `note` against `rejected`; `tokenOverlap` is a hint and finds nothing when the reference is not lexical",
+        "tokenOverlap": [
+          {
+            "from": "Ship Navigating Near Rocks",
+            "stem": "ship"
+          }
+        ],
+        "quietMs": 15439,
+        "note": "You asked for warmth, but kept the sailor’s bone-toned print and rejected three ship scenes; following the pick.",
+        "noteShape": {
+          "sentences": 1,
+          "words": 18
+        },
+        "rejected": [
+          {
+            "id": "open-access-art:nga:90935",
+            "title": "Caesar Crossing Stormy Seas",
+            "medium": "etching and engraving on laid paper"
+          },
+          {
+            "id": "open-access-art:nga:36894",
+            "title": "Ship Navigating Near Rocks",
+            "medium": "etching on laid paper"
+          }
+        ]
+      },
+      "four": {
+        "mode": "stub",
+        "micRendered": true,
+        "spokenAfterTypedTurn": [],
+        "silentAfterTyping": true,
+        "micBox": {
+          "x": 1009.265625,
+          "y": 181,
+          "width": 43,
+          "height": 38
+        },
+        "recognisersAfterHold": 1,
+        "drove": "said",
+        "turnReplies": [
+          {
+            "status": 200
+          },
+          {
+            "status": 200
+          },
+          {
+            "status": 200
+          },
+          {
+            "status": 200
+          }
+        ],
+        "pageAfterVoiceTurn": {
+          "note": "You kept the returning boats and rejected the stormy Breton port; following the calmer harbour scene.",
+          "entries": [
+            {
+              "provenance": "human",
+              "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+            },
+            {
+              "provenance": "human",
+              "text": "Something quieter, please."
+            }
+          ],
+          "errorEntries": 0
+        },
+        "utteranceLandedInField": "Something quieter, please.",
+        "heardBackAfterSpeaking": [
+          "You kept the returning boats and rejected the stormy Breton port; following the calmer harbour scene."
+        ],
+        "quietMs": 13943,
+        "pass": true
       },
       "five": {
         "pass": true,
@@ -112,6 +283,6 @@
       }
     },
     "errors": [],
-    "pass": false
+    "pass": true
   }
 ]

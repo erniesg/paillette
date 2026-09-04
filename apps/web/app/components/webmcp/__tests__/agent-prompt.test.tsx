@@ -674,6 +674,40 @@ describe('AgentPrompt', () => {
     expect(spoken).toEqual(['Warm shorelines, and the storm prints are out.']);
   });
 
+  /**
+   * The staging sequence, in miniature: type a turn, then speak one.
+   *
+   * Every voice test in this file starts from a cold prompt. On staging the
+   * spoken turn is always the *second* one — clause 3 types the sofa prompt
+   * first — and that run comes back silent every time while these pass. If the
+   * order is what matters, this is where it shows.
+   */
+  it('still speaks after a spoken turn that follows a typed one', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { spoken } = installSynthesis();
+    stubFetch('First reply.');
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+
+    fireEvent.change(field, { target: { value: 'something warm' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+    expect(spoken).toEqual([]);
+
+    stubFetch('Second reply.');
+    vi.useFakeTimers();
+    hold();
+    heard('something quieter', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    expect(spoken).toEqual(['Second reply.']);
+  });
+
   it('stays silent after a typed turn — text in, text out', async () => {
     setModelContext({ getTools: async () => [] });
     installRecognition();
