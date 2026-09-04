@@ -356,7 +356,10 @@ public domain in the United States", and **"1 of 5 labels written by an agent"**
 — counted from the data, not asserted.
 
 `docs/night/shots/40-exhibition-page.png`, `42-exhibition-colophon.png`,
-`44-atlas-regions.png`.
+`44-atlas-regions.png`, `46-exhibition-on-the-board.png` — the last being the
+other half of the object: the same title and statement in the agent's ink above
+the working board, with the labels under the picks as fields the human can type
+straight into.
 
 ---
 
