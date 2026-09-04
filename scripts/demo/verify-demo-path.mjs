@@ -217,11 +217,6 @@ const main = async () => {
       [name, args]
     );
 
-  const toolNames = async () =>
-    page.evaluate(async () =>
-      (await window.__paillette_webmcp.tools()).map((tool) => tool.name)
-    );
-
   const target = withDebugParam(url);
   process.stdout.write(`\n${target}\n\n`);
 
