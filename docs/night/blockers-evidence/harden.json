@@ -1,4 +1,15 @@
 {
+  "reloaded": {
+    "pass": true,
+    "flaggedBefore": 3,
+    "onScreenAfter": 3,
+    "inViewContextAfter": 3,
+    "restoredWithTitle": 3,
+    "restoredWithPalette": 3,
+    "dealtAfterReload": true,
+    "noteAfterReload": "One pick holds — bone.",
+    "errors": []
+  },
   "slow": {
     "pass": true,
     "inFlightMark": "true",

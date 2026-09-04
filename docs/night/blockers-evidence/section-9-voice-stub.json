@@ -1,0 +1,117 @@
+[
+  {
+    "run": 1,
+    "voice": "stub",
+    "clauses": {
+      "one": {
+        "pass": true,
+        "pickSetByP": "pick",
+        "clearedByU": "none",
+        "compareOpenedByC": true,
+        "flagsOnScreen": 3,
+        "viewContextBeforeReload": {
+          "picks": 1,
+          "rejects": 2
+        }
+      },
+      "onePersistence": {
+        "pass": true,
+        "inViewContextBefore": 3,
+        "inViewContextAfter": 3,
+        "picksAfter": 1,
+        "rejectsAfter": 2,
+        "markedOnScreenBefore": 3,
+        "markedOnScreenAfter": 1
+      },
+      "two": {
+        "pass": true,
+        "modelCallsDuring": 0,
+        "picksBeforeDeal": 2,
+        "picksHeld": [
+          {
+            "id": "open-access-art:nga:148513",
+            "before": 248,
+            "after": 248,
+            "moved": 0
+          },
+          {
+            "id": "open-access-art:nga:7764",
+            "before": 248,
+            "after": 248,
+            "moved": 0
+          }
+        ],
+        "note": {
+          "text": "Two picks hold — bone.",
+          "provenance": "human",
+          "sentences": 1
+        }
+      },
+      "three": {
+        "pass": true,
+        "referenceIsAJudgement": "read `note` against `rejected`; `tokenOverlap` is a hint and finds nothing when the reference is not lexical",
+        "tokenOverlap": [
+          {
+            "from": "Caesar Crossing Stormy Seas",
+            "stem": "stor"
+          },
+          {
+            "from": "Ship Navigating Near Rocks",
+            "stem": "ship"
+          }
+        ],
+        "quietMs": 21504,
+        "note": "You asked for warm calm; the pick is a bone-and-charcoal sailor, while stormy ship scenes were rejected—following the flags.",
+        "noteShape": {
+          "sentences": 1,
+          "words": 19
+        },
+        "rejected": [
+          {
+            "id": "open-access-art:nga:90935",
+            "title": "Caesar Crossing Stormy Seas",
+            "medium": "etching and engraving on laid paper"
+          },
+          {
+            "id": "open-access-art:nga:36894",
+            "title": "Ship Navigating Near Rocks",
+            "medium": "etching on laid paper"
+          }
+        ]
+      },
+      "four": {
+        "mode": "stub",
+        "micRendered": true,
+        "spokenAfterTypedTurn": [],
+        "silentAfterTyping": true,
+        "micBox": {
+          "x": 1009.265625,
+          "y": 181,
+          "width": 43,
+          "height": 38
+        },
+        "recognisersAfterHold": 1,
+        "drove": "said",
+        "utteranceLandedInField": "Something quieter, please.",
+        "heardBackAfterSpeaking": [],
+        "quietMs": 17175,
+        "pass": false
+      },
+      "five": {
+        "pass": true,
+        "onDeterministicBoard": {
+          "human": 5,
+          "agent": 0,
+          "both": false
+        },
+        "afterTheAgentTurn": {
+          "human": 5,
+          "agent": 5,
+          "both": true
+        }
+      }
+    },
+    "errors": [],
+    "pass": false
+  }
+]

@@ -15,28 +15,34 @@
         }
       },
       "onePersistence": {
-        "pass": false,
-        "flagsBeforeReload": 3,
-        "flagsAfterReload": 0,
-        "viewContextAfterReload": {
-          "picks": 0,
-          "rejects": 0
-        }
+        "pass": true,
+        "inViewContextBefore": 3,
+        "inViewContextAfter": 3,
+        "picksAfter": 1,
+        "rejectsAfter": 2,
+        "markedOnScreenBefore": 3,
+        "markedOnScreenAfter": 1
       },
       "two": {
         "pass": true,
         "modelCallsDuring": 0,
-        "picksBeforeDeal": 1,
+        "picksBeforeDeal": 2,
         "picksHeld": [
           {
             "id": "open-access-art:nga:148513",
             "before": 248,
             "after": 248,
             "moved": 0
+          },
+          {
+            "id": "open-access-art:nga:7764",
+            "before": 248,
+            "after": 248,
+            "moved": 0
           }
         ],
         "note": {
-          "text": "One pick holds — bone.",
+          "text": "Two picks hold — bone.",
           "provenance": "human",
           "sentences": 1
         }
@@ -44,23 +50,28 @@
       "three": {
         "pass": true,
         "referenceIsAJudgement": "read `note` against `rejected`; `tokenOverlap` is a hint and finds nothing when the reference is not lexical",
-        "tokenOverlap": [],
-        "quietMs": 14142,
-        "note": "You rejected the darker storm seascapes and kept Moran’s bone-and-umber coast—following the pick.",
+        "tokenOverlap": [
+          {
+            "from": "Caesar Crossing Stormy Seas",
+            "stem": "stor"
+          }
+        ],
+        "quietMs": 20991,
+        "note": "You asked warm and calm; the picked monochrome sailor outweighs the rejected storm-print fleet—following the pick.",
         "noteShape": {
           "sentences": 1,
-          "words": 13
+          "words": 16
         },
         "rejected": [
           {
-            "id": "open-access-art:nga:169652",
-            "title": "Sea Pasture",
-            "medium": "etching in black on laid paper"
+            "id": "open-access-art:nga:90935",
+            "title": "Caesar Crossing Stormy Seas",
+            "medium": "etching and engraving on laid paper"
           },
           {
-            "id": "open-access-art:nga:182274",
-            "title": "The Bell Buoy",
-            "medium": "watercolor with white highlights over graphite on wove paper"
+            "id": "open-access-art:nga:36894",
+            "title": "Ship Navigating Near Rocks",
+            "medium": "etching on laid paper"
           }
         ]
       },
@@ -74,19 +85,19 @@
       "five": {
         "pass": true,
         "onDeterministicBoard": {
-          "human": 3,
+          "human": 5,
           "agent": 0,
           "both": false
         },
         "afterTheAgentTurn": {
-          "human": 3,
-          "agent": 3,
+          "human": 5,
+          "agent": 5,
           "both": true
         }
       }
     },
     "errors": [],
-    "pass": false
+    "pass": true
   },
   {
     "run": 2,
@@ -104,28 +115,34 @@
         }
       },
       "onePersistence": {
-        "pass": false,
-        "flagsBeforeReload": 3,
-        "flagsAfterReload": 0,
-        "viewContextAfterReload": {
-          "picks": 0,
-          "rejects": 0
-        }
+        "pass": true,
+        "inViewContextBefore": 3,
+        "inViewContextAfter": 3,
+        "picksAfter": 1,
+        "rejectsAfter": 2,
+        "markedOnScreenBefore": 3,
+        "markedOnScreenAfter": 1
       },
       "two": {
         "pass": true,
         "modelCallsDuring": 0,
-        "picksBeforeDeal": 1,
+        "picksBeforeDeal": 2,
         "picksHeld": [
           {
             "id": "open-access-art:nga:148513",
             "before": 248,
             "after": 248,
             "moved": 0
+          },
+          {
+            "id": "open-access-art:nga:7764",
+            "before": 248,
+            "after": 248,
+            "moved": 0
           }
         ],
         "note": {
-          "text": "One pick holds — bone.",
+          "text": "Two picks hold — bone.",
           "provenance": "human",
           "sentences": 1
         }
@@ -133,23 +150,32 @@
       "three": {
         "pass": true,
         "referenceIsAJudgement": "read `note` against `rejected`; `tokenOverlap` is a hint and finds nothing when the reference is not lexical",
-        "tokenOverlap": [],
-        "quietMs": 17096,
-        "note": "You picked Moran’s bone-and-umber sea and rejected shipwrecks, boats, and darker coastal views—following the quieter palette.",
+        "tokenOverlap": [
+          {
+            "from": "Caesar Crossing Stormy Seas",
+            "stem": "stor"
+          },
+          {
+            "from": "Ship Navigating Near Rocks",
+            "stem": "ship"
+          }
+        ],
+        "quietMs": 16440,
+        "note": "You asked for warmth; you kept the sailor print and rejected the stormy ship scenes, so the board moves toward calmer, lighter work.",
         "noteShape": {
           "sentences": 1,
-          "words": 16
+          "words": 23
         },
         "rejected": [
           {
-            "id": "open-access-art:nga:169652",
-            "title": "Sea Pasture",
-            "medium": "etching in black on laid paper"
+            "id": "open-access-art:nga:90935",
+            "title": "Caesar Crossing Stormy Seas",
+            "medium": "etching and engraving on laid paper"
           },
           {
-            "id": "open-access-art:nga:182274",
-            "title": "The Bell Buoy",
-            "medium": "watercolor with white highlights over graphite on wove paper"
+            "id": "open-access-art:nga:36894",
+            "title": "Ship Navigating Near Rocks",
+            "medium": "etching on laid paper"
           }
         ]
       },
@@ -163,19 +189,19 @@
       "five": {
         "pass": true,
         "onDeterministicBoard": {
-          "human": 3,
+          "human": 5,
           "agent": 0,
           "both": false
         },
         "afterTheAgentTurn": {
-          "human": 3,
+          "human": 5,
           "agent": 7,
           "both": true
         }
       }
     },
     "errors": [],
-    "pass": false
+    "pass": true
   },
   {
     "run": 3,
@@ -193,28 +219,34 @@
         }
       },
       "onePersistence": {
-        "pass": false,
-        "flagsBeforeReload": 3,
-        "flagsAfterReload": 0,
-        "viewContextAfterReload": {
-          "picks": 0,
-          "rejects": 0
-        }
+        "pass": true,
+        "inViewContextBefore": 3,
+        "inViewContextAfter": 3,
+        "picksAfter": 1,
+        "rejectsAfter": 2,
+        "markedOnScreenBefore": 3,
+        "markedOnScreenAfter": 1
       },
       "two": {
         "pass": true,
         "modelCallsDuring": 0,
-        "picksBeforeDeal": 1,
+        "picksBeforeDeal": 2,
         "picksHeld": [
           {
             "id": "open-access-art:nga:148513",
             "before": 248,
             "after": 248,
             "moved": 0
+          },
+          {
+            "id": "open-access-art:nga:7764",
+            "before": 248,
+            "after": 248,
+            "moved": 0
           }
         ],
         "note": {
-          "text": "One pick holds — bone.",
+          "text": "Two picks hold — bone.",
           "provenance": "human",
           "sentences": 1
         }
@@ -222,23 +254,32 @@
       "three": {
         "pass": true,
         "referenceIsAJudgement": "read `note` against `rejected`; `tokenOverlap` is a hint and finds nothing when the reference is not lexical",
-        "tokenOverlap": [],
-        "quietMs": 15813,
-        "note": "You asked warm and quiet; the picked bone-toned sea stays, while the darker storm scenes and busier boats leave.",
+        "tokenOverlap": [
+          {
+            "from": "Caesar Crossing Stormy Seas",
+            "stem": "stor"
+          },
+          {
+            "from": "Ship Navigating Near Rocks",
+            "stem": "ship"
+          }
+        ],
+        "quietMs": 14912,
+        "note": "You asked warm and calm; you kept the bone-toned woodcut and rejected the stormy shipping scenes—following the pick.",
         "noteShape": {
           "sentences": 1,
-          "words": 19
+          "words": 18
         },
         "rejected": [
           {
-            "id": "open-access-art:nga:169652",
-            "title": "Sea Pasture",
-            "medium": "etching in black on laid paper"
+            "id": "open-access-art:nga:90935",
+            "title": "Caesar Crossing Stormy Seas",
+            "medium": "etching and engraving on laid paper"
           },
           {
-            "id": "open-access-art:nga:182274",
-            "title": "The Bell Buoy",
-            "medium": "watercolor with white highlights over graphite on wove paper"
+            "id": "open-access-art:nga:36894",
+            "title": "Ship Navigating Near Rocks",
+            "medium": "etching on laid paper"
           }
         ]
       },
@@ -252,18 +293,18 @@
       "five": {
         "pass": true,
         "onDeterministicBoard": {
-          "human": 3,
+          "human": 5,
           "agent": 0,
           "both": false
         },
         "afterTheAgentTurn": {
-          "human": 3,
+          "human": 5,
           "agent": 5,
           "both": true
         }
       }
     },
     "errors": [],
-    "pass": false
+    "pass": true
   }
 ]

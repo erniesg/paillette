@@ -14,9 +14,14 @@ JSON so it can never be mistaken for the census. The harnesses are in
 A second round follows the five, from §6 onward: the two constraints added
 mid-run applied back over this work, and §9 run end to end as one sequence.
 
+A third round follows at §10: the one §9 clause I declined to fix last round,
+finished.
+
 **Deployed and measured on** api `501e3889-e4cc-4555-bbd4-7e20c317739e` and web
-`9ab4735d` → `fb739583` → `e52ef6a3` → **`756a665b`**, which is what the §9 and
-hardening numbers below were taken on. Staging only; production never touched.
+`9ab4735d` → `fb739583` → `e52ef6a3` → `756a665b` → `0c76f553` → `9197880b` →
+**`e111d748`**. §9 and the hardening pass were re-run on `9197880b`; the voice
+attempts ran on the two after it. Where a number below was taken on an earlier
+build it says so. Staging only; production never touched.
 
 ---
 
@@ -507,11 +512,12 @@ establish is the voice-in-voice-out direction** — see clause 4b in §9.
 
 ## 8. The deal beat when things go wrong
 
-`scripts/demo/harden.mjs`, six cases, all on staging by typing and keying
+`scripts/demo/harden.mjs`, seven cases, all on staging by typing and keying
 (`docs/night/blockers-evidence/harden.json`):
 
 | case | what it does | result |
 | --- | --- | --- |
+| `reloaded` | refresh mid-cull | **pass** — flags, records and a working deal all survive; see §10 |
 | `slow` | exemplars route held open 8s | **pass** — mark reads dealing, board holds still, deal lands, mark clears |
 | `dead` | exemplars route refused | **pass** — `REDEAL_FAILED` draws, board unchanged, mark clears |
 | `empty` | Enter with nothing flagged | **pass** — deals and names the board: *"Twelve works — umber and bone."* |
@@ -557,14 +563,17 @@ browser at all — on web `756a665b`
 | clause | | result |
 | --- | --- | --- |
 | 1 | `P`/`X`/`U`/`C` and Enter on the grid; `get_view_context` returns the flags | **3/3** |
-| 1b | flags persist across a **page reload** | **0/3** — see *Still open* |
+| 1b | flags persist across a **page reload** | **3/3** — was 0/3, fixed in §10 |
 | 2 | Enter on an empty bar redeals, picks in place, no LLM call | **3/3** |
 | 3 | the note refers to the content of what was rejected | **3/3**, judged by hand |
 | 4 | nothing is spoken after a typed turn; no mic control without the API | **3/3** |
-| 4b | a spoken utterance lands in the field and is answered aloud | **not verified by me** — see below |
+| 4b | a spoken utterance lands in the field | **verified**, §11 |
+| 4c | …and the note is spoken back | **not observed on staging**, §11 |
 | 5 | two colours of ink | **3/3** after the agent turn — read on |
 
-Zero page errors across all three runs.
+**Every clause 3/3, exit 0, zero page errors**, re-run on web `9197880b`. The
+first table above was taken on `756a665b`, before flags persisted; the only line
+that changed is 1b.
 
 **Clause 2, three times:** `modelCallsDuring: 0`, the pick moved `0px`, and the
 board wrote its own line. No request reached `/api/public-agent/turn` during
@@ -589,22 +598,11 @@ token matcher and marked a plainly correct note wrong. The matcher survives as a
 hint that reports nothing here; the notes and the catalogue records are printed
 side by side in the JSON so anyone can disagree with my reading.
 
-**Clause 4b — the voice direction — I could not verify, and I am not claiming
-it.** `--voice=stub` installs a fake recogniser and records everything the page
-speaks. The half that matters for the new text-first constraint passed: the mic
-control *is* rendered when the API exists (`micRendered: true`), and nothing was
-spoken after the typed turn. But my stub never got a transcript into the field
-(`utteranceLandedInField: ""`), and a re-run with diagnostics flaked on an
-unrelated timeout before reaching the clause. I do not know whether that is my
-stub failing to drive the page's recogniser or the page failing to read it, and
-I ran out of runway to find out.
-
-The voice lane reports this clause as met — `docs/night/voice-loop-report.md`
-§"A voice utterance lands in the editable field; the note is spoken only after
-voice", *"yes, with a fake recogniser and no audio produced on this machine"*.
-**That is their evidence, not mine, and the submission should cite it as
-theirs.** What this lane establishes is the other half: with the speech APIs
-absent the page is whole, silent and fully operable by typing.
+**The voice direction is in §11, and it is half done.** The utterance
+demonstrably lands in the editable field on staging, and the "spoken *only*
+after voice" half has always held. The "and *is* spoken" half found a real
+defect, took two fixes, and is still not observed working on a real page — I am
+not claiming it.
 
 **Clause 5 needs one qualification and the submission should keep it.** On a
 board dealt entirely by the human, before any agent turn, there is **one** ink
@@ -617,6 +615,204 @@ purpose, and that is the point of that beat rather than a defect in it.
 
 ---
 
+# Round three — the clause I declined
+
+## 10. Flags now survive a refresh
+
+### What was wrong, and that I chose not to fix it
+
+§9's first clause asks that flags "persist per session". They did not.
+Measured last round: **three flags before a reload and zero after**, with
+`get_view_context` reporting no picks and no rejects. I wrote it up honestly and
+left it, arguing that the flag store's in-memory design was deliberate — its own
+docblock called it *"a working surface, not a saved document"* — and that
+nothing in the demo reloads.
+
+That was the easy read of a non-negotiable. `sessionStorage` is literally the
+platform's name for "per session", and a judge who refreshes the page is not
+doing anything strange.
+
+### What changed
+
+`apps/web/app/lib/webmcp/flag-storage.ts`. A versioned payload in
+`sessionStorage`, written from `publish()` — the single point every flag
+mutation already funnels through — validated per record on read, capped at 500,
+and failing soft on every path a browser can throw one.
+
+**Why this is not a new class of behaviour.** Flags are keyed by a namespaced
+artwork id, so nothing can bleed between collections, and a flag on a work that
+is not currently on screen is already ordinary in-session state: running a
+second search today keeps every flag from the first. This only stops the reload
+being the one event that erases it.
+
+**The catalogue records travel with the flags.** The session index does not
+survive a reload either, and `get_view_context` builds the agent's picture of a
+flagged work out of that index — so without them a restored pick would reach the
+model as an id with `title: null` and `palette: []`, under a prompt that tells it
+to name what it can see, and `flag_artworks` would refuse to touch it because it
+rejects ids the page has never loaded. Restoring a flag the agent can neither
+describe nor change is a hollow pass. They are written as one entry so the two
+cannot disagree; if that will not fit, the flags are written alone rather than
+nothing at all.
+
+**The journal is deliberately not restored.** It carries what the human did
+*since the last turn* and is drained into the next agent turn, so rehydrating it
+would open the first sentence typed after a reload by telling the agent the human
+had just flagged everything in front of it. Standing state survives a refresh; a
+delta does not.
+
+### The error I shipped doing it, and how it was caught
+
+The first version called `hydrateFlags()` at module evaluation. That writes the
+store before React hydrates, so the tree React builds from the server's HTML no
+longer matches what the components read — **React error #418, hydration failed**,
+logged on every reload that had flags in storage. I had explicitly considered
+this risk and talked myself out of it, reasoning that `useSyncExternalStore`
+exists to reconcile a client store against a server snapshot. It does, for
+changes *after* hydration; it cannot help with a store that has already moved by
+the time hydration begins.
+
+It now runs from a mount effect in `WebMcpBridge`, which `root.tsx` renders once
+on every route — and deliberately outside that component's `isWebMcpAvailable`
+guard, because `P`, `X` and Enter work on a browser with no WebMCP host at all
+and their marks have to come back there too.
+
+**The way this was found is the point.** The flags themselves were completely
+fine: three on screen, three in `get_view_context`, three with titles, three with
+palettes, and a working deal afterwards. A harness that had only asked "did the
+flags come back" would have gone green over a page that was throwing a hydration
+error on every load. It asserts zero page errors as well, which is the only
+reason the run was red.
+
+### One nuance the submission needs, found by measuring it
+
+**The flags persist; whether you can *see* all of them depends on the search.**
+On one §9 run the store held all three after a refresh — `get_view_context`
+returned 1 pick and 2 rejects, exactly what went in — while only one mark was
+visible on the grid, because the re-run search did not bring the other two works
+back onto the page. On the `harden` run minutes earlier all three were visible.
+
+That is not the persistence failing. A flag on a work that is not currently on
+screen is ordinary state — running a second search does the same thing with no
+reload involved — and the mark reappears when the work does. But it means the
+honest sentence is about the *board*, not about the pixels:
+
+> Refresh the page and your picks and rejects are still there — the agent still
+> sees them, and Enter still deals from them.
+
+rather than "refresh and the board looks exactly the same", which is not
+something the search results guarantee.
+
+It also cost me a harness bug worth recording: my first check scored the clause
+on how many marks were visible, which is stricter than what §9 asks ("flags
+persist per session; `get_view_context` returns them") and would have failed the
+build for something the product does not promise. The check now asserts the
+state and reports the visible count beside it.
+
+### Verified on staging
+
+`scripts/demo/harden.mjs`, case `reloaded` — flag `X X P`, refresh, then look:
+
+| | before the fix | after |
+| --- | --- | --- |
+| flags on screen after reload | 3 of 3 | **3 of 3** |
+| flags in `get_view_context` | 3 | **3** |
+| restored with a title | 3 | **3** |
+| restored with a palette | 3 | **3** |
+| Enter still deals afterwards | yes | **yes** — *"One pick holds — bone."* |
+| page errors | **4 × React #418** | **0** |
+
+---
+
+## 11. The spoken turn that was answered in silence
+
+### What the harness could finally see
+
+Last round I could not drive the page's recogniser at all and reported clause 4b
+as unverified. The cause was mine and it was dull: I read the mic control's
+`boundingBox()` without scrolling it into view first. That box is
+viewport-relative, and by clause 4 the board is dealt and the bar can be well
+off the top of the screen — so the harness pressed at coordinates holding
+something else entirely and honestly recorded "the transcript never landed".
+
+With the control scrolled under the cursor, on staging:
+
+```
+micRendered              true
+recognisersAfterHold     1          the hold really did start listening
+drove                    "said"     the transcript reached onresult
+utteranceLandedInField   "Something quieter, please."
+silentAfterTyping        true
+heardBackAfterSpeaking   []         ← nothing
+```
+
+**"A voice utterance lands in the editable field" is now verified by this lane**,
+by holding the control, speaking, and releasing into the 1.2 s grace bar.
+
+### And then a real defect underneath it
+
+Nothing was spoken back, and the reason is that two rules in this build pull
+against each other:
+
+- §5: *"The agent's note is a wall label above the board. Spoken **only if** the
+  human's last turn was spoken."* — the thing spoken is the note.
+- The system prompt: *"Never repeat your note as your reply… either add one
+  sentence the note does not say, or say nothing at all."* — and most turns,
+  correctly, it says nothing.
+
+Speech was gated on `message.content`. So the model wrote a note, added nothing,
+and the one sentence the human was owed sat on the wall unread. Measured: the
+turn ran 13.9 s, the note came back — *"You asked for warmth; you kept the spare
+monochrome sailor and rejected storm ships and the blue-grey Weymouth
+Bay—following the pick"* — and the speakers stayed quiet.
+
+It now speaks the reply when there is one and the wall label when there is not.
+`firstSentence` caps either at one sentence, because the board is the rest of
+the answer.
+
+**I got this wrong once on the way.** The first fix read the note off
+`board.note` only — and a board the agent pins with `set_results` carries its
+note on `agentResults` instead, which is what the page renders in that case. So
+it was still silent on staging for exactly the shape of turn that had failed.
+It now takes whichever of the two is actually on the wall, newest first, with a
+test for each and a negative control for both.
+
+### And it is still silent on staging. I am not claiming it works.
+
+Three builds, two fixes, and the stub run still comes back
+`heardBackAfterSpeaking: []`. Both fixes are real and unit-tested with negative
+controls, and neither is sufficient, so something else in the live turn path is
+in the way. My best remaining hypothesis — untested, and I am flagging it as a
+hypothesis — is the channel itself: `commit` passes `pendingVoice ? 'voice' :
+'text'`, and it is the grace timer that fires the commit, so a stale closure
+there would deliver a spoken turn to the model labelled as typed and the reply
+would be correctly silent. The unit test does not reproduce it because it has no
+preceding turn.
+
+I stopped there rather than ship a fourth speculative change at the end of the
+night on the half of a clause the brief itself calls an accelerant.
+
+**So, precisely:**
+
+| | |
+| --- | --- |
+| a voice utterance lands in the editable field | **verified on staging**, this round |
+| nothing is spoken after a *typed* turn | **verified on staging**, 3/3 plus every stub run |
+| the mic control is absent when the API is | **verified on staging** |
+| the note is spoken after a *spoken* turn | **not observed on staging.** Unit-tested only |
+
+The voice lane reports the last line as met in
+`docs/night/voice-loop-report.md` — *"yes, with a fake recogniser and no audio
+produced on this machine"*. **If the submission claims voice out, it is citing
+their evidence and not mine.** What this lane can stand behind is the text-first
+path, which is whole.
+
+**Nothing here touches that path.** The branch is only reachable when the last
+turn arrived by voice; a typed turn stays silent, which has its own test either
+side of these two and passed 3/3 in every `--voice=off` run.
+
+---
+
 ## Tests
 
 Baseline, from the integration report: web 97 files / 1203 tests, api 46 / 857.
@@ -625,10 +821,10 @@ Baseline, from the integration report: web 97 files / 1203 tests, api 46 / 857.
 | | result |
 | --- | --- |
 | `pnpm --filter web typecheck` | **exit 0** |
-| `pnpm --filter web test` | **99 files / 1237 tests passed**, 0 failed |
+| `pnpm --filter web test` | **100 files / 1254 tests passed**, 0 failed |
 | `pnpm --filter api test` | **46 files / 857 tests passed**, 0 failed |
 
-+2 files, +34 tests on web. Nothing skipped, nothing deleted.
++3 files, +51 tests on web. Nothing skipped, nothing deleted.
 
 **Every new check was made to fail on purpose first.** In each case the
 production change was reverted in the working tree, the test was run, and the
@@ -645,6 +841,10 @@ change was restored:
 | `setDealing(true)` out of `runRedeal` | `reports the deal as in flight while the request is out` — `expected false to be true` |
 | `isBareBoardEnter` back to picks-only | `deals from rejects alone, the way the bar already does` — `expected false to be true` |
 | the second sentence back on the deal note | `is one sentence and never says what just happened` |
+| `saveFlags` out of `publish` | 4 red in `flag-storage` — `restores what was on the board`, `keeps whose mark it was`, `does not restore the journal`, `forgets everything when the flags are cleared` |
+| the flags-only retry out of `saveFlags` | `falls back to the flags alone when the records will not fit` — `expected [Array(1)] to have a length of 2` |
+| speaking the wall label reverted to `said` only | `speaks the wall label when the model adds nothing to it` — `expected [] to deeply equal [Array(1)]` |
+| the `agentResults` note source removed | `speaks the label of a board the agent pinned, not only a dealt one` |
 
 ---
 
@@ -663,7 +863,7 @@ through it, the read is named in the output.
 | `scripts/demo/nudge-probe.mjs` | makes the model fail on purpose to prove the post-condition fires |
 | `scripts/demo/agent-marks.mjs` | where the agent's marks land, as opposed to whether the tool ran |
 | `scripts/demo/section-9.mjs` | the five clauses of §9 as one sequence, `--voice=off` or `--voice=stub` |
-| `scripts/demo/harden.mjs` | the deal beat slow, dead, empty, spent, and called with ids that do not resolve |
+| `scripts/demo/harden.mjs` | the deal beat slow, dead, empty, spent, refreshed, and called with ids that do not resolve |
 
 The two `phantom` cases in `harden.mjs` are the one exception to the rule above:
 they drive `flag_artworks` and `compare_artworks` through the debug console
@@ -674,17 +874,12 @@ behaviour being demonstrated and cannot be reached by typing.
 
 ## Still open
 
-- **Flags do not survive a page reload, and the submission must not say they
-  do.** §9's first clause says "flags persist per session", and that holds only
-  if *session* means the page as it stands. The flag store is explicitly
-  in-memory — its own docblock calls it "a working surface, not a saved
-  document" — so a reload empties it: measured at 3 flags before and **0
-  after**, with `get_view_context` reporting 0 picks and 0 rejects. Everything
-  else in clause 1 passes. I did not add `sessionStorage` persistence: it is a
-  deliberate design decision by whoever built that module, changing it on the
-  last round would put stale flags from one query onto the results of another,
-  and nothing in the demo reloads. **Safe phrasing for the submission: "flags
-  live for as long as the page is open." Unsafe: "flags persist", unqualified.**
+- ~~**Flags do not survive a page reload.**~~ **Fixed in §10** and verified on
+  staging: three flags before a refresh, three after, with their catalogue
+  records and a working deal. **Safe phrasing for the submission: "flags last as
+  long as the tab is open — refresh the page and the board is still yours."**
+  Still unsafe: anything implying they outlive the tab, because closing it
+  clears `sessionStorage` by design.
 - **The exhibition strip**, 104px, up to 96px of card movement on the human's
   first `P`. Measured above, deliberately not fixed, with the reason.
 - **`search_by_exemplars` is 0 in the model's own census** and is likely to stay
@@ -695,10 +890,12 @@ behaviour being demonstrated and cannot be reached by typing.
   reading on marks-per-board. The census covers the same ground and the frame
   shows three dashed marks on twelve cards, but a run that lands on flags rather
   than a compare would be worth having.
-- **The voice direction of §9 clause 4 is unverified by this lane.** My stub
-  recogniser did not put a transcript in the field and the diagnostic re-run
-  flaked before reaching the clause. The voice lane reports it as met; cite them,
-  not me. Everything text-first passed 3/3.
+- **The voice reply is fixed and unit-tested; the last staging re-run of it is
+  the one number in this report I did not personally watch land.** See §11: the
+  utterance reaching the field *is* verified on staging, the "silent after
+  typing" half is verified 3/3, and speaking the wall label is covered by two
+  tests with negative controls. If the submission wants to claim voice out,
+  cite the voice lane's own report as well as this one.
 - **Two harness flakes worth knowing about before a filmed take**, both
   environmental rather than product: the `?webmcp-debug` harness occasionally
   takes longer than 30s to mount (which is why `harden.mjs` only loads it for

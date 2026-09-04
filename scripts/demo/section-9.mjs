@@ -411,15 +411,35 @@ const main = async () => {
         rejects: contextBeforeReload?.flags?.rejects?.length ?? 0,
       },
     };
+    /*
+     * The clause, in its own words: "flags persist per session;
+     * get_view_context returns them". That is a claim about the state, and it
+     * is what this asserts.
+     *
+     * How many of them are *visible* is a different question and it is
+     * recorded beside it, because the two came apart on a real run: the store
+     * held all three after a reload and the grid showed one, since the
+     * re-run search did not return the other two works. A flag on a work that
+     * is not currently on screen is ordinary — running a second search does
+     * the same thing without any reload — so scoring the clause on the
+     * on-screen count would fail the build for something the clause does not
+     * ask and the product does not promise.
+     */
+    const before =
+      (contextBeforeReload?.flags?.picks?.length ?? 0) +
+      (contextBeforeReload?.flags?.rejects?.length ?? 0);
+    const after =
+      (context1?.flags?.picks?.length ?? 0) +
+      (context1?.flags?.rejects?.length ?? 0);
     record.clauses.onePersistence = {
-      // Measured, not asserted. The report carries the number either way.
-      pass: hadFlags > 0 && survived === hadFlags,
-      flagsBeforeReload: hadFlags,
-      flagsAfterReload: survived,
-      viewContextAfterReload: {
-        picks: context1?.flags?.picks?.length ?? 0,
-        rejects: context1?.flags?.rejects?.length ?? 0,
-      },
+      pass: before > 0 && after === before,
+      inViewContextBefore: before,
+      inViewContextAfter: after,
+      picksAfter: context1?.flags?.picks?.length ?? 0,
+      rejectsAfter: context1?.flags?.rejects?.length ?? 0,
+      // Observation, not a pass condition. See above.
+      markedOnScreenBefore: hadFlags,
+      markedOnScreenAfter: survived,
     };
 
     /*
@@ -430,14 +450,21 @@ const main = async () => {
      * Enter does to a board that has marks on it, so the marks go back.
      */
     if (survived !== hadFlags) {
+      // Not every restored flag is on a card in the current grid, and clause 2
+      // is about a board with marks on it, so top them up before measuring it.
+      // Unflagged cards only. `P` and `X` are Lightroom toggles — pressing P
+      // on a work that is already picked *clears* it — so topping up over a
+      // restored flag can quietly undo the very thing being measured, which is
+      // how clause 2 first came back with zero picks on the board.
       const fresh = await page.evaluate(() =>
         [...document.querySelectorAll('[data-artwork-id]')]
+          .filter((el) => el.getAttribute('data-flag') === 'none')
           .map((el) => el.getAttribute('data-artwork-id'))
           .slice(0, 3)
       );
-      await press(page, fresh[0], 'x');
-      await press(page, fresh[1], 'x');
-      await press(page, fresh[2], 'p');
+      if (fresh[0]) await press(page, fresh[0], 'x');
+      if (fresh[1]) await press(page, fresh[1], 'x');
+      if (fresh[2]) await press(page, fresh[2], 'p');
     }
 
     // --- clause 2: Enter on an empty bar ---------------------------------
