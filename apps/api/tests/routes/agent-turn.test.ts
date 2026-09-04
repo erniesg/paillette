@@ -108,6 +108,9 @@ describe('describeHumanTurn', () => {
     // just rejected.
     expect(described).toContain('first tool call now is write_labels');
     expect(described).toContain('before you search, redeal or set_results');
+    // Three runs relabelled correctly and left the room called "Weather at
+    // Sea" under a statement about leaving.
+    expect(described).toContain('Check the title in the same pass');
   });
 
   it('names the work a rewritten label belongs to', () => {

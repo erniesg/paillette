@@ -144,9 +144,62 @@ survived and the agent made any tool call, so it printed `3/3` on the batch
 above. It now requires that a work hanging before the correction is still
 hanging after it *with a different label*.
 
-### Batch 2 — after the fix
+### Batch 2 — after the fix. 3 of 3 turned.
 
-<!--BATCH2-->
+Same script, same instruction, fresh hour. Full transcript in
+`docs/night/curation-evidence/theme-correction-batch2-after-fix.txt`.
+
+| | opening turn | correction turn | kept works relabelled |
+| --- | --- | --- | --- |
+| Run 1 | *Weather at Sea*, 69 words, 2 labels | `…set_results → set_view → get_exhibition → write_labels` | **2 / 2** |
+| Run 2 | *Weather at Sea*, 53 words, 3 labels | `…set_results → set_view → set_exhibition → write_labels` | **2 / 2** |
+| Run 3 | *Weather at Sea*, 62 words, 3 labels | `…set_results → set_exhibition → write_labels` | **3 / 3** |
+
+Every run: the human's statement survived verbatim as `by: "human"`, the agent
+called `write_labels` on the correction turn, and the board moved (run 1 added
+one work, run 2 dropped one, run 3 added three).
+
+What it produced, on the same Du Maurier drawing, in three independent runs —
+the "weather" reading first, then the same work after the correction:
+
+> **run 1** · weather — "Its quoted line makes sailing a pledge made under
+> uncertain conditions: mist and faint light are not obstacles to be cleared,
+> but part of the decision to go on."
+> · leaving — "Its quoted line turns sailing into a condition of attachment:
+> departure depends on whether another person will go too. The ink-and-graphite
+> drawing holds that decision in the suspended phrase 'if he would sail with
+> me.'"
+>
+> **run 2** · weather — "…placing companionship and passage under unstable
+> light. The scratched and reworked ink marks suit a sea world whose course
+> cannot be fixed."
+> · leaving — "The quoted promise to sail together holds departure at the level
+> of wish: mist and dim light make the destination uncertain, while 'with me'
+> keeps attention on the person who may be left behind."
+>
+> **run 3** · weather — "The title sets sailing against mist or a faint
+> glimmer, making uncertain visibility part of the voyage."
+> · leaving — "Its quoted promise to sail together fixes on the instant before
+> departure: mist, distance, and the condition of going only if another goes
+> too."
+
+And on the stereoscopic card, where the correction changes what the picture is
+*for* rather than just its adjectives:
+
+> **weather** — "Rather than showing the raft itself, this stereoscopic print
+> foregrounds its printed description, partly blocked by a large piece of tape.
+> The obstruction makes maritime labor legible through interruption."
+>
+> **leaving** — "The blocked-out text turns a documentary card into a record
+> with a missing center. What remains readable—place, title, repeated
+> translations—circles an absence it cannot restore."
+
+**One caveat, stated plainly.** The title stayed *Weather at Sea* in all three
+runs. The agent rewrote the statement's works and every label around "leaving"
+and left the room's name describing the theme the human had rejected. Nothing
+in the prompt tells it the title is downstream of the statement, and I did not
+add it after the batch rather than claim a fix I had not re-run three times.
+It is a one-line prompt change for whoever picks this up.
 
 ---
 
