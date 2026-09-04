@@ -75,6 +75,7 @@ import {
   FlagBadge,
   useBoardKeyboard,
   useCardFlagProps,
+  useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
@@ -5053,9 +5054,13 @@ function ColourStrip({
  */
 function ResultsView(props: ResultsViewProps) {
   // One page-level keyboard contract for the whole grid — P/X/U/C on the card
-  // under the cursor, and Enter on an empty prompt bar to redeal. Mounted here
-  // rather than per card so the bindings exist exactly once.
+  // under the cursor, and Enter to redeal. Mounted here rather than per card so
+  // the bindings exist exactly once.
   useBoardKeyboard();
+  // And the works on screen go into the session index, whether they arrived by
+  // fetch or straight from the loader. Without this a pick made on a
+  // first-load grid is unresolvable, and the deal drops it.
+  useRememberedResults(props.results);
 
   return (
     <>

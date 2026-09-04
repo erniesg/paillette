@@ -8,16 +8,17 @@
  * card full of raw files. Shift-click and `Esc` are the other borrowed pair:
  * they have meant "and this one" and "never mind" since the Finder.
  *
- * And **Enter on an empty prompt bar redeals**, with no model call anywhere in
- * the path. That single binding is the argument the whole submission rests on:
- * the mechanism works with one operator or two, so the agent is a collaborator
- * on a real workspace rather than the thing that makes the workspace go.
+ * And **Enter redeals** — on an empty prompt bar, or on the board itself where
+ * there is no bar — with no model call anywhere in the path. That single
+ * binding is the argument the whole submission rests on: the mechanism works
+ * with one operator or two, so the agent is a collaborator on a real workspace
+ * rather than the thing that makes the workspace go.
  *
  * Installed from the results grid rather than the prompt bar, so it is one
  * page-level keyboard contract instead of two that have to agree.
  */
 
-import { toggleFlag } from './flags';
+import { getPinnedIds, toggleFlag } from './flags';
 import { clearSelection } from './selection';
 import { getWebMcpState, setCompare } from './store';
 import { submitHumanTurn, type HumanTurnOutcome } from './turn';
@@ -49,6 +50,38 @@ export const isEmptyUtteranceBar = (target: EventTarget | null): boolean => {
   return value.trim().length === 0;
 };
 
+/**
+ * Anything that already means something by Enter. Buttons, links and summaries
+ * are activated by it, so the beat must never be taken from one of them.
+ */
+const ACTIVATED_BY_ENTER =
+  'button, a[href], summary, select, textarea, input, [contenteditable], [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="option"]';
+
+/**
+ * Enter on the board itself, when there is no bar to press it in.
+ *
+ * The prompt bar only renders where a WebMCP host exists, so an ordinary
+ * visitor — no Chrome flag, no `?webmcp-debug` — gets cards they can flag and
+ * nowhere to press Enter. That leaves the one capability the whole submission
+ * rests on unreachable for most people who will ever open the page, which is
+ * not a state worth shipping over a component this lane does not own.
+ *
+ * So the beat falls back to the page. It is only claimed when nothing is
+ * focused that Enter already means something to, and only when there is
+ * actually a pick to deal from — otherwise Enter keeps whatever meaning it had.
+ */
+const isBareBoardEnter = (event: KeyboardEvent): boolean => {
+  if (event.key !== 'Enter' || event.shiftKey) return false;
+  const active = document.activeElement;
+  if (active && active !== document.body && active.matches?.(ACTIVATED_BY_ENTER)) {
+    return false;
+  }
+  if (event.target instanceof Element && event.target.matches?.(ACTIVATED_BY_ENTER)) {
+    return false;
+  }
+  return getPinnedIds().length > 0;
+};
+
 export interface BoardKeyboardOptions {
   /** Reports every redeal the keyboard triggers, for surfacing failures. */
   onTurn?: (outcome: HumanTurnOutcome) => void;
@@ -69,7 +102,10 @@ export const handleBoardKey = (
   // are the whole instruction, so run the deterministic deal and never reach
   // the model. The prompt bar already ignores an empty submit, so preventing
   // the default here cannot race with it.
-  if (event.key === 'Enter' && isEmptyUtteranceBar(event.target)) {
+  if (
+    (event.key === 'Enter' && isEmptyUtteranceBar(event.target)) ||
+    isBareBoardEnter(event)
+  ) {
     event.preventDefault();
     void submitHumanTurn()
       .then((outcome) => options.onTurn?.(outcome))

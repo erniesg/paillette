@@ -31,6 +31,8 @@ import {
   useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
+import type { ArtworkSearchResult } from '~/types';
+import { rememberArtworks } from '~/lib/webmcp/artwork-index';
 import { installBoardKeyboard } from '~/lib/webmcp/board-keyboard';
 import { toggleFlag } from '~/lib/webmcp/flags';
 import { toggleSelection } from '~/lib/webmcp/selection';
@@ -51,6 +53,31 @@ import {
  */
 export const useBoardKeyboard = () => {
   useEffect(() => installBoardKeyboard(), []);
+};
+
+/**
+ * Put whatever the grid is showing into the session index.
+ *
+ * Every tool resolves ids against that index, and it was only ever filled by
+ * the fetch observer — which sees client-side searches and nothing else. A
+ * first load of `/nga/search?q=…` is served by the route loader, so those works
+ * were on screen and unknown to the page's own tools: `get_view_context`
+ * reported flags on them as bare ids with no title, and a redeal dropped them
+ * from the rendered board entirely, because the board is drawn from records
+ * the index can resolve.
+ *
+ * That last one is the whole pin-survival guarantee failing in the one place
+ * it is most visible — the human's first pick, made on the first grid they
+ * ever see, vanishing on the first deal. The store had it right the whole
+ * time; only the screen was wrong, which is exactly the kind of bug a test
+ * that asserts on state cannot see.
+ */
+export const useRememberedResults = (
+  results: readonly ArtworkSearchResult[]
+) => {
+  useEffect(() => {
+    if (results.length) rememberArtworks(results);
+  }, [results]);
 };
 
 export const useFlag = (artworkId: string): FlagRecord | null =>

@@ -253,3 +253,61 @@ describe('C opens a two-up', () => {
     expect(press('c').handled).toBe(false);
   });
 });
+
+describe('Enter where there is no bar to press it in', () => {
+  // The prompt bar only renders where a WebMCP host exists, so an ordinary
+  // visitor gets cards they can flag and nowhere to press Enter. The beat has
+  // to survive that or the headline capability is debug-flag-only.
+  beforeEach(() => {
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+  });
+
+  it('deals from the board when nothing is focused', async () => {
+    const { event, handled } = press('Enter');
+
+    expect(handled).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(fetched).not.toHaveLength(0));
+    expect(fetched.some((url) => url.includes('/exemplars'))).toBe(true);
+    expect(fetched.some((url) => url.includes('public-agent'))).toBe(false);
+  });
+
+  it('leaves Enter alone on anything Enter already operates', () => {
+    for (const html of ['button', 'a', 'summary']) {
+      const element = document.createElement(html);
+      if (html === 'a') element.setAttribute('href', '#');
+      document.body.appendChild(element);
+      element.focus();
+
+      expect(press('Enter', element).handled).toBe(false);
+    }
+    expect(fetched).toHaveLength(0);
+  });
+
+  it('leaves Enter alone on a role that acts like a button', () => {
+    const element = document.createElement('div');
+    element.setAttribute('role', 'button');
+    element.tabIndex = 0;
+    document.body.appendChild(element);
+    element.focus();
+
+    expect(press('Enter', element).handled).toBe(false);
+  });
+
+  it('does nothing when there is no pick, so Enter keeps its old meaning', () => {
+    __resetFlagsForTest();
+
+    expect(press('Enter').handled).toBe(false);
+    expect(fetched).toHaveLength(0);
+  });
+
+  it('ignores shift-Enter, which is a newline everywhere else', () => {
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      cancelable: true,
+    });
+    expect(handleBoardKey(event)).toBe(false);
+  });
+});

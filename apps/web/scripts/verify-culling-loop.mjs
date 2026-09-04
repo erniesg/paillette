@@ -193,6 +193,15 @@ check(
   afterRedeal.board?.order?.[0] === firstId,
   `order[0]=${afterRedeal.board?.order?.[0]} pick=${firstId}`
 );
+// On the screen, not only in the store. The board is drawn from records the
+// session index can resolve, so a pick the index has never heard of is held
+// in state and silently missing from the wall — which is the guarantee
+// failing in the only place anyone would notice.
+check(
+  'and it is actually on the wall, not just in the state',
+  (await cards.first().getAttribute('data-artwork-id')) === firstId,
+  `first rendered card=${await cards.first().getAttribute('data-artwork-id')}`
+);
 check(
   'the reject left the board',
   !afterRedeal.board?.order?.includes(
@@ -219,7 +228,44 @@ check(
   JSON.stringify(turn?.flagsDelta)
 );
 
+console.log('\nthree deals in a row');
+// The drift the brief describes is three redeals, not one. Everything dealt is
+// excluded from the next deal, so this is where a small corpus runs dry and
+// the board quietly shrinks — the failure nobody sees until the third beat of
+// the demo.
+for (const round of [2, 3]) {
+  await page.keyboard.press('Escape');
+  await bar.click();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1200);
+  const state = await context();
+  check(
+    `deal ${round} keeps a full board`,
+    state.board?.order?.length === 12,
+    `${state.board?.order?.length} cards`
+  );
+  check(
+    `deal ${round} still holds the pick first`,
+    state.board?.order?.[0] === firstId
+  );
+  check(
+    `deal ${round} excludes everything already dealt`,
+    (exemplarCalls[round - 1]?.excludeIds?.length ?? 0) >=
+      (exemplarCalls[round - 2]?.excludeIds?.length ?? 0),
+    JSON.stringify(exemplarCalls[round - 1]?.excludeIds?.length)
+  );
+}
+check(
+  'the session remembers every work it has dealt',
+  ((await context()).board?.dealtThisSession ?? 0) >= 24,
+  String((await context()).board?.dealtThisSession)
+);
+
 console.log('\nC opens the two-up');
+// Escape first, because the deals above left the caret in the bar and a bare
+// letter must not fire while someone is typing. That is the product being
+// right, so the sequence has to do what a person would do.
+await page.keyboard.press('Escape');
 // The human's route into compare, which is the one the brief's definition of
 // done names. Hovering a card that is not the pick pairs it against the pick.
 await cards.nth(1).hover();
