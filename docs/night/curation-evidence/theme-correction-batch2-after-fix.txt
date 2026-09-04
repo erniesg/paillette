@@ -1,0 +1,139 @@
+
+══════════════════════════════════════════════════════════════════════════════
+RUN 1
+══════════════════════════════════════════════════════════════════════════════
+
+── 1. the agent drafts ─────────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : At sea, weather is not background but a force that measures distance, risk, and resolve. This room follows the changing visibility of the maritime world: air thickening into mist, wind altering a vessel’s course, and the horizon becoming both promise and uncertainty. The works ask us to feel the sea through conditions rather than scenery, where a shift in light or cloud can remake the scale of human presence. 
+             [agent] 69 words
+board      : 2 works
+   · "--And mist or glim, I'd sail with him, if he would sail with me--"
+     “Its quoted line makes sailing a pledge made under uncertain conditions: mist and faint light are not obstacles to be cleared, but part of the decision to go on. Pen, graphite, and scraped marks keep that uncertainty close to the paper’s surface.”
+   · "'t Suynighe Waertje" and "De Goelicke Waerdin"
+     “The paired oval portraits turn maritime weather into a social exchange, with the titles naming the sunny weather and the good innkeeper. Their facing profiles suggest a pause on shore, where conditions at sea may be discussed rather than seen.”
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── 2. the human rewrites the statement ─────────────────────
+   “It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.”
+   then types: “Again.”  (no direction in the words)
+   sent to the model: statement="It is not about weather. It is about leaving — the hour befo…"
+
+── 3. the agent acts on it ─────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone. 
+             [human]
+kept human words : YES
+board      : 3 works; 1 new, 0 dropped
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → get_exhibition → write_labels
+
+── the evidence: same work, two statements ─────────────────
+
+   "--And mist or glim, I'd sail with him, if he would sail with me--"
+   weather : “Its quoted line makes sailing a pledge made under uncertain conditions: mist and faint light are not obstacles to be cleared, but part of the decision to go on. Pen, graphite, and scraped marks keep that uncertainty close to the paper’s surface.”
+   leaving : “Its quoted line turns sailing into a condition of attachment: departure depends on whether another person will go too. The ink-and-graphite drawing holds that decision in the suspended phrase “if he would sail with me.””
+
+   "'t Suynighe Waertje" and "De Goelicke Waerdin"
+   weather : “The paired oval portraits turn maritime weather into a social exchange, with the titles naming the sunny weather and the good innkeeper. Their facing profiles suggest a pause on shore, where conditions at sea may be discussed rather than seen.”
+   leaving : “The two oval portraits face one another across a narrow gap, as if a conversation has been paused rather than ended. Their etched outlines preserve two separate presences, held in place after the moment of parting.”
+
+   2/2 shown were rewritten.
+
+write_labels calls: ok(2), ok(3)
+
+══════════════════════════════════════════════════════════════════════════════
+RUN 2
+══════════════════════════════════════════════════════════════════════════════
+
+── 1. the agent drafts ─────────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : At sea, weather is not a backdrop but an active force: mist conceals distance, wind unsettles passage, and shifting light turns water into a measure of time. These works trace maritime experience through uncertain visibility and changing conditions, where a vessel, shoreline, or human figure is always subject to the atmosphere around it. 
+             [agent] 53 words
+board      : 3 works
+   · "--And mist or glim, I'd sail with him, if he would sail with me--"
+     “Its quoted line makes sailing conditional on mist or glimmer, placing companionship and passage under unstable light. The scratched and reworked ink marks suit a sea world whose course cannot be fixed.”
+   · "'t Suynighe Waertje" and "De Goelicke Waerdin"
+     “Two weathered faces meet across separate oval frames, their dense hatching turning the surrounding space into a shadowed atmosphere. Without a shoreline or vessel in view, the print brings maritime uncertainty into the human scale of waiting and exchange.”
+   · "A Rice Raft, South Carolina"
+     “Rather than showing the raft itself, this stereoscopic print presents a written account of it, partly blocked by a broad strip of white tape. That obstruction makes the maritime subject difficult to reach, like a view lost through mist or distance.”
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── 2. the human rewrites the statement ─────────────────────
+   “It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.”
+   then types: “Again.”  (no direction in the words)
+   sent to the model: statement="It is not about weather. It is about leaving — the hour befo…"
+
+── 3. the agent acts on it ─────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone. 
+             [human]
+kept human words : YES
+board      : 2 works; 0 new, 1 dropped
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── the evidence: same work, two statements ─────────────────
+
+   "--And mist or glim, I'd sail with him, if he would sail with me--"
+   weather : “Its quoted line makes sailing conditional on mist or glimmer, placing companionship and passage under unstable light. The scratched and reworked ink marks suit a sea world whose course cannot be fixed.”
+   leaving : “The quoted promise to sail together holds departure at the level of wish: mist and dim light make the destination uncertain, while “with me” keeps attention on the person who may be left behind.”
+
+   "A Rice Raft, South Carolina"
+   weather : “Rather than showing the raft itself, this stereoscopic print presents a written account of it, partly blocked by a broad strip of white tape. That obstruction makes the maritime subject difficult to reach, like a view lost through mist or distance.”
+   leaving : “A card meant to explain a rice raft now withholds much of its account behind a large strip of white tape. Its repeated title in several languages remains, while the missing text turns a document of movement and labor into a record marked by absence.”
+
+   2/2 shown were rewritten.
+
+write_labels calls: ok(3), ok(2)
+
+══════════════════════════════════════════════════════════════════════════════
+RUN 3
+══════════════════════════════════════════════════════════════════════════════
+
+── 1. the agent drafts ─────────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : At sea, weather is not scenery but a force that changes distance, labour, and direction. This exhibition follows the unstable meeting of water and air: mist obscures the horizon, wind presses against vessels and bodies, and working shores register the sea’s daily shifts. Across print, drawing, and photograph, the works make atmosphere legible as both a visual condition and a lived one. 
+             [agent] 62 words
+board      : 3 works
+   · "--And mist or glim, I'd sail with him, if he would sail with me--"
+     “The title sets sailing against mist or a faint glimmer, making uncertain visibility part of the voyage. Pen, ink, and scraped corrections keep that uncertainty close to the surface.”
+   · "'t Suynighe Waertje" and "De Goelicke Waerdin"
+     “Two named figures face one another across separate oval frames, while dense hatching turns the surrounding field into a compressed, weather-like texture. The print brings human likeness into a show concerned with how conditions can narrow what is seen.”
+   · "A Rice Raft, South Carolina"
+     “Rather than showing the raft itself, this stereoscopic print foregrounds its printed description, partly blocked by a large piece of tape. The obstruction makes maritime labor legible through interruption, as if the working shore can be reached only through damaged information.”
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── 2. the human rewrites the statement ─────────────────────
+   “It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.”
+   then types: “Again.”  (no direction in the words)
+   sent to the model: statement="It is not about weather. It is about leaving — the hour befo…"
+
+── 3. the agent acts on it ─────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone. 
+             [human]
+kept human words : YES
+board      : 6 works; 3 new, 0 dropped
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_exhibition → write_labels
+
+── the evidence: same work, two statements ─────────────────
+
+   "--And mist or glim, I'd sail with him, if he would sail with me--"
+   weather : “The title sets sailing against mist or a faint glimmer, making uncertain visibility part of the voyage. Pen, ink, and scraped corrections keep that uncertainty close to the surface.”
+   leaving : “Its quoted promise to sail together fixes on the instant before departure: mist, distance, and the condition of going only if another goes too.”
+
+   "A Rice Raft, South Carolina"
+   weather : “Rather than showing the raft itself, this stereoscopic print foregrounds its printed description, partly blocked by a large piece of tape. The obstruction makes maritime labor legible through interruption, as if the working shore can be reached only through damaged information.”
+   leaving : “The blocked-out text turns a documentary card into a record with a missing center. What remains readable—place, title, repeated translations—circles an absence it cannot restore.”
+
+   "'t Suynighe Waertje" and "De Goelicke Waerdin"
+   weather : “Two named figures face one another across separate oval frames, while dense hatching turns the surrounding field into a compressed, weather-like texture. The print brings human likeness into a show concerned with how conditions can narrow what is seen.”
+   leaving : “The two faces remain held in separate oval frames, turned toward one another but unable to meet. Their paired titles make companionship feel preserved after the people themselves have receded.”
+
+   3/3 shown were rewritten.
+
+write_labels calls: ok(3), ok(6)
+turn error : 429 {"code":"AGENT_RATE_LIMITED","message":"You have used this hour’s shared agent budget. Try again shortly."}
+
+Transcripts written to /tmp/theme-correction/runs.json, screenshots alongside.
+
+3/3 runs kept the human's statement AND rewrote the labels under it.

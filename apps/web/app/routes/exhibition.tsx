@@ -169,7 +169,7 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     institution: 'National Gallery of Art, Washington',
     institutionUrl: 'https://www.nga.gov/open-access-images.html',
     rights:
-      'Open access. The Gallery believes these works are in the public domain in the United States.',
+      'CC0 open access. The Gallery believes these works are in the public domain in the United States.',
   };
 
   return json(page, {

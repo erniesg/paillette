@@ -2132,13 +2132,35 @@ const annotateAtlasTool = (): WebMcpTool => ({
       }
 
       const regions = setRegions(patches, { by: 'agent' });
-      const view = getWebMcpState().view;
+      const state = getWebMcpState();
+      const view = state.view;
+
+      /*
+       * A region whose works have all left the board draws nothing — the view
+       * refuses to put a name over an empty space. Returning a bare `ok` for
+       * it would let the agent believe it had named something the human can
+       * see, so the ones that will not draw are named back.
+       */
+      const onBoard = new Set(state.board?.order ?? []);
+      const empty = onBoard.size
+        ? regions
+            .filter((region) => !region.artworkIds.some((id) => onBoard.has(id)))
+            .map((region) => region.label)
+        : [];
+
       return ok({
         regions: regions.map((region) => ({
           label: region.label,
           artworkIds: region.artworkIds,
           ...(region.note ? { note: region.note } : {}),
         })),
+        ...(empty.length
+          ? {
+              notDrawn: empty,
+              notDrawnReason:
+                'None of these regions’ works are on the board, so they are not drawn — a name over an empty space is worse than no name. Name works that are actually dealt.',
+            }
+          : {}),
         ...(regions.length && view !== 'atlas'
           ? {
               notVisible:

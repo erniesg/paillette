@@ -1,0 +1,154 @@
+
+══════════════════════════════════════════════════════════════════════════════
+RUN 1
+══════════════════════════════════════════════════════════════════════════════
+
+── 1. the agent drafts ─────────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : At sea, weather is not a backdrop but a force that remakes distance, direction, and human scale. Mist obscures the horizon; wind tests the sail and the body; changing light turns travel into suspense. This exhibition follows marine weather as an encounter with uncertainty, where a visible shore or vessel can feel both like shelter and like a fragile mark against an immense, shifting world. 
+             [agent] 65 words
+board      : 2 works
+   · "--And mist or glim, I'd sail with him, if he would sail with me--"
+     “Its quoted promise to sail through “mist or glim” makes uncertain visibility part of companionship, with weather setting the terms of departure. Pen, ink, and scraped corrections keep the image close to a tentative, shifting mark.”
+   · "'t Suynighe Waertje" and "De Goelicke Waerdin"
+     “Two weather-named figures face one another across separate oval frames, turning “sunny weather” and “good weather” into a paired encounter. The etched hatching gives their enclosed world a dense, unsettled surface rather than an open horizon.”
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── 2. the human rewrites the statement ─────────────────────
+   “It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.”
+   then types: “Again.”  (no direction in the words)
+   sent to the model: statement="It is not about weather. It is about leaving — the hour befo…"
+
+── 3. the agent acts on it ─────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone. 
+             [human]
+kept human words : YES
+board      : 4 works; 2 new, 0 dropped
+tools      : get_view_context → search_artworks → search_artworks → search_by_color → search_by_color → set_results → set_view → get_exhibition → write_labels
+
+── the evidence: same work, two statements ─────────────────
+
+   "--And mist or glim, I'd sail with him, if he would sail with me--"
+   weather : “Its quoted promise to sail through “mist or glim” makes uncertain visibility part of companionship, with weather setting the terms of departure. Pen, ink, and scraped corrections keep the image close to a tentative, shifting mark.”
+   leaving : “Its quoted line fixes departure in a conditional promise: sailing depends on another person's willingness to go. The scratched and reworked ink leaves the thought feeling tentative, as if held at the edge of leaving.”
+
+   "'t Suynighe Waertje" and "De Goelicke Waerdin"
+   weather : “Two weather-named figures face one another across separate oval frames, turning “sunny weather” and “good weather” into a paired encounter. The etched hatching gives their enclosed world a dense, unsettled surface rather than an open horizon.”
+   leaving : “Two faces turn toward one another from separate oval frames, close enough for an exchange but held apart by the print's structure. Their paired likenesses preserve the pressure of a meeting after speech has fallen away.”
+
+   2/2 shown were rewritten.
+
+write_labels calls: ok(2), ok(4)
+
+══════════════════════════════════════════════════════════════════════════════
+RUN 2
+══════════════════════════════════════════════════════════════════════════════
+
+── 1. the agent drafts ─────────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : At sea, weather is not a backdrop but a force that changes scale, direction, and feeling. This room follows the unstable interval between mist and clearing, when water and sky merge and a vessel—or a figure waiting beside it—seems temporarily unmoored. Grey, blue, and broken light make atmosphere palpable: a pressure on the horizon, a veil over distance, and a measure of human vulnerability before the elements. 
+             [agent] 67 words
+board      : 9 works
+   · "--And mist or glim, I'd sail with him, if he would sail with me--"
+     “Its quoted line makes sailing a condition of companionship, held between mist and a faint “glim.” Pen, graphite, and scratched highlights keep the scene at the edge of visibility.”
+   · "'t Suynighe Waertje" and "De Goelicke Waerdin"
+     “Two elderly faces confront one another across separate oval frames. The dense etched hatching presses close, turning portraiture into a study of weathered surfaces and narrowed distance.”
+   · "A Rice Raft, South Carolina"
+     “The sea is absent from this stereoscopic card, replaced by a damaged field of printed information about a rice raft. White tape blocks the account at its center, making interruption and obscured knowledge part of its unsettled surface.”
+   · "A Money Saver" Coin Bank
+     “A coin bank enters the exhibition as a small shelter for value: an object made to contain and protect. Its mixed drawn and painted surface offers a domestic counterpoint to the exposure suggested by the surrounding sea.”
+tools      : get_view_context → search_artworks → search_artworks → search_by_color → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── 2. the human rewrites the statement ─────────────────────
+   “It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.”
+   then types: “Again.”  (no direction in the words)
+   sent to the model: statement="It is not about weather. It is about leaving — the hour befo…"
+
+── 3. the agent acts on it ─────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone. 
+             [human]
+kept human words : YES
+board      : 9 works; 0 new, 0 dropped
+tools      : get_view_context → redeal → search_artworks → search_artworks → search_artworks → set_results
+
+── the evidence: same work, two statements ─────────────────
+
+   "--And mist or glim, I'd sail with him, if he would sail with me--"
+   weather : “Its quoted line makes sailing a condition of companionship, held between mist and a faint “glim.” Pen, graphite, and scratched highlights keep the scene at the edge of visibility.”
+   leaving : “Its quoted line makes sailing a condition of companionship, held between mist and a faint “glim.” Pen, graphite, and scratched highlights keep the scene at the edge of visibility.”
+
+   "'t Suynighe Waertje" and "De Goelicke Waerdin"
+   weather : “Two elderly faces confront one another across separate oval frames. The dense etched hatching presses close, turning portraiture into a study of weathered surfaces and narrowed distance.”
+   leaving : “Two elderly faces confront one another across separate oval frames. The dense etched hatching presses close, turning portraiture into a study of weathered surfaces and narrowed distance.”
+
+   "A Rice Raft, South Carolina"
+   weather : “The sea is absent from this stereoscopic card, replaced by a damaged field of printed information about a rice raft. White tape blocks the account at its center, making interruption and obscured knowledge part of its unsettled surface.”
+   leaving : “The sea is absent from this stereoscopic card, replaced by a damaged field of printed information about a rice raft. White tape blocks the account at its center, making interruption and obscured knowledge part of its unsettled surface.”
+
+   "A Money Saver" Coin Bank
+   weather : “A coin bank enters the exhibition as a small shelter for value: an object made to contain and protect. Its mixed drawn and painted surface offers a domestic counterpoint to the exposure suggested by the surrounding sea.”
+   leaving : “A coin bank enters the exhibition as a small shelter for value: an object made to contain and protect. Its mixed drawn and painted surface offers a domestic counterpoint to the exposure suggested by the surrounding sea.”
+
+   0/4 shown were rewritten.
+
+write_labels calls: ok(9)
+
+══════════════════════════════════════════════════════════════════════════════
+RUN 3
+══════════════════════════════════════════════════════════════════════════════
+
+── 1. the agent drafts ─────────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : At sea, weather is not backdrop but force: mist obscures distance, wind redirects passage, and changing light makes the horizon unreliable. This room follows maritime experience through atmosphere rather than narrative, from the tense promise of a voyage to the small human improvisations demanded by uncertain conditions. Across drawing, print, and design, the sea appears less as a stable place than as a shifting field of visibility, risk, and desire. 
+             [agent] 70 words
+board      : 7 works
+   · "--And mist or glim, I'd sail with him, if he would sail with me--"
+     “Its paired phrases—mist or glim, sailing together—set departure between obscurity and a thin, unstable light. Pen, ink, and scraped corrections keep the promise of passage tentative.”
+   · "'t Suynighe Waertje" and "De Goelicke Waerdin"
+     “Two faces meet across separate oval frames, their names pairing sunny weather with a good hostess. Against the exhibition’s uncertain sea, this dry, hatched encounter suggests weather as a social condition as well as an atmospheric one.”
+   · "...disposto...disposto sempre all'ubbidienza" (Always Ready to Obey)
+     ““Always Ready to Obey” gives readiness the pressure of a command. In a room shaped by shifting conditions, the lithograph’s title turns obedience into a posture for uncertain passage.”
+   · "-Ouriskoff!..trouvez-vous cela ressemblant?" from Actualities
+     “A question about resemblance introduces doubt into looking itself. The lithograph sharpens the exhibition’s concern with unreliable visibility: what appears before the eye may not hold.”
+tools      : get_view_context → search_artworks → search_artworks → search_artworks → search_by_color → set_results → set_view → set_exhibition → write_labels
+
+── 2. the human rewrites the statement ─────────────────────
+   “It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.”
+   then types: “Again.”  (no direction in the words)
+   sent to the model: statement="It is not about weather. It is about leaving — the hour befo…"
+
+── 3. the agent acts on it ─────────────────────────────────
+title      : Weather at Sea [agent]
+statement  : It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone. 
+             [human]
+kept human words : YES
+board      : 7 works; 0 new, 0 dropped
+tools      : get_view_context → set_results
+
+── the evidence: same work, two statements ─────────────────
+
+   "--And mist or glim, I'd sail with him, if he would sail with me--"
+   weather : “Its paired phrases—mist or glim, sailing together—set departure between obscurity and a thin, unstable light. Pen, ink, and scraped corrections keep the promise of passage tentative.”
+   leaving : “Its paired phrases—mist or glim, sailing together—set departure between obscurity and a thin, unstable light. Pen, ink, and scraped corrections keep the promise of passage tentative.”
+
+   "'t Suynighe Waertje" and "De Goelicke Waerdin"
+   weather : “Two faces meet across separate oval frames, their names pairing sunny weather with a good hostess. Against the exhibition’s uncertain sea, this dry, hatched encounter suggests weather as a social condition as well as an atmospheric one.”
+   leaving : “Two faces meet across separate oval frames, their names pairing sunny weather with a good hostess. Against the exhibition’s uncertain sea, this dry, hatched encounter suggests weather as a social condition as well as an atmospheric one.”
+
+   "...disposto...disposto sempre all'ubbidienza" (Always Ready to Obey)
+   weather : ““Always Ready to Obey” gives readiness the pressure of a command. In a room shaped by shifting conditions, the lithograph’s title turns obedience into a posture for uncertain passage.”
+   leaving : ““Always Ready to Obey” gives readiness the pressure of a command. In a room shaped by shifting conditions, the lithograph’s title turns obedience into a posture for uncertain passage.”
+
+   "-Ouriskoff!..trouvez-vous cela ressemblant?" from Actualities
+   weather : “A question about resemblance introduces doubt into looking itself. The lithograph sharpens the exhibition’s concern with unreliable visibility: what appears before the eye may not hold.”
+   leaving : “A question about resemblance introduces doubt into looking itself. The lithograph sharpens the exhibition’s concern with unreliable visibility: what appears before the eye may not hold.”
+
+   0/4 shown were rewritten.
+
+write_labels calls: ok(7)
+
+Transcripts written to /tmp/theme-correction/runs.json, screenshots alongside.
+
+3/3 runs kept the human's statement and acted on it. Read the labels above and judge whether they are about this show.

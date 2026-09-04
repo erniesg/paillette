@@ -51,6 +51,31 @@ const LABELS = [
   'Snow across a track that somebody has already walked, going away from the viewer.',
 ];
 
+/**
+ * The same wall, as `write_labels` actually writes it.
+ *
+ * `LABELS` above average 85 characters, and the length claim used to be
+ * checked against them — which flattered the format badly. These twelve are
+ * real output captured from three runs against the model
+ * (`verify-theme-correction.mjs`), and they average **207**, because "one or
+ * two sentences" of museum prose is two hundred characters, not eighty. Every
+ * size assertion below uses these.
+ */
+const REAL_LABELS = [
+  'Its quoted promise to sail through “mist or glim” makes uncertain visibility part of companionship, with weather setting the terms of departure. Pen, ink, and scraped corrections keep the image close to a tentative, shifting mark.',
+  'Two weather-named figures face one another across separate oval frames, turning “sunny weather” and “good weather” into a paired encounter. The etched hatching gives their enclosed world a dense, unsettled surface rather than an open horizon.',
+  "Its quoted line fixes departure in a conditional promise: sailing depends on another person's willingness to go. The scratched and reworked ink leaves the thought feeling tentative, as if held at the edge of leaving.",
+  'The promised raft is absent; what remains is a printed description, partly covered by a blunt white patch. Information persists like a record after the thing it names has moved out of sight.',
+  "Two faces turn toward one another from separate oval frames, close enough for an exchange but held apart by the print's structure. Their paired likenesses preserve the pressure of a meeting after speech has fallen away.",
+  'A coin bank makes saving a small domestic ritual of postponement: something set aside now for a future departure or need. Its drawn, painted form keeps that private preparation present on paper.',
+  'Its quoted line makes sailing a condition of companionship, held between mist and a faint “glim.” Pen, graphite, and scratched highlights keep the scene at the edge of visibility.',
+  'Two elderly faces confront one another across separate oval frames. The dense etched hatching presses close, turning portraiture into a study of weathered surfaces and narrowed distance.',
+  'The sea is absent from this stereoscopic card, replaced by a damaged field of printed information about a rice raft. White tape blocks the account at its center, making interruption and obscured knowledge part of its unsettled surface.',
+  'A coin bank enters the exhibition as a small shelter for value: an object made to contain and protect. Its mixed drawn and painted surface offers a domestic counterpoint to the exposure suggested by the surrounding sea.',
+  'A question in the title—“do you find this a likeness?”—sets uncertainty at the center of the lithograph. Its printed tones and implied exchange make recognition feel as unstable as a face seen through haze.',
+  '“Always Ready to Obey” gives the lithograph a language of command and submission. In this setting, readiness reads as a human posture before conditions that cannot be directed.',
+];
+
 const STATEMENT =
   'Twelve works about departure — not the drama of it but the residue: an emptied harbour, a road going out of frame, a doorway with the light behind it. Nothing here shows the moment of leaving. Everything shows the minutes after, when the room has not caught up with the fact that somebody is not in it. The pictures are quiet on purpose.';
 
@@ -109,11 +134,21 @@ describe('the round trip', () => {
 });
 
 describe('the length claim', () => {
+  it('averages the label length this app really produces', () => {
+    const mean =
+      REAL_LABELS.reduce((sum, label) => sum + label.length, 0) /
+      REAL_LABELS.length;
+    // Guards the fixture itself. If someone swaps these for shorter prose the
+    // two size assertions below quietly stop meaning anything, which is
+    // exactly how the old numbers came to be wrong.
+    expect(mean).toBeGreaterThan(180);
+  });
+
   it('keeps a twelve-work show with real labels inside a pasteable URL', async () => {
     const encoded = await encodeExhibitionLink(
       show({
         statement: STATEMENT,
-        works: LABELS.map((label, index) => ({
+        works: REAL_LABELS.map((label, index) => ({
           // Full-length uuids, which is what the catalogue actually hands out.
           artworkId: `b3a4d1e2-8f7c-4a21-9c${String(index).padStart(2, '0')}-1f2e3d4c5b6a`,
           label,
@@ -121,6 +156,10 @@ describe('the length claim', () => {
         })),
       })
     );
+    // Asserted as a band, not just a ceiling: an upper bound alone would keep
+    // passing if the format silently stopped compressing.
+    expect(encoded.length).toBeGreaterThan(1000);
+    expect(encoded.length).toBeLessThan(3000);
     expect(encoded.length).toBeLessThan(EXHIBITION_LINK_SOFT_LIMIT);
   });
 
@@ -131,11 +170,12 @@ describe('the length claim', () => {
         works: Array.from({ length: 24 }, (_, index) => ({
           artworkId: `b3a4d1e2-8f7c-4a21-9c${String(index).padStart(2, '0')}-1f2e3d4c5b6a`,
           // Distinct labels, so this is not a compression artefact.
-          label: `${LABELS[index % LABELS.length]} (${index})`,
+          label: `${REAL_LABELS[index % REAL_LABELS.length]} (${index})`,
           labelByAgent: true,
         })),
       })
     );
+    expect(encoded.length).toBeLessThan(4500);
     expect(encoded.length).toBeLessThan(EXHIBITION_LINK_SOFT_LIMIT);
   });
 
