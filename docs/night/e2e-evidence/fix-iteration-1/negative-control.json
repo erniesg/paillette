@@ -1,0 +1,165 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "instruction": "something warm for above the sofa",
+  "query": "warm landscape",
+  "results": [
+    {
+      "condition": "darkest",
+      "instruction": "something warm for above the sofa",
+      "query": "warm landscape",
+      "rejected": [
+        {
+          "id": "open-access-art:nga:50687",
+          "title": "Lake George and the Village of Caldwell",
+          "palette": [
+            "#413225",
+            "#AB825E"
+          ],
+          "luminance": 94
+        },
+        {
+          "id": "open-access-art:nga:50295",
+          "title": "Peaceful Valley",
+          "palette": [
+            "#DEB585",
+            "#3B2F1F",
+            "#715023",
+            "#B09176",
+            "#A47852"
+          ],
+          "luminance": 119
+        }
+      ],
+      "note": "Warm colour in four registers: sunset gold, ember rust, peach, and softened terracotta.",
+      "swatchesBesideTheNote": 2,
+      "rejectSwatches": 2,
+      "boardCards": 8,
+      "flagsTheAgentSaw": {
+        "picks": [],
+        "rejects": [
+          {
+            "id": "open-access-art:nga:50687",
+            "title": "Lake George and the Village of Caldwell",
+            "artist": "Thomas Chambers",
+            "palette": [
+              "#413225",
+              "#AB825E"
+            ],
+            "medium": "oil on canvas",
+            "year": 1825,
+            "classification": "Painting",
+            "by": "human",
+            "onBoard": false
+          },
+          {
+            "id": "open-access-art:nga:50295",
+            "title": "Peaceful Valley",
+            "artist": "Alexander Helwig Wyant",
+            "palette": [
+              "#DEB585",
+              "#3B2F1F",
+              "#715023",
+              "#B09176"
+            ],
+            "medium": "oil on canvas",
+            "year": 1872,
+            "classification": "Painting",
+            "by": "human",
+            "onBoard": false
+          }
+        ],
+        "provisional": [],
+        "exemplars": {
+          "positive": [],
+          "negative": [
+            "open-access-art:nga:50687",
+            "open-access-art:nga:50295"
+          ]
+        },
+        "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+      },
+      "modelCalls": 6
+    },
+    {
+      "condition": "brightest",
+      "instruction": "something warm for above the sofa",
+      "query": "warm landscape",
+      "rejected": [
+        {
+          "id": "open-access-art:nga:184225",
+          "title": "Environs de Cremieu",
+          "palette": [
+            "#B89E81",
+            "#644F3F",
+            "#F4E8D6",
+            "#DCB17F",
+            "#D3C4B4"
+          ],
+          "luminance": 172
+        },
+        {
+          "id": "open-access-art:nga:56556",
+          "title": "Deer (Les Cerfs)",
+          "palette": [
+            "#D0AD8A",
+            "#B3896C",
+            "#ECCEA7",
+            "#BC946C"
+          ],
+          "luminance": 171
+        }
+      ],
+      "note": "Warmness here is saturated amber, rust, and fruit-toned oil—not the muted beige and umber you rejected.",
+      "swatchesBesideTheNote": 2,
+      "rejectSwatches": 2,
+      "boardCards": 12,
+      "flagsTheAgentSaw": {
+        "picks": [],
+        "rejects": [
+          {
+            "id": "open-access-art:nga:184225",
+            "title": "Environs de Cremieu",
+            "artist": "François-Auguste Ravier",
+            "palette": [
+              "#B89E81",
+              "#644F3F",
+              "#F4E8D6",
+              "#DCB17F"
+            ],
+            "medium": "watercolor and graphite on laid paper",
+            "year": 1885,
+            "classification": "Drawing",
+            "by": "human",
+            "onBoard": false
+          },
+          {
+            "id": "open-access-art:nga:56556",
+            "title": "Deer (Les Cerfs)",
+            "artist": "Charles-François Daubigny",
+            "palette": [
+              "#D0AD8A",
+              "#B3896C",
+              "#ECCEA7",
+              "#BC946C"
+            ],
+            "medium": "cliché-verre",
+            "year": 1862,
+            "classification": "Print",
+            "by": "human",
+            "onBoard": false
+          }
+        ],
+        "provisional": [],
+        "exemplars": {
+          "positive": [],
+          "negative": [
+            "open-access-art:nga:184225",
+            "open-access-art:nga:56556"
+          ]
+        },
+        "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+      },
+      "modelCalls": 6
+    }
+  ]
+}

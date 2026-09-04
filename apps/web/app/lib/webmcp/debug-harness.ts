@@ -194,3 +194,32 @@ export const installWebMcpDebugHarness = (): (() => void) => {
  * `window.__paillette_webmcp`, which is a back door and stays one.
  */
 installModelContextStub();
+
+let ensured = false;
+
+/**
+ * The debug driver, installed at module-evaluation time rather than from an
+ * effect. `night/review`'s fix for the mount-order race, kept whole.
+ *
+ * Ordering is the whole point. React runs a route subtree's effects *before*
+ * those of a later sibling in the tree, and `WebMcpBridge` is rendered after
+ * `<Outlet />` in `root.tsx`, so anything that reads `document.modelContext`
+ * from its own mount effect looked before the bridge's effect had installed
+ * anything, found nothing, and latched off for the lifetime of the page.
+ *
+ * The host half of that race is gone — the stub is claimed above, on every
+ * visit — but a capture script reaching for `window.__paillette_webmcp` on
+ * load hits the same ordering problem, so the driver is installed the same
+ * way. Still gated on the query parameter, and still a no-op on the server.
+ */
+export const ensureWebMcpDebugHarness = (): void => {
+  if (ensured || !isWebMcpDebugRequested()) return;
+  ensured = true;
+  installWebMcpDebugHarness();
+};
+
+export const __resetWebMcpDebugHarnessForTest = () => {
+  ensured = false;
+};
+
+ensureWebMcpDebugHarness();

@@ -1,0 +1,107 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "correction": "It is not about weather. It is about leaving: places with the people already gone.",
+  "ids": [
+    "open-access-art:nga:184225",
+    "open-access-art:nga:195765",
+    "open-access-art:nga:127567",
+    "open-access-art:nga:198119",
+    "open-access-art:nga:139234",
+    "open-access-art:nga:69343"
+  ],
+  "draftedLabels": [
+    "Watercolor and graphite register the changing tones around Cremieu, where the sky’s light appears to spread across the terrain in quick, loose marks.",
+    "Shadows move across the landscape as the title directs attention to their passage, making sunlight visible through what it leaves darkened.",
+    "The etched pond and rocky banks place still water beneath an open sky, recording weather through the light and shade laid across the ground.",
+    "Graphite and watercolor build a small outdoor view in which atmospheric conditions are carried by the wash, from pale air to darker passages.",
+    "The distant Sabine Hills are mapped with pen, graphite, and watercolor, while the broad interval between Civitella and Rocca Santo Stefano makes air and visibility part of the scene.",
+    "Printed in red, the palo verde trees stand against a spare desert setting where heat, dryness, and hard light are conveyed through the etched line."
+  ],
+  "rewrittenLabels": [
+    "The street holds its buildings after the people have left it. In the albumen print, the road itself becomes the record of passage.",
+    "A numbered section of canal company ground reads as infrastructure without its workforce. The photograph fixes an industrial site in the interval after activity.",
+    "Houses line the canal bank, their façades facing water with no one at the windows or along the edge. Etching reduces the place to a spare arrangement of dwelling, bank, and canal.",
+    "The convent is named as an interior place, but its printed architecture carries the scene. Aquatint deepens the sense of rooms and passages left to their surfaces.",
+    "A hallway leads toward a bedroom, marking domestic use through doors, walls, and a route through the house. With no occupant visible, the lithograph makes the passage feel recently cleared.",
+    "The church doorway stands as a threshold after entry or before return. Its etched lines keep attention on the opening, where absence is most sharply felt.",
+    "Railway tracks and their built setting point to movement that has already continued elsewhere. The albumen print leaves the rail line as evidence of departure rather than arrival.",
+    "The hotel is identified by place and plate number, an address made impersonal by the photographic record. Its exterior remains while the travelers associated with it are not shown.",
+    "The station is built for arrivals and departures, yet the photograph holds on the structure between them. Longueau's rail architecture appears waiting without a visible crowd.",
+    "Coal piers and harbor facilities remain after the labor and traffic they require have moved out of view. The photograph treats the waterfront as a set of working traces without workers.",
+    "The rail yard is a field of tracks, cars, and industrial distance, organized around transit. Printed years after it was photographed, the image also preserves a moment already gone from the yard.",
+    "Church and street meet in a small watercolor view with no figure to occupy the route. The empty street turns the built place into a remainder of communal life.",
+    "Watercolor and graphite register the changing tones around Cremieu, where the sky’s light appears to spread across the terrain in quick, loose marks.",
+    "Shadows move across the landscape as the title directs attention to their passage, making sunlight visible through what it leaves darkened.",
+    "The etched pond and rocky banks place still water beneath an open sky, recording weather through the light and shade laid across the ground.",
+    "Graphite and watercolor build a small outdoor view in which atmospheric conditions are carried by the wash, from pale air to darker passages.",
+    "The distant Sabine Hills are mapped with pen, graphite, and watercolor, while the broad interval between Civitella and Rocca Santo Stefano makes air and visibility part of the scene.",
+    "Printed in red, the palo verde trees stand against a spare desert setting where heat, dryness, and hard light are conveyed through the etched line."
+  ],
+  "shareUrl": "https://paillette-stg.berlayar.ai/exhibition?e=1hVdNruO4Eb5KQZtsNA_Pfr9-u0YnyAyQRTAdYBaNXpTJkkSYItXFkjVKECDXyAlykNwkJwmKpPzck8C98UI_VP18f_5bc27edm1jmrcm9Ni0jTRvn5sPnRDD72lClpmpaXdf2ibpnZ8EXIIQBfAYZ4GFUAbiOyg3ykVPeHahf4PJo6EEi5MBZCCYKE6eAD0T2hX6GOiuae-_tM3SvH3-3MSJwg9oDKX0A7K8hR7fds8Pj4_7pm3-MhAkYSKBIXqbwEmC4-y8daFPgLnmq68MeCbw1Ak4uYOfQr6H_jiPFGBiF6TNlzii1bPId3AkE0dK5TqZyBZiBxOmhL2WuvvS_v8q9_cvh-eHpm0-QJjHIzFZSGTExaAnGAzowcRxwrBCz3EOFnQICTCBCx1jEp6NTjuPS8eo_S2RT11kQ3eg_U9DlNgzTgN07ldKgAFcsHMSdughOSFwpVMXhPiMvg4Gjbizk_VWE4-7h-dD0zY_xjlRAu8C5aNK9UcMpzwxx9Dhv_-FlhJ0aFzoYUH9Rt5ziBADAUp-dXHBxiVBZEAfQ58vku3pDv4gZtB3mexs6swzYEAiIKQJmQCZMfQ0UhCdo13Iexf6tlaDwZbqbu5m_3zYP1cEmRjOepiiGEeyOv88RCF2kUsFLRzr_DNO9Ck2gxMqCzLI7GrFyVCgO_jwdUZxQcASTRTqPQqJtGyOcUy52AqlVIApsc4zzdwpVW61cXh6fcoAG9D7BVelmU0gcUG2gHAkq99pYUQ-6WCtQlmcgTnpHjnO_QA2Rk4tLOh9KvND4DjL-xNa-aAIuINftoUaM08YBM4uuaOnQhyvOC1gHPG0bbA0CB2RVwpREL-C8YRM9lZ7u9394bAtaZjZlFq10SQYClNQq6Sk_K-4piC8KryO1EVW1srMQfUoAYkZyGYcJzgRTYAiFAopC0u0koynZSCF2zFRMKToGGMSSAPy5FfoyMttiD0e7lWkfkaXdyOM5lRWXjasQiWQSERXM0XFikQY47mAWwYUGLTFKo4mBnFhJgvkE-XyigZ8I2FZazfBQucLaTEBnZ3NrShrNiEHzmqtHwtKLXf-LnMeD_d1KUMU8joZPVhc58jCca2Uzdj2KFTlT6EFaC1TSjCiJXDjRJxiVpK1QOUiZs5Uta17-7WSkWlEFxIsg_NFioTxTJ5Y0ZCicajkzLrjBFQw1JrSEJdwk0r7_evLxVIwA8KluqNOtarMpizwMr7Uwkrym9qrGVU8vav4kWQhylfHO_hTDP1MOP8ulTV9oyc4TYScYEGX0bEZAG58A8Nxuc2ew-vLk8rDx4geJpcnFCwMyMfIWaa9ExWtMtMru_SoT2SkMnadM3p1Baavs-NqowpTC1pT7ODsaPkfOxImlILDbAYdxyCFsonya2pl2p1So4aCnCAin4hvKt_-Yfey39V95fGtKnmaN6Bz5LNJF8a1Ks5V2K6M0TrVEBX2yD0G99cs6dmFhTEkTQh_rlK_5l2U-TiBBdNVn2SL9rlRRQ59ijAxJWIlIcIYM5mvAw50HMf8jhZ9m2371xf1qY9F_rSHGnhG_dGtQRrR-zJiE33kvI2L83auV0BJley1BpxZqnbQOMm6HapCWTZWgF-Y7EK23wITS5zjSxzHWZnrXXczBu1eH_d7heEv7wVqG4XlovLcu7QhzwwY-gyJqApdF_KRaXQ0b5KcWXVa__OPf2oi6Qe50EUipEkHDWg4ptKKELPi2wX4OjtzasHHmCib4k2Q7Q5PL89a-qcBc2RRzF-f7NWEDE5ZXvOnnHgC65iMpCtrubh69UJ15Iz8NIfSwUbrzXIXFX93EXOLfKLwHbvcvzw9bxpWjW6KaueaLKM5rTkipbrVJG6DDRwpaGpXhdaTdbpt1d-sPrSZxHseqINXQA4q5h7dN1MvifY7ArXbqb__cYOCnnaF45zkLwCPs6j7F3S7oA6gjJAxpmkgdkb90Tqdd8q6XzKZ3bxlwTS0hXoT6l8Ox7qXPNnLYm7j4eGwf3isAy76IfAJj-qvPzrvy2dHBWN1oIlCe0F6-5v-2isTO5a_HFtA35ziowZ08h7zqz9HYxA-odLxk1CHIdaYpb3oExlFKusrqEFlEbwk0hudPR8eHvWvyiZ4LmgGb2t88xHOxFatliiV7AXYqw_LJZZblbz3OFOYOhBKC5bXQKlK8KA6XcHDNXyvZL_B1lVKy1V_-ft_AQ",
+  "exhibition": {
+    "status": "After Departure — Paillette",
+    "heading": "After Departure",
+    "statement": "It is not about weather. It is about leaving: places with the people already gone.",
+    "works": 18,
+    "labels": 36
+  },
+  "results": [
+    {
+      "ok": true,
+      "label": "the show has a title and a statement on the working page",
+      "detail": "{\"title\":\"Weather Report\",\"statement\":\"A show about weather, and about painters who went outside to\"}"
+    },
+    {
+      "ok": true,
+      "label": "there is a share control on the page",
+      "detail": "true"
+    },
+    {
+      "ok": true,
+      "label": "every hung work has a wall label",
+      "detail": "6 of 6"
+    },
+    {
+      "ok": true,
+      "label": "the statement on the wall is the human’s words, verbatim",
+      "detail": "\"It is not about weather. It is about leaving: places with the people already gon\""
+    },
+    {
+      "ok": true,
+      "label": "rewriting the statement sends a turn to the agent on its own",
+      "detail": "2 POST(s) to /public-agent/turn after the edit"
+    },
+    {
+      "ok": true,
+      "label": "the labels are rewritten against the correction",
+      "detail": "18 of 18 labels differ from the weather draft"
+    },
+    {
+      "ok": true,
+      "label": "the agent did not overwrite the sentence the human wrote",
+      "detail": "\"It is not about weather. It is about leaving: places with the people already gon\""
+    },
+    {
+      "ok": true,
+      "label": "the share control produces a URL",
+      "detail": "https://paillette-stg.berlayar.ai/exhibition?e=1hVdNruO4Eb5KQZtsNA_Pfr9-u0YnyAyQRTAdYBaNXp…"
+    },
+    {
+      "ok": true,
+      "label": "the exhibition URL opens cold, in a browser that has never seen Paillette",
+      "detail": "HTTP 200"
+    },
+    {
+      "ok": true,
+      "label": "the shared page carries the works",
+      "detail": "{\"status\":\"After Departure — Paillette\",\"heading\":\"After Departure\",\"statement\":\"It is not about weather. It is about leaving: places with the people already gone.\",\"works\":18,\"labels\":36}"
+    },
+    {
+      "ok": true,
+      "label": "the shared page carries the human’s statement, not the agent’s draft",
+      "detail": "\"It is not about weather. It is about leaving: places with the people already gon\""
+    }
+  ],
+  "pageErrors": []
+}

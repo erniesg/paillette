@@ -1,2 +1,4 @@
-# Runtime output from capture.mjs — never commit screen recordings.
+# Runtime output — never commit recordings or run artefacts.
 captures/
+verify-shots/
+verify.json

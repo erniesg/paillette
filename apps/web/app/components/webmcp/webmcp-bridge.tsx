@@ -9,10 +9,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from '@remix-run/react';
 import { AgentActivityPanel } from './agent-activity-panel';
-import {
-  installWebMcpDebugHarness,
-  isWebMcpDebugRequested,
-} from '~/lib/webmcp/debug-harness';
+import { ensureWebMcpDebugHarness } from '~/lib/webmcp/debug-harness';
 import {
   observePublicSearchResponses,
   readPageContext,
@@ -28,6 +25,10 @@ import { previewJson, shapedError } from '~/lib/webmcp/activity-format';
 import { summariseToolResult } from '~/lib/webmcp/summarise';
 import { createPailletteTools } from '~/lib/webmcp/tools';
 import { installTurnBridge } from '~/lib/webmcp/turn-bridge';
+
+// Before any component renders, so nothing that checks for a host in its own
+// mount effect can look too early. See `ensureWebMcpDebugHarness`.
+ensureWebMcpDebugHarness();
 
 export function WebMcpBridge() {
   const location = useLocation();
@@ -45,20 +46,9 @@ export function WebMcpBridge() {
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    // The stub host itself is already up — `debug-harness` claims
-    // `document.modelContext` as its module loads, because a real host is
-    // there before any of this page's script runs and anything that checks
-    // for one on mount has to find the same thing either way. This call only
-    // re-binds the driver.
-    const disposeHarness = isWebMcpDebugRequested()
-      ? installWebMcpDebugHarness()
-      : () => {};
-
     if (!isWebMcpAvailable()) {
       // No host. Do not patch fetch, do not register, do not render.
-      return () => {
-        disposeHarness();
-      };
+      return;
     }
 
     // Activity ids are opaque to the registry; remember which tool each one
@@ -124,7 +114,6 @@ export function WebMcpBridge() {
       disposeTurnBridge();
       disposeObserver();
       setBridgeAttached(false);
-      disposeHarness();
     };
     // Mount-once: registration is global to the document, not to a render.
   }, []);

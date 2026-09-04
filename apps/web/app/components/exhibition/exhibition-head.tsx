@@ -64,7 +64,12 @@ export const ExhibitionHead = ({ trailing }: { trailing?: React.ReactNode }) => 
         onCommit={(value) => writeExhibition({ title: value }, { by: 'human' })}
         onAccept={() => acceptProposal('title')}
         onDecline={() => declineProposal('title')}
-        placeholder="Untitled"
+        /* No placeholder. "Untitled" over "What it's about." is an empty state
+           lecturing — two lines of serif that nobody wrote, sitting where the
+           show's own words go, on the first pick of every session. The rule
+           down the left is the mark, the count in the rail underneath says
+           what the block is, and the accessible name carries the sentence for
+           anyone who needs one. */
         textClassName="paillette-exhibition-title"
       />
 
@@ -93,7 +98,6 @@ export const ExhibitionHead = ({ trailing }: { trailing?: React.ReactNode }) => 
         }}
         onAccept={() => acceptProposal('statement')}
         onDecline={() => declineProposal('statement')}
-        placeholder="What it’s about."
         multiline
         className="mt-3"
         textClassName="paillette-exhibition-statement"

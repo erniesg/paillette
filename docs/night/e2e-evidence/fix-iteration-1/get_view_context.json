@@ -1,0 +1,208 @@
+{
+  "ok": true,
+  "page": {
+    "path": "/nga/search",
+    "collection": "nga",
+    "collectionName": "National Gallery of Art, Washington — open access",
+    "onSearchPage": true
+  },
+  "humanSearch": {
+    "query": "sunset landscape",
+    "facet": null,
+    "colour": null,
+    "active": true
+  },
+  "humanResults": {
+    "describedAs": "search “sunset landscape” (30 results)",
+    "count": 30,
+    "total": null,
+    "observedAt": "2026-09-04T04:28:06.083Z",
+    "visible": [
+      {
+        "id": "open-access-art:nga:50295",
+        "title": "Peaceful Valley",
+        "artist": "Alexander Helwig Wyant",
+        "year": 1872,
+        "similarity": 1
+      },
+      {
+        "id": "open-access-art:nga:143883",
+        "title": "A Cornfield at Sunset",
+        "artist": "Hercules Brabazon Brabazon",
+        "year": 1821,
+        "similarity": 0.974
+      },
+      {
+        "id": "open-access-art:nga:152342",
+        "title": "A Meadow at Sunset",
+        "artist": "Paul Huet",
+        "year": 1840,
+        "similarity": 0.834
+      },
+      {
+        "id": "open-access-art:nga:144394",
+        "title": "Sunset in an Oriental Landscape",
+        "artist": "Gabriel Hippolyte Lebas",
+        "year": 1812,
+        "similarity": 0.806
+      },
+      {
+        "id": "open-access-art:nga:184224",
+        "title": "Vicinity of Morestal",
+        "artist": "François-Auguste Ravier",
+        "year": 1885,
+        "similarity": 0.747
+      },
+      {
+        "id": "open-access-art:nga:177918",
+        "title": "The Haystack and the Moon",
+        "artist": "Jean-Charles Cazin",
+        "year": 1876,
+        "similarity": 0.729
+      },
+      {
+        "id": "open-access-art:nga:153739",
+        "title": "Sonnenuntergang (Alb)",
+        "artist": "Wilhelm Laage",
+        "year": 1918,
+        "similarity": 0.64
+      },
+      {
+        "id": "open-access-art:nga:46426",
+        "title": "Lake Albano, Sunset",
+        "artist": "George Inness",
+        "year": 1874,
+        "similarity": 0.627
+      },
+      {
+        "id": "open-access-art:nga:50332",
+        "title": "A Crow Village on the Salmon River",
+        "artist": "George Catlin",
+        "year": 1855,
+        "similarity": 0.627
+      },
+      {
+        "id": "open-access-art:nga:144846",
+        "title": "The Dawn of Creation",
+        "artist": "Samuel Jackson",
+        "year": 1830,
+        "similarity": 0.569
+      },
+      {
+        "id": "open-access-art:nga:70382",
+        "title": "Monte Circeo at Sunset",
+        "artist": "John Robert Cozens",
+        "year": 1780,
+        "similarity": 0.565
+      },
+      {
+        "id": "open-access-art:nga:50373",
+        "title": "Encampment of Pawnee Indians at Sunset",
+        "artist": "George Catlin",
+        "year": 1861,
+        "similarity": 0.561
+      }
+    ],
+    "truncated": true
+  },
+  "agentResults": null,
+  "openArtwork": null,
+  "flags": {
+    "picks": [
+      {
+        "id": "open-access-art:nga:144846",
+        "title": "The Dawn of Creation",
+        "artist": "Samuel Jackson",
+        "palette": [
+          "#46403C",
+          "#847B72",
+          "#A89F94"
+        ],
+        "medium": "brush and black ink with scratching out",
+        "year": 1830,
+        "classification": "Drawing",
+        "by": "human",
+        "onBoard": false
+      }
+    ],
+    "rejects": [
+      {
+        "id": "open-access-art:nga:50295",
+        "title": "Peaceful Valley",
+        "artist": "Alexander Helwig Wyant",
+        "palette": [
+          "#DEB585",
+          "#3B2F1F",
+          "#715023",
+          "#B09176"
+        ],
+        "medium": "oil on canvas",
+        "year": 1872,
+        "classification": "Painting",
+        "by": "human",
+        "onBoard": false
+      },
+      {
+        "id": "open-access-art:nga:184224",
+        "title": "Vicinity of Morestal",
+        "artist": "François-Auguste Ravier",
+        "palette": [
+          "#967B62",
+          "#B6874F",
+          "#574136",
+          "#8D6634"
+        ],
+        "medium": "watercolor and fabricated charcoal",
+        "year": 1885,
+        "classification": "Drawing",
+        "by": "human",
+        "onBoard": false
+      }
+    ],
+    "provisional": [],
+    "exemplars": {
+      "positive": [
+        "open-access-art:nga:144846"
+      ],
+      "negative": [
+        "open-access-art:nga:50295",
+        "open-access-art:nga:184224"
+      ]
+    },
+    "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+  },
+  "board": null,
+  "exhibition": {
+    "title": {
+      "text": null,
+      "by": null
+    },
+    "statement": {
+      "text": null,
+      "by": null
+    },
+    "works": [
+      {
+        "artworkId": "open-access-art:nga:144846",
+        "position": 0,
+        "title": "The Dawn of Creation",
+        "artist": "Samuel Jackson",
+        "year": 1830,
+        "label": null,
+        "labelBy": null
+      }
+    ],
+    "regions": [],
+    "unlabelled": 1,
+    "updatedAt": null,
+    "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show."
+  },
+  "selection": [],
+  "hovered": {
+    "id": "open-access-art:nga:144846",
+    "work": "The Dawn of Creation — Samuel Jackson"
+  },
+  "compare": null,
+  "indexedCollection": null,
+  "hint": "Use lookup_artwork on any id above for the full record, or search_by_image with an id for visually similar works."
+}

@@ -1,0 +1,228 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "sunset landscape",
+  "ids": [
+    "open-access-art:nga:50295",
+    "open-access-art:nga:184224",
+    "open-access-art:nga:144846",
+    "open-access-art:nga:42377",
+    "open-access-art:nga:24889",
+    "open-access-art:nga:195142"
+  ],
+  "runs": [
+    {
+      "condition": "weather",
+      "title": "Weather Report",
+      "statement": "A show about weather, and about painters who went outside to look at it. Every work here is a record of a particular hour of a particular day — the light going, the air thickening, a front coming in off the water. Nothing is symbolic. The subject is the sky and what it is doing to everything underneath it, and the works are hung so that the day appears to be passing as you walk the room.",
+      "tool": {
+        "ok": true,
+        "labels": [
+          {
+            "artworkId": "open-access-art:nga:50295",
+            "work": "Peaceful Valley — Alexander Helwig Wyant",
+            "label": "In oil, the valley is organized around a calm, open stretch of land beneath a broad sky. Its quiet conditions begin the exhibition’s passage through a day outdoors.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:184224",
+            "work": "Vicinity of Morestal — François-Auguste Ravier",
+            "label": "Watercolor and charcoal make the vicinity of Morestal a study in shifting light and dark. The fragile, worked surface keeps attention on air and atmosphere across the landscape.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:144846",
+            "work": "The Dawn of Creation — Samuel Jackson",
+            "label": "Black ink and scratched passages build a sky charged with early light. Despite its expansive title, the sheet concentrates the exhibition’s weather report into stark contrasts at daybreak.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:42377",
+            "work": "Sunrise (Lever du soleil: L'automne) — Alphonse Legros",
+            "label": "Green ink gives the sunrise an unusual, subdued cast rather than the expected blaze of color. The autumn morning appears as a specific change in light, registered through the etched line.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:24889",
+            "work": "Memorial Painting — James Vail",
+            "label": "Watercolor, gouache, and pen and ink gather different kinds of mark on a single paper surface. In this sequence, the title’s memorial note sits alongside a close record of the day’s visible conditions.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:195142",
+            "work": "Sunset on the River — Charles-François Daubigny",
+            "label": "The river carries the last light of the day beneath a setting sun. Painted in oil on wood, the scene closes the hanging order with weather and illumination settling toward evening.",
+            "writtenFrom": "catalogue"
+          }
+        ],
+        "catalogueOnly": [
+          "open-access-art:nga:50295",
+          "open-access-art:nga:184224",
+          "open-access-art:nga:144846",
+          "open-access-art:nga:42377",
+          "open-access-art:nga:24889",
+          "open-access-art:nga:195142"
+        ],
+        "effect": "The labels are under the works on the human’s screen, in your ink, and they can edit any of them."
+      },
+      "labels": [
+        {
+          "artworkId": "open-access-art:nga:50295",
+          "title": "Peaceful Valley",
+          "label": "In oil, the valley is organized around a calm, open stretch of land beneath a broad sky. Its quiet conditions begin the exhibition’s passage through a day outdoors."
+        },
+        {
+          "artworkId": "open-access-art:nga:184224",
+          "title": "Vicinity of Morestal",
+          "label": "Watercolor and charcoal make the vicinity of Morestal a study in shifting light and dark. The fragile, worked surface keeps attention on air and atmosphere across the landscape."
+        },
+        {
+          "artworkId": "open-access-art:nga:144846",
+          "title": "The Dawn of Creation",
+          "label": "Black ink and scratched passages build a sky charged with early light. Despite its expansive title, the sheet concentrates the exhibition’s weather report into stark contrasts at daybreak."
+        },
+        {
+          "artworkId": "open-access-art:nga:42377",
+          "title": "Sunrise (Lever du soleil: L'automne)",
+          "label": "Green ink gives the sunrise an unusual, subdued cast rather than the expected blaze of color. The autumn morning appears as a specific change in light, registered through the etched line."
+        },
+        {
+          "artworkId": "open-access-art:nga:24889",
+          "title": "Memorial Painting",
+          "label": "Watercolor, gouache, and pen and ink gather different kinds of mark on a single paper surface. In this sequence, the title’s memorial note sits alongside a close record of the day’s visible conditions."
+        },
+        {
+          "artworkId": "open-access-art:nga:195142",
+          "title": "Sunset on the River",
+          "label": "The river carries the last light of the day beneath a setting sun. Painted in oil on wood, the scene closes the hanging order with weather and illumination settling toward evening."
+        }
+      ]
+    },
+    {
+      "condition": "leaving",
+      "title": "After They Left",
+      "statement": "A show about departure, and about what a place looks like once the people are out of it. Every work here is somewhere that was recently occupied and is not now — a road out, a house at a distance, a shore with the boats already gone. Nothing here is about weather. The subject is absence, and the landscape is only the room the absence is standing in.",
+      "tool": {
+        "ok": true,
+        "labels": [
+          {
+            "artworkId": "open-access-art:nga:50295",
+            "work": "Peaceful Valley — Alexander Helwig Wyant",
+            "label": "The valley’s open expanse and distant road make the title’s peace feel unsettled: it is a place with no visible traveler left to occupy it. The empty route turns the landscape into evidence of passage.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:184224",
+            "work": "Vicinity of Morestal — François-Auguste Ravier",
+            "label": "Watercolor and charcoal hold the wooded vicinity in a loose, thinning view, with no figure fixing its scale or purpose. Morestal is presented as a place remaining after its human use has slipped out of sight.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:144846",
+            "work": "The Dawn of Creation — Samuel Jackson",
+            "label": "Black ink, brushed and scratched back, builds a stark terrain before anyone appears within it. Despite its origin-story title, the image enters the exhibition as a world emptied of inhabitants.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:42377",
+            "work": "Sunrise (Lever du soleil: L'automne) — Alphonse Legros",
+            "label": "Printed in green ink, this small landscape leaves the ground and horizon without visible human presence. Its seasonal subtitle marks time passing through a place after its occupants have gone.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:24889",
+            "work": "Memorial Painting — James Vail",
+            "label": "The title frames the image as an act of remembrance, while watercolor, gouache, and drawn line preserve a scene rather than a person. It makes absence tangible through what remains available to be pictured.",
+            "writtenFrom": "catalogue"
+          },
+          {
+            "artworkId": "open-access-art:nga:195142",
+            "work": "Sunset on the River — Charles-François Daubigny",
+            "label": "The river carries the eye through an unpeopled stretch of shore, where no boat or figure interrupts the water’s course. At day’s end, the scene reads as a place left behind rather than a view awaiting activity.",
+            "writtenFrom": "catalogue"
+          }
+        ],
+        "catalogueOnly": [
+          "open-access-art:nga:50295",
+          "open-access-art:nga:184224",
+          "open-access-art:nga:144846",
+          "open-access-art:nga:42377",
+          "open-access-art:nga:24889",
+          "open-access-art:nga:195142"
+        ],
+        "effect": "The labels are under the works on the human’s screen, in your ink, and they can edit any of them."
+      },
+      "labels": [
+        {
+          "artworkId": "open-access-art:nga:50295",
+          "title": "Peaceful Valley",
+          "label": "The valley’s open expanse and distant road make the title’s peace feel unsettled: it is a place with no visible traveler left to occupy it. The empty route turns the landscape into evidence of passage."
+        },
+        {
+          "artworkId": "open-access-art:nga:184224",
+          "title": "Vicinity of Morestal",
+          "label": "Watercolor and charcoal hold the wooded vicinity in a loose, thinning view, with no figure fixing its scale or purpose. Morestal is presented as a place remaining after its human use has slipped out of sight."
+        },
+        {
+          "artworkId": "open-access-art:nga:144846",
+          "title": "The Dawn of Creation",
+          "label": "Black ink, brushed and scratched back, builds a stark terrain before anyone appears within it. Despite its origin-story title, the image enters the exhibition as a world emptied of inhabitants."
+        },
+        {
+          "artworkId": "open-access-art:nga:42377",
+          "title": "Sunrise (Lever du soleil: L'automne)",
+          "label": "Printed in green ink, this small landscape leaves the ground and horizon without visible human presence. Its seasonal subtitle marks time passing through a place after its occupants have gone."
+        },
+        {
+          "artworkId": "open-access-art:nga:24889",
+          "title": "Memorial Painting",
+          "label": "The title frames the image as an act of remembrance, while watercolor, gouache, and drawn line preserve a scene rather than a person. It makes absence tangible through what remains available to be pictured."
+        },
+        {
+          "artworkId": "open-access-art:nga:195142",
+          "title": "Sunset on the River",
+          "label": "The river carries the eye through an unpeopled stretch of shore, where no boat or figure interrupts the water’s course. At day’s end, the scene reads as a place left behind rather than a view awaiting activity."
+        }
+      ]
+    }
+  ],
+  "compared": [
+    {
+      "artworkId": "open-access-art:nga:50295",
+      "identical": false,
+      "weather": "In oil, the valley is organized around a calm, open stretch of land beneath a broad sky. Its quiet conditions begin the exhibition’s passage through a day outdoors.",
+      "leaving": "The valley’s open expanse and distant road make the title’s peace feel unsettled: it is a place with no visible traveler left to occupy it. The empty route turns the landscape into evidence of passage."
+    },
+    {
+      "artworkId": "open-access-art:nga:184224",
+      "identical": false,
+      "weather": "Watercolor and charcoal make the vicinity of Morestal a study in shifting light and dark. The fragile, worked surface keeps attention on air and atmosphere across the landscape.",
+      "leaving": "Watercolor and charcoal hold the wooded vicinity in a loose, thinning view, with no figure fixing its scale or purpose. Morestal is presented as a place remaining after its human use has slipped out of sight."
+    },
+    {
+      "artworkId": "open-access-art:nga:144846",
+      "identical": false,
+      "weather": "Black ink and scratched passages build a sky charged with early light. Despite its expansive title, the sheet concentrates the exhibition’s weather report into stark contrasts at daybreak.",
+      "leaving": "Black ink, brushed and scratched back, builds a stark terrain before anyone appears within it. Despite its origin-story title, the image enters the exhibition as a world emptied of inhabitants."
+    },
+    {
+      "artworkId": "open-access-art:nga:42377",
+      "identical": false,
+      "weather": "Green ink gives the sunrise an unusual, subdued cast rather than the expected blaze of color. The autumn morning appears as a specific change in light, registered through the etched line.",
+      "leaving": "Printed in green ink, this small landscape leaves the ground and horizon without visible human presence. Its seasonal subtitle marks time passing through a place after its occupants have gone."
+    },
+    {
+      "artworkId": "open-access-art:nga:24889",
+      "identical": false,
+      "weather": "Watercolor, gouache, and pen and ink gather different kinds of mark on a single paper surface. In this sequence, the title’s memorial note sits alongside a close record of the day’s visible conditions.",
+      "leaving": "The title frames the image as an act of remembrance, while watercolor, gouache, and drawn line preserve a scene rather than a person. It makes absence tangible through what remains available to be pictured."
+    },
+    {
+      "artworkId": "open-access-art:nga:195142",
+      "identical": false,
+      "weather": "The river carries the last light of the day beneath a setting sun. Painted in oil on wood, the scene closes the hanging order with weather and illumination settling toward evening.",
+      "leaving": "The river carries the eye through an unpeopled stretch of shore, where no boat or figure interrupts the water’s course. At day’s end, the scene reads as a place left behind rather than a view awaiting activity."
+    }
+  ],
+  "identical": 0,
+  "modelCalls": []
+}

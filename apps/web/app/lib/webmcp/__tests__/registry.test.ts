@@ -424,3 +424,52 @@ describe('the tool surface a judge can count', () => {
     expect(PAILLETTE_TOOL_COUNT).toBe(25);
   });
 });
+
+describe('remount', () => {
+  it('survives StrictMode mount → cleanup → mount without losing the host', async () => {
+    // The exact sequence React runs in development, with no await between the
+    // phases — which is the point. The teardown's `unregisterTool` is still in
+    // flight when the second mount calls `registerTool`.
+    const host = createHost();
+    installHost(host);
+
+    const disposeFirst = registerTools([makeTool('get_view_context')]);
+    disposeFirst();
+    const disposeSecond = registerTools([makeTool('get_view_context')]);
+
+    await waitForWebMcpRegistry();
+
+    expect(getRegisteredToolNames()).toEqual(['get_view_context']);
+    expect([...host.registered.keys()]).toEqual(['get_view_context']);
+    expect(await getHostTools()).toHaveLength(1);
+
+    disposeSecond();
+    await waitForWebMcpRegistry();
+    expect([...host.registered.keys()]).toEqual([]);
+  });
+
+  it('reports no duplicate-registration error across a remount', async () => {
+    const host = createHost();
+    installHost(host);
+    const onError = vi.fn();
+
+    registerTools([makeTool('redeal')], { onError })();
+    registerTools([makeTool('redeal')], { onError });
+    await waitForWebMcpRegistry();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect([...host.registered.keys()]).toEqual(['redeal']);
+  });
+
+  it('holds the whole surface through a remount, not just one tool', async () => {
+    const host = createHost();
+    installHost(host);
+    const surface = ['flag_artworks', 'redeal', 'search_by_exemplars'];
+
+    registerTools(surface.map((name) => makeTool(name)))();
+    registerTools(surface.map((name) => makeTool(name)));
+    await waitForWebMcpRegistry();
+
+    expect([...host.registered.keys()].sort()).toEqual([...surface].sort());
+  });
+});
