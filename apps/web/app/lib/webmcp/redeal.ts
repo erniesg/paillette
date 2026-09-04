@@ -22,6 +22,7 @@ import type { ArtworkSearchResult } from '~/types';
 import { recallArtworks, rememberArtworks } from './artwork-index';
 import { toAgentArtworkSummary } from './artwork-summary';
 import { searchByExemplarsPublic } from './client';
+import { composeDealNote } from './deal-note';
 import { getExemplars } from './flags';
 import { resolveSearchTarget } from './search-target';
 import {
@@ -331,7 +332,16 @@ export const runRedeal = async (
     }
 
     const order = placeKeptInOrder(previousOrder, kept, added, size);
-    const note = request.note?.trim() || null;
+    // Nobody named this board, so it names itself. The deterministic path never
+    // passes a note — it has no model to write one with — and the wrapper hides
+    // an empty note, so Enter on an empty bar used to delete the sentence above
+    // the board and drop every card 56px into the gap. See `deal-note`: it is
+    // composed here from the flags and the palettes, with no model call in the
+    // path, which is the same argument the deal itself makes.
+    const note =
+      request.note?.trim() ||
+      composeDealNote({ exemplars, added }) ||
+      null;
 
     setBoard({
       order,
