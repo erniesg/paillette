@@ -33,9 +33,20 @@ const note = (ok, what, detail) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Positions of the cards in the deal grid — the board, not the tray. */
-const boardSlots = (page) =>
-  page.evaluate(() => {
+/**
+ * Positions of the cards in the deal grid — the board, not the tray.
+ *
+ * The pointer is parked off the board first. `.lt-slide:hover` lifts a card by
+ * `translateY(-2px)` (tailwind.css), and the last click of the previous step
+ * can leave the mouse resting over a slot, so measuring in place compares a
+ * resting card against a hovered one and reports a 2px "move" that is the
+ * hover state rather than the layout. Measured with the mouse away, a held
+ * pick sits on the identical subpixel before and after the deal.
+ */
+const boardSlots = async (page) => {
+  await page.mouse.move(4, 4);
+  await sleep(250);
+  return page.evaluate(() => {
     const grid = document.querySelector('[data-testid="deal-board-grid"]');
     const scope = grid ?? document;
     const out = {};
@@ -45,6 +56,7 @@ const boardSlots = (page) =>
     }
     return out;
   });
+};
 
 const flagsOnScreen = (page) =>
   page.evaluate(() =>

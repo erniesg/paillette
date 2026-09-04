@@ -1,0 +1,4 @@
+after deterministic redeal: {"grid":12,"fullyVisible":12,"tray":1,"total":13}
+set_results reply: {"ok":true,"collection":"nga","pinned":20,"note":"twenty works, set by the agent","effect":"The human’s screen now reflects this."}
+after agent set_results(20): {"grid":20,"fullyVisible":20,"tray":0,"total":22}
+rc=0

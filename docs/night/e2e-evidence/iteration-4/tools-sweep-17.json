@@ -1,0 +1,107 @@
+{
+  "out": [
+    {
+      "name": "list_collections",
+      "ms": 67,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collections\":[{\"id\":\"nga\",\"name\":\"National Gallery of Art, Washington — open access\",\"description\":\"Open-access artworks released by the National Gallery of Art, Washington. Every record c"
+    },
+    {
+      "name": "search_artworks",
+      "ms": 628,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"estuary at dusk\",\"count\":3,\"queryTimeMs\":0,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"estuary at dusk\",\"semanticQuery\":\"estuary at dusk\",\"constr"
+    },
+    {
+      "name": "search_by_color",
+      "ms": 641,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collection\":\"nga\",\"color\":{\"input\":\"#C8A165\",\"hex\":\"#c8a165\",\"swatch\":\"custom:#c8a165\"},\"method\":\"semantic search on the colour’s language, then CIEDE2000 re-rank against each work’s extra"
+    },
+    {
+      "name": "search_by_image",
+      "ms": 15122,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collection\":\"nga\",\"queriedWith\":{\"artworkId\":\"open-access-art:nga:184225\"},\"count\":2,\"queryTimeMs\":14915,\"quota\":{\"limit\":1000,\"used\":558,\"remaining\":442},\"results\":[{\"id\":\"open-access-art"
+    },
+    {
+      "name": "browse_collection",
+      "ms": 863,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collection\":\"nga\",\"count\":3,\"total\":63253,\"offset\":0,\"limit\":3,\"hasMore\":true,\"results\":[{\"id\":\"open-access-art:nga:55688\",\"title\":\"\\\"'t Suynighe Waertje\\\" and \\\"De Goelicke Waerdin\\\"\",\"ar"
+    },
+    {
+      "name": "lookup_artwork",
+      "ms": 19,
+      "ok": true,
+      "reply": "{\"ok\":true,\"artworks\":[{\"id\":\"open-access-art:nga:184225\",\"title\":\"Environs de Cremieu\",\"artist\":\"François-Auguste Ravier\",\"year\":1885,\"dateText\":\"c. 1890\",\"medium\":\"watercolor and graphite on laid pa"
+    },
+    {
+      "name": "get_search_quota",
+      "ms": 68,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collection\":\"nga\",\"limit\":1000,\"used\":558,\"remaining\":442,\"scope\":\"Shared across every anonymous visitor to this site, not per-user. Spend it deliberately.\",\"exhaustedFallback\":\"When remai"
+    },
+    {
+      "name": "get_view_context",
+      "ms": 18,
+      "ok": true,
+      "reply": "{\"ok\":true,\"page\":{\"path\":\"/nga/search\",\"collection\":\"nga\",\"collectionName\":\"National Gallery of Art, Washington — open access\",\"onSearchPage\":true},\"humanSearch\":{\"query\":\"warm landscape\",\"facet\":nul"
+    },
+    {
+      "name": "set_view",
+      "ms": 16,
+      "ok": true,
+      "reply": "{\"ok\":true,\"view\":\"salon\",\"effect\":\"The human’s grid is now laid out this way.\"}"
+    },
+    {
+      "name": "set_results",
+      "ms": 36,
+      "ok": true,
+      "reply": "{\"ok\":true,\"collection\":\"nga\",\"pinned\":5,\"note\":\"a five-work hang\",\"effect\":\"The human’s screen now reflects this.\"}"
+    },
+    {
+      "name": "show_artwork",
+      "ms": 14,
+      "ok": true,
+      "reply": "{\"ok\":true,\"opened\":{\"id\":\"open-access-art:nga:184225\",\"title\":\"Environs de Cremieu\",\"artist\":\"François-Auguste Ravier\",\"year\":1885,\"dateText\":\"c. 1890\",\"medium\":\"watercolor and graphite on laid paper"
+    },
+    {
+      "name": "describe_artwork",
+      "ms": 19,
+      "ok": true,
+      "reply": "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"artwork is required.\",\"hint\":\"Pass an id from search_artworks, browse_collection, or get_view_context.\"}}"
+    },
+    {
+      "name": "create_collection",
+      "ms": 30000,
+      "ok": false,
+      "reply": "THREW timed out after 30s"
+    },
+    {
+      "name": "add_to_collection",
+      "ms": 33,
+      "ok": true,
+      "reply": "{\"ok\":false,\"error\":{\"code\":\"SHORTLIST_NOT_FOUND\",\"message\":\"No shortlist exists yet.\",\"hint\":\"Call create_collection first.\"}}"
+    },
+    {
+      "name": "index_zip",
+      "ms": 17,
+      "ok": true,
+      "reply": "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"zipUrl must be an https:// URL or a data: URI of a .zip archive.\"}}"
+    },
+    {
+      "name": "index_folder",
+      "ms": 17,
+      "ok": true,
+      "reply": "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"files must contain at least one { url } entry.\",\"hint\":\"Each entry is an https:// URL or a data: URI of a single image.\"}}"
+    },
+    {
+      "name": "get_index_status",
+      "ms": 19,
+      "ok": true,
+      "reply": "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"jobId is required.\",\"hint\":\"It is returned by index_zip and index_folder.\"}}"
+    }
+  ],
+  "errs": []
+}

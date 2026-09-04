@@ -1,0 +1,214 @@
+[
+  {
+    "run": 1,
+    "steps": [
+      {
+        "label": "flags laid down",
+        "picks": [
+          "The Dawn of Creation"
+        ],
+        "rejects": [
+          "Peaceful Valley",
+          "Vicinity of Morestal"
+        ]
+      },
+      {
+        "label": "deterministic redeal",
+        "modelCallsDuring": 0,
+        "board": {
+          "view": "deal-board",
+          "cards": 14
+        }
+      },
+      {
+        "label": "instruction in the bar",
+        "chars": 88,
+        "verbatim": true
+      },
+      {
+        "label": "agent turn",
+        "quietMs": 14809,
+        "elapsedMs": 16491,
+        "modelCalls": 3,
+        "wallLabel": "You asked warm, but kept the charcoal ink drawing and rejected the two darker painted landscapes; following that spare tonal line.",
+        "provenance": "agent",
+        "view": "deal-board",
+        "cards": 17,
+        "picksHeld": 2,
+        "dealError": null,
+        "transcript": [
+          "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+        ]
+      }
+    ],
+    "turns": [
+      {
+        "messages": 1,
+        "turn": {
+          "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "flagsDelta": [
+            {
+              "artworkId": "open-access-art:nga:50295",
+              "title": "Peaceful Valley (Alexander Helwig Wyant)",
+              "palette": [
+                "#DEB585",
+                "#3B2F1F",
+                "#715023",
+                "#B09176"
+              ],
+              "medium": "oil on canvas",
+              "year": 1872,
+              "classification": "Painting",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:184224",
+              "title": "Vicinity of Morestal (François-Auguste Ravier)",
+              "palette": [
+                "#967B62",
+                "#B6874F",
+                "#574136",
+                "#8D6634"
+              ],
+              "medium": "watercolor and fabricated charcoal",
+              "year": 1885,
+              "classification": "Drawing",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:144846",
+              "title": "The Dawn of Creation (Samuel Jackson)",
+              "palette": [
+                "#46403C",
+                "#847B72",
+                "#A89F94"
+              ],
+              "medium": "brush and black ink with scratching out",
+              "year": 1830,
+              "classification": "Drawing",
+              "to": "pick"
+            }
+          ],
+          "selection": [],
+          "hovered": null,
+          "compareChoice": null,
+          "exhibitionEdits": []
+        },
+        "lastRole": "user"
+      },
+      {
+        "messages": 3,
+        "turn": {
+          "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "flagsDelta": [
+            {
+              "artworkId": "open-access-art:nga:50295",
+              "title": "Peaceful Valley (Alexander Helwig Wyant)",
+              "palette": [
+                "#DEB585",
+                "#3B2F1F",
+                "#715023",
+                "#B09176"
+              ],
+              "medium": "oil on canvas",
+              "year": 1872,
+              "classification": "Painting",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:184224",
+              "title": "Vicinity of Morestal (François-Auguste Ravier)",
+              "palette": [
+                "#967B62",
+                "#B6874F",
+                "#574136",
+                "#8D6634"
+              ],
+              "medium": "watercolor and fabricated charcoal",
+              "year": 1885,
+              "classification": "Drawing",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:144846",
+              "title": "The Dawn of Creation (Samuel Jackson)",
+              "palette": [
+                "#46403C",
+                "#847B72",
+                "#A89F94"
+              ],
+              "medium": "brush and black ink with scratching out",
+              "year": 1830,
+              "classification": "Drawing",
+              "to": "pick"
+            }
+          ],
+          "selection": [],
+          "hovered": null,
+          "compareChoice": null,
+          "exhibitionEdits": []
+        },
+        "lastRole": "tool"
+      },
+      {
+        "messages": 5,
+        "turn": {
+          "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "flagsDelta": [
+            {
+              "artworkId": "open-access-art:nga:50295",
+              "title": "Peaceful Valley (Alexander Helwig Wyant)",
+              "palette": [
+                "#DEB585",
+                "#3B2F1F",
+                "#715023",
+                "#B09176"
+              ],
+              "medium": "oil on canvas",
+              "year": 1872,
+              "classification": "Painting",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:184224",
+              "title": "Vicinity of Morestal (François-Auguste Ravier)",
+              "palette": [
+                "#967B62",
+                "#B6874F",
+                "#574136",
+                "#8D6634"
+              ],
+              "medium": "watercolor and fabricated charcoal",
+              "year": 1885,
+              "classification": "Drawing",
+              "to": "reject"
+            },
+            {
+              "artworkId": "open-access-art:nga:144846",
+              "title": "The Dawn of Creation (Samuel Jackson)",
+              "palette": [
+                "#46403C",
+                "#847B72",
+                "#A89F94"
+              ],
+              "medium": "brush and black ink with scratching out",
+              "year": 1830,
+              "classification": "Drawing",
+              "to": "pick"
+            }
+          ],
+          "selection": [],
+          "hovered": null,
+          "compareChoice": null,
+          "exhibitionEdits": []
+        },
+        "lastRole": "tool"
+      }
+    ],
+    "errors": [],
+    "note": "You asked warm, but kept the charcoal ink drawing and rejected the two darker painted landscapes; following that spare tonal line.",
+    "transcript": [
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    ]
+  }
+]

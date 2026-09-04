@@ -1,5 +1,271 @@
 # Integration — what merged, what runs, what does not
 
+# Iteration 4
+
+Branch `night/integration`, head `28a37ee` at the start of this run, pushed.
+Staging redeployed from it: web version `76f4f6b7-d917-4d51-903b-47c29d407f85`,
+api version `b1e32e84-d565-4cb8-9ec1-4cc16af31ece`.
+
+## 0. There was nothing left to merge
+
+Measured before deciding anything, with `git rev-list --count HEAD..<branch>`:
+
+| branch | commits not in `night/integration` |
+| --- | --- |
+| `night/shared-state` | 0 |
+| `night/visuals` | 0 |
+| `night/voice-loop` | 0 |
+| `night/review` | 0 |
+| `night/curation` | 0 |
+| `night/activity` | 0 |
+| `night/sharing` | 0 |
+| `night/capfix` | 0 |
+
+All eight lanes are fully contained. No merge ran this iteration, so no branch
+fought and there was nothing to resolve. The collision the brief predicts —
+shared-state's flag controls against visuals' restyle of the same tile — was
+resolved in iteration 1 and both halves are still live: §3 below flags cards by
+keyboard (shared-state's behaviour) on the light-table card (visuals'
+presentation).
+
+Two things verified rather than assumed, because the brief singles them out:
+
+- **`928b5dc` is present** — `git merge-base --is-ancestor 928b5dc HEAD` returns
+  true, and `?webmcp-debug` installed the driver on every one of the eight
+  browser runs below.
+- **capfix is present** — `AGENT_MODEL_CALLS_PER_HOUR` is read at
+  `apps/api/src/routes/agent.ts:52`, declared at `src/index.ts:60`, and the
+  deployed staging vars printed `AGENT_MODEL_CALLS_PER_HOUR: "600"` during this
+  run's api deploy.
+
+**I did not reset to `origin/deploy-nga-open-access`.** The brief asks a
+re-integrating run to do that rather than pile merges on merges. There are no
+merges to pile: the cost here would be discarding nine commits that exist only
+on this branch — the whole iteration-3 fix pass, including `f16b622` (rejects
+alone now deal), `db495a5` (the staging 429), `9b1fa61` (flags kept in context),
+`a3b82a2` and `fa6771c` (the sticky bar off the wall label) — to gain a graph
+shape nobody reads. Iterations 2 and 3 made the same call; I re-measured it
+rather than inheriting it.
+
+**The curation wait-gate: I did not wait.** `logs/curation.state` ends at
+`round=1 status=ok` with no `lane-done`, which is exactly what the brief's loop
+reads as "still running". It is not running. `ps` shows only `pipeline2.sh` and
+this agent; `curation.log` has not moved since 07:08, three hours ago; the
+worktree is clean; and `night/curation` is fully merged here. Waiting two hours
+for a line no live process exists to write would have spent the window for
+nothing. Iteration 3 found the same and recorded it; this is the second
+iteration the gate has misread a lane killed by the 07:40 reboot.
+
+## 1. Green
+
+Baseline is web 59 files / 593 tests and api 41 / 770.
+
+| | result |
+| --- | --- |
+| `pnpm --filter web typecheck` | **clean**, `rc=0` |
+| `pnpm --filter api typecheck` | **clean**, `rc=0` |
+| `pnpm --filter web test` | **97 files / 1203 tests passed**, 0 failed |
+| `pnpm --filter api test` | **46 files / 857 tests passed**, 0 failed |
+
+Roughly double the baseline on both sides, nothing skipped, nothing deleted to
+make a suite pass. No test was removed this iteration.
+
+## 2. The local dev server cannot serve `/nga/search` on this VM
+
+The brief asks for the loop to be walked against `pnpm dev`. That is not
+possible here, and the reason is worth recording because it will catch the next
+run too.
+
+`remix vite:dev` starts fine on `:5173`. The page renders, the utterance bar is
+there, `?webmcp-debug` installs `window.__paillette_webmcp`. But
+`/api/public-search/nga/text` and `/api/public-search/nga/quota` both return
+**401 — "A valid bearer token or API key is required"**, and the page shows
+`NO WORKS`. The chain:
+
+- `getApiBaseUrl` (`public-search.server.ts:92`) resolves a dev server to the
+  **staging** API, since there is no `PAILLETTE_API_URL` outside Wrangler.
+- `public-search.server.ts:258` sends `X-API-Key` only when
+  `PAILLETTE_PUBLIC_SEARCH_API_KEY` is set; otherwise it falls back to trusted
+  `X-User-*` headers.
+- `auth.ts:971` honours those headers only when `ENVIRONMENT === 'test'`. Its
+  own comment: *"staging, production, and local workers never trust user
+  headers."*
+
+The key is a deployed Worker secret and is not on this VM, so a local dev server
+has no route to the collection. Everything in §3–§5 was therefore walked against
+the **deployed staging build** — which is what the end-to-end phase films
+anyway, so the walk is on the artifact that matters rather than a proxy for it.
+Fixing this properly means putting a staging search key in a local `.dev.vars`,
+which is the owner's call, not a fix phase's.
+
+## 3. The demo loop, walked by hand on deployed staging
+
+Four runs of `scripts/demo/walk-the-loop.mjs` against
+`https://paillette-stg.berlayar.ai`, 1440×1000, nothing stubbed. Final run
+**19 pass · 0 fail**. Step by step, as the brief lists them:
+
+| step | worked? | measured |
+| --- | --- | --- |
+| deal a board | **yes** | 30 cards for "warm landscape"; one utterance bar on the page |
+| `P` on two works | **yes** | both read `data-flag=pick`, `data-flag-by=human` |
+| `X` on two others | **yes** | both read `data-flag=reject`, `data-flag-by=human` |
+| flagging does not call the model | **yes** | 3 requests while flagging, none to `/public-agent/turn` |
+| Enter on an empty bar redeals | **yes** | board becomes 12 cards, all 12 fully on screen in 1000px |
+| …with no model call | **yes** | **0** model calls, 11 requests, **1** call to the exemplar engine |
+| …with the picks still in place | **yes** | `{x:220,y:192}` → `{x:220,y:192}` and `{x:500,y:192}` → `{x:500,y:192}` |
+| rejects leave, still restorable | **yes** | both in the visible left tray after the deal |
+| the FLIP actually animates | **yes** | **23 distinct layouts across 340 sampled frames** (a jump cut is 4–5) |
+| no uncaught page errors | **yes** | 0 across the walk |
+
+Evidence: `docs/night/e2e-evidence/iteration-4/walk/`.
+
+### The one failure, and why it was the ruler and not the board
+
+Three consecutive runs failed *"both picks hold the exact same pixels"* —
+identically each time, pick `195765` moving `y 192 → 190`, the other pick not
+moving at all. Deterministic, so not noise. I measured it rather than dismissing
+two pixels:
+
+- the **slot** (`[data-board-slot]`) was at `y 192.09` before *and* after — it
+  did not move at all;
+- the **card inside it** was at `190.09`, with
+  `transform: matrix(1,0,0,1,0,-2)`, and `card.matches(':hover')` was `true`;
+- `.lt-slide:hover` sets `translateY(-2px)` (`tailwind.css:236`) — the light
+  table's deliberate lift;
+- moving the pointer to `(5,5)` and re-measuring put the card back at
+  **`192.09`, the identical subpixel**.
+
+The pointer was resting on that slot after the click into the utterance bar, so
+the check was comparing a resting card against a hovered one. The board's
+continuity was correct the whole time. Fixed in `scripts/demo/walk-the-loop.mjs`
+by parking the pointer before measuring, with the reason in the comment — the
+check still compares exact pixels and was not weakened. **This was a bug in the
+measurement, not in the product**, and it would have re-fired every iteration.
+
+## 4. All 25 tools driven directly through `?webmcp-debug`
+
+`PAILLETTE_TOOL_NAMES` holds 25 names and the live page agreed: *"document.
+modelContext carries 25 tools"*.
+
+**The 8 new tools** — `scripts/demo/exercise-new-tools.mjs`, **22 pass · 0
+fail**. `flag_artworks` lands `data-flag-by=agent` `data-flag-provisional=true`
+(dashed agent ink over a human board); `search_by_exemplars` returned 6 scored
+works; an agent-driven `redeal` held the human's pick on the same pixels
+(`{x:220,y:248}` → `{x:220,y:248}`); the two-up rendered full-frame at
+`0,0,1440,1000` rather than below the fold; `set_exhibition`/`get_exhibition`
+round-tripped with per-field provenance; `write_labels` returned a label per
+work written against the statement; `annotate_atlas` drew named regions.
+
+**The other 17**, called by hand with `window.__paillette_webmcp.call(name,
+args)` — `docs/night/e2e-evidence/iteration-4/tools-sweep-17.json`. All
+answered; no page errors. Three are worth writing down:
+
+- **`describe_artwork` takes `artwork`, not `artworkId`.** My first call passed
+  `artworkId` and got a clean `INVALID_INPUT — "artwork is required."` with a
+  hint. The schema does declare `artwork` (`tools.ts:793`, `required:
+  ['artwork']`), so the tool is self-consistent and this is not a defect. It is
+  the single place the surface is not uniform — every other tool takes
+  `artworkId` — and an agent skimming will get it wrong exactly as I did.
+  Called correctly it returned a real caption in 6.2 s from `gpt-5.6-luna`,
+  `persisted: true`.
+- **`create_collection` looked like a 30-second hang. It is not.** It blocks on
+  an on-page human approval: the page renders **Approve / Decline** and the
+  activity glyph reads `create_collection···{"name":…}` and `·█·█·collecting`.
+  Clicking Approve returned
+  `{"ok":true,"shortlist":{…},"added":1,"storage":"localStorage in this
+  browser"}`. `add_to_collection` is gated the same way and, called with no
+  shortlist, returns `SHORTLIST_NOT_FOUND` with a hint. Any harness that calls
+  these without clicking will appear to hang — worth knowing before filming.
+- `index_zip`, `index_folder` and `get_index_status` return correct
+  `INVALID_INPUT` with hints when called bare; `search_by_image` is the slow one
+  at **15.1 s**.
+
+## 5. The agentic half, on the deployed build
+
+A typed sofa instruction, voice off: **200, three model calls, note back in
+16.5 s.** No 429 — iteration 3's blocking budget item holds, with
+`OPENAI_DAILY_CALL_LIMIT = "5000"` and `AGENT_MODEL_CALLS_PER_HOUR = "600"`
+both printed in this run's deploy output.
+
+The wall label, verbatim:
+
+> **"You asked warm, but kept the charcoal ink drawing and rejected the two
+> darker painted landscapes; following that spare tonal line."**
+
+That is §3's said/chose gap surfaced and followed, unscripted. Checked against
+the flags actually on the wire (`iteration-4/agent-run.json`), which is the
+check the iteration-3 critique asked for — grounding read, not asserted:
+
+| | work | medium | classification | palette |
+| --- | --- | --- | --- | --- |
+| pick | *The Dawn of Creation*, Samuel Jackson, 1830 | brush and black ink with scratching out | Drawing | `#46403C #847B72 #A89F94` |
+| reject | *Peaceful Valley*, Wyant, 1872 | oil on canvas | Painting | `#DEB585 #3B2F1F #715023 #B09176` |
+| reject | *Vicinity of Morestal*, Ravier, 1885 | watercolor and fabricated charcoal | **Drawing** | `#967B62 #B6874F #574136 #8D6634` |
+
+So the note **is** grounded in the flagged works' medium and tone — "ink",
+"drawing", "darker" are all true of the right works — and it is **not
+word-perfect**: one of the two rejects is a drawing, not a "painted" landscape,
+and the pick is brush-and-ink rather than charcoal. Grounded with one wrong
+word is the honest description; it is a long way from iteration 3's "0 of 5
+notes named what was thrown out", and it is not a claim that it never
+misdescribes a medium.
+
+`turn.flagsDelta` rides **messages 1, 3 and 5** of the same turn, so the
+iteration-3 fix for "the flags are gone from context by the time the sentence is
+written" is confirmed on the wire rather than inferred.
+
+**Drift, observed.** The board that came back is monochrome ink drawings, from a
+"warm landscape" start — §6's predicted movement along visual rather than
+catalogue features, in one turn. `iteration-4/agent-note.png`.
+
+**The money shot.** `note-vs-toolbar.mjs` at scrollY 0 / 120 / 200 / 261 / 320:
+the note was present at all five and **sliced: false, overlap 0** at every one.
+I looked at the picture rather than the number:
+`iteration-4/money-shot-scroll000.png` has the human's sentence in graphite, the
+agent's wall label in cyan behind a cyan rule, and the board under it, in one
+frame. At scrollY 0 the bottom row of works is clipped by the viewport.
+
+## 6. What is broken, and what I did not fix
+
+1. **`set_results` is not capped to the board's twelve, and it empties the
+   tray.** Measured directly (`iteration-4/board-size-probe.txt`): after a
+   deterministic redeal the deal grid holds **12** cards with **1** in the left
+   tray; after `set_results` with 20 ids the same grid holds **20** and the tray
+   holds **0**. §4 says "Deal 12 cards, not 60 … each redeal is readable on
+   screen and on video", and §7.1 says rejects sit in a tray that stays visible
+   and restorable. The deterministic path honours both; the agent's path
+   honours neither. The cards shrink to fit rather than overflowing, so it
+   degrades legibility rather than breaking — but the human's
+   considered-and-declined pile disappearing on an agent turn is the more
+   serious half, because §6 lists that pile as part of the artifact. **Not
+   fixed:** changing `set_results` semantics late and unverified is exactly the
+   trade the brief warns against. It is a clean, cheap repro for the fix phase.
+2. **The local dev server cannot reach the collection** (§2). Not fixed —
+   it needs a secret that is not on this VM.
+3. **Two live text fields on a cold page** — the serif catalogue field and the
+   "Ask the agent" bar, both visible in `money-shot-scroll000.png`, against §5's
+   "there is nothing to switch because there is one field". Untouched; it is on
+   the critique's `nice_to_have` list, not the blocking one.
+4. **`describe_artwork`'s argument name** is the one non-uniform edge of the
+   tool surface (§4). Left alone deliberately: renaming a live tool argument the
+   night before filming is a worse risk than the inconsistency.
+5. **Not verified by me:** real speech (headless Chromium cannot do speech
+   recognition — it needs a real machine), and minting a *new* share code
+   end-to-end. Both were out of reach here rather than found broken.
+
+## 7. Deployed
+
+Both from `28a37ee`, production untouched:
+
+- web — **https://paillette-stg.berlayar.ai**, version
+  `76f4f6b7-d917-4d51-903b-47c29d407f85`
+- api — `https://paillette-api-stg.berlayar.ai`, version
+  `b1e32e84-d565-4cb8-9ec1-4cc16af31ece`
+
+Everything in §3–§6 was measured against those two versions.
+
+---
+
 # Iteration 3
 
 Branch `night/integration`, head `941f1c1`, pushed. Staging deployed from it.
