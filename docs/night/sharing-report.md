@@ -9,11 +9,20 @@ at iteration 2 so this branch contains their work as well as mine.
 > Three works, mixed provenance — two labels the agent wrote, one the human
 > did — so both inks are visible on one page.
 >
-> ## https://paillette-stg.berlayar.ai/e/QWwJnL5
-> Twelve works. Assembled by **typing** *"something warm for above the sofa,
-> and write me a title and statement"* into the prompt bar with the speech
-> APIs deleted from the page, then clicking Copy link. Title *"The Warm Side
-> of Light"* and its statement are the agent's.
+> ## https://paillette-stg.berlayar.ai/e/aWp7U3z
+> Twelve works and **twelve agent-written wall labels**. Assembled by
+> **typing** *"something warm for above the sofa — give it a title, a
+> statement, and write a wall label for each work"* into the prompt bar with
+> the speech APIs deleted from the page, then clicking Copy link. Title *"The
+> Amber Room"*, statement and all twelve labels are the agent's, and the
+> labels track the instruction ("making amber…", "warm fruit color…").
+>
+> ## https://paillette-stg.berlayar.ai/e/HcLSkLr
+> The same typed instruction, then the statement **retyped by hand** —
+> *"It is not about warmth. It is about the hour the light goes amber and the
+> room stops being a room."* The statement's provenance flips agent → human
+> and the shared page renders it in human ink. The agent wrote no labels on
+> this run (see §9.9).
 >
 > ## https://paillette-stg.berlayar.ai/e/MKwsxHy
 > Six works, four agent labels. Screenshot:
@@ -31,9 +40,17 @@ storage.
 > labels an agent wrote. Pasted into Slack or WhatsApp the link unfurls with
 > the exhibition's title, its statement and its lead artwork.
 
-Every clause of that is measured below. Do not extend it — in particular do
-not call these links private or say anything was tested in a real Slack
-workspace, because neither is true. See §6 and §9.
+Every clause of that is measured below. **Three things not to add to it:**
+
+1. Do not call these links private. They are unguessable, which is a different
+   property, and there is no delete and no expiry (§6).
+2. Do not say a card was seen rendering in a real Slack or WhatsApp client. The
+   document, the tags and the image were all fetched and checked, and the image
+   returns a real JPEG — but nothing was pasted into a real workspace (§9).
+3. Do not describe the *assembly* half as reliable. Publishing and opening a
+   link is this lane's and is 24/24; getting the agent to build a show to
+   publish depends on an hourly model-call budget that this VM exhausted
+   tonight (§8, "the agent budget").
 
 ---
 
@@ -72,6 +89,27 @@ failed and gives no way to get the link. There is now a visible, focused,
 pre-selected read-only field containing the URL, so it can be copied by hand —
 which is what the brief asked for. It does not clear on a timer; clearing it
 out from under someone mid-drag is the original bug in another coat.
+
+**Verified in a real browser, and it turned up a second bug.** Deleting
+`navigator.clipboard` on staging and driving the actual control: the button
+reads `Copy failed`, the field appears holding
+`https://paillette-stg.berlayar.ai/e/…`, read-only, focused, fully selected,
+and still there ten seconds later. But it was rendering the URL **uppercased**
+— the field inherits `.lt-catalogue`, which is `text-transform: uppercase`.
+
+Share codes are deliberately case-sensitive, so `sfT4685` was on screen as
+`SFT4685`. Ctrl+C copies the element's value and survives the transform, so
+the primary path was never broken — but this field exists precisely for the
+person who reads the link off the screen and types it somewhere else, and they
+would have typed a dead link. The one control whose whole job is handing a code
+to a human was showing it in a case that does not resolve.
+
+jsdom could not have caught it: no layout, no stylesheet, no computed style.
+The regression check now lives where the bug did —
+`apps/web/e2e/share-clipboard-fallback.spec.ts`, against staging, asserting
+`textTransform === 'none'` **and** that the code is genuinely mixed case so the
+assertion cannot pass vacuously. Screenshot after the fix:
+`docs/night/shots/share-clipboard-fallback.png`.
 
 ---
 
@@ -347,9 +385,13 @@ after merging `night/integration`, so it includes other lanes' tests too:
 
 | Suite | Baseline | Now |
 | --- | --- | --- |
-| `pnpm --filter web test` | 92 files / 1157 tests, **1 file failed to collect** | **95 files / 1181 tests, all pass** |
-| `pnpm --filter api test` | 44 files / 815 tests, all pass | **46 files / 849 tests, all pass** |
+| `pnpm --filter web test` | 92 files / 1157 tests, **1 file failed to collect** | **95 files / 1183 tests, all pass** |
+| `pnpm --filter api test` | 44 files / 815 tests, all pass | **46 files / 851 tests, all pass** |
 | `pnpm --filter web typecheck` | 1 error | **clean** |
+
+Playwright specs against staging, not in the default suites because they need a
+deployment: `cold-share-link.spec.ts` (4, needs `PAILLETTE_SHARE_CODE`) and
+`share-clipboard-fallback.spec.ts` (1). Both passing.
 
 Two notes on the baseline:
 
@@ -381,7 +423,9 @@ New coverage, all of it requested by the brief:
   fall-through case.
 - **The clipboard fallback** — `app/components/exhibition/__tests__/share-link.test.tsx`
   (12): the field appears, holds the URL, is read-only, is selected, persists,
-  and is absent on success.
+  and is absent on success. Plus `apps/web/e2e/share-clipboard-fallback.spec.ts`,
+  which drives the same branch in a real browser against staging because the
+  bug that was actually there — a CSS `text-transform` — is invisible to jsdom.
 - **Deadlines and hangs** — `app/lib/__tests__/exhibition-page-deadline.test.ts`
   (7): a record that never answers drops out while the rest render; the hang
   being *first* does not block the ones behind it; all-hang gives null not an
@@ -486,12 +530,7 @@ string does reach the function.
 
 1. **No delete, no expiry, no moderation.** §6. The largest gap, and the one
    that would matter if this went to production rather than staging.
-2. **The clipboard fallback has only been proven in jsdom.** The no-clipboard
-   branch is covered by five unit tests, but every real browser I could drive
-   has a working `navigator.clipboard` over HTTPS, so the visible selected
-   field has not been seen in a real browser. It would appear on an insecure
-   origin or where the permission is denied.
-3. **The `dropped` count is returned but not shown.** The API says how many
+2. **The `dropped` count is returned but not shown.** The API says how many
    works it could not resolve; the button ignores it. A curator whose show
    quietly loses a work finds out by counting.
 4. **Only the NGA collection.** Codes for `/try` sandbox collections are
@@ -500,9 +539,13 @@ string does reach the function.
 5. **No unfurl confirmed in a real client.** The document, the tags and the
    image were all fetched and checked with curl, and the image returns a real
    JPEG. Nothing was actually pasted into Slack, WhatsApp or X to see the card
-   render.
-6. **`view_count` is written on every resolve** including crawler and probe
-   hits, so it counts unfurls as visits.
+   render. This is the single largest remaining gap between what is measured
+   and what the submission would like to say.
+6. **`view_count` measures uncached human page loads, and nothing else.** It
+   no longer counts crawlers or probes (fixed this round, verified live). It
+   is still not a general analytics number: it counts server-rendered page
+   loads of `/e/:code` only, so it misses the `?e=…` links entirely and would
+   miss any future cached document.
 7. **The pre-existing `worker.ts` → `build/server/index.js` coupling** still
    makes `typecheck` and one test file fail on an unbuilt tree. Not mine, not
    fixed. Run `pnpm --filter web build` first and both go green.
@@ -514,10 +557,75 @@ string does reach the function.
    *only* in colour on the page — but a colour-blind visitor cannot tell which
    specific label came from which hand. A dashed-vs-solid rule would fix it
    without adding a word; not done tonight.
-9. **The typed end-to-end run produced no wall labels**, because the agent did
-   not call `write_labels` for that instruction. Labels and their ink were
-   verified on a separately published show instead. The two have not been
-   demonstrated in a single unbroken run.
+9. **The agent does not reliably write wall labels.** The same typed
+   instruction — one that explicitly asks for "a wall label for each work" —
+   produced 12 labels on one run and 0 on the next. Not this lane's code (the
+   share path carries whatever labels exist), but it decides whether the
+   shared page has any, so it is the difference between the strongest artifact
+   and a plain one. See §8 for both URLs.
+10. **A show with both inks has not come out of one typed run.** Two inks on
+    one page requires agent-written labels *and* a human-edited statement.
+    Run A got 12 agent labels and an agent statement (one ink); run B got a
+    human-inked statement and 0 labels (one ink). `/e/exYNx8X`, which has
+    both, was published directly rather than assembled through the UI.
+
+---
+
+## 8b. Iteration 3 — reliability, measured rather than asserted
+
+### The read path: 24/24, 30/30, 30/30
+
+Everything a stranger touches, exercised repeatedly against deployed staging.
+Three published shows (3, 12 and 6 works), each opened in a **fresh browser
+context with empty `storageState`**:
+
+| Path | Result |
+| --- | --- |
+| Cold page opens, walked top to bottom | **24 / 24** — right work count, right label count, title present, every image decoded |
+| Crawler unfurls (`Slackbot-LinkExpanding`) | **30 / 30** with `og:title`, `og:image` and `summary_large_image` |
+| JSON probes (`Accept: application/json`) | **30 / 30** answered as JSON, none fell through |
+
+The first version of that first measurement said **16/24**, and the eight
+failures were all the twelve-work show reporting 2–9 of 12 images decoded. That
+was my assertion being wrong, not the page: everything past the second image is
+`loading="lazy"`, so it decodes on approach and the check never scrolled. It
+passed on the three- and six-work shows because they sit near the fold — so the
+committed e2e test was one bigger exhibition away from failing for a reason
+that had nothing to do with the product. It walks the hang now.
+
+### The agent budget — the reason the assembly half could not be measured
+
+A 5-run reliability harness on the *typed assembly* beat returned **0/5, share
+button never appeared**. That number is worthless as a measure of the feature,
+and saying why matters more than the number:
+
+```
+429 /api/public-agent/turn
+{"error":{"code":"AGENT_RATE_LIMITED",
+          "message":"You have used this hour's shared agent budget."}}
+```
+
+`MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40` in `apps/api/src/routes/agent.ts`,
+and those are **model calls, not turns** — one agentic turn spends several. The
+bucket is keyed on the caller's address, so every lane running e2e from this VM
+shares one. My own runs exhausted it.
+
+**This is a real risk to the video, not just to my measurement.** Repeated takes
+from one machine will hit the same wall, and the failure is silent from the
+page's side: no board appears, so no share button appears. Anyone filming should
+know the budget exists and pace takes against it.
+
+Two successful typed runs are recorded from before the budget ran out, and both
+are still live — see the URLs at the top.
+
+### What this round fixed, all found by running it
+
+| Found | Why unit tests could not have found it |
+| --- | --- |
+| The fallback field displayed a case-sensitive code uppercased | jsdom has no stylesheet and no computed style |
+| `view_count` counted crawler and probe hits as visits | Only visible by watching the counter across three different caller types on a live deployment |
+| The loader's `Cache-Control` claim was false | `worker.ts` overrides it to `private, no-store` on the wire |
+| The cold-open test never scrolled | Passed on small shows; only a twelve-work show exposed it |
 
 ---
 
@@ -539,3 +647,32 @@ and an end-to-end proof from a cold browser.
 Iteration 2 added no scope. It merged `night/integration`, applied the two
 mid-run constraints to what already existed, hardened the failure paths that
 had no deadlines, and fixed the one bug that only appeared under real latency.
+
+Iteration 3 added no scope either. It closed the two claims the report was
+carrying as "built but unverified" — and both turned out to be hiding a real
+defect. Verifying the clipboard fallback in a real browser found the
+uppercased case-sensitive code; measuring the visit counter found it counting
+bots. It also measured the read path properly (24/24, 30/30, 30/30) and
+established that the assembly half could not be measured at all tonight,
+because the shared hourly agent budget was spent.
+
+**The honest summary of this lane:** the half a stranger touches — a link,
+opened cold, rendered whole, unfurled correctly — is done, hardened and
+measured at scale. The half that produces something to share depends on an
+agent turn that is rate-limited per machine per hour and does not reliably
+write wall labels. Nothing in this lane can fix that, and the submission
+should not claim otherwise.
+
+### Verdict item [4], re-checked
+
+The iteration-1 critique listed as blocking: *"`https://paillette-stg.berlayar.ai/exhibition`
+returns 404 … on the deployed build there is no UI entry point to the
+exhibition at all: no editable statement, no share button, no labels."*
+
+Re-measured on the current deployment: `/exhibition` returns **302** to
+`/nga/search`; `/e/:code` returns **200**; the share button is present and
+working on `/nga/search` **without** `?webmcp-debug` (it appears once a show
+exists, and was clicked in the typed runs above); the editable statement is
+present and its provenance flips to human ink when typed over. The parts of
+that item concerning this lane are closed. The label half is closed on the
+runs where the agent writes labels, which is not all of them (§9.9).
