@@ -387,13 +387,21 @@ export function AgentPrompt({
         const response = await fetch('/api/public-agent/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // Only on the first pass: the later ones carry tool results, and
-          // restating the gestures there would read as the human having done
-          // it all again.
+          // Every pass, not only the first.
+          //
+          // It used to go on `turn === 0` alone, reasoning that later requests
+          // carry tool results and restating the gestures there would read as
+          // the human having done it all again. But the wall label is written
+          // on the *last* request of a turn, five or six deep — and by then
+          // the sentence naming what was thrown out had fallen out of context,
+          // so the model wrote a plausible label about a board whose flags it
+          // could no longer see. The route rewords the same payload as
+          // standing state once the loop has been round, which is what the
+          // original concern was actually about.
           body: JSON.stringify({
             messages: historyRef.current,
             tools,
-            ...(turn === 0 && gestures ? { turn: gestures } : {}),
+            ...(gestures ? { turn: gestures } : {}),
           }),
         });
         type TurnPayload = {

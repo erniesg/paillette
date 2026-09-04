@@ -30,6 +30,35 @@ describe('describeHumanTurn', () => {
     expect(described).not.toContain('x1');
   });
 
+  it('rewords itself as standing state once the loop has been round', () => {
+    const turn = {
+      flagsDelta: [
+        { artworkId: 'x1', title: 'Environs de Cremieu', to: 'reject' as const },
+      ],
+    };
+
+    const first = describeHumanTurn(turn);
+    const later = describeHumanTurn(turn, { continued: true });
+
+    // Same facts either way — the flags do not change mid-turn, and dropping
+    // them is what left the model writing a wall label it could not ground.
+    expect(first).toContain('rejected Environs de Cremieu');
+    expect(later).toContain('rejected Environs de Cremieu');
+    // But five requests deep, "since the last turn" would read as the human
+    // having done it all again.
+    expect(first).toContain('Since the last turn');
+    expect(later).not.toContain('Since the last turn');
+    expect(later).toContain('Still standing on the board');
+  });
+
+  it('asks for a note grounded in the works, not one that fits any board', () => {
+    const described = describeHumanTurn({
+      flagsDelta: [{ artworkId: 'x1', title: 'A', to: 'reject' }],
+    });
+
+    expect(described).toContain('name what was actually flagged');
+  });
+
   it('falls back to the id when the page could not resolve a title', () => {
     const described = describeHumanTurn({
       flagsDelta: [{ artworkId: 'x1', to: 'pick' }],

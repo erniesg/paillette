@@ -706,7 +706,7 @@ describe('AgentPrompt', () => {
     expect(delta[0]?.title).toMatch(/Estuary at Day's End/);
   });
 
-  it('reports the gestures once, not on every tool round trip', async () => {
+  it('keeps the gestures in context for every request of the turn', async () => {
     setModelContext({ getTools: async () => [] });
     rememberArtworks([
       { id: 'nga-2', galleryId: 'nga', title: 'A', artist: 'B', imageUrl: null, similarity: 1 },
@@ -746,9 +746,15 @@ describe('AgentPrompt', () => {
 
     const bodies = fetchMock.mock.calls.map((c) => JSON.parse(c[1]?.body ?? '{}'));
     expect(bodies.length).toBeGreaterThan(1);
-    expect(bodies[0].turn?.flagsDelta).toHaveLength(1);
-    // Restating them would read as the human having flagged it all over again.
-    expect(bodies[1].turn).toBeUndefined();
+    // On every request, not just the first. The wall label is written on the
+    // last one, and when the flags dropped out before then the model wrote a
+    // confident sentence about a board it could no longer see them on. The
+    // route rewords the same payload as standing state once the loop has been
+    // round, which is what "do not restate them" was actually protecting.
+    for (const body of bodies) {
+      expect(body.turn?.flagsDelta).toHaveLength(1);
+      expect(body.turn.flagsDelta[0]?.artworkId).toBe('nga-2');
+    }
   });
 
   it('names one work but lets several speak for themselves', async () => {
