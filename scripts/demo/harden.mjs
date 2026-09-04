@@ -12,6 +12,7 @@
  *   spent     Enter with every work on the board rejected
  *   phantom   an agent flagging ids the page has never loaded
  *   phantom2  a two-up asked for on an id that does not resolve
+ *   reloaded  the flags, their catalogue records, and a deal after a refresh
  *
  * The bar for each is the same and it is not "no crash": **a person must be
  * able to tell what happened without being told twice.** A slow deal has to
@@ -116,6 +117,93 @@ const openBoard = async (browser, { flags = 'x x p', debug = false } = {}) => {
 };
 
 const cases = {
+  /**
+   * A refresh mid-cull, which is the path the session store now has to carry.
+   *
+   * Three things have to survive it and they are not the same thing: the flags
+   * themselves, the catalogue records behind them — `get_view_context` builds
+   * the agent's picture of a flagged work out of the session index, which does
+   * not survive a reload either — and the ability to deal from them afterwards.
+   * A flag the agent cannot describe and the board cannot deal from is not
+   * really restored.
+   */
+  reloaded: async (browser) => {
+    const { context, page, errors } = await openBoard(browser, { debug: true });
+    const before = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-artwork-id]')]
+        .filter((el) => el.getAttribute('data-flag') !== 'none')
+        .map((el) => el.getAttribute('data-artwork-id'))
+    );
+
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-artwork-id]').length > 0,
+      { timeout: 60_000 }
+    );
+    await page.waitForFunction(
+      async () => ((await window.__paillette_webmcp?.tools?.()) ?? []).length > 0,
+      { timeout: 60_000 }
+    );
+    await sleep(2000);
+
+    const after = await page.evaluate(async () => {
+      const raw = await window.__paillette_webmcp.call('get_view_context', {});
+      const parsed = Array.isArray(raw?.content)
+        ? JSON.parse(raw.content[0].text)
+        : raw;
+      const flagged = [
+        ...(parsed?.flags?.picks ?? []),
+        ...(parsed?.flags?.rejects ?? []),
+      ];
+      return {
+        onScreen: [...document.querySelectorAll('[data-artwork-id]')]
+          .filter((el) => el.getAttribute('data-flag') !== 'none')
+          .map((el) => el.getAttribute('data-artwork-id')),
+        inContext: flagged.map((entry) => entry.id),
+        // The half that makes a restored flag worth having.
+        named: flagged.filter((entry) => Boolean(entry.title)).length,
+        withPalette: flagged.filter((entry) => (entry.palette ?? []).length).length,
+      };
+    });
+
+    const boardBefore = await readBoard(page);
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press('Enter');
+    await page
+      .waitForFunction(
+        (previous) =>
+          [...document.querySelectorAll('[data-artwork-id]')]
+            .map((el) => el.getAttribute('data-artwork-id'))
+            .join(',') !== previous,
+        boardBefore.ids.join(','),
+        { timeout: 45_000 }
+      )
+      .catch(() => {});
+    await sleep(2000);
+    const dealt = await readBoard(page);
+    await page.screenshot({ path: path.join(OUT, 'reloaded.png') });
+    await context.close();
+
+    return {
+      pass:
+        before.length > 0 &&
+        after.inContext.length === before.length &&
+        after.onScreen.length === before.length &&
+        after.named === before.length &&
+        dealt.ids.join(',') !== boardBefore.ids.join(',') &&
+        Boolean(dealt.note) &&
+        errors.length === 0,
+      flaggedBefore: before.length,
+      onScreenAfter: after.onScreen.length,
+      inViewContextAfter: after.inContext.length,
+      restoredWithTitle: after.named,
+      restoredWithPalette: after.withPalette,
+      dealtAfterReload: dealt.ids.join(',') !== boardBefore.ids.join(','),
+      noteAfterReload: dealt.note,
+      errors,
+    };
+  },
+
   /** Eight seconds of nothing. The one the film will actually hit. */
   slow: async (browser) => {
     const { context, page, errors } = await openBoard(browser);

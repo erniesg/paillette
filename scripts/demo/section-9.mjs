@@ -611,7 +611,15 @@ const main = async () => {
        * sending, which is the whole design, so this waits it out.
        */
       const mic = page.locator('[aria-label="Hold to speak"]').first();
+      // Scroll it under the cursor first. `boundingBox()` is viewport-relative,
+      // and by this point the board is dealt and the bar may be well off the
+      // top of the screen — pressing at those coordinates presses whatever
+      // happens to be there instead, which is how this silently drove nothing
+      // on the previous round.
+      await mic.scrollIntoViewIfNeeded().catch(() => {});
+      await mic.hover().catch(() => {});
       const box = await mic.boundingBox();
+      record.clauses.four.micBox = box;
       if (box) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
