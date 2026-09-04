@@ -98,19 +98,15 @@ const ctx = () => page.evaluate(() => window.__paillette_webmcp.call('get_view_c
 await page.goto(`${BASE}/nga/search?webmcp-debug&q=estuary+at+dusk`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(2500);
 
-// The agent activity panel is a fixed overlay that covers the lower-left of
-// the board and intercepts clicks on the cards under it. Dismiss it first, the
-// way anyone would, or half this script is testing whether Playwright can
-// click through an aside. See voice-loop-notes.md.
-// The agent activity panel is a fixed overlay across the lower-left of the
-// board, and it re-opens itself whenever the agent does anything. While it is
-// open it intercepts clicks on the cards underneath. Dismissing it is a real
-// thing a person would do, so this does it whenever it is in the way rather
-// than forcing clicks through it. See voice-loop-notes.md.
+// The agent's activity used to be a fixed panel across the lower-left of the
+// board that reopened itself whenever the agent did anything, intercepting
+// clicks on the cards underneath — so this script dismissed it the way a person
+// would. It is now a glyph, and the log behind it opens only on a click, so
+// this is a no-op in the normal case. It stays because a consent gate still
+// opens the log by itself, and that would cover the same cards.
 const dismissPanel = async () => {
-  const collapse = page.locator('button[aria-label="Collapse agent activity"]');
-  if (await collapse.count()) {
-    await collapse.click();
+  if (await page.locator('.pa-activity-log').count()) {
+    await page.click('.pa-activity-glyph');
     await page.waitForTimeout(200);
   }
 };
