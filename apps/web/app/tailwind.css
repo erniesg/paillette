@@ -1414,6 +1414,35 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   text-decoration-style: dashed;
 }
 
+/* In flight. Dimmed rather than replaced by a spinner: the word already
+ * changed, and a second moving thing for a round trip this short is noise. */
+.paillette-share-link[data-share-state='working'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The link itself, when the clipboard would not take it. Selected on sight, so
+ * the next keystroke is the copy — the field is the affordance, not an
+ * instruction about one. Sized to the rail rather than the URL, because the
+ * long fallback link is 1,900 characters and would otherwise set the width of
+ * the page it sits on. */
+.paillette-share-fallback {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--lt-rule);
+  background: transparent;
+  color: var(--ink-human);
+  text-overflow: ellipsis;
+}
+
+.paillette-share-fallback:focus {
+  outline: none;
+  border-bottom-color: var(--ink-human);
+}
+
 /*
  * Their compare overlay, made into a room.
  *
