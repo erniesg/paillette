@@ -127,12 +127,16 @@ content-free nudge is the stricter test, not because the product needs one.
 
 `node apps/web/scripts/verify-theme-correction.mjs http://localhost:5174 3`
 
-**The design of the check matters.** After editing the statement the human types
-a deliberately content-free nudge — `"Again."` — rather than restating the
-correction in the prompt bar. So the word "leaving" exists in exactly one place:
-the statement the human rewrote, travelling in `turn.exhibitionEdits`. A board
-and labels that come back about leaving are attributable to the edit and nothing
-else.
+**The design of the check matters.** The correction is never restated in the
+prompt bar. Committing the edit is itself a turn — the human's own sentence goes
+up as the instruction — and where that does not fire, the harness types a
+deliberately content-free nudge, `"Again."`, instead. Either way the word
+"leaving" reaches the model from exactly one place: the statement the human
+rewrote, travelling in `turn.exhibitionEdits`. A board and labels that come back
+about leaving are attributable to the edit and to nothing else.
+
+Batch 1 and batch 2 below predate integration's statement-fires-the-turn change
+and used the nudge path throughout.
 
 Real: the page, all 25 tools, `POST /api/public-agent/turn`, the system prompt,
 the model (`gpt-5.6-terra`), and `POST /api/public-labels` reading real NGA
