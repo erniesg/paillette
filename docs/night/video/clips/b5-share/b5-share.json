@@ -1,0 +1,18 @@
+{
+  "scene": "b5-share",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:25:39.688Z",
+  "durationMs": 52471,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "title": "Everything the Light Left Behind",
+    "colophon": "4 of 6 labels written by an agentAssembled in Paillette",
+    "localStorageKeys": 0,
+    "reads": 0
+  },
+  "modelCalls": 0,
+  "searchCalls": 0,
+  "refusals": [],
+  "wire": []
+}

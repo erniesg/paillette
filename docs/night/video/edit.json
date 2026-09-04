@@ -1,0 +1,403 @@
+{
+  "width": 1440,
+  "height": 900,
+  "fps": 30,
+  "totalSeconds": 172.56,
+  "segments": [
+    {
+      "at": 0,
+      "dur": 7,
+      "src": "b1-cold-open",
+      "in": 4,
+      "out": 11,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 7,
+      "dur": 2.1,
+      "src": "b1-cold-open",
+      "in": 11,
+      "out": 27.8,
+      "speed": 8,
+      "ramped": true,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 9.1,
+      "dur": 6.2,
+      "src": "b1-cold-open",
+      "in": 27.8,
+      "out": 34,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 15.3,
+      "dur": 6.55,
+      "src": "b1-cold-open",
+      "in": 34,
+      "out": 43.5,
+      "speed": 1.45,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 21.85,
+      "dur": 2.22,
+      "src": "b1-cold-open",
+      "in": 43.5,
+      "out": 54.6,
+      "speed": 5,
+      "ramped": true,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 24.07,
+      "dur": 6.38,
+      "src": "b1-cold-open",
+      "in": 54.6,
+      "out": 59.7,
+      "speed": 0.8,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 30.45,
+      "dur": 6.4,
+      "src": "b2-empty-bar",
+      "in": 17,
+      "out": 23.4,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 36.85,
+      "dur": 4.6,
+      "src": "b2-empty-bar",
+      "in": 23.4,
+      "out": 28,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 41.45,
+      "dur": 5.5,
+      "src": "b2-empty-bar",
+      "in": 28,
+      "out": 33.5,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 46.95,
+      "dur": 7,
+      "src": "card:c2-request-log",
+      "speed": null,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 53.95,
+      "dur": 8,
+      "src": "b2-empty-bar",
+      "in": 33.5,
+      "out": 41.5,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 61.95,
+      "dur": 7,
+      "src": "b3-said-chose",
+      "in": 10.5,
+      "out": 17.5,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 68.95,
+      "dur": 3,
+      "src": "b3-said-chose",
+      "in": 17.5,
+      "out": 20.5,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 71.95,
+      "dur": 1.86,
+      "src": "b3-said-chose",
+      "in": 20.5,
+      "out": 29.8,
+      "speed": 5,
+      "ramped": true,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 73.81,
+      "dur": 6,
+      "src": "b3-said-chose",
+      "in": 29.8,
+      "out": 35.8,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 79.81,
+      "dur": 5,
+      "src": "b4-board-hold",
+      "in": 20,
+      "out": 25,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 84.81,
+      "dur": 5.5,
+      "src": "card:c4-scale",
+      "speed": null,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 90.31,
+      "dur": 6.8,
+      "src": "b5-share",
+      "in": 0.8,
+      "out": 7.6,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 97.11,
+      "dur": 7.6,
+      "src": "card:c5-two-labels",
+      "speed": null,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 104.71,
+      "dur": 9,
+      "src": "b5-share",
+      "in": 20,
+      "out": 29,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 113.71,
+      "dur": 5,
+      "src": "b6-keyboard",
+      "in": 3,
+      "out": 12,
+      "speed": 1.8,
+      "ramped": false,
+      "zoom": null,
+      "caption": "Pick Environs de Cremieu (P)"
+    },
+    {
+      "at": 118.71,
+      "dur": 3.7,
+      "src": "b6-keyboard",
+      "in": 12,
+      "out": 15.7,
+      "speed": 1,
+      "ramped": false,
+      "zoom": null,
+      "caption": "Pick Environs de Cremieu (P)"
+    },
+    {
+      "at": 122.41,
+      "dur": 9.35,
+      "src": "b6-keyboard",
+      "in": 15.7,
+      "out": 21.5,
+      "speed": 0.62,
+      "ramped": false,
+      "zoom": null,
+      "caption": "Enter on the empty bar redeals the board from your flags."
+    },
+    {
+      "at": 131.76,
+      "dur": 6.9,
+      "src": "b7-tool-surface",
+      "in": 7,
+      "out": 13.9,
+      "speed": 1,
+      "ramped": false,
+      "zoom": "glyph",
+      "caption": null
+    },
+    {
+      "at": 138.66,
+      "dur": 8.7,
+      "src": "b7-tool-surface",
+      "in": 14,
+      "out": 22.7,
+      "speed": 1,
+      "ramped": false,
+      "zoom": "tools",
+      "caption": null
+    },
+    {
+      "at": 147.36,
+      "dur": 6,
+      "src": "b7-log-live",
+      "in": 88.6,
+      "out": 94.6,
+      "speed": 1,
+      "ramped": false,
+      "zoom": "log",
+      "caption": null
+    },
+    {
+      "at": 153.36,
+      "dur": 4.5,
+      "src": "card:c7-keys",
+      "speed": null,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 157.86,
+      "dur": 10.2,
+      "src": "b1-cold-open",
+      "in": 54.6,
+      "out": 59.7,
+      "speed": 0.5,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    },
+    {
+      "at": 168.06,
+      "dur": 4.5,
+      "src": "card:c8-end",
+      "speed": null,
+      "ramped": false,
+      "zoom": null,
+      "caption": null
+    }
+  ],
+  "narration": [
+    {
+      "id": "1a",
+      "at": 0.8
+    },
+    {
+      "id": "1b",
+      "at": 10.2
+    },
+    {
+      "id": "1c",
+      "at": 24
+    },
+    {
+      "id": "2a",
+      "at": 30.65
+    },
+    {
+      "id": "2b",
+      "at": 42.45
+    },
+    {
+      "id": "2c",
+      "at": 48.35
+    },
+    {
+      "id": "2d",
+      "at": 55.05
+    },
+    {
+      "id": "3a",
+      "at": 62.45
+    },
+    {
+      "id": "3b",
+      "at": 73.95
+    },
+    {
+      "id": "4a",
+      "at": 80.41
+    },
+    {
+      "id": "4b",
+      "at": 86.61
+    },
+    {
+      "id": "5a",
+      "at": 91.11
+    },
+    {
+      "id": "5b",
+      "at": 97.51
+    },
+    {
+      "id": "5c",
+      "at": 105.51
+    },
+    {
+      "id": "6a",
+      "at": 114.46
+    },
+    {
+      "id": "6b",
+      "at": 118.91
+    },
+    {
+      "id": "6c",
+      "at": 123.91
+    },
+    {
+      "id": "7a",
+      "at": 132.26
+    },
+    {
+      "id": "7b",
+      "at": 140.26
+    },
+    {
+      "id": "7d",
+      "at": 153.76
+    },
+    {
+      "id": "8a",
+      "at": 158.66
+    }
+  ]
+}

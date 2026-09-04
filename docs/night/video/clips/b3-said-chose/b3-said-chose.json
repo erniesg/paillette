@@ -1,0 +1,194 @@
+{
+  "scene": "b3-said-chose",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:30:22.375Z",
+  "durationMs": 62153,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "presses": [
+      {
+        "n": 0,
+        "key": "p",
+        "ok": true,
+        "attempt": 1
+      },
+      {
+        "n": 1,
+        "key": "p",
+        "ok": true,
+        "attempt": 1
+      },
+      {
+        "n": 2,
+        "key": "p",
+        "ok": true,
+        "attempt": 1
+      }
+    ],
+    "allPicksLanded": true,
+    "picks": [
+      {
+        "id": "open-access-art:nga:50295",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": "open-access-art:nga:177918",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": "open-access-art:nga:195142",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      }
+    ],
+    "picked": [
+      {
+        "id": "open-access-art:nga:50295",
+        "text": "PXUPeaceful ValleyAlexander Helwig Wyant#01c. 1872oil on canvasPainting100%"
+      },
+      {
+        "id": null,
+        "text": "PXU"
+      },
+      {
+        "id": "open-access-art:nga:177918",
+        "text": "PXUThe Haystack and the MoonJean-Charles Cazin#06after 1876oil on canvasPainting66%"
+      },
+      {
+        "id": null,
+        "text": "PXU"
+      },
+      {
+        "id": "open-access-art:nga:195142",
+        "text": "PXUSunset on the RiverCharles-François Daubigny#101874oil on woodPainting51%"
+      },
+      {
+        "id": null,
+        "text": "PXU"
+      }
+    ],
+    "note": "You asked for cool blue severity, but picked three warm oil landscapes with umber, gold, and brown palettes; following the picks.",
+    "noteMs": 6116,
+    "flagsAfter": [
+      {
+        "id": "open-access-art:nga:50295",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": "open-access-art:nga:177918",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": "open-access-art:nga:195142",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      }
+    ]
+  },
+  "modelCalls": 3,
+  "searchCalls": 3,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 1090
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 1092
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 1482
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 8857
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 23215
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 25344
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 25395
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 28165
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 28186
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 29182
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 29294
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 31212
+    }
+  ]
+}

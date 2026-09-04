@@ -1,0 +1,239 @@
+{
+  "scene": "b1-cold-open",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:32:30.885Z",
+  "durationMs": 78578,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "barMs": 986,
+    "firstNote": "Warm light, open breathing room, and gentle domestic colour—without a crowded or sombre scene.",
+    "firstNoteMs": 16987,
+    "presses": [
+      {
+        "n": 3,
+        "key": "x",
+        "ok": true,
+        "attempt": 1
+      },
+      {
+        "n": 5,
+        "key": "x",
+        "ok": true,
+        "attempt": 1
+      },
+      {
+        "n": 1,
+        "key": "p",
+        "ok": true,
+        "attempt": 1
+      }
+    ],
+    "allFlagsLanded": true,
+    "flags": [
+      {
+        "id": "open-access-art:nga:184224",
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "pick",
+        "by": "human"
+      },
+      {
+        "id": "open-access-art:nga:69461",
+        "flag": "reject",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "reject",
+        "by": "human"
+      },
+      {
+        "id": "open-access-art:nga:61382",
+        "flag": "reject",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "reject",
+        "by": "human"
+      }
+    ],
+    "secondNote": "Following your pick’s ochre-and-umber watercolor; leaving behind the road drawing and Renoir’s vase.",
+    "secondNoteMs": 14107,
+    "secondNoteIsNew": true
+  },
+  "modelCalls": 8,
+  "searchCalls": 7,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 2117
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 3477
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 10684
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 13337
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 13371
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 20323
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 20346
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 20346
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 20347
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 20347
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 21868
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 21960
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 22196
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 23197
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 23877
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 27344
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 27398
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 29873
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 29908
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 32394
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 33493
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 34105
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 40030
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 42555
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 42588
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 48726
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 48734
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 52238
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 53789
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 56666
+    }
+  ]
+}

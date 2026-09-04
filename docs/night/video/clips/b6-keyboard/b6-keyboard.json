@@ -1,0 +1,206 @@
+{
+  "scene": "b6-keyboard",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:25:08.053Z",
+  "durationMs": 31163,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "landed": {
+      "tab": 23,
+      "tag": "BUTTON",
+      "name": "Pick Environs de Cremieu (P)",
+      "pressed": "false"
+    },
+    "tabsToFlagControl": 23,
+    "trail": [
+      {
+        "tab": 1,
+        "tag": "A",
+        "name": "Paillette search",
+        "pressed": null
+      },
+      {
+        "tab": 2,
+        "tag": "A",
+        "name": "About",
+        "pressed": null
+      },
+      {
+        "tab": 3,
+        "tag": "BUTTON",
+        "name": "Log in",
+        "pressed": null
+      },
+      {
+        "tab": 4,
+        "tag": "BUTTON",
+        "name": "Create account",
+        "pressed": null
+      },
+      {
+        "tab": 5,
+        "tag": "BUTTON",
+        "name": "Text search mode",
+        "pressed": "true"
+      },
+      {
+        "tab": 6,
+        "tag": "BUTTON",
+        "name": "Image search mode",
+        "pressed": "false"
+      },
+      {
+        "tab": 7,
+        "tag": "BUTTON",
+        "name": "Colour search mode",
+        "pressed": "false"
+      },
+      {
+        "tab": 8,
+        "tag": "INPUT",
+        "name": "",
+        "pressed": null
+      },
+      {
+        "tab": 9,
+        "tag": "BUTTON",
+        "name": "Search text",
+        "pressed": null
+      },
+      {
+        "tab": 10,
+        "tag": "BUTTON",
+        "name": "Choose another suggestion",
+        "pressed": null
+      },
+      {
+        "tab": 11,
+        "tag": "INPUT",
+        "name": "Ask the agent",
+        "pressed": null
+      },
+      {
+        "tab": 12,
+        "tag": "BUTTON",
+        "name": "Hold to speak",
+        "pressed": "false"
+      },
+      {
+        "tab": 13,
+        "tag": "BUTTON",
+        "name": "Relevance",
+        "pressed": null
+      },
+      {
+        "tab": 14,
+        "tag": "BUTTON",
+        "name": "Colour",
+        "pressed": null
+      },
+      {
+        "tab": 15,
+        "tag": "BUTTON",
+        "name": "Newest",
+        "pressed": null
+      },
+      {
+        "tab": 16,
+        "tag": "BUTTON",
+        "name": "Artist",
+        "pressed": null
+      },
+      {
+        "tab": 17,
+        "tag": "BUTTON",
+        "name": "Title",
+        "pressed": null
+      },
+      {
+        "tab": 18,
+        "tag": "BUTTON",
+        "name": "Masonry",
+        "pressed": null
+      },
+      {
+        "tab": 19,
+        "tag": "BUTTON",
+        "name": "Salon",
+        "pressed": null
+      },
+      {
+        "tab": 20,
+        "tag": "BUTTON",
+        "name": "Atlas",
+        "pressed": null
+      },
+      {
+        "tab": 21,
+        "tag": "BUTTON",
+        "name": "Table",
+        "pressed": null
+      },
+      {
+        "tab": 22,
+        "tag": "BUTTON",
+        "name": "Search settings",
+        "pressed": null
+      },
+      {
+        "tab": 23,
+        "tag": "BUTTON",
+        "name": "Pick Environs de Cremieu (P)",
+        "pressed": "false"
+      }
+    ],
+    "srBefore": [
+      "193 free searches left",
+      "textwarm landscape"
+    ],
+    "srAfter": [
+      "193 free searches left",
+      "textwarm landscape",
+      "Enter on the empty bar redeals the board from your flags."
+    ],
+    "flags": [
+      {
+        "id": "open-access-art:nga:184225",
+        "flag": "reject",
+        "by": "human"
+      },
+      {
+        "id": null,
+        "flag": "reject",
+        "by": "human"
+      }
+    ],
+    "mouseEvents": 0
+  },
+  "modelCalls": 0,
+  "searchCalls": 2,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 672
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 672
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 1454
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 1921
+    }
+  ]
+}

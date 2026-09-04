@@ -1,0 +1,116 @@
+{
+  "scene": "b7-log-live",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:40:18.139Z",
+  "durationMs": 141580,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "tools": [
+      {
+        "tool": "search_artworks",
+        "status": "ok"
+      },
+      {
+        "tool": "set_results",
+        "status": "ok"
+      }
+    ],
+    "toolCount": 2,
+    "expanded": null,
+    "note": null
+  },
+  "modelCalls": 3,
+  "searchCalls": 5,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 2518
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 3565
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 9494
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 12535
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 12564
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 18548
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 18625
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 20702
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 20759
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 20918
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 21147
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+      "at": 22596
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 51360
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 51409
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 81411
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 82139
+    }
+  ]
+}

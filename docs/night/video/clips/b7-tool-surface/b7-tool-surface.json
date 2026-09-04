@@ -1,0 +1,46 @@
+{
+  "scene": "b7-tool-surface",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:22:48.680Z",
+  "durationMs": 31602,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "toolCount": 25,
+    "glyphBox": {
+      "x": 6,
+      "y": 861,
+      "width": 69.203125,
+      "height": 33
+    },
+    "panelText": ".pa-activity {\n  position: fixed;\n  left: 6px;\n  bottom: 6px;\n  z-index: 65;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  pointer-events: none;\n\n  --pa-mono: \"IBM Plex Mono\", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  --pa-ink: var(--ink-agent, #5ec8d8);\n  --pa-ink-soft: var(--ink-agent-soft, rgba(94, 200, 216, 0.55));\n  --pa-ink-faint: var(--ink-agent-faint, rgba(94, 200, 216, 0.3));\n  --pa-ink-wash: var(--ink-agent-wash, rgba(94, 200, 216, 0.1));\n  --pa-ground: var(--lt-ground, #1a1a1d);\n  --pa-rule: var(--lt-rule, rgba(255, 255, 255, 0.08));\n  --pa-rule-strong: var(--lt-rule-strong, rgba(255, 255, 255, 0.22));\n  --pa-text: var(--ink-human, #e6e3dc);\n  --pa-text-soft: var(--ink-human-soft, rgba(230, 227, 220, 0.7));\n  --pa-text-faint: var(--ink-human-faint, rgba(230, 227, 220, 0.58));\n  --pa-well: var(--ink-human-wash, rgba(230, 227, 220, 0.07));\n  /* Contrast measured against both grounds: 5.2:1 on charcoal, 5.9:1 on paper. */\n  --pa-bad: #e0674f;\n}\n:root[data-theme='light'] .pa-activity { --pa-bad: #9a2f1c; }\n.pa-activity > * { pointer-events: auto; }\n\n.pa-activity-sr {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  margin: -1px;\n  padding: 0;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n  border: 0;\n}\n\n.pa-activity-glyph {\n  appearance: none;\n  -webkit-appearance: none;\n  background: transparent;\n  border: 0;\n  border-radius: 2px;\n  padding: 10px 12px;\n  margin: 0;\n  cursor: pointer;\n  line-height: 1;\n  display: inline-flex;\n  align-items: center;\n}\n.pa-activity-glyph:focus-visible {\n  outline: 1px solid var(--pa-ink);\n  outline-offset: 1px;\n}\n\n.pa-activity-cells {\n  font-family: var(--pa-mono);\n  font-size: 13px;\n  line-height: 1;\n  letter-spacing: 0.08em;\n  white-space: pre;\n  color: var(--pa-ink-faint);\n  opacity: 0.5;\n  text-shadow: none;\n  transition:\n    color 420ms ease,\n    opacity 420ms ease,\n    text-shadow 420ms ease;\n}\n.pa-activity-cells[data-phase='running'] {\n  co",
+    "names": []
+  },
+  "modelCalls": 0,
+  "searchCalls": 2,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 4590
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 4590
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 5737
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 6429
+    }
+  ]
+}

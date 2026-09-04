@@ -370,6 +370,8 @@ const main = async () => {
             t: new Date().toISOString(),
             elapsedMs: Date.now() - t0,
             event: 'tool',
+            id: current.id,
+            first: true,
             tool: current.tool,
             status: current.status,
           });
@@ -378,6 +380,8 @@ const main = async () => {
             t: new Date().toISOString(),
             elapsedMs: Date.now() - t0,
             event: 'tool',
+            id: current.id,
+            first: false,
             tool: current.tool,
             status: current.status,
           });
@@ -441,8 +445,14 @@ const main = async () => {
     mode: speak ? 'speak' : 'type',
     startedAt: new Date(t0).toISOString(),
     durationMs: Date.now() - t0,
+    // One entry per call, not one per sighting. Each call is observed twice —
+    // once `running`, once `ok` — so mapping every tool beat listed eleven
+    // tools for a take in which seven fired (iteration 4, finding E). The
+    // `beats` array below was correct throughout and carries both sightings;
+    // it is this summary that overstated, and a beats.json that overstates
+    // what happened is worse than the empty one it replaced.
     toolsFired: beats
-      .filter((b) => b.event === 'tool')
+      .filter((b) => b.event === 'tool' && b.first)
       .map((b) => b.tool),
     screenshots,
     beats,

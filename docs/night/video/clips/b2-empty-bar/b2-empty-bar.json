@@ -1,0 +1,81 @@
+{
+  "scene": "b2-empty-bar",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:23:47.391Z",
+  "durationMs": 61411,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "pickBefore": {
+      "id": "open-access-art:nga:127567",
+      "y": 0
+    },
+    "pickAfter": {
+      "id": "open-access-art:nga:127567",
+      "y": 0
+    },
+    "pickHeldPx": 0,
+    "firstExemplarAfterEnterMs": 13,
+    "modelCallsAfterEnter": 0
+  },
+  "modelCalls": 0,
+  "searchCalls": 5,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 2819
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 2822
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 3933
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 4165
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 13509
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 16205
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 28855
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 30272
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 34207
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 34260
+    }
+  ]
+}

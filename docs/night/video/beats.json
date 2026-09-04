@@ -1,0 +1,1310 @@
+{
+  "note": "Per-shot record for docs/night/video/paillette-demo.mp4. Derived from the per-scene JSON each take wrote; no value here was measured by this script. Every shot was driven headlessly against the deployed staging build with a real browser — no fixtures, no stubs, and no ?webmcp-debug on any of them.",
+  "film": "paillette-demo.mp4",
+  "totalSeconds": 172.56,
+  "frame": {
+    "width": 1440,
+    "height": 900,
+    "fps": 30
+  },
+  "routesFilmed": [
+    "/e/MKwsxHy",
+    "/nga/search",
+    "/nga/search?q=warm+landscape",
+    "/nga/search?q=warm+sunset+landscape"
+  ],
+  "totals": {
+    "modelCalls": 14,
+    "searchCalls": 27,
+    "refusals": 0,
+    "pageErrors": 0
+  },
+  "shots": [
+    {
+      "scene": "b1-cold-open",
+      "route": "/nga/search",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:32:30.885Z",
+      "takeDurationMs": 78578,
+      "live": true,
+      "modelCalls": 8,
+      "searchCalls": 7,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "barMs": 986,
+        "firstNote": "Warm light, open breathing room, and gentle domestic colour—without a crowded or sombre scene.",
+        "firstNoteMs": 16987,
+        "presses": [
+          {
+            "n": 3,
+            "key": "x",
+            "ok": true,
+            "attempt": 1
+          },
+          {
+            "n": 5,
+            "key": "x",
+            "ok": true,
+            "attempt": 1
+          },
+          {
+            "n": 1,
+            "key": "p",
+            "ok": true,
+            "attempt": 1
+          }
+        ],
+        "allFlagsLanded": true,
+        "flags": [
+          {
+            "id": "open-access-art:nga:184224",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": "open-access-art:nga:69461",
+            "flag": "reject",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "reject",
+            "by": "human"
+          },
+          {
+            "id": "open-access-art:nga:61382",
+            "flag": "reject",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "reject",
+            "by": "human"
+          }
+        ],
+        "secondNote": "Following your pick’s ochre-and-umber watercolor; leaving behind the road drawing and Renoir’s vase.",
+        "secondNoteMs": 14107,
+        "secondNoteIsNew": true
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 2117
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 3477
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 10684
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 13337
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 13371
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 20323
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 20346
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 20346
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 20347
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 20347
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 21868
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 21960
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 22196
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 23197
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 23877
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 27344
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 27398
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 29873
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 29908
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 32394
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 33493
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 34105
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 40030
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 42555
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 42588
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 48726
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 48734
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 52238
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 53789
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 56666
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 0,
+          "forSeconds": 7,
+          "fromClipSeconds": [
+            4,
+            11
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 7,
+          "forSeconds": 2.1,
+          "fromClipSeconds": [
+            11,
+            27.8
+          ],
+          "speed": 8,
+          "speedRamped": true,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 9.1,
+          "forSeconds": 6.2,
+          "fromClipSeconds": [
+            27.8,
+            34
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 15.3,
+          "forSeconds": 6.55,
+          "fromClipSeconds": [
+            34,
+            43.5
+          ],
+          "speed": 1.45,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 21.85,
+          "forSeconds": 2.22,
+          "fromClipSeconds": [
+            43.5,
+            54.6
+          ],
+          "speed": 5,
+          "speedRamped": true,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 24.07,
+          "forSeconds": 6.38,
+          "fromClipSeconds": [
+            54.6,
+            59.7
+          ],
+          "speed": 0.8,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 157.86,
+          "forSeconds": 10.2,
+          "fromClipSeconds": [
+            54.6,
+            59.7
+          ],
+          "speed": 0.5,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        }
+      ]
+    },
+    {
+      "scene": "b2-empty-bar",
+      "route": "/nga/search?q=warm+landscape",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:23:47.391Z",
+      "takeDurationMs": 61411,
+      "live": true,
+      "modelCalls": 0,
+      "searchCalls": 5,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "pickBefore": {
+          "id": "open-access-art:nga:127567",
+          "y": 0
+        },
+        "pickAfter": {
+          "id": "open-access-art:nga:127567",
+          "y": 0
+        },
+        "pickHeldPx": 0,
+        "firstExemplarAfterEnterMs": 13,
+        "modelCallsAfterEnter": 0
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 2819
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 2822
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 3933
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 4165
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 13509
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 16205
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 28855
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 30272
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 34207
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 34260
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 30.45,
+          "forSeconds": 6.4,
+          "fromClipSeconds": [
+            17,
+            23.4
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 36.85,
+          "forSeconds": 4.6,
+          "fromClipSeconds": [
+            23.4,
+            28
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 41.45,
+          "forSeconds": 5.5,
+          "fromClipSeconds": [
+            28,
+            33.5
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 53.95,
+          "forSeconds": 8,
+          "fromClipSeconds": [
+            33.5,
+            41.5
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        }
+      ]
+    },
+    {
+      "scene": "b3-said-chose",
+      "route": "/nga/search?q=warm+sunset+landscape",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:30:22.375Z",
+      "takeDurationMs": 62153,
+      "live": true,
+      "modelCalls": 3,
+      "searchCalls": 3,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "presses": [
+          {
+            "n": 0,
+            "key": "p",
+            "ok": true,
+            "attempt": 1
+          },
+          {
+            "n": 1,
+            "key": "p",
+            "ok": true,
+            "attempt": 1
+          },
+          {
+            "n": 2,
+            "key": "p",
+            "ok": true,
+            "attempt": 1
+          }
+        ],
+        "allPicksLanded": true,
+        "picks": [
+          {
+            "id": "open-access-art:nga:50295",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": "open-access-art:nga:177918",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": "open-access-art:nga:195142",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          }
+        ],
+        "picked": [
+          {
+            "id": "open-access-art:nga:50295",
+            "text": "PXUPeaceful ValleyAlexander Helwig Wyant#01c. 1872oil on canvasPainting100%"
+          },
+          {
+            "id": null,
+            "text": "PXU"
+          },
+          {
+            "id": "open-access-art:nga:177918",
+            "text": "PXUThe Haystack and the MoonJean-Charles Cazin#06after 1876oil on canvasPainting66%"
+          },
+          {
+            "id": null,
+            "text": "PXU"
+          },
+          {
+            "id": "open-access-art:nga:195142",
+            "text": "PXUSunset on the RiverCharles-François Daubigny#101874oil on woodPainting51%"
+          },
+          {
+            "id": null,
+            "text": "PXU"
+          }
+        ],
+        "note": "You asked for cool blue severity, but picked three warm oil landscapes with umber, gold, and brown palettes; following the picks.",
+        "noteMs": 6116,
+        "flagsAfter": [
+          {
+            "id": "open-access-art:nga:50295",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": "open-access-art:nga:177918",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": "open-access-art:nga:195142",
+            "flag": "pick",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "pick",
+            "by": "human"
+          }
+        ]
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 1090
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 1092
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 1482
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 8857
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 23215
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 25344
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 25395
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 28165
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 28186
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 29182
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 29294
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 31212
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 61.95,
+          "forSeconds": 7,
+          "fromClipSeconds": [
+            10.5,
+            17.5
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 68.95,
+          "forSeconds": 3,
+          "fromClipSeconds": [
+            17.5,
+            20.5
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 71.95,
+          "forSeconds": 1.86,
+          "fromClipSeconds": [
+            20.5,
+            29.8
+          ],
+          "speed": 5,
+          "speedRamped": true,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 73.81,
+          "forSeconds": 6,
+          "fromClipSeconds": [
+            29.8,
+            35.8
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        }
+      ]
+    },
+    {
+      "scene": "b4-board-hold",
+      "route": "/nga/search?q=warm+landscape",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:26:45.237Z",
+      "takeDurationMs": 39650,
+      "live": true,
+      "modelCalls": 0,
+      "searchCalls": 3,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "cards": 12
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 978
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 979
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 1785
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 2220
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 7140
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+          "at": 8869
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 79.81,
+          "forSeconds": 5,
+          "fromClipSeconds": [
+            20,
+            25
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        }
+      ]
+    },
+    {
+      "scene": "b5-share",
+      "route": "/e/MKwsxHy",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:25:39.688Z",
+      "takeDurationMs": 52471,
+      "live": true,
+      "modelCalls": 0,
+      "searchCalls": 0,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "title": "Everything the Light Left Behind",
+        "colophon": "4 of 6 labels written by an agentAssembled in Paillette",
+        "localStorageKeys": 0,
+        "reads": 0
+      },
+      "wire": [],
+      "usedIn": [
+        {
+          "atSeconds": 90.31,
+          "forSeconds": 6.8,
+          "fromClipSeconds": [
+            0.8,
+            7.6
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 104.71,
+          "forSeconds": 9,
+          "fromClipSeconds": [
+            20,
+            29
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": null
+        }
+      ]
+    },
+    {
+      "scene": "b6-keyboard",
+      "route": "/nga/search?q=warm+landscape",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:25:08.053Z",
+      "takeDurationMs": 31163,
+      "live": true,
+      "modelCalls": 0,
+      "searchCalls": 2,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "landed": {
+          "tab": 23,
+          "tag": "BUTTON",
+          "name": "Pick Environs de Cremieu (P)",
+          "pressed": "false"
+        },
+        "tabsToFlagControl": 23,
+        "trail": [
+          {
+            "tab": 1,
+            "tag": "A",
+            "name": "Paillette search",
+            "pressed": null
+          },
+          {
+            "tab": 2,
+            "tag": "A",
+            "name": "About",
+            "pressed": null
+          },
+          {
+            "tab": 3,
+            "tag": "BUTTON",
+            "name": "Log in",
+            "pressed": null
+          },
+          {
+            "tab": 4,
+            "tag": "BUTTON",
+            "name": "Create account",
+            "pressed": null
+          },
+          {
+            "tab": 5,
+            "tag": "BUTTON",
+            "name": "Text search mode",
+            "pressed": "true"
+          },
+          {
+            "tab": 6,
+            "tag": "BUTTON",
+            "name": "Image search mode",
+            "pressed": "false"
+          },
+          {
+            "tab": 7,
+            "tag": "BUTTON",
+            "name": "Colour search mode",
+            "pressed": "false"
+          },
+          {
+            "tab": 8,
+            "tag": "INPUT",
+            "name": "",
+            "pressed": null
+          },
+          {
+            "tab": 9,
+            "tag": "BUTTON",
+            "name": "Search text",
+            "pressed": null
+          },
+          {
+            "tab": 10,
+            "tag": "BUTTON",
+            "name": "Choose another suggestion",
+            "pressed": null
+          },
+          {
+            "tab": 11,
+            "tag": "INPUT",
+            "name": "Ask the agent",
+            "pressed": null
+          },
+          {
+            "tab": 12,
+            "tag": "BUTTON",
+            "name": "Hold to speak",
+            "pressed": "false"
+          },
+          {
+            "tab": 13,
+            "tag": "BUTTON",
+            "name": "Relevance",
+            "pressed": null
+          },
+          {
+            "tab": 14,
+            "tag": "BUTTON",
+            "name": "Colour",
+            "pressed": null
+          },
+          {
+            "tab": 15,
+            "tag": "BUTTON",
+            "name": "Newest",
+            "pressed": null
+          },
+          {
+            "tab": 16,
+            "tag": "BUTTON",
+            "name": "Artist",
+            "pressed": null
+          },
+          {
+            "tab": 17,
+            "tag": "BUTTON",
+            "name": "Title",
+            "pressed": null
+          },
+          {
+            "tab": 18,
+            "tag": "BUTTON",
+            "name": "Masonry",
+            "pressed": null
+          },
+          {
+            "tab": 19,
+            "tag": "BUTTON",
+            "name": "Salon",
+            "pressed": null
+          },
+          {
+            "tab": 20,
+            "tag": "BUTTON",
+            "name": "Atlas",
+            "pressed": null
+          },
+          {
+            "tab": 21,
+            "tag": "BUTTON",
+            "name": "Table",
+            "pressed": null
+          },
+          {
+            "tab": 22,
+            "tag": "BUTTON",
+            "name": "Search settings",
+            "pressed": null
+          },
+          {
+            "tab": 23,
+            "tag": "BUTTON",
+            "name": "Pick Environs de Cremieu (P)",
+            "pressed": "false"
+          }
+        ],
+        "srBefore": [
+          "193 free searches left",
+          "textwarm landscape"
+        ],
+        "srAfter": [
+          "193 free searches left",
+          "textwarm landscape",
+          "Enter on the empty bar redeals the board from your flags."
+        ],
+        "flags": [
+          {
+            "id": "open-access-art:nga:184225",
+            "flag": "reject",
+            "by": "human"
+          },
+          {
+            "id": null,
+            "flag": "reject",
+            "by": "human"
+          }
+        ],
+        "mouseEvents": 0
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 672
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 672
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 1454
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 1921
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 113.71,
+          "forSeconds": 5,
+          "fromClipSeconds": [
+            3,
+            12
+          ],
+          "speed": 1.8,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": "Pick Environs de Cremieu (P)"
+        },
+        {
+          "atSeconds": 118.71,
+          "forSeconds": 3.7,
+          "fromClipSeconds": [
+            12,
+            15.7
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": "Pick Environs de Cremieu (P)"
+        },
+        {
+          "atSeconds": 122.41,
+          "forSeconds": 9.35,
+          "fromClipSeconds": [
+            15.7,
+            21.5
+          ],
+          "speed": 0.62,
+          "speedRamped": false,
+          "zoom": null,
+          "burnedCaption": "Enter on the empty bar redeals the board from your flags."
+        }
+      ]
+    },
+    {
+      "scene": "b7-log-live",
+      "route": "/nga/search",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:40:18.139Z",
+      "takeDurationMs": 141580,
+      "live": true,
+      "modelCalls": 3,
+      "searchCalls": 5,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": [
+        {
+          "tool": "search_artworks",
+          "status": "ok"
+        },
+        {
+          "tool": "set_results",
+          "status": "ok"
+        }
+      ],
+      "detail": {
+        "tools": [
+          {
+            "tool": "search_artworks",
+            "status": "ok"
+          },
+          {
+            "tool": "set_results",
+            "status": "ok"
+          }
+        ],
+        "toolCount": 2,
+        "expanded": null,
+        "note": null
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 2518
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 3565
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 9494
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 12535
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 12564
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 18548
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 18625
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 20702
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 20759
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 20918
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 21147
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn",
+          "at": 22596
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 51360
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 51409
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 81411
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 82139
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 147.36,
+          "forSeconds": 6,
+          "fromClipSeconds": [
+            88.6,
+            94.6
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": "log",
+          "burnedCaption": null
+        }
+      ]
+    },
+    {
+      "scene": "b7-tool-surface",
+      "route": "/nga/search?q=warm+landscape",
+      "base": "https://paillette-stg.berlayar.ai",
+      "shotAt": "2026-09-04T16:22:48.680Z",
+      "takeDurationMs": 31602,
+      "live": true,
+      "modelCalls": 0,
+      "searchCalls": 2,
+      "refusals": [],
+      "pageErrors": [],
+      "failure": null,
+      "toolsObserved": "not observed — the activity log is closed by design and this scene never opened it, so no tool name could be read off the page. Model calls for this scene are counted on the wire above.",
+      "detail": {
+        "toolCount": 25,
+        "glyphBox": {
+          "x": 6,
+          "y": 861,
+          "width": 69.203125,
+          "height": 33
+        },
+        "panelText": ".pa-activity {\n  position: fixed;\n  left: 6px;\n  bottom: 6px;\n  z-index: 65;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  pointer-events: none;\n\n  --pa-mono: \"IBM Plex Mono\", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  --pa-ink: var(--ink-agent, #5ec8d8);\n  --pa-ink-soft: var(--ink-agent-soft, rgba(94, 200, 216, 0.55));\n  --pa-ink-faint: var(--ink-agent-faint, rgba(94, 200, 216, 0.3));\n  --pa-ink-wash: var(--ink-agent-wash, rgba(94, 200, 216, 0.1));\n  --pa-ground: var(--lt-ground, #1a1a1d);\n  --pa-rule: var(--lt-rule, rgba(255, 255, 255, 0.08));\n  --pa-rule-strong: var(--lt-rule-strong, rgba(255, 255, 255, 0.22));\n  --pa-text: var(--ink-human, #e6e3dc);\n  --pa-text-soft: var(--ink-human-soft, rgba(230, 227, 220, 0.7));\n  --pa-text-faint: var(--ink-human-faint, rgba(230, 227, 220, 0.58));\n  --pa-well: var(--ink-human-wash, rgba(230, 227, 220, 0.07));\n  /* Contrast measured against both grounds: 5.2:1 on charcoal, 5.9:1 on paper. */\n  --pa-bad: #e0674f;\n}\n:root[data-theme='light'] .pa-activity { --pa-bad: #9a2f1c; }\n.pa-activity > * { pointer-events: auto; }\n\n.pa-activity-sr {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  margin: -1px;\n  padding: 0;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n  border: 0;\n}\n\n.pa-activity-glyph {\n  appearance: none;\n  -webkit-appearance: none;\n  background: transparent;\n  border: 0;\n  border-radius: 2px;\n  padding: 10px 12px;\n  margin: 0;\n  cursor: pointer;\n  line-height: 1;\n  display: inline-flex;\n  align-items: center;\n}\n.pa-activity-glyph:focus-visible {\n  outline: 1px solid var(--pa-ink);\n  outline-offset: 1px;\n}\n\n.pa-activity-cells {\n  font-family: var(--pa-mono);\n  font-size: 13px;\n  line-height: 1;\n  letter-spacing: 0.08em;\n  white-space: pre;\n  color: var(--pa-ink-faint);\n  opacity: 0.5;\n  text-shadow: none;\n  transition:\n    color 420ms ease,\n    opacity 420ms ease,\n    text-shadow 420ms ease;\n}\n.pa-activity-cells[data-phase='running'] {\n  co",
+        "names": []
+      },
+      "wire": [
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 4590
+        },
+        {
+          "kind": "req",
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 4590
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+          "at": 5737
+        },
+        {
+          "kind": "res",
+          "status": 200,
+          "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+          "at": 6429
+        }
+      ],
+      "usedIn": [
+        {
+          "atSeconds": 131.76,
+          "forSeconds": 6.9,
+          "fromClipSeconds": [
+            7,
+            13.9
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": "glyph",
+          "burnedCaption": null
+        },
+        {
+          "atSeconds": 138.66,
+          "forSeconds": 8.7,
+          "fromClipSeconds": [
+            14,
+            22.7
+          ],
+          "speed": 1,
+          "speedRamped": false,
+          "zoom": "tools",
+          "burnedCaption": null
+        }
+      ]
+    }
+  ]
+}

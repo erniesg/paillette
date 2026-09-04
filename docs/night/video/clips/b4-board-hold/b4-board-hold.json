@@ -1,0 +1,49 @@
+{
+  "scene": "b4-board-hold",
+  "base": "https://paillette-stg.berlayar.ai",
+  "startedAt": "2026-09-04T16:26:45.237Z",
+  "durationMs": 39650,
+  "failure": null,
+  "pageErrors": [],
+  "detail": {
+    "cards": 12
+  },
+  "modelCalls": 0,
+  "searchCalls": 3,
+  "refusals": [],
+  "wire": [
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 978
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 979
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota",
+      "at": 1785
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text",
+      "at": 2220
+    },
+    {
+      "kind": "req",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 7140
+    },
+    {
+      "kind": "res",
+      "status": 200,
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars",
+      "at": 8869
+    }
+  ]
+}

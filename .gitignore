@@ -102,3 +102,8 @@ tmp/
 # Local rucksack outputs and generated artifacts
 .agent/submissions/
 **/.agent/submissions/
+
+# Per-segment renders for the demo film. `scripts/demo/film/cut.mjs` deletes
+# and rebuilds this directory on every run from clips/, cards/ and narration/,
+# all of which are committed — so it is pure derivative.
+docs/night/video/work/

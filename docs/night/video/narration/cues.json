@@ -1,0 +1,117 @@
+{
+  "voice": "sage",
+  "model": "gpt-4o-mini-tts",
+  "direction": "Calm, low and warm. A curator talking quietly beside the work, not a narrator selling a product. Even, conversational pace — do not drag, and do not leave long gaps inside a line; the silence between lines belongs to the film, not to the read. No brightness, no upsell, no rising enthusiasm at the end of a line.",
+  "cues": [
+    {
+      "id": "1a",
+      "text": "Most art is never seen. Not because it's hidden — because nobody knows what to ask for.",
+      "file": "1a.wav"
+    },
+    {
+      "id": "1b",
+      "text": "So I stop asking. I point.",
+      "file": "1b.wav"
+    },
+    {
+      "id": "1c",
+      "text": "I never typed any of those words. It read what I threw away.",
+      "file": "1c.wav"
+    },
+    {
+      "id": "2a",
+      "text": "Now the bar is empty. Nothing typed. Nothing said.",
+      "file": "2a.wav"
+    },
+    {
+      "id": "2b",
+      "text": "Same picks. Same slots. And not one call to a model.",
+      "file": "2b.wav"
+    },
+    {
+      "id": "2c",
+      "text": "One request, to a vector index, thirteen milliseconds after the key.",
+      "file": "2c.wav"
+    },
+    {
+      "id": "2d",
+      "text": "The agent isn't the mechanism. It's a second operator of one that works without it.",
+      "file": "2d.wav"
+    },
+    {
+      "id": "3a",
+      "text": "Three warm pictures kept. Now I'll ask it for the opposite.",
+      "file": "3a.wav"
+    },
+    {
+      "id": "3b",
+      "text": "It followed my hands, not my mouth. And it said so.",
+      "file": "3b.wav"
+    },
+    {
+      "id": "4a",
+      "text": "Sixty-three thousand works. Open access, from the National Gallery of Art.",
+      "file": "4a.wav"
+    },
+    {
+      "id": "4b",
+      "text": "Three keys move through all of them.",
+      "file": "4b.wav"
+    },
+    {
+      "id": "5a",
+      "text": "What's left is a show, and the statement is mine.",
+      "file": "5a.wav"
+    },
+    {
+      "id": "5b",
+      "text": "The labels are written against it. The same picture reads differently under a different sentence.",
+      "file": "5b.wav"
+    },
+    {
+      "id": "5c",
+      "text": "Then it leaves. A real URL, no account, and a line saying how many of the labels an agent wrote.",
+      "file": "5c.wav"
+    },
+    {
+      "id": "6a",
+      "text": "None of this needed a mouse.",
+      "file": "6a.wav"
+    },
+    {
+      "id": "6b",
+      "text": "The control says the work, and it says the key.",
+      "file": "6b.wav"
+    },
+    {
+      "id": "6c",
+      "text": "Someone who can't see the pictures is still the one choosing. Not the one being told.",
+      "file": "6c.wav"
+    },
+    {
+      "id": "7a",
+      "text": "How it's built is on the page. Five dots until a tool runs.",
+      "file": "7a.wav"
+    },
+    {
+      "id": "7b",
+      "text": "Twenty-five tools on document dot model context — with their arguments, their answers and their timings.",
+      "file": "7b.wav"
+    },
+    {
+      "id": "7c",
+      "text": "Flag artworks is P and X. Redeal is Enter. Compare artworks is C.",
+      "file": "7c.wav"
+    },
+    {
+      "id": "7d",
+      "text": "One workspace. Two operators.",
+      "file": "7d.wav"
+    },
+    {
+      "id": "8a",
+      "text": "So the agent becomes a co-curator. I didn't search for a single one of these. I described a room.",
+      "file": "8a.wav"
+    }
+  ]
+}
