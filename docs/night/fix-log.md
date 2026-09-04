@@ -324,3 +324,236 @@ Web and API are both deployed to staging from this branch. Web version
 `264bffd8-6764-4da4-bbe9-4651c913bb47`; API version
 `376f9b4d-48d6-45b6-ada7-89e250ce1d9b` (the system-prompt change). The next e2e
 run films this.
+
+---
+
+# Iteration 4 — the fix phase, 09:10–10:05 UTC
+
+Against `verdict.json` (iteration 3, FAIL) and `docs/night/critique-iteration-3.md`.
+All five `blocking` items are cleared and re-verified on the deployed build, by
+walking the beat in a browser rather than by running a unit test. Nothing from
+`nice_to_have` was started; the blocking list took the whole slot.
+
+Deployed at the end of this: web version `1b95cb0e-58e2-4bc5-9ad7-90d598c77405`,
+api version `c211e8b8-2e53-4b7e-9709-4298ee6da881`. The next e2e run films this.
+
+Baseline, both green and both up on the last iteration:
+`pnpm --filter web typecheck` and `--filter api typecheck` clean;
+**web 97 files / 1203 tests**, **api 46 files / 857 tests**.
+
+---
+
+## Blocking 1 — "rejects alone do nothing"
+
+**What it was.** `redeal.ts` refused when `exemplars.positive` was empty, and
+returned from `fail()` before reaching `setDealError`, so `X X` then Enter
+issued no request, changed no pixel and said nothing. The agent calling
+`redeal` on the human's flags got the same refusal and invented four searches
+of its own.
+
+**What I changed.** `seedPositives()` in `apps/web/app/lib/webmcp/redeal.ts`.
+With no picks, the unrejected works on screen seed the centroid and the rejects
+push against it — `cos(x, mean(screen \ rejects)) − w·max_j cos(x, neg_j)`,
+exactly the score the verdict specified. Same route, same weights, same
+function; only the origin of the positives differs.
+
+Four decisions inside that are worth stating, because they are not obvious:
+
+- **The seeds come off `humanResults` when there is no board.** `board` is null
+  until the first deal, which is precisely when someone is most likely to start
+  throwing things out. Reading only the board would have missed the case the
+  critique reproduced.
+- **The whole on-screen set goes into `excludeIds`.** Otherwise the deal hands
+  the same grid back and reads as nothing having happened.
+- **Seeds are not pins.** Nothing was chosen, so nothing holds a seat and the
+  board turns over. Only confirmed picks pin.
+- **The outcome carries `seededBy: 'picks' | 'unrejected'`**, and the `redeal`
+  tool result carries a hint telling the model not to claim they picked
+  anything. A note that says "you picked" about a turn where nobody picked is
+  the same hollowness in a different place.
+
+**On the verdict's "relax the positiveIds min-1 requirement": I did not, and I
+think that is right.** With the seeding above, `redeal` never sends an empty
+positive list, so the server's guard is not in the way. Ranking by
+`−w·max_j cos(x, neg_j)` alone — which is what relaxing it would mean — sorts
+63,253 works by "least like the thing you hate" and returns the weirdest
+corner of the index. Instead `search_by_exemplars` now applies the *same seeding
+rule* the human's Enter uses, so an agent asking "less like those" with nothing
+to be more like gets the human's answer rather than a 400 or a garbage ranking.
+That keeps the "no agent-only path" claim true, which relaxing the server would
+not have.
+
+The one remaining refusal — nothing picked and nothing unrejected on screen —
+now calls `setDealError`, so it draws.
+
+**Verified on staging**, `scripts/demo/probe-rejects-only.mjs`, twice, on the
+final build. Cold `/nga/search?q=warm landscape`, hover-and-`X` on two cards,
+Enter on an empty bar:
+
+```
+boardBefore 30 → boardAfter 12 · newWorks 12 · rejectsStillOnBoard 0
+exemplarCalls 1 · agentCalls 0 · dealError null
+dealtBoard true · trayPresent true · tray 2
+```
+
+One POST to `/api/public-search/nga/exemplars` and nothing else. Both rejects
+in the visible tray. Shots in `docs/night/shots/fix4-rejects/`.
+
+## Blocking 2 — 429 on every agent turn
+
+**What I changed.** `OPENAI_DAILY_CALL_LIMIT = "5000"` in `[env.staging]` of
+`apps/api/wrangler.toml`. The site-wide KV day-counter had been falling through
+to `DEFAULT_OPENAI_DAILY_CALL_LIMIT = 500`.
+
+And the diagnosis cost, which the verdict was right to call out: `openai.ts`
+threw an identical `OpenAiUnavailableError` for two unrelated 429s. They now
+carry an `OpenAiFailureCode`, and `agent.ts` relays them apart —
+`AGENT_BUDGET_SPENT` ("raise `OPENAI_DAILY_CALL_LIMIT` and redeploy; the
+counter resets at 00:00 UTC") versus `AGENT_RATE_LIMITED` (upstream, not ours).
+
+**Verified**: `POST /api/public-agent/turn` returns **200** with a real
+assistant message, re-checked at the end of the session. The deployed
+`OPENAI_API_KEY` is healthy — no key was changed and no other project's billing
+was pointed at, which was correctly not a fix phase's call. Every OpenAI-backed
+route on the worker shares that counter, so `/api/public-labels` came back with
+it.
+
+## Blocking 3 — the note not grounded in the flagged works
+
+**What I changed.** Two things, and the verdict's diagnosis of which mattered
+was right.
+
+- The gesture payload now rides **every** request of a turn
+  (`agent-prompt.tsx`), not only `turn === 0`. The wall label is written on the
+  last request, five or six deep, and by then the sentence naming the rejects
+  had gone.
+- `describeHumanTurn` takes `{ continued }` and rewords itself as *"Still
+  standing on the board, from before this turn began: …"* once the loop has
+  been round, detected from the conversation rather than trusted from the
+  client. That is what the original *"do not restate them"* comment was
+  protecting, and it costs nothing to keep the facts.
+- The gesture rule also now asks for a note naming subject, palette or medium
+  rather than one that would fit any board.
+
+**Verified, six runs across two independent triplets**, `notes-fix4.mjs`
+against staging: instruction → `X` on two → Enter → one contentless nudge
+("again"). **6 of 6 name what was thrown out.** Rejects beside their notes:
+
+| rejected | note |
+| --- | --- |
+| *Lake Albano, Sunset* (Inness, 1874, oil, `#BFAC66 #584D0B #E8C770 #80793F`) · *Stylized Landscape* (American 19C, 1850, oil, `#584E26 #C0A659 #768347 #A1A97D`) | "You rejected the **gold-and-olive landscape palettes**; moving toward softer, lighter warmth." |
+| *Environs de Cremieu* (Ravier, 1885, watercolor and graphite) · *A Hillside Path…* (Michetti, 1905, pastel and charcoal) | "You rejected the **two landscape drawings**; following that move toward warm, simple still lifes." |
+| *Northern Landscape Fantasy…* (Berchem, 1660, red chalk) · *Vicinity of Morestal* (Ravier, 1885, watercolor and charcoal) | "You rejected the **two chalk-and-watercolor landscapes**; moving toward warmer, fuller color and away from their spare paper tones." |
+| *Still Life, Wineglass, Two Peaches* · *A Peach, Seville* (Hall, 1866, oil, `#C3803A #7E3F0F #6C443C`) | "You rejected the **two peach-heavy, darkest palettes**; keeping the warmth lighter and less literal." |
+| same two | "You rejected the **two darkest, brown-fruit palettes**; moving toward lighter, airier warmth." |
+| *A Peach, Seville* · *Flower Holder* (Walbeck, 1936, watercolor and graphite) | "You rejected the **two warm still lifes**; following that move toward calmer, less object-centred landscapes." |
+
+Every bolded phrase is checkable against the medium and palette beside it. The
+redeal in each run made **0 model calls**. Evidence:
+`docs/night/e2e-evidence/fix-iteration-4/notes.json`, shots
+`docs/night/shots/fix4-note-run*.png`.
+
+## Blocking 4 — reports claiming more than their evidence
+
+- **`e2e-report.md` §4** rewritten. It quoted two ordering-B notes and said
+  *"five notes came back"*; `notes-B.json` records all three B runs as
+  `"note": null` against a 429. It now says two came back, both ordering A's,
+  and carries a labelled correction quoting the original claim — so the record
+  shows what was wrong rather than quietly reading differently. The judgement
+  that follows is unchanged; it was always about ordering A's two.
+- **`curation-report.md` §4** corrected. *"Nothing is stored on a server"* is
+  no longer true: the merged `share-link.tsx` POSTs to `/api/exhibitions` for a
+  seven-character code and falls back to the self-contained `?e=…` link. Now
+  described as the two tiers it is, with the existing argument kept as what it
+  actually is — the case for the fallback.
+
+## Blocking 5 — the sticky toolbar slicing the wall label
+
+**The first attempt was wrong and measuring caught it.** I scoped the fix to
+the undealt case, because that is what the broken frame looked like. Then I
+listed every pinned box on the page and measured each against the sentence
+(`scripts/demo/sticky-audit.mjs`): the board *was* dealt, the note was hanging
+in the board's own header, and the results bar (`56–158`) was on it
+(`144–170`) — **14 px of overlap at scrollY 261**, 26 px at 320. The earlier
+geometry check passed because it measured the bar and never the note.
+
+Both places a label can hang are below the bar in the flow, so the condition is
+just "is a label on screen", and the bar gives up `sticky` while one is.
+`data-board-note` is now on the note so a harness can find it by name.
+
+**Verified** with `note-vs-toolbar.mjs` on the final build, at scrollY 0, 120,
+200, 261 and 320: **overlap 0 at every position**, and I looked at the pictures
+rather than the assertion —
+`docs/night/shots/fix4-note-toolbar/note-scroll000.png` and `…261.png` both
+show the sentence whole above twelve cards at 1440×900.
+
+---
+
+## Section 7b — the standing list
+
+1. **Deal animation on the real `/nga/search`.** Already true and re-confirmed
+   here: my own probe returns `dealtBoard: true` with `.lt-deal-viewport` and a
+   populated tray on `/nga/search` against the real collection. The critique
+   independently measured 14–25 intermediate layouts and picks at 0 px on the
+   same route. Nothing to port.
+2. **`capture.mjs` hardcoded Mac playwright path.** Already fixed on this
+   branch, and now proven rather than read: `capture.mjs` ran on this VM with
+   no `PLAYWRIGHT_CORE` set and produced mp4 + webm + beats.json.
+3. **`--speak` truncation.** Already fixed, with an explicit guard that throws
+   if the field does not hold the whole sentence. Ran it: all 88 characters
+   delivered, no throw.
+4. **`?webmcp-debug` mount race.** Merged and holding — driver and stub host
+   both install at module-evaluation time. Verified over **29 cold loads**:
+   handle present, 25 tools, `get_view_context` returning through the driver.
+   One caveat below.
+5. **Tool count.** It is **25**, not 17 and not 21 — `PAILLETTE_TOOL_NAMES` has
+   25 entries and `registry.test.ts` asserts it. Corrected in README (whose own
+   table listed sixteen under a heading saying 25), the devpost fields and
+   description, the submission pack, demo script v7 and the handoff prompt,
+   with each name list checked against `PAILLETTE_TOOL_NAMES` rather than the
+   total alone. Dated lane reports under `docs/night/` and the version-stamped
+   drafts are left as written: they were true at their timestamps.
+
+**Two things found while verifying the above, and fixed rather than reported:**
+
+- **`beats.json` recorded `toolsFired: []` under a take in which every tool
+  fired.** The reader looked for `aside[aria-label="Agent activity"] ol`, which
+  is not the markup — and, the interesting half, the log is **closed at rest by
+  design**, so the harness was reading a shut drawer. It opens it now, once,
+  before the loop. That is not a workaround: §7.4's answer to "how was WebMCP
+  implemented" is a judge watching the tools fire, and that is only on camera
+  if the drawer is open. Entries are matched by a new `data-activity-id`
+  instead of by position, because the list is newest-first and reorders while
+  calls are in flight — positional matching reported `list_collections` four
+  times for one call, and a beats.json that overstates what happened is worse
+  than the empty one it replaced. A typed run now records 7 screenshots and the
+  real sequence: `list_collections`, three `search_artworks`, `search_by_color`,
+  `set_view`, `set_results`.
+- **The debug driver answered `[]` for the first 43–145 ms of every load.** The
+  ordering is deliberate and I did not touch it; what changed is the answer.
+  The back door now waits up to two seconds for a non-empty list rather than
+  reporting an empty surface as fact. A judge opening the console as the page
+  paints was reading "not yet" as "broken".
+
+---
+
+## What I could not close
+
+- **One cold load in 29 never produced `window.__paillette_webmcp`** (25 s
+  timeout). It happened in the batch run seconds after a `wrangler deploy`,
+  while the worker version was rolling over, and 24 consecutive clean loads
+  followed it — 12 through the strict probe and 12 through
+  `probe-debug-flake.mjs`, which records page errors, failed requests, the
+  query parameter and `document.readyState` on every load and caught nothing.
+  I believe it was the deploy, not the page, but I could not reproduce it and
+  so cannot prove that. `probe-debug-flake.mjs` is committed so the next
+  iteration can keep hunting it if it recurs.
+- **Nothing from `nice_to_have` was attempted.** The staging homepage still
+  points at a different product, the cold search page still has two live text
+  fields, and the disagreement is still not drawn on one card. The instruction
+  was to clear the blocking list and nothing else, and clearing it — including
+  the two capture-harness defects found while verifying it — took the slot.
+- **The compare click still does not dispatch a turn**, and re-selection on a
+  theme correction still drops works without adding any. Both are on the
+  `nice_to_have` list, both were already recorded by earlier iterations, and
+  neither was touched.
