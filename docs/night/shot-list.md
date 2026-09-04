@@ -68,13 +68,15 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
   Newcomers arrive from the right, staggered.
 - **Said.** *"I throw them out and press Enter."*
 - **Page + input.** Enter with nothing focused. **Film the second redeal.**
-- **Headless** yes. **Exists** yes — `e2e-deal-on-nga-search.webm`,
-  `e2e-06-deal-midflight-386ms.png`. Re-verified live: 12 cards, 12/12 fully
-  visible, `gridHeight 724` in a 1000 px viewport, `.lt-tray` present with 2
-  items. **Calls** 0.
-- **⚠ The first redeal after a text search is a jump cut, not a deal** — 5
-  distinct layouts against the second's 22–25. It is a masonry becoming a board
-  and there is no slot to hold. Do not film the first.
+- **Headless** yes. **Exists** yes — `e2e2-deal-on-nga-search.webm`,
+  `e2e2-09-step6-deal-midflight.png`,
+  `e2e2-10-step6-deal-settled-twelve-and-tray.png`. Re-verified live three times
+  tonight, identical every run: `{"cards":12,"fullyVisible":12,"rejectsOnBoard":0,
+  "gridHeight":724,"tray":2}`, and the pick at `{"dx":0,"dy":0}` before and after.
+  **Calls** 0.
+- **⚠ The first redeal after a text search is a jump cut, not a deal** — measured
+  at 3, 4, 4, 6, 12, 14 and 18 layouts against the second's 16–28. It is a
+  masonry becoming a board and there is no slot to hold. Do not film the first.
 
 ---
 

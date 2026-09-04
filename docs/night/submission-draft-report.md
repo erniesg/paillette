@@ -250,10 +250,14 @@ with `worker.ts(2,24): error TS2307: Cannot find module './build/server/index.js
 `pnpm --filter web build` then `typecheck` exits **0**. Not a regression; worth
 knowing, because a clean checkout will report a false failure.
 
-**One web test file fails to collect**, on a Vite transform error, with every one
-of the 1113 tests in the other 90 files passing. The same shape is recorded in
-the sharing lane's report, which fixed it on `night/sharing` — a branch not
-merged here. Not caused by this lane, which touched no source.
+**One web test file sometimes fails to collect**, on a Vite transform error,
+with every one of the 1113 tests in the other 90 files passing. **It is
+intermittent** — across four runs tonight it appeared in some and not others,
+which is why no file name is given here: the reporter names the error and not
+the file, and a run that reproduces it is needed to catch one. The same shape is
+recorded in the sharing lane's report, which fixed it on `night/sharing`, a
+branch not merged here. Not caused by this lane, which touched no source. It
+never failed a *test* — only a collect.
 
 ### 8.1 The demo path, run repeatedly
 
