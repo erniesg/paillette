@@ -25,6 +25,7 @@ import {
 } from './preview';
 import {
   buildExhibitionPage,
+  deadlineSignal,
   loadExhibitionByCode,
   PREVIEW_DEADLINE_MS,
 } from '../exhibition-page.server';
@@ -72,16 +73,15 @@ export const handleShareRequest = async (
   if (!crawler && !probe) return null;
 
   try {
-    // An unfurler abandons the fetch after a few seconds and caches the empty
-    // result, so this path runs on a tighter deadline than the page does. A
-    // card built from the works that answered in time beats a bare URL that
-    // stays bare.
-    const payload = await loadExhibitionByCode(
-      code,
-      env,
-      request.signal,
-      PREVIEW_DEADLINE_MS
-    );
+    // One clock for the whole path, not one per hop. An unfurler abandons the
+    // fetch after a few seconds and caches the empty result, so what has to be
+    // bounded is the total — and both calls below share this signal, so the
+    // lookup running slow leaves the records less time rather than adding to
+    // it. Blowing the budget falls through to the app, which serves the same
+    // tags the slow way.
+    const budget = deadlineSignal(PREVIEW_DEADLINE_MS, request.signal);
+
+    const payload = await loadExhibitionByCode(code, env, budget, PREVIEW_DEADLINE_MS);
     if (!payload) return null;
 
     const canonicalUrl = new URL(shareCodePath(code), url.origin).toString();
@@ -90,7 +90,7 @@ export const handleShareRequest = async (
       env,
       code,
       canonicalUrl,
-      signal: request.signal,
+      signal: budget,
       deadlineMs: PREVIEW_DEADLINE_MS,
     });
     if (!page) return null;

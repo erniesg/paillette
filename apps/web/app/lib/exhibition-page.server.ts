@@ -92,15 +92,45 @@ const apiRoot = (env: Record<string, string | undefined>) =>
 export const RECORD_DEADLINE_MS = 4000;
 
 /**
- * The crawler's budget is not ours to spend.
+ * The crawler's budget is not ours to spend — and this one is a *total*.
  *
  * Slack, X and WhatsApp abandon an unfurl after a few seconds and cache the
  * empty result, so a preview that arrives in six seconds is not a slow
  * preview — it is a link that renders as a bare URL, and stays that way.
- * Tighter than the page deliberately: a card with five of six works beats no
- * card at all.
+ *
+ * The first version of this was 1500 ms applied *per fetch*, which was wrong
+ * in both directions at once. The preview path makes two calls in sequence —
+ * look the code up, then resolve the records — so the real worst case was
+ * double the number written down. And measured against staging the lookup
+ * alone ran 0.13–1.50 s, so it was tripping its own deadline on ordinary
+ * traffic and silently falling through to the full app shell.
+ *
+ * So it is now one wall-clock cap on the whole path, not a per-call one.
+ * 2.5 s total sits inside every unfurler's window with room to spare, and
+ * `deadlineSignal` below is what makes it a real ceiling rather than an
+ * aspiration.
  */
-export const PREVIEW_DEADLINE_MS = 1500;
+export const PREVIEW_DEADLINE_MS = 2500;
+
+/**
+ * One signal that fires after `ms`, folded together with the caller's own.
+ *
+ * Handed to every call on a path so the *path* has a deadline, rather than
+ * each hop having its own and the total being however many hops there are.
+ */
+export const deadlineSignal = (
+  ms: number,
+  signal?: AbortSignal
+): AbortSignal | undefined => {
+  if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') {
+    return signal;
+  }
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  return typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([signal, timeout])
+    : timeout;
+};
 
 /**
  * `fetch` with a deadline, composed with the caller's own signal.

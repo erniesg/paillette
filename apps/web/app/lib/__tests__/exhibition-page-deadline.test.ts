@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildExhibitionPage,
+  deadlineSignal,
   loadExhibitionByCode,
   PREVIEW_DEADLINE_MS,
   RECORD_DEADLINE_MS,
@@ -170,6 +171,49 @@ describe('the crawler budget', () => {
     // page's deadline the card silently stops rendering in Slack, and nothing
     // else in the suite would notice.
     expect(PREVIEW_DEADLINE_MS).toBeLessThan(RECORD_DEADLINE_MS);
+  });
+
+  /*
+   * Found on staging, not here. The first version applied this budget per
+   * fetch, so the preview path's two sequential calls could take twice the
+   * number written down — and at 1500 ms it was tripping on ordinary traffic
+   * (the lookup alone measured 0.13-1.50 s) and silently falling through to
+   * the full app shell. `deadlineSignal` makes it one clock for the path.
+   */
+  it('caps the whole path once, not each hop separately', async () => {
+    vi.stubGlobal('fetch', hangingApi(['b']));
+
+    const budget = deadlineSignal(PREVIEW_DEADLINE_MS);
+    let aborted = false;
+    budget!.addEventListener('abort', () => {
+      aborted = true;
+    });
+
+    // Spend most of the budget on the first hop...
+    await vi.advanceTimersByTimeAsync(PREVIEW_DEADLINE_MS - 100);
+    expect(aborted).toBe(false);
+
+    // ...and the second hop inherits what is left rather than starting over.
+    const pending = buildExhibitionPage({
+      payload: show(['a', 'b']),
+      env,
+      canonicalUrl: 'https://paillette.test/e/aB3xk9m',
+      signal: budget,
+      deadlineMs: PREVIEW_DEADLINE_MS,
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(aborted).toBe(true);
+
+    /*
+     * The budget expired 200 ms into the second hop rather than giving it a
+     * fresh 2500 ms — that is the whole point. What survives is what had
+     * already answered: `a` came back immediately, `b` was still hanging when
+     * the shared signal fired. A card with one of two works beats a bare URL,
+     * so this is a partial page rather than a fall-through.
+     */
+    const page = await pending;
+    expect(page!.works.map((work) => work.artworkId)).toEqual(['a']);
+    expect(page!.missing).toBe(1);
   });
 
   it('abandons a slow record inside the preview budget', async () => {
