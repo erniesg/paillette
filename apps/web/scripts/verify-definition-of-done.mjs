@@ -22,6 +22,18 @@ import { chromium } from '@playwright/test';
 const BASE = process.argv[2] ?? 'http://localhost:5222';
 const RUNS = Number(process.argv[3] ?? 1);
 
+/*
+ * The take is not only ever shot at one size. 1280x800 is where the voice lane
+ * found the old panel overlapping the utterance bar, and the light theme flips
+ * every token the ink depends on — so a run cycles through these rather than
+ * proving the sequence in one configuration and implying the others.
+ */
+const VARIANTS = [
+  { label: '1500x1000 dark', width: 1500, height: 1000, theme: 'dark' },
+  { label: '1280x800 dark', width: 1280, height: 800, theme: 'dark' },
+  { label: '1440x900 light', width: 1440, height: 900, theme: 'light' },
+];
+
 const BULLETS = {
   keys: 'P/X/U/C and Enter work; flags persist per session; get_view_context returns them',
   redeal: 'Enter on an empty bar redeals from human flags, picks in place, no LLM call',
@@ -62,7 +74,7 @@ const CORPUS = [
   ...Array.from({ length: 30 }, (_, index) => `Study ${index + 1}`),
 ].map((title, index) => work(`nga-${index + 1}`, index, title));
 
-async function runOnce() {
+async function runOnce(variant) {
   const results = Object.fromEntries(
     Object.keys(BULLETS).map((key) => [key, { checks: [], skipped: null }])
   );
@@ -76,22 +88,63 @@ async function runOnce() {
   };
 
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1500, height: 1000 } });
-
-  // Record anything the page tries to say out loud, before the page loads, so
-  // "the note is spoken only after voice input" is an observation and not an
-  // assumption.
-  await context.addInitScript(() => {
-    window.__pa_spoken = [];
-    const synth = window.speechSynthesis;
-    if (synth && typeof synth.speak === 'function') {
-      const original = synth.speak.bind(synth);
-      synth.speak = (utterance) => {
-        window.__pa_spoken.push(String(utterance?.text ?? ''));
-        return original(utterance);
-      };
-    }
+  const context = await browser.newContext({
+    viewport: { width: variant.width, height: variant.height },
   });
+
+  /*
+   * A recogniser that never hears anything, and a synthesiser that records
+   * rather than speaks — both installed before the page's script runs, because
+   * Chromium ships a native `SpeechRecognition` and a read-only
+   * `speechSynthesis` accessor that can only be replaced by definition.
+   *
+   * This does not make the speech real. It makes the *plumbing* real in a real
+   * browser, which is the most that can be done headless — Chrome sends the
+   * audio to Google. What it buys is the strongest available form of section
+   * 9's fourth bullet: a typed turn and a spoken turn in the same session, so
+   * "spoken only after voice" is a contrast rather than two separate claims.
+   */
+  await context.addInitScript(([theme]) => {
+    class FakeRecognition {
+      constructor() {
+        window.__pa_rec = this;
+      }
+      start() {
+        window.__pa_rec_started = (window.__pa_rec_started ?? 0) + 1;
+      }
+      stop() {
+        window.__pa_rec_stopped = (window.__pa_rec_stopped ?? 0) + 1;
+      }
+    }
+    for (const name of ['SpeechRecognition', 'webkitSpeechRecognition']) {
+      Object.defineProperty(window, name, {
+        value: FakeRecognition,
+        configurable: true,
+        writable: true,
+      });
+    }
+    window.__pa_spoken = [];
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        speaking: false,
+        pending: false,
+        speak: (utterance) => window.__pa_spoken.push(String(utterance?.text ?? '')),
+        cancel() {},
+      },
+    });
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      configurable: true,
+      value: class {
+        constructor(text) {
+          this.text = text;
+        }
+      },
+    });
+    if (theme === 'light') {
+      window.localStorage.setItem('paillette-theme', 'light');
+    }
+  }, [variant.theme]);
 
   const page = await context.newPage();
   const pageErrors = [];
@@ -327,23 +380,81 @@ async function runOnce() {
   );
 
   // ── bullet 4 ──────────────────────────────────────────────────────────────
+  //
+  // The typed turn above has already happened, so the two halves of this bullet
+  // can be checked against each other inside one session rather than asserted
+  // separately in two scripts.
   bullet = 'voice';
-  const spoken = await page.evaluate(() => window.__pa_spoken ?? []);
-  check('a typed turn is silent — nothing was spoken', spoken.length === 0, spoken.join(' | '));
+  const spokenAfterTyped = await page.evaluate(() => window.__pa_spoken ?? []);
+  check(
+    'the typed turn was silent — nothing spoken',
+    spokenAfterTyped.length === 0,
+    spokenAfterTyped.join(' | ')
+  );
   check(
     'the field is editable text, not a transcript view',
     barPresent && (await bar.evaluate((node) => node.tagName)) === 'INPUT'
   );
-  const micCount = await page.locator('button[aria-label="Hold to speak"]').count();
-  check(
-    'the mic is an accelerant beside the field, not the way in',
-    micCount <= 1,
-    `${micCount} mic control(s)`
-  );
+
+  const mic = page.locator('button[aria-label="Hold to speak"]');
+  const micPresent = (await mic.count()) === 1;
+  check('the mic is one control beside the same field', micPresent);
+
+  if (micPresent) {
+    await bar.fill('');
+    await mic.hover();
+    await page.mouse.down();
+    await page.waitForTimeout(220);
+    await page.evaluate(() =>
+      window.__pa_rec.onresult({
+        results: [Object.assign([{ transcript: 'something warm' }], { isFinal: false })],
+      })
+    );
+    await page.waitForTimeout(220);
+    check(
+      'interim words land in the editable field as they arrive',
+      (await bar.inputValue()) === 'something warm',
+      await bar.inputValue()
+    );
+
+    await page.evaluate(() =>
+      window.__pa_rec.onresult({
+        results: [
+          Object.assign([{ transcript: 'something warm and quiet' }], { isFinal: true }),
+        ],
+      })
+    );
+    await page.mouse.up();
+    await page.waitForTimeout(260);
+    check(
+      'releasing does not send — a grace bar drains first',
+      (await page.locator('[role="progressbar"]').count()) === 1
+    );
+    check(
+      'and the words are editable while it drains',
+      (await bar.inputValue()).includes('something warm')
+    );
+
+    const agentBeforeVoice = agentTurns.length;
+    await page.waitForTimeout(1_800);
+    check(
+      'the utterance commits after the grace',
+      agentTurns.length === agentBeforeVoice + 1,
+      `${agentTurns.length - agentBeforeVoice} turn(s)`
+    );
+    await page.waitForTimeout(900);
+    const spokenAfterVoice = await page.evaluate(() => window.__pa_spoken ?? []);
+    check(
+      'and the note is spoken back — once, and only after the spoken turn',
+      spokenAfterVoice.length === 1,
+      JSON.stringify(spokenAfterVoice)
+    );
+  }
   skip(
     'voice',
-    'a real recogniser cannot run headless — Chrome ships the audio to Google. ' +
-      'The plumbing is checked with a fake recogniser in apps/web/scripts/voice-loop-verify.mjs.'
+    'the plumbing is real in a real browser but the speech is not: Chrome ships the ' +
+      'audio to Google, so no recogniser has run and no audio has been produced on ' +
+      'this machine. A genuinely spoken take must be filmed on a real one.'
   );
 
   // ── bullet 5 ──────────────────────────────────────────────────────────────
@@ -381,18 +492,35 @@ async function runOnce() {
     const humanCard = document.querySelector('.paillette-card[data-flag-by="human"]');
     const agentCard = document.querySelector('.paillette-card[data-flag-by="agent"]');
     const glyph = document.querySelector('.pa-activity-cells');
+
+    /*
+     * Resolve the tokens through the browser rather than restating their values.
+     * The light theme flips every one of them — graphite is #e6e3dc on the
+     * charcoal table and #17161a on the paper one — so an assertion carrying a
+     * literal passes in one theme and reports a defect in the other that is not
+     * there. Painting a probe and reading it back gives the same normalised
+     * `rgb(...)` form the computed styles are in.
+     */
+    const resolve = (token) => {
+      const probe = document.createElement('span');
+      probe.style.color = `var(${token})`;
+      probe.style.position = 'absolute';
+      probe.style.opacity = '0';
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe).color;
+      probe.remove();
+      return value;
+    };
+
     return {
       human: mark('human'),
       agent: mark('agent'),
       agentProvisional: agentCard?.getAttribute('data-flag-provisional'),
       humanFrame: humanCard ? getComputedStyle(humanCard).boxShadow : null,
       glyph: glyph ? getComputedStyle(glyph).color : null,
-      humanToken: getComputedStyle(document.documentElement)
-        .getPropertyValue('--ink-human')
-        .trim(),
-      agentToken: getComputedStyle(document.documentElement)
-        .getPropertyValue('--ink-agent')
-        .trim(),
+      humanInk: resolve('--ink-human'),
+      agentInk: resolve('--ink-agent'),
+      theme: document.documentElement.dataset.theme ?? 'dark',
       bothOnScreen: Boolean(humanCard) && Boolean(agentCard),
     };
   });
@@ -418,14 +546,30 @@ async function runOnce() {
     inks.agentProvisional
   );
   check(
-    'a confirmed human pick carries the graphite hairline frame',
-    (inks.humanFrame ?? '').includes('230, 227, 220'),
-    (inks.humanFrame ?? '').slice(0, 44)
+    'the human’s mark is the human’s ink, whichever theme is on',
+    inks.human?.colour === inks.humanInk,
+    `${inks.theme}: ${inks.human?.colour} vs ${inks.humanInk}`
+  );
+  check(
+    'the agent’s mark is the agent’s ink, whichever theme is on',
+    inks.agent?.colour === inks.agentInk,
+    `${inks.theme}: ${inks.agent?.colour} vs ${inks.agentInk}`
+  );
+  check(
+    'a confirmed human pick carries the hairline frame in that ink',
+    (inks.humanFrame ?? '').includes(
+      (inks.humanInk ?? '').replace('rgb(', '').replace(')', '')
+    ),
+    `${inks.theme}: ${(inks.humanFrame ?? '').slice(0, 40)}`
   );
   check(
     'the activity glyph is drawn in the agent’s ink, never the human’s',
-    inks.glyph !== null && !inks.glyph.includes('230, 227, 220'),
-    `${inks.glyph}`
+    inks.glyph !== null &&
+      inks.glyph !== inks.humanInk &&
+      inks.glyph.startsWith(
+        `rgba(${(inks.agentInk ?? '').replace('rgb(', '').replace(')', '')}`
+      ),
+    `${inks.theme}: ${inks.glyph} vs ${inks.agentInk}`
   );
 
   // The glyph's own promise, in the middle of a real take.
@@ -435,14 +579,79 @@ async function runOnce() {
   );
   check('no uncaught page errors anywhere in the take', pageErrors.length === 0, pageErrors[0]);
 
+  /*
+   * Text first, checked rather than asserted.
+   *
+   * Everything above ran with a recogniser installed. This is the same page with
+   * `SpeechRecognition` deleted entirely — the state of any browser that does
+   * not ship it, and of anyone who has denied the microphone. The agentic
+   * trigger has to fire from a typed instruction alone, and the only thing that
+   * may change is that the mic is not drawn.
+   */
+  bullet = 'voice';
+  const voiceOff = await browser.newContext({
+    viewport: { width: variant.width, height: variant.height },
+  });
+  await voiceOff.addInitScript(() => {
+    for (const name of ['SpeechRecognition', 'webkitSpeechRecognition']) {
+      Object.defineProperty(window, name, { value: undefined, configurable: true });
+    }
+  });
+  await voiceOff.route('**/api/public-search/**', (route) =>
+    route.fulfill({
+      json: { success: true, data: { results: CORPUS, count: CORPUS.length, queryTime: 5 } },
+    })
+  );
+  let offTurns = 0;
+  await voiceOff.route('**/api/public-agent/**', (route) => {
+    offTurns += 1;
+    return route.fulfill({
+      json: {
+        success: true,
+        data: { message: { role: 'assistant', content: 'Five warm, calm options.' } },
+      },
+    });
+  });
+  const offPage = await voiceOff.newPage();
+  const offErrors = [];
+  offPage.on('pageerror', (error) => offErrors.push(String(error)));
+  await offPage.goto(`${BASE}/nga/search?q=warm%20harbour&webmcp-debug`, {
+    waitUntil: 'networkidle',
+    timeout: 60_000,
+  });
+  await offPage.waitForSelector('.paillette-card', { timeout: 30_000 });
+  await offPage.waitForTimeout(1_200);
+
+  check(
+    'with no recogniser at all, no mic is drawn',
+    (await offPage.locator('button[aria-label="Hold to speak"]').count()) === 0
+  );
+  const offBar = offPage.locator('input[aria-label="Ask the agent"]');
+  check('the field is still there', (await offBar.count()) === 1);
+  if ((await offBar.count()) === 1) {
+    await offBar.fill('something warm for above the sofa');
+    await offBar.press('Enter');
+    await offPage.waitForTimeout(2_000);
+  }
+  check(
+    'and a typed instruction alone still fires the agent',
+    offTurns === 1,
+    `${offTurns} turn(s)`
+  );
+  check('no page errors with voice absent', offErrors.length === 0, offErrors[0]);
+  await voiceOff.close();
+
   await browser.close();
   return { results, pageErrors };
 }
 
 const tally = [];
 for (let index = 0; index < RUNS; index += 1) {
-  console.log(`\n================ run ${index + 1} of ${RUNS} ================`);
-  const { results } = await runOnce();
+  const variant = VARIANTS[index % VARIANTS.length];
+  console.log(
+    `\n================ run ${index + 1} of ${RUNS} · ${variant.label} ================`
+  );
+  const { results } = await runOnce(variant);
   const summary = {};
   for (const [key, label] of Object.entries(BULLETS)) {
     const { checks, skipped } = results[key];
