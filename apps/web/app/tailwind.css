@@ -653,9 +653,53 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   }
 }
 
+/*
+ * A deal in flight, said with the mark rather than with a word.
+ *
+ * `dealing` has been in the store since the loop was built, carrying a comment
+ * that a slow deal "has to be visibly in progress rather than look ignored" —
+ * and nothing ever read it. Pressing Enter on a slow connection did nothing
+ * observable until the board changed, which on a filmed take reads as a dead
+ * key rather than as a wait.
+ *
+ * So the hairline the human's own Enter armed travels while the deal is out.
+ * No text: "Redealing…" is §5b's chrome narrating the mechanism, and it would
+ * need a slot on screen that stands empty the rest of the time. This is the
+ * rule that is already under the bar, moving — the key acknowledging itself.
+ */
+.lt-enter-armed[data-dealing='true'] {
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--ink-human-faint) 12%,
+    var(--ink-human) 50%,
+    var(--ink-human-faint) 88%,
+    transparent
+  );
+  background-size: 220% 100%;
+  animation: lt-enter-dealing 900ms linear infinite;
+}
+
+@keyframes lt-enter-dealing {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -20% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lt-enter-armed {
     animation: none;
+  }
+
+  /* Still a state, only not a moving one: the rule brightens and holds. */
+  .lt-enter-armed[data-dealing='true'] {
+    animation: none;
+    background: var(--ink-human);
+    opacity: 0.7;
   }
 }
 
