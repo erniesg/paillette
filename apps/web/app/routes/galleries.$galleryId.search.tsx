@@ -80,6 +80,7 @@ import {
 import { CompareView } from '~/components/board/compare-view';
 import { ExhibitionHead } from '~/components/exhibition/exhibition-head';
 import { WallLabel } from '~/components/exhibition/wall-label';
+import { ShareExhibitionLink } from '~/components/exhibition/share-link';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
@@ -2889,7 +2890,16 @@ export default function SearchPage() {
             of whoever wrote them. It appears once someone has begun to curate
             — a confirmed pick, or a draft the agent has already written — so a
             plain search never carries a title block. */}
-        <ExhibitionHead />
+        <ExhibitionHead
+          trailing={
+            /* The link only means anything for a published collection: the
+               page it points at re-fetches every record by id, and a
+               collection indexed in this tab has no catalogue to fetch from. */
+            isNgaSearch ? (
+              <ShareExhibitionLink collectionId={preferredRouteId} />
+            ) : null
+          }
+        />
 
         {hasActiveSearch && (
           <section

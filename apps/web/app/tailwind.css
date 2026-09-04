@@ -1209,6 +1209,29 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   border-top: 1px solid var(--lt-rule);
 }
 
+/* The link. Catalogue mono at the quietest weight, underlined so it reads as
+ * a thing you can press, and no border — a box around it would make it the
+ * loudest object in a rail whose other occupant is a word count. */
+.paillette-share-link {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.paillette-share-link:hover {
+  color: var(--ink-human);
+}
+
+/* It says it worked in its own ink and its own place, and then stops. */
+.paillette-share-link[data-share-state='copied'] {
+  color: var(--ink-human);
+}
+
+.paillette-share-link[data-share-state='failed'] {
+  color: var(--ink-human);
+  text-decoration-style: dashed;
+}
+
 /*
  * Their compare overlay, made into a room.
  *
@@ -1618,4 +1641,262 @@ html[data-theme='light'] .themeable-surface textarea::placeholder {
 html[data-theme='light'] .themeable-surface pre,
 html[data-theme='light'] .themeable-surface code {
   border-color: var(--app-line) !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * The shareable exhibition page
+ *
+ * A gallery's own microsite, not an app screenshot. No header, no navigation,
+ * no controls — the only interactive things on the page are the links in the
+ * colophon and the catalogue record under each work, because there is nothing
+ * else a visitor could usefully do here.
+ *
+ * The measure is the design decision that does the most work. A wall label is
+ * read standing up at arm's length, so it is set short: the statement runs to
+ * about 62 characters a line and the labels to about 46, which is why the
+ * caption sits beside the picture on a wide screen rather than under it. Under
+ * it, at full width, a two-sentence label reads as a caption on a slide.
+ *
+ * Everything is unlayered and prefixed, so Tailwind cannot purge it and the
+ * rest of the app cannot inherit it.
+ * ------------------------------------------------------------------------- */
+
+.exhibition-page {
+  --exhibition-gutter: clamp(1.5rem, 6vw, 6rem);
+  min-height: 100vh;
+  /* Charcoal, not black: a black page makes every work look like it is
+   * floating in nothing and the dark passages of a painting dissolve. */
+  background: var(--lt-ground);
+  color: var(--ink-human);
+  padding: clamp(3rem, 12vh, 9rem) var(--exhibition-gutter)
+    clamp(3rem, 10vh, 7rem);
+  font-family: 'EB Garamond', Georgia, serif;
+}
+
+/* The masthead shares the hang's left edge rather than being centred on its
+ * own. Two different centres on one page reads as an accident. */
+.exhibition-masthead {
+  max-width: 74rem;
+  margin: 0 auto clamp(4rem, 14vh, 10rem);
+}
+
+.exhibition-masthead > * {
+  max-width: 34rem;
+}
+
+.exhibition-title {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.06;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+  color: var(--ink-human);
+}
+
+/*
+ * The statement sits under the title with a rule in the ink of whoever wrote
+ * it — the same provenance vocabulary the working page uses, so a show that is
+ * shared looks like the show that was made.
+ */
+.exhibition-statement {
+  margin-top: clamp(1.5rem, 4vh, 2.5rem);
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--ink);
+  font-size: 1.0625rem;
+  line-height: 1.66;
+  color: var(--ink-human-soft);
+  text-wrap: pretty;
+}
+
+.exhibition-statement[data-provenance='human'] {
+  --ink: var(--ink-human);
+}
+
+.exhibition-statement[data-provenance='agent'] {
+  --ink: var(--ink-agent);
+}
+
+.exhibition-count {
+  margin-top: clamp(1.5rem, 4vh, 2.5rem);
+}
+
+.exhibition-hang {
+  max-width: 74rem;
+  margin: 0 auto;
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Space is the only thing standing between one work and the next, so there
+   * is a lot of it. A rule between them would be a third mark on a page whose
+   * argument is that the pictures are the marks. */
+  gap: clamp(5rem, 16vh, 11rem);
+}
+
+.exhibition-work figure {
+  margin: 0;
+  display: grid;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+@media (min-width: 60rem) {
+  /*
+   * Named areas rather than `order`, which was the bug worth recording: grid
+   * auto-placement follows order-modified document order, so reordering the
+   * caption put it in the picture's column and squeezed every second work
+   * into the label's measure.
+   *
+   * The label column is a fixed measure because a wall label is. It does not
+   * get wider because the painting next to it did.
+   */
+  .exhibition-work figure {
+    grid-template-areas: 'work label';
+    grid-template-columns: minmax(0, 1fr) 19rem;
+    /* Bottom-aligned, the way a label is hung: level with the foot of the
+     * frame rather than its head. Pinned to the top, a tall work leaves its
+     * label a screen and a half above the point where you finish looking. */
+    align-items: end;
+  }
+
+  .exhibition-work figure > :first-child {
+    grid-area: work;
+  }
+
+  .exhibition-work figcaption {
+    grid-area: label;
+  }
+
+  /* Alternate the side the label hangs on, the way a real hang alternates, so
+   * a page of twelve works has a rhythm rather than a margin. */
+  .exhibition-work:nth-child(even) figure {
+    grid-template-areas: 'label work';
+    grid-template-columns: 19rem minmax(0, 1fr);
+  }
+
+  .exhibition-work:nth-child(even) figcaption {
+    text-align: right;
+  }
+
+  .exhibition-work:nth-child(even) .exhibition-line,
+  .exhibition-work:nth-child(even) .exhibition-accession {
+    justify-content: flex-end;
+  }
+
+  .exhibition-work:nth-child(even) .exhibition-label {
+    border-left: 0;
+    border-right: 1px solid var(--ink-human-faint);
+    padding-left: 0;
+    padding-right: 1rem;
+  }
+
+  /* Odd rows hang from the left edge of their column, even rows from the
+   * right, so the pictures track the labels instead of drifting. */
+  .exhibition-work:nth-child(even) .exhibition-image {
+    margin-left: auto;
+  }
+}
+
+/*
+ * Bounded, not stretched.
+ *
+ * `width: 100%` hangs every work at the same width, which is a contact sheet
+ * rather than a hang: a small etching comes out the size of a history
+ * painting. Capping both dimensions and letting the intrinsic aspect decide
+ * the rest means a tall work is tall and a wide one is wide, which is most of
+ * what makes a page of pictures look like a room.
+ */
+.exhibition-image {
+  display: block;
+  max-width: 100%;
+  max-height: 78vh;
+  width: auto;
+  height: auto;
+  /* Shadow rather than a border: a drawn frame competes with the frame that is
+   * already in the picture. */
+  box-shadow: var(--lt-slide-shadow-lifted);
+}
+
+.exhibition-image-missing {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--lt-slide-well);
+  box-shadow: inset 0 0 0 1px var(--lt-rule);
+}
+
+.exhibition-caption {
+  padding-top: clamp(0.25rem, 2vh, 1.5rem);
+}
+
+/* Artist, title, date, medium — a wall label's four facts, in the catalogue
+ * mono, separated by space rather than by punctuation. */
+.exhibition-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+.exhibition-work-title {
+  color: var(--ink-human);
+}
+
+.exhibition-label {
+  margin-top: 1rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--ink-human-faint);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink-human-soft);
+  text-wrap: pretty;
+}
+
+/* Who wrote the label is a mark, not a caption. The colophon says what it
+ * means, once, at the bottom, where a credit line belongs. */
+.exhibition-mark {
+  color: var(--ink-agent);
+  letter-spacing: 0.1em;
+}
+
+.exhibition-accession {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+}
+
+.exhibition-accession a,
+.exhibition-colophon a {
+  color: var(--ink-human-faint);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.exhibition-accession a:hover,
+.exhibition-colophon a:hover {
+  color: var(--ink-human);
+}
+
+.exhibition-colophon {
+  max-width: 34rem;
+  margin: clamp(6rem, 18vh, 12rem) auto 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--lt-rule);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-transform: none;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exhibition-page * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
