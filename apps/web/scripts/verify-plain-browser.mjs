@@ -10,6 +10,10 @@
  * route loader rather than a fetch, so the session index had never heard of
  * them and the human's first pick vanished from the board on the first deal.
  *
+ * The first of those has since been fixed by removing the condition rather
+ * than working around it — the host is now claimed on every visit — so the two
+ * assertions about it read the other way round now. See the note beside them.
+ *
  * Nothing here may call `window.__paillette_webmcp` — it does not exist. Every
  * assertion is made against the DOM, which is all a visitor has.
  *
@@ -78,17 +82,31 @@ await page.goto(`${BASE}/nga/search?q=stormy%20seas`, {
 await page.waitForSelector('.paillette-card', { timeout: 30_000 });
 
 console.log('\nwhat a visitor has');
+/*
+ * These two assertions were inverted deliberately, and the inversion is the
+ * point rather than a concession to a failing check.
+ *
+ * They used to assert that an ordinary visitor gets no host and therefore no
+ * prompt bar, which was true and was the defect: the critique's tenth blocking
+ * item was that a judge opening staging cold never reached the good part. The
+ * flag was gating the wrong thing. `document.modelContext` is what the page's
+ * *own* agent talks to, and a visitor whose browser has no WebMCP host is the
+ * common case, not the exception — so the stub is claimed on every visit.
+ *
+ * What stays behind `?webmcp-debug` is `window.__paillette_webmcp`, the
+ * console back door, and the check below still holds it to that.
+ */
 check(
-  'no WebMCP host',
-  (await page.evaluate(() => typeof document.modelContext)) === 'undefined'
+  'a WebMCP host, claimed on every visit',
+  (await page.evaluate(() => typeof document.modelContext)) !== 'undefined'
 );
 check(
   'no debug harness',
   (await page.evaluate(() => typeof window.__paillette_webmcp)) === 'undefined'
 );
 check(
-  'and therefore no prompt bar',
-  (await page.locator('input[aria-label="Ask the agent"]').count()) === 0
+  'and therefore a prompt bar',
+  (await page.locator('input[aria-label="Ask the agent"]').count()) === 1
 );
 check('but the cards are there', (await page.locator('.paillette-card').count()) === 6);
 
