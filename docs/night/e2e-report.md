@@ -311,23 +311,29 @@ that anything the note says about the rejects came from the flags).
 on the same turn. This is the shape iteration 1 used when it got notes like
 *"you picked the grey sea and rejected the dramatic boat."*
 
-> **Run 1.** Rejected: *"Environs de Cremieu"* and *"Flying Shadows"* (Kenyon
-> Cox, 1883, oil on canvas, `#47502B #9A8B57 #BDB89B`).
+> **Runs 1, 2 and 3.** Rejected: *"Environs de Cremieu"* and *"Flying Shadows"*
+> (Kenyon Cox, 1883, oil on canvas, `#47502B #9A8B57 #BDB89B`).
 >
-> Note: **"Soft light, simple forms, and warm colour for an easy, welcoming
-> wall."**
+> Note: **none, in all three.** Every one of them returned
+> `429 AGENT_UNAVAILABLE` on its first and only request. Ordering B produced no
+> model output at all, and `e2e3-08-note-B1.png` shows *"The shared daily agent
+> budget for this site is spent."* in red on the page.
 
-> **Run 2.** Same two rejects.
->
-> Note: **"Warm light, open space, and softened colour—quiet pictures that
-> welcome the room without crowding it."**
+> **Correction, written in the fix phase.** This section originally quoted two
+> notes for ordering B — *"Soft light, simple forms, and warm colour for an
+> easy, welcoming wall"* and *"Warm light, open space, and softened colour…"* —
+> and concluded *"five notes came back."* Neither sentence is in
+> `e2e-evidence/iteration-3/notes-B.json`, which records all three B runs as
+> `"note": null` against a 429. **Two notes came back, not five, and both of
+> them are ordering A's.** The judgement below is unchanged by this: it was
+> always about ordering A's two, and they are real and quoted correctly. But
+> the count was wrong and the two B quotations were not supported by this
+> report's own evidence, which is the one thing §10 of the brief forbids.
 
-> **Run 3.** Same two rejects. Note: **none — 429.**
-
-Five notes came back. **None of them names what was thrown out.** They are
-sentences about what is now on the board. Two carry a comparative that gestures
+Two notes came back. **Neither of them names what was thrown out.** They are
+sentences about what is now on the board. Both carry a comparative that gestures
 at a rejection without content — *"a quieter second hang"*, *"brighter"* — and
-that is the closest any of them gets. The system prompt asks for more than this
+that is the closest either of them gets. The system prompt asks for more than this
 and says so explicitly (`apps/api/src/routes/agent.ts:109`):
 
 > *"On a redeal after they have flagged something, the note is where the

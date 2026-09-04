@@ -321,18 +321,30 @@ prose under two themes is the stated failure of this lane.
 
 ## 4. The shareable page, and why this approach
 
-**The whole show travels in the URL.** Title, statement, ordered ids and every
-label, packed into one-letter wire keys, deflated with `CompressionStream`, and
-base64url'd into a single query parameter. Nothing is stored on a server.
-`/exhibition?e=…`.
+> **Correction, written in the fix phase.** What follows describes the
+> self-contained `?e=…` link, and it is still accurate about that link — but it
+> is no longer the whole mechanism, and the flat *"nothing is stored on a
+> server"* is now false. `night/sharing` merged a **two-tier** share:
+> `share-link.tsx` first POSTs the show to `/api/exhibitions` and gets a
+> seven-character code back, and falls back to the self-contained `?e=…` URL
+> only when that fails — API down, budget spent, no network. So the usual link
+> a person copies *is* a server record; the long one is the guarantee that a
+> link still exists when the short one cannot be minted. The section below is
+> the argument for the fallback, and it is why the fallback is the fallback
+> rather than the only option. `share-link.tsx:12–24`.
 
-The alternative was a server-side record behind a short id, and it is worse on
-every axis that mattered tonight. It needs an anonymous write endpoint on a site
-whose catalogue is deliberately read-only to anonymous callers — which means a
-rate limit, an expiry policy, a size cap and a moderation story for arbitrary
-prose strangers can publish under this domain. It needs KV. And it can rot: a
-link that resolves to a record somebody has to keep is a link that stops
-working.
+**The whole show can travel in the URL, and does when it has to.** Title,
+statement, ordered ids and every label, packed into one-letter wire keys,
+deflated with `CompressionStream`, and base64url'd into a single query
+parameter: `/exhibition?e=…`. Nothing about that link needs a server to survive.
+
+A server-side record behind a short id costs more, which is why it is the first
+tier rather than the only one: it needs an anonymous write endpoint on a site
+whose catalogue is deliberately read-only to anonymous callers — a rate limit,
+an expiry policy, a size cap and a moderation story for arbitrary prose
+strangers can publish under this domain. It needs KV. And it can rot: a link
+that resolves to a record somebody has to keep is a link that can stop working.
+The `?e=…` link is what makes that failure survivable rather than fatal.
 
 **The cost is length, and the first numbers I wrote for it were wrong.** The
 module claimed ~1250 characters for a twelve-work show and ~1900 for the full

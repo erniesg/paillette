@@ -1735,12 +1735,19 @@ export default function SearchPage() {
   );
 
   /**
-   * The note is above the results rather than on the board — the case where a
-   * sentence and a sticky bar want the same pixels. Read in two places, so it
-   * is named once: it decides whether the label renders here at all, and
-   * whether the results bar is allowed to pin over it.
+   * Is a wall label on screen at all?
+   *
+   * Both places it can hang are below the results bar in the flow — above the
+   * results when there is no deal, and inside the board's own header once
+   * there is — so both scroll under the bar when it pins. Measured on staging
+   * at 1440x900, scrollY 261: the bar's box was `56–158` and the sentence's
+   * was `144–170`. Fourteen pixels of overlap, straight through the middle of
+   * the one image the submission is made of.
+   *
+   * The first attempt at this scoped the fix to the undealt case, which is the
+   * one the broken frame *looked* like. It was the dealt one.
    */
-  const noteHangsAboveResults = Boolean(agentBoardNote) && !boardIsDealt;
+  const noteOnScreen = Boolean(agentBoardNote);
 
   /*
    * `?demo=sofa`: land with the query run and the flags already down, so the
@@ -3046,15 +3053,15 @@ export default function SearchPage() {
             {/* Chrome reduced to hairlines: one rule under the bar, none above,
                 and the ground showing through it.
 
-                Sticky, except while a wall label is hanging above it. The bar
-                pins at the top of the viewport and the note sits in normal
-                flow above the results, so scrolling slid the sentence under a
-                blurred backdrop and cut it in half — which happened to the one
-                frame of the night that carried the note and the board it
-                describes together. The count is chrome and the sentence is the
-                submission; when they collide the chrome gives way. */}
+                Sticky, except while a wall label is on screen. The bar pins at
+                the top of the viewport and every note hangs below it in the
+                flow, so scrolling slid the sentence under a blurred backdrop
+                and cut it in half — which is what happened to the one frame of
+                the night that carried the note and the board it describes
+                together. The count is chrome and the sentence is the
+                submission; when they collide, the chrome gives way. */}
             <div
-              className={`${noteHangsAboveResults ? '' : 'sticky top-14 '}z-30 -mx-5 border-b px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8`}
+              className={`${noteOnScreen ? '' : 'sticky top-14 '}z-30 -mx-5 border-b px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8`}
               style={{
                 borderColor: 'var(--lt-rule)',
                 background:

@@ -1,0 +1,38 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "rejected": [
+    "open-access-art:nga:184225",
+    "open-access-art:nga:195765"
+  ],
+  "boardBefore": 30,
+  "boardAfter": 12,
+  "boardChanged": true,
+  "newWorks": 12,
+  "rejectsStillOnBoard": 0,
+  "requestsAfterEnter": [
+    {
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    }
+  ],
+  "exemplarCalls": 1,
+  "agentCalls": 0,
+  "dealError": null,
+  "dealErrorText": null,
+  "note": null,
+  "trayPresent": true,
+  "tray": 2,
+  "dealtBoard": true,
+  "flagsAfterX": [
+    {
+      "id": "open-access-art:nga:184225",
+      "flag": "reject",
+      "by": "human"
+    },
+    {
+      "id": "open-access-art:nga:195765",
+      "flag": "reject",
+      "by": "human"
+    }
+  ]
+}
