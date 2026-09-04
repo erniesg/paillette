@@ -251,15 +251,21 @@ export const __resetFlagsForTest = () => {
 export const republishFlags = publish;
 
 /*
- * Restore on load, client only.
+ * Hydration is *not* triggered here, and the reason is a React error I put on
+ * staging by doing exactly that.
  *
- * `storage()` returns null on the server, so this costs nothing during SSR and
- * cannot desynchronise the rendered HTML. On the client the store is read
- * through `useSyncExternalStore` with a server snapshot, which is precisely the
- * hook for a client-side store whose value differs from the server's: it
- * renders the server snapshot while hydrating and re-renders once.
+ * Calling `hydrateFlags()` at module evaluation writes to the store before
+ * React has hydrated, so the tree React builds from the server's HTML no
+ * longer matches the state the components read — a hydration mismatch, logged
+ * on every reload with flags in storage. I had talked myself out of this on
+ * the grounds that `useSyncExternalStore` exists to reconcile a client store
+ * with a server snapshot; it does, but only for changes that happen *after*
+ * hydration, not for a store that has already moved by the time it starts.
+ *
+ * `WebMcpBridge` calls it from a mount effect instead — unconditionally, and
+ * not inside its WebMCP-availability guard, because `P`/`X`/Enter work on a
+ * browser with no host at all and their flags have to come back too.
  */
-hydrateFlags();
 
 /** Current state of the board, read straight off the shared store. */
 export const getBoardOrder = (): string[] => getWebMcpState().board?.order ?? [];

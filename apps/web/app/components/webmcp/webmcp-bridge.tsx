@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from '@remix-run/react';
 import { AgentActivityPanel } from './agent-activity-panel';
 import { ensureWebMcpDebugHarness } from '~/lib/webmcp/debug-harness';
+import { hydrateFlags } from '~/lib/webmcp/flags';
 import {
   observePublicSearchResponses,
   readPageContext,
@@ -44,6 +45,23 @@ export function WebMcpBridge() {
   useEffect(() => {
     setPageContext(readPageContext(location));
   }, [location.pathname, location.search]);
+
+  /*
+   * Bring back the flags this tab already had, once, after hydration.
+   *
+   * Deliberately outside the `isWebMcpAvailable` guard below: `P`, `X` and
+   * Enter on the board work on a browser with no WebMCP host at all — that is
+   * the whole "no agent-only path" claim — so their marks have to survive a
+   * refresh there too.
+   *
+   * And deliberately in an effect rather than at module load, which is where
+   * it was first written: restoring into the store before React hydrates makes
+   * the tree disagree with the server's HTML, and staging logged a React
+   * hydration error on every reload that had flags in storage.
+   */
+  useEffect(() => {
+    hydrateFlags();
+  }, []);
 
   useEffect(() => {
     if (!isWebMcpAvailable()) {
