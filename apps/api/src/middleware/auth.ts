@@ -1116,8 +1116,16 @@ export const requireApprovedDataAccess = async (
   await next();
 };
 
+/**
+ * `exemplars` is on this list because relevance feedback is NGA public search:
+ * it reads vectors already indexed for the same collection, defends itself with
+ * the same `isAllowedPublicSearchRouteScope` check as its siblings, and makes no
+ * embedding call at all. Leaving it off meant the deterministic redeal — the one
+ * beat the brief says must be demonstrated — returned FORBIDDEN on staging while
+ * passing every test, because no test and no dev server carries this key.
+ */
 const isPublicSearchApiRoute = (c: Context<AppBindings>) =>
-  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/nga\/search\/(?:text|image|color|quota)$/.test(
+  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/nga\/search\/(?:text|image|color|quota|exemplars)$/.test(
     c.req.path
   );
 

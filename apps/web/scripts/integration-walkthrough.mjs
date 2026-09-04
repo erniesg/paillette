@@ -118,7 +118,7 @@ const main = async () => {
   note(true, credentialled ? 'the deployment answers search live' : 'transport stubbed with real works (no local credential)');
 
   // ---- 1. deal a board --------------------------------------------------
-  await page.goto(`${BASE}/nga/search?q=storm%20at%20sea&webmcp-debug`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/nga/search?q=storm%20at%20sea&webmcp-debug`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await page.waitForSelector('.paillette-card', { timeout: 30_000 });
   const dealt = await board(page);
   note(dealt.length > 0, 'a board deals from the real collection', `${dealt.length} works, ${calls.text} text search(es)`);
@@ -263,7 +263,7 @@ const main = async () => {
   );
 
   // ---- 5. the tools, driven directly -----------------------------------
-  await page.goto(`${BASE}/nga/search?q=storm%20at%20sea&webmcp-debug=1`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/nga/search?q=storm%20at%20sea&webmcp-debug=1`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await page.waitForSelector('.paillette-card', { timeout: 30_000 });
   const liveIds = (await board(page)).map((entry) => entry.id).filter(Boolean);
 

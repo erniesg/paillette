@@ -338,3 +338,77 @@ describe('POST /search/exemplars', () => {
     });
   });
 });
+
+/**
+ * The key the page actually holds.
+ *
+ * Every test above authenticates as a signed-in user, and no dev server carries
+ * the public-search key, so the route passed everything while returning
+ * FORBIDDEN to the only caller that reaches it in production. That is what
+ * `/nga/search` does on a deployment: the browser posts to a same-origin proxy,
+ * the proxy attaches `PAILLETTE_PUBLIC_SEARCH_API_KEY`, and the middleware
+ * decides whether that key is allowed on this path. It was not.
+ */
+describe('POST /search/exemplars — the public-search key', () => {
+  const publicSearchPost = (env: Env, body: unknown, orgId = 'nga') =>
+    app.fetch(
+      new Request(`https://api.test/api/v1/orgs/${orgId}/search/exemplars`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': 'public-search-secret',
+          'Content-Type': 'application/json',
+          // The per-minute limiter fails closed with no caller to partition
+          // by, which is a 503 rather than an auth answer. Cloudflare always
+          // sets this in front of the deployed worker.
+          'CF-Connecting-IP': '203.0.113.7',
+        },
+        body: JSON.stringify(body),
+      }),
+      env
+    );
+
+  const publicEnv = (overrides: Partial<Env> = {}) =>
+    makeEnv({
+      ENVIRONMENT: 'production',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      ...overrides,
+    } as Partial<Env>);
+
+  it('reaches the engine, so a redeal works for a visitor with no account', async () => {
+    const env = publicEnv({
+      DB: makeDb(['near-liked']),
+      VECTORIZE_V2: makeVectorize(['near-liked', 'liked']),
+    });
+
+    const response = await publicSearchPost(env, {
+      positiveIds: ['liked'],
+      topK: 5,
+    });
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as any;
+    expect(payload.success).toBe(true);
+    expect(payload.data.results.map((result: any) => result.id)).toEqual([
+      'near-liked',
+    ]);
+  });
+
+  it('is still refused on a collection public search may not read', async () => {
+    const env = publicEnv({
+      DB: makeDb(['near-liked']),
+      VECTORIZE_V2: makeVectorize(['near-liked']),
+    });
+
+    const response = await publicSearchPost(
+      env,
+      { positiveIds: ['liked'], topK: 5 },
+      'private-gallery'
+    );
+
+    // The allowlist is per path *and* per collection, and the path check runs
+    // first: widening it to `exemplars` widened it only under `/nga/`.
+    expect(response.status).toBe(403);
+    const payload = (await response.json()) as any;
+    expect(payload.error.code).toBe('FORBIDDEN');
+  });
+});
