@@ -55,6 +55,10 @@ are the strongest rows in the table because they were not taken from a report.
 | V21 | `GET /exhibition` with no payload | `302 → /nga/search` |
 | V22 | `pageerror` across every run above | **zero** |
 | V23 | Artwork dialog on a cold NGA work | buttons `["Laurent de La Hyre","Public metadata","Copy"]` — **no read-aloud control** |
+| V24 | A **deterministic** redeal produces no wall label | `{"label":null,"swatches":0}` — so the swatch strips only ever appear beside an agent note. Correct per §5b, and it means the frame costs model calls. |
+| V25 | The note with its swatches, captured | `shots/50-note-with-swatches.png`. Note verbatim, swatch colours, strip flags in `e2e-evidence/note-swatches.json`. 3 model calls, 0 page errors. |
+| V26 | The inverted condition | flags set correctly (`by: human`), turn returned **`429 AGENT_RATE_LIMITED`** — *"You have used this hour's shared agent budget."* No frame. `e2e-evidence/note-swatches-inverted.json`. |
+| V27 | What the page shows on a 429 | **nothing.** No note, no error, no `pageerror`. `grep -r AGENT_RATE_LIMITED apps/web/app` → no UI branch. |
 
 Reproduce: the scripts are ad-hoc but every check maps onto a committed harness
 in `scripts/demo/`. The browser driver on this VM needs
@@ -70,13 +74,15 @@ and `executablePath: ~/.cache/ms-playwright/chromium-1194/chrome-linux/chrome`
 
 | Claim | Source |
 | --- | --- |
-| Enter on an empty bar redeals from the human's flags with **no model call** | V6, V9. `e2e-report.md` §2.3: `0 requests to /public-agent/turn; 12 requests total`. Asserted **negatively** in `e2e-deterministic.mjs`, so it fails if a call ever appears. Integration iter 2: `0 POSTs`, 10 requests total. |
+| Enter on an empty bar redeals from the human's flags with **no model call** | **27 separate redeals across five harnesses in e2e iteration 2, each with its own negative check, zero POSTs to `/api/public-agent/turn`**, counted off the wire. Plus V6, V9 first-hand. Asserted negatively, so it fails if a call ever appears. |
 | The entire deterministic run is four requests | `e2e-evidence/deterministic-network.json` — quota, text, exemplars, exemplars. Re-derived live (V10). |
 | Both paths work — caret in the empty bar, and nothing focused | `e2e-report.md` §2.3: `isEmptyUtteranceBar` and `isBareBoardEnter`. |
 | It works with **no WebMCP host at all** | `e2e-report.md` §2.3 / `e2e-17-no-host-deterministic-redeal.png`: `no prompt bar without a host: count=0`; `Enter on the bare board redeals, with no agent anywhere`. |
 | It works with the model route hard-refusing **429** | `verify-agentless-loop.mjs` — 9 checks, three runs in a row (`shared-state-report.md`, `critique-iteration-1.md` §1). |
 | Picks hold their exact slot | Integration iter 2: `220,144 → 220,144` and `500,144 → 500,144`, **zero pixels**. `e2e-report.md` §1.2: `{"page":{"dx":0,"dy":0},"board":{"dx":0,"dy":0}}`. |
-| It deals rather than cuts | **22** distinct layouts across 339 frames on the deployed build (integration iter 2); **25** across 205 pre-deploy (`e2e` §1.2); **28** across 272 in the fix log. A jump cut measures **4–5**. |
+| It deals rather than cuts | **Fourteen board-to-board redeals: 16 19 21 22 22 22 24 24 24 25 25 27 28 28** distinct layouts (e2e iteration 2 §3 step 6). First redeals measure 3–18. A jump cut is **4–5**. |
+| The loop stays correct as the board empties | e2e iteration 2 §4, 18 rounds across two queries: **zero rejects ever on the board, the rendered board matched `board.order` every time, the pick held every time, zero model calls.** |
+| ⚠ **but the board runs out after ~5 redeals in one tab** | e2e iteration 2 §4. Fifth Enter is the last full board; seventh is one card; Enter then dead. Cause is arithmetic in `apps/api/src/routes/search.ts` — a fixed ~66-work candidate pool minus everything already dealt. **Not a defect in the loop; a hard limit on a take.** Reload between takes. |
 | Twelve cards, all visible | V7, V9. Fix log §8: `{"cards":12,"visible":12,"gridHeight":724,"viewport":1000}`. |
 | Rejects go to a visible, restorable tray | V8. Fix log §8. |
 | Flagging fires no model call | `e2e-report.md` §2.2: "3 requests during flagging, none to the agent route". |
@@ -101,23 +107,48 @@ it is the only one asserted negatively.
 | Picks whole, rejects struck through, no words | `note-swatches.tsx` — `data-flag`, titles carried in `title`/`aria-label` only. |
 | The agent's note is one sentence | Every recorded note across the e2e runs, the sofa runs and the negative control. |
 
-**Verbatim, the pair the film uses** (fix log §2, Run A):
+**Verbatim, the pair the film uses** — captured tonight, `note-swatches.json`,
+frame at `shots/50-note-with-swatches.png`:
 
-> *rejected the two darkest* — "You rejected the two brown-and-ochre oils; these
-> keep the warmth in firelight, gold, and clear sunlit colour."
+> *"You said warm; you kept the bone-and-umber etching and rejected the darker,
+> greener palettes — following the picks."*
+
+The three strips under it, from the same capture:
+
+| | work | leading swatches | the word |
+| --- | --- | --- | --- |
+| pick | *A Rocky Pond* | `#EBD8BC` `#907F6A` `#695943` | "bone-and-umber" |
+| reject | *Environs de Cremieu* | `#B89E81` `#644F3F` `#F4E8D6` | — |
+| reject | *Flying Shadows* | `#47502B` `#9A8B57` | "darker, greener" |
+
+**The inversion, on one work** — `open-access-art:nga:52306`, Berthe Morisot,
+*Landscape*, colored pencils, palette `#D4C7A2 #B6A385 #9A886C`. Archived in
+`iteration-2/run3-loop.json` at `"to":"pick"` and `run4-loop.json` at
+`"to":"reject"`:
+
+> *picked* — "You kept the pale ochre pencil landscape and rejected the darker
+> peach palette — following its quiet, airy warmth."
 >
-> *rejected the two brightest* — "Warmth here runs from sunlit gold to russet
-> domestic colour, avoiding the tan-and-cream palettes you rejected."
+> *rejected* — "Following your warm oil-on-wood fruit pick and moving away from
+> the pale colored-pencil landscape you rejected."
 
-**Three caveats that must ride with any use of that pair.**
+Same work, same palette, described the same way, moved to the other side of the
+sentence. **This supersedes the negative-control pair** used in the first draft,
+which survived only as a console transcript.
 
-1. **Run A's JSON was overwritten by Run B before it was archived.** The fix log
-   says so plainly. `negative-control.json` holds Run B, whose notes differ. Both
-   quotes above are transcribed from the console. The harness is checked in and
-   deterministic — re-run and archive before publishing.
-2. **A third run was blocked by the 40-call anonymous budget.** Two conditions
-   completed, not three.
-3. **Both conditions had `picks: []`.** The inversion was of rejects only.
+**Four runs, four notes, all naming content** (e2e iteration 2 §3 step 4). Three
+of the four name the rejected work specifically enough to recognise on screen.
+Run 1 — *"darker, crowded scenes"* — is the weak one: accurate, but generic on
+camera. **If a take produces one of those, shoot it again.**
+
+**Two caveats.**
+
+1. **The strips do not carry `data-flag-by`** — they show *that* a work was
+   flagged, not by which hand. The one place the two-colour contract is not
+   carried (e2e iteration 2 §7.1).
+2. **The inverted frame does not exist.** I set the flags correctly and the turn
+   came back `429 AGENT_RATE_LIMITED`. Two agent turns and a fresh budget hour
+   would produce it.
 
 **What this does *not* prove.** The agent never called `lookup_artwork` or
 `describe_artwork` in any recorded run — zero across all three e2e runs
@@ -250,7 +281,7 @@ Marked in the script. **The shot may not exist.**
 
 | Claim | What exists | What is missing |
 | --- | --- | --- |
-| **The note with its swatches, as a frame** | `NoteSwatches` mounted under the wall label; DOM count `swatchesBesideTheNote: 2` | **No committed screenshot frames it.** `darkest.png` and `brightest.png` are salon views with the label out of frame. This is the most important missing frame in the submission. |
+| **The inverted note, as a frame** | Both notes archived verbatim with their `"to":"pick"` / `"to":"reject"` payloads (`iteration-2/run3-loop.json`, `run4-loop.json`) | No frame. Attempted tonight; the turn returned `429 AGENT_RATE_LIMITED`. Two agent turns in a fresh budget hour would produce it. *(The non-inverted frame is now **PROVEN** — see V25.)* |
 | **Read-aloud** | `SpeakButton`, label *"Read this aloud"*, feature-detected, mounted at `galleries.$galleryId.search.tsx:4827` and `try.tsx:1257`, reading `caption \|\| rootsDescriptionDetails.text` | It renders **only where the work has a stored caption or description**. V23: a cold NGA work offered no read-aloud control. Headless Chromium here has **zero voices**. No audio has ever been produced from this build. |
 | The whole spoken path | Push-to-talk on the mic or Space; a 1.2 s grace bar; Esc restores; the note spoken back only after a spoken turn | `recognition.start()` returns nothing on this VM — no `onresult`, `onerror` or `onend`. Zero voices for output. Voice-loop's own words: *"No audio has been produced on this machine."* The 1.2 s is the brief's number, not a tested one. |
 | A cold agentic run landing on the deal board | `dealtBoard` is now the first branch in `ResultsLayout`; fix log measured it surviving `set_view` | **No capture of a cold agentic instruction since that fix.** The one committed frame is the run where the agent chose salon and the board lost its grid. |
@@ -262,72 +293,75 @@ Marked in the script. **The shot may not exist.**
 
 # 4. WANTED, ABSENT
 
-Things I would have written and did not. **This list is a deliverable.** Roughly
-in order of what it would buy.
+Things I would have written and did not. **This list is a deliverable.** Ordered
+by what it buys. Items 1 and 2 of the previous draft are struck — the frame was
+captured tonight and the inversion is archived.
 
-1. **A still or a take of the agent's note with its swatches underneath.**
-   The whole submission turns on this frame and it does not exist. Everything
-   needed to make it is checked in. *Cost: one `negative-control.mjs` run and a
-   screenshot at the right scroll position.*
+1. **A UI branch for `AGENT_RATE_LIMITED`.** When the hourly budget is spent the
+   turn 429s and **the page shows nothing at all** — no note, no error, no page
+   error. `grep -r AGENT_RATE_LIMITED apps/web/app` finds no handler. The
+   deterministic path already has exactly this affordance
+   (`paillette-deal-error`: *"The deal didn't run; your flags are unchanged."*),
+   so the fix is one branch in the same shape. **This is the most likely way a
+   take gets wasted, and the most likely way a judge concludes the demo is
+   broken.** I hit it myself tonight, mid-capture. *One line of UI.*
 
-2. **A negative-control run that is archived rather than transcribed.** Run A
-   is the good pair and its JSON was overwritten. Re-run both conditions,
-   commit both, and the strongest ten seconds in the film stops resting on a
-   console transcript. *Cost: ~12 model calls.*
+2. **A bigger exemplar candidate pool.** Five clean redeals per pick set per tab,
+   then the board thins to one card and Enter goes dead. Diagnosed precisely in
+   e2e iteration 2 §4: `topK × 6` capped at 100, minus a growing exclusion list.
+   Filmable as-is if you reload; not survivable by a judge who sits and presses
+   Enter, which is exactly what the `↵` affordance now invites them to do.
 
-3. **A third negative-control condition, and one with picks as well as
-   rejects.** Both recorded conditions had `picks: []`. The film's premise —
-   *the agent says what you did* — is stronger if it survives a mixed board.
+3. **The inverted note, framed.** The text is archived on both sides
+   (`run3-loop.json` / `run4-loop.json`, the same Morisot at pick and at reject).
+   Two agent turns in a fresh budget hour and beat 3's second card is real.
 
-4. **The agent actually looking at a work.** `lookup_artwork` and
-   `describe_artwork` were called **zero** times across every recorded run. The
-   narration is grounded in indexed colour, medium and date. A single run where
-   the agent describes a work and then flags it on what it saw would close the
-   last gap between the product's promise and its behaviour. Today I cannot
-   write "the agent looks at the picture" and I have not.
+4. **`data-flag-by` on the swatch strips.** The one place on the page where the
+   two-colour contract is not carried. Invisible in the film; a real gap.
 
-5. **The ledger filmstrip on `/nga/search`.** Built, tested, and imported by
-   nothing but `/night/deal`. It is §7.5 of the brief — *"version history reused
-   as conversation record"* — and it is the answer to "where did the chat go".
-   Three lanes declined to wire it for a reason that has since been decided.
-   Until it is on the product page it cannot be filmed.
+5. **The agent actually looking at a work.** `lookup_artwork` and
+   `describe_artwork` were called **zero** times across every recorded run, in
+   both iterations. The narration is grounded in indexed colour, medium, year and
+   classification — a real improvement on titles, and not the same as seeing the
+   picture. Today I cannot write "the agent looks at the work" and I have not.
 
-6. **An affordance for `P`/`X`/`U`.** Enter now has one — the `↵` hairline, and
-   it is good. The keys that arm it have nothing. A judge who does not already
-   know the incantation still cannot find the loop. This is the last of the
-   critique's "opened cold, staging is an ordinary search page" and it is only
-   half fixed.
+6. **The ledger filmstrip on `/nga/search`.** Built, tested, imported only by
+   `/night/deal`. It is §7.5 — *"version history reused as conversation record"* —
+   and the answer to "where did the chat go". Until it is on the product page it
+   cannot be filmed.
 
-7. **A human control behind `write_labels` and `annotate_atlas`.** They are the
-   only two of twenty-five with no key or click behind them, and they are the
-   one visible dent in "the loop has no agent-only path". A *draft this* button
-   on the label field would close it.
+7. **An affordance for `P`/`X`/`U`.** Enter has one now and it is good. The keys
+   that arm it have nothing, so a judge still cannot find the loop cold.
 
-8. **A read-aloud take on a work that has a caption.** The control is real and
-   the argument is good, but on the collection being filmed most rows have no
-   caption and the button does not render. Find one, or cut the beat.
+8. **A human control behind `write_labels` and `annotate_atlas`.** The only two
+   of twenty-five with no key or click behind them, and the one dent in "the loop
+   has no agent-only path". A *draft this* button closes it.
 
-9. **A spoken take.** Not shootable on this VM at all. Must be filmed on a real
-   machine with a microphone and an installed voice. Nothing in the script
-   depends on it, which is the point — but a submission about human–agent
-   collaboration with no human voice in it is leaving something on the table.
+9. **A read-aloud take on a work that has a caption.** The control is real and
+   the argument is good, but on the NGA collection most rows have no caption and
+   the button does not render (V23). Find one, or cut the beat.
 
-10. **A social unfurl, rendered.** The tags are right and the image is real.
-    Nobody has pasted the link into Slack.
+10. **A visible failure for push-to-talk with no microphone.** It enters
+    *"Listening — release to send"* and on release nothing lands and nothing is
+    reported (e2e iteration 2 §6). Same silent-failure shape as item 1.
 
-11. **A raised model cap for the filming machine.** 40 calls an hour, and the
-    shot list costs ~30 before a retake. This is the most likely cause of a
-    ruined shoot night, and it blocked the third negative-control run already.
+11. **A spoken take.** Not shootable on this VM. Nothing in the script depends on
+    it — but a submission about human–agent collaboration with no human voice is
+    leaving something on the table.
 
-12. **`prefers-reduced-motion` with a pick starting at slot 5.**
+12. **A raised model cap for the filming machine.** 40/hour, 5–7 per cold
+    instruction, 8–12 per loop: three or four takes an hour. It blocked me
+    tonight and it blocked the fix lane's third negative-control run.
 
-13. **A compare choice that sends a turn immediately.** The build records it and
-    lets it ride the next turn, which I think is right, and the brief's §4 P4
-    says otherwise. It is a known, documented gap rather than a bug — but if the
-    film ever shows a compare, know that the click does not visibly do anything
-    to the agent until the next Enter.
+13. **A social unfurl, rendered.** Tags right, image real, nobody has pasted it
+    into Slack.
 
----
+14. **`prefers-reduced-motion` with a pick starting at slot 5.**
+
+15. **A compare choice that sends a turn immediately.** The build defers it to the
+    next turn, which I think is right and the brief's P4 says otherwise. Known and
+    documented — but on camera a compare answered in silence needs the next
+    utterance to become visible.
 
 # 5. Claims I dropped rather than softened
 

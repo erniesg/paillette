@@ -11,9 +11,14 @@ and must not appear in the film.
 VM. *Exists* — is there a committed frame of it today, or has it been observed
 in a browser. *Calls* — anonymous model calls it costs.
 
-Anonymous budget is **40 model calls per client per hour**, keyed on IP. The
-shots below total **≈30 calls before a single retake.** Film with a raised cap
-or a key.
+Anonymous budget is **40 model calls per client per hour**, keyed on IP. A cold
+typed instruction costs 5–7; a full loop 8–12. That is **three or four complete
+takes an hour.** Film with a raised cap or a key.
+
+**And reload between takes.** The board runs out after about five redeals in one
+tab: the fifth Enter is the last full board, the sixth comes back short, and by
+the seventh the board is a single card and Enter is a dead key. Reproduced on two
+queries. A fresh page resets it. (e2e iteration 2 §4.)
 
 ---
 
@@ -31,17 +36,17 @@ or a key.
   `e2e-16-capture-harness-agent-chose-salon.png` (stale: that run predates the
   `set_view` fix). **Calls** ~4–6.
 
-### S02 · Twelve arrive
+### S02 · A board arrives
 
-- **On screen.** The board filling. Twelve works, four across.
+- **On screen.** The board filling.
 - **Said.** — (hold)
-- **Headless** yes. **Exists** ⚠ **not in the fixed state.** The one committed
-  frame of this shot is the run where the agent chose salon and the board lost
-  its grid. The `dealtBoard` check is now first in `ResultsLayout` (fix log §4)
-  but **no capture of a cold agentic run since that fix is committed.** Re-shoot
-  and check `[data-testid="deal-board-grid"]` is present before you keep the
-  take. **Calls** 0 (same run as S01).
-- **⚠ 35 seconds** from Enter to a board on a cold run. Cut it.
+- **Headless** yes. **Exists** yes — `e2e2-06-step1-board-and-note.png`, a cold
+  typed instruction landing on a deal board *after* the `set_view` fix.
+  `view=deal-board` on all four iteration-2 runs. **Calls** 0 (same run as S01).
+- **⚠ 42–59 seconds** from Enter to a board on a cold run. Cut it.
+- **⚠ Do not say "twelve" here.** The agent's first board was 8, 12, 10 and 12
+  across four runs of the same instruction. Twelve is a property of Enter, not
+  of the agent's first board.
 
 ---
 
@@ -51,8 +56,8 @@ or a key.
 
 - **On screen.** Cursor over a card, `X`. Over another, `X`. Two marks in
   graphite. Nothing else moves.
-- **Said.** *"Twelve come back. Two of them are wrong, and I can't tell you why.
-  So I don't."*
+- **Said.** *"A board comes back. Two of them are wrong, and I can't tell you
+  why. So I don't."*
 - **Page + input.** Hover a card, press `x`. Repeat.
 - **Headless** yes. **Exists** yes — `e2e-02-flags-XXP.png`; re-verified live
   tonight (`data-flag="reject"` ×2, `data-flag-by="human"`). **Calls** 0.
@@ -77,40 +82,60 @@ or a key.
 
 ### S05 · The note, with its swatches
 
-- **On screen.** The wall label in serif above the board. Under it, the swatch
-  strips — one per flagged work, picks whole, rejects struck through, no words.
-- **Said.** *"I never used the word brown. It read the palettes it was handed
-  and named the colour I threw away."*
-- **On-screen text.** *"You rejected the two brown-and-ochre oils; these keep
-  the warmth in firelight, gold, and clear sunlit colour."*
-- **Page + input.** `node scripts/demo/negative-control.mjs`, condition
-  `darkest`. Instruction `something warm for above the sofa`, query
-  `warm landscape`.
-- **Headless** yes. **Exists** ❌ **NO.** The mechanism is proven
-  (`swatchesBesideTheNote: 2`, `rejectSwatches: 2` in
-  `negative-control.json`; `NoteSwatches` mounted at
-  `galleries.$galleryId.search.tsx:2932`) but **no committed screenshot frames
-  the note and its swatches.** The two negative-control shots (`darkest.png`,
-  `brightest.png`) are in salon view with the label out of frame. **This is the
-  single most important missing frame in the submission.** **Calls** ~6.
+- **On screen.** The wall label in serif above the board, in the agent's cyan
+  ink with a rule down its left side. Under it, three swatch strips — the pick
+  whole, the two rejects struck through, no words.
+- **Said.** *"I never used those words. It read the palettes it was handed. The
+  swatches under the sentence are the ones it read."*
+- **On-screen text.** *"You said warm; you kept the bone-and-umber etching and
+  rejected the darker, greener palettes — following the picks."*
+- **Page + input.** `/nga/search?q=warm landscape`. Hover-`X`, hover-`X`,
+  hover-`P` on the first three cards, then type `something warm for above the
+  sofa` into the utterance bar and press Enter.
+- **Headless** yes. **Exists** ✅ **yes, as of tonight** —
+  `docs/night/shots/50-note-with-swatches.png` (tight) and
+  `51-note-with-swatches-in-context.png` (full page). Raw:
+  `docs/night/e2e-evidence/note-swatches.json`. **Calls** 3.
+- **Why this frame is the one.** The words are checkable against the picture
+  directly under them: the pick's swatches are `#EBD8BC` and `#695943` — bone,
+  umber — and the second reject's leading swatch is `#47502B`, a dark olive. The
+  sentence also carries the said/chose gap (*"You said warm… following the
+  picks"*) in the same breath. **Nothing was staged**; the flags were the first
+  three cards on the board.
+- **⚠** The strips do not carry `data-flag-by`, so they show *that* a work was
+  flagged, not by which hand. Invisible in the film; a real gap in the design.
 
-### S06 · The same shot, flags inverted
+### S06 · The same work, the other way round
 
-- **On screen.** Cut to the same composition with the two brightest rejected
-  instead. The sentence has changed.
-- **Said.** *"Invert the flags — reject the two brightest instead — and the
-  sentence inverts with them."*
-- **On-screen text.** *"Warmth here runs from sunlit gold to russet domestic
-  colour, avoiding the tan-and-cream palettes you rejected."*
-- **Page + input.** Same script, condition `brightest`.
-- **Headless** yes. **Exists** ❌ same gap as S05. The *text* is attested (fix
-  log §2, Run A); the *frame* is not. **Calls** ~6.
-- **⚠** Run A's JSON was overwritten by Run B before it was archived. Both
-  quotes above are transcribed from the console. `negative-control.json` holds
-  Run B, whose notes are different and weaker for this cut. **Re-run and capture
-  on the day.**
-- **⚠** Both recorded conditions had `picks: []` — rejects only. If the take
-  includes a pick, the sentence will not be the one above.
+- **On screen.** Cut to the same composition after the flag on one work has been
+  flipped. The sentence has moved it to the other side.
+- **Said.** *"Flip the flags on the same work — and it changes sides."*
+- **On-screen text.** Berthe Morisot, *Landscape*, `open-access-art:nga:52306`,
+  colored pencils on wove paper, palette `#D4C7A2 #B6A385 #9A886C`:
+  > *picked* — "You kept the pale ochre pencil landscape and rejected the darker
+  > peach palette — following its quiet, airy warmth."
+  >
+  > *rejected* — "Following your warm oil-on-wood fruit pick and moving away
+  > from the pale colored-pencil landscape you rejected."
+- **Page + input.** Two agent turns with that work flagged opposite ways.
+- **Headless** yes. **Exists** ⚠ **text only.** Both notes are archived verbatim
+  in `docs/night/e2e-evidence/iteration-2/run3-loop.json` and `run4-loop.json`,
+  with the `"to":"pick"` / `"to":"reject"` payloads that produced them. **No
+  frame.** **Calls** ~6.
+- **⚠ I tried to shoot this tonight and could not.** The flags set correctly
+  (`184225` pick, `195765` + `127567` reject, all `by: human`) and the turn
+  returned:
+  ```
+  429 {"success":false,"error":{"code":"AGENT_RATE_LIMITED",
+       "message":"You have used this hour’s shared agent budget. Try again shortly."}}
+  ```
+  Raw: `docs/night/e2e-evidence/note-swatches-inverted.json`.
+- **⚠⚠ And nothing appeared on screen.** No note, no error, no page error — the
+  board simply did not change. There is no UI branch for `AGENT_RATE_LIMITED`
+  anywhere in `apps/web/app`. The deterministic path *does* have one
+  (`paillette-deal-error`, *"The deal didn't run; your flags are unchanged."*);
+  the agent path does not. **This is the most likely way a take gets wasted**:
+  the operator will read a silent board as a slow one and keep waiting.
 
 ---
 
@@ -412,7 +437,7 @@ slot 5 is untested.
 | --- | --- |
 | `/night/deal` | A 40-work fixture harness. Filming it and calling it the app would be dishonest. |
 | The ledger filmstrip | Built and tested, imported only by `/night/deal`. It is **not** on `/nga/search`. |
-| A spoken take, on this machine | `recognition.start()` returns nothing here — no `onresult`, no `onerror`, no `onend`. Zero voices installed. Must be shot on a real machine. |
+| A spoken take, on this machine | Headless Chromium here *does* expose `SpeechRecognition` and the mic control renders — but there is no microphone and **0 synthesis voices**. Push-to-talk enters `"Listening — release to send"`, and on release **nothing lands and nothing is reported**: no text, no error, no visible failure. Must be shot on a real machine. |
 | A social unfurl card | Tags verified by fetch; never rendered in a real client. |
 | Upload and indexing | Throat-clearing. Nothing in it is unique to WebMCP. |
 | Anything with `?webmcp-debug` in the address bar | The bar renders without it. The flag now gates only the `window.__paillette_webmcp` console back door, and a judge seeing it will assume the demo needs it. |
@@ -426,7 +451,12 @@ slot 5 is untested.
 3. Confirm the tool count: `(await document.modelContext.getTools()).length`
    → **25**.
 4. Raise the model cap for the filming IP, or film with a key. 40/hour is not
-   enough for retakes.
-5. After any Enter typed *inside* the utterance bar, press Escape. Otherwise the
+   enough for retakes — a cold instruction is 5–7 calls and a full loop 8–12.
+   **Verify the budget is not already spent before rolling**, because when it is
+   exhausted the page gives no sign: the turn 429s with `AGENT_RATE_LIMITED` and
+   the board just does not change. Probe it with one throwaway instruction.
+5. **Reload the tab between takes.** Five clean redeals per pick set, then the
+   board thins and by the seventh Enter is dead.
+6. After any Enter typed *inside* the utterance bar, press Escape. Otherwise the
    caret stays in the bar, the next `X` types the letter, and the Enter after
    that sends `"xx"` to the model as an instruction.

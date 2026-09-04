@@ -42,42 +42,36 @@ in `docs/night/shot-list.md`.
 
 **0:12 · Two rejects**
 
-> Twelve come back. Two of them are wrong, and I can't tell you why.
+> A board comes back. Two of them are wrong, and I can't tell you why.
 >
 > So I don't. I throw them out and press Enter.
 
 **0:30 · The agent says what you did**
 
-> I never used the word brown.
+> I never used those words.
 >
-> It read the palettes it was handed and named the colour I threw away. The
-> swatches under the sentence are the ones it wrote from, so you can check it
-> without leaving it.
+> It read the palettes it was handed. The swatches under the sentence are the
+> ones it read.
 >
-> Invert the flags — reject the two brightest instead —
+> Flip the flags on the same work —
 >
-> — and the sentence inverts with them.
+> — and it changes sides.
 
 **0:52 · Enter on an empty bar**
 
 > Now watch the bar. It's empty.
 >
-> Same board. Same picks. Same slots.
->
-> That redeal made one request, to a scoring endpoint. No model was called at
-> all.
+> Same twelve. Same picks. Same slots. And not one call to a model.
 >
 > Sixty-three thousand works, and the loop that moves through them is three
-> keys. P, X, Enter. It runs with the agent switched off.
+> keys.
 
 **1:12 · The show**
 
-> Keep going and there's a show on the table. A title, a statement, and a label
+> Keep going and there's a show on the table. A title, a statement, a label
 > under every work.
 >
 > The statement is wrong. It isn't about weather.
->
-> Committing the correction *is* the turn.
 >
 > It re-selects. It rewrites every label against my sentence. It doesn't touch
 > my sentence.
@@ -86,8 +80,8 @@ in `docs/night/shot-list.md`.
 
 > And it leaves.
 >
-> A real URL. Six works, the labels, my words — and a line at the bottom saying
-> how many of them an agent wrote.
+> A real URL. Six works, the labels, my words. And a line saying how many an
+> agent wrote.
 
 **2:06 · Co-curator**
 
@@ -97,8 +91,8 @@ in `docs/night/shot-list.md`.
 **2:18 · Without looking**
 
 > None of that needed a mouse. Tab to a work and the control says its name and
-> its key — *"Pick, Environs de Cremieu, P."* The note is one sentence. Ask for
-> a description and the browser reads it aloud, with no agent and no account.
+> its key. Ask for a description and the browser reads it aloud — no agent, no
+> account.
 >
 > Someone who can't see the pictures is still the one choosing.
 
@@ -106,12 +100,10 @@ in `docs/night/shot-list.md`.
 
 > How it's built is on the page. Five dots until a tool runs.
 >
-> Twenty-five tools on `document.modelContext`, with their arguments, their
-> answers and their timings.
+> Twenty-five tools on `document.modelContext`, with their arguments and their
+> timings.
 >
-> Every tool in the culling loop wraps a key the human already presses.
-> `flag_artworks` is P and X. `redeal` is Enter. `compare_artworks` is C. Same
-> function, either hand. The loop has no agent-only path.
+> `flag_artworks` is P and X. `redeal` is Enter. `compare_artworks` is C.
 >
 > One workspace. Two operators.
 
@@ -126,7 +118,7 @@ in `docs/night/shot-list.md`.
 ## Beat 1 — Cold open · 0:00–0:12
 
 **On screen.** `/nga/search`, cold, no query. The sentence typing into the
-utterance bar. Then twelve works arriving.
+utterance bar. Then a board arriving.
 
 **Card (0:00, 2s):** `Most art is never seen.`
 
@@ -144,10 +136,16 @@ Enter. **No `?webmcp-debug`.** No microphone.
 | The utterance bar is on the page with no query flag | **[P]** | Live, deployed, 2026-09-04: `barCount: 2` (section + input), `debugDriver: false`. Fix log §10. |
 | A typed instruction alone fires the agent | **[P]** | e2e-report §2.1; voice-loop-report. Three runs, three model calls each, 0 page errors. |
 | The agent runs several searches and merges them onto one board | **[P]** | `capture-beats.json`: `search_by_color` ×2, `search_artworks` ×2, then `set_results` with 12 works. |
-| The board that arrives is the deal board, not salon | **[P]** | Fix log §4 — `dealtBoard` is now the first branch in `ResultsLayout`; survives `set_view` for salon, atlas, table and masonry. **This was broken in the first e2e run; verify on the day.** |
+| The board that arrives is the deal board, not salon | **[P]** | e2e iteration 2 §3 step 4 — `view=deal-board` on **all four runs**, with the human's pick still on it. `dealtBoard` is the first branch in `ResultsLayout`; salon, atlas, table and masonry were each called against a dealt board and the grid survived all four. |
 
-**⚠ Timing.** A cold agentic instruction was **35 s** from Enter to a board
-(e2e-report §2.1). This is the slowest shot in the film. Cut it.
+**⚠ Timing.** A cold agentic instruction takes **42–59 s** from Enter to a
+board, measured across four runs (e2e iteration 2). This is the slowest shot in
+the film. Cut it.
+
+**⚠ The agent's first board is not always twelve** — 8, 12, 10, 12 across four
+runs of the same instruction. Twelve is a property of Enter, not of the agent's
+first board. That is why the VO says *"a board comes back"* here and saves the
+number for beat 4.
 
 ---
 
@@ -166,13 +164,20 @@ Film the **second** redeal, not the first.
 | `P`/`X`/`U` flag the hovered card, in the human's ink | **[P]** | Live, first-hand: `{"f":"reject"}` ×2, `{"f":"pick"}`, `data-flag-by="human"`. e2e-report §2.2. |
 | Flagging fires no model call | **[P]** | e2e-report §2.2: "3 requests during flagging, none to the agent route". |
 | Picks hold their exact slot across a redeal | **[P]** | Integration report iter 2: `220,144 → 220,144` and `500,144 → 500,144`, **zero pixels**. e2e §1.2: `{"page":{"dx":0,"dy":0},"board":{"dx":0,"dy":0}}`. |
-| The board deals rather than cuts | **[P]** | 22 distinct layouts across 339 frames on the deployed build (integration iter 2); 25 across 205 pre-deploy (e2e §1.2). A jump cut measures 4–5. |
-| Twelve cards, all on screen | **[P]** | Live, first-hand: `{"cards":12,"fullyVisible":12,"gridHeight":724,"viewport":1000}`. |
+| The board deals rather than cuts | **[P]** | **Fourteen board-to-board redeals measured on `/nga/search`: 16 19 21 22 22 22 24 24 24 25 25 27 28 28** distinct layouts (e2e iteration 2 §3 step 6). A jump cut measures 4–5, so the worst is more than three times a cut. |
+| Twelve cards, all on screen | **[P]** | Live, first-hand at 1440×1000: `{"cards":12,"fullyVisible":12,"gridHeight":724}`. e2e iteration 2 at 1440×900: `{"count":12,"gridHeight":650,"fullyVisibleAtBestScroll":12,"tray":2}`. |
 | Rejects go to a visible tray and stay restorable | **[P]** | Live, first-hand: `.lt-tray` present, 2 items, after both redeals. Fix log §8. |
 
-**⚠ The first redeal after a text search is a cut, not a deal** (5 layouts vs
-25). It is a masonry becoming a board and there is no slot to hold. Film the
-second.
+**⚠ The first redeal after a text search is a cut, not a deal** — measured at
+3, 4, 4, 6, 12, 14 and 18 layouts against the second's 16–28. It is a masonry
+becoming a board and there is no slot to hold. **Film the second.**
+
+**⚠ The board runs out after about five redeals in one tab.** The fifth Enter is
+the last full board; the sixth comes back short; by the seventh the board is one
+card and Enter is a dead key. Reproduced on two queries. The cause is arithmetic
+in the exemplar route — a fixed candidate pool of ~66 minus 12 struck out per
+round — not the collection running out of art. **Reload between takes.** A fresh
+page resets it. (e2e iteration 2 §4.)
 
 ---
 
@@ -180,46 +185,65 @@ second.
 
 **This is the beat. Everything else is context for it.**
 
-**On screen.** The note, in serif, as a wall label above the board. Under it,
-the swatch strips — one per flagged work, picks whole, rejects struck through,
-no words. Then the same shot with the flags inverted.
+**On screen.** The note, in serif, as a wall label above the board, in the
+agent's ink. Under it, the swatch strips — one per flagged work, picks whole,
+rejects struck through, no words. Then the same work with its flag flipped.
 
-**Card A:** the note, held.
+**Card A — the note, held.** This frame exists: `docs/night/shots/50-note-with-swatches.png`.
 
-> *You rejected the two brown-and-ochre oils; these keep the warmth in
-> firelight, gold, and clear sunlit colour.*
+> *You said warm; you kept the bone-and-umber etching and rejected the darker,
+> greener palettes — following the picks.*
 
-**Card B:** the inverted note.
+Under it, three strips. The pick's first two swatches are `#EBD8BC` and
+`#695943` — bone, and umber. The second reject's first swatch is `#47502B`, a
+dark olive. **The sentence is checkable against the picture directly under it,
+which is the whole reason the strips are there.**
 
-> *Warmth here runs from sunlit gold to russet domestic colour, avoiding the
-> tan-and-cream palettes you rejected.*
+**Card B — the same work, the other way round.** Berthe Morisot's *Landscape*,
+`open-access-art:nga:52306`, colored pencils, palette `#D4C7A2 #B6A385 #9A886C`.
+Picked in one run, rejected in the next:
 
-**Shot.** `node scripts/demo/negative-control.mjs` — same instruction
-(`something warm for above the sofa`), same query (`warm landscape`), flags
-inverted between the two conditions. Darkness computed from the same indexed
-swatches the agent is handed.
+> *picked* — "You kept the pale ochre pencil landscape and rejected the darker
+> peach palette — following its quiet, airy warmth."
+>
+> *rejected* — "Following your warm oil-on-wood fruit pick and moving away from
+> the pale colored-pencil landscape you rejected."
+
+Same work. Same palette. It describes it the same way and moves it to the other
+side of the sentence.
+
+**Shot.** Card A: `/nga/search?q=warm landscape`, hover-`X`, hover-`X`,
+hover-`P`, then type `something warm for above the sofa` and Enter. **3 model
+calls.** Card B: the two notes are archived in
+`docs/night/e2e-evidence/iteration-2/run3-loop.json` and `run4-loop.json` —
+**the frames do not exist and must be shot.**
 
 **Claims.**
 
 | Claim | Tier | Source |
 | --- | --- | --- |
-| Both notes above, verbatim | **[P]** | Fix log §2, Run A. **Caveat below.** |
-| The two conditions never produced the same note | **[P]** | Fix log §2, four notes across two runs. |
-| Three of four notes name the rejected works' actual colour, correctly and differently in each direction | **[P]** | Fix log §2: "brown-and-ochre" for the dark pair; "tan-and-cream" and "muted beige and umber" for the pale pair. The fourth describes the board without referring to the rejects — not wrong, not the beat. |
-| The agent is given the palette, medium, year and classification of every flagged work | **[P]** | `negative-control.json` → `flagsTheAgentSaw.rejects[].palette` = `["#413225","#AB825E"]`, `medium: "oil on canvas"`, `year: 1825`. `toAgentVisualFacts`, `artwork-summary.ts`. |
-| The swatches under the note are the ones it wrote from | **[P] in the DOM, [B] on camera** | `negative-control.json`: `swatchesBesideTheNote: 2, rejectSwatches: 2`. `NoteSwatches` is mounted directly under the wall label (`galleries.$galleryId.search.tsx:2932`). **No committed screenshot shows it.** See below. |
+| Card A's note, verbatim, with its swatches in one frame | **[P]** | Captured tonight: `shots/50-note-with-swatches.png`, `51-…-in-context.png`, raw in `e2e-evidence/note-swatches.json`. 3 model calls, 0 page errors. |
+| The swatch colours match the words | **[P]** | `note-swatches.json` → pick `A Rocky Pond` `rgb(235,216,188)`, `rgb(105,89,73)`; reject `Flying Shadows` `rgb(71,80,43)`. Against "bone-and-umber" and "greener". |
+| The same work described consistently and flagged both ways | **[P]** | `run3-loop.json` / `run4-loop.json`, `open-access-art:nga:52306` at `"to":"pick"` then `"to":"reject"`. |
+| Four for four name the content of what was rejected; three of four name the reject specifically enough to recognise on screen | **[P]** | e2e iteration 2 §3 step 4, four runs, all verbatim. |
+| Every flagged work reaches the agent with palette, medium, year, classification | **[P]** | `run1-loop.json` flagsDelta: `{"title":"A Peach, Seville (George Henry Hall)","palette":["#C3803A","#7E3F0F","#6C443C"],"medium":"oil on canvas","year":1866,…}` |
+| The note is one sentence | **[P]** | Every recorded note, in every harness. |
 
-**⚠ Three things the owner must know before this beat is cut.**
+**⚠ Four things the owner must know before this beat is cut.**
 
-1. **Run A's JSON was overwritten by Run B before it was copied.** The two notes
-   above are quoted from the console in `docs/night/fix-log.md`, not from a
-   committed artefact. `negative-control.json` holds Run B. The script is
-   deterministic and re-runnable — **re-run it and capture on the day.**
-2. **No still frame of the note with its swatches exists.** The two negative-control
-   screenshots (`darkest.png`, `brightest.png`) are in salon view and do not
-   frame the wall label. The mechanism is proven in the DOM; the shot is not.
-3. **A third run was blocked by the anonymous model budget** (40 calls/client/hour).
-   Two conditions completed. Film with a raised cap or a key.
+1. **The swatch strips do not carry `data-flag-by`.** They show *that* a work was
+   flagged, not *by which hand* — the one place on the page where the
+   two-colour contract is not carried (e2e iteration 2 §7.1). Nobody will notice
+   in the film; it is a real gap in the design.
+2. **A weak note is possible.** Run 1 of four gave "darker, crowded scenes" —
+   accurate, but it names no subject and reads generic on camera. **If you get
+   one of those, shoot it again.**
+3. **Card B has no frame.** The inversion is archived as text only. Shooting it
+   costs two agent turns and needs the same work on the board twice.
+4. **The negative-control pair the earlier draft used is retired.** Its Run A JSON
+   was overwritten before archiving and the notes survive only as a console
+   transcript in `fix-log.md` §2. Everything above is committed JSON. Do not go
+   back to it.
 
 ---
 
@@ -246,8 +270,9 @@ the log.
 
 | Claim | Tier | Source |
 | --- | --- | --- |
-| Enter on an empty bar makes **zero** model calls | **[P]** | Live, first-hand, twice: `modelCalls: 0`, one POST to `/api/public-search/nga/exemplars`. Asserted negatively in `e2e-deterministic.mjs`, so it fails if a call ever appears. |
-| The whole deterministic run is four requests | **[P]** | `deterministic-network.json`, verbatim above. Live re-run today: quota, text, exemplars ×2, plus one `/api/public-usage/nga` beacon. |
+| Enter on an empty bar makes **zero** model calls | **[P]** | **27 separate redeals across five harnesses, each with its own negative check, zero POSTs to `/api/public-agent/turn`** — counted off the wire by a request listener, not asserted (e2e iteration 2). Plus live first-hand, twice. Each redeal made exactly one call, to the deterministic Rocchio engine. |
+| The whole deterministic run is four requests | **[P]** | `iteration-2/deterministic-network.json`, verbatim above — identical shape to iteration 1's. Live re-run today: the same four plus one `/api/public-usage/nga` beacon. |
+| It keeps working as the board empties | **[P]** | e2e iteration 2 §4, 18 rounds across two queries: **zero rejects ever appeared on the board, the rendered board matched `board.order` every time, the pick was held every time, zero model calls.** |
 | It works with no WebMCP host at all | **[P]** | e2e §3: `no prompt bar without a host: count=0`; `Enter on the bare board redeals, with no agent anywhere`. Shot `e2e-17`. |
 | It works with the agent route hard-refusing 429 | **[P]** | `verify-agentless-loop.mjs` — 9 checks, three times in a row (critique §1). |
 | The `↵` hairline appears the moment the first flag is confirmed | **[P]** | Live, first-hand: `.lt-enter-armed` absent before the flag, `"↵"` after. |
@@ -493,7 +518,46 @@ it rather than soften it. The first half stands alone.
 
 ---
 
-# 4. Production notes
+# 4. Two constraints, checked against this script
+
+**Text first.** Every beat is typed or keyed. Nothing in the spine needs a
+microphone, and the agentic trigger fires from typing alone — proven four times
+in e2e iteration 2 and once more tonight. Audited beat by beat:
+
+| Beat | Input | Needs speech? |
+| --- | --- | --- |
+| 1 Cold open | typed sentence | no |
+| 2 Two rejects | hover + `X` `X` `P` | no |
+| 3 The note | typed instruction | no |
+| 4 Enter on an empty bar | Enter | no |
+| 5 The show | typed correction, Ctrl+Enter | no |
+| 6 Share | click | no |
+| 8 Without looking | Tab, `X`, one button press | no — read-aloud is speech *out*, and the beat stands without it |
+| 9 WebMCP on screen | click | no |
+
+The one shot that touches speech is S20's read-aloud button, it is marked
+**[B]**, and §3.2 carries the cut if it does not render.
+
+**Cut the words.** The spoken script is **280 words** across ten beats — 1:52 of
+speech in a 2:58 film, so a third of the runtime is silence. What went, and why:
+
+- *"Committing the correction is the turn"* — narrating the mechanism. The board
+  changing says it.
+- *"Same function, either hand. The loop has no agent-only path."* — the three
+  tool/key pairs on screen enact it. Saying it as well is a caption on a mark.
+  The precise wording stays in the Devpost, where prose is the medium.
+- *"…and a line at the bottom saying how many of them an agent wrote"* — the
+  card is the line. Read it once, not twice.
+- *"Twelve come back"* in beat 2 — deleted for being wrong, not for being long
+  (the agent's first board is 8–12), which is the better reason.
+- Beat 3 lost half its length the moment the frame existed. The swatches under
+  the sentence do the work the second sentence was doing.
+
+Nothing was made cryptic to be short. Every beat still names its subject.
+
+---
+
+# 5. Production notes
 
 **Model budget is the binding constraint.** 40 anonymous model calls per client
 per hour, keyed on IP. A typed instruction costs three to six; the curation walk

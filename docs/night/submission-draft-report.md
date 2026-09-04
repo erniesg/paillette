@@ -1,0 +1,260 @@
+# Submission draft — lane report
+
+What this lane produced, what is demonstrably true of it, and what is not. The
+submission can be written from this file without opening the code.
+
+**This lane writes. It does not build.** No file outside `docs/` was edited. The
+only things run against the product were checked-in harnesses and read-only
+browser probes, plus one three-call agent turn to capture a frame that did not
+exist.
+
+---
+
+## 1. What shipped
+
+Four documents, plus one screenshot pair and two evidence files captured tonight.
+
+| | |
+| --- | --- |
+| `docs/webmcp-vo-script-v2.md` | Timecoded voiceover, ten beats, ≈2:58. Per beat: the shot, the page and instruction that reproduces it, and the evidence tier of every claim. |
+| `docs/webmcp-devpost-v2.md` | The four judged questions in prose. Real tool names and argument shapes in Q4. |
+| `docs/night/shot-list.md` | 25 shots plus two in reserve. Per shot: what is on screen, what is said, the exact page and query, headless-capturable, exists today, model-call cost. |
+| `docs/night/submission-evidence.md` | Every claim mapped to its source and tier, plus the WANTED, ABSENT list. |
+| `docs/night/shots/50-note-with-swatches.png`, `51-…-in-context.png` | **New.** The agent's note with the swatches it wrote from — the frame the whole submission turns on, which did not exist before tonight. |
+| `docs/night/e2e-evidence/note-swatches.json`, `note-swatches-inverted.json` | The raw record behind those, including the run that failed and why. |
+
+The originals — `docs/webmcp-vo-script-final.md` and
+`docs/webmcp-devpost-fields.md` — are untouched, deliberately, so the two
+framings can be compared. Each new file states at the top what changed and why.
+
+---
+
+## 2. Demonstrably true
+
+### 2.1 The frame that did not exist, and now does
+
+The strongest beat in the film is the agent naming what the human threw away,
+with the swatches it read drawn underneath. Through two iterations of e2e, the
+mechanism was proven in the DOM and **no committed screenshot framed it** — the
+negative-control shots are salon views with the wall label out of frame, and both
+iteration-2 note shots are scrolled past it.
+
+Captured tonight on the deployed build, `/nga/search?q=warm landscape`, three
+flags by keyboard and one typed instruction, **3 model calls, 0 page errors**:
+
+> **"You said warm; you kept the bone-and-umber etching and rejected the darker,
+> greener palettes — following the picks."**
+
+The three strips under it, from `note-swatches.json`:
+
+| | work | leading swatches | the word it earned |
+| --- | --- | --- | --- |
+| pick | *A Rocky Pond* | `#EBD8BC` `#907F6A` `#695943` | "bone-and-umber" |
+| reject | *Environs de Cremieu* | `#B89E81` `#644F3F` `#F4E8D6` | — |
+| reject | *Flying Shadows* | `#47502B` `#9A8B57` | "darker, greener" |
+
+Nothing was staged. The flags were the first three cards on the board. The
+sentence also carries the said/chose gap — *"You said warm… following the
+picks"* — which is §3 of the brief, on real NGA works rather than a fixture
+corpus.
+
+### 2.2 An inversion on one work, archived
+
+Better evidence than the negative control, and nobody had noticed it was in the
+tree. Berthe Morisot, *Landscape*, `open-access-art:nga:52306`, colored pencils,
+palette `#D4C7A2 #B6A385 #9A886C`. In `iteration-2/run3-loop.json` it is
+`"to":"pick"`; in `run4-loop.json` it is `"to":"reject"`:
+
+> *picked* — "You kept the pale ochre pencil landscape and rejected the darker
+> peach palette — following its quiet, airy warmth."
+>
+> *rejected* — "Following your warm oil-on-wood fruit pick and moving away from
+> the pale colored-pencil landscape you rejected."
+
+Same work, same palette, described the same way, moved to the other side of the
+sentence. **This supersedes the negative-control pair** the earlier draft used,
+which survived only as a console transcript because its JSON was overwritten
+before archiving. The scripts and the Devpost now cite the archived pair.
+
+### 2.3 Verified first-hand against the deployed build
+
+27 checks, listed with their raw output in `submission-evidence.md` §1. Headless
+Chromium, **no `?webmcp-debug`**, zero model calls except where noted. The load-
+bearing ones:
+
+- **25 tools** on `document.modelContext`, all names read off.
+- The utterance bar renders **without** the debug flag; `window.__paillette_webmcp` absent.
+- **Enter on an empty bar: one POST to `/api/public-search/nga/exemplars`, zero to any model route.** Twice.
+- The dealt board: `{"cards":12,"fullyVisible":12,"gridHeight":724,"viewport":1000}`. Reject tray present, 2 items, after both redeals.
+- Compare two-up opened with `C`: `{"box":{"x":0,"y":0,"w":1440,"h":1000},"portalled":true,"chromeVisible":[]}` — zero model calls.
+- `.lt-enter-armed` absent before the first flag, `↵` after; the sentence exists once, `sr-only`.
+- Activity glyph `·····`, 68 × 33 px, at rest with no agent. Clicking it opens `document.modelContext · 25` and all 25 names — **zero model calls.**
+- **Keyboard-only flagging works**: 23 Tabs from cold load reach a control whose accessible name is `"Pick Environs de Cremieu (P)"`; `x` flags it `by: "human"`; `aria-pressed` follows.
+- `/e/MKwsxHy` opens cold: `<h1>` *Everything the Light Left Behind*, colophon `4 of 6 labels written by an agent`, **0 localStorage keys read**, real Open Graph tags on the NGA's own IIIF endpoint.
+- `/exhibition` with no payload: `302 → /nga/search`.
+- `warm landscape` returns **30**. Zero `pageerror` across every run.
+
+---
+
+## 3. Two defects found by running it, not by reading it
+
+Both are silent failures, both spoil takes, and neither was in any report before
+tonight.
+
+### 3.1 `AGENT_RATE_LIMITED` has no UI branch — **the most likely way a take is wasted**
+
+Capturing the inverted frame, the flags set correctly (`by: human`) and the turn
+returned:
+
+```
+429 {"success":false,"error":{"code":"AGENT_RATE_LIMITED",
+     "message":"You have used this hour’s shared agent budget. Try again shortly."}}
+```
+
+**The page showed nothing.** No note, no error, no `pageerror`. The board simply
+did not change. `grep -r AGENT_RATE_LIMITED apps/web/app` finds no handler.
+
+The asymmetry is exact and the fix is one branch in a shape that already exists:
+the deterministic path renders `paillette-deal-error` — *"The deal didn't run;
+your flags are unchanged."* — for precisely this case. The agent path does not.
+
+An operator will read a silent board as a slow one and keep waiting. So will a
+judge, and a judge will conclude the agent is broken. Raw:
+`e2e-evidence/note-swatches-inverted.json`.
+
+### 3.2 The swatch strips do not say whose flag they draw
+
+`NoteSwatches` renders `data-artwork-id` and `data-flag` but not `data-flag-by`,
+so a strip shows *that* a work was flagged and not by which hand — the one place
+on the page where the two-colour provenance contract is not carried. Confirmed
+against the component and against the e2e lane's independent finding
+(iteration 2 §7.1). Invisible in the film; a real gap in the design.
+
+### 3.3 One thing that is correct and worth knowing
+
+**A deterministic redeal produces no wall label**, so the swatch strips only ever
+appear beside an agent note. That is right — the human's own redeal should not
+narrate itself — but it means the frame in §2.1 cannot be captured without
+spending model calls, which is why it went uncaptured for two iterations.
+
+---
+
+## 4. The two mid-run constraints, applied
+
+### Text first
+
+Audited beat by beat. **Every beat is typed or keyed. Nothing in the spine needs
+a microphone.** The agentic trigger fires from typing alone — four times in e2e
+iteration 2, once more tonight. The one shot that touches speech is the
+read-aloud button, it is marked BUILT-UNVERIFIED, and the script carries the cut
+line if it does not render. Table in `webmcp-vo-script-v2.md` §4.
+
+### Cut the words
+
+The spoken script went from ~350 words to **280** — 1:52 of speech in a 2:58
+film, so a third of the runtime is silence. What went:
+
+- *"Committing the correction is the turn"* — narrating the mechanism. The board changing says it.
+- *"Same function, either hand. The loop has no agent-only path."* — the three tool/key pairs on screen enact it; saying it too is a caption on a mark. The precise wording stays in the Devpost, where prose is the medium.
+- *"…and a line at the bottom saying how many of them an agent wrote"* — the card is the line. Read it once.
+- Beat 3 lost half its length once the frame existed. The swatches do the work the second sentence was doing.
+
+*"Twelve come back"* also went, but for being **wrong** rather than long — the
+agent's first board measured 8, 12, 10 and 12 across four runs. Twelve is a
+property of Enter, not of the agent's first board. That is the better reason.
+
+Nothing was made cryptic to be short. Every beat still names its subject.
+
+---
+
+## 5. Corrected this round
+
+The build moved under the earlier draft. Everything below was wrong in it and is
+right now:
+
+| Was | Is |
+| --- | --- |
+| Cold instruction "35 s" | **42–59 s** across four runs |
+| "Twelve come back" on the agent's first board | 8, 12, 10, 12 — the number belongs to Enter |
+| "Enter makes zero model calls" (twice, first-hand) | **27 redeals across five harnesses, zero POSTs**, counted off the wire |
+| Deal "22 layouts / 339 frames" | **fourteen board-to-board redeals: 16 19 21 22 22 22 24 24 24 25 25 27 28 28** |
+| First redeal "5 layouts" | 3–18, depending on how much masonry has to move |
+| The note+swatches frame "does not exist" | it exists — `shots/50-note-with-swatches.png` |
+| Negative-control pair, transcribed from a console | retired; replaced with archived JSON on both sides |
+| Beat 1 "verify the deal board on the day" | `view=deal-board` on all four iteration-2 runs |
+
+---
+
+## 6. Still true, still unverified
+
+Unchanged from the earlier draft, and all of it marked in the script:
+
+- **Read-aloud.** `SpeakButton` is real and needs no agent or account, but it
+  renders only where a work has a stored caption. A cold NGA work opened tonight
+  offered `["Laurent de La Hyre","Public metadata","Copy"]` — **no read-aloud
+  control.** Headless Chromium here has **0 voices**; no audio has ever been
+  produced from this build. Find a captioned work before filming, or cut the beat
+  and the second half of the end card.
+- **The whole spoken path.** Push-to-talk enters *"Listening — release to send"*
+  and on release nothing lands and nothing is reported. Must be shot on a real
+  machine.
+- **`prefers-reduced-motion` with a pick starting at slot 5.**
+- **The clipboard fallback**, never seen in a real browser.
+- **`describe_artwork`'s human path** — no "generate a description" control was
+  found; the two-operator table does not claim one.
+
+---
+
+## 7. What I cut, and why
+
+- **Any use of the negative-control pair.** Its JSON was overwritten. Better
+  evidence exists.
+- **"The agent sees the pictures."** It sees four hex swatches, a medium, a year
+  and a classification. `lookup_artwork` and `describe_artwork` were called
+  **zero** times across every recorded run in both iterations.
+- **"Labels are written from the image."** Twelve of twelve in the A/B were
+  written from the catalogue.
+- **"No agent-only API."** Two tools have no human path. The script says *"the
+  loop has no agent-only path"*, which is checkable.
+- **A percentage for the note behaviour.** Four runs is not a rate. The text says
+  *four for four named content, three of four named the work*.
+- **The ledger filmstrip.** Built and tested, imported only by `/night/deal`.
+  It is not on the product page and must not be filmed as one.
+- **A total test count in the Devpost**, which is qualified rather than asserted:
+  the reports give 59/593 → 68/737 → 91/1112 → 91/1115 → 94/1171 for web across
+  the night as different lanes merged.
+
+---
+
+## 8. Checks
+
+No source outside `docs/` was touched, so these are a regression check on the
+merged tree rather than on this lane's work.
+
+| | Baseline in the brief | This tree |
+| --- | --- | --- |
+| `pnpm --filter web typecheck` | — | *see §8.1* |
+| `pnpm --filter web test` | 59 files / 593 tests | *see §8.1* |
+| `pnpm --filter api test` | 41 files / 770 tests | *see §8.1* |
+
+The brief's baseline predates the `night/curation`, `night/activity`,
+`night/review` and `night/sharing` merges. The integration lane's iteration-2
+figures for this tree are **web 91 files / 1115 tests, api 44 / 815**.
+
+---
+
+## 9. For whoever picks this up
+
+The three things that would most improve the submission, in order, are all in
+`submission-evidence.md` §4 and none of them is a doc:
+
+1. **One UI branch for `AGENT_RATE_LIMITED`.** One line, in a shape that already
+   exists three hundred lines up the same file.
+2. **Widen the exemplar candidate pool** so Enter does not go dead after five
+   redeals — because the `↵` affordance now invites a judge to sit and press it.
+3. **Two agent turns in a fresh budget hour** to frame the inversion. The text is
+   archived on both sides; only the picture is missing.
+
+The evidence file is the working surface. If a claim in the script ever stops
+being true, it is because a row in `submission-evidence.md` changed — fix the row
+first, then the sentence.

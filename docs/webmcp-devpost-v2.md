@@ -67,32 +67,42 @@ stay restorable; newcomers arrive from the right.
 None of that needs an agent, and that is the point. What the agent adds is a
 sentence.
 
-Reject the two darkest works on the board and the note above it reads:
+Flag two works you don't want and one you do, type a sentence, and the note
+above the board reads:
 
-> *"You rejected the two brown-and-ochre oils; these keep the warmth in
-> firelight, gold, and clear sunlit colour."*
+> *"You said warm; you kept the bone-and-umber etching and rejected the darker,
+> greener palettes — following the picks."*
 
-Run the same instruction again with the flags inverted — reject the two
-brightest instead — and it reads:
-
-> *"Warmth here runs from sunlit gold to russet domestic colour, avoiding the
-> tan-and-cream palettes you rejected."*
-
-The human never typed "brown-and-ochre" or "tan-and-cream". They pressed `X`
-twice. The agent is given the four indexed dominant-colour swatches, the medium,
-the year and the classification of every flagged work — the same fields printed
-on the card — and one instruction: *name the visual property you can see in the
+The human never typed "bone", "umber" or "greener". They pressed `X`, `X`, `P`.
+The agent is given the four indexed dominant-colour swatches, the medium, the
+year and the classification of every flagged work — the same fields printed on
+the card — and one instruction: *name the visual property you can see in the
 record, not a mood you associate with the artist's name*. The swatches it wrote
 from are drawn under the sentence, picks whole and rejects struck through, so
-the claim is checkable without leaving it.
+the claim is checkable without leaving it. In that capture the pick's leading
+swatches are `#EBD8BC` and `#695943`, and the second reject's is `#47502B` — bone,
+umber, and a dark olive.
 
-We tested this adversarially rather than assuming it. Four notes across two
-inverted conditions: three named the rejected works' actual colour, correctly
-and differently in each direction; the fourth described the board without
-referring to the rejects at all. The two conditions never produced the same
-note. ⚠ A third run was blocked by our own anonymous rate limit, and one run's
-JSON was overwritten before it was archived — the notes above are transcribed
-from the console, and the harness is checked in and deterministic.
+Notice the first clause too. *"You said warm… following the picks"* is the
+system reading the gap between what was typed and what was chosen, and telling
+you which one it followed.
+
+We tested this by varying the flags rather than assuming. Across four runs of the
+same instruction on different boards, all four notes described *what the rejected
+works were like* rather than the bare fact of rejection, and three named the
+rejected work specifically enough to recognise on screen. The cleanest evidence is
+one work flagged both ways — Berthe Morisot's *Landscape*, colored pencils,
+palette `#D4C7A2 #B6A385 #9A886C`:
+
+> *when picked* — "You kept the pale ochre pencil landscape and rejected the
+> darker peach palette — following its quiet, airy warmth."
+>
+> *when rejected* — "Following your warm oil-on-wood fruit pick and moving away
+> from the pale colored-pencil landscape you rejected."
+
+Same painting, described the same way, moved to the other side of the sentence.
+⚠ One of the four runs produced a note that was accurate but generic — *"darker,
+crowded scenes"* — so this is a strong tendency rather than a guarantee.
 
 The second improvement is that the words are two-way. The agent drafts a title,
 a statement and a wall label for every work. The human rewrites the statement —
@@ -124,8 +134,12 @@ from the data rather than asserted: *"4 of 6 labels written by an agent."*
 
 ### When your words and your gestures disagree, the agent follows the gestures and says so.
 
-> *"You said warm; you picked the grey harbour and rejected the golds —
-> following the picks."*
+> *"You said warm; you kept the bone-and-umber etching and rejected the darker,
+> greener palettes — following the picks."*
+
+That is one sentence doing three things: quoting what was typed, naming what was
+chosen in terms of the pixels rather than the catalogue, and saying which of the
+two it followed.
 
 No search box has both signals. A search box has words and no gestures. A chat
 window has words and no gestures either — it just has more of them. A
@@ -161,11 +175,13 @@ Same function, either hand. This is not a design preference; it is checkable,
 and we checked it by taking the agent away. With the model route hard-refusing
 `429`, the loop keeps working: nine assertions, three runs in a row. With no
 WebMCP host on the page at all, `P` and `X` still flag and Enter still deals.
-And the headline beat is asserted **negatively**, against a recorded network
-log: a full run — cold load, three flags, two redeals, a compare, a choice —
-made four HTTP requests, and `/api/public-agent/turn` appears zero times. The
-picks held their slots at zero pixels of displacement across a measured 22
-distinct layouts.
+And the headline beat is asserted **negatively**, counted off the wire rather
+than trusted: **27 separate redeals across five harnesses, zero POSTs to
+`/api/public-agent/turn`**, each redeal making exactly one call to the
+deterministic scoring route. A full run — cold load, three flags, two redeals, a
+compare, a choice — makes four HTTP requests in total. The picks hold their slots
+at zero pixels of displacement across fourteen measured deals of 16 to 28
+distinct layouts, where a jump cut measures 4–5.
 
 That is what makes "two operators" true rather than rhetorical. The agent is not
 the mechanism. It is a second operator of a mechanism that works without it, who
@@ -176,6 +192,13 @@ Two of the twenty-five tools — `write_labels` and `annotate_atlas` — have no
 human control behind them today. A human can edit any label by hand but cannot
 press a button to draft six at once, and cannot name a region of the atlas. Both
 should wrap a human affordance and currently do not.
+
+**And one honest limit on the deterministic half.** The exemplar route asks the
+vector index for a fixed pool of candidates and then subtracts everything already
+dealt, so after about five redeals against an unchanged pick set the board thins
+and then empties. Every property that matters still holds while it does — no
+reject ever returns, the pick never moves, no model is ever called — but Enter
+eventually stops producing new work, and it should widen the pool instead.
 
 ### And it survives being shared.
 

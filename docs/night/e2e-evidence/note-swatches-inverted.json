@@ -1,0 +1,19 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "instruction": "something warm for above the sofa",
+  "condition": "inverted",
+  "pick": "open-access-art:nga:184225",
+  "rejects": [
+    "open-access-art:nga:127567",
+    "open-access-art:nga:195765"
+  ],
+  "note": {
+    "text": null,
+    "provenance": null,
+    "dealGrid": false,
+    "strips": []
+  },
+  "modelCalls": 1,
+  "pageErrors": []
+}
