@@ -7,11 +7,31 @@ Branch `night/live-voice`, cut from `night/integration`.
 - `506525d` — `fix(live-voice)`: hardening found by running the page, and the copy audit
 - `6b5330c` — `test(demo)`: make the no-microphone check able to fail
 - `f67dbe1` — `test(demo)`: verify the §9 voice clause on a browser, both halves
+- `9a9b7b5` — `test(demo)`: check what the voice loop does when the agent is down
 
-**Read §3 before writing anything public.** The §9 voice clause and the quota
-gate are both exercised on a running browser / over real HTTP. The *live
-session's* audio path is not, and cannot be on this machine — those are two
-different things and the submission must not merge them.
+---
+
+## 0. For the submission lane — the two sentences, and the line between them
+
+**Safe to write.** The page has one utterance bar that takes typing or speech.
+Hold to talk; the transcript lands in that same editable field; a 1.2-second
+countdown drains under it, during which the words can be corrected by keyboard;
+the agent's reply is spoken back **only** when the turn began in speech, and
+shown as a wall label either way. Every beat of the loop works with speech
+turned off entirely. All of that is verified on a browser, repeatedly, and the
+verifier fails when the behaviour is broken.
+
+**Not safe to write.** Anything describing the *live realtime session* —
+speech-to-speech, barge-in, a typed message answered in audio mid-session — as
+working. It is built and unit-tested, its API routes are not deployed, and no
+part of its audio path has ever met a microphone or the provider. The demo
+today does not use it; it uses the recogniser loop above, which is what the
+verification covers.
+
+Those are two different mechanisms living in one lane, and the failure mode
+this report exists to prevent is a public description that merges them.
+
+---
 
 **One correction to the previous version of this report.** It claimed "text in,
 text out" was measured. It was not: the probe set `window.speechSynthesis = stub`,
@@ -81,20 +101,24 @@ Two operational notes for anyone re-running this:
   `agent.toolsExecuteFromTypedTurn` fails for reasons that have nothing to do
   with this branch. The page shows that 404 readably rather than crashing.
 
-### 1.1b The §9 voice clause — both halves, three consecutive clean runs
+### 1.1b The §9 voice clause, and what happens when the agent is down
 
 > "A voice utterance lands in the editable field; the note is spoken only after
 > voice input."
 
-`scripts/demo/verify-voice-symmetry.mjs` (`f67dbe1`), on a real browser:
+`scripts/demo/verify-voice-symmetry.mjs` (`f67dbe1`, `9a9b7b5`), on a real
+browser:
 
 ```
-PASS  voice.landsInField    field held "something warm for above the sofa" before release
-PASS  voice.noteOnWall      the note is above the board
-PASS  voice.spokenBack      spoken: ["These share a low horizon."]
-PASS  text.noteOnWall       the note is above the board
-PASS  text.staysSilent      spoken: []
-5 pass · 0 fail
+PASS  voice.landsInField       field held "something warm for above the sofa" before release
+PASS  voice.noteOnWall         the note is above the board
+PASS  voice.spokenBack         spoken: ["These share a low horizon."]
+PASS  text.noteOnWall          the note is above the board
+PASS  text.staysSilent         spoken: []
+PASS  outage.staysUsable       1 error(s), typeable=true, mic=true, grace cleared=true
+PASS  outage.saysNothingAloud  spoken: []
+PASS  outage.recovers          next utterance spoken: ["These share a low horizon."]
+8 pass · 0 fail
 ```
 
 No microphone required: the recogniser is a stub emitting a settled transcript,
@@ -102,8 +126,18 @@ which the page cannot distinguish from Chrome doing it, and the agent's reply is
 served by the script so the check measures the channel rule rather than whether
 this machine can reach the catalogue.
 
+The last three matter more than they look. Staging's agent route is down today,
+so the path most likely to be on screen during a take was the one nobody had
+exercised. What is asserted is not that an error appears — it is that the page
+**comes back**: one error in one sentence, the bar still typeable, the mic
+still there, the countdown cleared, nothing spoken aloud (a failure is not a
+wall label), and then the *next* utterance working and being spoken back.
+
 **Mutation-checked, not trusted.** With `shouldSpeakReply` forced to `false`,
-`voice.spokenBack` fails and the other four still pass.
+`voice.spokenBack` fails and the other seven pass. With the `finally` that
+clears `busy` removed, `outage.staysUsable` fails with `typeable=false` and
+`outage.recovers` fails with nothing spoken, while the five §9 assertions still
+pass — the right shape, since that mutation breaks recovery and not the rule.
 
 Two traps that silently invalidate any browser probe of this, both hit here
 before being fixed — worth knowing for any lane doing similar work:
@@ -182,12 +216,34 @@ node scripts/demo/verify-demo-path.mjs      http://localhost:5183/nga/search
 node scripts/demo/verify-voice-symmetry.mjs http://localhost:5183/nga/search
 ```
 
+**Soak, this round: both scripts, six consecutive rounds, zero failures.**
+
+```
+run 1 | demo-path: 14 pass · 0 fail · 1 skip | voice: 8 pass · 0 fail
+run 2 | demo-path: 14 pass · 0 fail · 1 skip | voice: 8 pass · 0 fail
+run 3 | demo-path: 14 pass · 0 fail · 1 skip | voice: 8 pass · 0 fail
+run 4 | demo-path: 14 pass · 0 fail · 1 skip | voice: 8 pass · 0 fail
+run 5 | demo-path: 14 pass · 0 fail · 1 skip | voice: 8 pass · 0 fail
+run 6 | demo-path: 14 pass · 0 fail · 1 skip | voice: 8 pass · 0 fail
+```
+
+**One unreproduced API flake, recorded rather than buried.** On the first
+`pnpm --filter api test` of this round the suite reported `1 failed | 887
+passed`. Seven consecutive runs afterwards all reported 888 passed, and no run
+printed a failing test name I could capture, so I cannot say which test it was
+or why. No API source was touched this round. It is one observation in eight
+and I could not make it happen again; it is written here because a flake nobody
+recorded is a flake that surprises somebody during a take.
+
 One caveat: on a clean checkout `pnpm --filter web typecheck` and one web test
 file fail because `worker.ts` imports `./build/server/index.js`, a build
 artifact. Run `pnpm --filter web build` first. Pre-existing, unrelated.
 
 Two pre-existing lint errors remain in `app/lib/webmcp/tools.ts` and
 `app/components/board/deal-board.tsx` — neither file is in this branch's diff.
+A third, a dead `toolNames` helper in `verify-demo-path.mjs`, was also
+pre-existing and is removed (`9a9b7b5`) since that file was being edited
+anyway; `scripts/demo/` now lints clean.
 
 ---
 
