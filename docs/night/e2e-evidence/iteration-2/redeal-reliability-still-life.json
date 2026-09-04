@@ -1,0 +1,187 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "still life fruit",
+  "rounds": [
+    {
+      "round": 1,
+      "changed": true,
+      "changedMs": 2352,
+      "layouts": 4,
+      "frames": 151,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 2,
+      "changed": true,
+      "changedMs": 1782,
+      "layouts": 22,
+      "frames": 140,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 3,
+      "changed": true,
+      "changedMs": 1977,
+      "layouts": 24,
+      "frames": 141,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 4,
+      "changed": true,
+      "changedMs": 1204,
+      "layouts": 22,
+      "frames": 141,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 5,
+      "changed": true,
+      "changedMs": 1218,
+      "layouts": 22,
+      "frames": 143,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 6,
+      "changed": true,
+      "changedMs": 1313,
+      "layouts": 22,
+      "frames": 145,
+      "renderedCount": 9,
+      "orderCount": 9,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 7,
+      "changed": true,
+      "changedMs": 1281,
+      "layouts": 27,
+      "frames": 151,
+      "renderedCount": 1,
+      "orderCount": 1,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 8,
+      "changed": false,
+      "changedMs": 45011,
+      "layouts": 3,
+      "frames": 157,
+      "renderedCount": 1,
+      "orderCount": 1,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 9,
+      "changed": false,
+      "changedMs": 45009,
+      "layouts": 1,
+      "frames": 157,
+      "renderedCount": 1,
+      "orderCount": 1,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 10,
+      "changed": false,
+      "changedMs": 45007,
+      "layouts": 1,
+      "frames": 157,
+      "renderedCount": 1,
+      "orderCount": 1,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:50825"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    }
+  ],
+  "errors": []
+}

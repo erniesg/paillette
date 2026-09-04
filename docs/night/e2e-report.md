@@ -1,5 +1,796 @@
 # End to end — the demo loop on a deployed build, driven by typing
 
+# Iteration 2
+
+Everything below was run on 2026-09-04 against
+**https://paillette-stg.berlayar.ai**, from `night/integration` at `c7f38d8`.
+Staging was already deployed and I did not redeploy: `apps/` and `packages/` on
+this branch are **byte-identical** to the commit staging was deployed from
+(`2680f51`) — `git diff --name-only 2680f51..HEAD` touches only `docs/`. So the
+page under test is the page that is deployed, and the page the next phase films.
+
+Nothing in this report is inherited from another lane. Every number was measured
+here, in a browser, against the live 63,253-work index.
+
+---
+
+## Verdict
+
+**Yes. The demo loop is filmable right now, typed, with voice switched off.**
+
+All six steps of §9 ran end to end on the deployed build. The claim the brief
+calls the most important in the submission — *Enter on an empty bar redeals from
+the flags with the picks in place and no model call* — is proven, not asserted:
+across **27 separate redeals** in this session, driven from five different
+harnesses and each one carrying its own explicit check, there were **zero POSTs
+to `/api/public-agent/turn`**, counted off the wire with a request listener that
+saw every request the page made. Each redeal made exactly one call, to
+`/api/public-search/nga/exemplars`, the deterministic Rocchio engine.
+
+The three things iteration 1 called blocking are all gone, and I checked each one
+myself rather than taking the fix log's word for it:
+
+| Iteration 1's blocker | Now |
+| --- | --- |
+| the compare two-up rendered ~1,700 px below the fold | **fixed** — `{"box":{"top":0,"left":0,"w":1440,"h":1000},"portalled":true}`, and nothing else visible on screen |
+| `set_view` could take the board out of the deal view | **fixed** — salon, atlas, table and masonry were all called against a dealt board and the deal grid survived all four |
+| twelve cards did not fit on screen | **fixed** — `{"count":12,"gridHeight":650,"viewport":900,"fullyVisibleAtBestScroll":12,"tray":2}` at 1440×900, and the reject tray is on screen |
+
+**And the deal animation is on the real page.** Not only on the visuals lane's
+`/night/deal` fixture route. Measured on `/nga/search` against the real
+collection by sampling every card's bounding box once per animation frame and
+counting distinct layouts: **16 to 28 distinct layouts across fourteen
+board-to-board redeals**, where a jump cut measures 4–5. Video: `docs/night/shots/e2e2-deal-on-nga-search.webm`.
+
+### What a person filming has to know, or the take is wasted
+
+None of these stops the loop. All of them will spoil a take if nobody is told.
+
+1. **The board runs out after about five redeals in one tab.** Quantified in
+   §4: the fifth Enter is the last full board, the sixth comes back short, and
+   by the seventh the board is **one card**. Reproduced on two different queries
+   with the same shape, and the arithmetic that causes it is in the API. Reload
+   between takes.
+2. **The first redeal after a search is a cut, not a deal** — 4 to 18 distinct
+   layouts against the second's 16 to 28, because it is turning a browsing
+   masonry into a board. The *second* is the deal, every time. Film the second.
+3. **A cold typed instruction takes 42–59 seconds** from Enter to a board, and
+   spends 5–7 model calls out of an anonymous budget of 40 per client per hour.
+   A full loop costs 8–12. That is three or four complete takes an hour.
+4. **The compare choice does not send a turn when you click it.** It rides the
+   next turn instead. §4's P4 says the click *is* a human turn; the build defers
+   it. Detail and the payload that proves it does arrive in §3, step 5.
+5. **Push-to-talk on a machine with no microphone enters the listening state and
+   then silently does nothing** — no words, no error, no visible failure. §6.
+
+Nothing about the *spoken* path is proven here and it cannot be on this machine.
+§6 says exactly which parts remain unproven and why.
+
+---
+
+## 1. The two things to check before starting. Both were fine.
+
+`scripts/demo/e2e2-preflight.mjs` — **17 assertions, 17 passed, 0 model calls.**
+Raw: `docs/night/e2e-evidence/iteration-2/preflight.json`.
+
+### 1.1 The in-page agent renders under `?webmcp-debug`. No cherry-pick needed.
+
+`928b5dc` is already an ancestor of this branch (`git merge-base --is-ancestor
+928b5dc HEAD` → true), so the mount-order race it fixes is not present. **I did
+not cherry-pick anything.** Measured:
+
+```
+the debug host registers tools                              25 tools
+the in-page agent bar renders under ?webmcp-debug           count=1
+the bar is actually visible, not merely in the DOM          true
+focus is on BODY at cold load, so P/X/U are live            BODY
+no "already registered" warnings                            0
+```
+
+And with no flag at all — which is what a judge opening the URL cold gets:
+
+```
+{"host":true,"driver":false,"bar":1,"cards":30}
+```
+
+The host is claimed and the bar renders for an ordinary visitor; only the console
+back door `window.__paillette_webmcp` stays behind the flag. Shots:
+`e2e2-01-preflight-agent-renders-under-debug-flag.png`,
+`e2e2-02-preflight-no-flag-at-all.png`.
+
+One thing to know before writing a harness against this page: registration is not
+synchronous with `document.modelContext` existing. Wait on `tools().length > 0`.
+
+### 1.2 The deal animation is on `/nga/search`, with the real collection
+
+This was the finding that could have been blocking, and it is not. `/night/deal`
+does exist and answers `HTTP 200`, but **nothing in this report was measured on
+it.** Everything below is the product page against the live index.
+
+On `/nga/search?q=sunset landscape`, flagging two picks and two rejects and
+pressing Enter twice:
+
+| | distinct layouts | frames |
+| --- | --- | --- |
+| first redeal (masonry → board) | 6 | 156 |
+| **second redeal (board → board)** | **25** | 149 |
+
+and the held picks, board to board:
+
+```
+[{"id":"…50295","dxPage":0,"dyPage":0,"dxBoard":0,"dyBoard":0},
+ {"id":"…184224","dxPage":0,"dyPage":0,"dxBoard":0,"dyBoard":0}]
+```
+
+Zero pixels, on the page and in the slot. Twelve cards, all twelve fully visible
+at 1440×900 in a 650 px grid, two rejects in the tray. Shot:
+`e2e2-03-preflight-deal-on-nga-search.png`.
+
+---
+
+## 2. How the loop was driven, and what it cost
+
+`scripts/demo/e2e2-loop.mjs --full` runs the brief's six steps **in the brief's
+order**, typed. It is deliberately different from iteration 1's agent harness,
+which laid the flags down before the instruction because that is cheaper. Here
+the cold instruction comes first, as §9 describes it.
+
+Voice is untouched: the instruction is typed character by character into
+`input[aria-label="Ask the agent"]` with `type(…, {delay: 12})`, and the harness
+asserts before it starts that nothing is listening
+(`{"micPresent":true,"micPressed":"false","listening":false}`).
+
+Four full runs against staging:
+
+| run | step 1 | step 4 | total model calls | first → second deal | score |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 42 s / 5 calls, 8 works | 17 s / 3 calls | 8 | 18 → 21 layouts | **22/22** |
+| 2 | 59 s / 7 calls, 12 works | 33 s / 5 calls | 12 | 3 → 3 layouts | 19/22 — **harness fault, §5** |
+| 3 | 44 s / 5 calls, 10 works | 36 s / 5 calls | 10 | 12 → 16 layouts | **22/22** |
+| 4 | 47 s / 5 calls, 12 works | 17 s / 3 calls | 8 | 14 → 19 layouts | **22/22** |
+
+Run 2's three failures were **my measurement, not the product**, and §5 shows the
+work that establishes that rather than assuming it. Run 4 is the same script with
+the measurement corrected; it is the canonical run and every shot numbered 04–12
+comes from it.
+
+Also run, all against the same deployed build:
+
+| Harness | Result | Model calls |
+| --- | --- | --- |
+| `e2e2-preflight.mjs` | **17 / 17** | 0 |
+| `e2e-deterministic.mjs` (checked in, iteration 1's) | 38 / 1 — the one failure is step 5, §3 | 0 |
+| `e2e2-loop.mjs --full` × 4 | 22/22, 19/22, 22/22, 22/22 | 38 |
+| `e2e2-redeal-reliability.mjs` × 2 queries | 18 redeals; §4 | 0 |
+| `e2e2-run2-repro.mjs` | **8 / 8** | 0 |
+| `e2e2-voice.mjs` | **10 / 10** | 0 |
+| `e2e2-ink.mjs` | 6 / 6, one of them vacuous — §7 | 0 |
+| `e2e-extras.mjs` (checked in) | 7 / 3 — all three are superseded assertions, §7 | 0 |
+
+**38 model calls spent in total**, all of them in the four full loops.
+
+### The suite, on the tree these scripts ran against
+
+This phase added six scripts under `scripts/demo/` and touched no application
+code, so the suite should be exactly where the integration lane left it, and it
+is:
+
+```
+pnpm --filter web typecheck   clean, 0 errors
+pnpm --filter web test        Test Files  91 passed (91)   Tests  1115 passed (1115)
+pnpm --filter api test        Test Files  44 passed (44)   Tests   815 passed (815)
+```
+
+Identical to the integration report's numbers. Nothing was skipped or deleted.
+
+---
+
+## 3. The loop, step by step
+
+### Step 1 — the instruction that needs no coaching
+
+Typed into the bar on a cold `/nga/search?webmcp-debug` with **no query at all** —
+an empty page, so the board can only come from the agent.
+
+> "I want something to hang above the sofa in my living room. Warm, not busy,
+> nothing grim."
+
+A board came back with a written note on all four runs. The notes, verbatim from
+`.paillette-wall-label`:
+
+> **run 1** — "Warm ochres, honeyed light, and open breathing room—quiet pictures
+> built to soften a living room."
+
+> **run 2** — "Quiet amber, honey, and earth tones with open space or a single
+> clear subject—warm company without visual noise."
+
+> **run 3** — "Warm, low-clutter pictures held together by ochre, peach, and
+> quiet open space."
+
+> **run 4** — "Warm, uncluttered pictures with gentle light and enough open
+> breathing room for a living room."
+
+Each carries `data-provenance="agent"` — the note arrives in the agent's ink, not
+the page's. The board size the agent chose varied: 8, 12, 10, 12 works.
+
+The tool sequence for run 1, timestamped off the wire
+(`iteration-2/run1-loop.json`):
+
+```
+ 3807ms  POST /api/public-agent/turn
+ 7059ms  POST /api/public-agent/turn
+10440ms  POST /api/public-search/nga/text
+15575ms  POST /api/public-search/nga/text
+20372ms  POST /api/public-search/nga/text
+24989ms  POST /api/public-search/nga/text
+30093ms  POST /api/public-agent/turn
+30985ms  GET  /api/public-search/nga/quota
+33675ms  POST /api/public-agent/turn
+36114ms  POST /api/public-agent/turn
+```
+
+Five model turns, four searches merged into one board. **41.8 s from Enter to a
+board on screen.** The first turn's payload, verbatim:
+
+```json
+{"text":"I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+ "flagsDelta":[],"selection":[],"hovered":null,"compareChoice":null,"exhibitionEdits":[]}
+```
+
+Shots: `e2e2-04-cold-load-no-query.png`,
+`e2e2-05-step1-sofa-instruction-typed.png`, `e2e2-06-step1-board-and-note.png`.
+
+### Step 2 — `X` on two works, `P` on one; the flags persist and are visible
+
+Hovering each card and pressing the key. Every mark landed, human-owned, not
+provisional, on all four runs. Run 4:
+
+```
+rejects: ["Landscape — Berthe Morisot",
+          "The Hudson River at Hastings — Jasper Francis Cropsey"]
+picks:   ["Still Life of Fruit — American 19th Century"]
+every flag by=human, provisional=false
+flagging fires no model call — 0
+```
+
+They are visible, not merely in the store — `data-flag="reject"` / `"pick"` on
+the card element itself — and they persist: the same three works are still in
+`get_view_context` two redeals later, and arrive in the agent's turn payload at
+step 4 carrying palette, medium, year and classification (§3, step 4).
+
+Shot: `e2e2-07-step2-flagged-XXP.png`.
+
+**A hazard for whoever films.** `P`/`X`/`U` are correctly suppressed while a text
+field holds the caret. Pressing Enter *inside* the utterance bar leaves the caret
+there, so the next `X` types the letter `x` into the bar instead of rejecting the
+card under the cursor. Every harness here blurs first. On camera: click the board
+before you cull.
+
+### Step 3 — Enter on an empty bar, and the no-model-call proof
+
+Proven negatively, off the wire, in four independent harnesses. Run 4:
+
+```
+STEP 3 — the bar is empty before Enter                    ""
+STEP 3 — the board redeals to twelve                      12 cards, view=deal-board
+STEP 3 — NO MODEL CALL: zero POSTs to /public-agent/turn  0 of 14 requests after Enter;
+                                                          API traffic was /api/public-search/nga/exemplars
+STEP 3 — it hit the deterministic engine instead          /api/public-search/nga/exemplars
+STEP 3 — the pick is still on the board after the redeal  {"dxPage":0,"dyPage":-70,"dxBoard":0,"dyBoard":-2}
+STEP 3 — both rejects have left the board                 tray: ["…56976","…52306"]
+```
+
+`dyBoard: -2` on the first redeal is the masonry becoming a board; board to board
+it is exactly zero, measured at step 6 below.
+
+**The strongest version of this claim** is the count across everything run
+tonight. Every redeal below carried its own explicit zero-model-call check, and
+each assertion is written negatively, so it fails if a model call ever appears:
+
+| Where | Redeals |
+| --- | --- |
+| `e2e2-redeal-reliability.mjs`, `still life fruit` | 10 |
+| `e2e2-redeal-reliability.mjs`, `warm landscape` | 8 |
+| `e2e2-loop.mjs --full`, step 3, four runs | 4 |
+| `e2e-deterministic.mjs`, two explicit assertions | 2 |
+| `e2e2-preflight.mjs`, two redeals under one 0-of-113-requests assertion | 2 |
+| `e2e-extras.mjs`, the redeal with no host on the page at all | 1 |
+| **Total** | **27 — zero POSTs to `/api/public-agent/turn` in any of them** |
+
+Independently, `e2e-deterministic.mjs` on the same build:
+
+```
+PASS  Enter on an empty bar makes NO model call — 0 requests to /public-agent/turn;
+      12 requests total in the window
+PASS  Enter on an empty bar hits the deterministic exemplar engine —
+      POST https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars
+PASS  Enter with nothing focused (bare board) redeals with NO model call — 0 model calls; 1 exemplar calls
+```
+
+and with **no `?webmcp-debug` and no host on the page at all**, from
+`e2e-extras.mjs`:
+
+```
+PASS  P and X still flag with no agent on the page
+PASS  Enter on the bare board redeals, with no agent anywhere —
+      https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars
+PASS  the deal board renders for a visitor with no agent
+```
+
+The loop is not merely model-free at that beat; it is agent-free.
+
+Shot: `e2e2-08-step3-redeal-no-model-call.png`.
+
+### Step 4 — does the note refer to the *content* of what was rejected?
+
+Run four times, as §9 asks (it asks for three). All four verbatim, each with the
+works that were actually thrown out:
+
+**Run 1**
+rejected: *A Peach, Seville* (George Henry Hall); *Still Life with Milk Jug and Fruit* (Paul Cezanne)
+picked: *A Corner of the Artist's Room, Rue Terre Neuve, Meudon* (Gwen John)
+> "Following your pick's pale ochre watercolor and quiet interior; steering away
+> from darker, crowded scenes."
+
+**Run 2**
+rejected: *A Peach, Seville* (George Henry Hall); *A Dessert* (Raphaelle Peale)
+picked: *Still Life with Apples, Sherry, and Tea Cake* (Raphaelle Peale)
+> "You kept the ochre-and-brown oil still life and rejected the deeper red-brown
+> peach—following its softer, quieter warmth."
+
+**Run 3**
+rejected: *A Peach, Seville* (George Henry Hall); *Flask* (John Tarantino)
+picked: *Landscape* (Berthe Morisot)
+> "You kept the pale ochre pencil landscape and rejected the darker peach
+> palette—following its quiet, airy warmth."
+
+**Run 4**
+rejected: *Landscape* (Berthe Morisot); *The Hudson River at Hastings* (Jasper Francis Cropsey)
+picked: *Still Life of Fruit* (American 19th Century)
+> "Following your warm oil-on-wood fruit pick and moving away from the pale
+> colored-pencil landscape you rejected."
+
+**Four for four refer to content rather than to the bare fact of rejection, and
+three of the four name the rejected work specifically enough to recognise it on
+screen.** Runs 2, 3 and 4 name it — "the deeper red-brown peach" is *A Peach,
+Seville*; "the darker peach palette" is the same work; "the pale colored-pencil
+landscape you rejected" is the Morisot. Run 1 is the weak one: "darker, crowded
+scenes" is a description of the rejected still lifes and is accurate about them,
+but it does not name a subject, and on camera it would read as generic. **If you
+get run 1's kind of note on a take, do it again.**
+
+This is not the model guessing from titles. The turn payload carries the visual
+facts — here is the flagsDelta that produced run 1's note, verbatim from
+`iteration-2/run1-loop.json`:
+
+```json
+{"artworkId":"open-access-art:nga:214119",
+ "title":"A Peach, Seville (George Henry Hall)",
+ "palette":["#C3803A","#7E3F0F","#6C443C"],
+ "medium":"oil on canvas","year":1866,"classification":"Painting","to":"reject"}
+```
+
+Both rejects and the pick arrive that way. That is why "ochre-and-brown oil still
+life" and "pale colored-pencil landscape" are available to the model at all.
+
+Also checked at this step, because iteration 1's second blocker lived here: the
+board is **still a deal board after the agent turn** on all four runs
+(`view=deal-board`), and the human's pick is still on it. Shots:
+`e2e2-11-step4-instruction-typed.png`,
+`e2e2-12-step4-agent-note-names-the-reject.png`.
+
+### Step 5 — `compare_artworks`
+
+It exists, it resolves, and it is a room. From `e2e-deterministic.mjs` on the
+deployed build:
+
+```
+PASS  compare_artworks resolves
+PASS  the two-up is on screen as a room —
+      {"present":true,"askedBy":"agent","question":"Which one holds the wall better?",
+       "choices":[{"id":"…144846","side":"left","label":"Choose The Dawn of Creation"},
+                  {"id":"…69344","side":"right","label":"Choose Desert Sunset"}],
+       "box":{"top":0,"left":0,"w":1440,"h":1000},"portalled":true,"chromeVisible":[]}
+PASS  the two-up is at the top of the viewport, not below the fold
+PASS  nothing else is on screen while the two-up is open — still visible: nothing
+PASS  choosing closes the two-up
+PASS  the winner becomes a human pick — {"id":"…144846","by":"human","onBoard":true}
+PASS  the loser becomes a human reject — {"id":"…69344","by":"human","onBoard":true}
+FAIL  choosing sends a human turn to the agent immediately —
+      0 POST(s) to /public-agent/turn in the 3s after the click
+      — resolveCompare() records the choice for the *next* turn instead
+```
+
+**Choosing resolves to pick/reject. It does not send a turn.** The brief's step 5
+asks for both. The information is not lost — `e2e-extras.mjs`, which refuses the
+agent route at the edge so nothing is billed, shows the choice riding the next
+turn verbatim:
+
+```json
+"compareChoice":{"winner":{"id":"…50295","title":"Peaceful Valley (Alexander Helwig Wyant)"},
+                 "loser":{"id":"…184224","title":"Vicinity of Morestal (François-Auguste Ravier)"},
+                 "question":"Which one holds the wall better?"}
+```
+
+and the flags it laid down ride with it, with palette and medium attached. So the
+gesture reaches the agent; it reaches it late. The integration lane left this
+deliberately, on the argument that firing a model call on every compare click
+would burn the demo's best beat against a 40-call budget. I am reporting it, not
+arguing with it: **on camera, a compare answered in silence needs the next
+utterance to make it visible.**
+
+Shots: `e2e2-13-step5-compare-two-up.png`, `e2e2-14-step5-after-choosing.png`.
+
+### Step 6 — the deal animates and the picks hold
+
+Run 4, board to board:
+
+```
+STEP 6 — the deal animates board to board —
+  19 distinct layouts across 132 frames (a jump cut is 4–5; the first redeal measured 14)
+STEP 6 — the picks visibly hold position, to the pixel —
+  [{"id":"…50825","dxPage":0,"dyPage":0,"dxBoard":0,"dyBoard":0}]
+```
+
+Every board-to-board redeal measured tonight on a **full twelve-card board**, all
+fourteen of them, in order:
+
+```
+16  19  21  22  22  22  24  24  24  25  25  27  28  28
+```
+
+A jump cut is 4–5, so the worst of the fourteen is more than three times a cut.
+The first redeal after a text search measures **3, 4, 4, 6, 12, 14 or 18**,
+depending on how much of the masonry has to rearrange — sometimes a cut,
+sometimes half a deal, never the clean thing. (The 3 is run 2, and is a
+mis-measurement, not a bad deal — §5.) **Film the second.**
+
+`e2e2-09-step6-deal-midflight.png` is the board 380 ms after the works changed:
+newcomers still arriving, the pick frame-lit and stationary.
+`e2e2-10-step6-deal-settled-twelve-and-tray.png` is the settled board — twelve
+cards on one screen, two rejects in the tray at the left edge.
+`e2e2-deal-on-nga-search.webm` is twelve seconds of it.
+
+---
+
+## 4. The finding that most affects filming: the board runs out
+
+`scripts/demo/e2e2-redeal-reliability.mjs`. Flag one pick and two rejects, then
+press Enter over and over, and after each deal compare three things that must
+agree: `board.order` (what the agent is told is on the table), the ids actually
+rendered in the deal grid (what a viewer sees), and the confirmed rejects (none
+of which may be in either).
+
+**`still life fruit`, ten rounds:**
+
+```
+round  1   4 layouts · 12 cards · order 12 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  2  22 layouts · 12 cards · order 12 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  3  24 layouts · 12 cards · order 12 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  4  22 layouts · 12 cards · order 12 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  5  22 layouts · 12 cards · order 12 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  6  22 layouts ·  9 cards · order  9 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  7  27 layouts ·  1 cards · order  1 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  8   3 layouts ·  1 cards · order  1 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round  9   1 layouts ·  1 cards · order  1 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+round 10   1 layouts ·  1 cards · order  1 · rejects on board 0 · tray 2 · picks held 1 · model calls 0
+```
+
+**`warm landscape` — the query the filming URL uses — eight rounds, same shape:**
+
+```
+round  1   4 layouts · 12 cards      round  5  28 layouts · 12 cards
+round  2  24 layouts · 12 cards      round  6  24 layouts · 11 cards
+round  3  25 layouts · 12 cards      round  7  29 layouts ·  1 cards
+round  4  28 layouts · 12 cards      round  8   3 layouts ·  1 cards
+```
+
+By round 7 the board is a single work — the human's pick, alone, with "1 / 1
+WORKS" in the chrome. Rounds 8 onward do not change at all: Enter is a dead key.
+Shots: `e2e2-15-redeal-05-last-full-board.png`,
+`e2e2-16-redeal-07-board-collapsed-to-one.png`.
+
+**This is not the vector index running out of art, and it is not query-specific.**
+The mechanism is arithmetic, in `apps/api/src/routes/search.ts`:
+
+```ts
+const candidatePool = Math.min(Math.max(topK * EXEMPLAR_CANDIDATE_MULTIPLIER, 20), MAX_SEARCH_RESULTS);
+const queryResult = await vectorize.query(centroid, { topK: candidatePool, … });
+const candidates = queryResult.matches
+  .map(…)
+  .filter((candidate) => !blocked.has(candidate.id));
+```
+
+`EXEMPLAR_CANDIDATE_MULTIPLIER` is 6 and `MAX_SEARCH_RESULTS` is 100, so a
+twelve-card deal asks Vectorize for a **fixed pool of about 66** nearest
+neighbours of the centroid and *then* removes everything already seen. The
+web side sends everything already seen —
+`excludeIds: [...alreadyDealt, ...previousOrder]` in `redeal.ts` — and the
+centroid does not move while the pick set is unchanged, so the same ~66 works
+come back every round and each round strikes 12 of them out. 66 ÷ 12 ≈ 5.5, which
+is exactly where the board starts to thin.
+
+**What it means for filming:** you have about five clean redeals per pick set in
+one tab. That is enough for a take. It is not enough to rehearse and then shoot in
+the same tab, and it is not enough for a judge who sits and presses Enter. Reload
+between takes; a fresh page resets `alreadyDealt`.
+
+**What it does not mean:** the loop is not wrong. In all 18 rounds, across both
+queries: **zero rejects ever appeared on the board, the rendered board matched
+`board.order` every single time, the human's pick was held every single time, and
+zero model calls were made.**
+
+I did not fix this. It is in reserved API code, it is a behaviour change with a
+scoring consequence, and the brief says to report rather than fix. The fix is
+small — the candidate pool needs to grow with the exclusion list rather than being
+fixed at `topK × 6` — but it is the fix phase's to make, and it needs a test.
+
+---
+
+## 5. Run 2, and why its three failures are mine and not the product's
+
+Run 2 came back with the two rejects apparently still on the board, an empty
+tray, fifteen elements answering to `[data-artwork-id]` where twelve works were on
+screen, and a deal measuring **3 distinct layouts** — a jump cut where the money
+shot should be. That would have been the most important finding in this report if
+it were true, so it is worth saying exactly how it was disposed of rather than
+waving at it.
+
+**Three candidate explanations, and they are not the same bug.** Run 2 was the
+only run of the four where the agent, unprompted, also wrote an exhibition
+(`set_exhibition`, `write_labels` → `POST /api/public-labels`) and asked for the
+salon view. So: (a) the extra elements are a second rendering somewhere and the
+harness counted both; (b) an exhibition statement pushes the board below the fold
+so the deal happens off camera; (c) the deal genuinely stops animating once an
+exhibition is on the page.
+
+**(c) and (b) were tested and are false.** `scripts/demo/e2e2-run2-repro.mjs`
+reproduces the state through the debug driver with no model involved — set the
+same exhibition, ask for salon, flag, redeal:
+
+```
+PASS  CONTROL — with no exhibition on the page the deal animates — {"layouts":24,"frames":147}
+PASS  set_exhibition applied (the thing run 2 did and runs 1 and 3 did not)
+PASS  the deal board survives set_view("salon") with an exhibition on the page —
+      {"present":true,"topInViewport":144,"height":650,"viewport":900,"scrollY":602}
+PASS  WITH AN EXHIBITION ON THE PAGE — does the deal still animate? —
+      27 distinct layouts across 149 frames (control measured 24)
+PASS  the board is on camera when the deal runs — {"topInViewport":144,"scrollY":602}
+```
+
+**(a) is true, and it is my fault.** `[data-artwork-id]` is too loose on this
+page. Three different things carry it: the result cards, the reject tray, and
+`NoteSwatches` — the little palette strips hung under the wall label, one per
+confirmed flag (`apps/web/app/components/board/note-swatches.tsx:71`). The
+fifteen elements were 12 cards + 3 swatches, and the census proves it: the three
+extras were exactly the three flagged ids, each carrying `data-flag` but
+**`data-flag-by: null`**, which no result card ever has.
+
+The second-order consequence is the one that actually broke the run. My harness
+captured the pre-Enter id list at step 2 and waited for it to change. Laying a
+flag inserts a swatch, so the list had *already* changed before Enter was pressed
+— `waitForFunction` returned in **43 ms** on a deal that had not started, and the
+board was then read 1.5 s later, mid-flight, still showing the works on their way
+out and a tray that had not filled yet. The 2.6 s layout-sampling window closed
+before the deal began, which is the 3 layouts.
+
+Fixed in `e2e2-loop.mjs`: one precise selector
+(`[data-testid="deal-board-grid"] [data-artwork-id], .paillette-card[data-artwork-id]`,
+minus `.lt-tray`) used everywhere, the id list read immediately before the key,
+and a longer settle before reading. Run 4 is that script, and scores **22/22**.
+The 18-round reliability run, written with the correct selector from the start,
+never once saw a reject on the board.
+
+I am leaving run 2's raw output committed
+(`iteration-2/run2.log`, `iteration-2/run2-loop.json`) and the shot
+`e2e2-20-run2-board-read-mid-deal.png`, because "a harness measured this and was
+wrong" is worth being able to check.
+
+**This is a harness fault, not a product one, and I want to be clear that I am
+not asserting it away: three separate scripts now measure the same thing three
+different ways and agree.**
+
+---
+
+## 6. Voice — what it adds, and what cannot be proven here
+
+The typed loop is proven first and independently; nothing below is load-bearing
+for it. `scripts/demo/e2e2-voice.mjs` — **10/10, 0 model calls** (the agent route
+is refused at the edge, so what the page *tried* to send is evidence without
+anything being billed).
+
+**What this machine actually has:**
+
+```json
+{"SpeechRecognition":"function","webkitSpeechRecognition":"function",
+ "speechSynthesis":"object","voices":0,"mediaDevices":"function"}
+```
+
+This corrects something iteration 1 and the checked-in `e2e-extras.mjs` both say.
+Headless Chromium **does** expose a `SpeechRecognition` constructor — the API is
+there and the mic control is on screen. What is missing is the audio: Chrome
+performs recognition by streaming to a Google service, there is no microphone on
+this box, and there are **0 synthesis voices installed**, so nothing can be spoken
+back either.
+
+**Pressing the mic on a machine with no microphone.** Push-to-talk is a hold, so
+the harness presses, holds 2.5 s, releases:
+
+```
+while held:      {"label":"Listening — release to send","pressed":"true"}
+after release:   {"listening":"false","barValue":"","barDisabled":false,
+                  "anyVisibleError":[]}
+uncaught errors: []
+```
+
+The control enters the listening state, says so, and on release **nothing lands
+and nothing is reported.** No error, no "we could not hear you", no visible
+failure. That is a real observation for filming and for a judge on a locked-down
+laptop: a push-to-talk that goes quiet is indistinguishable from one the user got
+wrong. Shots: `e2e2-17-voice-bar-idle.png`,
+`e2e2-18-voice-mic-held-no-microphone.png`.
+
+**Everything after the transcript works, and is the same code path as typing.**
+Delivering the words the way the recogniser's final result delivers them:
+
+```
+PASS  a transcript lands in the editable field, verbatim and editable
+PASS  the field the transcript landed in is editable, not a read-only receipt —
+      {"readOnly":false,"disabled":false}
+PASS  committing the transcript sends exactly the same turn a typed instruction does —
+      {"text":"I want something to hang above the sofa in my living room. Warm, not busy,
+        nothing grim.","flagsDelta":[],"selection":[],"hovered":null,
+        "compareChoice":null,"exhibitionEdits":[]}
+```
+
+Shot: `e2e2-19-voice-transcript-in-editable-field.png`.
+
+### Plainly: what remains unproven on this machine
+
+- **Real speech recognition.** No microphone, no audio to stream to Google.
+  Nothing here shows that a spoken sentence becomes a transcript.
+- **Real speech out.** 0 voices installed; `speechSynthesis` exists but has
+  nothing to speak with. The "spoken only after voice input" rule is therefore
+  untested end to end.
+- **The grace bar under real conditions** — the 1.2 s countdown between a final
+  transcript and the send. Its inputs are simulated here.
+- **A real WebMCP host.** Chromium 141 has no `document.modelContext` of its own;
+  the page's own spec-shaped host stands in and passes.
+
+**A spoken take must be filmed on a real machine with a microphone**, and nothing
+in this report should be read as evidence that it will work there.
+
+---
+
+## 7. Everything else observed
+
+1. **The note swatches do not say whose flag they draw.** `NoteSwatches` renders
+   `data-artwork-id` and `data-flag` but not `data-flag-by`, so a strip shows
+   that a work was flagged without showing by which hand — the one place on the
+   page where the two-colour contract is not carried. Evidence is the run-2
+   census (§5), which caught three swatches with `data-flag-by: null`. My ink
+   script's assertion about this was **vacuous** — no swatches were on the page
+   in that run, and `[].every()` is true — and I would rather say so than let a
+   green line stand for a check that did not happen.
+
+2. **Two colours of ink, measured off computed styles.** `e2e2-ink.mjs`, with a
+   human `P` by keyboard and an agent `flag_artworks` through the driver:
+
+   ```
+   --ink resolves to #e6e3dc on the human's card and #5ec8d8 on the agent's
+   human: box-shadow "rgb(230, 227, 220) 0px 0px 0px 1px, …", outline-style none
+   agent: outline 1px dashed, data-flag-provisional="true"
+   ```
+
+   The human's confirmed mark is a solid ring drawn with `box-shadow`; the
+   agent's proposal is a dashed outline in cyan. Note for anyone re-measuring:
+   reading `outline` alone reports the human's mark as absent, because the
+   human's mark is not an outline. My first pass got this wrong.
+
+3. **Three assertions in the checked-in `e2e-extras.mjs` now fail because the
+   product changed, not because it broke**, and none of them is a defect:
+   `no prompt bar without a host` (the bar now renders for everyone, which was
+   the critique's tenth blocking item), `headless Chromium exposes no
+   SpeechRecognition` (it does — §6), and `the mic control is feature-detected
+   away` (recognition exists, so correctly it is not). I did not edit that
+   script; it belongs to another lane and the fix phase should decide.
+
+4. **The agent chooses a board size, and it is not always twelve** — 8, 12, 10,
+   12 across four runs of the same instruction. Twelve is what the deterministic
+   redeal produces. §4's "deal 12 cards, not 60" is a property of Enter, not of
+   the agent's first board.
+
+5. **`data-flag-by` is on the card and correct.** Where §3 step 2 shows
+   `by: null` in the raw output, that is the swatch being read first in DOM
+   order, not a missing attribute — the corrected read at step 4 shows
+   `{"id":"…50825","flag":"pick","by":"human","provisional":"false"}`.
+
+6. **Cold-load latency was not a problem tonight.** The integration lane warned
+   that a fresh deploy can take 30 s on first load. Staging had been deployed for
+   some time; every page load here was well inside its timeout. Whoever films a
+   *fresh* deploy should still warm the page before rolling.
+
+7. **No uncaught page errors**, in any run, in any harness.
+
+---
+
+## 8. The harness
+
+Five new scripts, all checked in under `scripts/demo/`, all re-runnable, none
+requiring anything not on this box:
+
+```sh
+export PLAYWRIGHT_CORE=$PWD/node_modules/.pnpm/playwright-core@1.56.1/node_modules/playwright-core/index.mjs
+
+node scripts/demo/e2e2-preflight.mjs          https://paillette-stg.berlayar.ai /tmp/pre    # 0 model calls
+node scripts/demo/e2e2-loop.mjs --full        https://paillette-stg.berlayar.ai /tmp/run    # 8–12 model calls
+node scripts/demo/e2e2-redeal-reliability.mjs https://paillette-stg.berlayar.ai /tmp/rel 10 # 0
+node scripts/demo/e2e2-run2-repro.mjs         https://paillette-stg.berlayar.ai /tmp/repro  # 0
+node scripts/demo/e2e2-voice.mjs              https://paillette-stg.berlayar.ai /tmp/voice  # 0
+node scripts/demo/e2e2-ink.mjs                https://paillette-stg.berlayar.ai /tmp/ink    # 0
+```
+
+`scripts/demo/capture.mjs` (the PR #71 harness) was already on this branch as
+`fea0286`; I did not need to cherry-pick it. I did not use it this iteration —
+`e2e2-loop.mjs` drives the same typed path and additionally measures the
+network, the geometry and the animation, which is what the claims in this report
+rest on. `capture.mjs` remains the right tool for producing footage rather than
+evidence, and its own header is honest that its `--speak` flag reproduces the
+post-transcript path only.
+
+`node agent-drive.mjs …` is not on this branch and was not used; the in-page
+agent under `?webmcp-debug` is what drives everything here.
+
+---
+
+## 9. What a person should look at, in order
+
+`docs/night/shots/`:
+
+| | |
+| --- | --- |
+| `e2e2-01-preflight-agent-renders-under-debug-flag.png` | 25 tools, the bar, focus on BODY |
+| `e2e2-02-preflight-no-flag-at-all.png` | what a judge gets cold: host claimed, bar present |
+| `e2e2-03-preflight-deal-on-nga-search.png` | the deal board on the *product* page, 12 + tray |
+| `e2e2-04-cold-load-no-query.png` | an empty search page — the board can only come from the agent |
+| `e2e2-05-step1-sofa-instruction-typed.png` | the sentence in the bar, typed, voice untouched |
+| `e2e2-06-step1-board-and-note.png` | **step 1: a board, and a note on the wall** |
+| `e2e2-07-step2-flagged-XXP.png` | two rejects and a pick, human ink |
+| `e2e2-08-step3-redeal-no-model-call.png` | **step 3: Enter on an empty bar, 0 model calls** |
+| `e2e2-09-step6-deal-midflight.png` | **380 ms in: newcomers arriving, the pick stationary** |
+| `e2e2-10-step6-deal-settled-twelve-and-tray.png` | twelve on one screen, rejects in the tray |
+| `e2e2-11-step4-instruction-typed.png` | the second instruction |
+| `e2e2-12-step4-agent-note-names-the-reject.png` | **step 4: the note naming what was thrown out** |
+| `e2e2-13-step5-compare-two-up.png` | **step 5: the two-up as a room, nothing else on screen** |
+| `e2e2-14-step5-after-choosing.png` | winner picked, loser rejected, room closed |
+| `e2e2-15-redeal-05-last-full-board.png` | the fifth redeal — the last full board |
+| `e2e2-16-redeal-07-board-collapsed-to-one.png` | **the seventh: "1 / 1 WORKS"** |
+| `e2e2-17-voice-bar-idle.png` | the bar with the push-to-talk control |
+| `e2e2-18-voice-mic-held-no-microphone.png` | "Listening — release to send", on a box with no microphone |
+| `e2e2-19-voice-transcript-in-editable-field.png` | a transcript in the editable field |
+| `e2e2-20-run2-board-read-mid-deal.png` | §5: the harness reading the board mid-flight |
+| `e2e2-21-two-colours-of-ink.png` | §7: a human pick in graphite beside an agent's dashed cyan proposal |
+| `e2e2-22-run2-repro-deal-with-exhibition.png` | §5: the deal running with an exhibition on the page, 27 layouts |
+| `e2e2-deal-on-nga-search.webm` | 12 s of the deal on the product page |
+
+Machine-readable, every number above:
+`docs/night/e2e-evidence/iteration-2/`.
+
+### The URL to film
+
+```
+https://paillette-stg.berlayar.ai/nga/search?webmcp-debug
+```
+
+No query. Type the sofa sentence; `X`,`X`,`P`; click the board; Enter; Enter
+again — **that second Enter is the shot**. Reload before the next take.
+
+---
+
+---
+
+# Iteration 1
+
 Everything below was run against **https://paillette-stg.berlayar.ai** on
 2026-09-04, from `night/integration`. `apps/` and `packages/` on this branch are
 **byte-identical** to the commit staging was deployed from (`e8c248e`) —

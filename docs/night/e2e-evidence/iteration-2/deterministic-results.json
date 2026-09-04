@@ -1,0 +1,202 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "sunset landscape",
+  "results": [
+    {
+      "ok": true,
+      "label": "webmcp-debug registers tools",
+      "detail": "25 tools"
+    },
+    {
+      "ok": true,
+      "label": "in-page agent bar renders under ?webmcp-debug",
+      "detail": "count=1"
+    },
+    {
+      "ok": true,
+      "label": "focus is on BODY at cold load (culling keys live)",
+      "detail": "BODY"
+    },
+    {
+      "ok": true,
+      "label": "board has works",
+      "detail": "30 cards for \"sunset landscape\""
+    },
+    {
+      "ok": true,
+      "label": "X sets reject on open-access-art:nga:50295",
+      "detail": "{\"id\":\"open-access-art:nga:50295\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "label": "X sets reject on open-access-art:nga:184224",
+      "detail": "{\"id\":\"open-access-art:nga:184224\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "label": "P sets pick on open-access-art:nga:144846",
+      "detail": "{\"id\":\"open-access-art:nga:144846\",\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\"}"
+    },
+    {
+      "ok": true,
+      "label": "flagging fires no model call",
+      "detail": "3 requests during flagging"
+    },
+    {
+      "ok": true,
+      "label": "get_view_context reports the three flags",
+      "detail": "{\"picks\":[{\"id\":\"open-access-art:nga:144846\",\"title\":\"The Dawn of Creation\",\"artist\":\"Samuel Jackson\",\"palette\":[\"#46403C\",\"#847B72\",\"#A89F94\"],\"medium\":\"brush and black ink with scratching out\",\"year\":1830,\"classification\":\"Drawing\",\"by\":\"human\",\"onBoard\":false}],\"rejects\":[{\"id\":\"open-access-art:nga:50295\",\"title\":\"Peaceful Valley\",\"artist\":\"Alexander Helwig Wyant\",\"palette\":[\"#DEB585\",\"#3B2F1F\",\"#715023\",\"#B09176\"],\"medium\":\"oil on canvas\",\"year\":1872,\"classification\":\"Painting\",\"by\":\"human\",\"onBoard\":false},{\"id\":\"open-access-art:nga:184224\",\"title\":\"Vicinity of Morestal\",\"artist\":\"François-Auguste Ravier\",\"palette\":[\"#967B62\",\"#B6874F\",\"#574136\",\"#8D6634\"],\"medium\":\"watercolor and fabri"
+    },
+    {
+      "ok": true,
+      "label": "get_view_context hands the agent the exemplar sets",
+      "detail": "{\"positive\":[\"open-access-art:nga:144846\"],\"negative\":[\"open-access-art:nga:50295\",\"open-access-art:nga:184224\"]}"
+    },
+    {
+      "ok": true,
+      "label": "the utterance bar is empty before Enter",
+      "detail": "\"\""
+    },
+    {
+      "ok": true,
+      "label": "Enter on an empty bar makes NO model call",
+      "detail": "0 requests to /public-agent/turn; 12 requests total in the window"
+    },
+    {
+      "ok": true,
+      "label": "Enter on an empty bar hits the deterministic exemplar engine",
+      "detail": "POST https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    },
+    {
+      "ok": true,
+      "label": "the pick survives the redeal",
+      "detail": "pick=open-access-art:nga:144846 board=12 works"
+    },
+    {
+      "ok": true,
+      "label": "both rejects leave the board",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "label": "the rejects are in the visible tray, not gone",
+      "detail": "tray holds 2: open-access-art:nga:184224, open-access-art:nga:50295"
+    },
+    {
+      "ok": true,
+      "label": "the redeal renders the deal board, not the browsing masonry",
+      "detail": "data-testid=\"deal-board-grid\" present"
+    },
+    {
+      "ok": true,
+      "label": "every dealt card is on screen at once",
+      "detail": "{\"cards\":12,\"visible\":12,\"gridHeight\":724,\"viewport\":1000}"
+    },
+    {
+      "ok": true,
+      "label": "first redeal (masonry -> board): the pick is measurable on both sides",
+      "detail": "{\"page\":{\"dx\":108,\"dy\":1055},\"board\":null}"
+    },
+    {
+      "ok": true,
+      "label": "first redeal (masonry -> board) is a cut, not a deal",
+      "detail": "7 distinct layouts across 339 frames — a jump cut measures 4–5"
+    },
+    {
+      "ok": true,
+      "label": "redeal latency",
+      "detail": "1625ms from Enter to a changed board"
+    },
+    {
+      "ok": true,
+      "label": "X still flags after a redeal",
+      "detail": "[{\"id\":\"open-access-art:nga:74927\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:216694\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\"}]"
+    },
+    {
+      "ok": true,
+      "label": "Enter with nothing focused (bare board) redeals with NO model call",
+      "detail": "0 model calls; 1 exemplar calls"
+    },
+    {
+      "ok": true,
+      "label": "board-to-board: the pick holds its slot in the deal grid",
+      "detail": "{\"page\":{\"dx\":0,\"dy\":0},\"board\":{\"dx\":0,\"dy\":0}}"
+    },
+    {
+      "ok": true,
+      "label": "board-to-board: the pick moves zero pixels on the page",
+      "detail": "{\"page\":{\"dx\":0,\"dy\":0},\"board\":{\"dx\":0,\"dy\":0}}"
+    },
+    {
+      "ok": true,
+      "label": "board-to-board deal animates",
+      "detail": "28 distinct layouts across 272 frames"
+    },
+    {
+      "ok": true,
+      "label": "compare_artworks resolves",
+      "detail": "{\"ok\":true,\"comparing\":[{\"id\":\"open-access-art:nga:144846\",\"title\":\"The Dawn of Creation\",\"artist\":\"Samuel Jackson\",\"year\":1830,\"dateText\":\"1830s\",\"medium\":\"brush and black ink with scratching out\",\"classification\":\"Drawing\",\"similarity\":0.569,\"palette\":[\"#46403C\",\"#847B72\",\"#A89F94\"],\"thumbnailUrl\""
+    },
+    {
+      "ok": true,
+      "label": "the two-up is on screen as a room",
+      "detail": "{\"present\":true,\"label\":\"Which one holds the wall better?\",\"askedBy\":\"agent\",\"question\":\"Which one holds the wall better?\",\"choices\":[{\"id\":\"open-access-art:nga:144846\",\"side\":\"left\",\"label\":\"Choose The Dawn of Creation\"},{\"id\":\"open-access-art:nga:69344\",\"side\":\"right\",\"label\":\"Choose Desert Sunset\"}],\"fullScreen\":\"1440x1000\",\"box\":{\"top\":0,\"left\":0,\"w\":1440,\"h\":1000},\"portalled\":true,\"chromeVisible\":[]}"
+    },
+    {
+      "ok": true,
+      "label": "the agent's question is set between the two works",
+      "detail": "\"Which one holds the wall better?\""
+    },
+    {
+      "ok": true,
+      "label": "the two-up is at the top of the viewport, not below the fold",
+      "detail": "{\"box\":{\"top\":0,\"left\":0,\"w\":1440,\"h\":1000},\"portalled\":true}"
+    },
+    {
+      "ok": true,
+      "label": "nothing else is on screen while the two-up is open",
+      "detail": "still visible: nothing"
+    },
+    {
+      "ok": true,
+      "label": "choosing closes the two-up",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "label": "the winner becomes a human pick",
+      "detail": "{\"id\":\"open-access-art:nga:144846\",\"title\":\"The Dawn of Creation\",\"artist\":\"Samuel Jackson\",\"palette\":[\"#46403C\",\"#847B72\",\"#A89F94\"],\"medium\":\"brush and black ink with scratching out\",\"year\":1830,\"classification\":\"Drawing\",\"by\":\"human\",\"onBoard\":true}"
+    },
+    {
+      "ok": true,
+      "label": "the loser becomes a human reject",
+      "detail": "{\"id\":\"open-access-art:nga:69344\",\"title\":\"Desert Sunset\",\"artist\":\"George Elbert Burr\",\"palette\":[\"#807E75\",\"#DDDBCA\",\"#4D4C47\"],\"medium\":\"etching with plate tone in greenish-black on wove paper\",\"year\":1921,\"classification\":\"Print\",\"by\":\"human\",\"onBoard\":true}"
+    },
+    {
+      "ok": false,
+      "label": "choosing sends a human turn to the agent immediately",
+      "detail": "0 POST(s) to /public-agent/turn in the 3s after the click — resolveCompare() records the choice for the *next* turn instead"
+    },
+    {
+      "ok": true,
+      "label": "set_view \"salon\" cannot take the dealt board away",
+      "detail": "deal-board-grid present=true while a dealt board is on the table"
+    },
+    {
+      "ok": true,
+      "label": "set_view \"atlas\" cannot take the dealt board away",
+      "detail": "deal-board-grid present=true while a dealt board is on the table"
+    },
+    {
+      "ok": true,
+      "label": "set_view \"table\" cannot take the dealt board away",
+      "detail": "deal-board-grid present=true while a dealt board is on the table"
+    },
+    {
+      "ok": true,
+      "label": "set_view \"masonry\" cannot take the dealt board away",
+      "detail": "deal-board-grid present=true while a dealt board is on the table"
+    }
+  ],
+  "consoleErrors": []
+}

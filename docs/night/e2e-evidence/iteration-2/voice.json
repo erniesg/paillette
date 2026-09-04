@@ -1,0 +1,87 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "capability": {
+    "SpeechRecognition": "function",
+    "webkitSpeechRecognition": "function",
+    "speechSynthesis": "object",
+    "voices": 0,
+    "mediaDevices": "function"
+  },
+  "heldState": {
+    "label": "Listening — release to send",
+    "pressed": "true"
+  },
+  "afterMic": {
+    "listening": "false",
+    "barValue": "",
+    "barDisabled": false,
+    "status": [
+      "722 free searches left",
+      "textwarm landscape"
+    ],
+    "anyVisibleError": []
+  },
+  "attempted": [
+    {
+      "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "flagsDelta": [],
+      "selection": [],
+      "hovered": null,
+      "compareChoice": null,
+      "exhibitionEdits": []
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "label": "headless Chromium DOES expose a SpeechRecognition constructor",
+      "detail": "{\"SpeechRecognition\":\"function\",\"webkitSpeechRecognition\":\"function\",\"speechSynthesis\":\"object\",\"voices\":0,\"mediaDevices\":\"function\"}"
+    },
+    {
+      "ok": true,
+      "label": "…and NO synthesis voices, so nothing can actually be spoken back here",
+      "detail": "0 voices"
+    },
+    {
+      "ok": true,
+      "label": "the push-to-talk control is on screen",
+      "detail": "count=1"
+    },
+    {
+      "ok": true,
+      "label": "holding the mic on a machine with no microphone — while held",
+      "detail": "{\"label\":\"Listening — release to send\",\"pressed\":\"true\"}"
+    },
+    {
+      "ok": true,
+      "label": "…and after release",
+      "detail": "{\"listening\":\"false\",\"barValue\":\"\",\"barDisabled\":false,\"status\":[\"722 free searches left\",\"textwarm landscape\"],\"anyVisibleError\":[]}"
+    },
+    {
+      "ok": true,
+      "label": "pressing the mic throws no uncaught error",
+      "detail": "[]"
+    },
+    {
+      "ok": true,
+      "label": "a transcript lands in the editable field, verbatim and editable",
+      "detail": "\"I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.\""
+    },
+    {
+      "ok": true,
+      "label": "the field the transcript landed in is editable, not a read-only receipt",
+      "detail": "{\"readOnly\":false,\"disabled\":false}"
+    },
+    {
+      "ok": true,
+      "label": "committing the transcript sends exactly the same turn a typed instruction does",
+      "detail": "{\"text\":\"I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.\",\"flagsDelta\":[],\"selection\":[],\"hovered\":null,\"compareChoice\":null,\"exhibitionEdits\":[]}"
+    },
+    {
+      "ok": true,
+      "label": "the turn carries the transcript verbatim",
+      "detail": "\"I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.\""
+    }
+  ],
+  "errors": []
+}

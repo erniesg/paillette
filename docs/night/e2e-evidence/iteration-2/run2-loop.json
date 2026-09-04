@@ -1,0 +1,944 @@
+{
+  "label": "run2-full",
+  "mode": "full",
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "sunset landscape",
+  "step1": {
+    "quietMs": 55297,
+    "elapsedMs": 58978,
+    "modelCalls": 7,
+    "toolTraffic": [
+      "4300ms POST /api/public-agent/turn",
+      "6544ms POST /api/public-agent/turn",
+      "10114ms POST /api/public-search/nga/text",
+      "15309ms POST /api/public-search/nga/text",
+      "19021ms POST /api/public-search/nga/text",
+      "24029ms POST /api/public-search/nga/text",
+      "27227ms POST /api/public-agent/turn",
+      "30595ms POST /api/public-agent/turn",
+      "31279ms GET /api/public-search/nga/quota",
+      "32904ms POST /api/public-agent/turn",
+      "37548ms POST /api/public-agent/turn",
+      "41464ms POST /api/public-labels",
+      "52782ms POST /api/public-agent/turn",
+      "61317ms GET /api/public-search/nga/quota"
+    ],
+    "board": {
+      "wallLabel": "Quiet amber, honey, and earth tones with open space or a single clear subject—warm company without visual noise.",
+      "provenance": "agent",
+      "dealError": null,
+      "view": "deal-board",
+      "onBoard": [
+        {
+          "id": "open-access-art:nga:214119",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:110101",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:164945",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:184225",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:111775",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:117802",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:34170",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:25130",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:18443",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:17337",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:39205",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:32690",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        }
+      ],
+      "tray": [],
+      "transcript": [
+        "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+      ]
+    }
+  },
+  "step2": {
+    "targets": [
+      {
+        "id": "open-access-art:nga:214119",
+        "key": "x"
+      },
+      {
+        "id": "open-access-art:nga:110101",
+        "key": "x"
+      },
+      {
+        "id": "open-access-art:nga:164945",
+        "key": "p"
+      }
+    ],
+    "flags": {
+      "picks": [
+        {
+          "id": "open-access-art:nga:164945",
+          "title": "Still Life with Apples, Sherry, and Tea Cake",
+          "artist": "Raphaelle Peale",
+          "palette": [
+            "#56402B",
+            "#BE8935",
+            "#978D62"
+          ],
+          "medium": "oil on wood",
+          "year": 1822,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": true
+        }
+      ],
+      "rejects": [
+        {
+          "id": "open-access-art:nga:214119",
+          "title": "A Peach, Seville",
+          "artist": "George Henry Hall",
+          "palette": [
+            "#C3803A",
+            "#7E3F0F",
+            "#6C443C"
+          ],
+          "medium": "oil on canvas",
+          "year": 1866,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": true
+        },
+        {
+          "id": "open-access-art:nga:110101",
+          "title": "A Dessert",
+          "artist": "Raphaelle Peale",
+          "palette": [
+            "#533E2A",
+            "#C49041",
+            "#878385"
+          ],
+          "medium": "oil on wood",
+          "year": 1814,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": true
+        }
+      ],
+      "provisional": [],
+      "exemplars": {
+        "positive": [
+          "open-access-art:nga:164945"
+        ],
+        "negative": [
+          "open-access-art:nga:214119",
+          "open-access-art:nga:110101"
+        ]
+      },
+      "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+    },
+    "visibleMarks": [
+      {
+        "id": "open-access-art:nga:214119",
+        "key": "x",
+        "onScreen": true,
+        "flag": "reject",
+        "by": null,
+        "badge": null,
+        "outline": "rgb(230, 227, 220)"
+      },
+      {
+        "id": "open-access-art:nga:110101",
+        "key": "x",
+        "onScreen": true,
+        "flag": "reject",
+        "by": null,
+        "badge": null,
+        "outline": "rgb(230, 227, 220)"
+      },
+      {
+        "id": "open-access-art:nga:164945",
+        "key": "p",
+        "onScreen": true,
+        "flag": "pick",
+        "by": null,
+        "badge": null,
+        "outline": "rgb(230, 227, 220)"
+      }
+    ]
+  },
+  "step3": {
+    "redealMs": 43,
+    "sampled": {
+      "layouts": 3,
+      "frames": 152
+    },
+    "board": {
+      "wallLabel": "Quiet amber, honey, and earth tones with open space or a single clear subject—warm company without visual noise.",
+      "provenance": "agent",
+      "dealError": null,
+      "view": "deal-board",
+      "onBoard": [
+        {
+          "id": "open-access-art:nga:164945",
+          "flag": "pick",
+          "by": null,
+          "provisional": null
+        },
+        {
+          "id": "open-access-art:nga:214119",
+          "flag": "reject",
+          "by": null,
+          "provisional": null
+        },
+        {
+          "id": "open-access-art:nga:110101",
+          "flag": "reject",
+          "by": null,
+          "provisional": null
+        },
+        {
+          "id": "open-access-art:nga:214119",
+          "flag": "reject",
+          "by": "human",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:110101",
+          "flag": "reject",
+          "by": "human",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:164945",
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:184225",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:111775",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:117802",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:34170",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:25130",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:18443",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:17337",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:39205",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        },
+        {
+          "id": "open-access-art:nga:32690",
+          "flag": "none",
+          "by": "none",
+          "provisional": "false"
+        }
+      ],
+      "tray": [],
+      "transcript": [
+        "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+      ]
+    },
+    "traffic": [
+      "63398ms POST /api/public-search/nga/exemplars"
+    ],
+    "modelCalls": 0,
+    "allRequestsAfterEnter": 1,
+    "pickHeld": {
+      "dxPage": 0,
+      "dyPage": 2,
+      "dxBoard": 0,
+      "dyBoard": 2
+    }
+  },
+  "step6": {
+    "first": {
+      "layouts": 3,
+      "frames": 152
+    },
+    "second": {
+      "layouts": 3,
+      "frames": 155
+    },
+    "held": [
+      {
+        "id": "open-access-art:nga:164945",
+        "dxPage": 0,
+        "dyPage": -68,
+        "dxBoard": 0,
+        "dyBoard": 0
+      }
+    ]
+  },
+  "step4": {
+    "flagsBefore": {
+      "picks": [
+        {
+          "id": "open-access-art:nga:164945",
+          "title": "Still Life with Apples, Sherry, and Tea Cake",
+          "artist": "Raphaelle Peale",
+          "palette": [
+            "#56402B",
+            "#BE8935",
+            "#978D62"
+          ],
+          "medium": "oil on wood",
+          "year": 1822,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": true
+        }
+      ],
+      "rejects": [
+        {
+          "id": "open-access-art:nga:214119",
+          "title": "A Peach, Seville",
+          "artist": "George Henry Hall",
+          "palette": [
+            "#C3803A",
+            "#7E3F0F",
+            "#6C443C"
+          ],
+          "medium": "oil on canvas",
+          "year": 1866,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": false
+        },
+        {
+          "id": "open-access-art:nga:110101",
+          "title": "A Dessert",
+          "artist": "Raphaelle Peale",
+          "palette": [
+            "#533E2A",
+            "#C49041",
+            "#878385"
+          ],
+          "medium": "oil on wood",
+          "year": 1814,
+          "classification": "Painting",
+          "by": "human",
+          "onBoard": false
+        }
+      ],
+      "provisional": [],
+      "exemplars": {
+        "positive": [
+          "open-access-art:nga:164945"
+        ],
+        "negative": [
+          "open-access-art:nga:214119",
+          "open-access-art:nga:110101"
+        ]
+      },
+      "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+    },
+    "rejectedTitles": [
+      {
+        "title": "A Peach, Seville",
+        "artist": "George Henry Hall"
+      },
+      {
+        "title": "A Dessert",
+        "artist": "Raphaelle Peale"
+      }
+    ],
+    "pickedTitles": [
+      {
+        "title": "Still Life with Apples, Sherry, and Tea Cake",
+        "artist": "Raphaelle Peale"
+      }
+    ],
+    "quietMs": 28310,
+    "elapsedMs": 32502,
+    "modelCalls": 5,
+    "turnPayloads": [
+      {
+        "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+        "flagsDelta": [
+          {
+            "artworkId": "open-access-art:nga:214119",
+            "title": "A Peach, Seville (George Henry Hall)",
+            "palette": [
+              "#C3803A",
+              "#7E3F0F",
+              "#6C443C"
+            ],
+            "medium": "oil on canvas",
+            "year": 1866,
+            "classification": "Painting",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:110101",
+            "title": "A Dessert (Raphaelle Peale)",
+            "palette": [
+              "#533E2A",
+              "#C49041",
+              "#878385"
+            ],
+            "medium": "oil on wood",
+            "year": 1814,
+            "classification": "Painting",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:164945",
+            "title": "Still Life with Apples, Sherry, and Tea Cake (Raphaelle Peale)",
+            "palette": [
+              "#56402B",
+              "#BE8935",
+              "#978D62"
+            ],
+            "medium": "oil on wood",
+            "year": 1822,
+            "classification": "Painting",
+            "to": "pick"
+          }
+        ],
+        "selection": [],
+        "hovered": null,
+        "compareChoice": null,
+        "exhibitionEdits": []
+      },
+      null,
+      null,
+      null,
+      null
+    ],
+    "note": "You kept the ochre-and-brown oil still life and rejected the deeper red-brown peach—following its softer, quieter warmth.",
+    "provenance": "agent",
+    "view": "deal-board",
+    "transcript": [
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    ],
+    "board": [
+      {
+        "id": "open-access-art:nga:164945",
+        "flag": "pick",
+        "by": null,
+        "provisional": null
+      },
+      {
+        "id": "open-access-art:nga:214119",
+        "flag": "reject",
+        "by": null,
+        "provisional": null
+      },
+      {
+        "id": "open-access-art:nga:110101",
+        "flag": "reject",
+        "by": null,
+        "provisional": null
+      },
+      {
+        "id": "open-access-art:nga:214130",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:164918",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:164945",
+        "flag": "pick",
+        "by": "human",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:12206",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:214125",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:214168",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:126134",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:45986",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:130841",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:222287",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:134163",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      },
+      {
+        "id": "open-access-art:nga:164938",
+        "flag": "none",
+        "by": "none",
+        "provisional": "false"
+      }
+    ]
+  },
+  "results": [
+    {
+      "ok": true,
+      "label": "the utterance bar is on the page",
+      "detail": "1"
+    },
+    {
+      "ok": true,
+      "label": "voice is off — nothing is listening",
+      "detail": "{\"micPresent\":true,\"micPressed\":\"false\",\"listening\":false}"
+    },
+    {
+      "ok": true,
+      "label": "the sofa instruction is in the bar, verbatim, typed",
+      "detail": "88 chars"
+    },
+    {
+      "ok": true,
+      "label": "STEP 1 — a board comes back",
+      "detail": "12 works, view=deal-board, 59s from Enter"
+    },
+    {
+      "ok": true,
+      "label": "STEP 1 — with a written note",
+      "detail": "\"Quiet amber, honey, and earth tones with open space or a single clear subject—warm company without visual noise.\""
+    },
+    {
+      "ok": true,
+      "label": "STEP 1 — the note is in the agent's ink",
+      "detail": "data-provenance=agent"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — two rejects and one pick land",
+      "detail": "{\"rejects\":[\"A Peach, Seville — George Henry Hall\",\"A Dessert — Raphaelle Peale\"],\"picks\":[\"Still Life with Apples, Sherry, and Tea Cake — Raphaelle Peale\"]}"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — every flag is the human's, none provisional",
+      "detail": "[{\"by\":\"human\",\"flag\":null},{\"by\":\"human\",\"flag\":null},{\"by\":\"human\",\"flag\":null}]"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — the flags are visible on the cards themselves",
+      "detail": "[{\"id\":\"open-access-art:nga:214119\",\"key\":\"x\",\"onScreen\":true,\"flag\":\"reject\",\"by\":null,\"badge\":null,\"outline\":\"rgb(230, 227, 220)\"},{\"id\":\"open-access-art:nga:110101\",\"key\":\"x\",\"onScreen\":true,\"flag\":\"reject\",\"by\":null,\"badge\":null,\"outline\":\"rgb(230, 227, 220)\"},{\"id\":\"open-access-art:nga:164945\",\"key\":\"p\",\"onScreen\":true,\"flag\":\"pick\",\"by\":null,\"badge\":null,\"outline\":\"rgb(230, 227, 220)\"}]"
+    },
+    {
+      "ok": true,
+      "label": "STEP 2 — flagging fires no model call",
+      "detail": "0"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — the bar is empty before Enter",
+      "detail": "\"\""
+    },
+    {
+      "ok": false,
+      "label": "STEP 3 — the board redeals to twelve",
+      "detail": "15 cards, view=deal-board"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — NO MODEL CALL: zero POSTs to /public-agent/turn",
+      "detail": "0 of 1 requests after Enter; API traffic was /api/public-search/nga/exemplars"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — it hit the deterministic engine instead",
+      "detail": "/api/public-search/nga/exemplars"
+    },
+    {
+      "ok": true,
+      "label": "STEP 3 — the pick is still on the board after the redeal",
+      "detail": "{\"dxPage\":0,\"dyPage\":2,\"dxBoard\":0,\"dyBoard\":2}"
+    },
+    {
+      "ok": false,
+      "label": "STEP 3 — both rejects have left the board",
+      "detail": "{\"tray\":[]}"
+    },
+    {
+      "ok": false,
+      "label": "STEP 6 — the deal animates board to board",
+      "detail": "3 distinct layouts across 155 frames (a jump cut is 4–5; the first redeal measured 3)"
+    },
+    {
+      "ok": true,
+      "label": "STEP 6 — the picks visibly hold position, to the pixel",
+      "detail": "[{\"id\":\"open-access-art:nga:164945\",\"dxPage\":0,\"dyPage\":-68,\"dxBoard\":0,\"dyBoard\":0}]"
+    },
+    {
+      "ok": true,
+      "label": "STEP 4 — the agent wrote a note",
+      "detail": "\"You kept the ochre-and-brown oil still life and rejected the deeper red-brown peach—following its softer, quieter warmth.\""
+    },
+    {
+      "ok": true,
+      "label": "STEP 4 — the board is still a deal board after the agent turn",
+      "detail": "deal-board"
+    },
+    {
+      "ok": true,
+      "label": "STEP 4 — the human's pick is still on the board",
+      "detail": "[{\"id\":\"open-access-art:nga:164945\",\"flag\":\"pick\",\"by\":null,\"provisional\":null},{\"id\":\"open-access-art:nga:214119\",\"flag\":\"reject\",\"by\":null,\"provisional\":null},{\"id\":\"open-access-art:nga:110101\",\"flag\":\"reject\",\"by\":null,\"provisional\":null},{\"id\":\"open-access-art:nga:214130\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:164918\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:164945\",\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:12206\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:214125\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:214168\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:126134\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:45986\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:130841\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:222287\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:134163\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"},{\"id\":\"open-access-art:nga:164938\",\"flag\":\"none\",\"by\":\"none\",\"provisional\":\"false\"}]"
+    },
+    {
+      "ok": true,
+      "label": "no uncaught page errors",
+      "detail": "[]"
+    }
+  ],
+  "errors": [],
+  "turns": [
+    {
+      "at": 4301,
+      "turn": {
+        "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+        "flagsDelta": [],
+        "selection": [],
+        "hovered": null,
+        "compareChoice": null,
+        "exhibitionEdits": []
+      },
+      "messages": 1
+    },
+    {
+      "at": 6544,
+      "turn": null,
+      "messages": 3
+    },
+    {
+      "at": 27228,
+      "turn": null,
+      "messages": 8
+    },
+    {
+      "at": 30596,
+      "turn": null,
+      "messages": 10
+    },
+    {
+      "at": 32904,
+      "turn": null,
+      "messages": 12
+    },
+    {
+      "at": 37548,
+      "turn": null,
+      "messages": 14
+    },
+    {
+      "at": 52782,
+      "turn": null,
+      "messages": 16
+    },
+    {
+      "at": 73580,
+      "turn": {
+        "text": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+        "flagsDelta": [
+          {
+            "artworkId": "open-access-art:nga:214119",
+            "title": "A Peach, Seville (George Henry Hall)",
+            "palette": [
+              "#C3803A",
+              "#7E3F0F",
+              "#6C443C"
+            ],
+            "medium": "oil on canvas",
+            "year": 1866,
+            "classification": "Painting",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:110101",
+            "title": "A Dessert (Raphaelle Peale)",
+            "palette": [
+              "#533E2A",
+              "#C49041",
+              "#878385"
+            ],
+            "medium": "oil on wood",
+            "year": 1814,
+            "classification": "Painting",
+            "to": "reject"
+          },
+          {
+            "artworkId": "open-access-art:nga:164945",
+            "title": "Still Life with Apples, Sherry, and Tea Cake (Raphaelle Peale)",
+            "palette": [
+              "#56402B",
+              "#BE8935",
+              "#978D62"
+            ],
+            "medium": "oil on wood",
+            "year": 1822,
+            "classification": "Painting",
+            "to": "pick"
+          }
+        ],
+        "selection": [],
+        "hovered": null,
+        "compareChoice": null,
+        "exhibitionEdits": []
+      },
+      "messages": 18
+    },
+    {
+      "at": 75443,
+      "turn": null,
+      "messages": 20
+    },
+    {
+      "at": 80093,
+      "turn": null,
+      "messages": 22
+    },
+    {
+      "at": 82350,
+      "turn": null,
+      "messages": 24
+    },
+    {
+      "at": 96398,
+      "turn": null,
+      "messages": 26
+    }
+  ],
+  "net": [
+    {
+      "at": 1030,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 4300,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 6544,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 10114,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 15309,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 19021,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 24029,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/text"
+    },
+    {
+      "at": 27227,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 30595,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 31279,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 32904,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 37548,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 41464,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-labels"
+    },
+    {
+      "at": 52782,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 61317,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 63398,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    },
+    {
+      "at": 73579,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 75442,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 78306,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+    },
+    {
+      "at": 80092,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 82350,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    },
+    {
+      "at": 85405,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-labels"
+    },
+    {
+      "at": 91443,
+      "method": "GET",
+      "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/quota"
+    },
+    {
+      "at": 96397,
+      "method": "POST",
+      "url": "https://paillette-stg.berlayar.ai/api/public-agent/turn"
+    }
+  ]
+}
