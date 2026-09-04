@@ -178,7 +178,10 @@ const named = (entry: { id?: string; artworkId?: string; title?: string }) =>
  * English, and it is labelled as observed fact so it cannot be mistaken for
  * something the human typed.
  */
-export const describeHumanTurn = (turn: HumanTurnPayload): string | null => {
+export const describeHumanTurn = (
+  turn: HumanTurnPayload,
+  options: { continued?: boolean } = {}
+): string | null => {
   const parts: string[] = [];
   const delta = turn.flagsDelta ?? [];
 
@@ -232,10 +235,17 @@ export const describeHumanTurn = (turn: HumanTurnPayload): string | null => {
 
   return [
     parts.length
-      ? `Since the last turn the human ${parts.join(', and ')}.`
+      ? options.continued
+        ? // Mid-turn. The gestures have not changed since the first request —
+          // they are the standing state of the board — and saying "since the
+          // last turn" five requests deep would read as the human having done
+          // it all again. But dropping them entirely is what left the model
+          // writing a wall label with no idea what had been thrown out.
+          `Still standing on the board, from before this turn began: the human ${parts.join(', and ')}.`
+        : `Since the last turn the human ${parts.join(', and ')}.`
       : null,
     parts.length
-      ? 'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so.'
+      ? 'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so. When you write the note, name what was actually flagged — its subject, its palette, its medium — not a description that would fit any board.'
       : null,
     corrections.length
       ? `The human has rewritten the show in their own words: ${corrections.join('; ')}.`
@@ -328,9 +338,19 @@ agent.post('/public-agent/turn', async (c) => {
 
   // A turn is optional: an agent driving this route from outside the page has
   // no gestures to report, and the loop must still work for it.
+  //
+  // The page resends it on every request of a turn, because the note is
+  // written on the last request and the flags have to still be in context when
+  // it is. `continued` is how the same payload reads correctly in both places:
+  // a report of what just happened on the first request, and standing state on
+  // the ones after it. Detected from the conversation rather than trusted from
+  // the client — an assistant message means the loop has already been round.
+  const continued = (messages as { role?: unknown }[]).some(
+    (message) => message?.role === 'assistant'
+  );
   const gestures =
     body.turn && typeof body.turn === 'object'
-      ? describeHumanTurn(body.turn as HumanTurnPayload)
+      ? describeHumanTurn(body.turn as HumanTurnPayload, { continued })
       : null;
 
   const clientHash = await getClientHash(
@@ -373,19 +393,28 @@ agent.post('/public-agent/turn', async (c) => {
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    const status =
-      error && typeof error === 'object' && 'status' in error
-        ? Number((error as { status?: unknown }).status) || 503
-        : 503;
-    return c.json(
-      jsonError(
-        'AGENT_UNAVAILABLE',
-        status === 429
-          ? 'The shared daily agent budget for this site is spent.'
-          : 'The agent is temporarily unavailable.'
-      ),
-      status === 429 ? 429 : 503
-    );
+    const failure =
+      error && typeof error === 'object'
+        ? (error as { status?: unknown; code?: unknown })
+        : {};
+    const status = Number(failure.status) || 503;
+    // Both 429s used to arrive as the same sentence, and an hour of a finite
+    // night went into working out which one it was. They are relayed apart
+    // now: one is a number in this repo's own config, the other is upstream
+    // and nothing in this repo can fix it.
+    const [code, message] =
+      failure.code === 'OPENAI_DAILY_BUDGET_SPENT'
+        ? ([
+            'AGENT_BUDGET_SPENT',
+            "This site's own daily agent budget is spent. Raise OPENAI_DAILY_CALL_LIMIT and redeploy; the counter resets at 00:00 UTC.",
+          ] as const)
+        : failure.code === 'OPENAI_RATE_LIMITED'
+          ? ([
+              'AGENT_RATE_LIMITED',
+              'The model provider is rate-limiting this site right now. Try again shortly.',
+            ] as const)
+          : (['AGENT_UNAVAILABLE', 'The agent is temporarily unavailable.'] as const);
+    return c.json(jsonError(code, message), status === 429 ? 429 : 503);
   }
 });
 

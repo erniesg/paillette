@@ -10,12 +10,35 @@
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-5.6-luna';
 
+/**
+ * Two very different things arrive here as `429`, and telling them apart is
+ * the difference between an hour of diagnosis and a one-line config change:
+ * this site's own daily counter refusing to spend more, and OpenAI throttling
+ * the key upstream. The first is ours to raise; the second is not. So the
+ * error carries a code and callers relay it rather than flattening both into
+ * one sentence.
+ */
+export type OpenAiFailureCode =
+  | 'OPENAI_NOT_CONFIGURED'
+  /** Our own KV day-counter hit `OPENAI_DAILY_CALL_LIMIT`. Ours to raise. */
+  | 'OPENAI_DAILY_BUDGET_SPENT'
+  /** OpenAI itself returned 429 — the key is throttled or out of credit. */
+  | 'OPENAI_RATE_LIMITED'
+  | 'OPENAI_REQUEST_FAILED'
+  | 'OPENAI_BAD_RESPONSE';
+
 export class OpenAiUnavailableError extends Error {
   readonly status: number;
-  constructor(message: string, status = 503) {
+  readonly code: OpenAiFailureCode;
+  constructor(
+    message: string,
+    status = 503,
+    code: OpenAiFailureCode = 'OPENAI_REQUEST_FAILED'
+  ) {
     super(message);
     this.name = 'OpenAiUnavailableError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -141,12 +164,17 @@ export const openaiChat = async (
 ): Promise<Record<string, unknown>> => {
   const apiKey = options.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new OpenAiUnavailableError('OPENAI_API_KEY is not configured');
+    throw new OpenAiUnavailableError(
+      'OPENAI_API_KEY is not configured',
+      503,
+      'OPENAI_NOT_CONFIGURED'
+    );
   }
   if (!(await consumeQuota(options.env))) {
     throw new OpenAiUnavailableError(
       'The shared OpenAI daily budget for this site is exhausted',
-      429
+      429,
+      'OPENAI_DAILY_BUDGET_SPENT'
     );
   }
 
@@ -172,7 +200,8 @@ export const openaiChat = async (
   if (!response.ok) {
     throw new OpenAiUnavailableError(
       `OpenAI request failed with ${response.status}`,
-      response.status === 429 ? 429 : 503
+      response.status === 429 ? 429 : 503,
+      response.status === 429 ? 'OPENAI_RATE_LIMITED' : 'OPENAI_REQUEST_FAILED'
     );
   }
 
@@ -181,7 +210,11 @@ export const openaiChat = async (
   };
   const message = payload.choices?.[0]?.message;
   if (!message) {
-    throw new OpenAiUnavailableError('OpenAI returned no message');
+    throw new OpenAiUnavailableError(
+      'OpenAI returned no message',
+      503,
+      'OPENAI_BAD_RESPONSE'
+    );
   }
   return message;
 };
@@ -191,13 +224,18 @@ export const openaiCompletion = async (
 ): Promise<string | Record<string, unknown>> => {
   const apiKey = options.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new OpenAiUnavailableError('OPENAI_API_KEY is not configured');
+    throw new OpenAiUnavailableError(
+      'OPENAI_API_KEY is not configured',
+      503,
+      'OPENAI_NOT_CONFIGURED'
+    );
   }
 
   if (!(await consumeQuota(options.env))) {
     throw new OpenAiUnavailableError(
       'The shared OpenAI daily budget for this site is exhausted',
-      429
+      429,
+      'OPENAI_DAILY_BUDGET_SPENT'
     );
   }
 
@@ -225,7 +263,8 @@ export const openaiCompletion = async (
   if (!response.ok) {
     throw new OpenAiUnavailableError(
       `OpenAI request failed with ${response.status}`,
-      response.status === 429 ? 429 : 503
+      response.status === 429 ? 429 : 503,
+      response.status === 429 ? 'OPENAI_RATE_LIMITED' : 'OPENAI_REQUEST_FAILED'
     );
   }
 
@@ -234,7 +273,11 @@ export const openaiCompletion = async (
   };
   const content = payload.choices?.[0]?.message?.content;
   if (!content) {
-    throw new OpenAiUnavailableError('OpenAI returned an empty completion');
+    throw new OpenAiUnavailableError(
+      'OpenAI returned an empty completion',
+      503,
+      'OPENAI_BAD_RESPONSE'
+    );
   }
 
   if (!options.json) {
@@ -249,7 +292,9 @@ export const openaiCompletion = async (
     return parsed as Record<string, unknown>;
   } catch {
     throw new OpenAiUnavailableError(
-      'OpenAI returned malformed JSON for a structured request'
+      'OpenAI returned malformed JSON for a structured request',
+      503,
+      'OPENAI_BAD_RESPONSE'
     );
   }
 };
