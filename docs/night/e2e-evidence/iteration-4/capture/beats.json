@@ -1,0 +1,114 @@
+{
+  "url": "https://paillette-stg.berlayar.ai/nga/search?q=warm%20landscape",
+  "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+  "mode": "type",
+  "startedAt": "2026-09-04T10:53:18.951Z",
+  "durationMs": 24022,
+  "toolsFired": [
+    "get_view_context",
+    "search_by_color",
+    "search_artworks",
+    "search_artworks",
+    "search_artworks",
+    "search_by_color",
+    "search_artworks",
+    "search_artworks",
+    "search_artworks",
+    "set_results",
+    "set_view"
+  ],
+  "screenshots": [
+    "steps/step-1.png",
+    "steps/step-2.png",
+    "steps/step-3.png",
+    "steps/step-4.png",
+    "steps/step-5.png",
+    "steps/step-6.png",
+    "steps/step-7.png"
+  ],
+  "beats": [
+    {
+      "t": "2026-09-04T10:53:20.279Z",
+      "elapsedMs": 1328,
+      "event": "type",
+      "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    },
+    {
+      "t": "2026-09-04T10:53:23.550Z",
+      "elapsedMs": 4599,
+      "event": "tool",
+      "tool": "get_view_context",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T10:53:26.904Z",
+      "elapsedMs": 7953,
+      "event": "tool",
+      "tool": "search_by_color",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T10:53:27.468Z",
+      "elapsedMs": 8517,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T10:53:27.998Z",
+      "elapsedMs": 9047,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T10:53:28.558Z",
+      "elapsedMs": 9607,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "running"
+    },
+    {
+      "t": "2026-09-04T10:53:28.836Z",
+      "elapsedMs": 9885,
+      "event": "tool",
+      "tool": "search_by_color",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T10:53:28.836Z",
+      "elapsedMs": 9885,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T10:53:28.836Z",
+      "elapsedMs": 9885,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T10:53:28.836Z",
+      "elapsedMs": 9885,
+      "event": "tool",
+      "tool": "search_artworks",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T10:53:30.983Z",
+      "elapsedMs": 12032,
+      "event": "tool",
+      "tool": "set_results",
+      "status": "ok"
+    },
+    {
+      "t": "2026-09-04T10:53:33.288Z",
+      "elapsedMs": 14337,
+      "event": "tool",
+      "tool": "set_view",
+      "status": "ok"
+    }
+  ]
+}

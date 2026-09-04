@@ -1,0 +1,106 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "fired": 14,
+  "accepted": 10,
+  "refused": 4,
+  "results": [
+    {
+      "i": 1,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 37583
+    },
+    {
+      "i": 2,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 42807
+    },
+    {
+      "i": 3,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 42827
+    },
+    {
+      "i": 4,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 41497
+    },
+    {
+      "i": 5,
+      "status": 429,
+      "code": "NGA_PUBLIC_SEARCH_RATE_LIMITED",
+      "retryAfter": "56",
+      "ms": 8188
+    },
+    {
+      "i": 6,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 42796
+    },
+    {
+      "i": 7,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 42831
+    },
+    {
+      "i": 8,
+      "status": 429,
+      "code": "NGA_PUBLIC_SEARCH_RATE_LIMITED",
+      "retryAfter": "56",
+      "ms": 8192
+    },
+    {
+      "i": 9,
+      "status": 429,
+      "code": "NGA_PUBLIC_SEARCH_RATE_LIMITED",
+      "retryAfter": "56",
+      "ms": 8192
+    },
+    {
+      "i": 10,
+      "status": 429,
+      "code": "NGA_PUBLIC_SEARCH_RATE_LIMITED",
+      "retryAfter": "56",
+      "ms": 8191
+    },
+    {
+      "i": 11,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 43022
+    },
+    {
+      "i": 12,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 43028
+    },
+    {
+      "i": 13,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 43048
+    },
+    {
+      "i": 14,
+      "status": 200,
+      "code": null,
+      "retryAfter": null,
+      "ms": 43009
+    }
+  ]
+}

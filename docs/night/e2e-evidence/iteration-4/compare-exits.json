@@ -1,0 +1,145 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "trials": [
+    {
+      "name": "Escape",
+      "before": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "after": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "closed": false,
+      "flags": [
+        {
+          "id": "open-access-art:nga:184225",
+          "flag": "none"
+        },
+        {
+          "id": "open-access-art:nga:195765",
+          "flag": "none"
+        }
+      ]
+    },
+    {
+      "name": "click the backdrop",
+      "before": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "after": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "closed": false,
+      "flags": [
+        {
+          "id": "open-access-art:nga:127567",
+          "flag": "none"
+        },
+        {
+          "id": "open-access-art:nga:198119",
+          "flag": "none"
+        }
+      ]
+    },
+    {
+      "name": "click \"Neither\"",
+      "before": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "after": {
+        "open": true,
+        "neitherButton": false,
+        "neitherInput": false,
+        "focused": "INPUT",
+        "compareOpenAttr": "true"
+      },
+      "closed": false,
+      "flags": [
+        {
+          "id": "open-access-art:nga:139234",
+          "flag": "none"
+        },
+        {
+          "id": "open-access-art:nga:69343",
+          "flag": "none"
+        }
+      ]
+    },
+    {
+      "name": "\"Neither\" then Enter",
+      "before": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "after": {
+        "open": false,
+        "neitherButton": false,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": null
+      },
+      "closed": true,
+      "flags": [
+        {
+          "id": "open-access-art:nga:207980",
+          "flag": "reject"
+        },
+        {
+          "id": "open-access-art:nga:184947",
+          "flag": "reject"
+        }
+      ]
+    },
+    {
+      "name": "click a work",
+      "before": {
+        "open": true,
+        "neitherButton": true,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": "true"
+      },
+      "after": {
+        "open": false,
+        "neitherButton": false,
+        "neitherInput": false,
+        "focused": "BODY",
+        "compareOpenAttr": null
+      },
+      "closed": true,
+      "flags": [
+        {
+          "id": "open-access-art:nga:136181",
+          "flag": "pick"
+        },
+        {
+          "id": "open-access-art:nga:143797",
+          "flag": "reject"
+        }
+      ]
+    }
+  ]
+}

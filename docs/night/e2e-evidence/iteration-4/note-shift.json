@@ -1,0 +1,80 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "pickId": "open-access-art:nga:23090",
+  "note": {
+    "before": {
+      "text": "Quiet amber, honey, and parchment tones with ample breathing room.",
+      "provenance": "agent",
+      "box": {
+        "top": 192,
+        "docTop": 553,
+        "left": 220,
+        "w": 1108,
+        "h": 26
+      }
+    },
+    "after": null
+  },
+  "dealViewport": {
+    "before": {
+      "top": 176,
+      "docTop": 537,
+      "left": 112,
+      "w": 1216,
+      "h": 484
+    },
+    "after": {
+      "top": 176,
+      "docTop": 537,
+      "left": 112,
+      "w": 1216,
+      "h": 484
+    }
+  },
+  "pick": {
+    "before": {
+      "slot": 2,
+      "box": {
+        "top": 248,
+        "docTop": 609,
+        "left": 780,
+        "w": 268,
+        "h": 129
+      },
+      "slotBox": {
+        "top": 248,
+        "docTop": 609,
+        "left": 780,
+        "w": 268,
+        "h": 129
+      },
+      "hovered": false
+    },
+    "after": {
+      "slot": 2,
+      "box": {
+        "top": 192,
+        "docTop": 553,
+        "left": 780,
+        "w": 268,
+        "h": 148
+      },
+      "slotBox": {
+        "top": 192,
+        "docTop": 553,
+        "left": 780,
+        "w": 268,
+        "h": 148
+      },
+      "hovered": false
+    }
+  },
+  "boardSize": {
+    "before": 10,
+    "after": 12
+  },
+  "scrollY": {
+    "before": 361,
+    "after": 361
+  }
+}

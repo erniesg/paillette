@@ -1,0 +1,345 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "openingBoard": {
+    "label": "opening-board",
+    "pair": [
+      "open-access-art:nga:184225",
+      "open-access-art:nga:195765"
+    ],
+    "roomAtMs": 29,
+    "loadedAtMs": 131,
+    "closedCleanly": true,
+    "samples": [
+      {
+        "atMs": 29,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1006-0840-419d-b5fb-f5916fe280ae/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "2c55-0d2e-4e45-a01a-10396c4597fa/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 131,
+        "imgs": [
+          {
+            "complete": true,
+            "naturalWidth": 843,
+            "src": "1006-0840-419d-b5fb-f5916fe280ae/full/843,/0/default.jpg"
+          },
+          {
+            "complete": true,
+            "naturalWidth": 843,
+            "src": "2c55-0d2e-4e45-a01a-10396c4597fa/full/843,/0/default.jpg"
+          }
+        ]
+      }
+    ]
+  },
+  "freshlyDealt": {
+    "label": "freshly-dealt",
+    "pair": [
+      "open-access-art:nga:70344",
+      "open-access-art:nga:111810"
+    ],
+    "roomAtMs": 40,
+    "loadedAtMs": 1879,
+    "closedCleanly": true,
+    "samples": [
+      {
+        "atMs": 40,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 142,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 245,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 348,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 450,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 553,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 654,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 756,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 858,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 960,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1063,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 0,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1165,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1267,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1370,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1472,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1574,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1675,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1777,
+        "imgs": [
+          {
+            "complete": false,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": true,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      },
+      {
+        "atMs": 1879,
+        "imgs": [
+          {
+            "complete": true,
+            "naturalWidth": 843,
+            "src": "baac-3dab-4dad-bdd2-af911361a2fc/full/843,/0/default.jpg"
+          },
+          {
+            "complete": true,
+            "naturalWidth": 843,
+            "src": "1e83-ad49-4593-916e-d9d451655b68/full/843,/0/default.jpg"
+          }
+        ]
+      }
+    ]
+  },
+  "newcomerCount": 12,
+  "iiifResponses": 44,
+  "largeDerivatives": 4
+}

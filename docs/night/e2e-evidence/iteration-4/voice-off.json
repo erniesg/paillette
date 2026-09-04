@@ -1,0 +1,11 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+  "spoken": [],
+  "recognisersStarted": 0,
+  "speechSynthesisPresent": true,
+  "micButton": true,
+  "note": "A soft amber hang: open air, simple vessels, and flowers with room to breathe.",
+  "pending": false,
+  "speaking": false
+}

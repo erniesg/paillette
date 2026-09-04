@@ -1,5 +1,528 @@
 # End to end — the demo loop on a deployed build, driven by typing
 
+# Iteration 4
+
+Run on 2026-09-04, 10:47–11:15 UTC against **https://paillette-stg.berlayar.ai**
+— web version `76f4f6b7-d917-4d51-903b-47c29d407f85`, api
+`b1e32e84-d565-4cb8-9ec1-4cc16af31ece`, both read back from
+`wrangler deployments list`, both deployed at 10:04 UTC from `28a37ee`.
+
+**I did not redeploy, and I checked rather than assumed it was unnecessary.**
+`git diff --name-only 28a37ee..HEAD -- apps packages` is empty at `cb9cfe4`, so
+the page under test is byte-identical in application code to the commit staging
+runs. Everything below happened in a real browser against the live 63,253-work
+index: the search, the Rocchio engine, the images and the model turns are all
+the deployed ones. Nothing is stubbed, and no number here is carried over from
+another lane's report.
+
+Every turn in this run was **typed**. The mic was never pressed.
+
+---
+
+## Verdict
+
+**Yes. The typed loop is filmable right now, all six beats of it, on
+`/nga/search` against the real collection.** I ran it twice end to end, plus
+three more runs for §9's note check and six focused probes, and there is video.
+
+The headline claim holds and I proved it off the wire rather than on faith:
+**Enter on an empty bar redeals with zero model calls.** Across four redeals in
+two runs the page made exactly one non-image request each time —
+`POST /api/public-search/nga/exemplars` — and zero to `/public-agent/turn`. The
+full request list is in §3.
+
+§9's third clause, which iteration 3 failed 0-for-5, now passes **3 for 3**, and
+the three notes are quoted verbatim in §5.
+
+Nothing blocks the shoot. Six things will spoil a take if the crew does not know
+them, and one of them is a live rate limit that killed one of my own runs
+outright. They are §6, and the first two matter most:
+
+- **A. The board jumps 54–56 px on the first human redeal after an agent turn**,
+  because that Enter *deletes the agent's sentence from the screen*. Both halves
+  measured, cause identified, reproduced 3 for 3.
+- **B. Ten NGA searches per minute, per client — and the deterministic redeal
+  spends from the same ten the agent's searching does.** Measured: 10 accepted,
+  4 refused out of 14 fired at once. It refused a `redeal` mid-run and left one
+  page showing "Search is busy right now" with no works at all.
+
+### The two things the brief said to check before starting
+
+**1. Does the in-page agent render under `?webmcp-debug`? Yes — 18 loads out of
+18.** `git merge-base --is-ancestor 928b5dc HEAD` returns true, so the
+mount-order fix is merged; **no cherry-pick was needed.** Every cold load in this
+run — two loop runs, six note runs, two note-shift probes, two compare probes,
+compare-cold, compare-exits, voice-off, the capture harness and the preflight —
+came up with `input[aria-label="Ask the agent"]` on the page and
+`window.__paillette_webmcp.call` a function. On the one load where the
+collection never arrived (finding B) the bar was still there; it was the search
+that died, not the agent.
+
+**2. Is the deal animation on the real page, or only in the harness? On the real
+page.** This is not a blocking finding and I did not open `/night/deal` once.
+Every measurement in this report is `/nga/search` against the 63,253 works, and
+the FLIP is sampled every animation frame:
+
+| redeal | distinct layouts after the board first moved |
+| --- | --- |
+| run 1, first Enter | 19 (across 471 frames) |
+| run 1, second Enter | 24 (473 frames) |
+| run 2, first Enter | 24 (477 frames) |
+| run 2, second Enter | 27 (479 frames) |
+
+A jump cut measures 4–5 on this ruler. The board passes through twenty-odd
+intermediate positions, so it is dealing rather than swapping.
+
+---
+
+## 1. The instruction that needs no coaching
+
+Typed into the utterance bar, whole, voice untouched:
+
+> "I want something to hang above the sofa in my living room. Warm, not busy,
+> nothing grim."
+
+All 88 characters land in the field (checked with `inputValue`, not assumed),
+and Enter alone fires the agent. **7 for 7** across everything in this run that
+typed it: 2 loop runs, 3 paced note runs, 1 voice-off probe, 1 capture take.
+
+| | run 1 | run 2 |
+| --- | --- | --- |
+| model calls | 5 | 5 |
+| time to the note | 16.0 s | 15.7 s |
+| board that came back | 11 works | 12 works |
+| tool chain | `get_view_context → search_by_color → search_artworks → search_artworks → search_by_color → set_results → set_view` (run 1 opened with `list_collections`) | `get_view_context → search_artworks ×3 → search_by_color → set_results → set_view` |
+
+The wall labels, verbatim, in the agent's ink (`data-provenance=agent`):
+
+> **"Warm, breathing-room pictures: softened flowers, open land, and amber light
+> without a crowded story."**
+
+> **"Quiet amber, ochre, and soft-earth pictures with generous breathing room."**
+
+One sentence each, no preamble, no bullets. `01-after-instruction.png` has the
+human's typed line in graphite, the agent's label in cyan behind its rule, and
+the board under both, in one 1440×900 frame.
+
+Evidence: `docs/night/e2e-evidence/iteration-4/e2e4-loop.json` and
+`e2e4-loop-run1.json`.
+
+## 2. Flag — `X` on two, `P` on one
+
+Hover the card, press the key. Both runs, all six flags:
+
+```
+X → data-flag="reject"  data-flag-by="human"  data-flag-provisional="false"
+P → data-flag="pick"    data-flag-by="human"  data-flag-provisional="false"
+```
+
+Visible, read off computed styles rather than class names: the graphite hairline
+is `box-shadow: rgb(230,227,220) 0 0 0 1px` on a pick and
+`rgba(230,227,220,0.58) 0 0 0 1px` on a reject — the same ink, the reject
+softer. Each flagged card carries its corner badge.
+
+**Flagging fires nothing.** `0` model calls out of `0` requests: pressing `P` or
+`X` does not touch the network at all, which is stronger than the brief asks for.
+
+`get_view_context` returns them with the visual facts attached, so the agent has
+something to write from besides two proper nouns:
+
+```json
+"rejects":[{"id":"open-access-art:nga:184225","title":"Environs de Cremieu",
+  "artist":"François-Auguste Ravier","palette":["#B89E81","#644F3F","#F4E8D6","#DCB17F"],
+  "medium":"watercolor and graphite on laid paper","year":1885,
+  "classification":"Drawing","by":"human","onBoard":true}]
+```
+
+Shot: `02-flagged.png`.
+
+## 3. Enter on an empty bar — and the no-model-call claim, proved
+
+This is the single most important claim in the submission, so it is counted off
+the wire, not asserted. Every request the page made between pressing Enter and
+the board settling, run 1 — **twelve requests, in full**:
+
+```
+POST /api/public-search/nga/exemplars
+GET  https://api.nga.gov/iiif/f030ebc8-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/0cf354d3-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/7e18c524-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/8fb7c57b-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/803a4979-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/86aea10f-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/c2045420-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/3814dad1-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/e77ba644-.../full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/54179580-.../full/400,/0/default.jpg
+GET  /api/public-search/nga/quota
+```
+
+One call to the deterministic engine, ten pictures, and a quota read. Run 2 was
+thirteen requests with the same two non-image calls. The listener records *every*
+request the page makes, so this is not a filtered view of a chosen endpoint — a
+model call anywhere would appear in that list. There is none, on any of the four
+redeals across the two runs.
+
+What came back, both runs:
+
+| | measured |
+| --- | --- |
+| board size | **12 cards** |
+| rejects leave | both gone from the board |
+| rejects still restorable | both in the visible left tray |
+| newcomers | 11 works the board had not seen |
+| the deal animates | 19 / 24 distinct layouts (see the verdict table) |
+| picks hold, board to board | **0 px**, both runs, second Enter |
+| picks hold, first Enter after an agent turn | **54 px** — finding A, §6 |
+| uncaught page errors | 0 |
+
+Shots: `03-after-redeal.png`, `04-second-redeal.png`.
+
+## 4. Compare, two-up
+
+`compare_artworks` opens the room, both runs and every probe:
+
+```json
+{"box":{"top":0,"left":0,"w":1440,"h":900},
+ "question":"Which one belongs above the sofa?",
+ "works":2,"neither":true,"compareOpenAttr":"true"}
+```
+
+Full frame — `1440×900` at `0,0` — the question set in serif between the two
+works, the nav and the utterance bar taken off screen by `data-compare-open`.
+`30-compare-room-loaded.png` is what §7.3 describes.
+
+**Choosing resolves correctly.** Clicking the left work closed the room and
+flagged `winner → pick`, `loser → reject`, `by=human`, in both loop runs and the
+dedicated probe — 3 for 3.
+
+**Choosing does not send a turn.** `0` POSTs to `/public-agent/turn` within
+1.5 s (both loop runs) and within 3 s (`compare-room.mjs`, which waited longer
+specifically to rule out latency). §4's P4 says *"the click is sent as a human
+turn"*. It is not; the choice rides the next turn instead. This is unchanged
+from iterations 2 and 3, which both recorded it as a deliberate call, and I am
+recording it a third time rather than treating it as settled — it is a stated
+contract that the build does not meet.
+
+Two further things about the room are in §6, findings C and D.
+
+## 5. Three notes, verbatim — §9's third clause
+
+The brief asks for this by hand on three runs, so: three fresh browser contexts,
+each typing the sofa instruction, then `X` on two works off the board the agent
+dealt, then Enter on an empty bar (0 model calls each time), then **one neutral
+nudge — the single word "again"** — so the agent's next note is written with the
+rejects in view. The nudge is deliberately empty of content; a nudge that named
+what to avoid would be the check answering itself.
+
+`scripts/demo/e2e4/notes.mjs` · `docs/night/e2e-evidence/iteration-4/notes-e2e4-paced.json`
+
+**Run 1.** Rejected *Harvesters by Firelight* (Samuel Palmer, 1830, pen and
+black ink with watercolor and gouache) and *Northern Landscape Fantasy Evoking
+Tivoli* (Berchem, 1660, **red chalk on laid paper**):
+
+> **"Moving away from the rejected firelit harvest scene and red-chalk landscape
+> toward lighter, quieter warm views."**
+
+**Run 2.** Rejected *Environs de Cremieu* (Ravier, 1885, watercolor and graphite
+on laid paper, `#B89E81 #644F3F #F4E8D6 #DCB17F`) and *An Arcadian Landscape*
+(Barret Jr., 1767, watercolor on wove paper, `#CFB798 #978571 #4B3D31 #C9A281`):
+
+> **"You rejected two warm landscape drawings with brown-and-ochre palettes;
+> moving toward simpler floral and tabletop warmth."**
+
+**Run 3.** Rejected *A Peach, Seville* (Hall, 1866, oil on canvas,
+`#C3803A #7E3F0F #6C443C`) and *Flask* (Tarantino, 1935, watercolor and graphite
+on paperboard, `#E4D8BA #BF894D #885E39 #C2B194`):
+
+> **"Moving away from the rejected peach and flask: their saturated amber-brown
+> object studies; keeping warmth gentler and more open."**
+
+**Three for three, and each one is checkable against the record rather than
+plausible-sounding.** Run 1 names the medium of the *second* reject correctly
+("red-chalk") and the subject of the first ("firelit harvest scene"). Run 2 calls
+both rejects "landscape drawings" — both are watercolour on paper, classified
+`Drawing` — and "brown-and-ochre", which is what those eight swatches are. Run 3
+names both works by subject and calls them "amber-brown object studies", which is
+true of `#C3803A`/`#7E3F0F` and `#BF894D`/`#885E39`.
+
+I found nothing wrong in any of the three. That is a change of kind from
+iteration 3, which got zero out of five, and from iteration 4's integration walk,
+which got one grounded note with one wrong word in it.
+
+Shots: `10-note-run1.png`, `10-note-run2.png`, `10-note-run3.png`.
+
+**The first attempt at this check failed, and the failure is finding B.** Run 2
+of the unpaced batch returned no note at all because its `redeal` was refused —
+`REDEAL_FAILED: "Too many NGA public searches; try again shortly"` — and run 3
+never loaded a single card. Both are preserved in
+`notes-e2e4-unpaced.json` and `10-note-run3-error.png`. The paced re-run above
+is the same script with a wait between beats; nothing about the check was
+weakened.
+
+## 6. What will spoil a take
+
+### A. The first human redeal after an agent turn jolts the board 56 px, and deletes the agent's sentence
+
+The loop harness failed *"picks stay in place, board to board"* on the first
+Enter in **both** runs, identically — `y 246 → 192`, 54 px — while the pick's
+slot was unchanged. Iteration 4's integration walk hit a two-pixel version of
+this and correctly found it was the card's hover lift. **This is not that.** I
+parked the pointer at `(5,5)` before measuring and it persists.
+
+`scripts/demo/e2e4/note-shift.mjs` measures each candidate separately:
+
+```
+note before:  present, 26px tall — "Quiet amber, honey, and parchment tones with ample breathing room."
+note after:   ABSENT
+scrollY:      361 → 361          (not a scroll)
+board top (document): 537 → 537  (the container did not move)
+pick slot:    2 → 2              (the slot did not move)
+pick y (document): 609 → 553     (the card moved up 56px)
+card height:  129 → 148          (and grew 15%)
+```
+
+So: **a human redeal writes no wall label, and removing the agent's 26 px
+sentence lets the fixed-height deal viewport re-space around twelve cards.** The
+cards grow, the first row rises 56 px, and every pick rises with it. Reproduced
+three times out of three, on three different boards and three different works,
+to the pixel.
+
+Two consequences, and the second is the worse one:
+
+- *"Picks stay where they are"* is exactly true board-to-board — 0 px, twice —
+  and false across the one transition the demo passes through first. **Film the
+  second redeal.** Every previous report says this for a different reason; this
+  is the mechanism.
+- **§9's fifth clause, "two colours of ink visible in every state", does not
+  survive the human's own redeal.** Pressing Enter takes the agent's sentence off
+  the screen. Iteration 3 recorded `note: null` after a human redeal at five
+  scroll positions and called it "not blocking"; what is new here is that it also
+  moves the board, so it is visible as a jump on camera rather than only as an
+  absence. `20-note-shift-before.png` and `21-note-shift-after.png` are the pair.
+
+### B. Ten NGA searches per minute, shared between the agent and the redeal
+
+This is the biggest practical risk to a filming session, and it is not the model
+budget. It cost me a `redeal` and an entire run.
+
+Measured, not read off a constant — `scripts/demo/e2e4/search-burst.mjs` fires
+fourteen distinct text searches at once:
+
+```
+#1 200 ok   #2 200 ok   #3 200 ok   #4 200 ok
+#5 429 NGA_PUBLIC_SEARCH_RATE_LIMITED  retry-after=56
+#6 200 ok   #7 200 ok
+#8 429   #9 429   #10 429            retry-after=56
+#11 200 ok  #12 200 ok  #13 200 ok  #14 200 ok
+
+10 accepted, 4 refused out of 14 fired at once
+```
+
+Exactly ten. The cause is that `apps/api/wrangler.toml` does not set
+`PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE`, so it falls to
+`PUBLIC_SEARCH_COLD_MISS_DEFAULT_LIMIT = 10`
+(`apps/api/src/utils/public-search-cold-miss-rate-limit.ts:4`) — ten accepted
+searches per minute per client, partitioned by `CF-Connecting-IP`.
+
+**It is enforced on `/search/exemplars` as well as `/search/text` and
+`/search/color`** — `search.ts:4084`, `search.ts:3180`, `color-search.ts:137`.
+So the deterministic redeal, the beat the whole submission rests on, spends from
+the same ten that the agent's searching does. One typed instruction spends four
+to eight of them: `beats.json` from this run's capture shows a single turn
+issuing `search_by_color` and three `search_artworks` **in parallel**, all four
+`running` within 1.4 s of each other.
+
+What that looks like when it bites, both observed live in this run:
+
+- the agent's `redeal` comes back
+  `{"ok":false,"error":{"code":"REDEAL_FAILED","message":"Too many NGA public
+  searches; try again shortly","hint":"The flags are unchanged. Press Enter
+  again once the connection is back."}}` and **no note is written at all** —
+  the take has a working board and a silent agent;
+- the page loads with `NO WORKS` and **"Search is busy right now. Wait a moment,
+  then try again."** where the collection should be — `10-note-run3-error.png`,
+  with the quota pill in the same frame reading **412 FREE SEARCHES LEFT**, which
+  is how you can tell this is not the daily quota and not the model budget.
+
+Serially it is nearly unreachable: `search-budget.mjs` fired sixteen searches one
+at a time and was never refused, because an NGA text search takes ~4.8 s so the
+minute rolls over underneath you. It is bursts that trip it, and the agent only
+searches in bursts. Two agent turns inside one minute is over the line on its
+own; two people rehearsing behind one NAT is over it much faster.
+
+Whoever films needs either a gap of about a minute between agent turns, or
+`PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE` raised in `wrangler.toml` and the api
+redeployed. **I did not raise it.** It is a one-line change, but it is an abuse
+control on a public staging site, the run was not blocked by it once paced, and
+picking a number for someone else's rate limiter the night before filming is not
+this phase's call.
+
+### C. The two-up can open with the pictures still downloading
+
+`05-compare-room.png` is the room more than 1.2 s after the tool returned, with
+both works as dark rectangles carrying only their serif titles — one has a
+visible top strip of a progressive JPEG. §8 calls compare "the demo's best ten
+seconds", so this is worth a number rather than a shrug.
+
+`scripts/demo/e2e4/compare-cold.mjs`, both cases in one page:
+
+```
+opening-board:  room at 29ms, both pictures painted at  131ms
+freshly-dealt:  room at 40ms, both pictures painted at 1879ms
+```
+
+The room needs an **843 px** IIIF derivative (`/full/843,/0/default.jpg`), which
+is a different URL from the board's 400 px thumbnail. Compare works that have
+been on screen a while and it is instant; compare works a redeal brought in
+seconds ago and it is a cold fetch from `api.nga.gov` taking most of two seconds.
+**Hold the two-up for three seconds before cutting**, or compare works that were
+already up.
+
+### D. The compare room has two exits, and both of them flag both works
+
+`compare-cold.mjs` hung on this before I understood it: it opened the room,
+pressed Escape, clicked "Neither", and thirty seconds later the room was still
+covering the board. `scripts/demo/e2e4/compare-exits.mjs` tries each door
+against a fresh room:
+
+| attempt | room closed? | what it did to the two works |
+| --- | --- | --- |
+| **Escape** | **no** | nothing |
+| **click the backdrop** | **no** | nothing |
+| **click "Neither"** | **no** | nothing — the word becomes a line you write on |
+| "Neither" then Enter | yes | both `reject` |
+| click a work | yes | winner `pick`, loser `reject` |
+
+So there is no cancel. Once the agent opens a two-up, the human has to answer it
+— every way out flags both pictures. That is arguably the right design for a
+culling loop and it is not a defect, but on camera it means an unwanted two-up
+cannot be waved away, and Escape not working is the reflex everyone will try
+first. The voice lane listed "no Escape" in its notes; this is all four doors
+measured. Shot: `33-compare-neither-clicked.png`.
+
+### E. `beats.json` says eleven tools fired when seven did
+
+`scripts/demo/capture.mjs` produced `capture.mp4`, `capture.webm`, seven step
+screenshots and a `beats.json` on this VM with no `PLAYWRIGHT_CORE` set — the
+harness works, and the log drawer is opened so the tool calls are on camera,
+which is what iteration 4's fix phase set out to do.
+
+But the summary field is wrong. The take's activity panel held **seven** rows:
+
+```
+get_view_context · search_artworks("quiet interior") · search_artworks("still life flowers")
+search_artworks("sunlit landscape") · search_by_color("gold") · set_results · set_view
+```
+
+and `beats.json` reports:
+
+```json
+"toolsFired": ["get_view_context","search_by_color","search_artworks","search_artworks",
+  "search_artworks","search_by_color","search_artworks","search_artworks","search_artworks",
+  "set_results","set_view"]
+```
+
+Eleven. The `beats` array itself is correct and honest — it carries a `status`
+on every entry, and the four searches appear once as `running` and once as `ok`.
+`toolsFired` is derived at `capture.mjs:444` by mapping *every* tool beat, so any
+call observed mid-flight is listed twice. The fix is one line: filter to the
+first sighting of each `data-activity-id` rather than to `event === 'tool'`.
+
+**Not fixed here.** It does not block the run, and this phase was told to report.
+It matters because `beats.json` is the artifact that answers "how was WebMCP
+implemented" — the fix log's own words are *"a beats.json that overstates what
+happened is worse than the empty one it replaced"*, and the summary line is
+currently overstating by four. `docs/night/e2e-evidence/iteration-4/capture/beats.json`.
+
+### F. Choosing in the two-up still sends no turn
+
+§4 above. Third iteration in a row. Not a regression, still a documented
+contract the build does not meet.
+
+## 7. Voice — what I could check, and what nobody can check here
+
+**The typed loop needs no voice switch, and I proved the silence rather than
+assuming it.** `apps/web/app/lib/voice/speech-channel.ts` derives the channel
+from how the turn arrived (`shouldSpeakReply(lastTurn) === (lastTurn ===
+'voice')`), so there is nothing to toggle — which is §5's "one field, two
+inputs" working as designed. `scripts/demo/e2e4/voice-off.mjs` stubs
+`speechSynthesis.speak` and both `SpeechRecognition` constructors *before any
+page script runs*, then types the sofa instruction:
+
+```
+mic button on the page:   true
+speechSynthesis present:  true
+utterances spoken:        0
+recognisers started:      0
+note on screen:           "A soft amber hang: open air, simple vessels, and flowers with room to breathe."
+```
+
+The mic is on the page and the browser can speak; a typed turn does neither.
+
+**What remains unproven on this machine, plainly:**
+
+- **Real speech recognition.** Headless Chromium ships the audio to Google's
+  service and there is no microphone here. The mic button renders and
+  `webkitSpeechRecognition` exists, but nothing I can do makes it hear anything.
+  A spoken take has to be filmed on a real machine.
+- **The other half of the symmetric channel rule.** I have shown that a typed
+  turn is silent. I have *not* shown that a spoken turn is spoken back, because
+  I cannot produce a spoken turn.
+- **The 1.2 s grace bar and the push-to-talk gesture**, for the same reason.
+- **`capture.mjs --speak`.** The fix phase verified its truncation fix and I did
+  not re-run it; text is the primary path and that is what I spent the window on.
+
+## 8. Everything that ran, and where the evidence is
+
+New scripts, all under `scripts/demo/e2e4/`, all re-runnable against any base URL:
+
+| script | what it establishes |
+| --- | --- |
+| `loop.mjs` | §9's loop in order, twice — 26 pass · 2 fail each run, the two failures being findings A and F |
+| `notes.mjs` | §9's third clause, three paced runs, notes quoted in §5 |
+| `note-shift.mjs` | why the board jumps 56 px — finding A |
+| `search-budget.mjs` | sixteen serial searches, never refused |
+| `search-burst.mjs` | fourteen at once → 10 accepted, 4 refused — finding B |
+| `compare-room.mjs` | the two-up's geometry, image timing and turn-on-choice |
+| `compare-cold.mjs` | 131 ms vs 1879 ms — finding C |
+| `compare-exits.mjs` | all four doors out of the two-up — finding D |
+| `voice-off.mjs` | a typed turn speaks nothing and listens for nothing |
+
+Evidence — `docs/night/e2e-evidence/iteration-4/`:
+
+```
+e2e4-loop.json  e2e4-loop-run1.json      both full loop runs, every request logged
+notes-e2e4-paced.json                    the three notes and their turn payloads
+notes-e2e4-unpaced.json                  the rate-limited attempt, kept as the repro
+note-shift.json                          the 56px measurement
+search-budget.json  search-burst.json    the limiter, serial and burst
+compare-room.json  compare-cold.json  compare-exits.json
+voice-off.json
+capture/beats.json                       the capture take's tool chain
+```
+
+Video and stills from the capture harness are committed at
+`docs/night/e2e-evidence/iteration-4/capture/` — `capture.mp4` (733 KB) and
+`steps/` with one screenshot per tool call. The harness writes them to
+`scripts/demo/captures/<timestamp>/`, which is gitignored, so they are copied
+in rather than linked; `capture.webm` is left behind as the mp4's source.
+
+Screenshots: `docs/night/shots/e2e4/`, with `INDEX.md` naming what each one
+shows and which script produced it.
+
+## 9. §9, clause by clause
+
+| clause | result |
+| --- | --- |
+| `P`/`X`/`U`/`C` and Enter work; flags persist per session; `get_view_context` returns them | **yes** — §2. `U` and `C` were not exercised in this run; `P`, `X`, Enter and `compare_artworks` were |
+| **Enter on an empty bar redeals from human flags, picks in place, no LLM call** | **yes** on all three counts — §3. Picks hold to 0 px board-to-board; the first redeal after an agent turn moves them 54 px, finding A |
+| the redeal note refers to the *content* of what was rejected, checked by hand on three runs | **yes, 3 for 3** — §5, all three quoted |
+| a voice utterance lands in the editable field; the note is spoken only after voice | **half** — the typed half proved silent (§7); the spoken half is unprovable on this machine |
+| two colours of ink visible in every state | **no, not every state** — both inks are in one frame after an agent turn (`01-after-instruction.png`), but a human redeal removes the agent's label entirely, finding A |
+
+---
+
 # Iteration 3
 
 Run on 2026-09-04, 07:55–08:46 UTC, against **https://paillette-stg.berlayar.ai**

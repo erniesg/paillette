@@ -1,0 +1,776 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "steps": {
+    "cold": {
+      "loadMs": 1839,
+      "bar": true,
+      "micButton": true,
+      "speechApi": true,
+      "cards": 30,
+      "glyph": true,
+      "activeEl": "BODY",
+      "debugDriver": "function",
+      "shot": "docs/night/shots/e2e4/00-cold-load.png"
+    },
+    "instruction": {
+      "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "typedFully": true,
+      "turnMs": 15657,
+      "turnError": null,
+      "modelCalls": 5,
+      "exemplarCalls": 0,
+      "note": {
+        "text": "Quiet amber, ochre, and soft-earth pictures with generous breathing room.",
+        "provenance": "agent",
+        "color": "rgb(94, 200, 216)",
+        "fontFamily": "\"EB Garamond\""
+      },
+      "boardSize": 12,
+      "tools": [
+        {
+          "tool": "get_view_context",
+          "status": "ok",
+          "bad": "false",
+          "dur": "11ms",
+          "args": "{}"
+        },
+        {
+          "tool": "search_artworks",
+          "status": "ok",
+          "bad": "false",
+          "dur": "448ms",
+          "args": "{\"query\":\"still life\",\"collection\":\"nga\",\"topK\":12}"
+        },
+        {
+          "tool": "search_artworks",
+          "status": "ok",
+          "bad": "false",
+          "dur": "714ms",
+          "args": "{\"query\":\"quiet interior\",\"collection\":\"nga\",\"topK\":12}"
+        },
+        {
+          "tool": "search_artworks",
+          "status": "ok",
+          "bad": "false",
+          "dur": "924ms",
+          "args": "{\"query\":\"open landscape\",\"collection\":\"nga\",\"topK\":12}"
+        },
+        {
+          "tool": "search_by_color",
+          "status": "ok",
+          "bad": "false",
+          "dur": "254ms",
+          "args": "{\"color\":\"amber\",\"collection\":\"nga\",\"topK\":12}"
+        },
+        {
+          "tool": "set_results",
+          "status": "ok",
+          "bad": "false",
+          "dur": "35ms",
+          "args": "{\"artworkIds\":[\"open-access-art:nga:184225\",\"open-access-art:nga:214119\",\"open-access-art:nga:4…"
+        },
+        {
+          "tool": "set_view",
+          "status": "ok",
+          "bad": "false",
+          "dur": "7ms",
+          "args": "{\"view\":\"salon\"}"
+        }
+      ],
+      "shot": "docs/night/shots/e2e4/01-after-instruction.png"
+    },
+    "flags": {
+      "targets": {
+        "reject": [
+          "open-access-art:nga:184225",
+          "open-access-art:nga:214119"
+        ],
+        "pick": [
+          "open-access-art:nga:46621"
+        ]
+      },
+      "flagged": {
+        "rejects": [
+          {
+            "id": "open-access-art:nga:184225",
+            "flag": "reject",
+            "by": "human",
+            "provisional": "false",
+            "outline": "rgb(230, 227, 220) 0px",
+            "boxShadow": "rgba(230, 227, 220, 0.58) 0px 0px 0px 1px",
+            "borderColor": "rgb(230, 227, 220)",
+            "hasFlagBadge": true
+          },
+          {
+            "id": "open-access-art:nga:214119",
+            "flag": "reject",
+            "by": "human",
+            "provisional": "false",
+            "outline": "rgb(230, 227, 220) 0px",
+            "boxShadow": "rgba(230, 227, 220, 0.58) 0px 0px 0px 1px",
+            "borderColor": "rgb(230, 227, 220)",
+            "hasFlagBadge": true
+          }
+        ],
+        "picks": [
+          {
+            "id": "open-access-art:nga:46621",
+            "flag": "pick",
+            "by": "human",
+            "provisional": "false",
+            "outline": "rgb(230, 227, 220) 0px",
+            "boxShadow": "rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px 30px 56px -18px, rgba(0, 0, 0,",
+            "borderColor": "rgb(230, 227, 220)",
+            "hasFlagBadge": true
+          }
+        ]
+      },
+      "viewContextFlags": {
+        "picks": [
+          {
+            "id": "open-access-art:nga:46621",
+            "title": "Still Life",
+            "artist": "Henri Fantin-Latour",
+            "palette": [
+              "#9A9882",
+              "#6E4230",
+              "#413B3C",
+              "#E8CC96"
+            ],
+            "medium": "oil on canvas",
+            "year": 1866,
+            "classification": "Painting",
+            "by": "human",
+            "onBoard": true
+          }
+        ],
+        "rejects": [
+          {
+            "id": "open-access-art:nga:184225",
+            "title": "Environs de Cremieu",
+            "artist": "François-Auguste Ravier",
+            "palette": [
+              "#B89E81",
+              "#644F3F",
+              "#F4E8D6",
+              "#DCB17F"
+            ],
+            "medium": "watercolor and graphite on laid paper",
+            "year": 1885,
+            "classification": "Drawing",
+            "by": "human",
+            "onBoard": true
+          },
+          {
+            "id": "open-access-art:nga:214119",
+            "title": "A Peach, Seville",
+            "artist": "George Henry Hall",
+            "palette": [
+              "#C3803A",
+              "#7E3F0F",
+              "#6C443C"
+            ],
+            "medium": "oil on canvas",
+            "year": 1866,
+            "classification": "Painting",
+            "by": "human",
+            "onBoard": true
+          }
+        ],
+        "provisional": [],
+        "exemplars": {
+          "positive": [
+            "open-access-art:nga:46621"
+          ],
+          "negative": [
+            "open-access-art:nga:184225",
+            "open-access-art:nga:214119"
+          ]
+        },
+        "hint": "picks and rejects are confirmed by the human and are what redeal runs on. provisional are your own flags, still dashed on screen and not counted — do not read them back as the human’s taste. each entry carries the palette, medium and date printed on its card: say what those show, not what you remember about the artist."
+      },
+      "shot": "docs/night/shots/e2e4/02-flagged.png"
+    },
+    "redeal": {
+      "tray": [
+        "open-access-art:nga:214119",
+        "open-access-art:nga:184225"
+      ],
+      "barEmpty": true,
+      "modelCalls": 0,
+      "exemplarCalls": 1,
+      "requests": [
+        "POST /api/public-search/nga/exemplars",
+        "GET https://api.nga.gov/iiif/2ba04c6c-7a0b-4357-9f09-fb35018e330b/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/9407728e-20d4-4328-bcc2-2daba99ed795/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/7bcebb1e-489c-4b9a-8773-9cd2bfec09e4/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/c8c8df36-db7d-4167-aec6-2b1a717b067b/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/2400455c-9b59-4464-94b0-874e0be2686b/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/6b98db43-3aba-41b0-9b4a-a13ec1cfaf14/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/8d53492a-ce49-45bb-b4ac-6fd33ad36672/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/b74ba454-2953-4b77-b0db-a501449f3ef0/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/53ee4651-d206-4927-ab97-080febc8d87c/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/35db881d-fdfe-416d-bb2c-68907ec39b34/full/400,/0/default.jpg",
+        "GET https://api.nga.gov/iiif/e33d5263-724a-4c8e-b803-c5275c9ad3b6/full/400,/0/default.jpg",
+        "GET /api/public-search/nga/quota"
+      ],
+      "flip": {
+        "frames": 477,
+        "distinct": 25,
+        "distinctAfterChange": 24,
+        "firstChangeAtMs": 7
+      },
+      "boardSize": 12,
+      "heldPositions": [
+        {
+          "id": "open-access-art:nga:46621",
+          "before": "780,246",
+          "after": "780,192",
+          "moved": 54
+        }
+      ],
+      "rejectsGone": true,
+      "newcomers": 11,
+      "before": [
+        {
+          "id": "open-access-art:nga:184225",
+          "slot": 0,
+          "held": false,
+          "flag": "reject",
+          "by": "human",
+          "provisional": "false",
+          "x": 220,
+          "y": 248,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:214119",
+          "slot": 1,
+          "held": false,
+          "flag": "reject",
+          "by": "human",
+          "provisional": "false",
+          "x": 500,
+          "y": 248,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:46621",
+          "slot": 2,
+          "held": true,
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false",
+          "x": 780,
+          "y": 246,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:23136",
+          "slot": 3,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 1060,
+          "y": 248,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:30607",
+          "slot": 4,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 220,
+          "y": 390,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:21416",
+          "slot": 5,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 500,
+          "y": 390,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:12206",
+          "slot": 6,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 780,
+          "y": 390,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:56734",
+          "slot": 7,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 1060,
+          "y": 390,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:29928",
+          "slot": 8,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 220,
+          "y": 531,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:42886",
+          "slot": 9,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 500,
+          "y": 531,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:154389",
+          "slot": 10,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 780,
+          "y": 531,
+          "w": 268,
+          "h": 129
+        },
+        {
+          "id": "open-access-art:nga:34180",
+          "slot": 11,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 1060,
+          "y": 531,
+          "w": 268,
+          "h": 129
+        }
+      ],
+      "after": [
+        {
+          "id": "open-access-art:nga:50693",
+          "slot": 0,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 220,
+          "y": 192,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:214901",
+          "slot": 1,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 500,
+          "y": 190,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:46621",
+          "slot": 2,
+          "held": true,
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false",
+          "x": 780,
+          "y": 192,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:76208",
+          "slot": 3,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 1060,
+          "y": 192,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:102987",
+          "slot": 4,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 220,
+          "y": 352,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:227490",
+          "slot": 5,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 500,
+          "y": 352,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:76207",
+          "slot": 6,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 780,
+          "y": 352,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:220337",
+          "slot": 7,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 1060,
+          "y": 352,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:166469",
+          "slot": 8,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 220,
+          "y": 512,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:42504",
+          "slot": 9,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 500,
+          "y": 512,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:96655",
+          "slot": 10,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 780,
+          "y": 512,
+          "w": 268,
+          "h": 148
+        },
+        {
+          "id": "open-access-art:nga:76212",
+          "slot": 11,
+          "held": false,
+          "flag": "none",
+          "by": "none",
+          "provisional": "false",
+          "x": 1060,
+          "y": 512,
+          "w": 268,
+          "h": 148
+        }
+      ],
+      "shot": "docs/night/shots/e2e4/03-after-redeal.png"
+    },
+    "redeal2": {
+      "flip": {
+        "frames": 479,
+        "distinct": 28,
+        "distinctAfterChange": 27,
+        "firstChangeAtMs": 35
+      },
+      "held": [
+        {
+          "id": "open-access-art:nga:46621",
+          "before": "780,192",
+          "after": "780,192",
+          "moved": 0
+        }
+      ],
+      "boardSize": 12,
+      "modelCalls": 0,
+      "shot": "docs/night/shots/e2e4/04-second-redeal.png"
+    },
+    "compare": {
+      "pair": [
+        "open-access-art:nga:134540",
+        "open-access-art:nga:300"
+      ],
+      "result": {
+        "ok": true,
+        "comparing": [
+          {
+            "id": "open-access-art:nga:134540",
+            "title": "Still Life with Grapes and Game",
+            "artist": "Frans Snyders",
+            "year": 1630,
+            "dateText": "c. 1630",
+            "medium": "oil on panel",
+            "classification": "Painting",
+            "similarity": 0.411,
+            "palette": [
+              "#3C2C17",
+              "#845A33",
+              "#B39267",
+              "#696640"
+            ],
+            "thumbnailUrl": "https://api.nga.gov/iiif/70878c44-5954-4aeb-961e-97d571f4d5ec/full/400,/0/default.jpg",
+            "imageUrl": "https://api.nga.gov/iiif/70878c44-5954-4aeb-961e-97d571f4d5ec/full/843,/0/default.jpg",
+            "sourceUrl": "https://www.nga.gov/collection/art-object-page.134540.html",
+            "sourceInstitution": "National Gallery of Art, Washington"
+          },
+          {
+            "id": "open-access-art:nga:300",
+            "title": "Still Life with Fruit and Carafe",
+            "artist": "Pensionante del Saraceni",
+            "year": 1610,
+            "dateText": "c. 1610/1620",
+            "medium": "oil on canvas",
+            "classification": "Painting",
+            "similarity": 0.408,
+            "palette": [
+              "#312318",
+              "#7C6153",
+              "#C09178",
+              "#593C29"
+            ],
+            "thumbnailUrl": "https://api.nga.gov/iiif/5ca89749-ce03-413a-9b92-cd4582e34ffb/full/400,/0/default.jpg",
+            "imageUrl": "https://api.nga.gov/iiif/5ca89749-ce03-413a-9b92-cd4582e34ffb/full/843,/0/default.jpg",
+            "sourceUrl": "https://www.nga.gov/collection/art-object-page.300.html",
+            "sourceInstitution": "National Gallery of Art, Washington"
+          }
+        ],
+        "question": "Which one belongs above the sofa?",
+        "effect": "Both works are on the human’s screen at full size with your question between them.",
+        "next": "Wait for their answer. It arrives as a turn carrying compareChoice — either a winner and a loser, or a refusal of both with the reason they gave — and flags itself either way."
+      },
+      "room": {
+        "box": {
+          "top": 0,
+          "left": 0,
+          "w": 1440,
+          "h": 900
+        },
+        "question": "Which one belongs above the sofa?",
+        "works": 2,
+        "neither": true,
+        "compareOpenAttr": "true"
+      },
+      "choice": {
+        "resolved": {
+          "roomClosed": true,
+          "works": [
+            {
+              "id": "open-access-art:nga:134540",
+              "flag": "pick",
+              "by": "human"
+            },
+            {
+              "id": "open-access-art:nga:300",
+              "flag": "reject",
+              "by": "human"
+            }
+          ]
+        },
+        "turnsAfterChoice": 0
+      }
+    }
+  },
+  "pageErrors": [],
+  "results": [
+    {
+      "ok": true,
+      "what": "page loads with cards",
+      "detail": "1839ms"
+    },
+    {
+      "ok": true,
+      "what": "the in-page agent renders under ?webmcp-debug",
+      "detail": "{\"bar\":true,\"micButton\":true,\"speechApi\":true,\"cards\":30,\"glyph\":true,\"activeEl\":\"BODY\",\"debugDriver\":\"function\"}"
+    },
+    {
+      "ok": true,
+      "what": "voice present but unused — every turn here is typed",
+      "detail": "micButton=true speechApi=true"
+    },
+    {
+      "ok": true,
+      "what": "focus is not parked in a field",
+      "detail": "activeElement=BODY"
+    },
+    {
+      "ok": true,
+      "what": "the whole instruction is in the bar",
+      "detail": "88/88 chars"
+    },
+    {
+      "ok": true,
+      "what": "a typed instruction alone fired the agent",
+      "detail": "5 POSTs to /public-agent/turn"
+    },
+    {
+      "ok": true,
+      "what": "a board came back with a written note",
+      "detail": "12 works · note 73 chars · provenance=agent"
+    },
+    {
+      "ok": true,
+      "what": "X on two works → both reject, by human",
+      "detail": "[{\"id\":\"open-access-art:nga:184225\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\",\"outline\":\"rgb(230, 227, 220) 0px\",\"boxShadow\":\"rgba(230, 227, 220, 0.58) 0px 0px 0px 1px\",\"borderColor\":\"rgb(230, 227, 220)\",\"hasFlagBadge\":true},{\"id\":\"open-access-art:nga:214119\",\"flag\":\"reject\",\"by\":\"human\",\"provisional\":\"false\",\"outline\":\"rgb(230, 227, 220) 0px\",\"boxShadow\":\"rgba(230, 227, 220, 0.58) 0px 0px 0px 1px\",\"borderColor\":\"rgb(230, 227, 220)\",\"hasFlagBadge\":true}]"
+    },
+    {
+      "ok": true,
+      "what": "P on one work → pick, by human",
+      "detail": "[{\"id\":\"open-access-art:nga:46621\",\"flag\":\"pick\",\"by\":\"human\",\"provisional\":\"false\",\"outline\":\"rgb(230, 227, 220) 0px\",\"boxShadow\":\"rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px 30px 56px -18px, rgba(0, 0, 0,\",\"borderColor\":\"rgb(230, 227, 220)\",\"hasFlagBadge\":true}]"
+    },
+    {
+      "ok": true,
+      "what": "flagging fires no model call",
+      "detail": "0 model calls across 0 requests"
+    },
+    {
+      "ok": true,
+      "what": "get_view_context returns the flags",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "what": "the bar is empty",
+      "detail": "\"\""
+    },
+    {
+      "ok": true,
+      "what": "NO MODEL CALL on the redeal",
+      "detail": "0 POSTs to /public-agent/turn out of 13 requests"
+    },
+    {
+      "ok": true,
+      "what": "…it hit the deterministic engine instead",
+      "detail": "1 POSTs to /exemplars"
+    },
+    {
+      "ok": false,
+      "what": "picks stay in place, board to board",
+      "detail": "[{\"id\":\"open-access-art:nga:46621\",\"before\":\"780,246\",\"after\":\"780,192\",\"moved\":54}]"
+    },
+    {
+      "ok": true,
+      "what": "rejects leave the board",
+      "detail": "open-access-art:nga:184225, open-access-art:nga:214119"
+    },
+    {
+      "ok": true,
+      "what": "rejects land in the visible tray",
+      "detail": "tray holds 2: open-access-art:nga:214119, open-access-art:nga:184225"
+    },
+    {
+      "ok": true,
+      "what": "newcomers fill the gaps",
+      "detail": "11 works the board had not seen"
+    },
+    {
+      "ok": true,
+      "what": "the deal animates on /nga/search",
+      "detail": "24 distinct layouts after the board first moved (25 across all 477 frames; first change at 7ms; a jump cut is 4-5)"
+    },
+    {
+      "ok": true,
+      "what": "twelve cards",
+      "detail": "12"
+    },
+    {
+      "ok": true,
+      "what": "second redeal: still no model call",
+      "detail": "0 model calls"
+    },
+    {
+      "ok": true,
+      "what": "second redeal animates",
+      "detail": "27 distinct layouts after first movement (28/479 overall; first change at 35ms)"
+    },
+    {
+      "ok": true,
+      "what": "picks held again",
+      "detail": "[{\"id\":\"open-access-art:nga:46621\",\"before\":\"780,192\",\"after\":\"780,192\",\"moved\":0}]"
+    },
+    {
+      "ok": true,
+      "what": "compare_artworks opens the two-up room",
+      "detail": "{\"box\":{\"top\":0,\"left\":0,\"w\":1440,\"h\":900},\"question\":\"Which one belongs above the sofa?\",\"works\":2,\"neither\":true,\"compareOpenAttr\":\"true\"}"
+    },
+    {
+      "ok": true,
+      "what": "choosing closes the room",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "what": "choosing resolves to pick / reject",
+      "detail": "[{\"id\":\"open-access-art:nga:134540\",\"flag\":\"pick\",\"by\":\"human\"},{\"id\":\"open-access-art:nga:300\",\"flag\":\"reject\",\"by\":\"human\"}]"
+    },
+    {
+      "ok": false,
+      "what": "choosing sends a turn",
+      "detail": "0 POSTs to /public-agent/turn within 1.5s of the click"
+    },
+    {
+      "ok": true,
+      "what": "no uncaught page errors",
+      "detail": "none"
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "attempts": [
+    {
+      "n": 1,
+      "atSeconds": 7,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 6579
+    },
+    {
+      "n": 2,
+      "atSeconds": 12,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 5027
+    },
+    {
+      "n": 3,
+      "atSeconds": 17,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 5106
+    },
+    {
+      "n": 4,
+      "atSeconds": 22,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4931
+    },
+    {
+      "n": 5,
+      "atSeconds": 26,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4805
+    },
+    {
+      "n": 6,
+      "atSeconds": 31,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4937
+    },
+    {
+      "n": 7,
+      "atSeconds": 36,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4623
+    },
+    {
+      "n": 8,
+      "atSeconds": 41,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4704
+    },
+    {
+      "n": 9,
+      "atSeconds": 45,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4322
+    },
+    {
+      "n": 10,
+      "atSeconds": 50,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4737
+    },
+    {
+      "n": 11,
+      "atSeconds": 55,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 5114
+    },
+    {
+      "n": 12,
+      "atSeconds": 60,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4632
+    },
+    {
+      "n": 13,
+      "atSeconds": 64,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4554
+    },
+    {
+      "n": 14,
+      "atSeconds": 69,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4726
+    },
+    {
+      "n": 15,
+      "atSeconds": 74,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 5039
+    },
+    {
+      "n": 16,
+      "atSeconds": 78,
+      "status": 200,
+      "retryAfter": null,
+      "code": null,
+      "message": null,
+      "results": 4,
+      "ms": 4272
+    }
+  ],
+  "acceptedBeforeFirstRefusal": 16,
+  "firstRefusal": null,
+  "configuredLimit": "PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE unset in apps/api/wrangler.toml → default 10/min/client"
+}
