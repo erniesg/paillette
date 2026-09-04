@@ -1,0 +1,90 @@
+{
+  "ok": true,
+  "title": {
+    "text": "The Shape Left Behind",
+    "by": "agent"
+  },
+  "statement": {
+    "text": "It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.",
+    "by": "human",
+    "theirs": true
+  },
+  "works": [
+    {
+      "artworkId": "open-access-art:nga:165229",
+      "position": 0,
+      "title": "Ships in a Stormy Sea",
+      "artist": "Petrus Johannes Schotel",
+      "year": 1835,
+      "label": "Two ships strain through choppy water while a smaller vessel recedes in the distance. The ink and gray wash hold them at the uncertain point between departure and disappearance.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:61357",
+      "position": 1,
+      "title": "Ships and Sailing Boats Leaving Le Havre",
+      "artist": "Eugène Boudin",
+      "year": 1887,
+      "label": "Ships and sailing boats move away from Le Havre, making the harbor a place of watching rather than arrival. The painting catches the interval when vessels are still visible but already leaving.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:36512",
+      "position": 2,
+      "title": "East Side Interior",
+      "artist": "Edward Hopper",
+      "year": 1922,
+      "label": null,
+      "labelBy": null
+    },
+    {
+      "artworkId": "open-access-art:nga:134320",
+      "position": 3,
+      "title": "A Corner of the Artist's Room, Rue Terre Neuve, Meudon",
+      "artist": "Gwen John",
+      "year": 1876,
+      "label": null,
+      "labelBy": null
+    },
+    {
+      "artworkId": "open-access-art:nga:138469",
+      "position": 4,
+      "title": "Das leere Café (The Empty Café)",
+      "artist": "Walter Gramatté",
+      "year": 1917,
+      "label": null,
+      "labelBy": null
+    },
+    {
+      "artworkId": "open-access-art:nga:166494",
+      "position": 5,
+      "title": "The New York Window",
+      "artist": "Childe Hassam",
+      "year": 1912,
+      "label": null,
+      "labelBy": null
+    },
+    {
+      "artworkId": "open-access-art:nga:60974",
+      "position": 6,
+      "title": "L'Inquietude",
+      "artist": "Achille Devéria",
+      "year": 1829,
+      "label": null,
+      "labelBy": null
+    },
+    {
+      "artworkId": "open-access-art:nga:92343",
+      "position": 7,
+      "title": "Les Salles des Gardes, Palais des Papes, Avignon, France",
+      "artist": "French 19th Century",
+      "year": 1860,
+      "label": null,
+      "labelBy": null
+    }
+  ],
+  "regions": [],
+  "unlabelled": 6,
+  "updatedAt": "2026-09-04T15:39:42.587Z",
+  "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show."
+}

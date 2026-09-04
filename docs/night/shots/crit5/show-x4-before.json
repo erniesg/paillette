@@ -1,0 +1,89 @@
+{
+  "ok": true,
+  "title": {
+    "text": "Weather at Sea",
+    "by": "agent"
+  },
+  "statement": {
+    "text": "At sea, weather is never a backdrop. Wind rearranges sails, clouds erase distance, and waves turn travel into risk. These works follow the shoreline and open water through changing conditions: the tense interval before a storm, the violence of wreck and surge, and the quieter persistence of vessels and coasts after the weather has passed. Across oil, wash, watercolor, gouache, and print, atmosphere becomes an active force that measures human scale against the sea.",
+    "by": "agent"
+  },
+  "works": [
+    {
+      "artworkId": "open-access-art:nga:165229",
+      "position": 0,
+      "title": "Ships in a Stormy Sea",
+      "artist": "Petrus Johannes Schotel",
+      "year": 1835,
+      "label": "Gray wash and dense linework give wind and cloud as much force as the two ships, which pitch through choppy water. The distant vessel underscores how quickly the storm has swallowed the open sea.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:121881",
+      "position": 1,
+      "title": "Storm-Tossed Ships Wrecked on a Rocky Coast",
+      "artist": "Johann Christoph Dietzsch",
+      "year": 1710,
+      "label": "Violent waves drive several ships toward a jagged coast beneath dark clouds and a sharp flash of light. The wreck turns weather into an immediate collision between vessel, sea, and shore.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:199082",
+      "position": 2,
+      "title": "A Rocky Seacoast in a Storm",
+      "artist": "Gabriel Hippolyte Lebas",
+      "year": 1840,
+      "label": "Watercolor, gouache, and gum arabic bring a storm-bound rocky coast into the exhibition’s shifting weather sequence. Its title fixes the shoreline as a place exposed to the force of the sea.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:119967",
+      "position": 3,
+      "title": "The Much Resounding Sea",
+      "artist": "Thomas Moran",
+      "year": 1886,
+      "label": "In black etched, drypoint, and roulette marks, the sea is named for its sound rather than its calm. The print makes the water’s persistent roar a physical presence at the edge of travel and land.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:61357",
+      "position": 4,
+      "title": "Ships and Sailing Boats Leaving Le Havre",
+      "artist": "Eugène Boudin",
+      "year": 1887,
+      "label": "Ships and smaller sailing boats depart Le Havre, placing working movement on water at the center of the scene. Against the exhibition’s storms and wrecks, their departure marks the more ordinary but still weather-dependent business of leaving shore.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:8480",
+      "position": 5,
+      "title": "Spring Tide, Rocks of Zion (Grande maree, rochers de Sion, Vendee)",
+      "artist": "Auguste Lepère",
+      "year": 1907,
+      "label": "The title identifies a spring tide at the rocks of Zion, where rising water remakes the boundary between coast and sea. Etching gives that tidal pressure a spare, graphic form.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:55387",
+      "position": 6,
+      "title": "Weymouth Bay",
+      "artist": "David Lucas after John Constable",
+      "year": 1830,
+      "label": "Weymouth Bay offers a coastal interval in the exhibition, set apart from the titles of storm and wreck. Its mezzotint surface makes atmosphere and distance central to the bay’s changing condition.",
+      "labelBy": "agent"
+    },
+    {
+      "artworkId": "open-access-art:nga:110821",
+      "position": 7,
+      "title": "Jonah Thrown into the Stormy Sea",
+      "artist": "Justus Sadeler after Paul Bril",
+      "year": 1610,
+      "label": "A biblical figure is cast into stormy water, making the sea the site of sudden danger rather than passage. Engraving carries the crisis through a scene in which weather determines human vulnerability.",
+      "labelBy": "agent"
+    }
+  ],
+  "regions": [],
+  "unlabelled": 0,
+  "updatedAt": "2026-09-04T15:38:10.485Z",
+  "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show."
+}

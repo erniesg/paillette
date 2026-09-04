@@ -1,385 +1,395 @@
 # Shot list
 
-In order. Companion to `docs/webmcp-vo-script-v2.md`.
+In order. Companion to `docs/webmcp-vo-script-v2.md`. **21 shots plus three in
+reserve.**
 
 Everything is `https://paillette-stg.berlayar.ai/nga/search` against the live
-63,253 unless stated. **No `?webmcp-debug`** — the utterance bar renders without
-it, verified on the deployed build. `/night/deal` is a 40-work fixture harness
-and must not appear in the film.
+63,253 unless stated. **No `?webmcp-debug` in any frame** — the utterance bar, the
+stub host and all 25 tools render without it, verified on the deployed build. The
+flag now gates only the `window.__paillette_webmcp` console back door; the e2e and
+critique harnesses carry it because they drive tools directly, and a camera does
+not. `/night/deal` is a 40-work fixture harness and must not appear in the film.
 
-**Columns.** *Headless* — can this be captured by a Playwright script on this
-VM. *Exists* — is there a committed frame of it today, or has it been observed
-in a browser. *Calls* — anonymous model calls it costs.
+**Columns.** *Headless* — can a Playwright script on this VM capture it. *Exists*
+— is there a committed frame today, or has the behaviour been observed live.
+*Calls* — anonymous model calls it costs.
 
-Anonymous budget is **40 model calls per client per hour**, keyed on IP. A cold
-typed instruction costs 5–7; a full loop 8–12. That is **three or four complete
-takes an hour.** Film with a raised cap or a key.
+**Headless Chromium cannot do real speech recognition** — Chrome ships the audio
+to Google's service. **Any genuinely spoken take must be filmed on a real
+machine.** Everything after the transcript is capturable headlessly, and **no
+shot in this list requires speech.**
 
-**And reload between takes.** The board runs out after about five redeals in one
-tab: the fifth Enter is the last full board, the sixth comes back short, and by
-the seventh the board is a single card and Enter is a dead key. Reproduced on two
-queries. A fresh page resets it. (e2e iteration 2 §4.)
+**Model budget.** 40 anonymous calls per client per hour, keyed on IP. The film
+costs 15–20 in one clean pass. That is **two or three complete takes an hour.**
+Film with a raised cap or a key, and probe the budget with one throwaway
+instruction before rolling — when it is spent the turn 429s and the page says so
+in red under the bar, `role="alert"`, which is legible but not something you want
+in a take.
+
+**Reload between takes.** The exemplar route draws a fixed candidate pool and
+subtracts everything already dealt: about five clean redeals per pick set, then
+the board thins, and by the seventh Enter is a dead key. A fresh page resets it.
 
 ---
 
-## Beat 1 — Cold open · 0:00–0:12
+## Beat 1 — Cold open · 0:00–0:26
 
 ### S01 · The instruction typing
 
 - **On screen.** `/nga/search` cold, no query. The sentence appearing in the
   utterance bar, character by character.
 - **Said.** *"Most art is never seen. Not because it's hidden — because nobody
-  knows what to ask for. So I don't ask. I say what the room needs."*
-- **Page + input.** `/nga/search`. Click `[aria-label="Ask the agent"]`, type
-  verbatim: `I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.`
-- **Headless** yes — `scripts/demo/capture.mjs`. **Exists** yes —
-  `e2e-16-capture-harness-agent-chose-salon.png` (stale: that run predates the
-  `set_view` fix). **Calls** ~4–6.
+  knows what to ask for. So I stop asking. I point."*
+- **Page + input.** Click `[aria-label="Ask the agent"]`, type verbatim:
+  `I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.`
+  Enter.
+- **Headless** yes — `node scripts/demo/capture.mjs <url> "<instruction>"`.
+  **Exists** yes — `e2e5-01-sofa-instruction-typed.png`. **Calls** 4–5.
+- **⚠ Aim at the right field.** On a cold page there are still **two live text
+  fields**, and the prominent one is the ordinary catalogue search — a large serif
+  *"search by feeling, era, subject…"* at the optical centre. `Ask the agent` is
+  small and grey below the divider. Typing into the wrong one produces an ordinary
+  search results page and silently invalidates beat 8's *"I didn't search for a
+  single one of these."* Check the frame.
 
-### S02 · A board arrives
+### S02 · A board, and a label
 
-- **On screen.** The board filling.
+- **On screen.** The board filling, then the cyan wall label above it.
 - **Said.** — (hold)
-- **Headless** yes. **Exists** yes — `e2e2-06-step1-board-and-note.png`, a cold
-  typed instruction landing on a deal board *after* the `set_view` fix.
-  `view=deal-board` on all four iteration-2 runs. **Calls** 0 (same run as S01).
-- **⚠ 42–59 seconds** from Enter to a board on a cold run. Cut it.
-- **⚠ Do not say "twelve" here.** The agent's first board was 8, 12, 10 and 12
-  across four runs of the same instruction. Twelve is a property of Enter, not
-  of the agent's first board.
+- **Headless** yes. **Exists** yes — `e2e5-02-board-and-note.png` (label + **all
+  twelve cards**, no human utterance in frame) and
+  `e2e5-13-note-inside-board-before-redeal.png` (**the human's graphite sentence,
+  the agent's cyan label and the board in one frame**; 8 cards whole, 12 in
+  frame). **I opened both files and checked what is in them.** **Calls** 0 (same
+  run as S01).
+- **⚠ 12–33 s** from Enter to the label, and **the board arrives before the
+  sentence does**. A cut at 15 s will sometimes catch a board with no label on it.
+  Cut the wait, not the sentence.
+- **⚠ Do not say "twelve" here.** The agent's first board measured 8, 10, 11 and
+  12 across runs. Twelve is a property of Enter.
+
+### S03 · X, X, P
+
+- **On screen.** Cursor over a card, `X`. Over another, `X`. Over a third, `P`.
+  Three graphite marks. Nothing else moves.
+- **Said.** — (covered by S01's VO)
+- **Page + input.** Hover a card, press the key. Repeat. Do **not** click first.
+- **Headless** yes. **Exists** yes — `e2e5-03-flags-X-X-P.png`. **Calls** 0 —
+  measured at zero model calls across all three keypresses, 4 of 4 runs.
+- **The badges reveal on hover in about a second** and carry `P X U`. That is the
+  affordance, and it is the one piece of §5b restraint done well.
+
+### S04 · The agent redeals, under a new label
+
+- **On screen.** The board deals again. A new cyan label replaces the old one.
+- **Said.** *"I never typed any of those words. It read what I threw away."*
+- **On-screen text**, iteration-5 run 3, verbatim:
+  > *Following the pick: sunset watercolor; away from the firelit scene and the
+  > red-chalk landscape.*
+- **Page + input.** Type `again` into the utterance bar and Enter.
+- **Headless** yes. **Exists** yes — `e2e5-20-note-run2.png`,
+  `e2e5-21-note-run3.png`, `e2e5-22-note-run4.png`. Run 3 is the one quoted;
+  **3 of 3 notes had no wrong word in them**, checked against each named work's
+  medium, classification and palette. **Calls** 3, and 8–14 s.
+- **Why this and not a deterministic Enter here.** A label is on screen before and
+  after, so nothing collapses. See the ⚠ under S06.
+- **⚠ A weak note is possible.** An earlier round produced *"darker, crowded
+  scenes"* — accurate but generic — and one run called a drawing a painting. **If
+  you get one of those, shoot it again.**
 
 ---
 
-## Beat 2 — Two rejects, and Enter · 0:12–0:30
+## Beat 2 — Enter on an empty bar · 0:26–0:58
 
-### S03 · X, X
+### S05 · The armed bar
 
-- **On screen.** Cursor over a card, `X`. Over another, `X`. Two marks in
-  graphite. Nothing else moves.
-- **Said.** *"A board comes back. Two of them are wrong, and I can't tell you
-  why. So I don't."*
-- **Page + input.** Hover a card, press `x`. Repeat.
-- **Headless** yes. **Exists** yes — `e2e-02-flags-XXP.png`; re-verified live
-  tonight (`data-flag="reject"` ×2, `data-flag-by="human"`). **Calls** 0.
+- **On screen.** The utterance bar, empty, with the hairline under it carrying
+  `↵`. Tight.
+- **Said.** *"Now the bar is empty. Nothing typed. Nothing said."*
+- **Page + input.** Any board with one confirmed human flag on it.
+- **Headless** yes. **Exists** yes — `.lt-enter-armed` absent before the first
+  flag, `↵` after, verified first-hand. **Calls** 0.
+- **⚠ This is the only affordance for the headline behaviour**, and the critique's
+  view is that a judge will not find it. Hold the shot long enough that a viewer
+  does.
 
-### S04 · Enter, and the deal
+### S06 · Enter, and the deal
 
-- **On screen.** Enter. Rejects slide left into the tray. Picks do not move.
+- **On screen.** Enter. Rejects slide left into the tray. The pick does not move.
   Newcomers arrive from the right, staggered.
-- **Said.** *"I throw them out and press Enter."*
-- **Page + input.** Enter with nothing focused. **Film the second redeal.**
-- **Headless** yes. **Exists** yes — `e2e2-deal-on-nga-search.webm`,
-  `e2e2-09-step6-deal-midflight.png`,
-  `e2e2-10-step6-deal-settled-twelve-and-tray.png`. Re-verified live three times
-  tonight, identical every run: `{"cards":12,"fullyVisible":12,"rejectsOnBoard":0,
-  "gridHeight":724,"tray":2}`, and the pick at `{"dx":0,"dy":0}` before and after.
-  **Calls** 0.
-- **⚠ The first redeal after a text search is a jump cut, not a deal** — measured
-  at 3, 4, 4, 6, 12, 14 and 18 layouts against the second's 16–28. It is a
-  masonry becoming a board and there is no slot to hold. Do not film the first.
+- **Said.** *"Same picks. Same slots. And not one call to a model."*
+- **Page + input.** Enter with nothing focused, or with the caret in the empty
+  bar — both work.
+- **Headless** yes. **Exists** yes — `e2e5-04-redeal-midflight.png`,
+  `e2e5-14-note-gone-after-redeal.png` (which I opened: twelve works, the reject
+  tray at the left margin holding two desaturated cards, and one frame-lit pick
+  wearing its `P X U` badges). Video: `e2e2-deal-on-nga-search.webm`. **Calls** 0.
+- **🚫 FILM THE SECOND CONSECUTIVE ENTER, NOT THE FIRST.** The deterministic
+  redeal writes no wall label, and the label's wrapper is `empty:hidden`
+  (`deal-board.tsx`, read in code). So the **first** Enter after an agent turn
+  deletes the sentence and the whole board — picks included — slides up **56 px**:
+  44 px of sentence plus 12 px of margin. Measured grid-relative y 72 → 16 inside
+  a grid whose own top did not move. Reproduced 3/3 by the critique and twice more
+  by the e2e lane. The second Enter has no label before or after, so nothing
+  collapses and the pick holds at **zero pixels**. Compare `e2e5-13` and `e2e5-14`
+  to see exactly what the first one does.
+- **⚠ The first redeal after a *text search* is a jump cut, not a deal** —
+  3 to 18 distinct layouts against a board-to-board redeal's 15 to 27. It is a
+  masonry becoming a board and there is no slot to hold. Another reason not to
+  film the first.
 
----
+### S07 · The request log
 
-## Beat 3 — The agent says what you did · 0:30–0:52
-
-### S05 · The note, with its swatches
-
-- **On screen.** The wall label in serif above the board, in the agent's cyan
-  ink with a rule down its left side. Under it, three swatch strips — the pick
-  whole, the two rejects struck through, no words.
-- **Said.** *"I never used those words. It read the palettes it was handed. The
-  swatches under the sentence are the ones it read."*
-- **On-screen text.** *"You said warm; you kept the bone-and-umber etching and
-  rejected the darker, greener palettes — following the picks."*
-- **Page + input.** `/nga/search?q=warm landscape`. Hover-`X`, hover-`X`,
-  hover-`P` on the first three cards, then type `something warm for above the
-  sofa` into the utterance bar and press Enter.
-- **Headless** yes. **Exists** ✅ **yes, as of tonight** —
-  `docs/night/shots/50-note-with-swatches.png` (tight) and
-  `51-note-with-swatches-in-context.png` (full page). Raw:
-  `docs/night/e2e-evidence/note-swatches.json`. **Calls** 3.
-- **Two frames, and both exist.** `50-note-with-swatches.png` is the tight crop
-  (note + strips, nothing else). **`54-note-and-board-1440x900.png` is the wide
-  one** — the sentence, its swatches, and the board it describes, together.
-- **The scroll recipe for the wide frame.** The page has **159 px of sticky
-  chrome** (57 px header + 102 px search bar). Scroll so the wall label sits at
-  y≈114, i.e. `label.top − 159 − 12`. At 1440×900 that frames the note plus **8
-  of 12 cards fully and all 12 at least partly**; at a 1400 px-tall viewport it
-  frames **all 12 fully**. Shoot tall if the machine allows.
-- **Why this frame is the one.** The words are checkable against the picture
-  directly under them: the pick's swatches are `#EBD8BC` and `#695943` — bone,
-  umber — and the second reject's leading swatch is `#47502B`, a dark olive. The
-  sentence also carries the said/chose gap (*"You said warm… following the
-  picks"*) in the same breath. **Nothing was staged**; the flags were the first
-  three cards on the board.
-- **⚠** The strips do not carry `data-flag-by`, so they show *that* a work was
-  flagged, not by which hand. Invisible in the film; a real gap in the design.
-
-### S06 · The same work, the other way round
-
-- **On screen.** Cut to the same composition after the flag on one work has been
-  flipped. The sentence has moved it to the other side.
-- **Said.** *"Flip the flags on the same work — and it changes sides."*
-- **On-screen text.** Berthe Morisot, *Landscape*, `open-access-art:nga:52306`,
-  colored pencils on wove paper, palette `#D4C7A2 #B6A385 #9A886C`:
-  > *picked* — "You kept the pale ochre pencil landscape and rejected the darker
-  > peach palette — following its quiet, airy warmth."
-  >
-  > *rejected* — "Following your warm oil-on-wood fruit pick and moving away
-  > from the pale colored-pencil landscape you rejected."
-- **Page + input.** Two agent turns with that work flagged opposite ways.
-- **Headless** yes. **Exists** ⚠ **text only.** Both notes are archived verbatim
-  in `docs/night/e2e-evidence/iteration-2/run3-loop.json` and `run4-loop.json`,
-  with the `"to":"pick"` / `"to":"reject"` payloads that produced them. **No
-  frame.** **Calls** ~6.
-- **⚠ I tried to shoot this tonight and could not.** The flags set correctly
-  (`184225` pick, `195765` + `127567` reject, all `by: human`) and the turn
-  returned:
-  ```
-  429 {"success":false,"error":{"code":"AGENT_RATE_LIMITED",
-       "message":"You have used this hour’s shared agent budget. Try again shortly."}}
-  ```
-  Raw: `docs/night/e2e-evidence/note-swatches-inverted.json`.
-- **The page does say so, clearly.** *"You have used this hour's shared agent
-  budget. Try again shortly."* renders in red under the utterance bar,
-  `role="alert"`. So a spent budget is visible on camera and an operator will
-  know. **Probe it with one throwaway instruction before rolling.**
-
----
-
-## Beat 4 — Enter on an empty bar · 0:52–1:12
-
-### S07 · The armed bar
-
-- **On screen.** The utterance bar, empty, with a hairline under it carrying `↵`.
-  Tight.
-- **Said.** *"Now watch the bar. It's empty."*
-- **Page + input.** Any board with one confirmed flag on it.
-- **Headless** yes. **Exists** yes — `enter-armed.png`; re-verified live
-  (`.lt-enter-armed` absent before the flag, `"↵"` after). **Calls** 0.
-
-### S08 · The redeal, activity glyph closed
-
-- **On screen.** Enter. The board deals. The glyph does not move.
-- **Said.** *"Same board. Same picks. Same slots."*
-- **Headless** yes. **Exists** yes. **Calls** 0.
-
-### S09 · The network log
-
-- **On screen.** A four-line graphic over the held board. **Not a screenshot of
-  devtools** — set it.
-- **Said.** *"That redeal made one request, to a scoring endpoint. No model was
-  called at all. Sixty-three thousand works, and the loop that moves through
-  them is three keys. P, X, Enter. It runs with the agent switched off."*
+- **On screen.** A held graphic over the settled board. **Not a devtools
+  screenshot** — set it.
+- **Said.** *"One request, to a vector index, under thirty milliseconds after the
+  key. The agent isn't the mechanism. It's a second operator of one that works
+  without it."*
 - **On-screen text.**
   ```
-  GET   /api/public-search/nga/quota
-  POST  /api/public-search/nga/text
-  POST  /api/public-search/nga/exemplars   ← Enter
-  POST  /api/public-search/nga/exemplars   ← Enter
+  POST /api/public-search/nga/exemplars   ← Enter, +8 ms
+  POST /api/public-agent/turn             ← 0
   ```
-- **Source.** `docs/night/e2e-evidence/deterministic-network.json`, verbatim.
-  Regenerate with `node scripts/demo/e2e-deterministic.mjs https://paillette-stg.berlayar.ai`.
-- **Headless** n/a (graphic). **Exists** yes. **Calls** 0.
+- **Source.** e2e iteration 5, four silence-gated runs: `firstExemplarAt` = +8,
+  +11, +14, +21 ms, `modelCallsAfterEnter` = 0 in all four. The critique measured
+  +29 ms independently. Regenerate with
+  `node scripts/demo/e2e-deterministic.mjs https://paillette-stg.berlayar.ai`.
+- **Headless** n/a (graphic). **Exists** yes — `e2e5-08-no-model-call-redeal.png`
+  is the measurement frame. **Calls** 0.
 
-### S10 · (optional insert) With no agent at all
+### S08 · (optional insert) With no agent on the page at all
 
-- **On screen.** The same board in a page with no prompt bar.
-- **Said.** — (covered by S09's VO)
+- **On screen.** The same board in a page with no prompt bar. Enter still deals.
+- **Said.** — (covered by S07)
 - **Headless** yes. **Exists** yes — `e2e-17-no-host-deterministic-redeal.png`.
   **Calls** 0.
 
 ---
 
-## Beat 5 — The show, and the correction · 1:12–1:50
+## Beat 3 — Say one thing, do another · 0:58–1:18
 
-### S11 · Title and statement
+### S09 · Three warm picks
 
-- **On screen.** The exhibition head above the board: title and statement in
-  serif. **No labels yet** — that is correct, and it is what makes S13 land.
-- **Said.** *"Keep going and there's a show on the table. A title, and a
-  statement."*
-- **⚠ Do not say "a label under every work" here.** The opening turn writes
-  none: `label: null` on all six works and zero POSTs to `/api/public-labels`,
-  and the sharing lane's flagship link `/e/QWwJnL5` has 12 works and no label on
-  any of them. The labels arrive with the correction, in S13.
-- **Page + input.** `node scripts/demo/e2e-curation.mjs https://paillette-stg.berlayar.ai`.
-- **Headless** yes. **Exists** yes — `fix-iteration-1/01-drafted.png`.
-  **Calls** ~5.
+- **On screen.** Three graphite frames on three amber works in slots 0, 1, 2.
+- **Said.** *"Three warm pictures kept. Now I'll ask it for the opposite."*
+- **Page + input.** Hover and `P` on three warm works.
+- **Headless** yes. **Exists** yes — `docs/night/shots/crit5/c2-flagged.png`.
+  **Calls** 0.
 
-### S12 · The correction, typed
+### S10 · The sentence that contradicts them
 
-- **On screen.** The statement selected and typed over. Ctrl+Enter.
-- **Said.** *"The statement is wrong. It isn't about weather. Committing the
-  correction* is *the turn."*
-- **On-screen text (typed).** `It is not about weather. It is about leaving: places with the people already gone.`
-- **Page + input.** Click the paragraph, select all, type, Ctrl+Enter. The
-  gesture matters: committing the statement dispatches `commitHumanTurn`
-  (fix log §7). Before that fix nothing called it at all.
-- **Headless** yes. **Exists** yes — driven in the 11/11 walk. **Calls** 0 (the
-  turn it fires is counted in S13).
+- **On screen.** The typed sentence in the utterance bar.
+- **Said.** — (hold)
+- **Page + input.** Type verbatim:
+  `I want something cool and blue and severe. Nothing warm.` Enter.
+- **Headless** yes. **Exists** yes (as part of the c2 run). **Calls** 3–4, 8–14 s
+  of dead air. Cut it.
 
-### S13 · The board and the labels change
+### S11 · The label, held
 
-- **On screen.** The board re-selects. Every label rewrites. The human's
-  sentence sits untouched above it.
-- **Said.** *"It re-selects. It writes a label under every work, against my
-  sentence. And it doesn't touch my sentence."*
-- **Headless** yes. **Exists** yes — `fix-iteration-1/02-after-correction.png`.
-  Measured: 2 POSTs to `/public-agent/turn` after the edit, 18 of 18 labels
-  rewritten, statement returns `by: "human", theirs: true`. **Calls** ~5–8.
-
-### S14 · One label, before and after
-
-- **On screen.** A two-up card. Same painting, two labels.
-- **Said.** — (silent, held)
-- **On-screen text.** From `labels-ab.json`, verbatim:
-  > **weather** — *The river carries the last light of the day beneath a setting
-  > sun. Painted in oil on wood, the scene closes the hanging order with weather
-  > and illumination settling toward evening.*
-  >
-  > **leaving** — *The river carries the eye through an unpeopled stretch of
-  > shore, where no boat or figure interrupts the water's course. At day's end,
-  > the scene reads as a place left behind rather than a view awaiting activity.*
-- **Headless** n/a (graphic). **Exists** yes — `labels-ab.json`. **Calls** 0.
-- **⚠** Both of those were written `writtenFrom: "catalogue"` — that work has no
-  stored caption. A captioned pair (Bruegel, `source: caption`) is quoted in
-  `docs/night/curation-report.md` and is a stronger card if the film has room to
-  swap it. Do not let the VO imply the label was written from the image.
+- **On screen.** The cyan wall label, its swatch strips beneath it, and twelve
+  cards with the three picks still in slots 0, 1, 2.
+- **Said.** *"It followed my hands, not my mouth. And it said so."*
+- **On-screen text**, verbatim:
+  > *You said blue, but picked three amber-brown sunset drawings and paintings;
+  > following the picks.*
+- **Headless** yes. **Exists** ✅ **yes** —
+  `docs/night/shots/crit5/c2-gapnote.png`, committed on this branch from the
+  critique's own staging run. **I opened it and checked.** In frame: the label,
+  three swatch strips, twelve cards at 1440×900, *Harvesters by Firelight*, *An
+  Indian Encampment at Sunset* and *Clouds at Sunset* holding slots 0–2 with
+  graphite frames, and the newcomers *Clouds at Dawn*, *Marsh Landscape at
+  Twilight*, *Vicinity of Morestal*, *Landscape with Storm*. Amber and dusk,
+  against an explicit request for blue.
+- **Reproduce it.** `docs/night/shots/crit5/probe-conflict2.mjs` is committed
+  beside the frame, with the view context it read at `crit5/ctx-c2.json`.
+- **⚠ Use run c2's sentence, not c3's.** c3 said *"three ochre-and-amber
+  watercolors"* and the medium could not be confirmed on all three. c2's
+  *"drawings and paintings"* is correct of the three works it names.
+- **⚠ The probe URL carries `?webmcp-debug`**, used only to *read* palettes
+  through `get_view_context`. The instruction was typed and the picks were real
+  `P` keypresses. **Drop the flag for the camera.**
 
 ---
 
-## Beat 6 — It leaves the tab · 1:50–2:06
+## Beat 4 — Scale · 1:18–1:30
 
-### S15 · Copy link
+### S12 · The number
 
-- **On screen.** The `COPY LINK` control on the exhibition rail. Label sequence
-  `Copying… → Copied → Copy link`.
-- **Said.** *"And it leaves."*
-- **Headless** yes. **Exists** yes — sharing report drove it headless against
-  staging. **Calls** 0.
+- **On screen.** The board pulling back, or one card held with the number set
+  over it.
+- **Said.** *"Sixty-three thousand works. Open access, from the National Gallery
+  of Art. Three keys move through all of them."*
+- **On-screen text.** `63,253 works · National Gallery of Art · CC0`
+- **Headless** n/a (graphic over held footage). **Exists** yes — the figure is in
+  `docs/HANDOFF.md`, paged to the last record, and renders live on `/about`.
+  **Calls** 0.
+- **Cut, and staying cut.** *"The true power of Paillette is unleashed when we run
+  it over an entire collection."*
+
+---
+
+## Beat 5 — The show leaves the tab · 1:30–1:54
+
+### S13 · Title and statement
+
+- **On screen.** The exhibition head above the board: title and statement in
+  serif, behind a hairline rule. **No labels yet** — that is correct.
+- **Said.** *"What's left is a show, and the statement is mine."*
+- **Page + input.** `node scripts/demo/e2e-curation.mjs https://paillette-stg.berlayar.ai`
+- **Headless** yes. **Exists** yes — `crit5/show-x4-before.json`,
+  `crit5/show-x4-after.json`, `crit5/x4-show-after.png`. **Calls** ~5, and
+  **45–75 s** to a title. One critique run produced nothing at all in 150 s.
+- **⚠ Do not say "a label under every work" here.** The opening turn writes none.
+
+### S14 · The correction, typed
+
+- **On screen.** The statement selected and typed over. Ctrl+Enter.
+- **Said.** — (hold)
+- **On-screen text (typed).** `It is not about weather. It is about leaving: places with the people already gone.`
+- **Page + input.** Click the paragraph, select all, type, Ctrl+Enter. Committing
+  the statement *is* the turn — it dispatches `commitHumanTurn`. Before that fix
+  nothing called it at all.
+- **Headless** yes. **Exists** yes. **Calls** 0 (counted in S15).
+
+### S15 · One label, under two statements
+
+- **On screen.** A held graphic. The same work, two labels.
+- **Said.** *"The labels are written against it. The same picture reads
+  differently under a different sentence."*
+- **On-screen text**, verbatim:
+  > **under *Weather at Sea*** — *Gray wash and dense linework give wind and cloud
+  > as much force as the two ships, which pitch through choppy water. The distant
+  > vessel underscores how quickly the storm has swallowed the open sea.*
+  >
+  > **under *Leaving*** — *Two ships strain through choppy water while a smaller
+  > vessel recedes in the distance. The ink and gray wash hold them at the
+  > uncertain point between departure and disappearance.*
+
+  *Petrus Johannes Schotel,* Ships in a Stormy Sea, *1835.*
+- **Source.** Critique §9 run x4, on today's deploy — both labels are in
+  `docs/night/shots/crit5/show-x4-before.json` and `show-x4-after.json`, committed
+  on this branch, with the human's statement in the second reading
+  `"by": "human", "theirs": true`. A second, isolated pair from
+  `verify-contextual-labels.mjs` — same works, same call, only the statement
+  changed, **3 of 3 substantively different** — is in
+  `docs/night/curation-evidence/contextual-labels.txt`. The Bruegel pair there is
+  marked `[caption]` rather than `[catalogue]`, i.e. written from a stored
+  description of the picture, which is the stronger card if the film has room:
+  > **Weather at Sea** — *…the print shifts weather into a human exchange: a
+  > condition imagined through companionship rather than an open horizon.*
+  >
+  > **Leaving** — *…held close by the print's paired arrangement but never
+  > meeting. Their separation gives the exhibition's moment of departure a fixed,
+  > formal shape.*
+- **Headless** n/a (graphic). **Exists** yes. **Calls** 0 if the graphic is set
+  from the archived text.
+- **🚫 DO NOT FILM THE RE-SELECTION LIVE.** Run by hand four times on the current
+  deploy: one produced nothing in 150 s; one changed **0 works** and left weather
+  labels sitting under a wall text reading *"It is not about weather"*; one
+  changed **0 labels in 180 s**; one worked completely. **1 of 4.** On camera that
+  is a wall arguing with its own wall text. Set the card from archived text and
+  film S16 instead.
+- **🚫 And the run that worked still ended blank.** `crit5/show-x4-after.json` is
+  the successful one, and it reads `"unlabelled": 6` — the six newly-selected
+  works (*East Side Interior*, *Das leere Café*, *The New York Window*,
+  *L'Inquietude*, *A Corner of the Artist's Room*, *Les Salles des Gardes*) all
+  carry `"label": null, "labelBy": null`. Two labelled works, six blank. The
+  re-selection and the re-labelling are two tool calls and the second only covers
+  what was already there.
+- **⚠ Do not imply the label was written from the picture.** `write_labels` reads
+  a stored caption where one exists and the catalogue record where it does not,
+  and returns which. Most NGA rows have no caption.
 
 ### S16 · The link, opened cold
 
-- **On screen.** A browser window with no session. The exhibition page: title in
-  serif, works hung, labels under them.
-- **Said.** *"A real URL. Six works, the labels, my words —"*
+- **On screen.** A browser with no session. The exhibition page: serif title, the
+  human's statement behind a rule, works hung full-scale, labels beside them.
+  Then the colophon.
+- **Said.** *"Then it leaves. A real URL, no account, and a line saying how many
+  of the labels an agent wrote."*
+- **On-screen text.** `4 of 6 labels written by an agent`
 - **Page.** `https://paillette-stg.berlayar.ai/e/MKwsxHy`
-- **Headless** yes. **Exists** yes — `fix-iteration-1/03-exhibition-cold.png`
-  here, and `docs/night/shots/share-cold-open.png` on `night/sharing`, which is
-  **not merged into this branch yet**. Re-verified live
-  tonight: `200`, `<h1>` = *Everything the Light Left Behind*, **0 localStorage
-  keys read**. **Calls** 0.
-- **⚠** Confirm it still resolves on the day. It is a staging row with no
+- **Headless** yes. **Exists** yes — `docs/night/shots/crit5/share-MKwsxHy.png`,
+  which I opened: title *Everything the Light Left Behind*, six works, generous
+  negative space, agent labels *"The valley empties of light before anyone has
+  decided to go."* and *"A stopping place, which is not the same as an arrival."*,
+  and one the human wrote — *"Two people sitting for a picture that will outlast
+  the room."* Also `docs/night/shots/share-cold-open.png`. **0 localStorage keys
+  read.** **Calls** 0.
+- **🚫 Use `MKwsxHy` and no other code.** Of seven published shows, **four carry
+  no wall labels at all** — `HcLSkLr`, `QWwJnL5`, `dfbA3tE`, `wycy7SS` — and the
+  two twelve-work ones, the two that look most like real exhibitions, are both
+  blank. `aWp7U3z` has twelve agent labels but an agent-written statement, so it
+  does not show two hands. `MKwsxHy` is the only page where the whole claim is
+  visible.
+- **⚠ Confirm it still resolves on the day.** It is a staging row with no
   retention policy and no way to delete or expire it.
-
-### S17 · The colophon
-
-- **On screen.** The line at the foot of the page.
-- **Said.** *"— and a line at the bottom saying how many of them an agent
-  wrote."*
-- **On-screen text.** `·· 4 of 6 labels written by an agent`
-- **Headless** yes. **Exists** yes — `42-exhibition-colophon.png`; re-verified
-  live tonight. **Calls** 0.
 - **⚠ Do not shoot a social unfurl.** The Open Graph tags and the `og:image` are
-  real and were fetched, but nothing has ever been pasted into Slack, WhatsApp
-  or X to see a card render.
+  real and were fetched — 30 of 30 crawler requests answered — but nothing has
+  ever been pasted into Slack, WhatsApp or X to see a card render.
 
 ---
 
-## Beat 7 — Co-curator · 2:06–2:18
+## Beat 6 — Without looking · 1:54–2:14
 
-### S18 · The finished hang, held
-
-- **On screen.** The exhibition page, still. No chrome, no cursor.
-- **Said.** *"So the agent becomes a co-curator. I didn't search for a single
-  one of these. I described a room."* — see `docs/webmcp-vo-script-v2.md` §3.1
-  for the alternatives.
-- **Headless** yes. **Exists** yes. **Calls** 0.
-- **⚠** The line is only true if S01 was the agentic instruction. If the film
-  opens by typing a query into the search field, the human *did* search — cut
-  the line.
-
----
-
-## Beat 8 — Without looking · 2:18–2:34
-
-### S19 · Tab, and a flag
+### S17 · Tab, and a flag
 
 - **On screen.** No cursor anywhere. The focus ring stepping through the board
   and landing on a flag control. A rendered screen-reader caption. Then `X`, and
   the mark appearing.
-- **Said.** *"None of that needed a mouse. Tab to a work and the control says
-  its name and its key — 'Pick, Environs de Cremieu, P.' The note is one
-  sentence."*
-- **On-screen text.** `Pick Environs de Cremieu (P)` / `Reject Environs de Cremieu (X)`
-- **Page + input.** `/nga/search?q=warm landscape`, keyboard only. **23 Tab
-  presses** from cold load reach the first card's flag control — verified
-  first-hand tonight. Then `x`.
-- **Headless** yes. **Exists** ❌ **no committed frame**, but the behaviour was
-  observed live tonight: `document.activeElement` = `BUTTON` /
-  `"Pick Environs de Cremieu (P)"`, `[data-hovered="true"]` set by focus
-  (`flag-controls.tsx:147`, `onFocus: point`), `x` flags it `by: "human"`,
-  `aria-pressed` reflects it. **Calls** 0.
-- **⚠** 23 tabs is a lot of screen time. Cut to the moment the ring lands.
-
-### S20 · Read aloud
-
-- **On screen.** An artwork dialog with the `Read this aloud` control. Press it.
-- **Said.** *"Ask for a description and the browser reads it aloud, with no
-  agent and no account. Someone who can't see the pictures is still the one
-  choosing."*
-- **Headless** ❌ — headless Chromium here reports `speechSynthesis` with **zero
-  voices installed**. No audio has ever been produced from this build.
-- **Exists** ❌ **and it may not be shootable.** The control renders only where
-  the work has a stored caption or description. Opening a cold NGA work tonight,
-  the dialog offered `["Laurent de La Hyre", "Public metadata", "Copy"]` — **no
-  read-aloud button.** Most NGA rows have no caption; all twelve labels in the
-  A/B were written from the catalogue rather than a caption.
-- **Before filming:** find a work that has a caption, confirm the button
-  renders, and confirm the machine has a voice installed. **If it does not
-  render, cut this shot and the second half of the line.** S19 alone carries the
-  beat and is fully proven.
-- **Calls** 0 (or 1 if a description has to be generated).
+- **Said.** *"None of this needed a mouse. The control says the work, and it says
+  the key. Someone who can't see the pictures is still the one choosing. Not the
+  one being told."*
+- **On-screen text.** `Pick Environs de Cremieu (P)` then
+  `Enter on the empty bar redeals the board from your flags.`
+- **Page + input.** `/nga/search?q=warm landscape`, keyboard only, **no mouse
+  events at all**. 23 Tab presses from a cold load reach the first card's flag
+  control.
+- **Headless** yes. **Exists** ❌ **no committed frame — this beat has to be
+  shot.** The behaviour was verified first-hand: `document.activeElement` =
+  `BUTTON` / `"Pick Environs de Cremieu (P)"`, `[data-hovered="true"]` set by
+  focus (`flag-controls.tsx:147`, `onFocus: point`), then `x` flags it
+  `by: "human"`, `aria-pressed` following. The `sr-only[role="status"]` string is
+  in code at `galleries.$galleryId.search.tsx:3025`. **Calls** 0.
+- **⚠ 23 tabs is a lot of screen time.** Cut to the moment the ring lands.
+- **Do not use *"Let AI be your eyes and ears."*** The shot shows the opposite.
 
 ---
 
-## Beat 9 — WebMCP, on screen · 2:34–2:50
+## Beat 7 — WebMCP, on screen · 2:14–2:42
 
-### S21 · The glyph at rest
+### S18 · The glyph at rest
 
 - **On screen.** Five monospace dots. Tight — the element is 68 × 33 px.
 - **Said.** *"How it's built is on the page. Five dots until a tool runs."*
-- **Headless** yes. **Exists** yes — `shots/activity/01b-idle-glyph.png`;
-  re-verified live (`.pa-activity-glyph`, text `·····`, 68 × 33). **Calls** 0.
+- **Page + input.** Nothing. It renders at rest with no agent on the page.
+- **Headless** yes. **Exists** yes — `shots/activity/01b-idle-glyph.png`.
+  **Calls** 0.
 
-### S22 · The tool surface
+### S19 · The tool surface
 
 - **On screen.** Click the glyph. The panel opens: `document.modelContext · 25`
-  and the twenty-five names in two columns.
+  and the twenty-five names.
 - **Said.** *"Twenty-five tools on `document.modelContext` —"*
 - **Page + input.** Click `[aria-label="Agent activity"]`.
-- **Headless** yes. **Exists** yes — captured live tonight (panel 460 × 276 px).
-  **Calls** 0.
+- **Headless** yes. **Exists** yes — `shots/activity/02-log-tool-surface.png`.
+  **Calls 0.**
 - **This is the shot that answers "how did you implement WebMCP".** It costs
-  nothing and it cannot be faked.
+  nothing, it cannot be faked, and it is capturable headlessly today.
 
-### S23 · The log filling
+### S20 · The log filling, and a row expanded
 
 - **On screen.** Over a live agent run: rows appearing, each with a tool name,
-  its arguments inline, a duration on the right, one line of result. Then a row
-  expanded into full request and response JSON.
+  arguments inline, one line of result, duration right-aligned. Then a row
+  expanded into full request and response.
 - **Said.** *"— with their arguments, their answers and their timings."*
-- **On-screen text.** From `shots/activity/08-log-row-expanded.png`, verbatim:
+- **On-screen text**, verbatim from `shots/activity/08-log-row-expanded.png`:
   ```
   search_artworks                                6.0s
   {"query":"estuary at dusk"}
   12 results
   → { "ok": true, "collection": "nga", "count": 12, "queryTimeMs": 118, … }
-
-  describe_artwork                               6.0s
-  {"artwork":"open-access-art:nga:41623"}
-  "A low grey horizon under a bank of cloud, with two boats at anc…"
 
   redeal                                         6.0s
   {"count":12}
@@ -387,36 +397,43 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
   ```
 - **Headless** yes. **Exists** yes — `08-log-row-expanded.png`,
   `07b-log-detail.png`. **Calls** ~4 for a fresh run, or reuse the frame.
+- **⚠ The log is closed by design and opens only on a click.** A harness that
+  reads it must open it once first, or it records an empty `toolsFired`.
 
-### S24 · The two hands
+### S21 · The two hands
 
 - **On screen.** A held graphic, not the page: the tool on the left, the key on
   the right.
-- **Said.** *"Every tool in the culling loop wraps a key the human already
-  presses. `flag_artworks` is P and X. `redeal` is Enter. `compare_artworks` is
-  C. Same function, either hand. The loop has no agent-only path. One workspace.
-  Two operators."*
+- **Said.** *"`flag_artworks` is P and X. `redeal` is Enter. `compare_artworks`
+  is C. One workspace. Two operators."*
 - **On-screen text.**
   ```
   flag_artworks        P · X · U
   redeal               ↵
   compare_artworks     C
   ```
-- **Headless** n/a (graphic). **Exists** yes — all three verified first-hand
-  tonight from the keyboard with zero model calls. **Calls** 0.
-- **⚠** Say *"the loop has no agent-only path"*, not *"there is no agent-only
-  API"*. `write_labels` and `annotate_atlas` have no human control today.
+- **Headless** n/a (graphic). **Exists** yes — all three driven from the keyboard
+  with zero model calls, and `redeal` is verifiably the same function: the human's
+  `submitHumanTurn` and the `redeal` tool both call `runRedeal`. **Calls** 0.
+- **⚠ Say *"the loop has no agent-only path"*, not *"there is no agent-only
+  API"*.** `write_labels` and `annotate_atlas` have no human control today.
 
 ---
 
-## Beat 10 — End card · 2:50–2:58
+## Beat 8 — Co-curator, and the card · 2:42–2:56
 
-### S25 · The card
+### S22 · The finished hang, held, then the card
 
-- **On screen.** *For everything you can't name. And everything you can't see.*
-- **Said.** — (silent)
-- **⚠** If S20 does not survive, cut to *"For everything you can't name."*
-  Alternatives in `docs/webmcp-vo-script-v2.md` §3.2.
+- **On screen.** The exhibition page, still. No chrome, no cursor. Then the card.
+- **Said.** *"So the agent becomes a co-curator. I didn't search for a single one
+  of these. I described a room."*
+- **On-screen text.** `For everything you can't name. And everything you can't see.`
+- **Headless** yes. **Exists** yes. **Calls** 0.
+- **⚠** The co-curator line is only true if S01 typed into the **utterance bar**.
+  If it went into the catalogue search field, the human did search — cut the line.
+  Alternatives in `docs/webmcp-vo-script-v2.md` §3.1.
+- **The end card is unconditional.** *Can't see* is carried by S17, which is
+  proven, so it no longer depends on read-aloud rendering.
 
 ---
 
@@ -424,22 +441,42 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
 
 ### R01 · The compare room
 
-Two works at large scale on the dark ground, the question in serif between them,
-**nothing else on screen**. Press `C` on a hovered card. Measured live tonight:
-`{"box":{"x":0,"y":0,"w":1440,"h":1000},"portalled":true,"chromeVisible":[],"askedBy":"human"}`.
-Headless, zero model calls, and it exists — `fix-iteration-1/05-compare.png`.
-
-It is the best-looking ten seconds in the build and the current cut has no room
-for it. If a beat runs short, put it in Beat 2 between S03 and S04: *"or ask for
-one of two."* It was 1,700 px below the fold two iterations ago and is now
+Two works at large scale on the charcoal ground, the question in serif between
+them, one control, **nothing else on screen**. Measured full-bleed at 1440 × 900,
 portalled to `document.body` with every other body child hidden.
+`e2e5-06-two-up-room.png` — I opened it: two works on one centre line, catalogue
+lines in mono beneath each, *"Which one sits better above a sofa?"* in serif
+above, `NEITHER` at the foot. Zero model calls.
 
-### R02 · The board under `prefers-reduced-motion`
+**The best-composed screen in the product**, and the cut has no room for it. If a
+beat runs short, put it between S03 and S04. Press `C` on a hovered card, or
+shift-click two and press `C`; a click answers it (winner → pick, loser → reject)
+and the answer rides the next turn. Escape now leaves without answering.
 
-25 distinct layouts at `no-preference` against 4 at `reduce`, with the picks
-still holding. Worth a caption if the film ever claims accessibility beyond
-beat 8. ⚠ Only spot-checked with a pick already in slot 0 — a pick starting at
-slot 5 is untested.
+**⚠** Reachable by pressing `C`. **Not** reliably reachable by asking — the model
+chose `compare_artworks` zero times in 508 recorded tool calls, and only opened
+the room when asked almost verbatim (*"Show me two side by side and let me choose
+between them"*).
+
+### R02 · The agent's dashed mark beside the human's solid one
+
+Verified off computed styles rather than asserted: the human's confirmed mark is a
+**solid ring drawn with `box-shadow`** (`rgb(230,227,220) 0 0 0 1px`); the agent's
+proposal is a **dashed `outline`**, `by: agent`, `provisional: true`. Reading
+`outline` alone reports the human's mark as absent.
+
+**⚠ It has to be asked for.** *"Mark the ones on this board you would throw out"*
+produced six provisional rejects in agent ink. Natural phrasings did not. And a
+redeal sweeps a provisional off the board before it can be answered, deliberately
+— provisional flags do not move the exemplars. If this is filmed, film it without
+a redeal after it.
+
+### R03 · The board under `prefers-reduced-motion`
+
+25 distinct layouts at `no-preference` against 4 at `reduce`, picks still held; at
+`reduce` the held picks collect at the front instead of animating in place.
+**⚠ Only spot-checked with a pick in slot 0.** A pick starting at slot 5 is
+untested.
 
 ---
 
@@ -449,29 +486,41 @@ slot 5 is untested.
 | --- | --- |
 | `/night/deal` | A 40-work fixture harness. Filming it and calling it the app would be dishonest. |
 | The ledger filmstrip | Built and tested, imported only by `/night/deal`. It is **not** on `/nga/search`. |
-| A spoken take, on this machine | Headless Chromium here *does* expose `SpeechRecognition` and the mic control renders — but there is no microphone and **0 synthesis voices**. Push-to-talk enters `"Listening — release to send"`, and on release **nothing lands and nothing is reported**: no text, no error, no visible failure. Must be shot on a real machine. |
+| The `VIEW` row while a board is dealt | It offers Masonry / Salon / Atlas / Table, and choosing any of them destroys the board. A control that undoes the thing the screen is for. |
+| A spoken take, on this machine | Headless Chromium exposes `SpeechRecognition` and the mic control renders — but there is no microphone and **0 synthesis voices**. Push-to-talk enters *"Listening — release to send"* and on release nothing lands and nothing is reported. Must be shot on a real machine. |
+| Read-aloud | The control renders only on a work with a stored caption; a cold NGA work offered `["Laurent de La Hyre","Public metadata","Copy"]` and no read-aloud button. **No audio has ever been produced from this build by anybody.** Optional insert only, after confirming both. |
 | A social unfurl card | Tags verified by fetch; never rendered in a real client. |
+| The agent flagging or comparing unprompted | 508 model-chosen tool calls, `flag_artworks` 0, `compare_artworks` 0. Every recorded demonstration was driven through the debug console. |
 | Upload and indexing | Throat-clearing. Nothing in it is unique to WebMCP. |
-| Anything with `?webmcp-debug` in the address bar | The bar renders without it — verified first-hand and by the e2e lane's own no-flag preflight (`e2e2-02-preflight-no-flag-at-all.png`). The flag now gates only the `window.__paillette_webmcp` console back door. **The e2e report's "URL to film" includes the flag because its harness needs the back door to drive tools; a camera does not.** Drop it, or a judge will assume the demo needs it. |
+| The bare domain | `https://paillette-stg.berlayar.ai` is a marketing page headed *"Powerful Features"*; `/nga/search` appears in no link on it. |
+| Any address bar containing `?webmcp-debug` | The bar and all 25 tools render without it. Leave it in frame and a judge assumes the demo needs it. |
+
+---
 
 ## Before the first take
 
-1. `node scripts/demo/query-counts.mjs` — confirm the demo query still returns
-   30. `warm landscape` returned 30 tonight, and 30 on four measurements in the
-   fix log. `storm at sea` returns 4.
-2. Confirm `https://paillette-stg.berlayar.ai/e/MKwsxHy` still resolves.
-3. Confirm the tool count: `(await document.modelContext.getTools()).length`
+1. **Raise the model cap** for the filming IP, or film with a key. 40/hour is not
+   enough for retakes. **Probe with one throwaway instruction** to confirm the
+   budget is not already spent.
+2. **Confirm the tool count.** `(await document.modelContext.getTools()).length`
    → **25**.
-4. Raise the model cap for the filming IP, or film with a key. 40/hour is not
-   enough for retakes — a cold instruction is 5–7 calls and a full loop 8–12.
-   **Verify the budget is not already spent before rolling.** When it is, the
-   turn 429s and the page says so in red under the bar — legible, but not
-   something you want in a take. One throwaway instruction tells you.
-5. **Reload the tab between takes.** Five clean redeals per pick set, then the
-   board thins and by the seventh Enter is dead.
-6. **Set the scroll once for beat 3 and hold it.** The note and the board fit
-   one frame — put the wall label at y≈114, clear of the 159 px of sticky
-   chrome. Scrolling during the beat is what loses the sentence, not the layout.
-7. After any Enter typed *inside* the utterance bar, press Escape. Otherwise the
-   caret stays in the bar, the next `X` types the letter, and the Enter after
-   that sends `"xx"` to the model as an instruction.
+3. **Confirm `https://paillette-stg.berlayar.ai/e/MKwsxHy` still resolves.**
+4. **Check the query.** `node scripts/demo/query-counts.mjs` — `warm landscape`
+   returned 30 on five separate measurements; `storm at sea` returns 4.
+5. **Poll, don't sleep.** The agent bar takes 691–2786 ms to mount across 20 cold
+   loads, with an outlier past 4500 ms. Anything driving the page must wait for
+   the selector.
+6. **Pace takes about a minute apart.** Ten NGA searches per minute per client,
+   shared between the agent's bursts and the deterministic redeal — it refused a
+   redeal mid-run for the e2e lane. Or raise
+   `PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE` in `apps/api/wrangler.toml`.
+7. **Reload the tab between takes.** Five clean redeals per pick set.
+8. **Set the scroll and hold it.** At 1440 × 900, scrollY **120–180** puts the
+   agent's label and twelve whole cards in one frame. Scrolling during a beat is
+   what loses the sentence, not the layout.
+9. **Press Escape after any Enter typed inside the utterance bar.** Otherwise the
+   caret stays there, the next `X` types the letter, and the Enter after that
+   sends `"xx"` to the model as an instruction. `7dd250c` fixed the *catalogue*
+   field's autofocus, not this one.
+10. **Read §4 of the voiceover script before shooting S06.** It is the one shot
+    that has to be composed around an unfixed defect.
