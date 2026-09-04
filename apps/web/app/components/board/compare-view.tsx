@@ -12,18 +12,17 @@
  * `.paillette-compare`, `.paillette-compare-work` and `data-side`.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
 import {
   getWebMcpServerState,
   getWebMcpState,
-  setCompare,
   subscribeWebMcpState,
   type CompareState,
 } from '~/lib/webmcp/store';
-import { resolveCompare } from '~/lib/webmcp/turn';
+import { refuseCompare, resolveCompare } from '~/lib/webmcp/turn';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 
 const useCompare = (): CompareState | null =>
@@ -32,6 +31,66 @@ const useCompare = (): CompareState | null =>
     () => getWebMcpState().compare,
     () => getWebMcpServerState().compare
   );
+
+/**
+ * "Neither", and the reason.
+ *
+ * The word turns into a line you can write on, in the same place and the same
+ * serif. Nothing is added to the screen and nothing explains itself: you
+ * clicked "Neither" and there is now a caret, which is the whole instruction.
+ * Enter sends it with or without words, because a person who cannot say why
+ * still means it — asking them to justify a refusal before it counts is the
+ * mistake the two-up exists to avoid.
+ */
+const NeitherControl = ({
+  artworkIds,
+  question,
+}: {
+  artworkIds: [string, string];
+  question: string | null;
+}) => {
+  const [writing, setWriting] = useState(false);
+  const [reason, setReason] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (writing) inputRef.current?.focus();
+  }, [writing]);
+
+  if (!writing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setWriting(true)}
+        className="paillette-compare-neither border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em]"
+      >
+        Neither
+      </button>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={reason}
+      aria-label="Why neither?"
+      onChange={(event) => setReason(event.target.value)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          refuseCompare(artworkIds, reason, question);
+          return;
+        }
+        if (event.key === 'Escape') setWriting(false);
+      }}
+      // Clicking away is an answer too, not a retraction: they already said
+      // neither by opening this.
+      onBlur={() => refuseCompare(artworkIds, reason, question)}
+      className="paillette-compare-reason w-full max-w-md border-0 bg-transparent p-0 text-center outline-none"
+    />
+  );
+};
 
 export const CompareView = () => {
   const compare = useCompare();
@@ -104,14 +163,13 @@ export const CompareView = () => {
       </div>
 
       {/* Two pictures and a question need no instructions. The only thing
-          worth a control is the answer neither picture offers. */}
-      <button
-        type="button"
-        onClick={() => setCompare(null)}
-        className="border border-white/15 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-white/50 hover:text-white/80"
-      >
-        Neither
-      </button>
+          worth a control is the answer neither picture offers — and it is a
+          real answer, not a dismissal: both works are refused, in the human's
+          own ink, with whatever they say about why. */}
+      <NeitherControl
+        artworkIds={compare.artworkIds}
+        question={compare.question}
+      />
     </div>
   );
 };

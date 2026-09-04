@@ -34,11 +34,29 @@ import {
 import { runRedeal, type RedealResult } from './redeal';
 import { getWebMcpState, setCompare } from './store';
 
-export interface CompareChoice {
-  winnerId: string;
-  loserId: string;
-  question: string | null;
-}
+/**
+ * The answer to a two-up.
+ *
+ * Three doors, not two. Forcing a choice between two works the human does not
+ * want is a lie about taste, and the lie is expensive: "neither, they're both
+ * too busy" is a stronger signal than either choice would have been, because
+ * it names the axis rather than picking a point on it. So the refusal is a
+ * real answer that gets flagged, journalled and sent, not a dismissal.
+ */
+export type CompareChoice =
+  | {
+      kind: 'winner';
+      winnerId: string;
+      loserId: string;
+      question: string | null;
+    }
+  | {
+      kind: 'neither';
+      artworkIds: [string, string];
+      /** What they said was wrong with both, if they said. */
+      reason: string | null;
+      question: string | null;
+    };
 
 /** Everything the human's turn carries, whether or not they typed anything. */
 export interface HumanTurn {
@@ -92,7 +110,38 @@ export const resolveCompare = (
 ) => {
   setFlag(winnerId, 'pick', { by: 'human' });
   setFlag(loserId, 'reject', { by: 'human' });
-  recordCompareChoice({ winnerId, loserId, question });
+  recordCompareChoice({ kind: 'winner', winnerId, loserId, question });
+  setCompare(null);
+};
+
+/**
+ * Answering "neither".
+ *
+ * Both works are rejected, in the human's own ink, with whatever they said as
+ * the reason — so the refusal reaches the exemplar engine as two negatives on
+ * the same axis, which is the strongest single move the culling loop has. The
+ * reason is optional: a person who cannot say why still means it, and asking
+ * them to justify a refusal before it counts is the mistake the two-up exists
+ * to avoid.
+ */
+export const refuseCompare = (
+  artworkIds: [string, string],
+  reason: string | null = null,
+  question: string | null = null
+) => {
+  const trimmed = reason?.trim() || null;
+  for (const artworkId of artworkIds) {
+    setFlag(artworkId, 'reject', {
+      by: 'human',
+      ...(trimmed ? { reason: trimmed } : {}),
+    });
+  }
+  recordCompareChoice({
+    kind: 'neither',
+    artworkIds,
+    reason: trimmed,
+    question,
+  });
   setCompare(null);
 };
 
@@ -214,11 +263,18 @@ export interface HumanTurnPayload {
   }[];
   selection: { id: string; title?: string }[];
   hovered: { id: string; title?: string } | null;
-  compareChoice: {
-    winner: { id: string; title?: string };
-    loser: { id: string; title?: string };
-    question?: string | null;
-  } | null;
+  compareChoice:
+    | {
+        winner: { id: string; title?: string };
+        loser: { id: string; title?: string };
+        question?: string | null;
+      }
+    | {
+        neither: { id: string; title?: string }[];
+        reason?: string | null;
+        question?: string | null;
+      }
+    | null;
   exhibitionEdits: {
     field: 'title' | 'statement' | 'label';
     work?: string;
@@ -251,13 +307,19 @@ export const toTurnPayload = (turn: HumanTurn): HumanTurnPayload => ({
   }),
   selection: turn.selection.map(namedId),
   hovered: turn.hovered ? namedId(turn.hovered) : null,
-  compareChoice: turn.compareChoice
-    ? {
-        winner: namedId(turn.compareChoice.winnerId),
-        loser: namedId(turn.compareChoice.loserId),
-        question: turn.compareChoice.question,
-      }
-    : null,
+  compareChoice: !turn.compareChoice
+    ? null
+    : turn.compareChoice.kind === 'winner'
+      ? {
+          winner: namedId(turn.compareChoice.winnerId),
+          loser: namedId(turn.compareChoice.loserId),
+          question: turn.compareChoice.question,
+        }
+      : {
+          neither: turn.compareChoice.artworkIds.map(namedId),
+          reason: turn.compareChoice.reason,
+          question: turn.compareChoice.question,
+        },
   exhibitionEdits: turn.exhibitionEdits.map((edit) => {
     const title = edit.artworkId ? titleOf(edit.artworkId) : undefined;
     return {

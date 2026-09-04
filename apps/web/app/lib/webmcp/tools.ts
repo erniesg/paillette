@@ -1646,7 +1646,7 @@ const compareArtworksTool = (): WebMcpTool => ({
   name: 'compare_artworks',
   title: 'Put two works side by side',
   description:
-    'Ask a question with pictures instead of words. Two works go up large on the human\'s screen with your question between them; they answer with one click.\nThis is the cheapest question you can ask a person who has taste but no vocabulary — "which of these two?" costs them a glance, where "do you prefer higher contrast or a softer tonal range?" costs them an essay they may not be able to write. Use it when you have a real hypothesis to test about what they are after, not to fill a turn.\nTheir click resolves as a pick on the winner and a reject on the loser, and comes back to you as a turn, so the answer lands in the exemplars whether or not they say anything.',
+    'Ask a question with pictures instead of words. Two works go up large on the human\'s screen with your question between them; they answer with one click.\nThis is the cheapest question you can ask a person who has taste but no vocabulary — "which of these two?" costs them a glance, where "do you prefer higher contrast or a softer tonal range?" costs them an essay they may not be able to write. Use it when you have a real hypothesis to test about what they are after, not to fill a turn.\nTheir click resolves as a pick on the winner and a reject on the loser, and comes back to you as a turn, so the answer lands in the exemplars whether or not they say anything.\nThere is a third door: they can refuse the pair, with or without a reason. Read that as your best result, not a non-answer — "neither, they\u2019re both too busy" names the axis instead of picking a point on it, both works are rejected, and the next move is a different question rather than the same one with new pictures.',
   annotations: {
     readOnlyHint: false,
     destructiveHint: false,
@@ -1711,7 +1711,7 @@ const compareArtworksTool = (): WebMcpTool => ({
         ...(question ? { question } : {}),
         effect:
           'Both works are on the human’s screen at full size with your question between them.',
-        next: 'Wait for their click. It arrives as a turn carrying compareChoice, and resolves to a pick and a reject on its own.',
+        next: 'Wait for their answer. It arrives as a turn carrying compareChoice — either a winner and a loser, or a refusal of both with the reason they gave — and flags itself either way.',
       });
     }),
 });

@@ -99,6 +99,7 @@ describe('CompareView', () => {
 
     const turn = prepareTurn();
     expect(turn.compareChoice).toEqual({
+      kind: 'winner',
       winnerId: 'b',
       loserId: 'a',
       question: 'Which reads from further away?',
@@ -106,13 +107,64 @@ describe('CompareView', () => {
     expect(turn.flagsDelta).toHaveLength(2);
   });
 
-  it('lets the human decline both without flagging anything', async () => {
+  /*
+   * The third door. Forcing a choice between two works someone does not want
+   * is a lie about taste, and an expensive one: "neither, they're both too
+   * busy" names the axis instead of picking a point on it, so it is the
+   * strongest answer a two-up can get. It is treated as one.
+   */
+  it('turns Neither into a line to write on, and sends the reason', async () => {
+    openCompare('Which reads from further away?');
+    render(<CompareView />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Neither/ }));
+    const reason = screen.getByLabelText('Why neither?');
+    await userEvent.type(reason, 'they’re both too busy{Enter}');
+
+    expect(getWebMcpState().compare).toBeNull();
+    // Both refused, in the human's own ink, with what they said.
+    expect(getExemplars()).toEqual({ positive: [], negative: ['a', 'b'] });
+    expect(getFlag('a')).toMatchObject({
+      flag: 'reject',
+      by: 'human',
+      provisional: false,
+      reason: 'they’re both too busy',
+    });
+
+    const turn = prepareTurn();
+    expect(turn.compareChoice).toEqual({
+      kind: 'neither',
+      artworkIds: ['a', 'b'],
+      reason: 'they’re both too busy',
+      question: 'Which reads from further away?',
+    });
+    expect(turn.flagsDelta).toHaveLength(2);
+  });
+
+  it('accepts a refusal with no reason at all', async () => {
     openCompare();
     render(<CompareView />);
 
     await userEvent.click(screen.getByRole('button', { name: /Neither/ }));
+    await userEvent.keyboard('{Enter}');
 
     expect(getWebMcpState().compare).toBeNull();
+    expect(getExemplars().negative).toEqual(['a', 'b']);
+    expect(prepareTurn().compareChoice).toMatchObject({
+      kind: 'neither',
+      reason: null,
+    });
+  });
+
+  it('Escape puts the word back rather than answering', async () => {
+    openCompare();
+    render(<CompareView />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Neither/ }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.getByRole('button', { name: /Neither/ })).toBeInTheDocument();
+    expect(getWebMcpState().compare).not.toBeNull();
     expect(getExemplars()).toEqual({ positive: [], negative: [] });
   });
 

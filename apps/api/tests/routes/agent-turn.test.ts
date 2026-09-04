@@ -134,4 +134,36 @@ describe('describeHumanTurn', () => {
       describeHumanTurn({ exhibitionEdits: [{ field: 'title', value: '' }] })
     ).toBeNull();
   });
+  it('reads a refusal as the strongest answer, not as a non-answer', () => {
+    const described = describeHumanTurn({
+      compareChoice: {
+        neither: [
+          { id: 'a', title: 'A' },
+          { id: 'b', title: 'B' },
+        ],
+        reason: 'they are both too busy',
+        question: 'Which reads from further away?',
+      },
+    });
+
+    expect(described).toContain('refused both A and B');
+    expect(described).toContain('they are both too busy');
+    expect(described).toContain('stronger signal than either choice');
+    expect(described).toContain('both are now rejected');
+  });
+
+  it('carries a refusal with no reason', () => {
+    const described = describeHumanTurn({
+      compareChoice: {
+        neither: [
+          { id: 'a', title: 'A' },
+          { id: 'b', title: 'B' },
+        ],
+        reason: null,
+      },
+    });
+
+    expect(described).toContain('refused both A and B');
+    expect(described).not.toContain('saying');
+  });
 });

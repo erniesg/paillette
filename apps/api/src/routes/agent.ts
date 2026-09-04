@@ -78,6 +78,7 @@ const SYSTEM_PROMPT = [
   'On a redeal after they have flagged something, the note is where the disagreement gets named, in that one sentence: "You said warm; you picked the grey harbour and rejected the golds — following the picks." Name what they threw out, not only what you kept.',
   'Use flag_artworks to disagree in their own currency, at most three at a time and always with a reason. Your flags arrive provisional and do not steer the redeal until they confirm them; that is deliberate, so propose freely.',
   'Use compare_artworks when you have a real hypothesis about what they want and two works that differ on exactly that axis. One click from them is worth more than a paragraph of questions, and it is the only question you may ask.',
+  'They can also refuse the pair outright, with or without saying why. Read that as the most useful answer you have had: your hypothesis about the axis was wrong, both works are now rejected, and the next move is a different question rather than the same one with new pictures.',
 
   // --- The exhibition ----------------------------------------------------
   'Once a board has settled into something, it is an exhibition and not a search result. Draft it: set_exhibition with a title and a statement, then write_labels for the works on the board. Do this without being asked — a board with no title is a pile.',
@@ -113,11 +114,19 @@ export interface HumanTurnPayload {
   }[];
   selection?: { id: string; title?: string }[];
   hovered?: { id: string; title?: string } | null;
-  compareChoice?: {
-    winner: { id: string; title?: string };
-    loser: { id: string; title?: string };
-    question?: string | null;
-  } | null;
+  compareChoice?:
+    | {
+        winner: { id: string; title?: string };
+        loser: { id: string; title?: string };
+        question?: string | null;
+      }
+    | {
+        /** They refused both. The strongest answer a two-up can get. */
+        neither: { id: string; title?: string }[];
+        reason?: string | null;
+        question?: string | null;
+      }
+    | null;
   /** What the human rewrote in the exhibition since the last turn. */
   exhibitionEdits?: {
     field: 'title' | 'statement' | 'label';
@@ -150,12 +159,25 @@ export const describeHumanTurn = (turn: HumanTurnPayload): string | null => {
   if (rejected.length) parts.push(`rejected ${rejected.map(named).join('; ')}`);
   if (cleared.length) parts.push(`unflagged ${cleared.map(named).join('; ')}`);
   if (turn.compareChoice) {
-    parts.push(
-      `chose ${named(turn.compareChoice.winner)} over ${named(turn.compareChoice.loser)}` +
-        (turn.compareChoice.question
-          ? ` when asked "${turn.compareChoice.question}"`
-          : '')
-    );
+    const asked = turn.compareChoice.question
+      ? ` when asked "${turn.compareChoice.question}"`
+      : '';
+    if ('neither' in turn.compareChoice) {
+      // A refusal is worth more than either choice would have been: it names
+      // the axis rather than picking a point on it. Both works are already
+      // rejected, so say what it means rather than what was clicked.
+      parts.push(
+        `refused both ${turn.compareChoice.neither.map(named).join(' and ')}${asked}` +
+          (turn.compareChoice.reason
+            ? `, saying "${turn.compareChoice.reason}"`
+            : '') +
+          ' — that is a stronger signal than either choice, and both are now rejected'
+      );
+    } else {
+      parts.push(
+        `chose ${named(turn.compareChoice.winner)} over ${named(turn.compareChoice.loser)}${asked}`
+      );
+    }
   }
   if (turn.selection?.length) {
     parts.push(`selected ${turn.selection.map(named).join('; ')}`);

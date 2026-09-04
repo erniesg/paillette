@@ -1289,6 +1289,22 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   color: var(--ink-human) !important;
 }
 
+/*
+ * …and once it is clicked, the word becomes a line you can write on: same
+ * place, same width, the caret where the letters were. "Neither, they're both
+ * too busy" is a stronger signal than either choice would have been, so the
+ * refusal gets somewhere to put its reason. In the wall serif, because it is
+ * the human speaking, and with the same focus rule the exhibition fields use.
+ */
+.paillette-compare-reason {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ink-human);
+  caret-color: var(--ink-human);
+  box-shadow: 0 1px 0 0 var(--ink-human);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .paillette-compare-work,
   .paillette-compare:hover .paillette-compare-work:not(:hover),
