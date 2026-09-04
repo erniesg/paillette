@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
 import {
+  setAgentResults,
   setBoard,
   setFocusedArtwork,
   setHumanResults,
@@ -634,6 +635,43 @@ describe('AgentPrompt', () => {
     expect(spoken).toEqual([
       'You said warm; you picked the grey harbour.',
     ]);
+  });
+
+  /**
+   * The same clause on a board the agent pinned rather than dealt.
+   *
+   * A `set_results` board carries its note on `agentResults`, not on `board`,
+   * and the page renders whichever is in front of the human. The first fix
+   * read only `board` and so was still silent on staging for exactly this
+   * shape of turn.
+   */
+  it('speaks the label of a board the agent pinned, not only a dealt one', async () => {
+    setModelContext({ getTools: async () => [] });
+    installRecognition();
+    const { spoken } = installSynthesis();
+    setHumanResults(null);
+    setAgentResults({
+      origin: 'agent',
+      label: '12 works, dealt from 3 picks',
+      note: 'Warm shorelines, and the storm prints are out.',
+      items: [{ id: 'nga-2' }],
+      at: 5,
+    } as never);
+    stubFetch('');
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    vi.useFakeTimers();
+    hold();
+    heard('something quieter', true);
+    release();
+    await act(async () => {
+      vi.advanceTimersByTime(GRACE_MS + 20);
+    });
+
+    // The label is the agent's own bookkeeping and never goes on the wall or
+    // into the air; the note does.
+    expect(spoken).toEqual(['Warm shorelines, and the storm prints are out.']);
   });
 
   it('stays silent after a typed turn — text in, text out', async () => {

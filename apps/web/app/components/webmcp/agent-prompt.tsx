@@ -629,7 +629,20 @@ export function AgentPrompt({
            * caps either at one sentence: the board is the rest of the answer.
            */
           if (shouldSpeakReply(channel)) {
-            const aloud = said || getWebMcpState().board?.note?.trim() || '';
+            // Whichever sentence is actually on the wall. A dealt board carries
+            // its note on `board`; a board the agent pinned with `set_results`
+            // carries it on `agentResults`, and the page renders whichever is
+            // in front of the human. Reading only `board` spoke nothing on a
+            // `set_results` turn, which is how the first attempt at this fix
+            // still came back silent on staging. Newest wins.
+            const state = getWebMcpState();
+            const onTheWall = [
+              { note: state.board?.note, at: state.board?.at ?? 0 },
+              { note: state.agentResults?.note, at: state.agentResults?.at ?? 0 },
+            ]
+              .filter((entry) => entry.note?.trim())
+              .sort((a, b) => b.at - a.at)[0];
+            const aloud = said || onTheWall?.note?.trim() || '';
             if (aloud) speechRef.current?.speak(aloud);
           }
           return;
