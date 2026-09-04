@@ -28,7 +28,8 @@ watching rather than a paragraph of claiming.
 ```sh
 pnpm --filter web dev --port 5222 --strictPort            # one shell
 
-node apps/web/scripts/verify-definition-of-done.mjs http://localhost:5222 3  # section 9, 3 takes
+node apps/web/scripts/verify-definition-of-done.mjs http://localhost:5222 6  # section 9, 6 takes
+                                                                            # (cycles 3 viewport/theme configs)
 node apps/web/scripts/verify-activity-log.mjs   http://localhost:5222        # 53 checks
 node apps/web/scripts/capture-activity-shots.mjs http://localhost:5222 \
      docs/night/shots/activity                                               # 32 checks + 30 PNGs
@@ -43,7 +44,7 @@ is a camera that also checks what it is photographing.
 
 | Harness | Owner | Run 1 | Run 2 | Run 3 |
 | --- | --- | --- | --- | --- |
-| `verify-definition-of-done.mjs` | this lane | **32/32** | **32/32** | **32/32** |
+| `verify-definition-of-done.mjs` | this lane | **43/43** | **43/43** | **43/43** |
 | `verify-activity-log.mjs` | this lane | **53/53** | **53/53** | **53/53** |
 | `capture-activity-shots.mjs` | this lane | **32/32** | **32/32** | **32/32** |
 | `voice-loop-verify.mjs` | voice | **0 failures** | **0 failures** | **0 failures** |
@@ -76,15 +77,27 @@ beat, in the order a camera would see them, and prints a verdict per bullet —
 because "37 checks passed" does not tell anyone whether bullet three is safe to
 point a lens at.
 
-**32 checks, three consecutive clean runs, every bullet green.**
+**43 checks per take. Sixteen takes run in total: ten consecutive at one size,
+then six cycling three configurations. No failure and no variance in any of
+them.**
+
+A run cycles **1500×1000 dark**, **1280×800 dark** — the size where the voice
+lane found the old panel overlapping the utterance bar — and **1440×900 light**,
+where every design token flips. So no bullet below is proven in only one
+configuration.
 
 | §9 bullet | Verdict | What was actually observed |
 | --- | --- | --- |
 | `P`/`X`/`U`/`C` and Enter work; flags persist; `get_view_context` returns them | **PASS** 8/8 | `P` picks the hovered card, `X` rejects, `U` clears, `C` opens the two-up and one click answers it — and the flags survive the human running a different search |
 | Enter on an empty bar redeals from human flags, picks in place, **no LLM call** | **PASS** 7/7 | reaches `/exemplars` once, `/public-agent` **zero** times, deals **12**, the pick is first in the board order *and* the first card actually rendered, board marked as the human's move |
 | the agent's redeal note refers to the content of what was rejected | **PARTIAL** 5/5 | the precondition holds: after the sofa prompt and two `X` presses the turn carries the rejects the human just made, **each with a title rather than an id**. The model half is not run here — see below |
-| a voice utterance lands in the editable field; the note is spoken only after voice | **PARTIAL** 3/3 | a typed instruction alone fires the agent, the typed turn is **silent** (`speechSynthesis.speak` wrapped before page load and never called), the field is an editable `input`, the mic is one control beside it. The recogniser half is not run here — see below |
-| two colours of ink visible in every state | **PASS** 9/9 | human `rgb(230,227,220)` filled and solid, agent `rgb(94,200,216)` outlined and **dashed**, both on screen at once, the confirmed pick carrying the graphite hairline frame, and the activity glyph in the agent's ink |
+| a voice utterance lands in the editable field; the note is spoken only after voice | **PARTIAL** 12/12 | the typed turn is **silent**; then, in the same session, holding the mic lands interim words in the field as they arrive, releasing does **not** send, a grace bar drains, the words stay editable while it does, the turn commits, and the note is spoken back **exactly once**. Plus: with `SpeechRecognition` deleted entirely, no mic is drawn and a typed instruction alone still fires the agent. No real recogniser — see below |
+| two colours of ink visible in every state | **PASS** 11/11 | both marks on screen at once and **different resolved values**; the human's filled and solid, the agent's outlined and **dashed**; each equal to the theme's own `--ink-human` / `--ink-agent`; the confirmed pick carrying the hairline frame in that ink; the activity glyph in the agent's ink. **Checked in both themes** — graphite is `rgb(230,227,220)` on the charcoal table and `rgb(23,22,26)` on the paper one |
+
+**Why bullet 4 is stronger here than anywhere else.** The typed turn and the
+spoken turn happen in *the same session*, so "spoken only after voice" is a
+contrast that was observed rather than two claims asserted in two scripts. What
+is still missing is only the speech itself.
 
 **The take's one invisible precondition, stated because it will spoil a shot.**
 The search field carries `autofocus`, and a bare letter is correctly ignored
@@ -106,11 +119,14 @@ pretending it is unnecessary. Whoever films this should know it.
   runs in the shared-state report and 3 in the voice report**; a fourth
   confirmation was not worth spoiling someone's takes for.
 - **The recogniser.** Headless Chromium cannot do real speech recognition —
-  Chrome ships the audio to Google. The plumbing is checked with a fake
-  recogniser in `voice-loop-verify.mjs`, which passes on this branch; a
-  genuinely spoken take must be filmed on a real machine.
+  Chrome ships the audio to Google. The take installs a fake recogniser and a
+  recording synthesiser before the page's script runs, so the *plumbing* is real
+  in a real browser: a real component, a real field, a real grace bar, a real
+  turn. **The speech is not.** No recogniser has run and no audio has been
+  produced on this machine. A genuinely spoken take must be filmed on a real
+  one, and nothing in the submission should say otherwise.
 
-### Three false alarms, recorded because each looked like a defect first
+### Four false alarms, recorded because each looked like a defect first
 
 Every one was the script's fault, not the product's, and each is the kind of
 thing that would have cost someone a morning:
@@ -127,8 +143,20 @@ thing that would have cost someone a morning:
    is the pressed button *inside* the badge. Read that and the human is filled
    graphite with a solid border, the agent outlined cyan and dashed.
 
-That third one is worth repeating for anyone else writing an ink check: assert
-on `.paillette-flag-button[aria-pressed="true"]`, never on the badge.
+4. **"a confirmed pick has lost its hairline frame in the light theme."** It has
+   not. The assertion carried the dark theme's graphite, `rgb(230,227,220)`, as
+   a literal — and in the light theme graphite is `rgb(23,22,26)`. The frame was
+   there the whole time. The check now paints a probe with `var(--ink-human)`
+   and reads it back, so it compares against whatever the theme resolved.
+
+Two of those are worth repeating for anyone else writing an ink check:
+
+- Assert on `.paillette-flag-button[aria-pressed="true"]`, never on
+  `.paillette-flag-badge` — the badge is a layout wrapper and inherits body
+  colour, so both hands read identical.
+- **Never hardcode a token value.** Resolve it through the browser. Every ink
+  token flips between themes, and a literal turns a passing build into a
+  reported defect in exactly the half of the checks nobody runs by default.
 
 ---
 
@@ -605,10 +633,11 @@ Four sentences that are safe to write, each backed by something in §4:
 And one about the loop as a whole, which §2b backs:
 
 - *Every beat of the definition of done runs end to end in a browser, in
-  shooting order, three times without a failure — including the headline one:
-  press Enter on an empty bar and the board redeals from your own picks with no
-  model call at all.* Backed by `verify-definition-of-done.mjs`, which asserts
-  the agent route is called **zero** times.
+  shooting order, sixteen takes without a single failure — including the
+  headline one: press Enter on an empty bar and the board redeals from your own
+  picks with no model call at all.* Backed by `verify-definition-of-done.mjs`,
+  which asserts the agent route is called **zero** times, across two viewport
+  sizes and both themes.
 
 **Do not write** that this has been seen working in Chrome with the WebMCP flag.
 It has not. **Do not write** that the deal animation appears on the product
