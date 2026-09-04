@@ -1,0 +1,230 @@
+{
+  "census": {
+    "get_view_context": 6,
+    "search_by_color": 2,
+    "search_artworks": 6,
+    "redeal": 5,
+    "flag_artworks": 4,
+    "compare_artworks": 2
+  },
+  "runs": [
+    {
+      "run": 1,
+      "steps": [
+        {
+          "label": "Enter on an empty bar",
+          "modelCallsDuring": 0,
+          "noteBefore": null,
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteProvenanceAfter": "human",
+          "pickedTopBefore": 603,
+          "pickedTopAfter": 226,
+          "pickMoved": -377,
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "Enter again, board to board",
+          "noteBefore": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "pickedTopBefore": null,
+          "pickedTopAfter": null,
+          "pickMoved": null,
+          "firstCardMoved": 0
+        },
+        {
+          "label": "typed 1",
+          "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "quietMs": 21489,
+          "tools": [
+            "get_view_context",
+            "search_by_color",
+            "search_artworks",
+            "search_artworks",
+            "search_artworks",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 3,
+          "compareOpen": false,
+          "note": "You asked for warm and calm; your sea pick outweighs the rejected wreck and fishing-boat scenes—following its pale bone-and-umber horizon.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "typed 2",
+          "instruction": "Narrow these down for me — I can only hang one.",
+          "quietMs": 18192,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "compare_artworks"
+          ],
+          "agentFlagsOnBoard": 0,
+          "compareOpen": true,
+          "note": "Your two picks are warm shoreline scenes in earth-and-ochre palettes; the rejected reclining figure confirms that open coast, not indoor narrative, is the direction.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "answered the two-up",
+          "chose": "Choose The Coast of Elba",
+          "quietMs": 33544,
+          "agentFlagsOnBoard": 0,
+          "note": "Your two picks are warm shoreline scenes in earth-and-ochre palettes; the rejected reclining figure confirms that open coast, not indoor narrative, is the direction."
+        },
+        {
+          "label": "typed 3",
+          "instruction": "I’m torn. Help me decide.",
+          "quietMs": 17186,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 2,
+          "compareOpen": false,
+          "note": "The Coast of Elba won: its pale bone, umber, and grey-brown etching gives the calmest open shore; Tahitian Shore’s denser brown monotype falls away.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        }
+      ],
+      "chosen": [
+        "get_view_context",
+        "search_by_color",
+        "search_artworks",
+        "search_artworks",
+        "search_artworks",
+        "redeal",
+        "flag_artworks",
+        "get_view_context",
+        "redeal",
+        "compare_artworks",
+        "get_view_context",
+        "redeal",
+        "flag_artworks"
+      ],
+      "nudges": [],
+      "harnessReads": {
+        "picks": 1,
+        "rejects": 3,
+        "provisional": 3
+      },
+      "errors": []
+    },
+    {
+      "run": 2,
+      "steps": [
+        {
+          "label": "Enter on an empty bar",
+          "modelCallsDuring": 0,
+          "noteBefore": null,
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteProvenanceAfter": "human",
+          "pickedTopBefore": 603,
+          "pickedTopAfter": 226,
+          "pickMoved": -377,
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "Enter again, board to board",
+          "noteBefore": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "pickedTopBefore": null,
+          "pickedTopAfter": null,
+          "pickMoved": null,
+          "firstCardMoved": 0
+        },
+        {
+          "label": "typed 1",
+          "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "quietMs": 18934,
+          "tools": [
+            "get_view_context",
+            "search_artworks",
+            "search_artworks",
+            "search_artworks",
+            "search_by_color",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 1,
+          "compareOpen": false,
+          "note": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "typed 2",
+          "instruction": "Narrow these down for me — I can only hang one.",
+          "quietMs": 10095,
+          "tools": [
+            "get_view_context",
+            "compare_artworks"
+          ],
+          "agentFlagsOnBoard": 1,
+          "compareOpen": true,
+          "note": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "answered the two-up",
+          "chose": "Choose The Resounding Sea",
+          "quietMs": 33536,
+          "agentFlagsOnBoard": 0,
+          "note": "One pick holds — bone. Eleven works dealt to sit with it."
+        },
+        {
+          "label": "typed 3",
+          "instruction": "I’m torn. Help me decide.",
+          "quietMs": 20969,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 3,
+          "compareOpen": false,
+          "note": "The black etching’s bone and muted umber sea won over the amber oil still life; following its open, quiet horizon.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        }
+      ],
+      "chosen": [
+        "get_view_context",
+        "search_artworks",
+        "search_artworks",
+        "search_artworks",
+        "search_by_color",
+        "redeal",
+        "flag_artworks",
+        "get_view_context",
+        "compare_artworks",
+        "get_view_context",
+        "redeal",
+        "flag_artworks"
+      ],
+      "nudges": [],
+      "harnessReads": {
+        "picks": 1,
+        "rejects": 3,
+        "provisional": 4
+      },
+      "errors": []
+    }
+  ]
+}

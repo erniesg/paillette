@@ -1,0 +1,317 @@
+{
+  "census": {
+    "get_view_context": 9,
+    "redeal": 8,
+    "flag_artworks": 6,
+    "compare_artworks": 3
+  },
+  "runs": [
+    {
+      "run": 1,
+      "steps": [
+        {
+          "label": "Enter on an empty bar",
+          "modelCallsDuring": 0,
+          "noteBefore": null,
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteProvenanceAfter": "human",
+          "pickedTopBefore": 603,
+          "pickedTopAfter": 226,
+          "pickMoved": -377,
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "Enter again, board to board",
+          "noteBefore": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "pickedTopBefore": null,
+          "pickedTopAfter": null,
+          "pickMoved": null,
+          "firstCardMoved": 0
+        },
+        {
+          "label": "typed 1",
+          "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "quietMs": 19250,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 0,
+          "compareOpen": false,
+          "note": "You said warm; the picked bone-toned seascape stays, while the two shipwreck prints leave.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "typed 2",
+          "instruction": "Narrow these down for me — I can only hang one.",
+          "quietMs": 11184,
+          "tools": [
+            "get_view_context",
+            "compare_artworks"
+          ],
+          "agentFlagsOnBoard": 0,
+          "compareOpen": true,
+          "note": "You said warm; the picked bone-toned seascape stays, while the two shipwreck prints leave.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "answered the two-up",
+          "chose": "Choose Tahitian Shore [recto]",
+          "quietMs": 33542,
+          "agentFlagsOnBoard": 0,
+          "note": "You said warm; the picked bone-toned seascape stays, while the two shipwreck prints leave."
+        },
+        {
+          "label": "typed 3",
+          "instruction": "I’m torn. Help me decide.",
+          "quietMs": 13920,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 0,
+          "compareOpen": false,
+          "note": "The warm brown monotype stays; the cooler black-ink beach drawing is out — follow the softer Tahitian shoreline.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        }
+      ],
+      "chosen": [
+        "get_view_context",
+        "redeal",
+        "flag_artworks",
+        "get_view_context",
+        "compare_artworks",
+        "get_view_context",
+        "redeal",
+        "flag_artworks"
+      ],
+      "nudges": [],
+      "harnessReads": {
+        "picks": 1,
+        "rejects": 3,
+        "provisional": 3
+      },
+      "errors": []
+    },
+    {
+      "run": 2,
+      "steps": [
+        {
+          "label": "Enter on an empty bar",
+          "modelCallsDuring": 0,
+          "noteBefore": null,
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteProvenanceAfter": "human",
+          "pickedTopBefore": 603,
+          "pickedTopAfter": 226,
+          "pickMoved": -377,
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "Enter again, board to board",
+          "noteBefore": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "pickedTopBefore": null,
+          "pickedTopAfter": null,
+          "pickMoved": null,
+          "firstCardMoved": 0
+        },
+        {
+          "label": "typed 1",
+          "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "quietMs": 15717,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 3,
+          "compareOpen": false,
+          "note": "You asked warm and calm; you kept Moran’s sea but rejected the two storm-ship scenes—following the quieter coast.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "typed 2",
+          "instruction": "Narrow these down for me — I can only hang one.",
+          "quietMs": 15191,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "compare_artworks"
+          ],
+          "agentFlagsOnBoard": 0,
+          "compareOpen": true,
+          "note": "The warm coastal picks hold; the rejected storm print stays out, tightening around open shore and sunlit colour.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "answered the two-up",
+          "chose": "Choose Castellammare",
+          "quietMs": 33535,
+          "agentFlagsOnBoard": 0,
+          "note": "The warm coastal picks hold; the rejected storm print stays out, tightening around open shore and sunlit colour."
+        },
+        {
+          "label": "typed 3",
+          "instruction": "I’m torn. Help me decide.",
+          "quietMs": 15463,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 2,
+          "compareOpen": false,
+          "note": "You chose the pale grey-bone etching of Castellammare over the darker umber bay; following its spare, calm coast.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        }
+      ],
+      "chosen": [
+        "get_view_context",
+        "redeal",
+        "flag_artworks",
+        "get_view_context",
+        "redeal",
+        "compare_artworks",
+        "get_view_context",
+        "redeal",
+        "flag_artworks"
+      ],
+      "nudges": [],
+      "harnessReads": {
+        "picks": 1,
+        "rejects": 3,
+        "provisional": 5
+      },
+      "errors": []
+    },
+    {
+      "run": 3,
+      "steps": [
+        {
+          "label": "Enter on an empty bar",
+          "modelCallsDuring": 0,
+          "noteBefore": null,
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteProvenanceAfter": "human",
+          "pickedTopBefore": 603,
+          "pickedTopAfter": 226,
+          "pickMoved": -377,
+          "inks": [
+            "human"
+          ]
+        },
+        {
+          "label": "Enter again, board to board",
+          "noteBefore": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "noteAfter": "One pick holds — bone. Eleven works dealt to sit with it.",
+          "pickedTopBefore": null,
+          "pickedTopAfter": null,
+          "pickMoved": null,
+          "firstCardMoved": 0
+        },
+        {
+          "label": "typed 1",
+          "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+          "quietMs": 16271,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 3,
+          "compareOpen": false,
+          "note": "You asked warm, but kept Moran’s bone-toned sea and rejected the darker storm prints—following the pick.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "typed 2",
+          "instruction": "Narrow these down for me — I can only hang one.",
+          "quietMs": 22756,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "compare_artworks"
+          ],
+          "agentFlagsOnBoard": 0,
+          "compareOpen": true,
+          "note": "Your warm coastal picks hold; the sofa figure stays out, so this narrows toward open shores rather than indoor narrative.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        },
+        {
+          "label": "answered the two-up",
+          "chose": "Choose Castellammare",
+          "quietMs": 33552,
+          "agentFlagsOnBoard": 0,
+          "note": "Your warm coastal picks hold; the sofa figure stays out, so this narrows toward open shores rather than indoor narrative."
+        },
+        {
+          "label": "typed 3",
+          "instruction": "I’m torn. Help me decide.",
+          "quietMs": 17901,
+          "tools": [
+            "get_view_context",
+            "redeal",
+            "flag_artworks"
+          ],
+          "agentFlagsOnBoard": 2,
+          "compareOpen": false,
+          "note": "Castellammare’s quiet grey-beige etching holds; the blue-paper mountain drawing is out, so the decision is narrowing toward spare coastal calm.",
+          "inks": [
+            "human",
+            "agent"
+          ]
+        }
+      ],
+      "chosen": [
+        "get_view_context",
+        "redeal",
+        "flag_artworks",
+        "get_view_context",
+        "redeal",
+        "compare_artworks",
+        "get_view_context",
+        "redeal",
+        "flag_artworks"
+      ],
+      "nudges": [],
+      "harnessReads": {
+        "picks": 1,
+        "rejects": 3,
+        "provisional": 5
+      },
+      "errors": []
+    }
+  ]
+}

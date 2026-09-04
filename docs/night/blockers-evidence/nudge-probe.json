@@ -1,0 +1,14 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "requests": 3,
+  "interceptedFirstResponse": true,
+  "nudgeFired": true,
+  "nudge": "They have marked this board and you have not. Their marks and yours are the same currency and land on the same cards, so a turn that answers someone’s hands with only a sentence has left them nothing to agree or disagree with. The board is the transcript, and one hand has written on it.\n\nBefore you reply, call flag_artworks on at most three of the unmarked works below — or compare_artworks on two of them that differ on the one axis you are still unsure about, with the question set between them. Give every flag a reason naming what you can see in that record — the palette, the medium, the thing it has that the picks do not. Your flags arrive provisional, are drawn dashed, and steer nothing until they press P or X on the same work, so a wrong one costs you nothing and tells them more than a hedge would. Disagreeing is the point: if their words and their flags pull apart, mark what you actually think.\n\nKeep your note as well. This is in addition to the sentence, not instead of it — a board full of dashed marks and no wall label is the same defect the other way round.\n\nUnmarked works on the board:\nopen-access-art:nga:117659: Sailing Boats in a Tempest — Schelte Adams Bolswert after Andries van Eertvelt\nopen-access-art:nga:165229: Ships in a Stormy Sea — Petrus Johannes Schotel\nopen-access-art:nga:194624: Ship in a Squall — Seth Wells Cheney and John Cheney after Washington Allston\nopen-access-art:nga:110821: Jonah Thrown into the Stormy Sea — Justus Sadeler after Paul Bril\nopen-access-art:nga:136220: Shipping Scene from the Collection of John Chicheley — Elisha Kirkall after Willem van de Velde the Elder\nopen-access-art:nga:148302: The Breakers — Otis S. Weber\nopen-access-art:nga:119963: Fishing Boats Tossed before a Storm — Eugène Isabey\nopen-access-art:nga:7659: Mount's Bay — Francis Seymour Haden\n\nChoose from those ids. You have everything you need; do not search again first.",
+  "modelChoseAfterNudge": [
+    "flag_artworks"
+  ],
+  "board": {
+    "agentMarked": 3,
+    "compareOpen": false
+  }
+}

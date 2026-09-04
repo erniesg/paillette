@@ -149,9 +149,20 @@ Seven runs, all typed character-by-character into
 arrives before the sentence does; a take that cuts at 15 s will sometimes catch
 a board with no wall label on it yet.
 
-Shots `e2e5-01`, `e2e5-02`. The note and its board are in one 1440×900 frame,
-the human's utterance in graphite above and the agent's label in cyan behind a
-cyan rule.
+Shots `e2e5-01`, `e2e5-02`. **The sentence that stood here was wrong about
+`e2e5-02` and has been replaced — see the blockers lane's item 5.** It claimed
+the human's utterance and the agent's label were in one frame together. Opened
+at native resolution, `e2e5-02-board-and-note.png` carries the agent's cyan
+label and twelve cards, and above the label: the Paillette logo, About, Log in,
+Create account, `12 / 12 works`, the SORT row, the VIEW row and `Settings 30 /
+20`. There is no human utterance anywhere in it.
+
+The frame that does hold both inks is
+`docs/night/shots/blockers-01-two-inks-scrolly-80.png`, shot at scrollY 80 on
+the build with the board-mode chrome fold, and attested rather than described:
+`docs/night/blockers-evidence/frame.json` carries the two sentences verbatim,
+the RGB sampled out of the saved PNG at each rule, and a census of every other
+word in the frame.
 
 **Step 2 — `X` on two works, `P` on one, and the flags persist and are
 visible.** With no Escape pressed first, on both walks:

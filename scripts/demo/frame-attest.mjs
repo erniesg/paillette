@@ -101,6 +101,15 @@ const scoreViewport = (page) =>
     }).length;
     return {
       scrollY: Math.round(window.scrollY),
+      // Whose marks are on the cards in the frame. §7.2 is a claim about a
+      // screenshot, so it belongs in the attestation of one rather than in a
+      // sentence someone wrote after looking at it.
+      marks: {
+        human: cards.filter((el) => el.getAttribute('data-flag-by') === 'human')
+          .length,
+        agent: cards.filter((el) => el.getAttribute('data-flag-by') === 'agent')
+          .length,
+      },
       human: inside(human),
       humanText: human?.textContent?.trim() ?? null,
       note: inside(note),
@@ -303,6 +312,7 @@ const main = async () => {
       noteProvenance: rects.noteProvenance,
       wholeCards: rects.wholeCards,
       cardsOnBoard: rects.cards,
+      marks: rects.marks,
       png: sampled.size,
       inkSamples: sampled.points.map((point) => ({
         ...point,
@@ -331,6 +341,9 @@ const main = async () => {
   log(`  human: "${frame.humanText}"`);
   log(`  agent (${frame.noteProvenance}): "${frame.noteText}"`);
   log(`  whole cards in frame: ${frame.wholeCards} of ${frame.cardsOnBoard}`);
+  log(
+    `  marks on those cards: ${frame.marks.human} human, ${frame.marks.agent} agent`
+  );
   for (const point of frame.inkSamples) {
     log(`  sampled ${point.name} at ${point.x},${point.y}: ${point.hex}`);
   }
