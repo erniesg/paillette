@@ -85,24 +85,41 @@ one. `[]` dissolves them all.
 - `apps/api`: `POST /api/public-labels` (new), plus `agent.ts` carrying
   `exhibitionEdits` in the turn payload.
 
-### Two fixes found while verifying this lane's own work
+### Found while verifying this lane's own work
 
-- **The two-up was off screen.** `compare_artworks` opens a room that is
-  `fixed inset-0`, so it should be the viewport. Measured on `/nga/search` it
-  resolved to `top: 474, height: 1948`, putting both works ~1220px down a
-  1000px viewport. `position: fixed` only positions against the viewport while
-  no ancestor establishes a containing block, and the board sits inside a
-  section the deal animation gives a transform — an identity matrix, but a
-  transform is enough. The room now renders through a portal into `<body>`;
-  re-measured at `top: 0`, height exactly the viewport, both works in it. This
-  matters beyond my lane: it is the beat the brief calls the demo's best ten
-  seconds, and it was unfilmable. Found only because a "neither" button is
-  worthless on a room nobody can see.
 - **`annotate_atlas` lied by omission.** The view refuses to draw a name over
   an empty space, so a region whose works have all left the board renders
   nothing — but the tool still returned a bare `ok`, letting the agent believe
   it had named something the human could see. It now returns `notDrawn` with
   those region names and why.
+- **The two-up was off screen** — found here at 04:50, and independently by the
+  integration lane at 04:03. `compare_artworks` opens a room that is
+  `fixed inset-0`, so it should be the viewport; measured on `/nga/search` it
+  resolved to `top: 474, height: 1948`, putting both works ~1220px down a
+  1000px viewport. `position: fixed` only positions against the viewport until
+  an ancestor establishes a containing block, and a finished GSAP tween leaves
+  an identity transform on the results section — visually nothing, and enough.
+  Both lanes reached the same fix, a portal to `<body>`. **Integration's is the
+  one that survives the merge**, because it also sets `data-compare-open` on
+  the root to take the nav and the utterance bar off screen, which is what §7.3
+  actually asks for, and defers the portal to the first client effect rather
+  than sniffing for `document`. Recorded here because it is worth knowing the
+  beat the brief calls the demo's best ten seconds was unfilmable for most of
+  the night, and because a lane found it only by checking that its own feature
+  was reachable: "neither" is a worthless control on a room nobody can see.
+
+### Merged with `night/integration`
+
+Integration had moved 29 commits ahead and had already merged this lane once,
+so a diff against it read its newer work as deletions. Merged here rather than
+left for whoever integrates. One conflict — the duplicate compare fix above.
+
+Integration's work changes one thing this report should not overstate: **a
+rewritten statement now fires the turn by itself**. Editing the statement and
+pressing Enter on an empty bar sends the human's own sentence as the
+instruction, so the nudge this lane's harness types (§2) is no longer the only
+way to hand a correction over. The harness keeps typing it because a
+content-free nudge is the stricter test, not because the product needs one.
 
 ---
 
@@ -313,7 +330,7 @@ public domain in the United States", and **"1 of 5 labels written by an agent"**
 — counted from the data, not asserted.
 
 `docs/night/shots/40-exhibition-page.png`, `42-exhibition-colophon.png`,
-`44-atlas-regions.png`, `45-compare-neither.png`.
+`44-atlas-regions.png`.
 
 ---
 
@@ -381,7 +398,7 @@ removing them from the show.
 | | result |
 | --- | --- |
 | `pnpm --filter web typecheck` | clean except the baseline `worker.ts` error above |
-| `pnpm --filter web test` | **1015 passed**, 85 files, 1 file fails to collect (baseline) |
+| `pnpm --filter web test` | **1113 passed / 91 files**, 1 file fails to collect (baseline) |
 | `pnpm --filter api test` | **815 passed / 44 files** (baseline was 770 / 41) |
 
 New tests this lane: `exhibition.test.ts` (724 lines — schema, failure paths,
