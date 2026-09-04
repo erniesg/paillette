@@ -78,7 +78,7 @@ text:
 > by visually kindred ships, turbulent water, and storm-heavy skies — from full
 > gale to a boat racing home."*
 
-Nothing in that sequence was scripted. The model was handed the page's 16 tool
+Nothing in that sequence was scripted. The model was handed the page's 25 tool
 schemas and chose the chain itself.
 
 ## How we built it

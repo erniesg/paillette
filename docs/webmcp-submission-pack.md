@@ -52,11 +52,13 @@ unregister on unmount, every `execute` honours `options.signal`, and read-only
 tools carry `readOnlyHint: true` while the two mutating index tools require an
 on-page confirmation.
 
-**Tools:** `search_artworks`, `search_by_image`, `search_by_color`,
-`browse_collection`, `lookup_artwork`, `list_collections`, `get_search_quota`,
-`describe_artwork`, `get_view_context`, `show_artwork`, `set_results`,
-`create_collection`, `add_to_collection`, `index_zip`, `index_folder`,
-`get_index_status`.
+**Tools:** `list_collections`, `search_artworks`, `search_by_image`,
+`search_by_color`, `browse_collection`, `lookup_artwork`, `get_search_quota`,
+`describe_artwork`, `get_view_context`, `set_results`, `show_artwork`,
+`set_view`, `flag_artworks`, `search_by_exemplars`, `redeal`,
+`compare_artworks`, `get_exhibition`, `set_exhibition`, `write_labels`,
+`annotate_atlas`, `create_collection`, `add_to_collection`, `index_zip`,
+`index_folder`, `get_index_status`.
 
 **Eligibility note to include:** Paillette predates the submission period, so per
 the rules only submission-period work counts. `docs/webmcp-whats-new.md` splits

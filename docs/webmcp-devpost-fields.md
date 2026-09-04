@@ -52,7 +52,7 @@ image embeddings, and colour — into a single ranking using **reciprocal rank f
 with an LLM step that **parses a natural-language query into structured filters**
 (artist, medium, date range) plus a rewritten semantic query, grounded in the values
 that actually exist in the collection. On top of that sits a **serverless Cloudflare** stack (Remix
-on Workers, D1, R2, Vectorize, Cloudflare AI) and a WebMCP layer of seventeen tools
+on Workers, D1, R2, Vectorize, Cloudflare AI) and a WebMCP layer of twenty-five tools
 registered on `document.modelContext`. Rich interactivity comes from OpenAI voice —
 you talk to the agent and it reads descriptions back aloud — plus data enrichment:
 vision captions, colour extraction, and CSV metadata mapping run automatically on
@@ -126,7 +126,7 @@ everything indexed. The page detects WebMCP, so without it nothing changes.
 
 Paillette predates the submission period; the platform (multimodal search, the
 existing HTTP MCP server, NGA open-access ingestion) was live before Aug 25 2026.
-This submission is for the **WebMCP layer added after Aug 25**: seventeen tools on
+This submission is for the **WebMCP layer added after Aug 25**: twenty-five tools on
 `document.modelContext`, the feature-detected bridge, the anonymous indexing and
 read-aloud captioning, and the `/try` page. The full prior/new split with dated
 commit hashes (verifiable via `git log e4ae3b43..master`) is in
@@ -138,7 +138,7 @@ commit hashes (verifiable via `git log e4ae3b43..master`) is in
 - **Live URL**: `https://paillette-stg.berlayar.ai/try` — open it in ChatGPT's in-app
   browser (WebMCP on by default) or Chrome 149+ with
   `chrome://flags/#enable-webmcp-testing`.
-- **Gate check**: `await document.modelContext.getTools()` should list seventeen tools.
+- **Gate check**: `await document.modelContext.getTools()` should list twenty-five tools.
 - **Fastest demo**: pick a sample collection (e.g. "25 works, no metadata"), index it,
   then ask the agent to search it. The 25-image set indexes in a couple of minutes.
 

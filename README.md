@@ -72,7 +72,7 @@ Two LLM steps sit in front of retrieval, both fail-open:
 
 ```
 apps/web/app/lib/webmcp/
-  tools.ts       # the 16 tool definitions (schemas, annotations, execute)
+  tools.ts       # the 25 tool definitions (schemas, annotations, execute)
   registry.ts    # host binding: feature detection, idempotent registration, AbortSignal
   store.ts       # the shared canvas — the same React state the human's UI renders from
   client.ts      # HTTP client for the public search + indexing endpoints
@@ -85,13 +85,14 @@ apps/web/app/types/webmcp.d.ts                     # host API types
 
 | Group                                | Tools                                                                                                                                                                          |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Read / search (`readOnlyHint: true`) | `list_collections`, `search_artworks`, `search_by_image`, `search_by_color`, `browse_collection`, `lookup_artwork`, `get_search_quota`, `get_view_context`, `get_index_status` |
-| Shared canvas                        | `set_results`, `show_artwork`                                                                                                                                                  |
+| Read / search (`readOnlyHint: true`) | `list_collections`, `search_artworks`, `search_by_image`, `search_by_color`, `browse_collection`, `lookup_artwork`, `get_search_quota`, `get_view_context`, `search_by_exemplars`, `get_exhibition`, `get_index_status` |
+| Shared canvas                        | `set_results`, `show_artwork`, `set_view`, `flag_artworks`, `redeal`, `compare_artworks`                                                                                        |
+| Exhibition                           | `set_exhibition`, `write_labels`, `annotate_atlas`                                                                                                                             |
 | Curation                             | `create_collection`, `add_to_collection`                                                                                                                                       |
 | Indexing                             | `index_zip`, `index_folder`                                                                                                                                                    |
 | Vision                               | `describe_artwork` — captioner on `gpt-5.6-luna` (or `gpt-5.6-terra`), scoped to the open-access collection and freshly indexed sandbox collections                            |
 
-9 tools are `readOnlyHint: true`; the other 7 are `readOnlyHint: false`.
+11 tools are `readOnlyHint: true`; the other 14 are `readOnlyHint: false`.
 `create_collection`, `add_to_collection`, `index_zip` and `index_folder`
 additionally require an in-page confirmation the human sees before anything
 commits.

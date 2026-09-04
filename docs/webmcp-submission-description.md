@@ -28,7 +28,7 @@ separate integration and no server-side OAuth for the read paths.
 
 And because the domain is genuinely multimodal — text, image, and colour queries,
 plus curation into collections, plus building a brand-new collection out of a zip —
-there are seventeen tools with real work behind them, not a single search box wrapped
+there are twenty-five tools with real work behind them, not a single search box wrapped
 in a schema.
 
 Unseen data is handled, not special-cased. A CSV sidecar whose headers the page has
@@ -63,9 +63,11 @@ says exactly that in its result, with the current embedded count, so an agent re
 "still settling, N of M embedded" instead of telling the human their collection is
 empty.
 
-Of the seventeen tools, nine are annotated `readOnlyHint: true`. The seven that are
-not (`set_results`, `show_artwork`, `describe_artwork`, `create_collection`,
-`add_to_collection`, `index_zip`, `index_folder`) are marked `readOnlyHint: false`.
+Of the twenty-five tools, eleven are annotated `readOnlyHint: true`. The fourteen that are
+not (`set_results`, `set_view`, `show_artwork`, `flag_artworks`, `redeal`,
+`compare_artworks`, `set_exhibition`, `write_labels`, `annotate_atlas`,
+`describe_artwork`, `create_collection`, `add_to_collection`, `index_zip`,
+`index_folder`) are marked `readOnlyHint: false`.
 The four that write human-visible state — `create_collection`,
 `add_to_collection`, `index_zip`, `index_folder` — are additionally gated behind an
 in-page confirmation the human sees and approves before anything commits;

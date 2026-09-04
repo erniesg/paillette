@@ -13,7 +13,7 @@ features beyond what is asked. Do not deploy to production.
 
 ## Context (already built — do not rebuild)
 
-- 16 tools registered on `document.modelContext` in
+- 25 tools registered on `document.modelContext` in
   `apps/web/app/lib/webmcp/tools.ts`, bound by `apps/web/app/lib/webmcp/registry.ts`,
   mounted from `apps/web/app/components/webmcp/webmcp-bridge.tsx` via `root.tsx`.
 - Read tools wrap the anonymous public-search routes; shared-canvas tools
@@ -45,7 +45,7 @@ returns. All of it works on the staging URL, anonymously.
    drops the transcript into the search box — but only if needed.
 
 3. **Gate check + smoke test on staging.**
-   - `await document.modelContext.getTools()` returns all 16 tools.
+   - `await document.modelContext.getTools()` returns all 25 tools.
    - `index_zip` on a sample → poll `get_index_status` until `searchable: true`.
    - **Full spectrum, verified end-to-end:** `search_artworks` on a mood query
      ("stormy seascapes"); `search_artworks` on an exact parsed query (an
@@ -67,7 +67,7 @@ returns. All of it works on the staging URL, anonymously.
 
 ## Definition of done
 
-- `await document.modelContext.getTools()` on staging lists 16 tools.
+- `await document.modelContext.getTools()` on staging lists 25 tools.
 - A spoken prompt in ChatGPT's in-app browser completes
   index → status → the full search spectrum (mood, exact parsed, visual, colour) →
   show-artwork end to end.

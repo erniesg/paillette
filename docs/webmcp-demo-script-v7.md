@@ -82,7 +82,7 @@ inference. Runtime ≈ **1:50**. Product on screen at 0:08.
 > "Which is the whole point. Neither of us could do this alone — I can't name
 > what I'm after, but I can point at it; the agent can't see what caught my eye,
 > until it's reading the same page I am.
-> That's what sixteen tools on `document.modelContext` buy: it reads my view,
+> That's what twenty-five tools on `document.modelContext` buy: it reads my view,
 > and it can change it. Same tab, same grid — and I can take the wheel back any
 > second.
 > Today, Paillette is your eyes on the collection. In the future, your ears too."
@@ -112,7 +112,7 @@ inference. Runtime ≈ **1:50**. Product on screen at 0:08.
 
 ## 4. How the implementation actually works
 
-**Registration.** `apps/web/app/lib/webmcp/registry.ts` puts 16 tools on
+**Registration.** `apps/web/app/lib/webmcp/registry.ts` puts 25 tools on
 `document.modelContext`, reference-counted by name and feature-detected, so a
 browser without WebMCP renders an identical page.
 
@@ -155,7 +155,7 @@ someone clicks Approve in the page.
 
 | Beat | Measured |
 | --- | --- |
-| tools registered | **16** |
+| tools registered | **25** |
 | goes searchable | ~10s, at 1 of 100 embedded — the cut says "as it loads" |
 | fully indexed | 100/100 in ~6 min → ramped 37× |
 | suggested searches | 6 offered, **all 6 return results** |
