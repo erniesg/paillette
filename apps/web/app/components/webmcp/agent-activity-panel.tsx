@@ -532,6 +532,12 @@ export function AgentActivityPanel() {
                       <button
                         type="button"
                         className="pa-activity-row"
+                        /* Stable per call, so a harness watching this list can
+                           tell a new call from a re-render of an old one. The
+                           list is newest-first and reorders while calls are in
+                           flight, so matching by position reported the same
+                           tool several times over. */
+                        data-activity-id={entry.id}
                         data-tool={entry.toolName}
                         data-status={entry.status}
                         data-running={running ? 'true' : 'false'}

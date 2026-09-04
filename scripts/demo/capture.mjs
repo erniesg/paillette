@@ -153,26 +153,46 @@ const withQueryParam = (url, name) => {
   return parsed.toString();
 };
 
-/** Reads the tool-call entries the activity panel is currently showing. */
+/**
+ * Reads the tool-call entries the activity panel is showing.
+ *
+ * This used to look for `aside[aria-label="Agent activity"] ol` and find
+ * nothing, ever, for two reasons: the panel is a `div.pa-activity` whose log
+ * is a `section`, and — the one that matters — the log is **closed at rest by
+ * design** and nothing the agent does opens it. So the harness read a shut
+ * drawer and wrote `toolsFired: []` under a take in which the tools had all
+ * fired. Each row carries its own `data-tool` and `data-status`, which is a
+ * contract rather than a guess at where the text sits.
+ */
 const readEntries = (page) =>
-  page.evaluate(() => {
-    const aside = document.querySelector('aside[aria-label="Agent activity"]');
-    const list = aside?.querySelector('ol');
-    if (!list) return [];
-    return [...list.children].map((li) => {
-      const tool =
-        li.querySelector('div code')?.textContent?.trim() ?? '';
-      const text = li.textContent ?? '';
-      const status = text.includes('running')
-        ? 'running'
-        : text.includes('cancelled')
-          ? 'aborted'
-          : text.includes('error')
-            ? 'error'
-            : 'ok';
-      return { tool, status };
-    });
-  });
+  page.evaluate(() =>
+    [...document.querySelectorAll('.pa-activity-list [data-tool]')]
+      .map((row) => ({
+        id: row.getAttribute('data-activity-id') ?? '',
+        tool: row.getAttribute('data-tool') ?? '',
+        status: row.getAttribute('data-status') ?? 'ok',
+      }))
+      // Newest first on screen; oldest first is the order things happened in.
+      .reverse()
+  );
+
+/**
+ * Open the log, once.
+ *
+ * Not a workaround for the reader above — it is the shot. §7.4's answer to
+ * "how was WebMCP implemented" is a judge watching the real tools fire against
+ * the page, and that is only on camera if the drawer is open. It stays a
+ * click, made here rather than by the page, because a panel that opens itself
+ * is the chat this design deliberately is not.
+ */
+const openActivityLog = async (page) => {
+  const glyph = page.locator('button[aria-label="Agent activity"]');
+  if ((await glyph.count()) === 0) return false;
+  if ((await glyph.getAttribute('aria-expanded')) === 'true') return true;
+  await glyph.click();
+  await page.waitForSelector('.pa-activity-log', { timeout: 5000 }).catch(() => {});
+  return true;
+};
 
 const runFfmpeg = (args) =>
   new Promise((resolve, reject) => {
@@ -311,6 +331,10 @@ const main = async () => {
       });
     }
 
+    // Open the log before the loop starts, so the tools are on camera from the
+    // first call rather than revealed after the fact.
+    await openActivityLog(page);
+
     // Drive + observe until the agent goes quiet or the deadline passes.
     let previous = [];
     let quietSince = null;
@@ -329,11 +353,14 @@ const main = async () => {
       }
 
       const entries = await readEntries(page);
-      const oldestFirst = [...entries].reverse();
 
-      for (let i = 0; i < oldestFirst.length; i += 1) {
-        const current = oldestFirst[i];
-        const prior = previous[i];
+      // Matched by id, not by position. The list reorders while calls are in
+      // flight, so positional matching reported `list_collections` four times
+      // for one call — a beats.json that overstates what happened is worse
+      // than the empty one it replaced.
+      const seen = new Map(previous.map((entry) => [entry.id, entry]));
+      for (const current of entries) {
+        const prior = seen.get(current.id);
         if (!prior) {
           step += 1;
           const shot = path.join(stepsDir, `step-${step}.png`);
@@ -356,7 +383,7 @@ const main = async () => {
           });
         }
       }
-      previous = oldestFirst;
+      previous = entries;
 
       const running = entries.some((entry) => entry.status === 'running');
       const busy = await input.isDisabled();
@@ -374,10 +401,10 @@ const main = async () => {
       path: path.join(stepsDir, 'final.png'),
     }).catch(() => {});
 
-    const summary = await page.evaluate(() => {
-      const aside = document.querySelector('aside[aria-label="Agent activity"]');
-      return aside?.textContent ?? '';
-    });
+    const summary = await page.evaluate(
+      () =>
+        document.querySelector('.pa-activity-log')?.textContent?.trim() ?? ''
+    );
     log(`final panel:\n${summary}`);
   } finally {
     await context.close();
