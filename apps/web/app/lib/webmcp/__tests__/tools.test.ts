@@ -111,6 +111,7 @@ describe('tool surface', () => {
       'compare_artworks',
       'get_exhibition',
       'set_exhibition',
+      'write_labels',
       'annotate_atlas',
       'create_collection',
       'add_to_collection',

@@ -44,6 +44,7 @@ import {
   searchByExemplarsPublic,
   searchImagePublic,
   searchTextPublic,
+  writeLabelsPublic,
   INDEX_ARCHIVE_MAX_BYTES,
   INDEX_FILE_MAX_BYTES,
   PailletteApiError,
@@ -1725,6 +1726,9 @@ const compareArtworksTool = (): WebMcpTool => ({
 // whose hand wrote it.
 // ---------------------------------------------------------------------------
 
+/** Mirrors `MAX_LABELS_PER_CALL` on the route: one board's worth. */
+const MAX_LABELS_PER_CALL = 12;
+
 /** A work with everything the wall needs: catalogue line plus label. */
 const describeHungWork = (work: HungWork) => {
   const artwork = recallArtwork(work.artworkId);
@@ -1916,6 +1920,134 @@ const setExhibitionTool = (): WebMcpTool => ({
                 'These fields are the human’s. Your wording is on their screen as a dashed proposal they can accept; it is not on the wall. Take what they wrote as the brief and work with it.',
             }
           : {}),
+      });
+    }),
+});
+
+const writeLabelsTool = (): WebMcpTool => ({
+  name: 'write_labels',
+  title: 'Write the wall labels',
+  description:
+    'Write a wall label for each of these works, against the exhibition statement. The labels land on the human’s screen under the pictures and can be edited there.\nThis is the tool that makes the show a show rather than a pile: a label says what *this* work is doing for *this* theme, so the same painting in an exhibition about weather and one about grief gets a different label. Write the statement first — this refuses without one, because a label with no theme is just a caption.\nIt reads the vision caption describe_artwork already paid for rather than looking at the pictures again, so a work you have described is labelled from what it visibly shows and a work you have not is labelled from its catalogue record. The result says which, per work.\nUp to twelve at a time, and one model call for the whole wall — so pass the works you want labelled together, not one at a time. A label onto one the human has written is a proposal, not an overwrite.',
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      artworkIds: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: MAX_LABELS_PER_CALL,
+        description:
+          'The works to label, in the order they hang. Ids from the board or get_exhibition.',
+      },
+      voice: {
+        type: 'string',
+        maxLength: 200,
+        description:
+          'An optional steer on how the labels should read — "plainer", "for someone who has never been to a museum". Not a second statement; the statement is the brief.',
+      },
+      collection: collectionProperty,
+    },
+    required: ['artworkIds'],
+    additionalProperties: false,
+  },
+  execute: async (input, options) =>
+    guard(async () => {
+      const artworkIds = readStringArray(
+        (input as { artworkIds?: unknown }).artworkIds
+      );
+      if (!artworkIds.length) {
+        return fail(
+          'INVALID_INPUT',
+          'artworkIds must be a non-empty array.',
+          'Pass the ids from get_exhibition or the current board.'
+        );
+      }
+      if (artworkIds.length > MAX_LABELS_PER_CALL) {
+        return fail(
+          'TOO_MANY_WORKS',
+          `At most ${MAX_LABELS_PER_CALL} works per call.`,
+          'Label the board, then label the next one.'
+        );
+      }
+
+      const exhibition = getWebMcpState().exhibition;
+      const statement = exhibition.statement.current?.value ?? '';
+      if (!statement) {
+        return fail(
+          'NO_STATEMENT',
+          'There is no exhibition statement, so there is nothing for a label to be about.',
+          'Call set_exhibition with a statement first — 60 to 100 words on what this show is — then write the labels against it.'
+        );
+      }
+
+      const { missing } = recallArtworks(artworkIds);
+      if (missing.length === artworkIds.length) {
+        return fail(
+          'ARTWORK_NOT_IN_SESSION',
+          `Not loaded by this page: ${missing.join(', ')}.`,
+          'Search or redeal first, then label ids from what came back.'
+        );
+      }
+
+      const target = resolveSearchTarget(
+        (input as { collection?: unknown }).collection
+      );
+      const voice = asString((input as { voice?: unknown }).voice);
+      const title = exhibition.title.current?.value ?? '';
+
+      const response = await writeLabelsPublic({
+        collectionId: target.collectionId,
+        artworkIds: artworkIds.filter((id) => !missing.includes(id)),
+        statement,
+        ...(title ? { title } : {}),
+        ...(voice ? { voice } : {}),
+        signal: options.signal,
+      });
+
+      // Straight into the document, through the same merge the tool uses, so
+      // a label the human has already written is not overwritten by a batch.
+      const write = writeExhibition(
+        {
+          works: response.labels.map((entry) => ({
+            artworkId: entry.artworkId,
+            label: entry.label,
+          })),
+        },
+        { by: 'agent' }
+      );
+
+      const deferred = new Set(
+        write.deferred.map((entry) => entry.field.replace(/^label:/, ''))
+      );
+
+      return ok({
+        labels: response.labels.map((entry) => ({
+          artworkId: entry.artworkId,
+          work: flagLabel(entry.artworkId),
+          label: entry.label,
+          writtenFrom: entry.source,
+          ...(deferred.has(entry.artworkId) ? { proposedOnly: true } : {}),
+        })),
+        ...(missing.length ? { unresolved: missing } : {}),
+        ...(response.missing.length ? { unlabelled: response.missing } : {}),
+        ...(write.deferred.length
+          ? {
+              deferred: write.deferred,
+              deferredHint:
+                'The human wrote those labels themselves. Yours are on screen as dashed proposals they can take with one click; theirs are still on the wall.',
+            }
+          : {}),
+        catalogueOnly: response.labels
+          .filter((entry) => entry.source === 'catalogue')
+          .map((entry) => entry.artworkId),
+        effect: 'The labels are under the works on the human’s screen, in your ink, and they can edit any of them.',
       });
     }),
 });
@@ -2704,6 +2836,7 @@ export const createPailletteTools = (context: ToolContext): WebMcpTool[] => [
   compareArtworksTool(),
   getExhibitionTool(),
   setExhibitionTool(),
+  writeLabelsTool(),
   annotateAtlasTool(),
   createCollectionTool(),
   addToCollectionTool(),
@@ -2731,6 +2864,7 @@ export const PAILLETTE_TOOL_NAMES = [
   'compare_artworks',
   'get_exhibition',
   'set_exhibition',
+  'write_labels',
   'annotate_atlas',
   'create_collection',
   'add_to_collection',

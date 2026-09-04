@@ -410,6 +410,151 @@ describe('set_exhibition and get_exhibition', () => {
   });
 });
 
+describe('write_labels', () => {
+  const stubLabels = (
+    labels: { artworkId: string; label: string; source?: string }[],
+    { status = 200 }: { status?: number } = {}
+  ) => {
+    const sent: Record<string, any>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        sent.push({
+          url: String(input),
+          body: init.body ? JSON.parse(String(init.body)) : {},
+        });
+        if (status !== 200) {
+          return Response.json(
+            {
+              success: false,
+              error: { code: 'LABELS_RATE_LIMITED', message: 'Too many.' },
+            },
+            { status }
+          );
+        }
+        return Response.json({
+          success: true,
+          data: {
+            collectionId: 'nga',
+            model: 'gpt-5.6-terra',
+            labels: labels.map((entry) => ({
+              source: 'catalogue',
+              ...entry,
+            })),
+            missing: [],
+          },
+        });
+      })
+    );
+    return sent;
+  };
+
+  it('refuses without a statement, because a label needs a theme', async () => {
+    board(['a']);
+    const sent = stubLabels([]);
+    const result = await call('write_labels', { artworkIds: ['a'] });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('NO_STATEMENT');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('sends the theme with the works and writes the labels onto the show', async () => {
+    board(['a', 'b']);
+    writeExhibition(
+      { title: 'Leaving', statement: 'A show about departure.' },
+      { by: 'agent' }
+    );
+    const sent = stubLabels([
+      { artworkId: 'a', label: 'The boat is already gone.' },
+      { artworkId: 'b', label: 'Nobody is on the quay.' },
+    ]);
+
+    const result = await call('write_labels', { artworkIds: ['a', 'b'] });
+
+    expect(result.ok).toBe(true);
+    expect(sent[0]?.url).toBe('/api/public-labels');
+    expect(sent[0]?.body).toMatchObject({
+      collectionId: 'nga',
+      artworkIds: ['a', 'b'],
+      statement: 'A show about departure.',
+      title: 'Leaving',
+    });
+    expect(exhibition().labels.a?.current?.value).toBe(
+      'The boat is already gone.'
+    );
+    expect(exhibition().labels.b?.current?.by).toBe('agent');
+  });
+
+  it('does not overwrite a label the human wrote', async () => {
+    board(['a']);
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    writeExhibition({ works: [{ artworkId: 'a', label: 'Mine.' }] }, { by: 'human' });
+    stubLabels([{ artworkId: 'a', label: 'Theirs.' }]);
+
+    const result = await call('write_labels', { artworkIds: ['a'] });
+
+    expect(exhibition().labels.a?.current?.value).toBe('Mine.');
+    expect(exhibition().labels.a?.proposed?.value).toBe('Theirs.');
+    expect(result.labels[0].proposedOnly).toBe(true);
+    expect(result.deferred[0].field).toBe('label:a');
+  });
+
+  it('reports which labels were written from a caption and which were not', async () => {
+    board(['a', 'b']);
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    stubLabels([
+      { artworkId: 'a', label: 'Seen.', source: 'caption' },
+      { artworkId: 'b', label: 'Read.', source: 'catalogue' },
+    ]);
+
+    const result = await call('write_labels', { artworkIds: ['a', 'b'] });
+    expect(result.labels[0].writtenFrom).toBe('caption');
+    expect(result.catalogueOnly).toEqual(['b']);
+  });
+
+  it('carries the voice steer', async () => {
+    board(['a']);
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    const sent = stubLabels([{ artworkId: 'a', label: 'One.' }]);
+    await call('write_labels', { artworkIds: ['a'], voice: 'plainer' });
+    expect(sent[0]?.body.voice).toBe('plainer');
+  });
+
+  it('refuses an empty artworkIds', async () => {
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    const result = await call('write_labels', { artworkIds: [] });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('INVALID_INPUT');
+  });
+
+  it('refuses more than a board at a time', async () => {
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    const result = await call('write_labels', {
+      artworkIds: Array.from({ length: 13 }, (_, index) => `w${index}`),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('TOO_MANY_WORKS');
+  });
+
+  it('refuses ids this page has never seen', async () => {
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    const sent = stubLabels([]);
+    const result = await call('write_labels', { artworkIds: ['ghost'] });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('ARTWORK_NOT_IN_SESSION');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('returns a shaped failure when the service refuses', async () => {
+    board(['a']);
+    writeExhibition({ statement: 'A show about departure.' }, { by: 'agent' });
+    stubLabels([], { status: 429 });
+    const result = await call('write_labels', { artworkIds: ['a'] });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('LABELS_RATE_LIMITED');
+  });
+});
+
 describe('annotate_atlas', () => {
   it('names groupings and gives each work one region', () => {
     board(['a', 'b', 'c']);
