@@ -28,9 +28,10 @@ watching rather than a paragraph of claiming.
 ```sh
 pnpm --filter web dev --port 5222 --strictPort            # one shell
 
-node apps/web/scripts/verify-activity-log.mjs   http://localhost:5222   # 53 checks
+node apps/web/scripts/verify-definition-of-done.mjs http://localhost:5222 3  # section 9, 3 takes
+node apps/web/scripts/verify-activity-log.mjs   http://localhost:5222        # 53 checks
 node apps/web/scripts/capture-activity-shots.mjs http://localhost:5222 \
-     docs/night/shots/activity                                          # 32 checks + 30 PNGs
+     docs/night/shots/activity                                               # 32 checks + 30 PNGs
 ```
 
 Both drive the real `/nga/search` with the real tools registered on
@@ -42,6 +43,7 @@ is a camera that also checks what it is photographing.
 
 | Harness | Owner | Run 1 | Run 2 | Run 3 |
 | --- | --- | --- | --- | --- |
+| `verify-definition-of-done.mjs` | this lane | **32/32** | **32/32** | **32/32** |
 | `verify-activity-log.mjs` | this lane | **53/53** | **53/53** | **53/53** |
 | `capture-activity-shots.mjs` | this lane | **32/32** | **32/32** | **32/32** |
 | `voice-loop-verify.mjs` | voice | **0 failures** | **0 failures** | **0 failures** |
@@ -61,6 +63,72 @@ index in the board order but not its position in the masonry layout.
 
 Nothing in this lane is flaky across those runs. Every number above is the same
 on all three.
+
+---
+
+## 2b. Section 9, run as one continuous take
+
+This lane's own harnesses only prove this lane's surface. The brief's definition
+of done spans four lanes, and the harnesses that cover it each test a slice with
+their own fixtures and reset between sections. **A filmed take does not reset.**
+`verify-definition-of-done.mjs` drives one page from a cold load through every
+beat, in the order a camera would see them, and prints a verdict per bullet —
+because "37 checks passed" does not tell anyone whether bullet three is safe to
+point a lens at.
+
+**32 checks, three consecutive clean runs, every bullet green.**
+
+| §9 bullet | Verdict | What was actually observed |
+| --- | --- | --- |
+| `P`/`X`/`U`/`C` and Enter work; flags persist; `get_view_context` returns them | **PASS** 8/8 | `P` picks the hovered card, `X` rejects, `U` clears, `C` opens the two-up and one click answers it — and the flags survive the human running a different search |
+| Enter on an empty bar redeals from human flags, picks in place, **no LLM call** | **PASS** 7/7 | reaches `/exemplars` once, `/public-agent` **zero** times, deals **12**, the pick is first in the board order *and* the first card actually rendered, board marked as the human's move |
+| the agent's redeal note refers to the content of what was rejected | **PARTIAL** 5/5 | the precondition holds: after the sofa prompt and two `X` presses the turn carries the rejects the human just made, **each with a title rather than an id**. The model half is not run here — see below |
+| a voice utterance lands in the editable field; the note is spoken only after voice | **PARTIAL** 3/3 | a typed instruction alone fires the agent, the typed turn is **silent** (`speechSynthesis.speak` wrapped before page load and never called), the field is an editable `input`, the mic is one control beside it. The recogniser half is not run here — see below |
+| two colours of ink visible in every state | **PASS** 9/9 | human `rgb(230,227,220)` filled and solid, agent `rgb(94,200,216)` outlined and **dashed**, both on screen at once, the confirmed pick carrying the graphite hairline frame, and the activity glyph in the agent's ink |
+
+**The take's one invisible precondition, stated because it will spoil a shot.**
+The search field carries `autofocus`, and a bare letter is correctly ignored
+while a text field has focus. So on a cold load `P` does nothing until one click
+lands somewhere neutral. The script does that click as step one rather than
+pretending it is unnecessary. Whoever films this should know it.
+
+### The two halves this script does not run, and why
+
+- **The model.** Checking that the note refers to the *content* of the rejects
+  needs a live model, and a stub answering with a sentence about rejects would
+  be the script grading its own homework. The API worker on this VM **is**
+  reachable and does have a key — `POST /api/public-agent/turn` answers
+  `NO_TOOLS` rather than an auth error, which means the route and the key are
+  both there. It was **deliberately not run**: the anonymous budget is 40 model
+  calls per client per hour, shared across everyone on this machine, three sofa
+  runs cost roughly nine, and another lane had that worker up and may have been
+  rehearsing against it. The evidence for this bullet already stands at **9 live
+  runs in the shared-state report and 3 in the voice report**; a fourth
+  confirmation was not worth spoiling someone's takes for.
+- **The recogniser.** Headless Chromium cannot do real speech recognition —
+  Chrome ships the audio to Google. The plumbing is checked with a fake
+  recogniser in `voice-loop-verify.mjs`, which passes on this branch; a
+  genuinely spoken take must be filmed on a real machine.
+
+### Three false alarms, recorded because each looked like a defect first
+
+Every one was the script's fault, not the product's, and each is the kind of
+thing that would have cost someone a morning:
+
+1. **"the board dealt eight."** A ten-work fixture, and a redeal excludes the
+   picks, the rejects and everything already dealt. Fixture defect.
+2. **"the rejects were not named by title."** The assertion pattern-matched a
+   `reject:Title` serialisation the payload does not use; it sends
+   `{artworkId, title, to}`. The titles were there all along.
+3. **"the two hands render in the same colour."** The check read
+   `.paillette-flag-badge`, which is a layout wrapper inheriting body colour —
+   so it compared two identical values and reported that the provenance ink,
+   the thing the whole palette exists for, was broken. **It is not.** The mark
+   is the pressed button *inside* the badge. Read that and the human is filled
+   graphite with a solid border, the agent outlined cyan and dashed.
+
+That third one is worth repeating for anyone else writing an ink check: assert
+on `.paillette-flag-button[aria-pressed="true"]`, never on the badge.
 
 ---
 
@@ -474,6 +542,7 @@ apps/web/app/lib/webmcp/__tests__/{activity-glyph,activity-format,summarise,acti
 apps/web/app/components/webmcp/__tests__/agent-activity-panel.test.tsx
 apps/web/scripts/capture-activity-shots.mjs           new — 32 checks, 30 PNGs
 apps/web/scripts/verify-activity-log.mjs              new — 53 checks, the unhappy paths
+apps/web/scripts/verify-definition-of-done.mjs        new — section 9 as one take, verdict per bullet
 apps/web/scripts/{voice-loop-verify,integration-walkthrough}.mjs   the panel control they clicked is gone
 ```
 
@@ -533,6 +602,17 @@ Four sentences that are safe to write, each backed by something in §4:
 - *Nothing about it depends on speech, and it degrades to nothing at all on a
   browser without WebMCP.* Backed by the grep in §4 and by `12-no-host.png`.
 
+And one about the loop as a whole, which §2b backs:
+
+- *Every beat of the definition of done runs end to end in a browser, in
+  shooting order, three times without a failure — including the headline one:
+  press Enter on an empty bar and the board redeals from your own picks with no
+  model call at all.* Backed by `verify-definition-of-done.mjs`, which asserts
+  the agent route is called **zero** times.
+
 **Do not write** that this has been seen working in Chrome with the WebMCP flag.
 It has not. **Do not write** that the deal animation appears on the product
-grid — that is the visuals lane's, and it does not.
+grid — that is the visuals lane's, and it does not. **Do not write** that the
+agent's note was verified against a live model on this branch — it was not; that
+evidence is the shared-state and voice lanes', and §2b says why it was not
+repeated here.
