@@ -47,7 +47,14 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         display: ['Playfair Display', 'Georgia', 'serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        // JetBrains Mono was declared here but never loaded, so every
+        // `font-mono` on the site was silently falling back to whatever the OS
+        // happened to have. IBM Plex Mono is already in root.tsx's font link.
+        mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        // The wall-label serif. Garamond is a book face, not a display face —
+        // it sits behind the works instead of competing with them, which is
+        // what a label next to a painting is supposed to do.
+        wall: ['EB Garamond', 'Georgia', 'serif'],
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
