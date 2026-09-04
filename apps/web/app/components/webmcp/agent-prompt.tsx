@@ -232,7 +232,7 @@ const readBoardMarkState = (
 ): BoardMarkState => {
   const state = getWebMcpState();
   const flags = new Map(
-    state.flags.map((flag) => [flag.artworkId, flag.flag] as const)
+    state.flags.map((flag) => [flag.artworkId, flag] as const)
   );
   // Whatever is actually in front of them, freshest surface first. `redeal`'s
   // own `worksOnScreen` knows about the board and the human's grid but not
@@ -249,13 +249,17 @@ const readBoardMarkState = (
     humanGestured: Boolean(
       gestures?.flagsDelta?.length || gestures?.compareChoice
     ),
+    // The two-up is a room, so while one is open there is no board to mark.
+    comparing: Boolean(state.compare),
     board: onScreen.map((artworkId) => {
       const summary = lookUpWork(artworkId);
+      const flag = flags.get(artworkId);
       return {
         artworkId,
         title: summary?.title ?? null,
         artist: summary?.artist ?? null,
-        flag: flags.get(artworkId) ?? null,
+        flag: flag?.flag ?? null,
+        by: flag?.by ?? null,
       };
     }),
   };
@@ -583,9 +587,17 @@ export function AgentPrompt({
            * behaviour, and asking for it in stronger prose has been tried
            * twice. See `unmarked-board`.
            */
-          const unmarked = findUnmarkedBoard(readBoardMarkState(gestures), called);
-          if (unmarked && !nudged.has('unmarked') && putBackToWork(unmarked)) {
-            nudged.add('unmarked');
+          const marks = readBoardMarkState(gestures);
+          const unmarked = findUnmarkedBoard(marks, called);
+          // Keyed on the board, like the labels gap is keyed on the works: a
+          // turn that flagged and then redealt has dealt its own marks away and
+          // is looking at a different board, which is a job it has not done
+          // rather than the one it already did. `MAX_NUDGES` is the ceiling.
+          const boardKey = `unmarked:${marks.board
+            .map((work) => work.artworkId)
+            .join(',')}`;
+          if (unmarked && !nudged.has(boardKey) && putBackToWork(unmarked)) {
+            nudged.add(boardKey);
             continue;
           }
 

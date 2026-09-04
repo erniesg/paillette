@@ -50,12 +50,53 @@ describe('findUnmarkedBoard', () => {
     );
   });
 
-  it('is satisfied by a flag', () => {
-    expect(findUnmarkedBoard(board(), new Set(['flag_artworks']))).toBeNull();
+  it('is satisfied by a mark that is actually on the board', () => {
+    expect(
+      findUnmarkedBoard(
+        board({
+          board: [
+            { artworkId: 'a', title: 'A', artist: null, flag: 'pick', by: 'human' },
+            { artworkId: 'b', title: 'B', artist: null, flag: null },
+            {
+              artworkId: 'c',
+              title: 'C',
+              artist: null,
+              flag: 'reject',
+              by: 'agent',
+            },
+          ],
+        }),
+        new Set(['flag_artworks'])
+      )
+    ).toBeNull();
+  });
+
+  /**
+   * The case a browser probe on staging found, and the reason satisfaction is
+   * read off the board rather than off the tool names.
+   *
+   * The model flagged three works and then redealt. Only confirmed human picks
+   * hold a slot, so the deal took its own proposals with it: `flag_artworks`
+   * was in the turn's tool names and the board in front of the human had one
+   * hand on it.
+   */
+  it('is not satisfied by a flag the turn then dealt away', () => {
+    const nudge = findUnmarkedBoard(board(), new Set(['flag_artworks', 'redeal']));
+
+    expect(nudge).toContain('flag_artworks');
+    expect(nudge).toContain('the deal took your marks with it');
   });
 
   it('is satisfied by a two-up', () => {
     expect(findUnmarkedBoard(board(), new Set(['compare_artworks']))).toBeNull();
+    // And by the room being open, which is the state rather than the call.
+    expect(findUnmarkedBoard(board({ comparing: true }), nothing)).toBeNull();
+  });
+
+  it('does not accuse a turn that has not dealt anything away', () => {
+    expect(findUnmarkedBoard(board(), nothing)).not.toContain(
+      'the deal took your marks with it'
+    );
   });
 
   it('is not satisfied by having searched and redealt', () => {

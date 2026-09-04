@@ -942,32 +942,24 @@ describe('AgentPrompt — a turn that answers gestures', () => {
     expect(nudgesIn(bodies).join(' ')).toContain('nga-3');
   });
 
-  it('lets the turn end once the model has proposed something', async () => {
+  it('lets the turn end once a mark of its own is on the board', async () => {
     setModelContext({ getTools: async () => [] });
     twoWorks();
     setFlag('nga-2', 'pick', { by: 'human' });
+    // The proposal, as the board holds it after the tool has run. Set here
+    // rather than dispatched, because what satisfies the check is the mark on
+    // the card and not the call that put it there — a flag the turn then deals
+    // away leaves the board with one hand on it, which is the defect a browser
+    // probe on staging found.
+    setFlag('nga-3', 'reject', { by: 'agent', reason: 'darker' });
     const bodies = scriptModel([
-      {
-        role: 'assistant',
-        tool_calls: [
-          {
-            id: 't1',
-            function: {
-              name: 'flag_artworks',
-              arguments: JSON.stringify({
-                flags: [{ artworkId: 'nga-3', flag: 'reject', reason: 'darker' }],
-              }),
-            },
-          },
-        ],
-      },
       { role: 'assistant', content: 'Following the greys.' },
     ]);
 
     render(<AgentPrompt />);
     await type('something warm');
 
-    expect(bodies).toHaveLength(2);
+    expect(bodies).toHaveLength(1);
     expect(nudgesIn(bodies).join(' ')).not.toContain('flag_artworks');
   });
 
