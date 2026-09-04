@@ -30,13 +30,20 @@ import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 import { SOCIAL_CARD_WIDTH, WALL_IMAGE_WIDTH, atWidth } from '~/lib/share/iiif';
 
 /**
- * The label credit, as a mark rather than a sentence.
+ * Who wrote a label is **ink**, not a mark and certainly not a tooltip.
  *
- * A museum prints who wrote its labels; it does not print it under each one.
- * The mark carries the fact and the colophon says what the mark means, once,
- * at the bottom where a credit line belongs.
+ * This page used to hang a `··` glyph off every agent-written label with
+ * `title` and `aria-label` both reading "Label written by an agent" — a
+ * tooltip restating a mark that existed only to need the tooltip. Two pieces
+ * of chrome for one bit of information.
+ *
+ * The rule down the left of each label carries it instead, in the same two
+ * inks the statement, the wall label and the board already use, switched by
+ * the same `data-provenance` attribute. Nothing to hover, nothing to read, and
+ * the convention is already learned by the time anyone reaches this page. The
+ * colophon still prints the count once at the bottom, which is where a museum
+ * puts "labels written by…" and is also the non-colour statement of the fact.
  */
-export const AGENT_MARK = '·⁠·';
 
 /**
  * What a link looks like when it is pasted.
@@ -133,18 +140,11 @@ export const ExhibitionView = ({ page }: { page: ExhibitionPage }) => {
                 </p>
 
                 {work.label && (
-                  <p className="exhibition-label">
+                  <p
+                    className="exhibition-label"
+                    data-provenance={work.labelByAgent ? 'agent' : 'human'}
+                  >
                     {work.label}
-                    {work.labelByAgent && (
-                      <span
-                        className="exhibition-mark"
-                        aria-label="Label written by an agent"
-                        title="Label written by an agent"
-                      >
-                        {' '}
-                        {AGENT_MARK}
-                      </span>
-                    )}
                   </p>
                 )}
 
@@ -163,10 +163,10 @@ export const ExhibitionView = ({ page }: { page: ExhibitionPage }) => {
       </ol>
 
       {/*
-        The colophon. Terse, and every line in it is a fact somebody could
-        check: where the pictures came from, what the rights are, how many of
-        the labels a machine wrote, and — when the catalogue could not resolve
-        something the link asked for — that it happened.
+        The colophon. Every line is a fact somebody could check, and nothing
+        here explains the page to itself. The rights sentence stays long
+        because it is the institution's own credit line rather than our
+        chrome — the licence is the part a reuser acts on.
       */}
       <footer className="exhibition-colophon lt-catalogue">
         <p>
@@ -177,14 +177,18 @@ export const ExhibitionView = ({ page }: { page: ExhibitionPage }) => {
         <p>{page.rights}</p>
         {agentWritten > 0 && (
           <p>
-            {AGENT_MARK} {agentWritten} of {page.works.length}{' '}
+            {agentWritten} of {page.works.length}{' '}
             {page.works.length === 1 ? 'label' : 'labels'} written by an agent
           </p>
         )}
+        {/*
+          Was "N works in this link could not be resolved in the catalogue" —
+          a sentence narrating a mechanism the visitor cannot act on and did
+          not ask about. They need the count, not the cause.
+        */}
         {page.missing > 0 && (
           <p>
-            {page.missing} {page.missing === 1 ? 'work' : 'works'} in this link
-            could not be resolved in the catalogue
+            {page.missing} {page.missing === 1 ? 'work' : 'works'} unavailable
           </p>
         )}
         <p>

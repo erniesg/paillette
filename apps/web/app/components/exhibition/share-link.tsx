@@ -148,13 +148,18 @@ export const ShareExhibitionLink = ({
         data-share-state={state}
         className="paillette-share-link lt-catalogue"
       >
+        {/*
+          Three labels, not four. The working state used to read "Copying…",
+          which narrates a mechanism nobody asked about and made one click
+          flicker through three different words in under a second. It is
+          dimmed and disabled instead — a colour and a state, not a word —
+          and the label only changes to say the thing that actually happened.
+        */}
         {state === 'copied'
           ? 'Copied'
           : state === 'failed'
             ? 'Copy failed'
-            : state === 'working'
-              ? 'Copying…'
-              : 'Copy link'}
+            : 'Copy link'}
       </button>
 
       {fallbackUrl && (

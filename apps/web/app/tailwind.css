@@ -2075,21 +2075,25 @@ html[data-theme='light'] .themeable-surface code {
   color: var(--ink-human);
 }
 
+/* The rule down the left carries who wrote it, in the same two inks and off
+ * the same attribute as the statement above it and the wall label on the
+ * board. The `··` glyph and its tooltip that used to do this job are gone. */
 .exhibition-label {
   margin-top: 1rem;
   padding-left: 1rem;
-  border-left: 1px solid var(--ink-human-faint);
+  border-left: 1px solid var(--ink);
   font-size: 1rem;
   line-height: 1.6;
   color: var(--ink-human-soft);
   text-wrap: pretty;
 }
 
-/* Who wrote the label is a mark, not a caption. The colophon says what it
- * means, once, at the bottom, where a credit line belongs. */
-.exhibition-mark {
-  color: var(--ink-agent);
-  letter-spacing: 0.1em;
+.exhibition-label[data-provenance='human'] {
+  --ink: var(--ink-human-faint);
+}
+
+.exhibition-label[data-provenance='agent'] {
+  --ink: var(--ink-agent);
 }
 
 .exhibition-accession {
