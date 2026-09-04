@@ -1,0 +1,28 @@
+{
+  "text": "what do these have in common?",
+  "flagsDelta": [
+    {
+      "artworkId": "open-access-art:nga:50295",
+      "title": "Peaceful Valley (Alexander Helwig Wyant)",
+      "to": "pick"
+    },
+    {
+      "artworkId": "open-access-art:nga:184224",
+      "title": "Vicinity of Morestal (François-Auguste Ravier)",
+      "to": "reject"
+    }
+  ],
+  "selection": [],
+  "hovered": null,
+  "compareChoice": {
+    "winner": {
+      "id": "open-access-art:nga:50295",
+      "title": "Peaceful Valley (Alexander Helwig Wyant)"
+    },
+    "loser": {
+      "id": "open-access-art:nga:184224",
+      "title": "Vicinity of Morestal (François-Auguste Ravier)"
+    },
+    "question": "Which one holds the wall better?"
+  }
+}

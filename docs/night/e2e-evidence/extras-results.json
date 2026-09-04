@@ -1,0 +1,52 @@
+[
+  {
+    "ok": true,
+    "label": "a compare choice fires no turn of its own",
+    "detail": "0 agent requests after the click"
+  },
+  {
+    "ok": true,
+    "label": "the compare choice rides the next turn",
+    "detail": "{\"winner\":{\"id\":\"open-access-art:nga:50295\",\"title\":\"Peaceful Valley (Alexander Helwig Wyant)\"},\"loser\":{\"id\":\"open-access-art:nga:184224\",\"title\":\"Vicinity of Morestal (François-Auguste Ravier)\"},\"question\":\"Which one holds the wall better?\"}"
+  },
+  {
+    "ok": true,
+    "label": "the flags the choice laid down ride with it",
+    "detail": "[{\"artworkId\":\"open-access-art:nga:50295\",\"title\":\"Peaceful Valley (Alexander Helwig Wyant)\",\"to\":\"pick\"},{\"artworkId\":\"open-access-art:nga:184224\",\"title\":\"Vicinity of Morestal (François-Auguste Ravier)\",\"to\":\"reject\"}]"
+  },
+  {
+    "ok": true,
+    "label": "no prompt bar without a host",
+    "detail": "count=0"
+  },
+  {
+    "ok": true,
+    "label": "P and X still flag with no agent on the page",
+    "detail": "[{\"id\":\"open-access-art:nga:50295\",\"flag\":\"reject\"},{\"id\":\"open-access-art:nga:184224\",\"flag\":\"pick\"}]"
+  },
+  {
+    "ok": true,
+    "label": "Enter on the bare board redeals, with no agent anywhere",
+    "detail": "https://paillette-stg.berlayar.ai/api/public-search/nga/exemplars"
+  },
+  {
+    "ok": true,
+    "label": "the deal board renders for a visitor with no agent",
+    "detail": ""
+  },
+  {
+    "ok": false,
+    "label": "headless Chromium exposes no SpeechRecognition — the spoken path cannot be proven here",
+    "detail": "{\"SpeechRecognition\":\"function\",\"webkitSpeechRecognition\":\"function\",\"speechSynthesis\":\"object\",\"voices\":0,\"mediaDevices\":\"function\"}"
+  },
+  {
+    "ok": false,
+    "label": "the mic control is feature-detected away where recognition is missing",
+    "detail": "push-to-talk buttons on screen: 1"
+  },
+  {
+    "ok": true,
+    "label": "speech *synthesis* exists, so the reply-aloud half is at least reachable",
+    "detail": "0 voices installed"
+  }
+]
