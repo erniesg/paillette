@@ -184,8 +184,10 @@ for (let index = 1; index <= RUNS; index += 1) {
   console.log('tool calls    :');
   for (const call of outcome.toolCalls) console.log('   ', call.slice(0, 240));
   console.log('reply         :', outcome.replies.join(' / ') || '(none)');
-  if (outcome.turnErrors.length) {
-    console.log('turn errors   :', outcome.turnErrors.slice(0, 3));
+  for (const error of outcome.turnErrors.slice(0, 3)) {
+    // Printed one per line rather than as an array: the message is the whole
+    // point of a failed run, and console.log of an array wraps it away.
+    console.log('turn error    :', error);
   }
   console.log('NOTE          :', outcome.note ?? '(none written)');
   if (outcome.pageErrors.length) {

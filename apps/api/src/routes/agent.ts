@@ -23,8 +23,20 @@ import { Hono } from 'hono';
 import type { Env } from '../index';
 import { openaiChat, type OpenAiToolMessage } from '../utils/openai';
 
-/** One conversation should not be able to spend the whole daily budget. */
-export const MAX_AGENT_TURNS_PER_CLIENT_PER_HOUR = 40;
+/**
+ * One conversation should not be able to spend the whole daily budget.
+ *
+ * This counts **model calls, not turns**, and the difference is large enough to
+ * plan around: one thing a person types costs two or three requests, because
+ * the loop reads the view, acts on it, and then answers. Forty calls is
+ * therefore something like fifteen typed instructions in an hour, not forty.
+ *
+ * The old name said "turns" and made the budget read as nearly three times what
+ * it is — which matters when someone rehearses a demo and finds the agent dead
+ * on the take. The deterministic loop is unaffected by this ceiling: Enter on
+ * an empty bar never reaches this route.
+ */
+export const MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40;
 /** Beyond this the loop is not converging and should be stopped. */
 export const MAX_MESSAGES_PER_REQUEST = 60;
 const MAX_BODY_CHARS = 120_000;
@@ -167,7 +179,7 @@ const withinAgentRateLimit = async (
   const key = `webmcp-agent:v1:${bucket}:${clientHash}`;
   try {
     const used = Number((await env.CACHE.get(key)) || '0');
-    if (Number.isFinite(used) && used >= MAX_AGENT_TURNS_PER_CLIENT_PER_HOUR) {
+    if (Number.isFinite(used) && used >= MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR) {
       return false;
     }
     await env.CACHE.put(key, String((Number.isFinite(used) ? used : 0) + 1), {
