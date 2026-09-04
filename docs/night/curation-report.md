@@ -85,6 +85,25 @@ one. `[]` dissolves them all.
 - `apps/api`: `POST /api/public-labels` (new), plus `agent.ts` carrying
   `exhibitionEdits` in the turn payload.
 
+### Two fixes found while verifying this lane's own work
+
+- **The two-up was off screen.** `compare_artworks` opens a room that is
+  `fixed inset-0`, so it should be the viewport. Measured on `/nga/search` it
+  resolved to `top: 474, height: 1948`, putting both works ~1220px down a
+  1000px viewport. `position: fixed` only positions against the viewport while
+  no ancestor establishes a containing block, and the board sits inside a
+  section the deal animation gives a transform — an identity matrix, but a
+  transform is enough. The room now renders through a portal into `<body>`;
+  re-measured at `top: 0`, height exactly the viewport, both works in it. This
+  matters beyond my lane: it is the beat the brief calls the demo's best ten
+  seconds, and it was unfilmable. Found only because a "neither" button is
+  worthless on a room nobody can see.
+- **`annotate_atlas` lied by omission.** The view refuses to draw a name over
+  an empty space, so a region whose works have all left the board renders
+  nothing — but the tool still returned a bare `ok`, letting the agent believe
+  it had named something the human could see. It now returns `notDrawn` with
+  those region names and why.
+
 ---
 
 ## 2. The three by-hand runs
@@ -293,7 +312,8 @@ National Gallery, "CC0 open access. The Gallery believes these works are in the
 public domain in the United States", and **"1 of 5 labels written by an agent"**
 — counted from the data, not asserted.
 
-`docs/night/shots/40-exhibition-page.png`, `42-exhibition-colophon.png`.
+`docs/night/shots/40-exhibition-page.png`, `42-exhibition-colophon.png`,
+`44-atlas-regions.png`, `45-compare-neither.png`.
 
 ---
 
@@ -364,7 +384,7 @@ removing them from the show.
 | `pnpm --filter web test` | **1015 passed**, 85 files, 1 file fails to collect (baseline) |
 | `pnpm --filter api test` | **815 passed / 44 files** (baseline was 770 / 41) |
 
-New tests this lane: `exhibition.test.ts` (698 lines — schema, failure paths,
+New tests this lane: `exhibition.test.ts` (724 lines — schema, failure paths,
 partial-write merge semantics, and human-edited fields surviving an agent
 rewrite), `exhibition-link.test.ts`, `exhibition-route.test.ts`,
 `exhibition-head.test.tsx`, `share-link.test.tsx`, `atlas-regions.test.tsx`,
