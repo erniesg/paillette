@@ -24,6 +24,7 @@ import {
   getWebMcpState,
   setBoard,
   setDealError,
+  setHumanResults,
 } from '../store';
 import { __resetTurnStateForTest, submitHumanTurn } from '../turn';
 
@@ -282,6 +283,67 @@ describe('Enter on an empty bar', () => {
 
     expect(outcome.kind).toBe('noop');
     expect(calls).toHaveLength(0);
+    // …but it says so. A refusal nobody can see is a broken key.
+    expect(getWebMcpState().dealError?.code).toBe('NO_EXEMPLARS');
+  });
+
+  it('deals from two X presses on a search grid, with nothing picked', async () => {
+    // The exact gesture the brief calls the headline beat, in the state a
+    // judge meets it in: a search grid, no board yet, no picks — just two
+    // rejects and Enter.
+    rememberArtworks(['g1', 'g2', 'g3', 'g4'].map(artwork));
+    setHumanResults({
+      origin: 'human',
+      label: 'text search "warm landscape"',
+      items: ['g1', 'g2', 'g3', 'g4'].map((id) => ({ id }) as never),
+      at: 1,
+    });
+    setFlag('g3', 'reject', { by: 'human' });
+    setFlag('g4', 'reject', { by: 'human' });
+    stubExemplarRoute(['n1', 'n2']);
+
+    const outcome = await submitHumanTurn();
+
+    expect(outcome.kind).toBe('redeal');
+    expect(outcome.kind === 'redeal' && outcome.result.ok).toBe(true);
+
+    const exemplarCall = calls.find((call) => call.url.includes('/exemplars'));
+    expect(exemplarCall?.body).toMatchObject({
+      // The two they left alone are the direction; the two they threw out push.
+      positiveIds: ['g1', 'g2'],
+      negativeIds: ['g3', 'g4'],
+    });
+    // The grid they were looking at is excluded, so the deal cannot hand the
+    // same works back and read as nothing having happened.
+    expect(exemplarCall?.body.excludeIds).toEqual(
+      expect.arrayContaining(['g1', 'g2', 'g3', 'g4'])
+    );
+    expect(getWebMcpState().board?.order).toEqual(['n1', 'n2']);
+    expect(
+      outcome.kind === 'redeal' &&
+        outcome.result.ok &&
+        outcome.result.seededBy
+    ).toBe('unrejected');
+    // No model anywhere in the path.
+    expect(calls.some((call) => call.url.includes('public-agent'))).toBe(false);
+  });
+
+  it('labels a rejects-only board by what was thrown out, not by picks', async () => {
+    rememberArtworks(['g1', 'g2'].map(artwork));
+    setHumanResults({
+      origin: 'human',
+      label: 'text search',
+      items: ['g1', 'g2'].map((id) => ({ id }) as never),
+      at: 1,
+    });
+    setFlag('g2', 'reject', { by: 'human' });
+    stubExemplarRoute(['n1']);
+
+    await submitHumanTurn();
+
+    expect(getWebMcpState().agentResults?.label).toBe(
+      '1 work, dealt away from 1 reject'
+    );
   });
 
   it('hands a typed turn to the agent instead of redealing', async () => {

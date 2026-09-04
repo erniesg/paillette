@@ -55,6 +55,58 @@ export const REDEAL_STRATEGIES = {
 
 export type RedealStrategy = keyof typeof REDEAL_STRATEGIES;
 
+/** Matches the per-side cap the exemplar route enforces. */
+const MAX_EXEMPLARS_PER_SIDE = 32;
+
+/**
+ * The works in front of the human right now: the dealt board once there is
+ * one, and otherwise their own search grid. Before the first deal `board` is
+ * null, which is exactly the moment someone is most likely to start throwing
+ * things out, so reading only the board would miss the case that matters.
+ */
+export const worksOnScreen = (state: {
+  board?: { order: string[] } | null;
+  humanResults?: { items: { id: string }[] } | null;
+}): string[] =>
+  state.board?.order?.length
+    ? [...state.board.order]
+    : (state.humanResults?.items ?? []).map((item) => item.id);
+
+/**
+ * What the positive half of the deal is computed from.
+ *
+ * "I can tell you what I don't want, but not what I do" is the most common
+ * thing a person can say about pictures, and it used to be a dead key here:
+ * with nothing picked, the deal refused and the board did not move. But a cull
+ * has an answer for it, and it is the obvious one — **the works you left alone
+ * are the direction**. So when there are no picks, the unrejected works on
+ * screen seed the centroid and the rejects push against it:
+ *
+ *     cos(x, mean(screen \ rejects)) − w · max_j cos(x, neg_j)
+ *
+ * Same scoring function, same route, same weights; only where the positives
+ * came from differs. They are seeds, not picks: they set the direction and
+ * then leave the board, because nothing was chosen and nothing has earned a
+ * seat. Only confirmed picks hold their position.
+ */
+export type SeedSource = 'picks' | 'unrejected';
+
+export const seedPositives = (
+  exemplars: { positive: string[]; negative: string[] },
+  onScreen: readonly string[]
+): { positive: string[]; from: SeedSource } => {
+  if (exemplars.positive.length) {
+    return { positive: exemplars.positive, from: 'picks' };
+  }
+  const rejected = new Set(exemplars.negative);
+  return {
+    positive: onScreen
+      .filter((id) => !rejected.has(id))
+      .slice(0, MAX_EXEMPLARS_PER_SIDE),
+    from: 'unrejected',
+  };
+};
+
 export interface RedealRequest {
   strategy?: RedealStrategy;
   count?: number;
@@ -74,7 +126,15 @@ export interface RedealOutcome {
   /** Ids dealt in this round. */
   added: string[];
   order: string[];
+  /** The human's confirmed flags — always the flags, never the seeds. */
   exemplars: { positive: string[]; negative: string[] };
+  /**
+   * Where the positive half came from. `'unrejected'` means they rejected
+   * without picking and the works they left alone set the direction. Worth
+   * reporting rather than hiding: an agent narrating this board must not say
+   * they picked anything, because they did not.
+   */
+  seededBy: SeedSource;
   strategy: RedealStrategy;
   note: string | null;
 }
@@ -90,6 +150,22 @@ const fail = (code: string, message: string, hint?: string): RedealFailure => ({
   ok: false,
   error: { code, message, ...(hint ? { hint } : {}) },
 });
+
+const plural = (count: number, word: string) =>
+  `${count} ${word}${count === 1 ? '' : 's'}`;
+
+/**
+ * What the board is called when the agent did not name it. Says which gesture
+ * dealt it, in the fewest words that stay true.
+ */
+const dealLabel = (
+  size: number,
+  from: SeedSource,
+  exemplars: { positive: string[]; negative: string[] }
+): string =>
+  from === 'picks'
+    ? `${plural(size, 'work')}, dealt from ${plural(exemplars.positive.length, 'pick')}`
+    : `${plural(size, 'work')}, dealt away from ${plural(exemplars.negative.length, 'reject')}`;
 
 /**
  * Lay the survivors back down where they were, and let the newcomers fill the
@@ -174,12 +250,22 @@ export const runRedeal = async (
   }
 
   const exemplars = getExemplars();
-  if (exemplars.positive.length === 0) {
-    return fail(
+  const onScreen = worksOnScreen(state);
+  const seeds = seedPositives(exemplars, onScreen);
+  if (seeds.positive.length === 0) {
+    // Genuinely nothing to deal from: no picks, and every work on screen has
+    // been thrown out — or there is no screen yet. This is the only remaining
+    // way Enter can decline, and it now says so. A refusal that draws nothing
+    // is indistinguishable from a broken key.
+    const failure = fail(
       'NO_EXEMPLARS',
-      'Nothing has been picked yet, so there is no direction to deal in.',
-      'Press P on a work worth keeping — or call flag_artworks — and redeal again.'
+      exemplars.negative.length
+        ? 'Everything on screen has been rejected, so there is nothing left to deal from.'
+        : 'Nothing is on the board yet, so there is no direction to deal in.',
+      'Run a search, or press P on a work worth keeping, and redeal again.'
     );
+    setDealError(failure.error);
+    return failure;
   }
 
   const size = Math.min(
@@ -215,11 +301,16 @@ export const runRedeal = async (
       const alreadyDealt = state.board?.dealt ?? [];
       const response = await searchByExemplarsPublic({
         collectionId: target.collectionId,
-        positiveIds: exemplars.positive,
+        positiveIds: seeds.positive,
         negativeIds: exemplars.negative,
         // Everything this session has already put in front of the human is out.
         // Without this a redeal hands back the same twelve and the loop stalls.
-        excludeIds: [...new Set([...alreadyDealt, ...previousOrder])],
+        // `onScreen` matters on the rejects-only path: the seeds came off the
+        // human's own grid, which the board does not yet know about, and
+        // dealing them straight back would read as nothing having happened.
+        excludeIds: [
+          ...new Set([...alreadyDealt, ...previousOrder, ...onScreen]),
+        ],
         topK: need + offset,
         negativeWeight,
         signal: request.signal,
@@ -244,7 +335,14 @@ export const runRedeal = async (
 
     setBoard({
       order,
-      dealt: [...new Set([...(state.board?.dealt ?? []), ...previousOrder, ...added])],
+      dealt: [
+        ...new Set([
+          ...(state.board?.dealt ?? []),
+          ...previousOrder,
+          ...onScreen,
+          ...added,
+        ]),
+      ],
       note,
       lastChangeBy: request.by,
       redeals: (state.board?.redeals ?? 0) + 1,
@@ -256,7 +354,7 @@ export const runRedeal = async (
     const { found } = recallArtworks(order);
     setAgentResults({
       origin: request.by,
-      label: note || `${order.length} works, dealt from ${exemplars.positive.length} pick${exemplars.positive.length === 1 ? '' : 's'}`,
+      label: note || dealLabel(order.length, seeds.from, exemplars),
       ...(note ? { note } : {}),
       items: found.map(toAgentArtworkSummary),
       at: Date.now(),
@@ -269,6 +367,7 @@ export const runRedeal = async (
       added,
       order,
       exemplars,
+      seededBy: seeds.from,
       strategy,
       note,
     };

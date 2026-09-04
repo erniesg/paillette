@@ -217,11 +217,36 @@ describe('search_by_exemplars', () => {
     });
   });
 
-  it('needs at least one positive, and says what to read instead', async () => {
+  it('refuses only when there is nothing on screen to stand in either', async () => {
     const result = await call('search_by_exemplars', { positiveIds: [] });
 
-    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(result).toMatchObject({ ok: false, error: { code: 'NO_EXEMPLARS' } });
     expect(result.error.hint).toContain('get_view_context');
+  });
+
+  it('stands the unrejected board in for missing positives', async () => {
+    setBoard({
+      order: ['a', 'b', 'c'],
+      dealt: ['a', 'b', 'c'],
+      note: null,
+      lastChangeBy: 'human',
+      redeals: 1,
+      at: 1,
+    });
+    stubExemplars(['n1']);
+
+    const result = await call('search_by_exemplars', {
+      positiveIds: [],
+      negativeIds: ['c'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.seededBy).toBe('unrejected');
+    // The rejected work seeds nothing; the two left alone do.
+    expect(requests[0]?.body).toMatchObject({
+      positiveIds: ['a', 'b'],
+      negativeIds: ['c'],
+    });
   });
 
   it('returns an upstream failure as data rather than throwing', async () => {
@@ -293,14 +318,42 @@ describe('redeal', () => {
     });
   });
 
-  it('refuses when nothing has been picked, and says what to do', async () => {
+  it('refuses only when the screen is empty too, and says so out loud', async () => {
     const result = await call('redeal', {});
 
     expect(result).toMatchObject({
       ok: false,
       error: { code: 'NO_EXEMPLARS' },
     });
-    expect(result.error.hint).toContain('flag_artworks');
+    expect(result.error.hint).toContain('Run a search');
+    // The refusal has to be visible. Silence is what made Enter a dead key.
+    expect(getWebMcpState().dealError?.code).toBe('NO_EXEMPLARS');
+  });
+
+  it('deals from rejects alone, seeded by the works left alone', async () => {
+    setBoard({
+      order: ['a', 'b', 'c'],
+      dealt: ['a', 'b', 'c'],
+      note: null,
+      lastChangeBy: 'human',
+      redeals: 1,
+      at: 1,
+    });
+    setFlag('c', 'reject', { by: 'human' });
+    stubExemplars(['n1', 'n2']);
+
+    const result = await call('redeal', { count: 2 });
+
+    expect(result.ok).toBe(true);
+    expect(result.seededBy).toBe('unrejected');
+    expect(result.seededByHint).toContain('not say they picked');
+    expect(requests[0]?.body).toMatchObject({
+      positiveIds: ['a', 'b'],
+      negativeIds: ['c'],
+    });
+    // Nothing was picked, so nothing is pinned and the board turns over.
+    expect(result.kept).toEqual([]);
+    expect(getWebMcpState().board?.order).toEqual(['n1', 'n2']);
   });
 
   it('will not deal from its own unconfirmed suggestions', async () => {

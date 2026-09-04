@@ -105,7 +105,12 @@ import {
   type HungWork,
   type RegionPatch,
 } from './exhibition';
-import { runRedeal, BOARD_SIZE } from './redeal';
+import {
+  runRedeal,
+  seedPositives,
+  worksOnScreen,
+  BOARD_SIZE,
+} from './redeal';
 import { INDEX_CAPS } from './caps';
 import { toIndexedArtwork } from './indexed-artwork';
 import { getCollectionSuggestions } from './collection-suggestions';
@@ -1495,13 +1500,28 @@ const searchByExemplarsTool = (): WebMcpTool => ({
   },
   execute: async (input, options) =>
     guard(async () => {
-      const positiveIds = readStringArray(
-        (input as { positiveIds?: unknown }).positiveIds
+      const negativeIds = readStringArray(
+        (input as { negativeIds?: unknown }).negativeIds
       );
+      // "Less like those" with nothing to be more like is a real request, and
+      // it is the one the human can make by pressing X twice. The agent gets
+      // the same answer from the same rule the human's Enter uses: the works
+      // on screen that were not rejected seed the centroid. Anything else here
+      // would be an agent-only path, which is the thing this build does not have.
+      const seeded = seedPositives(
+        {
+          positive: readStringArray(
+            (input as { positiveIds?: unknown }).positiveIds
+          ),
+          negative: negativeIds,
+        },
+        worksOnScreen(getWebMcpState())
+      );
+      const positiveIds = seeded.positive;
       if (!positiveIds.length) {
         return fail(
-          'INVALID_INPUT',
-          'positiveIds must contain at least one artwork id.',
+          'NO_EXEMPLARS',
+          'There is nothing to search from: no positive ids, and nothing unrejected on screen to stand in for them.',
           'Read get_view_context for what the human has picked, or pass ids from a search you just ran.'
         );
       }
@@ -1534,9 +1554,7 @@ const searchByExemplarsTool = (): WebMcpTool => ({
       const response = await searchByExemplarsPublic({
         collectionId: target.collectionId,
         positiveIds: knownPositives,
-        negativeIds: readStringArray(
-          (input as { negativeIds?: unknown }).negativeIds
-        ),
+        negativeIds,
         excludeIds: readStringArray(
           (input as { excludeIds?: unknown }).excludeIds
         ),
@@ -1549,6 +1567,14 @@ const searchByExemplarsTool = (): WebMcpTool => ({
         count: response.results.length,
         scoring:
           'cos(x, mean(positives)) − 0.5 · max over negatives. Fixed weights, nothing learned; the same exemplars always return the same works.',
+        seededBy: seeded.from,
+        ...(seeded.from === 'unrejected'
+          ? {
+              seededByHint:
+                'No positives were given, so the unrejected works on screen stood in as the centroid. These are not picks — nobody chose them.',
+              seededFrom: knownPositives,
+            }
+          : {}),
         results: capture(response.results),
         ...(unresolved.length
           ? {
@@ -1641,6 +1667,17 @@ const redealTool = (): WebMcpTool => ({
         added: result.added.map((id) => ({ id, work: flagLabel(id) })),
         order: result.order,
         exemplars: result.exemplars,
+        // Which gesture this deal followed. When they rejected without
+        // picking, the works they left alone set the direction and nothing was
+        // pinned — a note claiming they picked something would be describing a
+        // turn that did not happen.
+        seededBy: result.seededBy,
+        ...(result.seededBy === 'unrejected'
+          ? {
+              seededByHint:
+                'They rejected without picking. The works they left alone set the direction, nothing was pinned, and the board turned over. Do not say they picked anything — name what they threw out.',
+            }
+          : {}),
         strategy: result.strategy,
         ...(result.note ? { note: result.note } : {}),
         effect:
