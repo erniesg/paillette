@@ -96,6 +96,65 @@ bearing ones:
 
 ---
 
+## 2.4 The critique's blocking item 1 is wrong, and here is the measurement
+
+The iteration-2 critique fails the submission on this:
+
+> *"The agent's note and the board it describes cannot be on screen together …
+> the deal grid starts at y=814 and is 650px tall, so the note-plus-board stack
+> needs 1464px of a 900px viewport."*
+
+**It does not. The stack starts at y=479, so it needs 985px, not 1464.** The
+critique took the grid's document-bottom coordinate as a height. Measured on the
+deployed build, with a real wall label installed through the `redeal` tool's
+`note` argument — **zero model calls**:
+
+| viewport | label below the nav? | cards fully visible | cards partly visible |
+| --- | --- | --- | --- |
+| 1440 × 900 | **yes**, at y=114 | **8** of 12 | **12** of 12 |
+| 1920 × 1080 | yes | 8 of 12 | 12 of 12 |
+| 1600 × 1200 | yes | 8 of 12 | 12 of 12 |
+| 1440 × 1400 | yes | **12** of 12 | 12 of 12 |
+
+The frame is committed: **`docs/night/shots/54-note-and-board-1440x900.png`** —
+the note in the agent's ink, its three swatch strips beneath it, then two full
+rows of the board with the pick frame-lit in slot 0 and the reject tray at the
+left margin. Raw numbers in `e2e-evidence/note-and-board-geometry.json`.
+
+The critique reached the right *neighbourhood* by the wrong route, and the real
+obstacle is smaller and much more fixable than a layout redesign:
+
+**291 px sits between the agent's sentence and the board it describes**, and
+most of it is chrome nobody asked for:
+
+```
+swatches end            y=523
+  INPUT   34px  y=555   ← the exhibition title field, empty
+  TEXTAREA 27px y=601   ← the exhibition statement field, empty
+  "12 works · Copy link"      y=650
+  results header + sort/view toolbar
+deal grid begins        y=814
+```
+
+Two **empty form fields** — the ones the critique saw as "orphan vertical
+hairlines drawing beside nothing" — sit between the agent's sentence and the
+board. That is §5b's complaint in its purest form: chrome for a thing nobody has
+started doing yet, in the one gap where the film needs none. **Collapse the
+exhibition head until someone actually curates and the frame goes from 8 of 12
+to 12 of 12 at 1440 × 900.** The sticky chrome above (57 px header + 102 px
+search bar = 159 px) is the other half.
+
+I am not fixing either — this lane writes. But the fix is ~60 px of empty
+inputs, not the redesign the verdict implies, and the fix lane should know that
+before it starts.
+
+**Two things the critique got right and I confirm from the same frames.** Works
+occupy roughly 40–60% of their tile with dead charcoal to the right and below;
+and long titles clip mid-word without an ellipsis — *"A Young Couple Seated near
+a Massive Rock"* is cut in `54-note-and-board-1440x900.png`.
+
+---
+
 ## 3. One defect found, and one I got wrong
 
 ### 3.1 The rate-limit error — **I was wrong, and here is the correction**

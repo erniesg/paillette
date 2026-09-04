@@ -1,0 +1,115 @@
+{
+  "note": "You said warm; you kept the bone-and-umber etching and rejected the darker, greener palettes—following the picks.",
+  "method": "redeal tool with a note argument via ?webmcp-debug — zero model calls",
+  "viewports": {
+    "1440x900": {
+      "labelVisibleBelowNav": true,
+      "labelTop": 114,
+      "occluderHeight": 102,
+      "cardsFullyVisible": 8,
+      "cardsPartlyVisible": 12,
+      "cards": 12,
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "sticky": [
+        {
+          "tag": "HEADER",
+          "cls": "sticky top-0 z-40 border-b border-white/",
+          "h": 57,
+          "top": 0,
+          "z": "40"
+        },
+        {
+          "tag": "DIV",
+          "cls": "sticky top-14 z-30 -mx-5 border-b px-5 p",
+          "h": 102,
+          "top": 56,
+          "z": "30"
+        }
+      ],
+      "modelCalls": 0
+    },
+    "1920x1080": {
+      "labelVisibleBelowNav": true,
+      "labelTop": 114,
+      "occluderHeight": 102,
+      "cardsFullyVisible": 8,
+      "cardsPartlyVisible": 12,
+      "cards": 12,
+      "viewport": {
+        "w": 1920,
+        "h": 1080
+      },
+      "sticky": [
+        {
+          "tag": "HEADER",
+          "cls": "sticky top-0 z-40 border-b border-white/",
+          "h": 57,
+          "top": 0,
+          "z": "40"
+        },
+        {
+          "tag": "DIV",
+          "cls": "sticky top-14 z-30 -mx-5 border-b px-5 p",
+          "h": 102,
+          "top": 56,
+          "z": "30"
+        }
+      ],
+      "modelCalls": 0
+    },
+    "1600x1200": {
+      "labelVisibleBelowNav": true,
+      "labelTop": 114,
+      "occluderHeight": 102,
+      "cardsFullyVisible": 8,
+      "cardsPartlyVisible": 12,
+      "cards": 12,
+      "viewport": {
+        "w": 1600,
+        "h": 1200
+      },
+      "sticky": [
+        {
+          "tag": "HEADER",
+          "cls": "sticky top-0 z-40 border-b border-white/",
+          "h": 57,
+          "top": 0,
+          "z": "40"
+        },
+        {
+          "tag": "DIV",
+          "cls": "sticky top-14 z-30 -mx-5 border-b px-5 p",
+          "h": 102,
+          "top": 56,
+          "z": "30"
+        }
+      ],
+      "modelCalls": 0
+    },
+    "1440x1400": {
+      "labelVisibleBelowNav": true,
+      "labelTop": 69,
+      "occluderHeight": 57,
+      "cardsFullyVisible": 12,
+      "cardsPartlyVisible": 12,
+      "cards": 12,
+      "viewport": {
+        "w": 1440,
+        "h": 1400
+      },
+      "sticky": [
+        {
+          "tag": "HEADER",
+          "cls": "sticky top-0 z-40 border-b border-white/",
+          "h": 57,
+          "top": 0,
+          "z": "40"
+        }
+      ],
+      "modelCalls": 0
+    }
+  }
+}

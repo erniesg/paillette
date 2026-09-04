@@ -98,6 +98,14 @@ queries. A fresh page resets it. (e2e iteration 2 §4.)
   `docs/night/shots/50-note-with-swatches.png` (tight) and
   `51-note-with-swatches-in-context.png` (full page). Raw:
   `docs/night/e2e-evidence/note-swatches.json`. **Calls** 3.
+- **Two frames, and both exist.** `50-note-with-swatches.png` is the tight crop
+  (note + strips, nothing else). **`54-note-and-board-1440x900.png` is the wide
+  one** — the sentence, its swatches, and the board it describes, together.
+- **The scroll recipe for the wide frame.** The page has **159 px of sticky
+  chrome** (57 px header + 102 px search bar). Scroll so the wall label sits at
+  y≈114, i.e. `label.top − 159 − 12`. At 1440×900 that frames the note plus **8
+  of 12 cards fully and all 12 at least partly**; at a 1400 px-tall viewport it
+  frames **all 12 fully**. Shoot tall if the machine allows.
 - **Why this frame is the one.** The words are checkable against the picture
   directly under them: the pick's swatches are `#EBD8BC` and `#695943` — bone,
   umber — and the second reject's leading swatch is `#47502B`, a dark olive. The
