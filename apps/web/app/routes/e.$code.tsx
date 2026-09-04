@@ -37,7 +37,15 @@ export const loader = async ({ context, params, request }: LoaderFunctionArgs) =
   if (!code) throw new Response('Not found', { status: 404 });
 
   const env = getServerEnv(context);
-  const payload = await loadExhibitionByCode(code, env, request.signal);
+  // The one caller that is a visit. Crawlers and probes are answered in
+  // `worker.ts` before this loader runs and do not count.
+  const payload = await loadExhibitionByCode(
+    code,
+    env,
+    request.signal,
+    undefined,
+    true
+  );
   if (!payload) throw new Response('Not found', { status: 404 });
   if (!isAllowedPublicSearchRouteId(payload.collectionId)) {
     throw new Response('Not found', { status: 404 });
@@ -56,9 +64,20 @@ export const loader = async ({ context, params, request }: LoaderFunctionArgs) =
 
   return json(page, {
     headers: {
-      // Shorter than the self-contained link's: that URL *is* its record and
-      // can never change, while this one points at a row somebody may
-      // republish.
+      /*
+       * This governs the client-navigation `.data` request, not the document.
+       *
+       * `worker.ts` rewrites `Cache-Control` to `private, no-store` on
+       * anything that asks for `text/html`, so a cold page load is never edge
+       * cached whatever is set here — measured, and the header on the wire is
+       * `private, no-store`. Which is the behaviour the visit count depends
+       * on: a cached document would never reach the Worker and would never be
+       * counted.
+       *
+       * Shorter than the self-contained link's anyway: that URL *is* its
+       * record and can never change, while this one points at a row somebody
+       * may republish.
+       */
       'Cache-Control': 'public, max-age=60, s-maxage=300',
     },
   });

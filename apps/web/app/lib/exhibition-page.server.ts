@@ -185,11 +185,21 @@ export const loadExhibitionByCode = async (
   code: string,
   env: Record<string, string | undefined>,
   signal?: AbortSignal,
-  deadlineMs: number = RECORD_DEADLINE_MS
+  deadlineMs: number = RECORD_DEADLINE_MS,
+  /**
+   * Whether this resolve is a person looking at the show.
+   *
+   * Only the page loader passes true. A crawler building an unfurl card and a
+   * probe reading the JSON are not visits, and counting them meant pasting a
+   * link into Slack registered as somebody having looked at it.
+   */
+  countAsVisit = false
 ): Promise<ExhibitionLinkPayload | null> => {
   try {
     const response = await fetchWithDeadline(
-      `${apiRoot(env)}/api/public-exhibitions/${encodeURIComponent(code)}`,
+      `${apiRoot(env)}/api/public-exhibitions/${encodeURIComponent(code)}${
+        countAsVisit ? '?count=1' : ''
+      }`,
       { signal, deadlineMs, headers: { Accept: 'application/json' } }
     );
     if (!response.ok) return null;

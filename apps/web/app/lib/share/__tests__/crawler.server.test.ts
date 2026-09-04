@@ -121,6 +121,23 @@ describe('who gets what', () => {
     expect(html).toContain('Avalanche in an Alpine Landscape');
   });
 
+  /*
+   * Neither of these is somebody looking at the show, so neither may bump the
+   * visit tally. The API counts only when asked, and this asserts the crawler
+   * path never asks — pasting a link into Slack is not a view of it.
+   */
+  it.each([
+    ['a crawler', { 'User-Agent': SLACK }],
+    ['a probe', { Accept: 'application/json' }],
+  ])('does not count %s as a visit', async (_name, headers) => {
+    await handleShareRequest(request(`/e/${CODE}`, headers), env);
+    const lookups = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.includes('/public-exhibitions/'));
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]).not.toContain('count=1');
+  });
+
   it('serves an enrichment probe the facts as JSON', async () => {
     const response = await handleShareRequest(
       request(`/e/${CODE}`, { Accept: 'application/json' }),

@@ -332,6 +332,22 @@ exhibitions.get('/public-exhibitions/:code', async (c) => {
     return c.json(jsonError('NOT_FOUND', 'No exhibition with that code.'), 404);
   }
 
+  /*
+   * Counting is opt-in, and the default is the honest one.
+   *
+   * This route resolves a code for three different callers — a human loading
+   * the page, a social crawler building an unfurl card, and a probe asking
+   * for JSON — and only the first is a visit. It used to count all three, so
+   * pasting a link into Slack registered as somebody looking at the show.
+   *
+   * The web worker is the only layer that knows which caller it is, so it
+   * says. Opt-in rather than opt-out because the failure modes are not
+   * symmetric: a caller that forgets the flag under-counts, which is dull,
+   * where a default of "count everything" means every new integration
+   * silently inflates the number.
+   */
+  const counting = c.req.query('count') === '1';
+
   const row = await c.env.DB.prepare(
     `SELECT code, collection_id, title, statement, title_by_agent,
             statement_by_agent, works, created_at, view_count
@@ -344,30 +360,43 @@ exhibitions.get('/public-exhibitions/:code', async (c) => {
     return c.json(jsonError('NOT_FOUND', 'No exhibition with that code.'), 404);
   }
 
-  // Counted after the response is decided, never in front of it. A visit
-  // tally is not worth a millisecond of the page it is counting, and a failed
-  // increment must not turn a working link into an error.
-  const count = c.env.DB.prepare(
-    'UPDATE exhibitions SET view_count = view_count + 1 WHERE code = ?'
-  )
-    .bind(code)
-    .run()
-    .catch((error: unknown) => {
-      console.warn('exhibition view count failed:', error);
-    });
-  try {
-    // Hono's `executionCtx` *throws* when there is no execution context rather
-    // than returning undefined, so this cannot be an optional chain. Off a
-    // Worker — in tests, and under `app.fetch` — the update simply runs
-    // without anything holding the request open for it.
-    c.executionCtx.waitUntil(count);
-  } catch {
-    // No execution context. The increment is already in flight.
+  if (counting) {
+    // Counted after the response is decided, never in front of it. A visit
+    // tally is not worth a millisecond of the page it is counting, and a
+    // failed increment must not turn a working link into an error.
+    const count = c.env.DB.prepare(
+      'UPDATE exhibitions SET view_count = view_count + 1 WHERE code = ?'
+    )
+      .bind(code)
+      .run()
+      .catch((error: unknown) => {
+        console.warn('exhibition view count failed:', error);
+      });
+    try {
+      // Hono's `executionCtx` *throws* when there is no execution context
+      // rather than returning undefined, so this cannot be an optional chain.
+      // Off a Worker — in tests, and under `app.fetch` — the update simply
+      // runs without anything holding the request open for it.
+      c.executionCtx.waitUntil(count);
+    } catch {
+      // No execution context. The increment is already in flight.
+    }
   }
 
-  // The stored show never changes, so this is cacheable — but briefly at the
-  // edge, because the row can be revised by republishing.
-  c.header('Cache-Control', 'public, max-age=60, s-maxage=300');
+  /*
+   * Cacheable only when nobody is counting.
+   *
+   * These two cannot both be had: a response served from the edge never
+   * reaches this Worker, so every cache hit is a visit that does not
+   * increment. The crawler and probe paths want the cache and do not want the
+   * count; the page load wants the count and can afford one indexed
+   * primary-key lookup. So the header follows the flag rather than being the
+   * same for everyone and quietly wrong for one of them.
+   */
+  c.header(
+    'Cache-Control',
+    counting ? 'no-store' : 'public, max-age=60, s-maxage=300'
+  );
   return c.json({ success: true as const, data: toResponse(row) });
 });
 

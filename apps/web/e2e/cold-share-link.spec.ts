@@ -50,8 +50,19 @@ test.describe('a short link opened cold', () => {
     const count = await works.count();
     expect(count).toBeGreaterThan(0);
 
+    /*
+     * Walk the show the way a visitor does, rather than asserting against a
+     * page nobody has scrolled.
+     *
+     * Everything past the second image is `loading="lazy"`, so it decodes on
+     * approach. Measured over 24 cold opens: without the scroll a twelve-work
+     * show reports 2-9 of 12 decoded and looks broken, and the three- and
+     * six-work shows pass anyway because they sit near the fold. So the naive
+     * version of this check silently depended on the show being small.
+     */
     for (let index = 0; index < count; index += 1) {
       const work = works.nth(index);
+      await work.scrollIntoViewIfNeeded();
       await expect(work.locator('.exhibition-work-title')).toBeVisible();
       const image = work.locator('img.exhibition-image');
       await expect(image).toBeVisible();

@@ -140,9 +140,11 @@ const post = (body: unknown, ip = '203.0.113.7') =>
     env()
   );
 
-const get = (code: string) =>
+const get = (code: string, { count = false }: { count?: boolean } = {}) =>
   app.fetch(
-    new Request(`http://localhost/api/public-exhibitions/${code}`),
+    new Request(
+      `http://localhost/api/public-exhibitions/${code}${count ? '?count=1' : ''}`
+    ),
     env()
   );
 
@@ -335,13 +337,42 @@ describe('opening', () => {
     expect(body.data.works[0]!.label).toBe('The boat is already gone.');
   });
 
-  it('counts the visit', async () => {
+  it('counts a visit when the caller says it is one', async () => {
+    const created = await post(aShow);
+    const { data } = (await created.json()) as { data: { code: string } };
+
+    await get(data.code, { count: true });
+    await get(data.code, { count: true });
+    expect(db.rows.get(data.code)!.view_count).toBe(2);
+  });
+
+  /*
+   * A crawler building an unfurl card and a probe reading the JSON both
+   * resolve the code, and neither is somebody looking at the show. Counting
+   * them meant pasting a link into Slack registered as a visit.
+   */
+  it('does not count a resolve that nobody asked to count', async () => {
     const created = await post(aShow);
     const { data } = (await created.json()) as { data: { code: string } };
 
     await get(data.code);
     await get(data.code);
-    expect(db.rows.get(data.code)!.view_count).toBe(2);
+    expect(db.rows.get(data.code)!.view_count).toBe(0);
+  });
+
+  /*
+   * These two cannot both be had: an edge-cached response never reaches the
+   * Worker, so every cache hit would be an uncounted visit. The header
+   * follows the flag rather than being the same for both and wrong for one.
+   */
+  it('is cacheable only when nobody is counting', async () => {
+    const created = await post(aShow);
+    const { data } = (await created.json()) as { data: { code: string } };
+
+    expect((await get(data.code)).headers.get('Cache-Control')).toContain('s-maxage');
+    expect(
+      (await get(data.code, { count: true })).headers.get('Cache-Control')
+    ).toBe('no-store');
   });
 
   it('404s a code nobody published', async () => {
