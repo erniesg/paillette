@@ -521,6 +521,37 @@ async function main() {
     .screenshot({ path: path.join(outDir, '11-log-light-theme.png') });
   console.log(`  → 11-log-light-theme.png  (${inkOnPaper.name} / ${inkOnPaper.bad})`);
   await shoot(page, '11b-light-theme-page.png');
+
+  // ── a session longer than the log can hold ─────────────────────────────────
+  console.log('\ntruncation');
+  await page.evaluate(async () => {
+    for (let index = 0; index < 125; index += 1) {
+      await window.__paillette_webmcp.call('get_view_context', {}).catch(() => null);
+    }
+  });
+  await page.waitForTimeout(400);
+  if ((await page.locator('.pa-activity-log').count()) === 0) {
+    await page.click('.pa-activity-glyph');
+  }
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const scroll = document.querySelector('.pa-activity-scroll');
+    if (scroll) scroll.scrollTop = 0;
+  });
+  await page.waitForTimeout(200);
+  const earlier = (
+    await page.locator('.pa-activity-earlier').textContent()
+  )?.trim();
+  check(
+    'a truncated log says how much it dropped',
+    /^…\s\d+\searlier$/.test(earlier ?? ''),
+    earlier
+  );
+  await page
+    .locator('.pa-activity-log')
+    .screenshot({ path: path.join(outDir, '13-log-truncated.png') });
+  console.log('  → 13-log-truncated.png');
+
   await context.close();
 
   // ── a browser with no WebMCP at all ────────────────────────────────────────
