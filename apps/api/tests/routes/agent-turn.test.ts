@@ -110,11 +110,19 @@ describe('describeHumanTurn', () => {
     // works and rewrite the labels") had two of them re-select and never
     // relabel, leaving every label written against the theme the human had
     // just rejected.
-    expect(described).toContain('first tool call now is write_labels');
-    expect(described).toContain('before you search, redeal or set_results');
-    // Three runs relabelled correctly and left the room called "Weather at
-    // Sea" under a statement about leaving.
-    expect(described).toContain('Check the title in the same pass');
+    expect(described).toContain('First, write_labels over the works already hanging');
+
+    // The other two thirds of §5c step 4, each measured missing on staging
+    // under the previous wording:
+    //
+    //  - the title stayed "Sea Change" under a statement about leaving, so it
+    //    is a numbered instruction now rather than a closing aside;
+    //  - the board did not move at all — KEPT 6 / RELABELLED 6 — because the
+    //    old wording deferred searching to "only if the show is still short",
+    //    and a six-work show is never short enough to trigger it.
+    expect(described).toContain('Second, set_exhibition with a new title');
+    expect(described).toContain('Third, change what is hanging');
+    expect(described).toContain('a text edit, not a re-curation');
   });
 
   it('names the work a rewritten label belongs to', () => {

@@ -590,7 +590,10 @@ html[data-theme='light'] .themeable-surface.lt-ground {
  * restorable, and visibly not in the running. The treatment is the caption.
  */
 .lt-tray-card {
-  border: 1px solid var(--lt-rule);
+  /* The same pale mount the slides on the board carry, so a declined work
+     reads as the same kind of object, only smaller and out of the running. */
+  background: var(--lt-slide);
+  border: 1px solid var(--lt-rule-strong);
   filter: saturate(0.25);
   opacity: 0.7;
   transition:
@@ -682,6 +685,7 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 .lt-deal-viewport > * {
   min-height: 0;
 }
+
 
 /*
  * A card on the board fills its slot, and the picture takes whatever is left
@@ -1070,6 +1074,92 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 } /* @layer components — end of the light table */
 
 /* ---------------------------------------------------------------------------
+ * Board mode: the page stops being a search form
+ *
+ * Measured on the deployed build at 1440×900, the stack above the deal grid
+ * came to 814px — breadcrumb, mode rail, a 5xl search field, the suggestion
+ * chip, the bar, the note — against a 650px grid. The arithmetic is the whole
+ * problem: 1464px of content in a 900px window means there is no scroll
+ * position where the agent's sentence and the twelve cards it describes are
+ * both on screen. The submission's defining image could not be photographed.
+ *
+ * So once a deal is on the table, everything the deal made redundant folds
+ * away. The search field stays — it is the only way back to browsing without
+ * an agent, and taking it away would strand anyone who wanted a fresh query —
+ * but it stops being the hero and becomes one quiet line.
+ *
+ * Deliberately OUTSIDE `@layer components`. Everything above is in the layer
+ * so that a Tailwind utility in the markup always wins, which is the right
+ * default. These rules are the exception that proves it: they exist precisely
+ * to beat `py-5 text-3xl lg:text-5xl` sitting on the field in the JSX, and
+ * inside the layer they would lose to it silently.
+ * ------------------------------------------------------------------------- */
+
+[data-board-mode] .lt-board-fold {
+  display: none;
+}
+
+/*
+ * The field, demoted. At 5xl italic with 1.25rem of vertical padding it was
+ * 118px of the budget on its own; here it is a line of type you can still
+ * click into and still type a new search in.
+ */
+[data-board-mode] .lt-search-field {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 1024px) {
+  [data-board-mode] .lt-search-field {
+    font-size: 1.125rem;
+  }
+}
+
+/*
+ * The board takes what is left of the window rather than a flat 74svh.
+ *
+ * With the fold above it there are three fixed costs between the top of the
+ * window and the top of the board — the sticky site header, the demoted
+ * search field and the utterance bar — and 74svh took no account of any of
+ * them. Subtracting them is what puts the label, the twelve cards and the bar
+ * inside one screen together instead of inside one page.
+ */
+[data-board-mode] {
+  /* Sticky site header, the demoted search field, and the utterance bar with
+     its margins. Measured, not guessed — see docs/night/fix-log.md. */
+  --lt-board-chrome: 17rem;
+}
+
+/*
+ * A drafted show costs more: a serif title, the statement, and the count rail.
+ * The statement is clamped to three lines here rather than dropped, because
+ * the correction beat is the human rewriting it and watching the wall follow —
+ * it has to be on screen with the works it just changed.
+ */
+[data-board-mode]:has(.paillette-exhibition-head) {
+  --lt-board-chrome: 26rem;
+}
+
+[data-board-mode] .paillette-exhibition-statement {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* Never clamp what someone is in the middle of writing. */
+[data-board-mode] .paillette-exhibition-statement:focus {
+  display: block;
+  overflow: visible;
+}
+
+[data-board-mode] .lt-deal-viewport {
+  height: min(calc(100svh - var(--lt-board-chrome)), 820px);
+}
+
+/* ---------------------------------------------------------------------------
  * The same ink, in the shared-state lane's words
  *
  * That lane ships the flag logic and writes its own vocabulary onto the tiles.
@@ -1317,6 +1407,22 @@ html[data-theme='light'] .themeable-surface.lt-ground {
 /* Nothing written yet: a rule at the faintest weight that still reads. */
 .paillette-exhibition-field[data-provenance='none'] {
   --ink: var(--ink-human-faint);
+}
+
+/*
+ * A rule marks whose words these are. With no words it marks nothing, and two
+ * of them stood beside an empty title and an empty statement in every board
+ * screenshot taken tonight, reading as artifacts. Gone until there is
+ * something to attribute — or until a pointer or the keyboard comes looking,
+ * which is what keeps an empty field findable without a word of help text.
+ */
+.paillette-exhibition-field[data-empty] {
+  border-left-color: transparent;
+}
+
+.paillette-exhibition-field[data-empty]:hover,
+.paillette-exhibition-field[data-empty]:focus-within {
+  border-left-color: var(--ink);
 }
 
 .paillette-editable {

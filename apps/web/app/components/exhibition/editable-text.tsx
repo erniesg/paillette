@@ -126,7 +126,21 @@ export const EditableText = ({
   };
 
   return (
-    <div className={`paillette-exhibition-field ${className}`} data-provenance={by ?? 'none'}>
+    <div
+      className={`paillette-exhibition-field ${className}`}
+      data-provenance={by ?? 'none'}
+      /*
+       * Nothing written here yet.
+       *
+       * The head appears on the first pick, before anyone has drafted
+       * anything, and both fields drew their rule regardless — two vertical
+       * hairlines standing beside no words at all, in every board screenshot
+       * taken tonight. A rule is a mark of authorship, so with no text it is
+       * marking nothing. It comes back on hover and focus, so the field is
+       * still there to be found and still there to be typed in.
+       */
+      data-empty={!editing && !draft.trim() && !proposed ? '' : undefined}
+    >
       {multiline ? (
         <textarea
           {...shared}

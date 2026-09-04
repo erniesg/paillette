@@ -31,6 +31,12 @@ import {
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
+import { listHungWorks } from '~/lib/webmcp/exhibition';
+import {
+  findShowGap,
+  type ShowGap,
+  type ShowState,
+} from '~/lib/webmcp/unfinished-show';
 import { onAgentTurnRequest } from '~/lib/webmcp/agent-request';
 import { submitHumanTurn, toTurnPayload } from '~/lib/webmcp/turn';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
@@ -139,6 +145,25 @@ const lookUpWork = (id: string): SceneWork | null => {
 };
 
 const MAX_TURNS = 8;
+
+/**
+ * The show as `findShowGap` needs it, read from the state the tools actually
+ * wrote rather than from what the model said it did.
+ */
+const readShowState = (statementCorrected: boolean): ShowState => {
+  const exhibition = getWebMcpState().exhibition;
+  return {
+    statement: exhibition.statement.current?.value ?? null,
+    title: exhibition.title.current?.value ?? null,
+    titleBy: exhibition.title.current?.by ?? null,
+    titleHeldByHuman: Boolean(exhibition.title.current?.heldByHuman),
+    hung: listHungWorks(exhibition).map((work) => ({
+      artworkId: work.artworkId,
+      label: work.label,
+    })),
+    statementCorrected,
+  };
+};
 
 type ModelContextLike = {
   getTools: () => Promise<
@@ -329,6 +354,21 @@ export function AgentPrompt({
         }
       }
 
+      /*
+       * A correction is the human rewriting the statement in their own words,
+       * and it is the one edit that changes what the title is allowed to say.
+       * Read from the turn payload rather than guessed from the instruction:
+       * the statement arrives as an edit on a field, not as a sentence typed
+       * at the bar.
+       */
+      const statementCorrected = Boolean(
+        gestures?.exhibitionEdits?.some(
+          (edit) => edit.field === 'statement' && edit.value.trim()
+        )
+      );
+      /** Each unfinished-show gap gets one nudge per turn, and no more. */
+      const nudged = new Set<ShowGap>();
+
       const context = getModelContext();
       const registered = (await context?.getTools?.()) ?? [];
       // The page's own schemas become the model's function definitions; nothing
@@ -389,6 +429,27 @@ export function AgentPrompt({
 
         const calls = message.tool_calls ?? [];
         if (calls.length === 0) {
+          /*
+           * Before it walks away: did it finish the show?
+           *
+           * Two post-conditions the prompt asked for and staging measured as
+           * not happening — an opening draft with a statement and no label on
+           * any work, and a corrected statement with the title still naming
+           * the theme the human had just rejected. Wording is how you ask for
+           * judgement; it is not how you guarantee a post-condition. Each gap
+           * can put the turn back to work exactly once, which is what
+           * `nudged` counts. The model still writes every word.
+           */
+          const gap = findShowGap(readShowState(statementCorrected), nudged);
+          if (gap) {
+            nudged.add(gap.gap);
+            historyRef.current = [
+              ...historyRef.current,
+              { role: 'system', content: gap.message },
+            ];
+            continue;
+          }
+
           const said = (message.content ?? '').trim();
           if (said) {
             setEntries((current) => [...current, { kind: 'agent', text: said }]);

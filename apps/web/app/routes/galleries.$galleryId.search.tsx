@@ -79,11 +79,12 @@ import {
   useRememberedResults,
 } from '~/components/board/flag-controls';
 import { CompareView } from '~/components/board/compare-view';
-import { NoteSwatches } from '~/components/board/note-swatches';
+import { BoardNote } from '~/components/board/board-note';
 import {
   DealBoard,
   DEFAULT_BOARD_SIZE as DEAL_BOARD_SIZE,
 } from '~/components/board/deal-board';
+import { resolveDealtBoard } from '~/lib/board/dealt-board';
 import {
   ExhibitionHead,
   useExhibition,
@@ -92,6 +93,8 @@ import { WallLabel } from '~/components/exhibition/wall-label';
 import { ShareExhibitionLink } from '~/components/exhibition/share-link';
 import { RegionedAtlas } from '~/components/exhibition/atlas-regions';
 import { recallArtwork, recallArtworks } from '~/lib/webmcp/artwork-index';
+import { setFlag } from '~/lib/webmcp/flags';
+import { resolveDemoSeed } from '~/lib/board/demo-seed';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import { getAuthenticatedAssetUrl } from '~/lib/public-asset-url';
 import { loadPublicSearchPage } from '~/lib/public-route-loaders.server';
@@ -1710,6 +1713,45 @@ export default function SearchPage() {
     [isBrowsingCollection, rankedResults, shouldSearch, sortedBrowseResults]
   );
   const results = agentBoardResults ?? resultSections.combinedResults;
+
+  /**
+   * Board mode: the page stops being a search form and becomes a light table.
+   *
+   * Measured on the deployed build at 1440×900, the stack above the deal grid
+   * was 814px — hero, mode rail, a 5xl search field, the suggestion chip, the
+   * bar, the note — against a 650px grid. There was no scroll position where
+   * the agent's sentence and the twelve cards it describes were both on
+   * screen, which means the image the whole submission is about did not
+   * exist. Once a deal is on the table none of that stack is doing anything:
+   * the works are the subject, the bar is the only input that matters, and
+   * §7's light table says the pictures should be the only saturated thing
+   * here. So it folds away, and the note moves onto the board itself.
+   *
+   * Same resolver the board uses, so the chrome cannot collapse around a
+   * masonry or leave a deal filmed under a full-height search page.
+   */
+  const boardIsDealt = Boolean(
+    resolveDealtBoard(webmcpState.board, webmcpState.flags, results)
+  );
+
+  /*
+   * `?demo=sofa`: land with the query run and the flags already down, so the
+   * first thing a judge does on this page is press Enter and watch the board
+   * deal under their hands. No model call, no agent turn — a query and three
+   * flags. See `demo-seed.ts` for why this exists instead of onboarding copy.
+   */
+  const demoSeed = resolveDemoSeed(searchParams.get('demo'));
+  const demoSeededRef = useRef(false);
+
+  useEffect(() => {
+    if (!demoSeed) return;
+    if (normalizedUrlQuery === normalizeSearchQuery(demoSeed.query)) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('q', demoSeed.query);
+    setSearchParams(next, { replace: true });
+  }, [demoSeed, normalizedUrlQuery, searchParams, setSearchParams]);
+
+
   const activeSortColours = sortMode === 'colour' ? sortColours : [];
   const visibleRankedResults = resultSections.rankedResults;
   const visibleBrowseResults = isBrowsingCollection
@@ -1728,6 +1770,23 @@ export default function SearchPage() {
       ? browseQuery.isLoading && results.length === 0
       : currentQuery.isLoading ||
         (currentQuery.isFetching && !currentQuery.data));
+  useEffect(() => {
+    if (!demoSeed || demoSeededRef.current) return;
+    // Wait for the works themselves: flagging by rank needs the ranking.
+    if (isLoading || results.length < Math.max(...demoSeed.reject)) return;
+    demoSeededRef.current = true;
+
+    const flagAt = (rank: number, intent: 'pick' | 'reject') => {
+      const result = results[rank - 1];
+      // `by: 'human'` on purpose. These are the human's judgements, not an
+      // agent's proposals: they must be confirmed flags, or they arrive dashed
+      // and Enter has nothing to redeal from — which is the whole point.
+      if (result) setFlag(result.id, intent, { by: 'human' });
+    };
+    demoSeed.pick.forEach((rank) => flagAt(rank, 'pick'));
+    demoSeed.reject.forEach((rank) => flagAt(rank, 'reject'));
+  }, [demoSeed, isLoading, results]);
+
   const displayedSearchError = deriveDisplayedSearchError({
     isBrowsingCollection,
     shouldShowRankedSearch: shouldSearch,
@@ -2498,13 +2557,32 @@ export default function SearchPage() {
         onSignup={() => void signup({ returnTo: getCurrentReturnTo() })}
       />
 
-      <main className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
+      <main
+        /*
+         * Board mode. Once a deal is on the table the search form has nothing
+         * left to do — the bar is the input, the works are the subject — and
+         * every pixel it holds is a pixel the twelve cards and the agent's
+         * sentence do not get. Everything carrying `lt-board-fold` folds away
+         * from here, and the board sizes itself against what is left;
+         * `tailwind.css` owns the rules, so the fold is in one place rather
+         * than a dozen ternaries. It sits on `main` because the composer and
+         * the board are siblings, not nested.
+         */
+        data-board-mode={boardIsDealt ? '' : undefined}
+        className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8"
+      >
         <section
           ref={searchPanelRef}
           className={
             hasActiveSearch
               ? 'mx-auto max-w-6xl'
-              : 'relative -mx-5 -mt-10 flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
+              : /* The cold hero used to be a full `100vh-3.5rem`, which put
+                   the utterance bar at y=926 on a 1440×900 screen — the one
+                   control the whole submission is about, below the fold, on
+                   the first screen anybody sees. The e2e harness reached it
+                   because clicking a selector scrolls; a person does not.
+                   Short enough now that the bar is on the first screen. */
+                'relative -mx-5 -mt-10 flex min-h-[calc(100vh-16rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
           }
         >
           {!hasActiveSearch && hasMounted && (
@@ -2535,7 +2613,7 @@ export default function SearchPage() {
               />
             )}
 
-            <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
+            <div className="lt-board-fold mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
               <span>{gallery.name}</span>
               <span>/</span>
               <span>collection search</span>
@@ -2576,7 +2654,7 @@ export default function SearchPage() {
                 <div
                   role="status"
                   aria-live="polite"
-                  className="mx-auto w-fit rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-fuchsia-100"
+                  className="lt-board-fold mx-auto w-fit rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-fuchsia-100"
                 >
                   {formatNgaSearchQuota(ngaSearchQuota)}
                 </div>
@@ -2588,7 +2666,7 @@ export default function SearchPage() {
                 </p>
               ) : null}
 
-              <div className="flex justify-center">
+              <div className="lt-board-fold flex justify-center">
                 <div className="lt-rail items-center gap-1 p-1">
                   <ModeButton
                     active={editorMode === 'text'}
@@ -2820,7 +2898,7 @@ export default function SearchPage() {
             </div>
 
             {editorMode !== 'image' && (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <div className="lt-board-fold mt-4 flex flex-wrap items-center justify-center gap-2">
                 {!hasUncommittedInitialText && editorMode === 'text' && (
                   <SuggestionPicker
                     suggestions={suggestionPool}
@@ -2862,12 +2940,19 @@ export default function SearchPage() {
              and restating it from `tailwind.css` keeps the seam out of their
              file — the bar is unchanged anywhere else it is used. */
           className="lt-agent-bar mx-auto mt-6 max-w-3xl"
-          /* No placeholder. An italic example sentence is helper text — it
-             was the longest string on the page that nobody typed, and it
-             taught the wrong thing: this bar's headline behaviour is Enter on
-             an *empty* field, which the example is standing in the way of.
-             The board carries that affordance instead, as a mark. */
-          placeholder=""
+          /* Three words, and they name the counterpart rather than the
+             mechanism.
+
+             An italic example sentence was helper text and taught the wrong
+             thing — this bar's headline behaviour is Enter on an *empty*
+             field, and an example sentence stands in the way of it. But
+             deleting the placeholder outright left a 1px underline with a mic
+             glyph beside it and nothing else, on a page where nothing
+             announced that there was an agent at all. §5b draws that line
+             itself: terse is not the same as cryptic, and a bare icon nobody
+             can read is its own failure. This says what the field is for and
+             stops. */
+          placeholder="Ask the agent"
         />
 
         {/*
@@ -2919,18 +3004,14 @@ export default function SearchPage() {
             a human redeal could put a board here. `data-provenance` is the
             hook the palette matches; the sentence stands on its own without
             it. */}
-        {agentBoardNote && (
-          <div className="mx-auto mt-6 max-w-3xl">
-            <p
-              className="paillette-wall-label"
-              data-provenance={webmcpState.agentResults?.origin ?? 'agent'}
-            >
-              {agentBoardNote}
-            </p>
-            {/* The swatches the note was written from, so a claim about
-                colour can be checked without leaving the sentence. */}
-            <NoteSwatches />
-          </div>
+        {/* Only while the results are *not* a dealt board. Once they are, the
+            note hangs on the board itself — see `DealResults`. */}
+        {agentBoardNote && !boardIsDealt && (
+          <BoardNote
+            className="mx-auto mt-6 max-w-3xl"
+            note={agentBoardNote}
+            provenance={webmcpState.agentResults?.origin ?? 'agent'}
+          />
         )}
 
         {/* The show. Title and statement, both editable in place, in the ink
@@ -5180,23 +5261,10 @@ function ResultsLayout({
   onSelectArtwork,
 }: ResultsViewProps) {
   const { board, flags } = useWebMcpState();
-  const dealtBoard = useMemo(() => {
-    if (!board?.order.length) return null;
-    // The board has to be *these* works, not a board that happens to exist —
-    // running a fresh text search after a deal must go back to browsing.
-    const onScreen = new Set(results.map((result) => result.id));
-    if (board.order.length !== onScreen.size) return null;
-    if (!board.order.every((id) => onScreen.has(id))) return null;
-
-    // Only confirmed human picks pin a slot. An agent's proposal is dashed
-    // until the human takes it, and a proposal must not be able to nail a
-    // card to the board.
-    const preservedIds = flags
-      .filter((flag) => flag.flag === 'pick' && !flag.provisional)
-      .map((flag) => flag.artworkId)
-      .filter((id) => onScreen.has(id));
-    return { preservedIds };
-  }, [board, flags, results]);
+  const dealtBoard = useMemo(
+    () => resolveDealtBoard(board, flags, results),
+    [board, flags, results]
+  );
 
   // A board is on the table when a deal put these exact works there, and a
   // dealt board outranks every layout choice — including the agent's own.
@@ -5296,7 +5364,7 @@ function DealResults({
   onPaletteColourSelect: (hex: string) => void;
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
-  const { flags } = useWebMcpState();
+  const { flags, agentResults } = useWebMcpState();
   const shellRef = useRef<HTMLDivElement>(null);
   useBoardOnCamera(shellRef, results.map((result) => result.id).join(' '));
 
@@ -5339,6 +5407,17 @@ function DealResults({
     >
       <DealBoard
         className="h-full"
+        /* The wall label, hung on the board rather than above it. A label
+           that scrolls away from its work is not a label, and this is the
+           one image the submission is made of. */
+        header={
+          agentResults?.note ? (
+            <BoardNote
+              note={agentResults.note}
+              provenance={agentResults.origin ?? 'agent'}
+            />
+          ) : null
+        }
         items={results}
         preservedIds={preservedIds}
         tray={trayItems}
@@ -5413,9 +5492,18 @@ function TrayCard({
 }) {
   const title = getPublicTitle(result);
   return (
+    /*
+     * A declined work has to read as a small picture set aside, not as a grey
+     * rectangle in the margin. It had no fixed shape — `h-full` inside an
+     * auto-height button resolves to auto — so a card was whatever height its
+     * thumbnail happened to be, and a thumbnail that had not arrived was the
+     * 64px placeholder. Two of those in a row is the "grey ghost" the board
+     * screenshots caught. A square well and a mount give it a size before the
+     * image lands, so the tray looks like a tray from the first deal.
+     */
     <button
       type="button"
-      className="lt-tray-card block w-full overflow-hidden"
+      className="lt-tray-card block aspect-square w-full overflow-hidden"
       data-artwork-id={result.id}
       onClick={() => onSelectArtwork(result)}
       aria-label={`Set aside: ${title}`}
@@ -5424,7 +5512,7 @@ function TrayCard({
       <ImageWithFallback
         src={getPublicThumbnailUrl(result)}
         fallbackSrc={getPublicImageUrl(result)}
-        fallback={<div className="h-16 w-full" aria-hidden />}
+        fallback={<div className="h-full w-full" aria-hidden />}
         alt=""
         className="block h-full w-full object-cover"
       />
@@ -5770,7 +5858,24 @@ function ResultCard({
         onClick={() => onSelectArtwork(result)}
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
-        <div className="lt-slide-well" style={imageFrameStyle}>
+        {/*
+         * The well keeps the work's own proportions in the masonry, where a
+         * column of ragged heights is the point. On the board it must not:
+         * twelve slots are forced equal by `auto-rows-fr`, and an inline
+         * aspect-ratio inside one of them beats any stylesheet, so a wide
+         * landscape rendered as a short band pinned to the top-left of its
+         * slot with the rest of the slot left as dead charcoal — measured at
+         * 30-60% of the tile on every board screenshot taken tonight. On the
+         * board the slot decides the shape and the work is centred in it.
+         */}
+        <div
+          className={
+            compact
+              ? 'lt-slide-well flex h-full w-full items-center justify-center'
+              : 'lt-slide-well'
+          }
+          style={compact ? undefined : imageFrameStyle}
+        >
           <ImageWithFallback
             src={image.src}
             fallbackSrc={image.fallbackSrc}
@@ -5785,10 +5890,17 @@ function ResultCard({
       <div className="space-y-2.5 p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
+            {/* `block w-full` is load-bearing, not tidying. A button is
+                inline-block and sizes to its content, so the title overflowed
+                this column instead of being constrained by it — the ellipsis
+                on the `h2` never had a narrower box to trigger against, and
+                three of twelve titles per board hard-clipped mid-word against
+                the card's `overflow: hidden` instead ("...Rocca Santo
+                Stefano, S"). */}
             <button
               type="button"
               onClick={() => onSelectArtwork(result)}
-              className="min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
+              className="block w-full min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
             >
               {/* Wall labels are set in the serif. Hover goes to full graphite
                   rather than to the accent: on this board the coloured ink means
