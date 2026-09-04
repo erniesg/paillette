@@ -20,6 +20,7 @@ import indexingRoutes from './routes/indexing';
 import describeRoutes from './routes/describe';
 import agentRoutes from './routes/agent';
 import labelRoutes from './routes/labels';
+import exhibitionRoutes from './routes/exhibitions';
 import metadataMapRoutes from './routes/metadata-map';
 import { requireAuthOrApiKey } from './middleware/auth';
 import {
@@ -234,6 +235,12 @@ api.route('/galleries/:galleryId', embeddingsRoutes);
 app.route('/api', describeRoutes);
 app.route('/api', agentRoutes);
 app.route('/api', labelRoutes);
+// Publishing and opening a shareable exhibition. Anonymous for the same
+// reason the rest of the NGA surface is — there is no account in this flow —
+// and bounded the same way: open-access collection only, capped prose, a
+// per-caller hourly budget, and every work checked against the catalogue
+// before the row is written.
+app.route('/api', exhibitionRoutes);
 
 // Mount API routes
 app.route('/api/v1', api);
