@@ -223,6 +223,24 @@ Staging only. Do not imply production-readiness.
 | *"more like this one"* binds to the pointed-at work and draws a chip with its thumbnail — typed, mic absent | Voice-loop report, verified in the browser. |
 | *"something between these two"* binds to a shift-click selection and draws both thumbnails, with no "2 works" caption | Voice-loop report, verified in the browser. |
 | The referent survives the cursor leaving the card | Voice-loop report. |
+| The *plumbing* of the spoken path works in a real browser | `verify-definition-of-done.mjs`, **12/12** on the deployed build (integration iter 2): a transcript lands in the editable field, the grace commits it as one turn, and `speechSynthesis.speak` is called after a spoken turn and **not** after a typed one. |
+
+**⚠ That 12/12 is not evidence that speech works.** The harness stubs both
+`SpeechRecognition` and `speechSynthesis`, and says so itself: *"This does not
+make the speech real. It makes the plumbing real in a real browser."* Real
+recognition returns nothing on this VM and there are no voices to speak with.
+The claim that is earned is narrow and worth having — **the wiring is right, and
+the symmetric rule is a contrast that has actually been observed** — but it is
+not a spoken take.
+
+## 2.10 Provenance ink
+
+| Claim | Source |
+| --- | --- |
+| Two colours of ink are visible in every state | `verify-definition-of-done.mjs`, **11/11** on the deployed build (integration iter 2) — §9's fifth clause. |
+| Graphite for the human, a coloured ink for the agent, dashed for provisional | Visuals report; `03-agent-provisional.png`, `03b-ink-detail.png`, `04-agent-confirmed.png`. Live: `data-flag-by="human"` on every key-pressed flag. |
+| An agent's flag is a proposal until the human confirms it with the same key | `flag_artworks` description, `tools.ts:1341`; provisional flags do not move the exemplars the deterministic redeal runs on. |
+| Provenance is ink, not a caption | Shared-state report: the *"assembled by the agent"* caption was removed and replaced by `data-provenance` on the wall label. Verified live — no such string on the page. |
 
 ---
 
