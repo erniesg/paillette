@@ -25,6 +25,7 @@ and must not go past it.
 | Multi-select (shift-click), P5 "Point" | shipped |
 | Pin survival in `set_results` as well as `redeal` | shipped |
 | Failure, slow-network and empty-collection paths | shipped, 25 checks |
+| The loop still working with the agent refusing | verified, 9 checks |
 | Terseness pass on this lane's own surfaces | shipped — see §6 |
 | Flags surviving a new search | shipped, verified in a browser |
 
@@ -82,6 +83,7 @@ The four verification harnesses, all runnable by hand:
 ```
 apps/web/scripts/verify-culling-loop.mjs     29 checks, the loop end to end
 apps/web/scripts/verify-failure-paths.mjs    25 checks, every way it can refuse
+apps/web/scripts/verify-agentless-loop.mjs    9 checks, the loop with no agent
 apps/web/scripts/verify-sofa-run.mjs         the brief's definition of done, live
 apps/api/scripts/verify-exemplars-live.mjs   the engine over the real 63,253
 ```
@@ -253,6 +255,27 @@ worth suppressing in the page rather than asked for in the prompt.
 - The corpus in these runs is **eight fixture works with invented titles**, not
   the NGA. The behaviour is real; the pictures are not. Nothing here shows the
   engine returning good works from the real collection.
+
+### The loop with the agent switched off
+
+**This is the claim the submission rests on, and it is the one worth quoting.**
+`apps/web/scripts/verify-agentless-loop.mjs` runs the culling loop against an
+agent route that is hard-refusing with a 429 — not a hypothetical, but the real
+failure mode found while rehearsing (see §8, the hourly budget). **9 checks, all
+passed, three times in a row.**
+
+With the model unreachable:
+
+- `P` and `X` still flag
+- **Enter on an empty bar still deals twelve, and the pick still holds its seat**
+- **no agent call is made at all** — asserted, so it fails if one appears
+- the typed agent path fails *visibly*: the human is told why, in the page's own
+  words, rather than nothing happening
+- the board the human dealt is untouched by the failed turn
+- Enter still deals afterwards
+
+An app with an agent in it stops when the agent stops. This one does not, and
+that is testable rather than rhetorical.
 
 ### The engine over the real 63,253
 
@@ -456,6 +479,15 @@ It is still a monkey-patch on `fetch`, and I would rather it were not there.
   index. The loop is `/nga/search` only.
 - **Nothing persists.** Flags, board and selection are page-session state in
   memory. A refresh loses the cull.
+- **The anonymous agent budget is 40 model calls per client per hour, and one
+  typed instruction costs two or three of them.** That is roughly fifteen
+  instructions an hour, and an afternoon of rehearsal will exhaust it — two of
+  my sofa runs failed this way before I traced it. The route says so plainly
+  when it happens and the deterministic loop is unaffected, but **whoever films
+  this should know the number**. The constant used to be called
+  `MAX_AGENT_TURNS_PER_CLIENT_PER_HOUR`, which read as nearly three times the
+  real budget; it is now `MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR`. I did not
+  raise it — that is a cost decision, not mine to make quietly.
 - **A second Enter during a slow deal is dropped, not queued.** It returns
   `REDEAL_IN_FLIGHT` and nothing happens. That is deliberate — the flags have
   not changed, so the next press would read the same thing — but on a slow
@@ -486,6 +518,7 @@ Baseline was web 59 files / 593 tests, api 41 / 770.
 | `pnpm --filter web typecheck` | **1 error, pre-existing, not mine** |
 | `verify-culling-loop.mjs` | **29 checks, all passed, 3 runs** |
 | `verify-failure-paths.mjs` | **25 checks, all passed, 3 runs** |
+| `verify-agentless-loop.mjs` | **9 checks, all passed, 3 runs** |
 | `verify-exemplars-live.mjs` | **ran; output is for reading, not a pass/fail** |
 | `verify-sofa-run.mjs` | **9 runs, all 9 redealt with a one-sentence note** |
 

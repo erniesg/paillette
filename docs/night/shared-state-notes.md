@@ -121,6 +121,20 @@ hide the activity panel entirely rather than show a chat."* I have not touched
 the file. A screenshot of the duplication is at `/tmp/sofa-run-1.png` if it is
 still there; re-create it with `apps/web/scripts/verify-sofa-run.mjs`.
 
+## Before anyone films this
+
+The anonymous agent route allows **40 model calls per client per hour**, and one
+typed instruction costs two or three — the loop reads the view, acts, then
+answers. So it is about fifteen instructions an hour, and a rehearsal session
+will run it out. Two of my own verification runs died that way before I traced
+it. The page does say why, in the prompt bar, so it is not silent; it is just
+fatal to a take.
+
+Enter on an empty bar is not affected — it never reaches that route. I have a
+check that proves the whole culling loop still works while the agent is
+hard-refusing (`apps/web/scripts/verify-agentless-loop.mjs`), which is worth
+knowing if the shoot goes long.
+
 ## What I need from nobody, but you should know
 
 - `speak-button.tsx` untouched.
