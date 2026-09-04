@@ -194,6 +194,15 @@ export interface WebMcpState {
   /** The most recent indexing job started on this page, by either party. */
   indexJob: IndexJobHandleState | null;
   activity: ActivityEntry[];
+  /**
+   * Calls that have rolled off the top of `activity`.
+   *
+   * The buffer is bounded, so a long session loses its beginning. A truncated
+   * list that says nothing about being truncated reads as a complete one, which
+   * is the wrong thing for a surface whose whole claim is that it shows what
+   * actually happened.
+   */
+  activityDropped: number;
   pendingConfirmations: PendingConfirmation[];
   /** True once the bridge has registered tools with a real host. */
   bridgeAttached: boolean;
@@ -243,6 +252,7 @@ const initialState: WebMcpState = {
   selection: [],
   indexJob: null,
   activity: [],
+  activityDropped: 0,
   pendingConfirmations: [],
   bridgeAttached: false,
   panelOpen: false,
@@ -347,6 +357,8 @@ export const startActivity = (toolName: string, input: unknown): string => {
       },
       ...state.activity,
     ].slice(0, MAX_ACTIVITY),
+    activityDropped:
+      state.activityDropped + (state.activity.length >= MAX_ACTIVITY ? 1 : 0),
     // Deliberately does not open the log. The glyph is what a tool call earns:
     // it is already animating, in the agent's ink, in the corner. Throwing a
     // panel over the board every time a tool fires — five or six times a turn —

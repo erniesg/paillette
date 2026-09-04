@@ -236,24 +236,51 @@ const CSS = `
 .pa-activity-out[data-bad='true'] { color: var(--pa-bad); }
 
 .pa-activity-detail {
-  margin: 0;
   padding: 8px 12px 10px 12px;
   background: var(--pa-well);
+  max-height: 280px;
+  overflow: auto;
+}
+.pa-activity-detail pre {
+  margin: 0;
   font-family: var(--pa-mono);
   font-size: 11px;
   line-height: 1.5;
   color: var(--pa-text-soft);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 280px;
-  overflow: auto;
 }
-.pa-activity-detail dt {
+/*
+ * One character where two words used to be. A wall label gives artist, title,
+ * date and medium and never names the fields, because position says which is
+ * which; a REPL prints what went in, an arrow, and what came back. Both work
+ * on the same principle, and "arguments" / "result" were the labels a legend
+ * would carry.
+ */
+.pa-activity-turn {
+  display: block;
+  margin: 5px 0;
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--pa-ink);
+}
+.pa-activity-row[data-bad='true'] + .pa-activity-detail .pa-activity-turn {
+  color: var(--pa-bad);
+}
+
+/*
+ * The session is longer than the log can hold. A truncated list that says
+ * nothing reads as a complete one, so it says how much is missing — a count,
+ * not a sentence about counts.
+ */
+.pa-activity-earlier {
+  padding: 7px 12px 8px 12px;
+  border-bottom: 1px solid var(--pa-rule);
+  font-family: var(--pa-mono);
+  font-size: 11px;
   color: var(--pa-text-faint);
-  margin: 0 0 2px 0;
 }
-.pa-activity-detail dd { margin: 0 0 8px 0; }
-.pa-activity-detail dd:last-child { margin-bottom: 0; }
 
 .pa-activity-ask {
   padding: 10px 12px;
@@ -327,12 +354,18 @@ const startsBurst = (
 };
 
 export function AgentActivityPanel() {
-  const { activity, pendingConfirmations, panelOpen, bridgeAttached } =
-    useWebMcpState();
+  const {
+    activity,
+    activityDropped,
+    pendingConfirmations,
+    panelOpen,
+    bridgeAttached,
+  } = useWebMcpState();
   const reducedMotion = usePrefersReducedMotion();
   const glyph = readGlyphState(activity);
 
   const [expanded, setExpanded] = useState<readonly string[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
 
@@ -354,6 +387,35 @@ export function AgentActivityPanel() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [panelOpen]);
+
+  /**
+   * Reaching for anything else closes it.
+   *
+   * The log is an opaque panel over the lower-left of the board, and that is
+   * where the cards are. Driving it in a browser found the obvious consequence:
+   * with the log open, `P` on a card is unreachable and a click on one is
+   * swallowed — the same complaint the voice lane filed against the panel this
+   * replaced, surviving into its replacement.
+   *
+   * Listening on `pointerdown` in the capture phase without preventing anything
+   * means the click still lands on whatever was actually clicked; the log just
+   * gets out of the way at the same moment. So nothing is ever lost, and there
+   * is one less control to find.
+   *
+   * A pending confirmation is exempt. Something waiting on an answer cannot be
+   * dismissed by looking away from it.
+   */
+  useEffect(() => {
+    if (!panelOpen || pendingConfirmations.length > 0) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && rootRef.current?.contains(target)) return;
+      setPanelOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () =>
+      window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [panelOpen, pendingConfirmations.length]);
 
   // Follow the tail the way a terminal does — but only while the reader is
   // already at the tail. Someone scrolled up to read an earlier call is reading
@@ -390,7 +452,11 @@ export function AgentActivityPanel() {
   if (!bridgeAttached && !hasAnything) return null;
 
   return (
-    <div className="pa-activity" data-open={panelOpen ? 'true' : 'false'}>
+    <div
+      className="pa-activity"
+      ref={rootRef}
+      data-open={panelOpen ? 'true' : 'false'}
+    >
       <style>{CSS}</style>
 
       {panelOpen && (
@@ -441,6 +507,11 @@ export function AgentActivityPanel() {
               </div>
             ) : (
               <ol className="pa-activity-list">
+                {activityDropped > 0 && (
+                  <li className="pa-activity-earlier">
+                    … {activityDropped} earlier
+                  </li>
+                )}
                 {rows.map((entry, index) => {
                   const running = entry.status === 'running';
                   const bad = entry.error !== null;
@@ -495,16 +566,26 @@ export function AgentActivityPanel() {
                         )}
                       </button>
                       {open && (
-                        <dl className="pa-activity-detail">
-                          <dt>arguments</dt>
-                          <dd>{detailJson(entry.input)}</dd>
+                        <div className="pa-activity-detail">
+                          <pre>
+                            <span className="pa-activity-sr">arguments </span>
+                            {detailJson(entry.input)}
+                          </pre>
                           {entry.detail !== null && (
                             <>
-                              <dt>result</dt>
-                              <dd>{entry.detail}</dd>
+                              <span
+                                className="pa-activity-turn"
+                                aria-hidden="true"
+                              >
+                                →
+                              </span>
+                              <pre>
+                                <span className="pa-activity-sr">result </span>
+                                {entry.detail}
+                              </pre>
                             </>
                           )}
-                        </dl>
+                        </div>
                       )}
                     </li>
                   );

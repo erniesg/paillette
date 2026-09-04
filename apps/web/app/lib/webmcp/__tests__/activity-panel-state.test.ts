@@ -78,6 +78,26 @@ describe('the tool-call log', () => {
     expect(entry?.detail).toBe('{"count":12}');
   });
 
+  it('counts what rolled off the top rather than truncating silently', () => {
+    // A bounded buffer that says nothing about being bounded reads as a
+    // complete record, which is the wrong thing for a surface whose claim is
+    // that it shows what actually happened.
+    for (let call = 0; call < 130; call += 1) {
+      startActivity('get_view_context', { call });
+    }
+
+    const state = getWebMcpState();
+    expect(state.activity).toHaveLength(120);
+    expect(state.activityDropped).toBe(10);
+  });
+
+  it('drops nothing until the buffer is actually full', () => {
+    for (let call = 0; call < 120; call += 1) {
+      startActivity('get_view_context', { call });
+    }
+    expect(getWebMcpState().activityDropped).toBe(0);
+  });
+
   it('records a failure in the words the tool used', () => {
     const id = startActivity('flag_artworks', { flags: [] });
     settleActivity(id, 'ok', 'UNKNOWN_ARTWORK: no such work on this board', {

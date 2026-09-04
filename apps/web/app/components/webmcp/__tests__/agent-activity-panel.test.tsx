@@ -288,6 +288,58 @@ describe('the log', () => {
     expect(detail.textContent).toContain('"nga-9"');
   });
 
+  it('separates what went in from what came back with a mark, not a label', () => {
+    act(() => setBridgeAttached(true));
+    render(<AgentActivityPanel />);
+
+    const id = run('search_artworks', { query: 'storm' });
+    settle(id, 'ok', '12 results', { detail: '{\n  "count": 12\n}' });
+
+    fireEvent.click(glyphButton());
+    fireEvent.click(rows()[0]!);
+
+    const detail = document.querySelector('.pa-activity-detail') as HTMLElement;
+    // Position and one arrow say which block is which; a wall label never names
+    // its fields either.
+    expect(detail.querySelector('.pa-activity-turn')?.textContent).toBe('→');
+    expect(
+      detail.querySelector('.pa-activity-turn')?.getAttribute('aria-hidden')
+    ).toBe('true');
+
+    // The words survive only for a reader who cannot see the position.
+    const visible = Array.from(detail.querySelectorAll('pre')).map((node) =>
+      Array.from(node.childNodes)
+        .filter(
+          (child) =>
+            !(
+              child instanceof HTMLElement &&
+              child.classList.contains('pa-activity-sr')
+            )
+        )
+        .map((child) => child.textContent)
+        .join('')
+    );
+    expect(visible.join(' ')).not.toContain('arguments');
+    expect(visible.join(' ')).not.toContain('result');
+    expect(detail.textContent).toContain('arguments');
+    expect(detail.textContent).toContain('result');
+  });
+
+  it('says how much of the session it had to drop', () => {
+    act(() => setBridgeAttached(true));
+    render(<AgentActivityPanel />);
+
+    for (let call = 0; call < 125; call += 1) {
+      settle(run('get_view_context', { call }), 'ok', 'ok');
+    }
+
+    fireEvent.click(glyphButton());
+    expect(rows()).toHaveLength(120);
+    expect(
+      document.querySelector('.pa-activity-earlier')?.textContent?.trim()
+    ).toBe('… 5 earlier');
+  });
+
   it('keeps its history when the human closes it', () => {
     act(() => setBridgeAttached(true));
     render(<AgentActivityPanel />);
@@ -306,6 +358,33 @@ describe('the log', () => {
       'search_artworks',
       'redeal',
     ]);
+  });
+
+  it('gets out of the way when the human reaches for the page', () => {
+    // The log is an opaque overlay across the lower-left of the board, which is
+    // where the cards are. Driving it in a browser found the obvious
+    // consequence: with the log open, a click meant for a card beside it went
+    // nowhere useful. Listening on pointerdown without preventing anything
+    // means the click still lands where it was aimed.
+    act(() => setBridgeAttached(true));
+    render(<AgentActivityPanel />);
+    settle(run('search_artworks', { query: 'storm' }), 'ok', '12 results');
+
+    fireEvent.click(glyphButton());
+    expect(document.querySelector('.pa-activity-log')).toBeTruthy();
+
+    fireEvent.pointerDown(document.body);
+    expect(document.querySelector('.pa-activity-log')).toBeNull();
+  });
+
+  it('stays open when the pointer lands inside it', () => {
+    act(() => setBridgeAttached(true));
+    render(<AgentActivityPanel />);
+    settle(run('search_artworks', { query: 'storm' }), 'ok', '12 results');
+
+    fireEvent.click(glyphButton());
+    fireEvent.pointerDown(rows()[0]!);
+    expect(document.querySelector('.pa-activity-log')).toBeTruthy();
   });
 
   it('closes on Escape', () => {
@@ -350,6 +429,10 @@ describe('the consent gate', () => {
     expect(ask).toBeTruthy();
     expect(ask.textContent).toContain('create_collection');
     expect(ask.textContent).toContain('Storm-lit seascapes');
+
+    // A question waiting on an answer cannot be dismissed by looking away.
+    fireEvent.pointerDown(document.body);
+    expect(document.querySelector('.pa-activity-ask')).toBeTruthy();
 
     fireEvent.click(within(ask).getByRole('button', { name: 'Decline' }));
     await expect(answered!).resolves.toBe(false);
