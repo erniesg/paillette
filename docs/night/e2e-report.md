@@ -1,5 +1,577 @@
 # End to end — the demo loop on a deployed build, driven by typing
 
+# Iteration 5
+
+Run on 2026-09-04, 14:40–16:05 UTC against **https://paillette-stg.berlayar.ai**
+— web version `579886d4-2009-4e19-90c0-e398e951e499`, api
+`9995af12-2cdc-4691-94a8-01377710f031`, both read back from
+`wrangler deployments list --env staging` during this run.
+
+**I did not redeploy, and I checked rather than assumed.** Staging's web version
+is the one the integration lane deployed from `4e79c6c`, and
+`git diff --name-only 4e79c6c..HEAD -- apps packages` is empty at `b808f34` —
+the only commit since is the integration report itself. The page under test is
+byte-identical in application code to this branch's head.
+
+Everything below happened in a real browser against the live 63,253-work index:
+the search, the Rocchio engine, the pictures and the model turns are the
+deployed ones. Nothing is stubbed. **Every turn was typed. The mic was never
+pressed** except in one probe whose whole purpose was to find out what happens
+when it is (§8).
+
+---
+
+## Verdict
+
+**Yes — the typed loop is filmable right now.** All six beats of §9 run on
+`/nga/search` against the real collection, driven by typing, with voice off.
+
+The headline claim is proven, and proven properly: **Enter on an empty bar
+redeals with zero model calls, 4 runs out of 4**, measured after waiting for the
+model endpoint to fall silent for 20+ seconds so the keypress is the only thing
+the requests can be attributed to. The single request it makes is
+`POST /api/public-search/nga/exemplars`, **8–21 ms after the keypress**.
+
+§9's hardest clause — the note naming *what* was rejected — passes **3 for 3**,
+and this time the notes are not merely grounded but close to word-perfect. All
+three are quoted verbatim in §5.
+
+**One thing will spoil the money shot and it is not the FLIP.** The deal
+animation is real and runs on the real page. But on the human's own Enter, **the
+agent's sentence is deleted from the board**, and every card slides up 56 px into
+the gap it leaves — picks included. So the beat the submission is built on ends
+with a board that has no words on it and a pick that visibly moved. Cause found,
+element named, arithmetic closed, in §6.1. It is a layout fix, not a FLIP fix.
+
+**I nearly reported the opposite of the truth on the central claim, and the way
+that happened is worth more than the result.** My first walk measured 0 model
+calls on the redeal; my second measured 1, and the model turn was the *first*
+request in the window. Either number alone would have been publishable and one
+of them is wrong. The 1 was the tail of the opening turn's tool chain landing in
+the ~200 ms between where the harness took its mark and where the human pressed
+Enter — not Enter reaching the model. §3 is how that was settled. **No count of
+requests "in a window" can answer this question**; the window has to start at
+the keypress and the endpoint has to be silent before it.
+
+### The two things the brief said to check before starting
+
+**1. Does the in-page agent render under `?webmcp-debug`? Yes.**
+`git merge-base --is-ancestor 928b5dc HEAD` returns true — the mount-order fix is
+merged and **no cherry-pick was needed**. I measured it rather than trusting it:
+`e2e-mount-probe.mjs` did **20 cold loads in fresh browser contexts, and 20/20
+rendered `input[aria-label="Ask the agent"]`** and installed
+`window.__paillette_webmcp.call`, with 25 tools on `document.modelContext` every
+time.
+
+The bar arrives between **691 ms and 2786 ms**, driver between 247 ms and 2564 ms.
+That range matters: **one of my note runs died at the first step** with "the
+agent bar is not on the page", because it waited a flat 4500 ms and that page was
+slower. The race the brief warns about did not reproduce in 20 attempts; a
+harness that sleeps instead of polling will still produce a false failure. Every
+script here now polls.
+
+**2. Is the deal animation on the real page, or only in the harness? It is on
+the real page. This is not a blocking finding.**
+
+`apps/web/app/routes/galleries.$galleryId.search.tsx:5458` renders
+`className="lt-deal-viewport"` wrapping `DealBoard` — the same component the
+`/night/deal` harness uses, on the route the video films. Measured there, against
+the real collection, on a real deterministic redeal that replaced 11 of 12 cards:
+
+| run | distinct layouts | frames sampled |
+| --- | --- | --- |
+| no-model probe 1 | **24** | 717 |
+| no-model probe 2 | **20** | 712 |
+| no-model probe 3 | **26** | 718 |
+| no-model probe 4 | **15** | 707 |
+| walk run 1 | **27** | 357 |
+
+A jump cut produces 4–5. Layouts are counted on card positions *relative to the
+grid*, so a container sliding underneath a still board cannot inflate the number.
+The animation is real, on `/nga/search`, with the real 63,253 works.
+
+**One measurement of mine was wrong and I am flagging it rather than dropping
+it.** Walk run 2 reported "1 distinct layout over 360 frames" — no animation at
+all. That was my ruler: it sampled for 6 s on a run where the exemplars call did
+not return until 6.2 s, so the sampler stopped before the board moved. The probe
+samples 12 s and the finding disappeared. Nothing was wrong with the product.
+
+---
+
+## 1. What ran
+
+Five scripts, all new for this phase, all in `apps/web/scripts/`:
+
+| script | what it answers |
+| --- | --- |
+| `e2e-typed-loop.mjs` | the six beats of §9, typed, end to end |
+| `e2e-no-model-call-probe.mjs` | **the central claim**, with silence-gating |
+| `e2e-mount-probe.mjs` | how often the agent actually renders on a cold load |
+| `e2e-compare-probe.mjs` | the two-up, and where the choice goes |
+| `e2e-geometry-probe.mjs` + `e2e-inside-grid-probe.mjs` | why the picks move |
+| `e2e-voice-off-probe.mjs` | what voice adds, and what cannot be tested here |
+
+Raw evidence under `/tmp/e2e6/`; screenshots copied into `docs/night/shots/` as
+`e2e5-*`, numbered in the order a human would flip through them.
+
+Three rules the harnesses hold themselves to, each because it is how an earlier
+report overstated:
+
+- **No Escape and no wake-up click before the culling keys.** `P`/`X` are
+  pressed on the page as it arrives.
+- **"No model call" is counted off the wire and timed from the keypress.**
+- **The animation is only scored if the board actually changed.**
+
+---
+
+## 2. Steps 1 and 2 — the typed instruction, and the flags
+
+**Step 1 — a typed instruction alone brings back a board with a written note.**
+No coaching, the brief's sentence exactly:
+
+> I want something to hang above the sofa in my living room. Warm, not busy,
+> nothing grim.
+
+Seven runs, all typed character-by-character into
+`input[aria-label="Ask the agent"]` and submitted with Enter:
+
+| run | cards | note in | model calls |
+| --- | --- | --- | --- |
+| walk 1 | 12 | 12.1 s | 4 |
+| walk 2 | 12 | 32.6 s | 4 |
+| note 2 | 12 | 22.1 s | 4 |
+| note 3 | 12 | 14.1 s | 5 |
+| note 4 | 12 | 21.6 s | 4 |
+| no-model 2 | 12 | — | 5 |
+| no-model 3 | 12 | — | 4 |
+
+**12.1 s to 32.6 s is a wide spread and the crew should know it.** The board
+arrives before the sentence does; a take that cuts at 15 s will sometimes catch
+a board with no wall label on it yet.
+
+Shots `e2e5-01`, `e2e5-02`. The note and its board are in one 1440×900 frame,
+the human's utterance in graphite above and the agent's label in cyan behind a
+cyan rule.
+
+**Step 2 — `X` on two works, `P` on one, and the flags persist and are
+visible.** With no Escape pressed first, on both walks:
+
+```
+walk 1  open-access-art:nga:182820=reject/human  open-access-art:nga:30607=reject/human
+        open-access-art:nga:34180=pick/human
+walk 2  open-access-art:nga:214114=reject/human  open-access-art:nga:214119=reject/human
+        open-access-art:nga:53123=pick/human
+```
+
+`data-flag-by="human"` on all six — the graphite ink. Shot `e2e5-03` shows the
+two rejects dimmed and the pick carrying the hairline frame, with `P X U` badges
+on the hovered card.
+
+**`get_view_context` hands all three back, with the catalogue record on each:**
+
+```
+picks=1 rejects=2 provisional=0
+fields on a reject: id,title,artist,palette,medium,year,classification,by,onBoard
+```
+
+That grounding is not decoration — it is *why* §9's third clause is achievable at
+all, and §5 shows the agent using every one of those fields. Verbatim, one reject
+as the agent receives it:
+
+```json
+{ "id": "open-access-art:nga:130607",
+  "title": "Northern Landscape Fantasy Evoking Tivoli",
+  "artist": "Nicolaes Pietersz Berchem",
+  "palette": ["#EEC8AB", "#D88E5E", "#C4A88C"],
+  "medium": "red chalk on laid paper",
+  "year": 1660, "classification": "Drawing",
+  "by": "human", "onBoard": true }
+```
+
+The `flags.hint` the agent is given is worth quoting, because it is the
+provenance rule enforced in words as well as in code:
+
+> picks and rejects are confirmed by the human and are what redeal runs on.
+> provisional are your own flags, still dashed on screen and not counted — do
+> not read them back as the human's taste.
+
+**Flagging fires no model call.** 0 in 4/4 no-model runs, measured across all
+three keypresses.
+
+**My first assertion here was wrong and it was the harness.** The walk initially
+reported "get_view_context hands the flags back — FAIL". It was searching the
+JSON for the strings `"pick"` and `"reject"`; the actual shape is
+`{ picks: [...], rejects: [...] }`. The product was correct throughout. Fixed to
+check the entries and their fields, which is a stronger assertion than the one it
+replaced.
+
+---
+
+## 3. Step 3 — Enter on an empty bar, and no model call
+
+**This is the claim the submission rests on, so it gets its own method.**
+
+Counting requests "in the redeal window" cannot answer it. The opening turn is a
+*chain* — the agent calls a tool, the page answers, the agent is invoked again —
+and that chain is still firing POSTs long after its sentence is on screen. A POST
+landing 200 ms *before* the keypress is indistinguishable, to a counter, from one
+the keypress caused. That is exactly what bit walk run 2.
+
+`e2e-no-model-call-probe.mjs` therefore:
+
+1. **waits for silence** — no request to `/api/public-agent/turn` for 20
+   consecutive seconds before it touches anything;
+2. **times every request from the keypress**, not from a mark taken earlier;
+3. **reads the body** of any model turn it does see.
+
+The wait was real: 22 s, 22 s, 47 s, 22 s. All four reached silence.
+
+**Result — 4 runs out of 4, zero model calls after Enter:**
+
+| run | bar at Enter | model calls after Enter | every request after Enter | board |
+| --- | --- | --- | --- | --- |
+| 1 | `""` | **0** | `+11ms POST /exemplars`, `+13720ms GET /quota` | 8 left, 11 arrived, 12 up |
+| 2 | `""` | **0** | `+21ms POST /exemplars` | 11 left, 11 arrived, 12 up |
+| 3 | `""` | **0** | `+8ms POST /exemplars`, `+4388ms GET /quota` | 11 left, 11 arrived, 12 up |
+| 4 | `""` | **0** | `+14ms POST /exemplars` | 9 left, 11 arrived, 12 up |
+
+The deterministic engine is hit **8–21 ms after the keypress** — immediately, and
+it is the only thing that fires. The `/quota` GET is the free-search counter.
+
+Corroborated independently on walk run 1, which recorded the whole window:
+
+```
+POST /api/public-agent/turn × 0; every request in the window:
+POST /api/public-search/nga/exemplars, GET /api/public-search/nga/quota
+```
+
+**The picks stay picked and the rejects leave**, 6/6 across both walks and all
+four probe runs: the pick is still on the board carrying `pick`/`human`, and both
+rejects are gone from the board and sitting in the visible left tray
+(`.lt-tray`, 468 px tall, measured in §6.1).
+
+**Walk run 2, the one that measured 1, in full.** The window's requests were
+`POST /api/public-agent/turn` at +0 ms, `POST /exemplars` at +4743 ms,
+`GET /quota` at +12058 ms. The model turn is the *first* thing in the window,
+before the exemplars call, i.e. in the gap between the harness taking its mark
+and the human pressing Enter — the opening chain finishing, not Enter reaching
+the model. The silence-gated probe reproduces the correct result 4/4 and I am
+recording the bad measurement rather than deleting it.
+
+---
+
+## 4. Step 6 — the deal animates, and the picks do not visibly hold
+
+Two separate claims. The first is true. The second is false, and it is the most
+important line in this report.
+
+**The animation is real** — 15–27 distinct grid-relative layouts over ~710
+sampled frames, on `/nga/search`, five runs, table in the verdict above.
+
+**The picks do not hold their place on screen.** Deterministic, identical to the
+pixel in every run:
+
+| | pick, relative to the grid | pick, on screen |
+| --- | --- | --- |
+| flagged, before Enter | y **72** | y 248 (or 497 unscrolled) |
+| after the redeal | y **16** | y **192** |
+
+`grid.x` is 668 both times — it does not change column. It moves **56 px
+upward**, and it does so *inside the grid*, in runs where the grid's own top does
+not move at all (176 → 176, probe runs 1 and 3). So this is not the container
+sliding under a still board. The card genuinely changes position.
+
+§7.1 calls the deal "the single most important visual in the submission" and its
+entire content is that the picks do not move. They move.
+
+---
+
+## 5. Step 4 — does the note name *what* was rejected? 3 for 3
+
+§9 asks for this checked by hand on three runs. Here are all three, verbatim,
+each with the works that were actually flagged on the wire.
+
+### Run 2
+
+Opening note:
+
+> **"Warm, open compositions with soft light, gentle earth tones, and enough
+> visual breathing room for a living room."**
+
+Rejected with `X`: *Northern Landscape Fantasy Evoking Tivoli* (Berchem, 1660,
+**red chalk on laid paper**, Drawing, `#EEC8AB #D88E5E #C4A88C`) and *Vicinity of
+Morestal* (Ravier, 1885, **watercolor and fabricated charcoal**, Drawing,
+`#967B62 #B6874F #574136 #8D6634`). Picked with `P`: *Clouds at Sunset*.
+
+Redeal note:
+
+> **"Following the pick: Shegogue's amber watercolor sky; moving away from the
+> rejected rust-and-umber landscape drawings."**
+
+Grounded: both rejects are classified **Drawing** and both are landscapes; the
+palettes are literally rust and umber (`#D88E5E`, `#8D6634`). Not a word wrong.
+
+### Run 3
+
+Opening note:
+
+> **"Warm, open compositions: amber landscapes, window light, and still lifes
+> with room to breathe."**
+
+Rejected: *Harvesters by Firelight* (Samuel Palmer, 1830, pen and black ink with
+watercolor and gouache) and *Northern Landscape Fantasy Evoking Tivoli*
+(Berchem, **red chalk on laid paper**).
+
+Redeal note:
+
+> **"Following the pick: sunset watercolor; away from the firelit scene and the
+> red-chalk landscape."**
+
+**This is the best result the loop has produced.** "the firelit scene" is
+*Harvesters by Firelight*; "the red-chalk landscape" is the Berchem, whose medium
+is exactly `red chalk on laid paper`. Both rejects named by content, one by its
+subject and one by its medium, and both correct.
+
+### Run 4
+
+Opening note:
+
+> **"Warm, low-clutter pictures: fruit, flowers, and quiet light held in earthy
+> golds."**
+
+Rejected: *Still Life, Wineglass, Two Peaches* (oil on canvas, `#5F432B #C8864A
+#9D834D #D6AE68`) and *Still Life with Milk Jug and Fruit* (oil on canvas,
+`#8F765D #CB915B #95501E #643832`). Picked: *Flowers on a Window Ledge*.
+
+Redeal note:
+
+> **"Following the window flowers: warm oil light stays; the two darker fruit
+> still lifes leave."**
+
+Grounded: both rejects are fruit still lifes, both oil on canvas, and both
+palettes are darker than the pick's.
+
+**3 for 3, and this is a real improvement.** Iteration 3 was 0 for 5. Iteration 4
+was 3 for 3 but with a medium misdescribed. These three have no wrong word in
+them — the agent is reading `medium`, `classification` and `palette` off the
+flags and using all three. Shots `e2e5-20`, `e2e5-21`, `e2e5-22`.
+
+Redeal notes cost 3 model calls each and arrive in 8.0–13.7 s.
+
+**A fourth run is missing and I am saying so.** The original run 1 died before
+its first turn on the 4500 ms bar timeout (§verdict). I replaced it with run 4
+rather than reporting two.
+
+---
+
+## 6. What is broken
+
+### 6.1 The human's own Enter deletes the agent's sentence, and the board slides up into the gap
+
+**This is the blocking finding for the video.** Not the FLIP — the FLIP is
+correct. The wall label.
+
+`e2e-inside-grid-probe.mjs` listed everything inside `.lt-deal-viewport` above
+the topmost card, before and after the redeal:
+
+```
+BEFORE   grid top 425, height 484, first card 72px into the grid
+  note: "A quiet warm-toned hang: fruit, vessels, flowers, and unhurried
+         landscapes in amber, ochre, and soft earth colors."
+  box  : { y: 441, h: 44, insideGrid: true }
+  blocks above the first card:
+    h 468  lt-tray flex w-[92px] shrink-0 …      (the reject tray, beside)
+    h  44  mb-3 shrink-0 empty:hidden            (the agent's sentence)
+
+AFTER    grid top 176, height 484, first card 16px into the grid
+  note: (none)   box: null
+  blocks above the first card:  (none)
+```
+
+The arithmetic closes exactly: **44 px of sentence + 12 px of `mb-3` margin =
+56 px**, and 72 − 16 = 56. The note's wrapper carries `empty:hidden`, so when the
+deterministic redeal writes no note the element collapses to nothing and every
+card on the board — picks included — slides up into the space.
+
+Two consequences, and the second is worse than the first:
+
+1. **The picks visibly move 56 px** in the one beat whose entire point is that
+   they do not.
+2. **The board ends the beat with no words on it at all.** Compare `e2e5-13` and
+   `e2e5-14`: before, the agent's label in cyan above twelve works; after,
+   twelve works and silence. The thesis is "the human points, the agent narrates,
+   the board is the transcript" — and on the human's own redeal the transcript is
+   erased. Two inks become one.
+
+This is iteration 4's finding A ("the board jumps 54–56 px … that Enter deletes
+the agent's sentence"), still unfixed, now with the element named and the
+arithmetic closed.
+
+**The cheapest fix is to reserve the row** — drop `empty:hidden` and give the
+wrapper a min-height so it occupies 56 px whether or not there is a sentence in
+it. That fixes the jump but leaves the board silent. **The better fix** is for the
+deterministic redeal to write its own one-line note; `redeal`'s schema already
+carries `note?: string` (§4 P2), and a deterministic sentence — the count kept,
+removed and added — would keep a wall label on the board without a model call and
+without touching the zero-model-call guarantee. I did not make either change:
+the brief says report, not fix, and this one straddles the visuals and
+shared-state lanes.
+
+### 6.2 The exhibition strip appears on the first flag and pushes the whole board down
+
+Separate from 6.1, at a different beat, measured by `e2e-geometry-probe.mjs`:
+
+| moment | grid top | grid height | what is above the grid |
+| --- | --- | --- | --- |
+| board dealt, nothing flagged | **128 px** | 628 px | nav, search field, sort/view rail |
+| after `X`,`X`,`P` | **176 px** | 484 px | *plus* `paillette-exhibition-head`, **104 px**, "8 works / Copy link" |
+| after the redeal | 176 px | 484 px | the same strip, now "12 works" |
+
+So flagging three cards inserts a 104 px strip, drops the grid 48 px and shrinks
+it by 144 px. The pick travels 182 → 248 on screen before Enter is ever pressed.
+This is iteration 5's §6.1, confirmed at the flag beat — but note that iteration 5
+attributed the *deal*-beat movement to the same cause, and that is not right:
+across the redeal the grid top does not move (176 → 176 in probe runs 1 and 3)
+while the pick still travels 56 px. **They are two different defects with two
+different fixes**, and fixing the strip alone will not hold the picks still.
+
+Shots `e2e5-10`, `e2e5-11`, `e2e5-12`.
+
+### 6.3 The chrome is still on screen while a board is dealt
+
+Unchanged from iteration 5 §6.3 and still true: `Create account`, `Log in`,
+`Sort`, `Relevance`, `Colour`, `Newest`, `Artist`, `Title`, `View`, `Masonry`,
+`Salon`, `Atlas`, `Table`, `Settings 30 / 20` are all above a dealt board, plus
+the serif catalogue field *and* the agent bar — two live text fields against §5's
+"there is nothing to switch because there is one field". Visible in every shot
+from `e2e5-02` on. Reported, not fixed.
+
+### 6.4 The agent bar can take longer to arrive than a harness expects
+
+20/20 cold loads rendered it, in 691–2786 ms, so this is not the mount race. But
+one run of mine failed outright on a 4500 ms budget. **Anything driving this page
+must poll for the bar, not sleep.** Worth a line in the filming notes too: the
+page is not ready the instant it paints.
+
+---
+
+## 7. Step 5 — the two-up, and where the choice goes
+
+`e2e-compare-probe.mjs`, all against the deployed build.
+
+**It opens as a room, not a dialog.** `[data-compare-room]` at
+`{x:0, y:0, w:1440, h:900}` — the full viewport — `askedBy=agent`, the question
+set in serif between the works: *"Which one sits better above a sofa?"*, and one
+other control, `NEITHER`. Nothing else on screen. That is §7.3 exactly. Shot
+`e2e5-06`.
+
+**Escape leaves without answering it**, and flags nothing:
+
+```
+opened=true   open after Escape=false
+flags afterwards: [{"flag":"none","by":"none"},{"flag":"none","by":"none"}]
+```
+
+That is integration's `4e79c6c` fix, confirmed on the deployed build.
+
+**Choosing resolves to a pick and a reject.** Clicking the left work — the whole
+work is the target, there is no control to find:
+
+```
+open-access-art:nga:46426 = pick/human     (Lake Albano, Sunset — George Inness)
+open-access-art:nga:50826 = reject/human   (Stylized Landscape — American 19th Century)
+```
+
+Both in the human's ink. Reproduced on walk run 2 with a different pair. Shot
+`e2e5-07`.
+
+**"And sends a turn" needs splitting, because the code answers the two halves
+differently.** `resolveCompare` (`app/lib/webmcp/turn.ts:111`) sets both flags
+and then deliberately does **not** fire, and says why:
+
+> It does **not** fire a turn. Flags never trigger the agent — Enter is the beat
+> — or the board thrashes under the human's hands while they are still deciding.
+> The choice waits in the journal and rides the next turn.
+
+So: **0 model calls on the click**, measured. The honest question is whether the
+choice reaches the agent at all, and that is a question about the *next* turn's
+body, not about counting requests. I read the body. It is there:
+
+```json
+"compareChoice": {
+  "winner": { "id": "open-access-art:nga:46426", "title": "Lake Albano, Sunset (George Inness)" },
+  "loser":  { "id": "open-access-art:nga:50826", "title": "Stylized Landscape (American 19th Century)" },
+  "question": "Which one sits better above a sofa?" }
+```
+
+and the same payload carries the two flags with their catalogue records and
+`"to":"pick"` / `"to":"reject"`. **The gesture is an utterance, on the wire.**
+
+Against §4's P4 — "The click is sent as a human turn" — the letter is not met and
+the intent is. The information is not lost and the agent is not fired at. I would
+not change it before filming; iteration 2 reached the same conclusion and I
+reached it independently by reading the payload rather than the code comment.
+
+---
+
+## 8. Voice — what it adds, and what remains unproven here
+
+The typed loop above is complete without any of this, which was the point.
+
+**Provable on this machine, and proven:**
+
+- The push-to-talk control is on the page: `button[aria-label="Hold to speak"]`,
+  not disabled.
+- **§5's symmetric channel rule holds in its negative half.** I wrapped
+  `speechSynthesis.speak` before any page script ran, then did a full typed turn.
+  The note came back — *"Warm, quiet pictures with open space, softened light,
+  and a welcoming palette."* — and **`speak` was called 0 times**. The rule is
+  `shouldSpeakReply = lastTurn === 'voice'` (`app/lib/voice/speech-channel.ts:22`),
+  applied at `agent-prompt.tsx:470`. A typed turn is silent. Shot `e2e5-30`.
+- **The page does not fall over without a working microphone.** I held the mic
+  for 2.5 s. The recogniser emitted a single `end` event — no `start`, no
+  `result`, no `error` — and the field was still `""` afterwards. It degrades to
+  a no-op rather than an error state.
+
+**Not provable here, and I am not claiming it:**
+
+- **Real speech recognition.** Note that a `SpeechRecognition` constructor *does*
+  exist in this headless Chromium — my first draft of this probe asserted it did
+  not, and was wrong. Its presence is not a working recogniser: Chrome streams
+  audio to a Google service and there is no microphone on this VM, which is what
+  the `end`-with-no-`result` above is. **A spoken take must be filmed on a real
+  machine**, and nothing here says whether it works there.
+- The 1.2 s grace bar, deictic chips, and the note being spoken *after* a voice
+  turn. The code is present (`graceProgress` in `app/lib/voice/utterance.ts:61`,
+  the bar at `agent-prompt.tsx:908` with `aria-valuenow`), but every one of those
+  paths begins with a transcript this machine cannot produce.
+
+---
+
+## 9. Summary against §9's definition of done
+
+| clause | result |
+| --- | --- |
+| `P`/`X`/`U`/`C` and Enter work on the grid | **yes** — `P`, `X` and Enter walked repeatedly; `C` exercised via `compare_artworks` |
+| flags persist per session | **yes** |
+| `get_view_context` returns them | **yes**, with the full catalogue record on each |
+| **Enter on an empty bar redeals from human flags, picks in place, no LLM call** | **yes — 4/4 silence-gated**, exemplars hit 8–21 ms after the keypress. "Picks in place" is true of the flag and false of the pixels (§6.1) |
+| the redeal note names the *content* of what was rejected, 3 runs | **yes — 3/3, no wrong word** (§5) |
+| a voice utterance lands in the editable field; note spoken only after voice | **negative half proven** (typed turn is silent); **spoken half unproven on this machine** (§8) |
+| two colours of ink visible in every state | **yes while the agent's sentence is on screen; no after a human redeal**, which erases it (§6.1) |
+
+## 10. What the crew needs to know before filming
+
+1. **Film the redeal knowing the board loses its sentence and slides up 56 px.**
+   Until §6.1 is fixed, the cleanest take ends on the flagged board *before*
+   Enter, or accepts a silent board after it.
+2. **The board arrives before the note does**, by 12–33 s. Do not cut early.
+3. **Poll, do not sleep**, in anything driving the page; the bar can take 2.8 s.
+4. **A spoken take needs a real machine.** Nothing here proves or disproves it.
+5. **Everything above was measured on web `579886d4` / api `9995af12`.**
+
+---
+
 # Iteration 4
 
 Run on 2026-09-04, 10:47–11:15 UTC against **https://paillette-stg.berlayar.ai**
