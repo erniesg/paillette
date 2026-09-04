@@ -91,4 +91,47 @@ describe('describeHumanTurn', () => {
 
     expect(described).toContain('rejected A; B');
   });
+  it('carries a rewritten statement as the brief, not as one gesture among many', () => {
+    const described = describeHumanTurn({
+      exhibitionEdits: [
+        { field: 'statement', value: 'It is not about weather. It is about leaving.' },
+      ],
+    });
+
+    expect(described).toContain('the exhibition statement now reads');
+    expect(described).toContain('It is about leaving.');
+    expect(described).toContain('they are now the brief');
+    expect(described).toContain('Re-select the works and rewrite the labels');
+  });
+
+  it('names the work a rewritten label belongs to', () => {
+    const described = describeHumanTurn({
+      exhibitionEdits: [
+        { field: 'label', work: 'Storm at Sea', value: 'Nobody is coming back.' },
+      ],
+    });
+
+    expect(described).toContain('the label on Storm at Sea now reads');
+  });
+
+  it('keeps the correction separate from the gestures', () => {
+    const described = describeHumanTurn({
+      flagsDelta: [{ artworkId: 'a', title: 'A', to: 'reject' }],
+      exhibitionEdits: [{ field: 'statement', value: 'About leaving.' }],
+    });
+
+    expect(described).toContain('rejected A');
+    expect(described).toContain('These are gestures, not words.');
+    // The correction is its own sentence, after the gestures, and carries its
+    // own rule.
+    expect(described!.indexOf('rewritten the show')).toBeGreaterThan(
+      described!.indexOf('These are gestures')
+    );
+  });
+
+  it('ignores an edit that cleared a field', () => {
+    expect(
+      describeHumanTurn({ exhibitionEdits: [{ field: 'title', value: '' }] })
+    ).toBeNull();
+  });
 });

@@ -19,8 +19,15 @@ import {
   getWebMcpState,
   setBoard,
 } from '../store';
-import { __resetTurnStateForTest } from '../turn';
 import {
+  __resetTurnStateForTest,
+  isEmptyTurn,
+  peekTurn,
+  prepareTurn,
+  toTurnPayload,
+} from '../turn';
+import {
+  __resetExhibitionForTest,
   acceptProposal,
   declineProposal,
   dissolveRegion,
@@ -88,6 +95,7 @@ beforeEach(() => {
   __resetWebMcpStateForTest();
   __resetFlagsForTest();
   __resetTurnStateForTest();
+  __resetExhibitionForTest();
   rememberArtworks(['a', 'b', 'c', 'd', 'e'].map(artwork));
   tools = new Map(
     createPailletteTools(context).map((tool) => [tool.name, tool])
@@ -407,6 +415,72 @@ describe('set_exhibition and get_exhibition', () => {
     const view = await call('get_view_context');
     expect(view.exhibition.title.text).toBe('Leaving');
     expect(view.exhibition.works[0].artworkId).toBe('a');
+  });
+});
+
+describe('a correction rides the next turn', () => {
+  it('carries the human’s rewritten statement, and drains it once', () => {
+    board(['a']);
+    writeExhibition({ statement: 'About weather.' }, { by: 'agent' });
+    writeExhibition(
+      { statement: 'It is not about weather. It is about leaving.' },
+      { by: 'human' }
+    );
+
+    const payload = toTurnPayload(prepareTurn('try again'));
+    expect(payload.exhibitionEdits).toEqual([
+      {
+        field: 'statement',
+        value: 'It is not about weather. It is about leaving.',
+      },
+    ]);
+
+    // Once. The agent should see what changed since it last looked, not the
+    // whole history restated every turn.
+    expect(toTurnPayload(prepareTurn('and again')).exhibitionEdits).toEqual([]);
+  });
+
+  it('does not report the agent’s own writes back to it', () => {
+    board(['a']);
+    writeExhibition({ title: 'Weather', statement: 'x' }, { by: 'agent' });
+    expect(prepareTurn('go').exhibitionEdits).toEqual([]);
+  });
+
+  it('names the work a rewritten label belongs to', () => {
+    board(['a']);
+    writeExhibition(
+      { works: [{ artworkId: 'a', label: 'Nobody is coming back.' }] },
+      { by: 'human' }
+    );
+    expect(toTurnPayload(prepareTurn()).exhibitionEdits).toEqual([
+      {
+        field: 'label',
+        work: 'Work a (A. Painter)',
+        value: 'Nobody is coming back.',
+      },
+    ]);
+  });
+
+  it('reports only the last wording of a field they edited twice', () => {
+    writeExhibition({ statement: 'first' }, { by: 'human' });
+    writeExhibition({ statement: 'second' }, { by: 'human' });
+    expect(prepareTurn().exhibitionEdits).toEqual([
+      expect.objectContaining({ field: 'statement', value: 'second' }),
+    ]);
+  });
+
+  it('makes a rewritten statement on its own a non-empty turn', () => {
+    writeExhibition({ statement: 'About leaving.' }, { by: 'human' });
+    expect(isEmptyTurn(peekTurn())).toBe(false);
+  });
+
+  it('a deterministic redeal does not spend the correction', async () => {
+    board(['a']);
+    setFlag('a', 'pick', { by: 'human' });
+    writeExhibition({ statement: 'About leaving.' }, { by: 'human' });
+    // peekTurn is what a redeal assembles; it must not drain.
+    peekTurn();
+    expect(prepareTurn('now tell the agent').exhibitionEdits).toHaveLength(1);
   });
 });
 

@@ -19,6 +19,11 @@
  */
 
 import { recallArtwork } from './artwork-index';
+import {
+  drainExhibitionEdits,
+  peekExhibitionEdits,
+  type ExhibitionEdit,
+} from './exhibition';
 import { toAgentArtworkSummary } from './artwork-summary';
 import {
   drainFlagChanges,
@@ -43,6 +48,16 @@ export interface HumanTurn {
   selection: string[];
   hovered: string | null;
   compareChoice: CompareChoice | null;
+  /**
+   * What the human rewrote in the show since the last turn.
+   *
+   * A correction to the statement is the most consequential gesture on this
+   * page and the quietest: it happens by typing into a field. Carrying it in
+   * the turn is what makes "it's not about weather, it's about leaving" a
+   * thing the agent is *told*, rather than something it finds if it happens to
+   * look.
+   */
+  exhibitionEdits: ExhibitionEdit[];
   board: {
     order: string[];
     note: string | null;
@@ -84,7 +99,8 @@ export const resolveCompare = (
 const buildTurn = (
   text: string | undefined,
   flagsDelta: FlagChange[],
-  compareChoice: CompareChoice | null
+  compareChoice: CompareChoice | null,
+  exhibitionEdits: ExhibitionEdit[]
 ): HumanTurn => {
   const state = getWebMcpState();
   const trimmed = text?.trim();
@@ -94,6 +110,7 @@ const buildTurn = (
     selection: [...state.selection],
     hovered: state.hovered,
     compareChoice,
+    exhibitionEdits,
     board: state.board
       ? {
           order: [...state.board.order],
@@ -116,7 +133,12 @@ const buildTurn = (
 export const prepareTurn = (text?: string): HumanTurn => {
   const compareChoice = pendingCompareChoice;
   pendingCompareChoice = null;
-  return buildTurn(text, drainFlagChanges(), compareChoice);
+  return buildTurn(
+    text,
+    drainFlagChanges(),
+    compareChoice,
+    drainExhibitionEdits()
+  );
 };
 
 /**
@@ -129,13 +151,19 @@ export const prepareTurn = (text?: string): HumanTurn => {
  * precisely the behaviour the payload exists to prevent.
  */
 export const peekTurn = (text?: string): HumanTurn =>
-  buildTurn(text, peekFlagChanges(), pendingCompareChoice);
+  buildTurn(
+    text,
+    peekFlagChanges(),
+    pendingCompareChoice,
+    peekExhibitionEdits()
+  );
 
 /** Does this turn have anything in it at all? */
 export const isEmptyTurn = (turn: HumanTurn) =>
   !turn.text &&
   turn.flagsDelta.length === 0 &&
   turn.selection.length === 0 &&
+  turn.exhibitionEdits.length === 0 &&
   !turn.compareChoice;
 
 export type HumanTurnOutcome =
@@ -191,6 +219,11 @@ export interface HumanTurnPayload {
     loser: { id: string; title?: string };
     question?: string | null;
   } | null;
+  exhibitionEdits: {
+    field: 'title' | 'statement' | 'label';
+    work?: string;
+    value: string;
+  }[];
 }
 
 const titleOf = (id: string): string | undefined => {
@@ -225,6 +258,14 @@ export const toTurnPayload = (turn: HumanTurn): HumanTurnPayload => ({
         question: turn.compareChoice.question,
       }
     : null,
+  exhibitionEdits: turn.exhibitionEdits.map((edit) => {
+    const title = edit.artworkId ? titleOf(edit.artworkId) : undefined;
+    return {
+      field: edit.field,
+      ...(title ? { work: title } : edit.artworkId ? { work: edit.artworkId } : {}),
+      value: edit.value,
+    };
+  }),
 });
 
 export const __resetTurnStateForTest = () => {

@@ -219,6 +219,37 @@ export interface ExhibitionPatch {
   removeArtworkIds?: string[];
 }
 
+/**
+ * The human's edits since the last turn.
+ *
+ * A correction to the statement — *"it's not about weather, it's about
+ * leaving"* — is the single most consequential thing anyone does on this page,
+ * and it happens by typing into a field, silently. Without a journal the agent
+ * finds out only if it happens to read the view context, and the beat this
+ * whole surface exists for becomes something that works most of the time.
+ *
+ * Only the human's edits are recorded. The agent does not need its own writes
+ * read back to it, and reporting them would let it mistake its draft for a
+ * correction.
+ */
+export interface ExhibitionEdit {
+  field: 'title' | 'statement' | 'label';
+  artworkId?: string;
+  /** What they made it say. Empty when they cleared it. */
+  value: string;
+  at: number;
+}
+
+let editJournal: ExhibitionEdit[] = [];
+
+export const peekExhibitionEdits = (): ExhibitionEdit[] => [...editJournal];
+
+export const drainExhibitionEdits = (): ExhibitionEdit[] => {
+  const drained = editJournal;
+  editJournal = [];
+  return drained;
+};
+
 /** What did not land, and why — so the agent can read the human's words back. */
 export interface DeferredWrite {
   field: 'title' | 'statement' | `label:${string}`;
@@ -252,12 +283,25 @@ export const writeExhibition = (
   };
   const changed: string[] = [];
   const deferred: DeferredWrite[] = [];
+  const note = (edit: Omit<ExhibitionEdit, 'at'>) => {
+    if (options.by !== 'human') return;
+    editJournal = [
+      ...editJournal.filter(
+        (entry) =>
+          entry.field !== edit.field || entry.artworkId !== edit.artworkId
+      ),
+      { ...edit, at: Date.now() },
+    ];
+  };
 
   if (typeof patch.title === 'string') {
     const value = clip(patch.title, TITLE_MAX_CHARS);
     const result = applyText(previous.title, value, options.by);
     next.title = result.field;
-    if (result.landed) changed.push('title');
+    if (result.landed) {
+      changed.push('title');
+      note({ field: 'title', value });
+    }
     else if (result.field.proposed) {
       deferred.push({
         field: 'title',
@@ -271,7 +315,10 @@ export const writeExhibition = (
     const value = clip(patch.statement, STATEMENT_MAX_CHARS);
     const result = applyText(previous.statement, value, options.by);
     next.statement = result.field;
-    if (result.landed) changed.push('statement');
+    if (result.landed) {
+      changed.push('statement');
+      note({ field: 'statement', value });
+    }
     else if (result.field.proposed) {
       deferred.push({
         field: 'statement',
@@ -300,7 +347,10 @@ export const writeExhibition = (
       const field = previous.labels[artworkId] ?? emptyField();
       const result = applyText(field, value, options.by);
       next.labels[artworkId] = result.field;
-      if (result.landed) changed.push(`label:${artworkId}`);
+      if (result.landed) {
+        changed.push(`label:${artworkId}`);
+        note({ field: 'label', artworkId, value });
+      }
       else if (result.field.proposed) {
         deferred.push({
           field: `label:${artworkId}`,
@@ -460,4 +510,7 @@ export const renameRegion = (regionId: string, label: string): void => {
   setExhibition({ ...previous, regions, updatedAt: Date.now() });
 };
 
-export const __resetExhibitionForTest = () => setExhibition(emptyExhibition());
+export const __resetExhibitionForTest = () => {
+  editJournal = [];
+  setExhibition(emptyExhibition());
+};
