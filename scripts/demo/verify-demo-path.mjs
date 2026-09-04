@@ -140,12 +140,31 @@ const firstLoadedArtworkId = async (callTool) => {
   return candidates.find((id) => typeof id === 'string' && id.length > 0) ?? null;
 };
 
-const countPanelEntries = (page) =>
-  page.evaluate(
-    () =>
-      document.querySelectorAll('aside[aria-label="Agent activity"] ol > li')
-        .length
-  );
+/**
+ * How many tool calls the page has recorded.
+ *
+ * This used to count `<li>`s in an always-present `aside[aria-label="Agent
+ * activity"]`. That panel no longer exists: the agent's presence is now a
+ * five-cell glyph that rests when idle, and the tool-call log lives behind it
+ * and deliberately does not open itself — a log that springs open mid-turn is
+ * the chat this submission argues against. So the count has to open the log to
+ * read it, and close it again so the next check sees the page as a human does.
+ */
+const countPanelEntries = async (page) => {
+  const glyph = page.locator('.pa-activity-glyph');
+  if ((await glyph.count()) === 0) return 0;
+  const wasOpen = (await page.locator('.pa-activity-log').count()) > 0;
+  if (!wasOpen) {
+    await glyph.click().catch(() => {});
+    await page.waitForTimeout(250);
+  }
+  const rows = await page.locator('.pa-activity-row').count();
+  if (!wasOpen) {
+    await glyph.click().catch(() => {});
+    await page.waitForTimeout(250);
+  }
+  return rows;
+};
 
 const withDebugParam = (url) => {
   const parsed = new URL(url);
@@ -345,21 +364,20 @@ const main = async () => {
     if (!typedTurnFired) {
       return { skip: 'no typed turn was sent, so nothing to attribute' };
     }
-    const grew = await page
-      .waitForFunction(
-        (baseline) =>
-          document.querySelectorAll('aside[aria-label="Agent activity"] ol > li')
-            .length > baseline,
-        panelEntriesBeforeTurn,
-        { timeout: 45_000 }
-      )
-      .then(() => true)
-      .catch(() => false);
+    // The log is behind the glyph and does not open itself, so this has to
+    // poll it open rather than watch the DOM for rows that are not rendered
+    // until someone asks.
+    let after = panelEntriesBeforeTurn;
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      after = await countPanelEntries(page);
+      if (after > panelEntriesBeforeTurn) break;
+      await page.waitForTimeout(1_500);
+    }
     assert(
-      grew,
-      `no new tool call in 45s (panel still at ${panelEntriesBeforeTurn} from this script's own probes)`
+      after > panelEntriesBeforeTurn,
+      `no new tool call in 45s (log still at ${panelEntriesBeforeTurn} from this script's own probes)`
     );
-    const after = await countPanelEntries(page);
     return {
       detail: `${after - panelEntriesBeforeTurn} tool call(s) attributable to the typed turn`,
     };
@@ -403,12 +421,16 @@ const main = async () => {
       detail: `0 model calls (redeal ${outcome.ok ? 'ran' : 'declined cleanly'})`,
     };
   });
-  await check('panel.rendersActivity', async () => {
-    const aside = await page
-      .locator('aside[aria-label="Agent activity"]')
-      .count();
-    assert(aside === 1, 'activity panel absent after tools ran');
-    return { detail: 'panel present once something happened' };
+  await check('glyph.rendersActivity', async () => {
+    // The check this replaces asserted an always-present activity *panel*.
+    // The build now says the same thing more quietly: a glyph that is always
+    // mounted, and a log behind it that stays shut until asked. Both halves
+    // matter, so both are asserted — present, and not self-opening.
+    const glyph = await page.locator('.pa-activity-glyph').count();
+    assert(glyph === 1, 'the agent has no mark on the page after tools ran');
+    const selfOpened = await page.locator('.pa-activity-log').count();
+    assert(selfOpened === 0, 'the tool-call log opened itself during the turn');
+    return { detail: 'glyph present, log still closed' };
   });
 
   const shotDir = path.join(__dirname, 'verify-shots');
