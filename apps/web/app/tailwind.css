@@ -1436,6 +1436,19 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   background: transparent;
   color: var(--ink-human);
   text-overflow: ellipsis;
+  /*
+   * The one place `.lt-catalogue` must not have its way.
+   *
+   * Catalogue mono is uppercase everywhere else, and everywhere else that is
+   * a typographic choice about accession numbers. Here it is a lie: share
+   * codes are deliberately case-sensitive (mixed-case base62, see
+   * `@paillette/types/share-codes`), so `sfT4685` was being displayed as
+   * `SFT4685`. Ctrl+C copies the value and survives that, but this field
+   * exists precisely for the person who is going to read it off the screen
+   * and type it somewhere else — and they would have typed a dead link.
+   */
+  text-transform: none;
+  letter-spacing: 0.04em;
 }
 
 .paillette-share-fallback:focus {
