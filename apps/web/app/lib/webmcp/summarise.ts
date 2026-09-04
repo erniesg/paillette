@@ -57,6 +57,46 @@ export const summariseToolResult = (
     parts.push(`shortlist “${payload.shortlist.name}”`);
     if (count(payload.added) !== null) parts.push(`+${payload.added}`);
   }
+  /*
+   * The culling tools landed after this file was written, so every one of them
+   * summarised as "done" — a log row that says a redeal happened and nothing
+   * about what it did. These read the fields those tools actually return.
+   */
+  if (Array.isArray(payload.applied)) {
+    const flags = payload.applied as { flag?: string }[];
+    const picks = flags.filter((flag) => flag.flag === 'pick').length;
+    const rejects = flags.filter((flag) => flag.flag === 'reject').length;
+    parts.push(
+      [
+        picks ? `${picks} picked` : null,
+        rejects ? `${rejects} rejected` : null,
+        flags.length - picks - rejects ? `${flags.length - picks - rejects} cleared` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || `${flags.length} flagged`
+    );
+    if (payload.provisional === true) parts.push('provisional');
+  }
+  if (Array.isArray(payload.order) && Array.isArray(payload.added)) {
+    parts.push(
+      `dealt ${payload.order.length} · ${payload.added.length} new · ${
+        Array.isArray(payload.kept) ? payload.kept.length : 0
+      } held`
+    );
+    if (typeof payload.strategy === 'string') parts.push(payload.strategy);
+  }
+  if (typeof payload.view === 'string') parts.push(`view ${payload.view}`);
+  if (Array.isArray(payload.comparing)) {
+    parts.push(`two-up · ${payload.comparing.length} works`);
+  }
+  if (typeof payload.caption === 'string' && payload.caption) {
+    // The caption *is* the result. A character count would be data about the
+    // answer rather than the answer.
+    parts.push(
+      `“${payload.caption.length > 64 ? `${payload.caption.slice(0, 63)}…` : payload.caption}”`
+    );
+  }
+
   if (payload.humanResults || payload.page) {
     const page = payload.page as { collection?: string | null } | undefined;
     const human = payload.humanResults as { count?: number } | undefined;

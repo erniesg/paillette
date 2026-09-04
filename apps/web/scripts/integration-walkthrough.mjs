@@ -310,28 +310,30 @@ const main = async () => {
   note(Boolean(labelInk), 'and it carries an ink', String(labelInk));
   await page.screenshot({ path: `${SHOTS}/5-agent-redeal.png` });
 
-  // ---- 5b. the panel stays where the human put it ----------------------
+  // ---- 5b. the agent's presence never covers the board -----------------
   //
-  // It is a fixed overlay across the lower-left of the board, which is where
-  // the picks are. Every tool call used to reopen it, and a turn is five or
-  // six calls, so on camera it covered the one thing the board is for.
-  await page.click('[aria-label="Collapse agent activity"]');
-  await page.waitForTimeout(200);
+  // There used to be a fixed panel across the lower-left of the board, which is
+  // where the picks are, and every tool call reopened it — a turn is five or
+  // six calls, so on camera it covered the one thing the board is for. It is
+  // now a five-character glyph, and the log behind it opens only when a human
+  // asks. This asserts that nothing opens itself through a whole turn.
   await call('get_view_context', {});
   await call('flag_artworks', { flags: [{ artworkId: liveIds[2], flag: 'reject', reason: 'busier' }] });
   await page.waitForTimeout(300);
-  const panelCovers = await page.evaluate(() => {
-    const panel = Array.from(document.querySelectorAll('div,aside,section')).find(
-      (node) =>
-        getComputedStyle(node).position === 'fixed' &&
-        node.textContent?.includes('TOOL CALLS')
-    );
-    if (!panel) return null;
-    const box = panel.getBoundingClientRect();
+  const logOpen = await page.$('.pa-activity-log');
+  note(logOpen === null, 'the tool-call log does not open itself during a turn', logOpen ? 'it opened' : 'closed');
+  const glyphBox = await page.evaluate(() => {
+    const glyph = document.querySelector('.pa-activity');
+    if (!glyph) return null;
+    const box = glyph.getBoundingClientRect();
     return { w: Math.round(box.width), h: Math.round(box.height) };
   });
-  note(panelCovers === null, 'the activity panel stays closed through the rest of the turn', panelCovers ? `still ${panelCovers.w}x${panelCovers.h}` : 'closed');
-  await page.screenshot({ path: `${SHOTS}/5b-panel-dismissed.png` });
+  note(
+    Boolean(glyphBox) && glyphBox.w < 120 && glyphBox.h < 80,
+    'the agent is present as a mark rather than a panel',
+    glyphBox ? `${glyphBox.w}x${glyphBox.h}` : 'missing'
+  );
+  await page.screenshot({ path: `${SHOTS}/5b-glyph-not-a-panel.png` });
 
   const nowIds = (await board(page)).map((entry) => entry.id).filter(Boolean);
   const compared = await call('compare_artworks', {
