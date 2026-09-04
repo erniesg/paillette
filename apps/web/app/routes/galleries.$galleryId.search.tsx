@@ -1734,6 +1734,14 @@ export default function SearchPage() {
     resolveDealtBoard(webmcpState.board, webmcpState.flags, results)
   );
 
+  /**
+   * The note is above the results rather than on the board — the case where a
+   * sentence and a sticky bar want the same pixels. Read in two places, so it
+   * is named once: it decides whether the label renders here at all, and
+   * whether the results bar is allowed to pin over it.
+   */
+  const noteHangsAboveResults = Boolean(agentBoardNote) && !boardIsDealt;
+
   /*
    * `?demo=sofa`: land with the query run and the flags already down, so the
    * first thing a judge does on this page is press Enter and watch the board
@@ -3036,9 +3044,17 @@ export default function SearchPage() {
             aria-busy={isLoading || isPreparingImage}
           >
             {/* Chrome reduced to hairlines: one rule under the bar, none above,
-                and the ground showing through it. */}
+                and the ground showing through it.
+
+                Sticky, except while a wall label is hanging above it. The bar
+                pins at the top of the viewport and the note sits in normal
+                flow above the results, so scrolling slid the sentence under a
+                blurred backdrop and cut it in half — which happened to the one
+                frame of the night that carried the note and the board it
+                describes together. The count is chrome and the sentence is the
+                submission; when they collide the chrome gives way. */}
             <div
-              className="sticky top-14 z-30 -mx-5 border-b px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8"
+              className={`${noteHangsAboveResults ? '' : 'sticky top-14 '}z-30 -mx-5 border-b px-5 py-3 backdrop-blur-md lg:-mx-8 lg:px-8`}
               style={{
                 borderColor: 'var(--lt-rule)',
                 background:

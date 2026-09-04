@@ -26,7 +26,11 @@ export function BoardNote({
   className?: string;
 }) {
   return (
-    <div className={className}>
+    // `data-board-note` is a measurement hook, not styling: the one frame the
+    // submission is made of was checked by measuring the toolbar and never the
+    // sentence, and it shipped with the sentence cut in half. Now the geometry
+    // harness can find it by name.
+    <div className={className} data-board-note>
       <p className="paillette-wall-label" data-provenance={provenance}>
         {note}
       </p>
