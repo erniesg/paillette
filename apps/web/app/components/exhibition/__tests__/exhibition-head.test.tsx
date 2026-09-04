@@ -24,6 +24,11 @@ import {
   getWebMcpState,
   setBoard,
 } from '~/lib/webmcp/store';
+import {
+  __resetAgentRequestForTest,
+  onAgentTurnRequest,
+} from '~/lib/webmcp/agent-request';
+import { __resetTurnStateForTest } from '~/lib/webmcp/turn';
 
 const artwork = (id: string): ArtworkSearchResult =>
   ({
@@ -50,6 +55,8 @@ beforeEach(() => {
   __resetArtworkIndexForTest();
   __resetWebMcpStateForTest();
   __resetFlagsForTest();
+  __resetTurnStateForTest();
+  __resetAgentRequestForTest();
   rememberArtworks(['a', 'b'].map(artwork));
 });
 
@@ -211,5 +218,65 @@ describe('the wall label', () => {
     await userEvent.click(screen.getByLabelText('Wall label for Work a'));
     await userEvent.keyboard('pxu');
     expect(sawKey).toBe(false);
+  });
+});
+
+/*
+ * §5c step 4, and the thing that made it a system prompt rather than a feature.
+ *
+ * Rewriting the statement used to write the field and stop. The correction sat
+ * in the edit journal until the human happened to type something unrelated at
+ * the agent, and a bare edit with no text fell through submitHumanTurn's
+ * `if (text?.trim())` into the deterministic redeal — which runs on flags and
+ * has never read a word of the statement. So the most consequential gesture on
+ * the page changed the board according to something nobody had just said, and
+ * changed no label at all.
+ */
+describe('a rewritten statement is a turn', () => {
+  it('sends the human’s own sentence to the agent when they commit it', async () => {
+    board(['a']);
+    setFlag('a', 'pick', { by: 'human' });
+    writeExhibition({ statement: 'It is about weather.' }, { by: 'agent' });
+
+    const requests: { instruction: string }[] = [];
+    onAgentTurnRequest((request) => requests.push(request));
+
+    render(<ExhibitionHead />);
+    const statement = screen.getByLabelText('Exhibition statement');
+    await userEvent.click(statement);
+    await userEvent.clear(statement);
+    await userEvent.type(statement, 'It is not about weather. It is about leaving.');
+    await userEvent.tab();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(requests).toHaveLength(1);
+    // Verbatim. A correction paraphrased back is not a correction, and the
+    // prompt already forbids restating their sentence in the agent's words.
+    expect(requests[0]!.instruction).toBe(
+      'It is not about weather. It is about leaving.'
+    );
+  });
+
+  it('does not spend a model call on a title someone retyped', async () => {
+    board(['a']);
+    setFlag('a', 'pick', { by: 'human' });
+
+    const requests: unknown[] = [];
+    onAgentTurnRequest((request) => requests.push(request));
+
+    render(<ExhibitionHead />);
+    const title = screen.getByLabelText('Exhibition title');
+    await userEvent.click(title);
+    await userEvent.type(title, 'After They Left');
+    await userEvent.tab();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(requests).toHaveLength(0);
   });
 });

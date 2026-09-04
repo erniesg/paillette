@@ -18,6 +18,7 @@
  *    mechanism, not the mechanism.
  */
 
+import { requestAgentTurn } from './agent-request';
 import { recallArtwork } from './artwork-index';
 import {
   drainExhibitionEdits,
@@ -283,6 +284,34 @@ export const submitHumanTurn = async (
     return { kind: 'noop', turn };
   }
   return { kind: 'redeal', turn, result };
+};
+
+/**
+ * Commit a turn, and hand it to the in-page agent if it turns out to be one.
+ *
+ * `submitHumanTurn` decides *what* the gesture was; this is what happens next.
+ * The two were the same thing for as long as every turn started at the prompt
+ * bar, which does its own dispatch — but a rewritten statement starts in an
+ * editable paragraph, and Enter on the board starts on the board, and neither
+ * of those had anything to hand the turn to. The effect was that the most
+ * consequential gesture in §5c set some state and stopped.
+ *
+ * The turn is passed on already assembled, because `prepareTurn` drains the
+ * gesture journals and draining them twice would report an empty set for a
+ * turn that had plenty.
+ */
+export const commitHumanTurn = async (
+  text?: string,
+  options: { signal?: AbortSignal } = {}
+): Promise<HumanTurnOutcome> => {
+  const outcome = await submitHumanTurn(text, options);
+  if (outcome.kind === 'agent' && outcome.turn.text) {
+    requestAgentTurn({
+      instruction: outcome.turn.text,
+      gestures: toTurnPayload(outcome.turn),
+    });
+  }
+  return outcome;
 };
 
 /**
