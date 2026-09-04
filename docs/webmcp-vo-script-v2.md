@@ -194,7 +194,10 @@ page resets it. (e2e iteration 2 §4.)
 agent's ink. Under it, the swatch strips — one per flagged work, picks whole,
 rejects struck through, no words. Then the same work with its flag flipped.
 
-**Card A — the note, held.** This frame exists: `docs/night/shots/50-note-with-swatches.png`.
+**Card A — the note, held.** Two frames exist, and beat 3 should use the wide
+one: `docs/night/shots/54-note-and-board-1440x900.png` has the sentence, its
+swatches **and the board it describes** in one shot;
+`50-note-with-swatches.png` is the tight crop if the cut needs it.
 
 > *You said warm; you kept the bone-and-umber etching and rejected the darker,
 > greener palettes — following the picks.*
@@ -219,7 +222,9 @@ side of the sentence.
 
 **Shot.** Card A: `/nga/search?q=warm landscape`, hover-`X`, hover-`X`,
 hover-`P`, then type `something warm for above the sofa` and Enter. **3 model
-calls.** Card B: the two notes are archived in
+calls.** Then set the scroll once — the wall label to y≈114, clear of the 159 px
+of sticky chrome — and **hold it**. Do not scroll during this beat; one frame
+carries both halves and scrolling is what loses the sentence. Card B: the two notes are archived in
 `docs/night/e2e-evidence/iteration-2/run3-loop.json` and `run4-loop.json` —
 **the frames do not exist and must be shot.**
 
@@ -233,6 +238,17 @@ calls.** Card B: the two notes are archived in
 | Four for four name the content of what was rejected; three of four name the reject specifically enough to recognise on screen | **[P]** | e2e iteration 2 §3 step 4, four runs, all verbatim. |
 | Every flagged work reaches the agent with palette, medium, year, classification | **[P]** | `run1-loop.json` flagsDelta: `{"title":"A Peach, Seville (George Henry Hall)","palette":["#C3803A","#7E3F0F","#6C443C"],"medium":"oil on canvas","year":1866,…}` |
 | The note is one sentence | **[P]** | Every recorded note, in every harness. |
+
+**On the claim that this frame is impossible.** The iteration-2 critique fails
+the submission on *"the agent's note and the board it describes cannot be on
+screen together at any scroll position"*, deriving a 1464 px requirement for a
+900 px viewport. **The stack starts at y=479, so it needs 985 px.** Measured on
+the deployed build: at 1440 × 900 the label sits at y=114 with **8 of 12 cards
+fully visible and all 12 at least partly**; at a 1400 px-tall viewport, **12 of
+12 fully**. The frame is committed. What is genuinely in the way is 291 px
+between the sentence and the board, 61 px of which is two **empty** form fields
+— the exhibition title and statement, rendered before anyone has curated
+anything. See `docs/night/submission-draft-report.md` §2.4.
 
 **⚠ Four things the owner must know before this beat is cut.**
 

@@ -465,6 +465,9 @@ slot 5 is untested.
    something you want in a take. One throwaway instruction tells you.
 5. **Reload the tab between takes.** Five clean redeals per pick set, then the
    board thins and by the seventh Enter is dead.
-6. After any Enter typed *inside* the utterance bar, press Escape. Otherwise the
+6. **Set the scroll once for beat 3 and hold it.** The note and the board fit
+   one frame — put the wall label at y≈114, clear of the 159 px of sticky
+   chrome. Scrolling during the beat is what loses the sentence, not the layout.
+7. After any Enter typed *inside* the utterance bar, press Escape. Otherwise the
    caret stays in the bar, the next `X` types the letter, and the Enter after
    that sends `"xx"` to the model as an instruction.
