@@ -18,7 +18,7 @@
  * page-level keyboard contract instead of two that have to agree.
  */
 
-import { getPinnedIds, toggleFlag } from './flags';
+import { getExemplars, toggleFlag } from './flags';
 import { clearSelection } from './selection';
 import { getWebMcpState, setCompare } from './store';
 import { commitHumanTurn, type HumanTurnOutcome } from './turn';
@@ -68,7 +68,17 @@ const ACTIVATED_BY_ENTER =
  *
  * So the beat falls back to the page. It is only claimed when nothing is
  * focused that Enter already means something to, and only when there is
- * actually a pick to deal from — otherwise Enter keeps whatever meaning it had.
+ * something to deal from — otherwise Enter keeps whatever meaning it had.
+ *
+ * **Any confirmed flag counts, not only a pick.** This read `getPinnedIds()`,
+ * which is picks alone, and X-only is a completely ordinary way to start
+ * culling: throw out the three worst things you can see and press Enter. A
+ * person doing that with no caret in the bar got nothing at all — no deal, no
+ * refusal, no mark — while the same keystroke *inside* the bar dealt correctly,
+ * because `seedPositives` treats the unrejected works on screen as the
+ * direction when there are no picks. Two Enters on one page disagreeing about
+ * whether rejects are an instruction is the kind of thing that is invisible in
+ * a test and fatal on a take.
  */
 const isBareBoardEnter = (event: KeyboardEvent): boolean => {
   if (event.key !== 'Enter' || event.shiftKey) return false;
@@ -79,7 +89,8 @@ const isBareBoardEnter = (event: KeyboardEvent): boolean => {
   if (event.target instanceof Element && event.target.matches?.(ACTIVATED_BY_ENTER)) {
     return false;
   }
-  return getPinnedIds().length > 0;
+  const { positive, negative } = getExemplars();
+  return positive.length > 0 || negative.length > 0;
 };
 
 export interface BoardKeyboardOptions {

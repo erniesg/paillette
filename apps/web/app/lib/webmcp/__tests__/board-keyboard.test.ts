@@ -24,6 +24,7 @@ import {
   __resetWebMcpStateForTest,
   getWebMcpState,
   setHoveredArtwork,
+  setHumanResults,
   setSelection,
 } from '../store';
 import { __resetTurnStateForTest, prepareTurn } from '../turn';
@@ -295,11 +296,43 @@ describe('Enter where there is no bar to press it in', () => {
     expect(press('Enter', element).handled).toBe(false);
   });
 
-  it('does nothing when there is no pick, so Enter keeps its old meaning', () => {
+  it('does nothing when nothing is flagged, so Enter keeps its old meaning', () => {
     __resetFlagsForTest();
 
     expect(press('Enter').handled).toBe(false);
     expect(fetched).toHaveLength(0);
+  });
+
+  /**
+   * Rejects alone are an instruction, and this binding used to disagree.
+   *
+   * It read `getPinnedIds()` — picks only — so someone who had thrown out the
+   * three worst things on screen and pressed Enter with no caret in the bar got
+   * nothing: no deal, no refusal, no mark. The same keystroke *inside* the bar
+   * dealt correctly, because `seedPositives` treats the unrejected works on
+   * screen as the direction when there are no picks. Found on staging by
+   * `scripts/demo/harden.mjs`, which pressed Enter after twelve X presses and
+   * measured silence.
+   */
+  it('deals from rejects alone, the way the bar already does', async () => {
+    __resetFlagsForTest();
+    rememberArtworks([artwork('out'), artwork('other')]);
+    // The works they are looking at. With no picks these seed the centroid and
+    // the reject pushes against it, which is the whole rejects-only path.
+    setHumanResults({
+      origin: 'human',
+      label: 'storms',
+      items: [{ id: 'out' }, { id: 'other' }] as never,
+      at: 1,
+    });
+    setFlag('out', 'reject', { by: 'human' });
+
+    const { handled } = press('Enter');
+
+    expect(handled).toBe(true);
+    await vi.waitFor(() => expect(fetched).not.toHaveLength(0));
+    expect(fetched.some((url) => url.includes('/exemplars'))).toBe(true);
+    expect(fetched.some((url) => url.includes('public-agent'))).toBe(false);
   });
 
   it('ignores shift-Enter, which is a newline everywhere else', () => {
