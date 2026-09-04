@@ -1,0 +1,1013 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "sunset landscape",
+  "tools": [
+    {
+      "name": "list_collections",
+      "title": "List collections",
+      "readOnly": true,
+      "required": [],
+      "properties": []
+    },
+    {
+      "name": "search_artworks",
+      "title": "Search artworks",
+      "readOnly": true,
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "query",
+        "collection",
+        "topK",
+        "minScore",
+        "facet"
+      ]
+    },
+    {
+      "name": "search_by_image",
+      "title": "Search by image",
+      "readOnly": true,
+      "required": [],
+      "properties": [
+        "artworkId",
+        "imageUrl",
+        "collection",
+        "topK",
+        "minScore"
+      ]
+    },
+    {
+      "name": "search_by_color",
+      "title": "Search by colour",
+      "readOnly": true,
+      "required": [
+        "color"
+      ],
+      "properties": [
+        "color",
+        "query",
+        "collection",
+        "topK"
+      ]
+    },
+    {
+      "name": "browse_collection",
+      "title": "Browse collection",
+      "readOnly": true,
+      "required": [],
+      "properties": [
+        "collection",
+        "limit",
+        "offset",
+        "sortBy",
+        "sortOrder"
+      ]
+    },
+    {
+      "name": "lookup_artwork",
+      "title": "Look up artwork",
+      "readOnly": true,
+      "required": [],
+      "properties": [
+        "artworkId",
+        "artworkIds"
+      ]
+    },
+    {
+      "name": "get_search_quota",
+      "title": "Get search quota",
+      "readOnly": true,
+      "required": [],
+      "properties": [
+        "collection"
+      ]
+    },
+    {
+      "name": "describe_artwork",
+      "title": "Describe artwork",
+      "readOnly": false,
+      "required": [
+        "artwork"
+      ],
+      "properties": [
+        "artwork",
+        "collection",
+        "model"
+      ]
+    },
+    {
+      "name": "get_view_context",
+      "title": "Get view context",
+      "readOnly": true,
+      "required": [],
+      "properties": []
+    },
+    {
+      "name": "set_results",
+      "title": "Set the results the human sees",
+      "readOnly": false,
+      "required": [],
+      "properties": [
+        "query",
+        "artworkIds",
+        "note",
+        "colour",
+        "facet",
+        "collection"
+      ]
+    },
+    {
+      "name": "show_artwork",
+      "title": "Show an artwork to the human",
+      "readOnly": false,
+      "required": [
+        "artworkId"
+      ],
+      "properties": [
+        "artworkId",
+        "note"
+      ]
+    },
+    {
+      "name": "set_view",
+      "title": "Change how the results are laid out",
+      "readOnly": false,
+      "required": [
+        "view"
+      ],
+      "properties": [
+        "view"
+      ]
+    },
+    {
+      "name": "flag_artworks",
+      "title": "Flag works as picks or rejects",
+      "readOnly": false,
+      "required": [
+        "flags"
+      ],
+      "properties": [
+        "flags"
+      ]
+    },
+    {
+      "name": "search_by_exemplars",
+      "title": "Search by example",
+      "readOnly": true,
+      "required": [
+        "positiveIds"
+      ],
+      "properties": [
+        "positiveIds",
+        "negativeIds",
+        "excludeIds",
+        "topK",
+        "collection"
+      ]
+    },
+    {
+      "name": "redeal",
+      "title": "Deal a new board from the flags",
+      "readOnly": false,
+      "required": [],
+      "properties": [
+        "keep",
+        "strategy",
+        "count",
+        "note",
+        "collection"
+      ]
+    },
+    {
+      "name": "compare_artworks",
+      "title": "Put two works side by side",
+      "readOnly": false,
+      "required": [
+        "artworkIds"
+      ],
+      "properties": [
+        "artworkIds",
+        "question"
+      ]
+    },
+    {
+      "name": "get_exhibition",
+      "title": "Read the exhibition",
+      "readOnly": true,
+      "required": [],
+      "properties": []
+    },
+    {
+      "name": "set_exhibition",
+      "title": "Write the exhibition",
+      "readOnly": false,
+      "required": [],
+      "properties": [
+        "title",
+        "statement",
+        "works",
+        "removeArtworkIds"
+      ]
+    },
+    {
+      "name": "write_labels",
+      "title": "Write the wall labels",
+      "readOnly": false,
+      "required": [
+        "artworkIds"
+      ],
+      "properties": [
+        "artworkIds",
+        "voice",
+        "collection"
+      ]
+    },
+    {
+      "name": "annotate_atlas",
+      "title": "Name the groupings on the atlas",
+      "readOnly": false,
+      "required": [
+        "regions"
+      ],
+      "properties": [
+        "regions"
+      ]
+    },
+    {
+      "name": "create_collection",
+      "title": "Create a shortlist",
+      "readOnly": false,
+      "required": [
+        "name"
+      ],
+      "properties": [
+        "name",
+        "description",
+        "artworkIds"
+      ]
+    },
+    {
+      "name": "add_to_collection",
+      "title": "Add works to a shortlist",
+      "readOnly": false,
+      "required": [
+        "artworkIds"
+      ],
+      "properties": [
+        "shortlistId",
+        "artworkIds"
+      ]
+    },
+    {
+      "name": "index_zip",
+      "title": "Index a zip archive",
+      "readOnly": false,
+      "required": [
+        "zipUrl"
+      ],
+      "properties": [
+        "zipUrl",
+        "collectionName"
+      ]
+    },
+    {
+      "name": "index_folder",
+      "title": "Index a list of images",
+      "readOnly": false,
+      "required": [
+        "files"
+      ],
+      "properties": [
+        "files",
+        "collectionName",
+        "metadataCsv"
+      ]
+    },
+    {
+      "name": "get_index_status",
+      "title": "Get indexing status",
+      "readOnly": true,
+      "required": [
+        "jobId"
+      ],
+      "properties": [
+        "jobId",
+        "query",
+        "topK"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "label": "the debug host registers tools",
+      "detail": "25 tools"
+    },
+    {
+      "ok": true,
+      "label": "the in-page agent bar renders under ?webmcp-debug",
+      "detail": "count=1"
+    },
+    {
+      "ok": true,
+      "label": "the bar is actually visible, not merely in the DOM",
+      "detail": "true"
+    },
+    {
+      "ok": true,
+      "label": "focus is on BODY at cold load, so P/X/U are live",
+      "detail": "BODY"
+    },
+    {
+      "ok": true,
+      "label": "no \"already registered\" warnings",
+      "detail": "0"
+    },
+    {
+      "ok": true,
+      "label": "with no flag at all the host is still claimed and the bar still renders",
+      "detail": "{\"host\":true,\"driver\":false,\"bar\":1,\"cards\":30}"
+    },
+    {
+      "ok": true,
+      "label": "the console back door stays behind the flag",
+      "detail": "__paillette_webmcp present=false"
+    },
+    {
+      "ok": true,
+      "label": "/night/deal (the visuals fixture route) responds",
+      "detail": "HTTP 200"
+    },
+    {
+      "ok": true,
+      "label": "the real search deals works",
+      "detail": "30 cards for \"sunset landscape\""
+    },
+    {
+      "ok": true,
+      "label": "first redeal, distinct layouts",
+      "detail": "6 across 156 frames (jump cut = 4–5)"
+    },
+    {
+      "ok": true,
+      "label": "THE DEAL ANIMATION RUNS ON /nga/search, board to board",
+      "detail": "25 distinct layouts across 149 frames (jump cut = 4–5)"
+    },
+    {
+      "ok": true,
+      "label": "the held picks move zero pixels in their slots across a board-to-board redeal",
+      "detail": "[{\"id\":\"open-access-art:nga:50295\",\"dxPage\":0,\"dyPage\":0,\"dxBoard\":0,\"dyBoard\":0},{\"id\":\"open-access-art:nga:184224\",\"dxPage\":0,\"dyPage\":0,\"dxBoard\":0,\"dyBoard\":0}]"
+    },
+    {
+      "ok": true,
+      "label": "twelve cards",
+      "detail": "{\"count\":12,\"gridHeight\":650,\"viewport\":900,\"fullyVisibleAtBestScroll\":12,\"tray\":2}"
+    },
+    {
+      "ok": true,
+      "label": "all twelve fit on screen at 1440×900",
+      "detail": "12/12, grid 650px in a 900px viewport"
+    },
+    {
+      "ok": true,
+      "label": "the rejects are in a visible tray",
+      "detail": "2 in the tray"
+    },
+    {
+      "ok": true,
+      "label": "nothing in this preflight reached a model",
+      "detail": "0 of 113 requests"
+    },
+    {
+      "ok": true,
+      "label": "no uncaught page errors",
+      "detail": "[]"
+    }
+  ],
+  "first": {
+    "label": "first redeal (masonry → board)",
+    "changedMs": 1816,
+    "sampled": {
+      "layouts": 6,
+      "frames": 156
+    },
+    "geomBefore": {
+      "grid": null,
+      "cards": {
+        "open-access-art:nga:50295": {
+          "page": {
+            "x": 112,
+            "y": 754
+          },
+          "board": null
+        },
+        "open-access-art:nga:184224": {
+          "page": {
+            "x": 112,
+            "y": 1246
+          },
+          "board": null
+        },
+        "open-access-art:nga:144846": {
+          "page": {
+            "x": 112,
+            "y": 1803
+          },
+          "board": null
+        },
+        "open-access-art:nga:42377": {
+          "page": {
+            "x": 112,
+            "y": 2375
+          },
+          "board": null
+        },
+        "open-access-art:nga:24889": {
+          "page": {
+            "x": 112,
+            "y": 2954
+          },
+          "board": null
+        },
+        "open-access-art:nga:195142": {
+          "page": {
+            "x": 112,
+            "y": 3575
+          },
+          "board": null
+        },
+        "open-access-art:nga:152309": {
+          "page": {
+            "x": 112,
+            "y": 4146
+          },
+          "board": null
+        },
+        "open-access-art:nga:143883": {
+          "page": {
+            "x": 420,
+            "y": 754
+          },
+          "board": null
+        },
+        "open-access-art:nga:46426": {
+          "page": {
+            "x": 420,
+            "y": 1369
+          },
+          "board": null
+        },
+        "open-access-art:nga:70382": {
+          "page": {
+            "x": 420,
+            "y": 1852
+          },
+          "board": null
+        },
+        "open-access-art:nga:184225": {
+          "page": {
+            "x": 420,
+            "y": 2482
+          },
+          "board": null
+        },
+        "open-access-art:nga:110669": {
+          "page": {
+            "x": 420,
+            "y": 3059
+          },
+          "board": null
+        },
+        "open-access-art:nga:50527": {
+          "page": {
+            "x": 420,
+            "y": 3563
+          },
+          "board": null
+        },
+        "open-access-art:nga:46461": {
+          "page": {
+            "x": 420,
+            "y": 4020
+          },
+          "board": null
+        },
+        "open-access-art:nga:50658": {
+          "page": {
+            "x": 420,
+            "y": 4434
+          },
+          "board": null
+        },
+        "open-access-art:nga:152342": {
+          "page": {
+            "x": 728,
+            "y": 754
+          },
+          "board": null
+        },
+        "open-access-art:nga:153739": {
+          "page": {
+            "x": 728,
+            "y": 1346
+          },
+          "board": null
+        },
+        "open-access-art:nga:50373": {
+          "page": {
+            "x": 728,
+            "y": 1928
+          },
+          "board": null
+        },
+        "open-access-art:nga:50497": {
+          "page": {
+            "x": 728,
+            "y": 2439
+          },
+          "board": null
+        },
+        "open-access-art:nga:69461": {
+          "page": {
+            "x": 728,
+            "y": 3035
+          },
+          "board": null
+        },
+        "open-access-art:nga:111775": {
+          "page": {
+            "x": 728,
+            "y": 3547
+          },
+          "board": null
+        },
+        "open-access-art:nga:152321": {
+          "page": {
+            "x": 728,
+            "y": 4159
+          },
+          "board": null
+        },
+        "open-access-art:nga:144394": {
+          "page": {
+            "x": 1036,
+            "y": 754
+          },
+          "board": null
+        },
+        "open-access-art:nga:177918": {
+          "page": {
+            "x": 1036,
+            "y": 1293
+          },
+          "board": null
+        },
+        "open-access-art:nga:50332": {
+          "page": {
+            "x": 1036,
+            "y": 1779
+          },
+          "board": null
+        },
+        "open-access-art:nga:177332": {
+          "page": {
+            "x": 1036,
+            "y": 2398
+          },
+          "board": null
+        },
+        "open-access-art:nga:41576": {
+          "page": {
+            "x": 1036,
+            "y": 2855
+          },
+          "board": null
+        },
+        "open-access-art:nga:74991": {
+          "page": {
+            "x": 1036,
+            "y": 3403
+          },
+          "board": null
+        },
+        "open-access-art:nga:8294": {
+          "page": {
+            "x": 1036,
+            "y": 3986
+          },
+          "board": null
+        },
+        "open-access-art:nga:50323": {
+          "page": {
+            "x": 1036,
+            "y": 4429
+          },
+          "board": null
+        }
+      }
+    },
+    "geomAfter": {
+      "grid": {
+        "x": 220,
+        "y": 746
+      },
+      "cards": {
+        "open-access-art:nga:50295": {
+          "page": {
+            "x": 220,
+            "y": 746
+          },
+          "board": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:184224": {
+          "page": {
+            "x": 500,
+            "y": 746
+          },
+          "board": {
+            "x": 280,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:184225": {
+          "page": {
+            "x": 780,
+            "y": 746
+          },
+          "board": {
+            "x": 560,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:35087": {
+          "page": {
+            "x": 1060,
+            "y": 746
+          },
+          "board": {
+            "x": 840,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:195142": {
+          "page": {
+            "x": 220,
+            "y": 965
+          },
+          "board": {
+            "x": 0,
+            "y": 219
+          }
+        },
+        "open-access-art:nga:178208": {
+          "page": {
+            "x": 500,
+            "y": 967
+          },
+          "board": {
+            "x": 280,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:195026": {
+          "page": {
+            "x": 780,
+            "y": 967
+          },
+          "board": {
+            "x": 560,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:106485": {
+          "page": {
+            "x": 1060,
+            "y": 967
+          },
+          "board": {
+            "x": 840,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:152342": {
+          "page": {
+            "x": 220,
+            "y": 1187
+          },
+          "board": {
+            "x": 0,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:133501": {
+          "page": {
+            "x": 500,
+            "y": 1187
+          },
+          "board": {
+            "x": 280,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:133640": {
+          "page": {
+            "x": 780,
+            "y": 1187
+          },
+          "board": {
+            "x": 560,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:178273": {
+          "page": {
+            "x": 1060,
+            "y": 1187
+          },
+          "board": {
+            "x": 840,
+            "y": 441
+          }
+        }
+      }
+    },
+    "before": "open-access-art:nga:50295,open-access-art:nga:184224,open-access-art:nga:144846,open-access-art:nga:42377,open-access-art:nga:24889,open-access-art:nga:195142,open-access-art:nga:152309,open-access-art:nga:143883,open-access-art:nga:46426,open-access-art:nga:70382,open-access-art:nga:184225,open-access-art:nga:110669,open-access-art:nga:50527,open-access-art:nga:46461,open-access-art:nga:50658,open-access-art:nga:152342,open-access-art:nga:153739,open-access-art:nga:50373,open-access-art:nga:50497,open-access-art:nga:69461,open-access-art:nga:111775,open-access-art:nga:152321,open-access-art:nga:144394,open-access-art:nga:177918,open-access-art:nga:50332,open-access-art:nga:177332,open-access-art:nga:41576,open-access-art:nga:74991,open-access-art:nga:8294,open-access-art:nga:50323"
+  },
+  "second": {
+    "label": "second redeal (board → board)",
+    "changedMs": 1201,
+    "sampled": {
+      "layouts": 25,
+      "frames": 149
+    },
+    "geomBefore": {
+      "grid": {
+        "x": 220,
+        "y": 746
+      },
+      "cards": {
+        "open-access-art:nga:50295": {
+          "page": {
+            "x": 220,
+            "y": 746
+          },
+          "board": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:184224": {
+          "page": {
+            "x": 500,
+            "y": 746
+          },
+          "board": {
+            "x": 280,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:184225": {
+          "page": {
+            "x": 780,
+            "y": 746
+          },
+          "board": {
+            "x": 560,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:35087": {
+          "page": {
+            "x": 1060,
+            "y": 746
+          },
+          "board": {
+            "x": 840,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:195142": {
+          "page": {
+            "x": 220,
+            "y": 965
+          },
+          "board": {
+            "x": 0,
+            "y": 219
+          }
+        },
+        "open-access-art:nga:178208": {
+          "page": {
+            "x": 500,
+            "y": 967
+          },
+          "board": {
+            "x": 280,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:195026": {
+          "page": {
+            "x": 780,
+            "y": 967
+          },
+          "board": {
+            "x": 560,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:106485": {
+          "page": {
+            "x": 1060,
+            "y": 967
+          },
+          "board": {
+            "x": 840,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:152342": {
+          "page": {
+            "x": 220,
+            "y": 1187
+          },
+          "board": {
+            "x": 0,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:133501": {
+          "page": {
+            "x": 500,
+            "y": 1187
+          },
+          "board": {
+            "x": 280,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:133640": {
+          "page": {
+            "x": 780,
+            "y": 1187
+          },
+          "board": {
+            "x": 560,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:178273": {
+          "page": {
+            "x": 1060,
+            "y": 1187
+          },
+          "board": {
+            "x": 840,
+            "y": 441
+          }
+        }
+      }
+    },
+    "geomAfter": {
+      "grid": {
+        "x": 220,
+        "y": 746
+      },
+      "cards": {
+        "open-access-art:nga:50295": {
+          "page": {
+            "x": 220,
+            "y": 746
+          },
+          "board": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:184224": {
+          "page": {
+            "x": 500,
+            "y": 746
+          },
+          "board": {
+            "x": 280,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:66427": {
+          "page": {
+            "x": 780,
+            "y": 746
+          },
+          "board": {
+            "x": 560,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:46623": {
+          "page": {
+            "x": 1060,
+            "y": 746
+          },
+          "board": {
+            "x": 840,
+            "y": 0
+          }
+        },
+        "open-access-art:nga:46426": {
+          "page": {
+            "x": 220,
+            "y": 965
+          },
+          "board": {
+            "x": 0,
+            "y": 219
+          }
+        },
+        "open-access-art:nga:52261": {
+          "page": {
+            "x": 500,
+            "y": 967
+          },
+          "board": {
+            "x": 280,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:204911": {
+          "page": {
+            "x": 780,
+            "y": 967
+          },
+          "board": {
+            "x": 560,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:52216": {
+          "page": {
+            "x": 1060,
+            "y": 967
+          },
+          "board": {
+            "x": 840,
+            "y": 221
+          }
+        },
+        "open-access-art:nga:111773": {
+          "page": {
+            "x": 220,
+            "y": 1187
+          },
+          "board": {
+            "x": 0,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:125748": {
+          "page": {
+            "x": 500,
+            "y": 1187
+          },
+          "board": {
+            "x": 280,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:50323": {
+          "page": {
+            "x": 780,
+            "y": 1187
+          },
+          "board": {
+            "x": 560,
+            "y": 441
+          }
+        },
+        "open-access-art:nga:35094": {
+          "page": {
+            "x": 1060,
+            "y": 1187
+          },
+          "board": {
+            "x": 840,
+            "y": 441
+          }
+        }
+      }
+    },
+    "before": "open-access-art:nga:50295,open-access-art:nga:184224,open-access-art:nga:184225,open-access-art:nga:35087,open-access-art:nga:195142,open-access-art:nga:178208,open-access-art:nga:195026,open-access-art:nga:106485,open-access-art:nga:152342,open-access-art:nga:133501,open-access-art:nga:133640,open-access-art:nga:178273"
+  },
+  "fit": {
+    "count": 12,
+    "gridHeight": 650,
+    "viewport": 900,
+    "fullyVisibleAtBestScroll": 12,
+    "tray": 2
+  },
+  "errors": []
+}

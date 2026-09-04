@@ -1,0 +1,151 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "rounds": [
+    {
+      "round": 1,
+      "changed": true,
+      "changedMs": 1913,
+      "layouts": 4,
+      "frames": 156,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 2,
+      "changed": true,
+      "changedMs": 1576,
+      "layouts": 24,
+      "frames": 147,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 3,
+      "changed": true,
+      "changedMs": 1799,
+      "layouts": 25,
+      "frames": 148,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 4,
+      "changed": true,
+      "changedMs": 1926,
+      "layouts": 28,
+      "frames": 147,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 5,
+      "changed": true,
+      "changedMs": 1235,
+      "layouts": 28,
+      "frames": 149,
+      "renderedCount": 12,
+      "orderCount": 12,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 6,
+      "changed": true,
+      "changedMs": 1148,
+      "layouts": 24,
+      "frames": 149,
+      "renderedCount": 11,
+      "orderCount": 11,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 7,
+      "changed": true,
+      "changedMs": 1096,
+      "layouts": 29,
+      "frames": 154,
+      "renderedCount": 1,
+      "orderCount": 1,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    },
+    {
+      "round": 8,
+      "changed": false,
+      "changedMs": 45015,
+      "layouts": 3,
+      "frames": 156,
+      "renderedCount": 1,
+      "orderCount": 1,
+      "renderedMatchesOrder": true,
+      "rejectsOnBoard": [],
+      "rejectsInOrder": [],
+      "picksOnBoard": [
+        "open-access-art:nga:184225"
+      ],
+      "trayCount": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1
+    }
+  ],
+  "errors": []
+}

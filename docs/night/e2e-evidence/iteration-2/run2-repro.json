@@ -1,0 +1,492 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "control": {
+    "layouts": 24,
+    "frames": 147,
+    "distinctCards": 23
+  },
+  "withExhibition": {
+    "layouts": 27,
+    "frames": 149,
+    "distinctCards": 23
+  },
+  "geometry": {
+    "present": true,
+    "topInViewport": 144,
+    "height": 650,
+    "viewport": 900,
+    "scrollY": 602,
+    "documentHeight": 1636
+  },
+  "geomAfter": {
+    "topInViewport": 144,
+    "scrollY": 602,
+    "viewport": 900
+  },
+  "censusControl": [
+    {
+      "id": "open-access-art:nga:157462",
+      "flag": null,
+      "by": null,
+      "provisional": null,
+      "inTray": true,
+      "inDealGrid": false,
+      "rect": {
+        "x": 120,
+        "y": 152,
+        "w": 75,
+        "h": 57
+      },
+      "chain": "button.lt-tray-card.block < div < aside.lt-tray.flex < div.lt-ground.flex < div.lt-deal-viewport < section.mt-8"
+    },
+    {
+      "id": "open-access-art:nga:50825",
+      "flag": null,
+      "by": null,
+      "provisional": null,
+      "inTray": true,
+      "inDealGrid": false,
+      "rect": {
+        "x": 120,
+        "y": 217,
+        "w": 75,
+        "h": 55
+      },
+      "chain": "button.lt-tray-card.block < div < aside.lt-tray.flex < div.lt-ground.flex < div.lt-deal-viewport < section.mt-8"
+    },
+    {
+      "id": "open-access-art:nga:76207",
+      "flag": "pick",
+      "by": "human",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 220,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:195391",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 500,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:42506",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 780,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:71024",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 1060,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:226411",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 220,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:76212",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 500,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:214901",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 780,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:214125",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 1060,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:161665",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 220,
+        "y": 583,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:46621",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 500,
+        "y": 585,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:24924",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 780,
+        "y": 585,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:214117",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 1060,
+        "y": 585,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    }
+  ],
+  "censusExhibition": [
+    {
+      "id": "open-access-art:nga:157462",
+      "flag": null,
+      "by": null,
+      "provisional": null,
+      "inTray": true,
+      "inDealGrid": false,
+      "rect": {
+        "x": 120,
+        "y": 152,
+        "w": 75,
+        "h": 57
+      },
+      "chain": "button.lt-tray-card.block < div < aside.lt-tray.flex < div.lt-ground.flex < div.lt-deal-viewport < section.mt-8"
+    },
+    {
+      "id": "open-access-art:nga:50825",
+      "flag": null,
+      "by": null,
+      "provisional": null,
+      "inTray": true,
+      "inDealGrid": false,
+      "rect": {
+        "x": 120,
+        "y": 217,
+        "w": 75,
+        "h": 55
+      },
+      "chain": "button.lt-tray-card.block < div < aside.lt-tray.flex < div.lt-ground.flex < div.lt-deal-viewport < section.mt-8"
+    },
+    {
+      "id": "open-access-art:nga:76207",
+      "flag": "pick",
+      "by": "human",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 220,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:195391",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 500,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:42506",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 780,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:71024",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 1060,
+        "y": 144,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:226411",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 220,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:76212",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 500,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:214901",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 780,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:214125",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 1060,
+        "y": 365,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:161665",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 220,
+        "y": 583,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:46621",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 500,
+        "y": 585,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:24924",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 780,
+        "y": 585,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    },
+    {
+      "id": "open-access-art:nga:214117",
+      "flag": "none",
+      "by": "none",
+      "provisional": "false",
+      "inTray": false,
+      "inDealGrid": true,
+      "rect": {
+        "x": 1060,
+        "y": 585,
+        "w": 268,
+        "h": 209
+      },
+      "chain": "article.paillette-card.lt-slide < div < div.relative.grid < div.flex.min-w-0 < div.lt-ground.flex < div.lt-deal-viewport"
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "label": "CONTROL — with no exhibition on the page the deal animates",
+      "detail": "{\"layouts\":24,\"frames\":147,\"distinctCards\":23}"
+    },
+    {
+      "ok": true,
+      "label": "CONTROL — every [data-artwork-id] is either on the board or in the tray",
+      "detail": "14 elements: 12 board, 2 tray, 0 elsewhere"
+    },
+    {
+      "ok": true,
+      "label": "set_exhibition applied (the thing run 2 did and runs 1 and 3 did not)",
+      "detail": "{\"ok\":true,\"title\":{\"text\":\"Warm Company\",\"by\":\"agent\"},\"statement\":{\"text\":\"This room gathers works that make warmth feel spacious rather than insistent. Honeyed light, ochre earth, softened paper, a"
+    },
+    {
+      "ok": true,
+      "label": "the deal board survives set_view(\"salon\") with an exhibition on the page",
+      "detail": "{\"present\":true,\"topInViewport\":144,\"height\":650,\"viewport\":900,\"scrollY\":602,\"documentHeight\":1636}"
+    },
+    {
+      "ok": true,
+      "label": "with an exhibition on the page, no work is rendered outside the board and tray",
+      "detail": "{\"tray\":2,\"board\":12} — elsewhere: []"
+    },
+    {
+      "ok": true,
+      "label": "WITH AN EXHIBITION ON THE PAGE — does the deal still animate?",
+      "detail": "27 distinct layouts across 149 frames (control measured 24); a jump cut is 4–5"
+    },
+    {
+      "ok": true,
+      "label": "the board is on camera when the deal runs",
+      "detail": "{\"topInViewport\":144,\"scrollY\":602,\"viewport\":900}"
+    },
+    {
+      "ok": true,
+      "label": "no model call was spent proving any of this",
+      "detail": "0"
+    }
+  ]
+}
