@@ -55,6 +55,8 @@ export interface Env {
   AUTH_ISSUER?: string;
   AUTH_JWKS_URI?: string;
   AUTH_CLIENT_ID?: string;
+  /** Per-caller hourly ceiling on agent model calls. Defaults to 40 when unset. */
+  AGENT_MODEL_CALLS_PER_HOUR?: string;
   SEARCH_ACCESS_MODE?: string;
   SEARCH_ACCESS_BOOTSTRAP_EMAIL?: string;
   /** Immutable WorkOS subject for the one bootstrap administrator. */
