@@ -327,25 +327,29 @@ removing them from the show.
 
 ## 7. What is broken, and what to watch
 
-1. **The correction turn is prompt-shaped, not enforced.** Nothing in the code
-   guarantees the agent calls `write_labels` after a statement rewrite; it is an
-   instruction the model can still drop under a tight tool budget. `MAX_TURNS`
-   is 8 in `agent-prompt.tsx` and a drafting turn routinely spends 5–6 of them
-   searching. If this proves flaky on camera, raising `MAX_TURNS` to ~12 is the
-   blunt fix, but that constant is shared with the culling loop and I did not
-   change it on one night's evidence.
-2. **`MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40`** and a full run of this
+1. **The correction turn is prompt-shaped, not enforced.** It went 1/3 → 3/3 on
+   wording alone, and wording is all it is: nothing in the code guarantees the
+   agent calls `write_labels` after a statement rewrite. `MAX_TURNS` is 8 in
+   `agent-prompt.tsx` and a drafting turn routinely spends 5–6 of them
+   searching, so the budget is genuinely tight. If it proves flaky on camera,
+   raising `MAX_TURNS` to ~12 is the blunt fix — but that constant is shared
+   with the culling loop and I would not change it on one night's evidence.
+2. **The title fix is deployed but thinner-evidenced than the rest.** The
+   relabelling behaviour is backed by three clean runs; the title instruction
+   went in *after* that batch, in response to what it showed, and is verified by
+   <!--TITLEVERIFY-->.
+3. **`MAX_AGENT_MODEL_CALLS_PER_CLIENT_PER_HOUR = 40`** and a full run of this
    loop costs ~10–14. Three back-to-back verification runs sit right at the cap;
    my first batch was partly destroyed by 429s before I noticed. Anyone filming
    several takes in an hour will hit it.
-3. **The ranking in the loop harness is not real** (§2). The prose loop is
+4. **The ranking in the loop harness is not real** (§2). The prose loop is
    verified; retrieval quality under a corrected theme is not.
-4. **I deployed `apps/api` to staging** (`npx wrangler deploy --env staging`) to
+5. **I deployed `apps/api` to staging** (`npx wrangler deploy --env staging`) to
    get a real `/api/public-labels` and the updated agent prompt. That is a
    shared surface — the agent system prompt now carries this lane's exhibition
    instructions for every lane using staging. Integration should redeploy from
    the merged branch.
-5. `worker-cache-control.test.ts` fails to collect and `worker.ts` fails
+6. `worker-cache-control.test.ts` fails to collect and `worker.ts` fails
    typecheck, both needing `apps/web/build/server/index.js`. **Baseline** —
    confirmed by stashing this lane's changes and reproducing on clean
    `night/integration`.
@@ -357,7 +361,7 @@ removing them from the show.
 | | result |
 | --- | --- |
 | `pnpm --filter web typecheck` | clean except the baseline `worker.ts` error above |
-| `pnpm --filter web test` | **1012 passed**, 85 files, 1 file fails to collect (baseline) |
+| `pnpm --filter web test` | **1015 passed**, 85 files, 1 file fails to collect (baseline) |
 | `pnpm --filter api test` | **815 passed / 44 files** (baseline was 770 / 41) |
 
 New tests this lane: `exhibition.test.ts` (698 lines — schema, failure paths,
