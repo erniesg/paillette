@@ -1,0 +1,162 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "plainBrowser": {
+    "hasBar": true,
+    "boardSize": 0,
+    "modelCalls": 0,
+    "exemplarCalls": 0
+  },
+  "reload": {
+    "before": {
+      "picks": [
+        "open-access-art:nga:127567"
+      ],
+      "rejects": [
+        "open-access-art:nga:184225",
+        "open-access-art:nga:195765"
+      ]
+    },
+    "after": {
+      "picks": [],
+      "rejects": []
+    },
+    "survived": false
+  },
+  "deals": [
+    {
+      "deal": 1,
+      "cards": 12,
+      "tray": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1,
+      "flip": {
+        "frames": 474,
+        "distinct": 5,
+        "distinctAfterChange": 4,
+        "firstChangeAtMs": 65
+      },
+      "held": [
+        {
+          "id": "open-access-art:nga:127567",
+          "moved": 481
+        },
+        {
+          "id": "open-access-art:nga:198119",
+          "moved": 425
+        }
+      ]
+    },
+    {
+      "deal": 2,
+      "cards": 12,
+      "tray": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1,
+      "flip": {
+        "frames": 456,
+        "distinct": 18,
+        "distinctAfterChange": 17,
+        "firstChangeAtMs": 30
+      },
+      "held": [
+        {
+          "id": "open-access-art:nga:127567",
+          "moved": 0
+        },
+        {
+          "id": "open-access-art:nga:198119",
+          "moved": 2
+        }
+      ]
+    },
+    {
+      "deal": 3,
+      "cards": 12,
+      "tray": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1,
+      "flip": {
+        "frames": 453,
+        "distinct": 18,
+        "distinctAfterChange": 17,
+        "firstChangeAtMs": 53
+      },
+      "held": [
+        {
+          "id": "open-access-art:nga:127567",
+          "moved": 0
+        },
+        {
+          "id": "open-access-art:nga:198119",
+          "moved": 0
+        }
+      ]
+    },
+    {
+      "deal": 4,
+      "cards": 12,
+      "tray": 2,
+      "modelCalls": 0,
+      "exemplarCalls": 1,
+      "flip": {
+        "frames": 448,
+        "distinct": 15,
+        "distinctAfterChange": 14,
+        "firstChangeAtMs": 60
+      },
+      "held": [
+        {
+          "id": "open-access-art:nga:127567",
+          "moved": 0
+        },
+        {
+          "id": "open-access-art:nga:198119",
+          "moved": 0
+        }
+      ]
+    }
+  ],
+  "video": "docs/night/shots/video/e2e3-deal-on-nga-search.webm",
+  "results": [
+    {
+      "ok": false,
+      "what": "plain browser, no debug flag: Enter deals twelve",
+      "detail": "0 cards, bar present=true"
+    },
+    {
+      "ok": true,
+      "what": "plain browser: no model call",
+      "detail": "0"
+    },
+    {
+      "ok": false,
+      "what": "plain browser: the deterministic engine ran",
+      "detail": "0 POSTs to /exemplars"
+    },
+    {
+      "ok": false,
+      "what": "flags survive a reload, per session",
+      "detail": "before {\"picks\":[\"open-access-art:nga:127567\"],\"rejects\":[\"open-access-art:nga:184225\",\"open-access-art:nga:195765\"]} · after {\"picks\":[],\"rejects\":[]}"
+    },
+    {
+      "ok": true,
+      "what": "four consecutive redeals, zero model calls",
+      "detail": "0"
+    },
+    {
+      "ok": false,
+      "what": "picks hold position on every board-to-board redeal",
+      "detail": "[[0,2],[0,0],[0,0]]"
+    },
+    {
+      "ok": true,
+      "what": "the deal animates on every board-to-board redeal",
+      "detail": "[4,17,17,14]"
+    },
+    {
+      "ok": true,
+      "what": "twelve cards every deal",
+      "detail": "[12,12,12,12]"
+    }
+  ]
+}

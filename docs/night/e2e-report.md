@@ -1,5 +1,497 @@
 # End to end — the demo loop on a deployed build, driven by typing
 
+# Iteration 3
+
+Run on 2026-09-04, 07:55–08:46 UTC, against **https://paillette-stg.berlayar.ai**
+(web version `9b056c22`, api `8a017206`), from `night/integration` at `164c416`.
+
+I did not redeploy. `git diff --name-only 941f1c1..HEAD -- apps packages` is
+empty, so the page under test is byte-identical to the commit staging was
+deployed from. Everything below was measured in a browser against the live
+63,253-work index. Nothing is stubbed and nothing is inherited from another
+lane's report; where I quote an earlier report it is to say it is now wrong.
+
+---
+
+## Verdict
+
+**No — not the whole loop, not right now. Half of it is filmable this minute and
+half of it is dead.**
+
+The deterministic half — deal, `P`, `X`, Enter on an empty bar, twelve cards,
+picks nailed in place, rejects into the tray, the deal animating — works, on
+`/nga/search`, against the real collection, with **zero model calls**. I have it
+on video. That half needs nothing from anybody.
+
+The agentic half is **blocked**. Since roughly 08:20 UTC the deployed agent has
+returned `429` to every single turn, continuously, for the 25 minutes I polled
+it:
+
+```
+{"success":false,"error":{"code":"AGENT_UNAVAILABLE",
+ "message":"The shared daily agent budget for this site is spent."}}
+```
+
+No typed instruction can fire the agent while that holds, so there is no board
+from the agent, no wall label, no note, no two inks in one frame, and no
+`beats.json` with tools in it. The capture harness ran to completion and
+recorded `"toolsFired": []`.
+
+I got in under the wire: between 07:55 and 08:20 the agent still answered, and
+**everything §9 asks for was exercised against real model turns before it died.**
+So this report has the evidence. It just cannot be reproduced today until the
+budget question is settled.
+
+### What blocks it, precisely
+
+**Blocker 1 — the shared daily OpenAI budget is spent, and the limit is a
+default nobody set.**
+
+`apps/api/wrangler.toml:97` sets `AGENT_MODEL_CALLS_PER_HOUR = "600"` — the
+capfix lane raised that ceiling. It does **not** set `OPENAI_DAILY_CALL_LIMIT`,
+so `parseLimit` falls through to `DEFAULT_OPENAI_DAILY_CALL_LIMIT = 500`
+(`apps/api/src/utils/openai.ts:35`). That is a **site-wide** counter, not
+per-client: one KV key, `openai-quota:v1:<UTC date>` (`openai.ts:37`),
+incremented once per model call by every lane, every verification harness and
+every visitor, and reset only by the date rolling over at 00:00 UTC.
+
+One typed instruction costs 5–6 of those 500. The night's lanes have been
+spending them all along; my own runs spent roughly 55. There were two ceilings
+and the capfix lane raised the wrong one — or rather, only one of the two.
+
+**I could not determine from outside which of the two 429 branches fired**, and
+that is itself worth fixing. `openaiChat` throws an identical
+`OpenAiUnavailableError(…, 429)` when the site counter refuses *before* any
+OpenAI request (`openai.ts:146`) and when OpenAI itself answers 429
+(`openai.ts:173`), and `agent.ts` maps both to the same sentence. Timing does
+not separate them: the refusal takes 0.68–1.55 s, a real `gpt-5.6-terra` round
+trip from this box takes 1.22–1.75 s, and the worker's own `/health` takes
+0.45 s. The two hypotheses are:
+
+- the site's own 500/day counter is full — remedy is one line in
+  `wrangler.toml` (`OPENAI_DAILY_CALL_LIMIT = "5000"`) plus an api redeploy;
+- the worker's `OPENAI_API_KEY` is out of quota upstream — remedy is the owner's,
+  not a code change.
+
+Evidence bearing on it: **the key in `~/code/erniesg/tong/.env` is healthy.** I
+called `gpt-5.6-terra` with it directly and got `200`. So whatever is exhausted
+is either the site counter or a *different* key held as a Worker secret. I did
+**not** rotate the deployed secret to the working key. That would have unblocked
+the run in one command, but it points a public staging site's agent budget at an
+unrelated project's billing account, and that is the owner's call, not a fix
+phase's.
+
+**Blocker 2 — the agent's note does not name what was rejected. 0 for 5.**
+
+§9's third clause: *"Given the sofa prompt and two X presses, the agent's redeal
+note refers to the content of what was rejected."* It did not, in any of the
+five runs that completed before the budget ran out, under either reading of the
+ordering. All five notes are quoted verbatim in §4 below, and I found the
+mechanism: **the gestures reach the model on the first request of a turn only,
+and the note is written five requests later, by which point the sentence naming
+the rejects is no longer in context.**
+`apps/web/app/components/webmcp/agent-prompt.tsx:396`:
+
+```js
+...(turn === 0 && gestures ? { turn: gestures } : {}),
+```
+
+This is not a blocker for *filming* — the notes that come back are good
+sentences and the board is right. It is a blocker for the claim, and the claim
+is one of the five bullets in the definition of done.
+
+### Not blocking, but nobody should discover these on the day
+
+1. **A human redeal writes no wall label at all.** Measured at five scroll
+   positions after two human Enter redeals: `note: null` every time (§7). The
+   label is the agent's only. So "two colours of ink in one frame" needs a live
+   agent turn, and is unfilmable while blocker 1 stands.
+2. **Choosing in the two-up still does not send a turn.** 0 POSTs within 1.5 s
+   of the click. It resolves to pick/reject correctly; the choice rides the next
+   turn. Unchanged from iteration 2, which flagged it deliberately.
+3. **Flags do not survive a reload.** They survive a new search in the same tab
+   — which is what "per session" has to mean — but a reload clears them
+   completely. Iteration 2's advice to *"reload between takes"* therefore also
+   wipes the flags. Both facts are true; whoever films needs both.
+4. **The first redeal is a cut, not a deal**, and how bad depends on what was on
+   screen first. From a browsing masonry: 4 distinct layouts and the picks
+   travel 481 px and 425 px. From a board the agent set: 25 layouts and 54 px.
+   Board-to-board it is 14–25 layouts and **0 px**. Film the second redeal, as
+   every previous report has said.
+5. **The note is clipped by the sticky search chrome** at the scroll position
+   the page lands on after an agent turn — visible in
+   `e2e3-01-after-instruction.png`, where the sentence is cut through
+   horizontally by the toolbar.
+
+---
+
+## The two preflight questions
+
+**Does the in-page agent render under `?webmcp-debug`? Yes.** `928b5dc` is an
+ancestor of `HEAD` and works on the deployed build. No cherry-pick needed.
+
+```json
+{"bar":true,"host":true,"debugDriver":"function","cards":30,
+ "glyph":true,"activeEl":"BODY","pageErrors":[]}
+```
+
+`activeEl: "BODY"` matters as much as the rest: focus is not parked in the
+search field on a cold load, so `P`/`X`/`U` are live immediately.
+
+**Is the deal animation on the real page, or only in the harness? It is on the
+real page.** This is the one thing the brief called potentially blocking that
+turns out to be fine, and I measured it rather than reading it off a report.
+
+On `/nga/search?q=warm+landscape`, against the real collection, sampling every
+card's bounding box once per animation frame across four consecutive redeals:
+
+| redeal | cards | tray | distinct layouts | picks moved |
+| --- | --- | --- | --- | --- |
+| 1 (masonry → board) | 12 | 2 | 4 | 481 px, 425 px |
+| 2 | 12 | 2 | **17** | 0 px, 2 px |
+| 3 | 12 | 2 | **17** | 0 px, 0 px |
+| 4 | 12 | 2 | **14** | 0 px, 0 px |
+
+A jump cut measures 4–5, which is exactly what redeal 1 measures and exactly
+what it is. Redeals 2–4 pass through 14–17 intermediate layouts. Video, 1440×900,
+no model call anywhere in it:
+**`docs/night/shots/video/e2e3-deal-on-nga-search.webm`**.
+
+`/night/deal` is not what I tested and is not needed.
+
+---
+
+## §9, step by step
+
+### 1. The sofa instruction, typed, with voice untouched
+
+Typed character by character into the bar and submitted with Enter. Voice was
+never used: no mic button was pressed, and the turn is dispatched as channel
+`text`. (Headless Chromium *does* expose `webkitSpeechRecognition`, so the mic
+button does render — my first harness asserted it would not and was wrong about
+that. It renders and is ignored.)
+
+The whole instruction arrived: **88 of 88 characters** in the field before Enter.
+
+- **5 POSTs to `/api/public-agent/turn`** — a typed instruction alone fired the
+  agent, with no coaching and nothing else on the page touched.
+- **14,105 ms** from Enter to a settled board.
+- **12 works** came back.
+- The note, verbatim, in the agent's cyan (`rgb(94, 200, 216)`) and EB Garamond,
+  `data-provenance="agent"`:
+
+> **"Warm light, open breathing room, and gentle domestic colour for an easy
+> living-room hang."**
+
+Tool chain, read off the activity log the way a human would see it — name,
+duration, arguments:
+
+```
+get_view_context     12ms  ok  {}
+search_artworks     619ms  ok  {"query":"open landscape","collection":"nga","topK":12,"minScore":0.25}
+search_artworks     782ms  ok  {"query":"quiet interior","collection":"nga","topK":12,"minScore":0.25}
+search_artworks     758ms  ok  {"query":"still life flowers","collection":"nga","topK":12,"minScore":0.25}
+search_by_color     874ms  ok  {"color":"gold","query":"landscape","collection":"nga","topK":12}
+set_results          35ms  ok  {"artworkIds":["open-access-art:nga:184225", …]}
+set_view              6ms  ok  {"view":"salon"}
+```
+
+Shots: `e2e3-01-after-instruction.png`, `e2e3-01b-activity-log.png`.
+
+### 2. `X` on two, `P` on one — the flags persist and are visible
+
+Hovered each card, pressed the key. Read back off the DOM and off computed
+style, not off class names:
+
+```
+reject  nga:184225  data-flag-by=human  provisional=false  box-shadow rgba(230,227,220,.58) 0 0 0 1px
+reject  nga:46426   data-flag-by=human  provisional=false  box-shadow rgba(230,227,220,.58) 0 0 0 1px
+pick    nga:50826   data-flag-by=human  provisional=false  box-shadow rgb(230,227,220) 0 0 0 1px + lift
+```
+
+`rgb(230,227,220)` is graphite — the human's ink. Flagging made **0 requests of
+any kind**, so it certainly made no model call.
+
+`get_view_context` returns them, with the catalogue record attached, which is
+what lets the agent talk about *content* rather than ids:
+
+```json
+{"picks":[{"id":"open-access-art:nga:50826","title":"Stylized Landscape",
+  "artist":"American 19th Century","palette":["#584E26","#C0A659","#768347","#A1A97D"],
+  "medium":"oil on canvas","year":1850,"classification":"Painting",
+  "by":"human","onBoard":true}],
+ "rejects":[{"id":"open-access-art:nga:184225","title":"Environs de Cremieu",
+  "artist":"François-Auguste Ravier","palette":["#B89E81","#644F3F","#F4E8D6","#DCB17F"],
+  "medium":"watercolor and graphite on laid paper","year":1885, …}, …]}
+```
+
+**Persistence, tested two ways** (`e2e3-10-*.png`):
+
+| | result |
+| --- | --- |
+| a new search in the same tab (`"harbour at dusk"`) | **survives** — same 1 pick, same 2 rejects |
+| a reload | **lost** — `{"picks":[],"rejects":[]}` |
+
+### 3. Enter on an empty bar — the redeal, and no model call
+
+This is the claim the brief says not to take on faith, so here is not a count
+but **every request the page made**, from the keypress to the settled board:
+
+```
+POST /api/public-search/nga/exemplars
+GET  https://api.nga.gov/iiif/bc34d795-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/16db7d22-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/4d3fb453-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/c552208a-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/af969695-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/efe2953f-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/b28faf81-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/aa56fcc5-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/717f3a55-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/dfea6612-…/full/400,/0/default.jpg
+GET  https://api.nga.gov/iiif/f867baac-…/full/400,/0/default.jpg
+```
+
+Twelve requests: **one call to the deterministic Rocchio route and eleven
+pictures.** There is nothing in that list a model call could be hiding in. The
+listener was attached to `page.on('request')` before navigation, so it saw
+everything the page issued.
+
+The board that came back:
+
+- **12 cards**
+- both rejects gone from the board, and **both in the visible tray** —
+  `tray holds 2: nga:46426, nga:184225`
+- 11 works the board had not seen
+- 25 distinct layouts across 478 sampled frames, first movement at 10 ms
+
+Across every redeal I ran today — 2 in the ordered walk, 4 in the recorded
+deterministic run, 3 in the note runs, 1 in the plain-browser run, 2 in the
+framing run: **12 redeals, 0 POSTs to `/public-agent/turn`.**
+
+And it holds with no agent on the page at all. Without `?webmcp-debug` the
+console driver is absent (`debugDriver: false`) but the host is still claimed and
+the bar still renders, and Enter on it deals twelve from the flags: `0` model
+calls, `1` exemplar call (`e2e3-09-plain-browser-redeal.png`).
+
+Picks, board to board: **`780,192 → 780,192`, zero pixels.**
+
+Shots: `e2e3-03-after-redeal.png`, `e2e3-04-second-redeal.png`,
+`e2e3-11-deal-*.png`.
+
+### 4. The agent's next note, three times — this is the one that fails
+
+Two orderings, because §9's wording permits both. Every note below came back
+from a real model turn against the deployed build. The rejected works are given
+in full so the "content" judgement can be made rather than taken.
+
+**Ordering A — the brief's own step order.** Instruction → `X` on two → Enter on
+an empty bar → one neutral nudge (`"again"`, deliberately empty of content, so
+that anything the note says about the rejects came from the flags).
+
+> **Run 1.** Rejected: *"Environs de Cremieu"* (Ravier, 1885, watercolor and
+> graphite, `#B89E81 #644F3F #F4E8D6 #DCB17F`) and *"A Hillside Path with
+> Blooming Cherry Trees under an Overcast Sky"* (Michetti, 1905, pastel and
+> charcoal, `#E3D5C1 #9A9080 #3F3C2B #AEB4A8`).
+>
+> Note: **"A quieter second hang: honeyed landscapes and simple still lifes,
+> kept clear of drama and visual clutter."**
+
+> **Run 2.** Rejected: *"Harvesters by Firelight"* (Palmer, 1830) and *"Northern
+> Landscape Fantasy Evoking Tivoli"* (Berchem, 1660).
+>
+> Note: **none — the turn failed.** This was the first 429 of the session.
+
+> **Run 3.** Rejected: the same two works as run 1.
+>
+> Note: **"Brighter, friendlier warmth: fruit, flowers, and open ground with
+> clean, restful compositions."**
+
+**Ordering B — flags first, then the instruction**, so gestures and words arrive
+on the same turn. This is the shape iteration 1 used when it got notes like
+*"you picked the grey sea and rejected the dramatic boat."*
+
+> **Run 1.** Rejected: *"Environs de Cremieu"* and *"Flying Shadows"* (Kenyon
+> Cox, 1883, oil on canvas, `#47502B #9A8B57 #BDB89B`).
+>
+> Note: **"Soft light, simple forms, and warm colour for an easy, welcoming
+> wall."**
+
+> **Run 2.** Same two rejects.
+>
+> Note: **"Warm light, open space, and softened colour—quiet pictures that
+> welcome the room without crowding it."**
+
+> **Run 3.** Same two rejects. Note: **none — 429.**
+
+Five notes came back. **None of them names what was thrown out.** They are
+sentences about what is now on the board. Two carry a comparative that gestures
+at a rejection without content — *"a quieter second hang"*, *"brighter"* — and
+that is the closest any of them gets. The system prompt asks for more than this
+and says so explicitly (`apps/api/src/routes/agent.ts:109`):
+
+> *"On a redeal after they have flagged something, the note is where the
+> disagreement gets named, in that one sentence: 'You said warm; you picked the
+> grey harbour and rejected the golds — following the picks.' Name what they
+> threw out, not only what you kept."*
+
+**The mechanism, from the request bodies.** The gestures do reach the model, and
+they are well-formed. Ordering A, run 1, request 5 of 10:
+
+```json
+{"text":"again",
+ "flagsDelta":["reject:Environs de Cremieu (François-Auguste Ravier)",
+               "reject:A Hillside Path with Blooming Cherry Trees under an Overcast Sky (Francesco Paolo Michetti)"]}
+```
+
+Requests 6, 7, 8 and 9 of that same turn carry **no `turn` key at all**. The
+server appends the gesture sentence as a trailing system message only when
+`body.turn` is present (`agent.ts:357–367`), and the client sends `turn` only on
+the first pass (`agent-prompt.tsx:396`, with the comment *"restating the
+gestures there would read as the human having done it all again"*). The client's
+message history never contains that injected system message, so it is not
+carried forward either.
+
+So the model is told what was rejected once, while deciding its *first* tool
+call, and by the time it calls `set_results` and writes the note — five round
+trips later — the sentence is gone from its context. That is consistent with
+every note I got: they describe the board the model can see, because that is all
+it can still see.
+
+Shots: `e2e3-07-note-run*.png`, `e2e3-08-note-B*.png`.
+
+### 5. `compare_artworks`
+
+Driven through `window.__paillette_webmcp.call`. The room opens as a room, not a
+dialog:
+
+```json
+{"box":{"top":0,"left":0,"w":1440,"h":900},
+ "question":"Which one belongs above the sofa?",
+ "works":2,"neither":true,"compareOpenAttr":"true"}
+```
+
+Full-bleed at the viewport origin, the question set between the two works, the
+"Neither" door present, and `data-compare-open` on the root taking the nav and
+the chrome off screen.
+
+Clicking a work closes the room and **resolves to pick / reject** correctly:
+
+```json
+[{"id":"nga:56994","flag":"pick","by":"human"},
+ {"id":"nga:53881","flag":"reject","by":"human"}]
+```
+
+**It does not send a turn.** 0 POSTs to `/public-agent/turn` within 1.5 s of the
+click. §4's P4 says *"the click is sent as a human turn"*; the choice is recorded
+and rides the next turn instead. Iteration 2 found the same thing and left it
+deliberately, and I am not overturning that — but it is still divergent from the
+brief and it is still true.
+
+Shots: `e2e3-05-compare-room.png`, `e2e3-06-after-compare-choice.png`.
+
+### 6. The deal animation and picks holding position
+
+Answered in the preflight section above: 14–25 distinct layouts board-to-board,
+picks at 0 px, twelve cards, tray of two, on `/nga/search` with the real
+collection. Video committed.
+
+---
+
+## 7. Framing — where to point the camera
+
+Measured on a human-dealt board at 1440×900, at five scroll positions:
+
+| scrollY | bar on screen | cards whole | note |
+| --- | --- | --- | --- |
+| 0 | yes (top 182) | 8/12 | none |
+| **120** | **yes (top 62)** | **12/12** | none |
+| 200 | no (−18) | 12/12 | none |
+| 261 | no (−79) | 12/12 | none |
+| 320 | no (−138) | 12/12 | none |
+
+Two things follow.
+
+**Iteration 2's framing advice is out of date.** It reported *"there is no single
+position holding the bar and twelve uncropped cards"* and said to film from the
+top of the page. At **scrollY 120** the utterance bar and all twelve whole cards
+are on screen together — verified by eye in `e2e3-12-framing-scroll120.png`, not
+just by the numbers. scrollY 0 clips the bottom row.
+
+**But there is no note in any of those rows**, because a human redeal does not
+write one. The full money shot — bar, note, board, two inks — could not be
+re-measured today at all, because it needs a live agent turn. The one frame I
+have of it is `e2e3-01-after-instruction.png` from 08:24, and in that frame the
+note is **horizontally clipped by the sticky search toolbar**.
+
+---
+
+## 8. What remains unproven on this machine
+
+- **Real speech recognition, and speech out.** Headless Chromium ships audio to
+  Google's service and there is no microphone here. `webkitSpeechRecognition`
+  exists and the mic button renders, but nothing can be spoken into it. A spoken
+  take must be filmed on a real machine. Unchanged, and I did not try to fake it:
+  every turn in this report is typed.
+- **The agentic loop after 08:20 UTC.** Blocked by the 429; see blocker 1.
+- **A `beats.json` with tools in it.** `scripts/demo/capture.mjs` itself is
+  fine — it resolved the browser driver on this VM without any override, drove
+  the page, recorded `capture.mp4` (1440×900, 3.1 MB) and wrote `beats.json`.
+  §7b item 2 is genuinely fixed. But it ran during the outage, so:
+
+  ```json
+  {"mode":"type","durationMs":243647,"toolsFired":[],"screenshots":[],
+   "beats":[{"elapsedMs":558,"event":"type","instruction":"I want something to hang above the sofa…"}]}
+  ```
+
+  Worth noting as a harness gap: it waited out its full 243 s quiet deadline and
+  printed `final panel:` with nothing after it. It never surfaced the 429 that
+  caused it. A harness that cannot say *why* it captured nothing costs an hour
+  of somebody's night.
+- **Which of the two 429 branches fired.** See blocker 1.
+
+## 9. What I changed
+
+No application code. Eight harnesses under `scripts/demo/e2e3/` (`preflight`,
+`dom-probe`, `loop`, `notes`, `notes-ab`, `deterministic`, `persistence`,
+`framing`, `turn-probe`), the evidence under
+`docs/night/e2e-evidence/iteration-3/`, and the shots below.
+
+Two of my own harness bugs are worth recording so nobody repeats them:
+`[data-artwork-id]` also matches `.lt-note-swatch` and `.lt-tray-card`, so a bare
+query counts a work up to three times and reads `data-flag-by` off a swatch that
+never had one; and clicking a card to move focus navigates to the work. Both
+produced convincing-looking product failures that were not real. Everything is
+scoped to `article.paillette-card` now.
+
+## 10. Shots, in order
+
+| file | what |
+| --- | --- |
+| `e2e3-00-cold-load.png` | `/nga/search?q=warm+landscape&webmcp-debug`, 30 cards, agent bar, glyph |
+| `e2e3-01-after-instruction.png` | after the typed sofa instruction — board and note (note clipped by the toolbar) |
+| `e2e3-01b-activity-log.png` | the tool log open: the seven calls that produced that board |
+| `e2e3-02-flagged.png` | `X`, `X`, `P` — graphite marks |
+| `e2e3-03-after-redeal.png` | Enter on an empty bar, first redeal |
+| `e2e3-04-second-redeal.png` | second redeal — twelve cards, tray at the left edge |
+| `e2e3-05-compare-room.png` | `compare_artworks`, full-bleed, question between the works |
+| `e2e3-06-after-compare-choice.png` | after choosing — winner picked, loser rejected |
+| `e2e3-07-note-run1.png` · `-run2-error.png` · `-run3.png` | ordering A, three runs (run 2 is the first 429) |
+| `e2e3-08-note-B1/B2/B3.png` | ordering B, three runs |
+| `e2e3-09-plain-browser-redeal.png` | no `?webmcp-debug`: the loop with one operator |
+| `e2e3-10-flags-after-new-search.png` | flags survive a new search |
+| `e2e3-10b-flags-after-reload.png` | flags do not survive a reload |
+| `e2e3-11-deal-00-browsing.png` → `-05-redeal4.png` | the recorded deterministic run, deal by deal |
+| `e2e3-12-framing-scroll{000,120,200,261,320}.png` | framing sweep |
+| `e2e3-13-capture-harness-final.png` | what `capture.mjs` captured during the outage |
+| `video/e2e3-deal-on-nga-search.webm` | the deal, four redeals, no model call |
+
+Raw evidence: `docs/night/e2e-evidence/iteration-3/` — `loop.json`, `notes.json`,
+`notes-B.json`, `deterministic.json`, `persistence.json`, `framing.json`,
+`capture/beats.json`.
+
+---
+
 # Iteration 2
 
 Everything below was run on 2026-09-04 against

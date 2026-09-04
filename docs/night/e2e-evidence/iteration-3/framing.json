@@ -1,0 +1,47 @@
+[
+  {
+    "scrollY": 0,
+    "note": null,
+    "cardsWhole": "8/12",
+    "bar": {
+      "top": 182,
+      "onScreen": true
+    }
+  },
+  {
+    "scrollY": 120,
+    "note": null,
+    "cardsWhole": "12/12",
+    "bar": {
+      "top": 62,
+      "onScreen": true
+    }
+  },
+  {
+    "scrollY": 200,
+    "note": null,
+    "cardsWhole": "12/12",
+    "bar": {
+      "top": -18,
+      "onScreen": false
+    }
+  },
+  {
+    "scrollY": 261,
+    "note": null,
+    "cardsWhole": "12/12",
+    "bar": {
+      "top": -79,
+      "onScreen": false
+    }
+  },
+  {
+    "scrollY": 320,
+    "note": null,
+    "cardsWhole": "12/12",
+    "bar": {
+      "top": -138,
+      "onScreen": false
+    }
+  }
+]

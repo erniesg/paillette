@@ -1,0 +1,17 @@
+{
+  "url": "https://paillette-stg.berlayar.ai/nga/search?q=warm%20landscape",
+  "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+  "mode": "type",
+  "startedAt": "2026-09-04T08:38:03.006Z",
+  "durationMs": 243647,
+  "toolsFired": [],
+  "screenshots": [],
+  "beats": [
+    {
+      "t": "2026-09-04T08:38:03.564Z",
+      "elapsedMs": 558,
+      "event": "type",
+      "instruction": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim."
+    }
+  ]
+}

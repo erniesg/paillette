@@ -1,0 +1,57 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "checks": [
+    {
+      "ok": true,
+      "what": "plain browser (no ?webmcp-debug): Enter deals twelve",
+      "detail": "12 cards · bar=true host=true debugDriver=false"
+    },
+    {
+      "ok": true,
+      "what": "plain browser: deterministic engine, no model",
+      "detail": "0 model calls, 1 exemplar calls"
+    },
+    {
+      "ok": true,
+      "what": "flags survive a new search in the same session",
+      "detail": "before {\"picks\":[\"open-access-art:nga:127567\"],\"rejects\":[\"open-access-art:nga:184225\",\"open-access-art:nga:195765\"]} · after {\"picks\":[\"open-access-art:nga:127567\"],\"rejects\":[\"open-access-art:nga:184225\",\"open-access-art:nga:195765\"]}"
+    },
+    {
+      "ok": false,
+      "what": "flags survive a reload",
+      "detail": "before {\"picks\":[\"open-access-art:nga:127567\"],\"rejects\":[\"open-access-art:nga:184225\",\"open-access-art:nga:195765\"]} · after {\"picks\":[],\"rejects\":[]}"
+    }
+  ],
+  "plainBrowser": {
+    "bar": true,
+    "debugDriver": false,
+    "host": true,
+    "cards": 12,
+    "model": 0,
+    "exemplars": 1
+  },
+  "persistence": {
+    "before": {
+      "picks": [
+        "open-access-art:nga:127567"
+      ],
+      "rejects": [
+        "open-access-art:nga:184225",
+        "open-access-art:nga:195765"
+      ]
+    },
+    "afterSearch": {
+      "picks": [
+        "open-access-art:nga:127567"
+      ],
+      "rejects": [
+        "open-access-art:nga:184225",
+        "open-access-art:nga:195765"
+      ]
+    },
+    "afterReload": {
+      "picks": [],
+      "rejects": []
+    }
+  }
+}
