@@ -1,0 +1,670 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "query": "warm landscape",
+  "runs": 3,
+  "checks": 64,
+  "failures": 0,
+  "results": [
+    {
+      "run": 1,
+      "name": "focus is on BODY at cold load, so the keys are live",
+      "ok": true
+    },
+    {
+      "run": 1,
+      "name": "X rejects the hovered card, in the human's ink",
+      "ok": true,
+      "detail": {
+        "flag": "reject",
+        "by": "human"
+      }
+    },
+    {
+      "run": 1,
+      "name": "P picks the hovered card",
+      "ok": true,
+      "detail": {
+        "flag": "pick",
+        "by": "human"
+      }
+    },
+    {
+      "run": 1,
+      "name": "U clears a flag it set",
+      "ok": true,
+      "detail": {
+        "flag": "none",
+        "by": "none"
+      }
+    },
+    {
+      "run": 1,
+      "name": "get_view_context returns the flags, with visual facts attached",
+      "ok": true,
+      "detail": {
+        "picks": 1,
+        "rejects": 2,
+        "palette": [
+          "#B89E81",
+          "#644F3F",
+          "#F4E8D6",
+          "#DCB17F"
+        ],
+        "medium": "watercolor and graphite on laid paper"
+      }
+    },
+    {
+      "run": 1,
+      "name": "the flags survive the human running a different search",
+      "ok": true,
+      "detail": {
+        "picks": 1,
+        "rejects": 2,
+        "modelCalls": 0
+      }
+    },
+    {
+      "run": 1,
+      "name": "Enter #1 deals a board",
+      "ok": true,
+      "detail": {
+        "cards": 12
+      }
+    },
+    {
+      "run": 1,
+      "name": "Enter on an empty bar makes NO model call",
+      "ok": true,
+      "detail": {
+        "modelCalls": 0,
+        "exemplarCalls": 1
+      }
+    },
+    {
+      "run": 1,
+      "name": "the board is twelve and all twelve are on screen",
+      "ok": true,
+      "detail": {
+        "cards": 12,
+        "fullyVisible": 12,
+        "rejectsOnBoard": 0,
+        "gridHeight": 724,
+        "tray": 2
+      }
+    },
+    {
+      "run": 1,
+      "name": "no reject is ever on the board",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "run": 1,
+      "name": "the rejects are in the tray, restorable",
+      "ok": true,
+      "detail": 2
+    },
+    {
+      "run": 1,
+      "name": "the pick holds its slot, to the pixel",
+      "ok": true,
+      "detail": {
+        "before": {
+          "id": "open-access-art:nga:127567",
+          "dx": 0,
+          "dy": 0
+        },
+        "after": {
+          "dx": 0,
+          "dy": 0
+        }
+      }
+    },
+    {
+      "run": 1,
+      "name": "C opens the two-up as a room, full viewport, nothing else on screen",
+      "ok": true,
+      "detail": {
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 1440,
+          "h": 1000
+        },
+        "askedBy": "human",
+        "chromeVisible": 0,
+        "viewport": {
+          "w": 1440,
+          "h": 1000
+        }
+      }
+    },
+    {
+      "run": 1,
+      "name": "opening the two-up makes NO model call",
+      "ok": true
+    },
+    {
+      "run": 1,
+      "name": "the agent's flag lands provisional and dashed, beside the human's solid one",
+      "ok": true,
+      "detail": {
+        "human": {
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false",
+          "boxShadow": "rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px ",
+          "outlineStyle": "none"
+        },
+        "agent": {
+          "flag": "reject",
+          "by": "agent",
+          "provisional": "true",
+          "boxShadow": "rgba(255, 255, 255, 0.08) 0px 0px 0px 1px inset",
+          "outlineStyle": "dashed"
+        }
+      }
+    },
+    {
+      "run": 1,
+      "name": "an agent flag makes NO model call",
+      "ok": true
+    },
+    {
+      "run": 1,
+      "name": "flag_artworks on an id that does not resolve fails loudly, not silently",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "ARTWORK_NOT_IN_SESSION",
+          "message": "None of those ids have been loaded by this page.",
+          "hint": "Search or read get_view_context first, then flag ids from what came back."
+        }
+      }
+    },
+    {
+      "run": 1,
+      "name": "compare_artworks on stale ids does not open an empty room",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "ARTWORK_NOT_IN_SESSION",
+          "message": "Not loaded by this page: open-access-art:nga:000000000, open-access-art:nga:0000000001.",
+          "hint": "Search first, then compare ids from the results."
+        }
+      }
+    },
+    {
+      "run": 1,
+      "name": "lookup_artwork on a stale id returns an error rather than throwing",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "INVALID_INPUT",
+          "message": "Provide artworkId or artworkIds."
+        }
+      }
+    },
+    {
+      "run": 1,
+      "name": "no uncaught page errors anywhere in the run",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "run": 2,
+      "name": "focus is on BODY at cold load, so the keys are live",
+      "ok": true
+    },
+    {
+      "run": 2,
+      "name": "X rejects the hovered card, in the human's ink",
+      "ok": true,
+      "detail": {
+        "flag": "reject",
+        "by": "human"
+      }
+    },
+    {
+      "run": 2,
+      "name": "P picks the hovered card",
+      "ok": true,
+      "detail": {
+        "flag": "pick",
+        "by": "human"
+      }
+    },
+    {
+      "run": 2,
+      "name": "U clears a flag it set",
+      "ok": true,
+      "detail": {
+        "flag": "none",
+        "by": "none"
+      }
+    },
+    {
+      "run": 2,
+      "name": "get_view_context returns the flags, with visual facts attached",
+      "ok": true,
+      "detail": {
+        "picks": 1,
+        "rejects": 2,
+        "palette": [
+          "#B89E81",
+          "#644F3F",
+          "#F4E8D6",
+          "#DCB17F"
+        ],
+        "medium": "watercolor and graphite on laid paper"
+      }
+    },
+    {
+      "run": 2,
+      "name": "the flags survive the human running a different search",
+      "ok": true,
+      "detail": {
+        "picks": 1,
+        "rejects": 2,
+        "modelCalls": 0
+      }
+    },
+    {
+      "run": 2,
+      "name": "Enter #1 deals a board",
+      "ok": true,
+      "detail": {
+        "cards": 12
+      }
+    },
+    {
+      "run": 2,
+      "name": "Enter on an empty bar makes NO model call",
+      "ok": true,
+      "detail": {
+        "modelCalls": 0,
+        "exemplarCalls": 1
+      }
+    },
+    {
+      "run": 2,
+      "name": "the board is twelve and all twelve are on screen",
+      "ok": true,
+      "detail": {
+        "cards": 12,
+        "fullyVisible": 12,
+        "rejectsOnBoard": 0,
+        "gridHeight": 724,
+        "tray": 2
+      }
+    },
+    {
+      "run": 2,
+      "name": "no reject is ever on the board",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "run": 2,
+      "name": "the rejects are in the tray, restorable",
+      "ok": true,
+      "detail": 2
+    },
+    {
+      "run": 2,
+      "name": "the pick holds its slot, to the pixel",
+      "ok": true,
+      "detail": {
+        "before": {
+          "id": "open-access-art:nga:127567",
+          "dx": 0,
+          "dy": 0
+        },
+        "after": {
+          "dx": 0,
+          "dy": 0
+        }
+      }
+    },
+    {
+      "run": 2,
+      "name": "C opens the two-up as a room, full viewport, nothing else on screen",
+      "ok": true,
+      "detail": {
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 1440,
+          "h": 1000
+        },
+        "askedBy": "human",
+        "chromeVisible": 0,
+        "viewport": {
+          "w": 1440,
+          "h": 1000
+        }
+      }
+    },
+    {
+      "run": 2,
+      "name": "opening the two-up makes NO model call",
+      "ok": true
+    },
+    {
+      "run": 2,
+      "name": "the agent's flag lands provisional and dashed, beside the human's solid one",
+      "ok": true,
+      "detail": {
+        "human": {
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false",
+          "boxShadow": "rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px ",
+          "outlineStyle": "none"
+        },
+        "agent": {
+          "flag": "reject",
+          "by": "agent",
+          "provisional": "true",
+          "boxShadow": "rgba(255, 255, 255, 0.08) 0px 0px 0px 1px inset",
+          "outlineStyle": "dashed"
+        }
+      }
+    },
+    {
+      "run": 2,
+      "name": "an agent flag makes NO model call",
+      "ok": true
+    },
+    {
+      "run": 2,
+      "name": "flag_artworks on an id that does not resolve fails loudly, not silently",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "ARTWORK_NOT_IN_SESSION",
+          "message": "None of those ids have been loaded by this page.",
+          "hint": "Search or read get_view_context first, then flag ids from what came back."
+        }
+      }
+    },
+    {
+      "run": 2,
+      "name": "compare_artworks on stale ids does not open an empty room",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "ARTWORK_NOT_IN_SESSION",
+          "message": "Not loaded by this page: open-access-art:nga:000000000, open-access-art:nga:0000000001.",
+          "hint": "Search first, then compare ids from the results."
+        }
+      }
+    },
+    {
+      "run": 2,
+      "name": "lookup_artwork on a stale id returns an error rather than throwing",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "INVALID_INPUT",
+          "message": "Provide artworkId or artworkIds."
+        }
+      }
+    },
+    {
+      "run": 2,
+      "name": "no uncaught page errors anywhere in the run",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "run": 3,
+      "name": "focus is on BODY at cold load, so the keys are live",
+      "ok": true
+    },
+    {
+      "run": 3,
+      "name": "X rejects the hovered card, in the human's ink",
+      "ok": true,
+      "detail": {
+        "flag": "reject",
+        "by": "human"
+      }
+    },
+    {
+      "run": 3,
+      "name": "P picks the hovered card",
+      "ok": true,
+      "detail": {
+        "flag": "pick",
+        "by": "human"
+      }
+    },
+    {
+      "run": 3,
+      "name": "U clears a flag it set",
+      "ok": true,
+      "detail": {
+        "flag": "none",
+        "by": "none"
+      }
+    },
+    {
+      "run": 3,
+      "name": "get_view_context returns the flags, with visual facts attached",
+      "ok": true,
+      "detail": {
+        "picks": 1,
+        "rejects": 2,
+        "palette": [
+          "#B89E81",
+          "#644F3F",
+          "#F4E8D6",
+          "#DCB17F"
+        ],
+        "medium": "watercolor and graphite on laid paper"
+      }
+    },
+    {
+      "run": 3,
+      "name": "the flags survive the human running a different search",
+      "ok": true,
+      "detail": {
+        "picks": 1,
+        "rejects": 2,
+        "modelCalls": 0
+      }
+    },
+    {
+      "run": 3,
+      "name": "Enter #1 deals a board",
+      "ok": true,
+      "detail": {
+        "cards": 12
+      }
+    },
+    {
+      "run": 3,
+      "name": "Enter on an empty bar makes NO model call",
+      "ok": true,
+      "detail": {
+        "modelCalls": 0,
+        "exemplarCalls": 1
+      }
+    },
+    {
+      "run": 3,
+      "name": "the board is twelve and all twelve are on screen",
+      "ok": true,
+      "detail": {
+        "cards": 12,
+        "fullyVisible": 12,
+        "rejectsOnBoard": 0,
+        "gridHeight": 724,
+        "tray": 2
+      }
+    },
+    {
+      "run": 3,
+      "name": "no reject is ever on the board",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "run": 3,
+      "name": "the rejects are in the tray, restorable",
+      "ok": true,
+      "detail": 2
+    },
+    {
+      "run": 3,
+      "name": "the pick holds its slot, to the pixel",
+      "ok": true,
+      "detail": {
+        "before": {
+          "id": "open-access-art:nga:127567",
+          "dx": 0,
+          "dy": 0
+        },
+        "after": {
+          "dx": 0,
+          "dy": 0
+        }
+      }
+    },
+    {
+      "run": 3,
+      "name": "C opens the two-up as a room, full viewport, nothing else on screen",
+      "ok": true,
+      "detail": {
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 1440,
+          "h": 1000
+        },
+        "askedBy": "human",
+        "chromeVisible": 0,
+        "viewport": {
+          "w": 1440,
+          "h": 1000
+        }
+      }
+    },
+    {
+      "run": 3,
+      "name": "opening the two-up makes NO model call",
+      "ok": true
+    },
+    {
+      "run": 3,
+      "name": "the agent's flag lands provisional and dashed, beside the human's solid one",
+      "ok": true,
+      "detail": {
+        "human": {
+          "flag": "pick",
+          "by": "human",
+          "provisional": "false",
+          "boxShadow": "rgb(230, 227, 220) 0px 0px 0px 1px, rgba(0, 0, 0, 0.95) 0px ",
+          "outlineStyle": "none"
+        },
+        "agent": {
+          "flag": "reject",
+          "by": "agent",
+          "provisional": "true",
+          "boxShadow": "rgba(255, 255, 255, 0.08) 0px 0px 0px 1px inset",
+          "outlineStyle": "dashed"
+        }
+      }
+    },
+    {
+      "run": 3,
+      "name": "an agent flag makes NO model call",
+      "ok": true
+    },
+    {
+      "run": 3,
+      "name": "flag_artworks on an id that does not resolve fails loudly, not silently",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "ARTWORK_NOT_IN_SESSION",
+          "message": "None of those ids have been loaded by this page.",
+          "hint": "Search or read get_view_context first, then flag ids from what came back."
+        }
+      }
+    },
+    {
+      "run": 3,
+      "name": "compare_artworks on stale ids does not open an empty room",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "ARTWORK_NOT_IN_SESSION",
+          "message": "Not loaded by this page: open-access-art:nga:000000000, open-access-art:nga:0000000001.",
+          "hint": "Search first, then compare ids from the results."
+        }
+      }
+    },
+    {
+      "run": 3,
+      "name": "lookup_artwork on a stale id returns an error rather than throwing",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "error": {
+          "code": "INVALID_INPUT",
+          "message": "Provide artworkId or artworkIds."
+        }
+      }
+    },
+    {
+      "run": 3,
+      "name": "no uncaught page errors anywhere in the run",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "run": 0,
+      "name": "Enter with no flags at all does not blank the page or error",
+      "ok": true,
+      "detail": {
+        "dealGrid": false,
+        "enterArmed": false,
+        "dealError": null,
+        "stillHasResults": true
+      }
+    },
+    {
+      "run": 0,
+      "name": "the enter affordance is absent until a flag exists",
+      "ok": true,
+      "detail": {
+        "dealGrid": false,
+        "enterArmed": false,
+        "dealError": null,
+        "stillHasResults": true
+      }
+    },
+    {
+      "run": 0,
+      "name": "Enter with no flags makes no request at all",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "run": 0,
+      "name": "no page errors in the empty state",
+      "ok": true,
+      "detail": []
+    }
+  ]
+}

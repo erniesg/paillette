@@ -1,7 +1,7 @@
 # Paillette — WebMCP demo voiceover, v2
 
-Runtime **≈2:58** at ~150 wpm. ~350 spoken words across ten beats; the pictures
-carry the rest.
+Runtime **≈2:58**. **280 spoken words** across ten beats — 1:52 of speech at
+~150 wpm, so a third of the film is silence. The pictures carry the rest.
 
 `docs/webmcp-vo-script-final.md` is left in place, unedited, so the two can be
 compared. **Do not merge them.**
@@ -17,6 +17,11 @@ compared. **Do not merge them.**
 | Board is the end of the interaction | Board is the middle | The rejects, the redeal, the statement correction and the share link are all after it. |
 | Ends on a roadmap (*"Next, we make the whole thing a conversation"*) | Ends by closing the opening premise | The film opens on "most art is never seen". |
 | "seventeen tools" | **25**, verified live | It has been wrong twice. See §Evidence. |
+
+**Revised after e2e iteration 2.** The build moved under the first draft. Beat 1's
+timing, beat 2's card count, beat 3's entire evidence base and beat 4's proof
+strength all changed — the corrections are listed in
+`docs/night/submission-draft-report.md` §5.
 
 ## Reading the tiers
 
@@ -559,11 +564,18 @@ Nothing was made cryptic to be short. Every beat still names its subject.
 
 # 5. Production notes
 
-**Model budget is the binding constraint.** 40 anonymous model calls per client
-per hour, keyed on IP. A typed instruction costs three to six; the curation walk
-costs ten to fourteen. Beats 1, 3 and 5 together are roughly **30 calls in one
-sitting**, before a single retake. **Film with a raised cap or a key**, or the
-second take of beat 5 will silently return nothing.
+**Model budget is the binding constraint, and it fails silently.** 40 anonymous
+model calls per client per hour, keyed on IP. A cold instruction costs 5–7 and a
+full loop 8–12 — **three or four complete takes an hour.**
+
+When it runs out the turn returns `429 AGENT_RATE_LIMITED` and **the page shows
+nothing at all**: no note, no error, no page error. There is no UI branch for it.
+I hit this mid-capture tonight and it cost me the beat-3 inversion frame. **Probe
+the budget with one throwaway instruction before rolling**, and film with a
+raised cap or a key.
+
+**Reload between takes.** Five clean redeals per pick set in one tab; by the
+seventh Enter is a dead key.
 
 **Never film in the harness.** Everything above is `/nga/search` against the
 live 63,253. `/night/deal` is a fixture route with 40 works. The compare room and

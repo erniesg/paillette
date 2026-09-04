@@ -59,6 +59,13 @@ are the strongest rows in the table because they were not taken from a report.
 | V25 | The note with its swatches, captured | `shots/50-note-with-swatches.png`. Note verbatim, swatch colours, strip flags in `e2e-evidence/note-swatches.json`. 3 model calls, 0 page errors. |
 | V26 | The inverted condition | flags set correctly (`by: human`), turn returned **`429 AGENT_RATE_LIMITED`** — *"You have used this hour's shared agent budget."* No frame. `e2e-evidence/note-swatches-inverted.json`. |
 | V27 | What the page shows on a 429 | **nothing.** No note, no error, no `pageerror`. `grep -r AGENT_RATE_LIMITED apps/web/app` → no UI branch. |
+| V28 | `U` clears a flag it set | `{"flag":"none","by":"none"}` — the one key no earlier harness pressed |
+| V29 | Flags survive an **in-page** search | `{"picks":1,"rejects":2,"modelCalls":0}`. A `page.goto` is a reload and loses them, which is documented behaviour, not a defect. |
+| V30 | `get_view_context` flag entries carry visual facts | `{"picks":1,"rejects":2,"palette":["#B89E81","#644F3F","#F4E8D6","#DCB17F"],"medium":"watercolor and graphite on laid paper"}` |
+| V31 | Two colours of ink, off computed styles | human: `box-shadow rgb(230,227,220) 0 0 0 1px`, `outline-style: none`, `provisional false`. agent: `outline-style: dashed`, `by: agent`, `provisional true`. |
+| V32 | `flag_artworks` / `compare_artworks` / `lookup_artwork` on ids that do not resolve | structured errors with hints — `ARTWORK_NOT_IN_SESSION`, `INVALID_INPUT`. No throw, no empty room. |
+| V33 | Enter with no flags at all | page does not blank, no error, `↵` correctly absent, **zero requests made** |
+| V34 | The whole of the above, three times | **64 checks, 0 failures, no flakiness.** `e2e-evidence/demo-path.json`, `docs/night/verify-demo-path.mjs`. |
 
 Reproduce: the scripts are ad-hoc but every check maps onto a committed harness
 in `scripts/demo/`. The browser driver on this VM needs
@@ -226,6 +233,15 @@ Staging only. Do not imply production-readiness.
 | `compare_artworks` is a room: portalled to `document.body`, all other body children hidden | V15. Fix log §3: `box {top:0,left:0,w:1440,h:1000}`, `portalled: true`, `chromeVisible: []`. Was ~1,700 px below the fold two iterations ago. |
 | The deal board outranks `set_view` | Fix log §4 — `dealtBoard` is the first branch in `ResultsLayout`; the grid survives salon, atlas, table and masonry. |
 | Every tool in the culling loop wraps a key the human presses | V5, V6, V15, V16 — `flag_artworks`↔P/X/U, `redeal`↔Enter, `compare_artworks`↔C, all driven from the keyboard with zero model calls. |
+
+## 2.6b Failure paths and empty states
+
+| Claim | Source |
+| --- | --- |
+| A tool called with ids the page never loaded fails loudly | V32. `flag_artworks` → `{"ok":false,"error":{"code":"ARTWORK_NOT_IN_SESSION","message":"None of those ids have been loaded by this page.","hint":"Search or read get_view_context first…"}}`. `compare_artworks` names both offending ids and does **not** open an empty room. |
+| Pressing the headline key before it means anything costs nothing | V33 — Enter with no flags makes **zero requests**, shows no error, and the `↵` affordance is correctly absent until a flag exists. |
+| A deterministic redeal that fails says so in one sentence | `paillette-deal-error`, *"The deal didn't run; your flags are unchanged."* `galleries.$galleryId.search.tsx:2905`. |
+| ⚠ **An agent turn that fails says nothing at all** | V26, V27. `429 AGENT_RATE_LIMITED` → no note, no error, no page error. No UI branch exists. The asymmetry with the row above is the finding. |
 
 ## 2.7 Accessibility
 
@@ -428,7 +444,8 @@ Do not copy from these without correcting them.
 | --- | --- |
 | `docs/webmcp-devpost-fields.md` (×3) | "seventeen tools". It is **25**. |
 | `docs/webmcp-vo-script-final.md` | The whole framing — delegation, *"eyes and ears"*, a board that ends the interaction. Superseded, deliberately left in place. |
-| `docs/night/e2e-report.md` | Iteration 1. Its three blockers — compare below the fold, `set_view` outranking the board, twelve cards not fitting — are **all fixed**. It also reports **21** tools and *"warm landscape returns zero works"*, both since corrected. Still the best account of the deterministic proof. |
+| `docs/night/e2e-report.md` | **Now carries iteration 2 first, then iteration 1 below it.** Read the top half. Iteration 1's three blockers — compare below the fold, `set_view` outranking the board, twelve cards not fitting — are all fixed and were each re-checked in iteration 2. Iteration 1 also reports **21** tools and *"warm landscape returns zero works"*; both are wrong now. |
+| `docs/webmcp-vo-script-v2.md`, `docs/night/shot-list.md` before commit `20b9192` | Cited 35 s for a cold instruction (it is 42–59 s), "twelve" for the agent's first board (8–12), and said the note-with-swatches frame did not exist (it does — `shots/50-note-with-swatches.png`). |
 | `docs/night/critique-iteration-1.md`, `verdict.json` | The verdict is **FAIL** against iteration 1. Nine of its eleven blocking items are addressed in `fix-log.md`; its `nice_to_have` list is untouched and is the source of §4 items 5, 6, 7, 12 and 13. |
 | Lane reports saying "21 tools" | True when written. The exhibition tools took it to 25. |
 | The brief's baseline of web 59/593, api 41/770 | Predates the curation, activity and review merges. |

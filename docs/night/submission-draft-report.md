@@ -228,20 +228,106 @@ Unchanged from the earlier draft, and all of it marked in the script:
 
 ## 8. Checks
 
-No source outside `docs/` was touched, so these are a regression check on the
-merged tree rather than on this lane's work.
+This lane edited nothing outside `docs/`, so these are a regression check on the
+merged tree rather than on its own work. `apps/` and `packages/` on this branch
+are **byte-identical to `origin/night/integration`** (`git diff --name-only
+origin/night/integration HEAD -- apps packages` is empty), so these numbers
+describe the tree the e2e lane measured.
 
-| | Baseline in the brief | This tree |
+| | Brief's baseline | This tree |
 | --- | --- | --- |
-| `pnpm --filter web typecheck` | — | *see §8.1* |
-| `pnpm --filter web test` | 59 files / 593 tests | *see §8.1* |
-| `pnpm --filter api test` | 41 files / 770 tests | *see §8.1* |
+| `pnpm --filter web typecheck` | — | **clean** — *but see below* |
+| `pnpm --filter web test` | 59 files / 593 tests | **1113 tests passed, 0 failed. 90 of 91 files passed; 1 file failed to collect.** |
+| `pnpm --filter api test` | 41 files / 770 tests | **44 files / 815 tests, all pass** |
 
 The brief's baseline predates the `night/curation`, `night/activity`,
-`night/review` and `night/sharing` merges. The integration lane's iteration-2
-figures for this tree are **web 91 files / 1115 tests, api 44 / 815**.
+`night/review` and `night/sharing` merges. The api figure matches the
+integration lane's iteration-2 number exactly.
 
----
+**Typecheck needed a build first.** In a freshly installed worktree it fails
+with `worker.ts(2,24): error TS2307: Cannot find module './build/server/index.js'`
+— `apps/web/worker.ts` imports the Remix server build, which is a build artifact.
+`pnpm --filter web build` then `typecheck` exits **0**. Not a regression; worth
+knowing, because a clean checkout will report a false failure.
+
+**One web test file fails to collect**, on a Vite transform error, with every one
+of the 1113 tests in the other 90 files passing. The same shape is recorded in
+the sharing lane's report, which fixed it on `night/sharing` — a branch not
+merged here. Not caused by this lane, which touched no source.
+
+### 8.1 The demo path, run repeatedly
+
+`docs/night/verify-demo-path.mjs` — new, and under `docs/` deliberately, because
+`scripts/demo/` belongs to the e2e lane. It runs §9's reachable bullets three
+times in fresh tabs and then does the things nobody scripts. **Zero model calls
+by construction.** Raw: `docs/night/e2e-evidence/demo-path.json`.
+
+It covers what the e2e harnesses do not: `U` (which no earlier harness pressed),
+flags surviving an in-page search, and three failure paths.
+
+**64 checks, 0 failures, three runs, no flakiness.** Every run identical. The
+load-bearing rows, verbatim:
+
+```
+ok  U clears a flag it set                          {"flag":"none","by":"none"}
+ok  get_view_context returns the flags, with
+    visual facts attached                           {"picks":1,"rejects":2,
+                                                     "palette":["#B89E81","#644F3F","#F4E8D6","#DCB17F"],
+                                                     "medium":"watercolor and graphite on laid paper"}
+ok  the flags survive the human running a
+    different search                                {"picks":1,"rejects":2,"modelCalls":0}
+ok  Enter on an empty bar makes NO model call       {"modelCalls":0,"exemplarCalls":1}
+ok  the board is twelve and all twelve are
+    on screen                                       {"cards":12,"fullyVisible":12,
+                                                     "rejectsOnBoard":0,"gridHeight":724,"tray":2}
+ok  the pick holds its slot, to the pixel           before {"dx":0,"dy":0} after {"dx":0,"dy":0}
+ok  C opens the two-up as a room                    {"box":{"x":0,"y":0,"w":1440,"h":1000},
+                                                     "askedBy":"human","chromeVisible":0}
+ok  the agent's flag lands provisional and
+    dashed, beside the human's solid one            human: box-shadow rgb(230,227,220) 0 0 0 1px,
+                                                            outline none, provisional false
+                                                    agent: outline dashed, by agent, provisional true
+```
+
+That is **§9 bullets 1, 2 and 5 met, three times over, at zero model cost**.
+Bullet 3 is met by the e2e lane's four runs plus tonight's capture (§2.1).
+Bullet 4 — a real voice utterance — is not reachable on this machine and is
+reported as skipped rather than passed.
+
+Worth singling out, because it is the two-colour ink contract measured off
+computed styles rather than asserted: the human's confirmed mark is a **solid
+ring drawn with `box-shadow`** and the agent's proposal is a **dashed outline**.
+Reading `outline` alone would report the human's mark as absent.
+
+**The failure paths all behave well.** Every one returns a structured error with
+a hint rather than throwing or opening an empty view:
+
+```
+flag_artworks    on an unresolvable id  → {"ok":false,"error":{"code":"ARTWORK_NOT_IN_SESSION",
+   "message":"None of those ids have been loaded by this page.",
+   "hint":"Search or read get_view_context first, then flag ids from what came back."}}
+compare_artworks on stale ids           → ARTWORK_NOT_IN_SESSION, both ids named. No empty room opens.
+lookup_artwork   on a stale id          → {"ok":false,"error":{"code":"INVALID_INPUT",…}}
+```
+
+**And the empty state is silent, correctly.** Enter with no flags at all: the
+page does not blank, no error appears, the `↵` affordance is correctly absent,
+and **not one request is made**. Pressing the headline key before it means
+anything costs nothing and says nothing, which is the right answer.
+
+**First run: 27 failures, and all 27 were mine.** Recorded because the brief says
+to establish this by reproducing rather than assuming, and because the e2e lane
+made the same class of mistake and said so. Two harness bugs:
+
+1. `window.__paillette_webmcp.call()` resolves to **the tool's own object**, not
+   an MCP `{content:[{text}]}` envelope. Parsing it as an envelope gave `{}` for
+   every `get_view_context`, which cascaded into eleven downstream assertions.
+2. I tested "the flags survive a different search" with `page.goto`. **A
+   navigation is a reload**, and flags are documented in-memory page-session
+   state that a reload loses. So the harness destroyed the state and then
+   reported correct behaviour as a defect. It types into the search field now.
+
+Both fixed; the corrected run is the one in `demo-path.json`.
 
 ## 9. For whoever picks this up
 

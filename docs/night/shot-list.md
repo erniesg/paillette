@@ -440,7 +440,7 @@ slot 5 is untested.
 | A spoken take, on this machine | Headless Chromium here *does* expose `SpeechRecognition` and the mic control renders — but there is no microphone and **0 synthesis voices**. Push-to-talk enters `"Listening — release to send"`, and on release **nothing lands and nothing is reported**: no text, no error, no visible failure. Must be shot on a real machine. |
 | A social unfurl card | Tags verified by fetch; never rendered in a real client. |
 | Upload and indexing | Throat-clearing. Nothing in it is unique to WebMCP. |
-| Anything with `?webmcp-debug` in the address bar | The bar renders without it. The flag now gates only the `window.__paillette_webmcp` console back door, and a judge seeing it will assume the demo needs it. |
+| Anything with `?webmcp-debug` in the address bar | The bar renders without it — verified first-hand and by the e2e lane's own no-flag preflight (`e2e2-02-preflight-no-flag-at-all.png`). The flag now gates only the `window.__paillette_webmcp` console back door. **The e2e report's "URL to film" includes the flag because its harness needs the back door to drive tools; a camera does not.** Drop it, or a judge will assume the demo needs it. |
 
 ## Before the first take
 
