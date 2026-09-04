@@ -166,8 +166,18 @@ describe('opened cold', () => {
 });
 
 describe('a link that is not one', () => {
-  it('404s with no parameter', async () => {
-    await expect(run('')).rejects.toMatchObject({ status: 404 });
+  /*
+   * This used to 404, and that 404 is what "`/exhibition` returns 404 on
+   * staging" actually was — not a deploy or routing fault but this branch. It
+   * is the right status code and the wrong page: the only person who lands on
+   * a bare `/exhibition` is someone whose link lost its query string on the
+   * way through a chat client, and a dead end tells them nothing. They get
+   * sent to the place a show is assembled instead.
+   */
+  it('sends a bare /exhibition somewhere useful instead of nowhere', async () => {
+    const thrown: Response = await run('').catch((response) => response);
+    expect(thrown.status).toBe(302);
+    expect(thrown.headers.get('Location')).toBe('/nga/search');
   });
 
   it('404s on a payload it cannot read', async () => {
