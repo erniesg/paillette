@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { ImageWithFallback } from '~/components/artwork/image-with-fallback';
 import { NoImagePlaceholder } from '~/components/artwork/no-image-placeholder';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
@@ -118,7 +119,21 @@ export const CompareView = () => {
     },
   ];
 
-  return (
+  /*
+   * Portalled to <body>, and that is load-bearing rather than tidy.
+   *
+   * `fixed inset-0` positions against the viewport only while no ancestor
+   * establishes a containing block, and the board sits inside a section the
+   * deal animation gives a transform — an identity matrix, but a transform,
+   * which is enough. Rendered in place the room resolved to top:474 and
+   * height:1948, so both works sat ~1220px down a 1000px viewport: the agent
+   * asked a question with pictures and the pictures were off screen.
+   *
+   * A portal is the fix that stays fixed. The deal animation is built on
+   * transforms and will keep adding them; anything that depends on this
+   * subtree staying transform-free would break again the next time it does.
+   */
+  const room = (
     <div
       className="paillette-compare fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-neutral-950/95 p-8"
       role="dialog"
@@ -172,4 +187,10 @@ export const CompareView = () => {
       />
     </div>
   );
+
+  // No document during the server render; the room only exists once someone
+  // has asked, which is a client event either way.
+  return typeof document === 'undefined'
+    ? room
+    : createPortal(room, document.body);
 };
