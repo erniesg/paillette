@@ -5,9 +5,21 @@ Branch `night/live-voice`, cut from `night/integration`.
 - `d4f2596` — `feat(live-audio)`: the audio-minute quota gate (071)
 - `ecbe71e` — `feat(live-voice)`: the live session (070)
 - `506525d` — `fix(live-voice)`: hardening found by running the page, and the copy audit
+- `6b5330c` — `test(demo)`: make the no-microphone check able to fail
+- `f67dbe1` — `test(demo)`: verify the §9 voice clause on a browser, both halves
 
-**Read §3 before writing anything public.** The gate is exercised over real
-HTTP. The session's audio path is not, and cannot be on this machine.
+**Read §3 before writing anything public.** The §9 voice clause and the quota
+gate are both exercised on a running browser / over real HTTP. The *live
+session's* audio path is not, and cannot be on this machine — those are two
+different things and the submission must not merge them.
+
+**One correction to the previous version of this report.** It claimed "text in,
+text out" was measured. It was not: the probe set `window.speechSynthesis = stub`,
+which silently no-ops because that is a readonly accessor on `Window`, so the
+real synthesiser stayed in charge and the assertion passed for the wrong
+reason. Re-collected properly with `Object.defineProperty`, and the verifier
+now refuses to report unless it can confirm its own stubs installed. The claim
+happens to be true; the earlier evidence for it was worthless.
 
 ---
 
@@ -16,7 +28,7 @@ HTTP. The session's audio path is not, and cannot be on this machine.
 Everything in this section was measured on a running browser against a running
 server, not inferred from unit tests.
 
-### 1.1 Text first — five consecutive clean runs
+### 1.1 Text first — three consecutive clean runs
 
 `scripts/demo/verify-demo-path.mjs` deletes `SpeechRecognition` and
 `webkitSpeechRecognition` from the window before the page loads, and counts
@@ -26,20 +38,20 @@ requests to `/api/public-agent/turn`. Against this branch on a local dev server:
 14 pass · 0 fail · 1 skip
 ```
 
-Identical on five consecutive runs. Every check:
+Identical on three consecutive runs. Every check:
 
 ```
 PASS  host.installs                    document.modelContext present, stubbed=false
 PASS  tools.register                   25 tools, stable
 PASS  tools.noDuplicates               every name unique
 PASS  agent.rendersHeadless            agent input present under ?webmcp-debug
-PASS  agent.noMicWithoutSpeech         no mic, input still there
+PASS  agent.noMicWithoutSpeech         no speech, no WebRTC: no mic, bar still typeable
 PASS  context.readable                 keys: ok, page, humanSearch, humanResults, …
 PASS  context.reportsFlags             `flags` present
 PASS  flags.rejectsStaleId             ARTWORK_NOT_IN_SESSION
 PASS  resilience.unknownId             ARTWORK_NOT_IN_SESSION
 PASS  resilience.badArgs               rejected without throwing internals
-PASS  agent.typedTriggerFires          2–3 turn(s) from typed input
+PASS  agent.typedTriggerFires          2 turn(s) from typed input
 PASS  agent.toolsExecuteFromTypedTurn  1–2 tool call(s) attributable to the typed turn
 skip  flags.roundTrip                  no artwork loaded (search needs credentials here)
 PASS  redeal.noModelCall               0 model calls (redeal ran)
@@ -49,10 +61,61 @@ PASS  glyph.rendersActivity            glyph present, log still closed
 **The agentic trigger fires from a typed instruction alone, with no recogniser
 in the page**, and **redeal runs with zero model calls**. Both measured.
 
-A first run against a cold dev server reported 6 failures. That was Vite's
-initial dependency re-optimization forcing a page reload mid-run, not the
-build: `window.__paillette_webmcp` vanished between checks. Warm the server
-before trusting a run.
+`agent.noMicWithoutSpeech` was rewritten this round (`6b5330c`) because it
+could not fail. It looked for a control named "speak your request" and asserted
+there were none — no such control exists in this build, so it counted zero of
+a thing that was never there and passed on every build, including ones that do
+render a microphone. It now opens a page with the recogniser *and*
+`RTCPeerConnection` removed and asserts the real invariant: with neither way
+in, there is no mic and the bar is still typeable. The previous five clean runs
+included a vacuous PASS; these three do not.
+
+Two operational notes for anyone re-running this:
+
+- **Warm the dev server first.** A first run against a cold one reports ~6
+  failures as Vite's dependency re-optimization forces a reload mid-run and
+  `window.__paillette_webmcp` vanishes between checks.
+- **Use the Vite dev server, not `wrangler dev` on the built worker.** On the
+  wrangler-served build `/api/public-agent/turn` returns 404 (the web worker's
+  own config does not reach the API the way `.dev.vars` does), so
+  `agent.toolsExecuteFromTypedTurn` fails for reasons that have nothing to do
+  with this branch. The page shows that 404 readably rather than crashing.
+
+### 1.1b The §9 voice clause — both halves, three consecutive clean runs
+
+> "A voice utterance lands in the editable field; the note is spoken only after
+> voice input."
+
+`scripts/demo/verify-voice-symmetry.mjs` (`f67dbe1`), on a real browser:
+
+```
+PASS  voice.landsInField    field held "something warm for above the sofa" before release
+PASS  voice.noteOnWall      the note is above the board
+PASS  voice.spokenBack      spoken: ["These share a low horizon."]
+PASS  text.noteOnWall       the note is above the board
+PASS  text.staysSilent      spoken: []
+5 pass · 0 fail
+```
+
+No microphone required: the recogniser is a stub emitting a settled transcript,
+which the page cannot distinguish from Chrome doing it, and the agent's reply is
+served by the script so the check measures the channel rule rather than whether
+this machine can reach the catalogue.
+
+**Mutation-checked, not trusted.** With `shouldSpeakReply` forced to `false`,
+`voice.spokenBack` fails and the other four still pass.
+
+Two traps that silently invalidate any browser probe of this, both hit here
+before being fixed — worth knowing for any lane doing similar work:
+
+- `window.speechSynthesis = stub` **does nothing.** It is a readonly accessor
+  on `Window`; the assignment no-ops and the real synthesiser stays in charge,
+  so `spoken` stays empty and every assertion against it passes for the wrong
+  reason. `Object.defineProperty` is required.
+- Chromium ships an **unprefixed** `window.SpeechRecognition`, and the page
+  reads `SpeechRecognition ?? webkitSpeechRecognition`. Stubbing only the
+  prefixed name leaves the native recogniser in charge, and a native recogniser
+  in a headless browser hears nothing at all.
 
 ### 1.2 A live session that refuses degrades silently to typing
 
@@ -90,12 +153,12 @@ the independence property, demonstrated rather than asserted.
 `LIVE_UNIDENTIFIED` (no connecting address) could **not** be reached locally —
 `wrangler dev` injects a `CF-Connecting-IP` of its own. Unit-tested only.
 
-### 1.4 The symmetric channel rule, negative half
+### 1.4 The symmetric channel rule
 
-With `speechSynthesis` stubbed to record everything said aloud, a typed
-instruction produced `spoken: []`. Text in, text out, measured.
-
-The positive half — voice in, voice out — needs a microphone. See §3.
+Both halves, superseded by §1.1b above. The previous version of this report
+claimed only the negative half and said the positive half "needs a microphone".
+That was wrong twice over: the positive half does not need one, and the
+negative half's evidence was invalid because the stub never installed.
 
 ### 1.5 Checks
 
@@ -110,6 +173,14 @@ api 41/770. Measured on this branch's own starting commit before any of my
 work: **web 97 files / 1201 tests, api 46 / 857.** The quoted baseline is from
 an earlier round. Against what I actually measured, this branch adds 2 web
 files / 49 tests and 1 api file / 31 tests, and regresses nothing.
+
+Two scripts under `scripts/demo/` are also this branch's and are the two things
+to run before filming:
+
+```
+node scripts/demo/verify-demo-path.mjs      http://localhost:5183/nga/search
+node scripts/demo/verify-voice-symmetry.mjs http://localhost:5183/nga/search
+```
 
 One caveat: on a clean checkout `pnpm --filter web typecheck` and one web test
 file fail because `worker.ts` imports `./build/server/index.js`, a build
@@ -224,10 +295,19 @@ is the audible form of helper text.
 
 ## 3. What is NOT verified, and why
 
-**No part of the live audio path has met a real microphone.** This machine is
-headless. The transport is deliberately thin and every decision worth asserting
-was pushed into pure functions, but the following are documentation-derived and
-have never round-tripped against the live API:
+**The distinction that matters for the submission:** the *existing* voice path —
+push-to-talk, transcript into the editable field, grace bar, spoken reply — is
+verified on a browser (§1.1b). The **live realtime session** is a separate,
+newer mechanism, and none of it has met a real microphone or the provider.
+
+The demo, as it stands today, runs on the verified path: the API routes for the
+live session are not deployed, so the session refuses and the page uses the
+recogniser cascade that §1.1b measures. **A submission can safely describe the
+voice loop. It cannot safely describe the realtime session as working.**
+
+This machine is headless. The transport is deliberately thin and every decision
+worth asserting was pushed into pure functions, but the following are
+documentation-derived and have never round-tripped against the live API:
 
 1. **That a session connects at all.** `getUserMedia`, `RTCPeerConnection`, the
    SDP exchange, `setRemoteDescription`.
