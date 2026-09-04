@@ -594,7 +594,7 @@
       ],
       "regions": [],
       "unlabelled": 12,
-      "updatedAt": "2026-09-04T05:12:24.153Z",
+      "updatedAt": "2026-09-04T05:40:32.445Z",
       "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show.",
       "changed": [
         "title",
@@ -726,8 +726,46 @@
       ],
       "regions": [],
       "unlabelled": 12,
-      "updatedAt": "2026-09-04T05:12:24.153Z",
+      "updatedAt": "2026-09-04T05:40:32.445Z",
       "hint": "Anything marked \"theirs\" is the human’s wording — they typed it or accepted yours. Write around it; a set_exhibition call that touches it is parked as a proposal instead of landing. The hang follows the board, so redeal changes which works are in the show."
+    }
+  },
+  "write_labels": {
+    "args": {
+      "artworkIds": [
+        "open-access-art:nga:127567",
+        "open-access-art:nga:53734",
+        "open-access-art:nga:79326"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "labels": [
+        {
+          "artworkId": "open-access-art:nga:127567",
+          "work": "A Rocky Pond — Laurent de La Hyre",
+          "label": "The rocky pond fixes the first pause in the sequence: water and stone hold the view close, with no destination yet visible. Its etched marks make departure feel tentative, still caught at the edge of the land.",
+          "writtenFrom": "catalogue"
+        },
+        {
+          "artworkId": "open-access-art:nga:53734",
+          "work": "The Pointed Rock — Allart van Everdingen",
+          "label": "A pointed outcrop interrupts the scene like a threshold, directing attention beyond the immediate ground. The etching shifts the movement outward from enclosed water toward a harder, more exposed edge.",
+          "writtenFrom": "catalogue"
+        },
+        {
+          "artworkId": "open-access-art:nga:79326",
+          "work": "The Isar with Boulders on the Isarhohe — Franz Innocenz Josef Kobell",
+          "label": "River, boulders, and the Isarhöhe open the final view along a route that continues beyond the sheet. The restrained brown ink and wash leave the landscape spare and forward-looking, sustaining the moment before any arrival.",
+          "writtenFrom": "catalogue"
+        }
+      ],
+      "catalogueOnly": [
+        "open-access-art:nga:127567",
+        "open-access-art:nga:53734",
+        "open-access-art:nga:79326"
+      ],
+      "effect": "The labels are under the works on the human’s screen, in your ink, and they can edit any of them."
     }
   },
   "annotate_atlas": {
