@@ -220,7 +220,7 @@ live.post('/public-live/token', async (c) => {
   }
   if (!c.env.DB) {
     return c.json(
-      jsonError('LIVE_UNAVAILABLE', 'Live audio is unavailable right now.'),
+      jsonError('LIVE_UNAVAILABLE', 'Live audio is unavailable.'),
       503
     );
   }
@@ -238,23 +238,19 @@ live.post('/public-live/token', async (c) => {
   if (!grant.admitted) {
     if (grant.reason === 'unavailable') {
       return c.json(
-        jsonError('LIVE_UNAVAILABLE', 'Live audio is unavailable right now.'),
+        jsonError('LIVE_UNAVAILABLE', 'Live audio is unavailable.'),
         503
       );
     }
     // Two different refusals, said apart. One resets on the hour for this
     // visitor; the other is everybody's and resets at midnight UTC. The page
-    // shows the sentence as-is, so it has to be true rather than generic.
+    // paints the sentence as-is, so it has to be true rather than generic —
+    // and short, because it is a wall label and not an explanation. Neither
+    // tells anyone to type instead: the bar is on screen with a caret in it.
     return c.json(
       grant.reason === 'site'
-        ? jsonError(
-            'LIVE_BUDGET_SPENT',
-            'Today’s shared live-audio budget is spent. Typing still works.'
-          )
-        : jsonError(
-            'LIVE_BUDGET_SPENT',
-            'You’ve used this hour’s live-audio budget. Typing still works.'
-          ),
+        ? jsonError('LIVE_BUDGET_SPENT', 'No live audio left today.')
+        : jsonError('LIVE_BUDGET_SPENT', 'No live audio left this hour.'),
       429
     );
   }
@@ -284,7 +280,7 @@ live.post('/public-live/token', async (c) => {
         ? error
         : new RealtimeUnavailableError('Live audio is unavailable.');
     return c.json(
-      jsonError(failure.code, 'Live audio is unavailable right now.'),
+      jsonError(failure.code, 'Live audio is unavailable.'),
       failure.status === 429 ? 429 : 503
     );
   }
@@ -383,7 +379,7 @@ live.post('/public-live/call', async (c) => {
     // for a session that produced no audio.
     await closeSession(c.env, row, 'connect-failed', row.started_at);
     return c.json(
-      jsonError(failure.code, 'Live audio is unavailable right now.'),
+      jsonError(failure.code, 'Live audio is unavailable.'),
       failure.status === 429 ? 429 : 503
     );
   }
@@ -447,7 +443,7 @@ live.post('/public-live/heartbeat', async (c) => {
         data: {
           open: false,
           remainingSeconds: 0,
-          reason: 'Live audio time is up. Typing still works.',
+          reason: 'Live audio time is up.',
         },
       },
       { headers: { 'Cache-Control': 'no-store' } }

@@ -361,8 +361,9 @@ describe('POST /api/public-live/token — the gate', () => {
       error: { code: string; message: string };
     };
     expect(body.error.code).toBe('LIVE_BUDGET_SPENT');
-    // Readable, and it names the way out rather than only the refusal.
-    expect(body.error.message).toContain('Typing still works');
+    // One clause. It does not tell them to type instead: the bar is on
+    // screen with a caret in it, and saying so is the page apologising.
+    expect(body.error.message).toBe('No live audio left this hour.');
   });
 
   it('says the site-wide refusal differently from the per-caller one', async () => {
@@ -383,8 +384,9 @@ describe('POST /api/public-live/token — the gate', () => {
     expect(refused.status).toBe(429);
     const body = (await refused.json()) as { error: { message: string } };
     // Grace has spent nothing of her own; telling her she has would be a lie
-    // she could act on by waiting for the wrong clock.
-    expect(body.error.message).toContain('shared');
+    // she could act on by waiting for the wrong clock. Hers resets at
+    // midnight, not on the hour.
+    expect(body.error.message).toBe('No live audio left today.');
   });
 
   it('refuses rather than degrading when there is no meter', async () => {
@@ -531,7 +533,7 @@ describe('an open session is stopped server-side when the grant runs out', () =>
     };
     expect(body.data.open).toBe(false);
     // One sentence, and the human is told once.
-    expect(body.data.reason).toBe('Live audio time is up. Typing still works.');
+    expect(body.data.reason).toBe('Live audio time is up.');
     expect(
       calls.some((url) => url.endsWith('/v1/realtime/calls/rtc_abc123/hangup'))
     ).toBe(true);

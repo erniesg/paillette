@@ -21,9 +21,21 @@ import type { LiveEvent } from '~/lib/voice/live-protocol';
 const openLiveSession = vi.fn();
 const isLiveSupported = vi.fn(() => true);
 
+class LiveRefusedError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'LiveRefusedError';
+    this.code = code;
+  }
+}
+
 vi.mock('~/lib/voice/live-session', () => ({
   openLiveSession: (...args: unknown[]) => openLiveSession(...args),
   isLiveSupported: () => isLiveSupported(),
+  LiveRefusedError,
+  isWorthSaying: (error: unknown) =>
+    error instanceof LiveRefusedError && error.code === 'LIVE_BUDGET_SPENT',
 }));
 
 const { AgentPrompt } = await import('../agent-prompt');
@@ -105,6 +117,27 @@ const hold = async () => {
   });
 };
 
+/**
+ * Press and let go, tolerating the control disappearing under the press.
+ *
+ * It does exactly that when a session refuses and there is no recogniser
+ * behind it, which is the intended behaviour rather than an accident — so the
+ * helper cannot assume the button it pressed is still there to release.
+ */
+const holdAndRelease = async () => {
+  await hold();
+  const mic = screen.queryByLabelText(MIC);
+  if (mic) fireEvent.pointerUp(mic);
+};
+
+/** Hold the space bar instead. The window-level grammar, with no mic on screen. */
+const holdSpace = async () => {
+  await act(async () => {
+    fireEvent.keyDown(window, { code: 'Space' });
+  });
+  fireEvent.keyUp(window, { code: 'Space' });
+};
+
 const release = () =>
   fireEvent.pointerUp(screen.getByLabelText('Listening — release to send'));
 
@@ -165,10 +198,11 @@ describe('the typed path, with no session', () => {
     render(<AgentPrompt />);
     await screen.findByPlaceholderText(PLACEHOLDER);
 
-    for (let press = 0; press < 3; press += 1) {
-      await hold();
-      fireEvent.pointerUp(screen.getByLabelText(MIC));
-    }
+    await holdAndRelease();
+    // The mic has withdrawn by now, so the remaining presses come through the
+    // space-bar grammar, which is still bound at the window.
+    await holdSpace();
+    await holdSpace();
 
     // One attempt per page load is enough to learn the answer. A button that
     // silently re-dials on every hold is a button that stutters.
@@ -180,28 +214,63 @@ describe('the typed path, with no session', () => {
     render(<AgentPrompt />);
     await screen.findByPlaceholderText(PLACEHOLDER);
 
-    await hold();
-    fireEvent.pointerUp(screen.getByLabelText(MIC));
+    await holdAndRelease();
 
     await waitFor(() => expect(openLiveSession).toHaveBeenCalled());
-    // The page does not narrate its own plumbing. The microphone still works
-    // through the recogniser and the glyph simply never wakes up.
+    // The page does not narrate its own plumbing: no alert, no explanation of
+    // what WebRTC is to somebody looking at paintings.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('does say the one refusal that is the visitor’s own business', async () => {
     openLiveSession.mockRejectedValue(
-      new Error('You’ve used this hour’s live-audio budget. Typing still works.')
+      new LiveRefusedError('No live audio left this hour.', 'LIVE_BUDGET_SPENT')
     );
     render(<AgentPrompt />);
     await screen.findByPlaceholderText(PLACEHOLDER);
 
-    await hold();
-    fireEvent.pointerUp(screen.getByLabelText(MIC));
+    await holdAndRelease();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Typing still works'
+    // One clause. It does not add "typing still works": the bar is on screen
+    // with a caret in it, and saying so is the interface apologising.
+    const said = await screen.findByRole('alert');
+    expect(said).toHaveTextContent('No live audio left this hour.');
+    expect(said.textContent).not.toMatch(/typing/i);
+  });
+
+  it('stays silent for a refusal that is not the visitor’s to act on', async () => {
+    // Same shape, different code. Sniffing the sentence for the word "budget"
+    // is how this quietly breaks the first time somebody rewords a string.
+    openLiveSession.mockRejectedValue(
+      new LiveRefusedError('Live audio is unavailable.', 'LIVE_UNAVAILABLE')
     );
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+
+    await holdAndRelease();
+
+    await waitFor(() => expect(openLiveSession).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('withdraws the microphone rather than leaving it dead', async () => {
+    // A browser with WebRTC and no recogniser shows a mic on the strength of
+    // the live session. Once that has refused, holding it would do nothing at
+    // all — and a control that does nothing is worse than no control.
+    openLiveSession.mockRejectedValue(
+      new LiveRefusedError('Live audio is unavailable.', 'LIVE_UNAVAILABLE')
+    );
+    render(<AgentPrompt />);
+    await screen.findByPlaceholderText(PLACEHOLDER);
+    expect(screen.getByLabelText(MIC)).toBeInTheDocument();
+
+    await holdAndRelease();
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText(MIC)).not.toBeInTheDocument()
+    );
+    // The bar is untouched. The absence of the mic is the whole message.
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toBeInTheDocument();
   });
 });
 
@@ -496,12 +565,10 @@ describe('what the glyph is told', () => {
     const session = makeSession();
     await connect(session);
 
-    act(() =>
-      handlers?.onClosed('Live audio time is up. Typing still works.')
-    );
+    act(() => handlers?.onClosed('Live audio time is up.'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Live audio time is up. Typing still works.'
+      'Live audio time is up.'
     );
     // And the bar is still there, still typeable. Never a dead control.
     expect(screen.getByPlaceholderText(PLACEHOLDER)).not.toBeDisabled();

@@ -32,6 +32,7 @@ import {
 } from '~/lib/voice/speech-channel';
 import {
   isLiveSupported,
+  isWorthSaying,
   openLiveSession,
   type LiveConnectionState,
   type LiveSession,
@@ -281,6 +282,18 @@ export function AgentPrompt({
    * silently re-dials on every hold is a button that stutters.
    */
   const liveRefusedRef = useRef(false);
+  /**
+   * The same fact, as state, because the microphone control depends on it.
+   *
+   * A browser with WebRTC and no `webkitSpeechRecognition` — which is most of
+   * them that are not Chrome — shows a microphone on the strength of the live
+   * session. If that session then refuses, holding it would do nothing at all,
+   * and a control that does nothing is worse than no control. So the
+   * affordance withdraws instead of going dead.
+   */
+  const [liveRefused, setLiveRefused] = useState(false);
+  /** Unmounted while a session was still opening. See the cleanup effect. */
+  const disposedRef = useRef(false);
   /**
    * The conversation item holding the audio the human just spoke, waiting out
    * the grace window. This is what makes speaking and typing one conversation:
@@ -741,8 +754,13 @@ export function AgentPrompt({
    */
   const ensureLive = useCallback(async () => {
     if (liveRef.current || liveOpeningRef.current || liveRefusedRef.current) return;
-    if (!isLiveSupported()) {
+    const refuse = () => {
       liveRefusedRef.current = true;
+      setLiveRefused(true);
+      setLiveState('off');
+    };
+    if (!isLiveSupported()) {
+      refuse();
       return;
     }
 
@@ -774,15 +792,24 @@ export function AgentPrompt({
           setLiveState('off');
         },
       });
+      // Unmounted while the handshake was in flight. Nothing will ever read
+      // this session, and leaving it open holds its grant until the sweep.
+      if (disposedRef.current) {
+        void liveRef.current?.close();
+        liveRef.current = null;
+      }
     } catch (error) {
-      liveRefusedRef.current = true;
-      setLiveState('off');
-      const message = error instanceof Error ? error.message : '';
-      // The Worker's budget refusals are written to be read by a person and
-      // are the visitor's own business. Everything else — a refused microphone
-      // permission, a failed negotiation — degrades in silence.
-      if (message.includes('budget') || message.includes('Typing still works')) {
-        setEntries((current) => [...current, { kind: 'error', text: message }]);
+      refuse();
+      // A spent budget is the visitor's own business and is said. Everything
+      // else — a refused permission, a blocked media path, a provider outage —
+      // degrades in silence: the microphone withdrawing is the whole message,
+      // and a sentence explaining WebRTC to somebody looking at paintings is
+      // the interface talking about itself.
+      if (isWorthSaying(error)) {
+        setEntries((current) => [
+          ...current,
+          { kind: 'error', text: (error as Error).message },
+        ]);
       }
     } finally {
       liveOpeningRef.current = false;
@@ -1124,6 +1151,7 @@ export function AgentPrompt({
 
   useEffect(
     () => () => {
+      disposedRef.current = true;
       try {
         recognitionRef.current?.stop();
       } catch {
@@ -1155,7 +1183,12 @@ export function AgentPrompt({
   // Either way in counts. A browser with no `webkitSpeechRecognition` but with
   // WebRTC — which is most of them that are not Chrome — used to get no
   // microphone at all; it now gets the better one.
-  const micSupported = getSpeechRecognition() !== null || isLiveSupported();
+  //
+  // And once a live session has refused, that browser has neither, so the
+  // control goes rather than staying and doing nothing. The absence is the
+  // message; there is nothing to add in words.
+  const micSupported =
+    getSpeechRecognition() !== null || (isLiveSupported() && !liveRefused);
   // One string, two contrasts: what the human owns, then what is still being
   // heard. Both live in the same field because there is only one field.
   const composed = composeUtterance(input, interim);

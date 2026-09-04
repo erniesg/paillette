@@ -80,6 +80,43 @@ export type LiveSession = {
  */
 const HEARTBEAT_MS = 15_000;
 
+/**
+ * How long the whole handshake gets before it is given up on.
+ *
+ * Nothing in a WebRTC connection fails fast. A blocked UDP path, a captive
+ * portal, a conference network that answers the mint and then swallows the
+ * SDP — none of these produce an error, they produce a promise that never
+ * settles, and the page sits on `connecting` with a control that will never
+ * work. Eight seconds is longer than any healthy connection needs and short
+ * enough that the human tries again rather than waiting.
+ */
+const CONNECT_TIMEOUT_MS = 8_000;
+
+/**
+ * Reject rather than hang.
+ *
+ * The grant is already debited by the time any of this runs, so a hang is not
+ * only a dead control — it is seconds the visitor has paid for and cannot
+ * spend. Failing lets the caller close the session and get them back.
+ */
+const withDeadline = async <T,>(
+  work: Promise<T>,
+  ms: number,
+  what: string
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} timed out`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 /** Support, in the plainest terms: can this browser do WebRTC and getUserMedia? */
 export const isLiveSupported = (): boolean =>
   typeof window !== 'undefined' &&
@@ -93,23 +130,57 @@ type MintedSession = {
   grantedSeconds: number;
 };
 
+/**
+ * A refusal from the mint, carrying the reason as a code.
+ *
+ * The page has to decide whether to say anything, and that decision used to be
+ * made by sniffing the message text for the word "budget" — which quietly
+ * breaks the first time somebody rewords a sentence. The code is the contract;
+ * the sentence is only what gets painted.
+ */
+export class LiveRefusedError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'LiveRefusedError';
+    this.code = code;
+  }
+}
+
+/**
+ * The only refusal worth putting on screen.
+ *
+ * A spent budget is a fact about the visitor's own session that they can act on
+ * — by waiting, or by typing, which they can see they are able to do. Every
+ * other failure here is plumbing: a blocked UDP path, a refused permission, a
+ * provider outage. Saying those out loud is the page narrating its own
+ * mechanism, and the microphone withdrawing already carries the news.
+ */
+export const isWorthSaying = (error: unknown): boolean =>
+  error instanceof LiveRefusedError && error.code === 'LIVE_BUDGET_SPENT';
+
 const mint = async (): Promise<MintedSession> => {
-  const response = await fetch('/api/public-live/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-  });
+  const response = await withDeadline(
+    fetch('/api/public-live/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }),
+    CONNECT_TIMEOUT_MS,
+    'Live audio'
+  );
   const payload = (await response.json().catch(() => ({}))) as {
     success?: boolean;
     data?: MintedSession;
-    error?: { message?: string };
+    error?: { message?: string; code?: string };
   };
   if (!response.ok || !payload.success || !payload.data) {
     // The Worker's refusals are already written to be read by a person — the
     // per-caller one and the site-wide one say different true things — so they
     // are relayed rather than replaced with a generic sentence.
-    throw new Error(
-      payload.error?.message ?? 'Live audio is unavailable right now.'
+    throw new LiveRefusedError(
+      payload.error?.message ?? 'Live audio is unavailable.',
+      payload.error?.code ?? 'LIVE_UNAVAILABLE'
     );
   }
   return payload.data;
@@ -212,43 +283,66 @@ export const openLiveSession = async (
     }
   };
 
+  // Resolved when the session is actually usable, which is not when the SDP
+  // answer arrives — ICE still has to complete and the channel still has to
+  // open. Awaiting this is the difference between handing back a session and
+  // handing back an object that will never work.
+  let channelOpen: () => void = () => {};
+  const opened = new Promise<void>((resolve) => {
+    channelOpen = resolve;
+  });
+
   channel.onopen = () => {
     // The page's own tool schemas become the session's functions. Nothing about
     // the tool surface is restated here — the same twenty-five tools the human
     // drives by hand, offered to the session as they stand.
     send(buildSessionUpdate(tools));
+    channelOpen();
   };
 
   connection.onconnectionstatechange = () => {
     const state = connection.connectionState;
     if (state === 'failed' || state === 'disconnected') {
       handlers.onState('failed');
-      void stop('The live connection dropped. Typing still works.');
+      void stop('Live audio disconnected.');
     }
   };
 
   const offer = await connection.createOffer();
   await connection.setLocalDescription(offer);
 
-  const answer = await fetch(
-    `/api/public-live/call?session=${encodeURIComponent(minted.sessionId)}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/sdp',
-        'X-Live-Token': minted.token,
-      },
-      body: offer.sdp ?? '',
-    }
-  );
-  if (!answer.ok) {
+  try {
+    const answer = await withDeadline(
+      fetch(
+        `/api/public-live/call?session=${encodeURIComponent(minted.sessionId)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/sdp',
+            'X-Live-Token': minted.token,
+          },
+          body: offer.sdp ?? '',
+        }
+      ),
+      CONNECT_TIMEOUT_MS,
+      'Live audio handshake'
+    );
+    if (!answer.ok) throw new Error('Live audio is unavailable.');
+    await connection.setRemoteDescription({
+      type: 'answer',
+      sdp: await answer.text(),
+    });
+    // A network that answers the handshake and then swallows the media path
+    // produces no error at all — just a session that never becomes usable.
+    await withDeadline(opened, CONNECT_TIMEOUT_MS, 'Live audio connection');
+  } catch (error) {
+    // Give the grant back. It was debited at mint, and a connection that never
+    // happened must not cost the visitor seconds they never got to spend.
     await stop(null);
-    throw new Error('Live audio is unavailable right now.');
+    throw error instanceof Error
+      ? error
+      : new Error('Live audio is unavailable.');
   }
-  await connection.setRemoteDescription({
-    type: 'answer',
-    sdp: await answer.text(),
-  });
 
   heartbeat = setInterval(() => {
     void (async () => {
@@ -326,7 +420,7 @@ const beat = async (
     // A 404 means the Worker has already closed and settled this session —
     // which is a stop, not a network hiccup to shrug at.
     if (response.status === 404) {
-      return { open: false, reason: 'Live audio time is up. Typing still works.' };
+      return { open: false, reason: 'Live audio time is up.' };
     }
     if (!response.ok || !payload.data) return null;
     return {
