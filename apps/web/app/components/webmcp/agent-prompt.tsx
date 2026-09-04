@@ -42,6 +42,7 @@ import { submitHumanTurn, toTurnPayload } from '~/lib/webmcp/turn';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { useWebMcpState } from './use-webmcp-state';
+import { PAILLETTE_READ_ONLY_TOOL_NAMES } from '~/lib/webmcp/tools';
 
 /**
  * An agent, in the page, for visitors who did not bring one.
@@ -463,22 +464,35 @@ export function AgentPrompt({
           return;
         }
 
-        for (const call of calls) {
+        // Reads run together; writes run in order.
+        //
+        // A goal turn is three or four independent searches, and running them
+        // one after another spent the whole turn waiting: three colour searches
+        // at ~20s each is a minute of nothing before the board moves. They do
+        // not depend on each other, so they go at once.
+        //
+        // Writes cannot. Two `set_results` in flight would leave the board
+        // showing whichever returned last rather than what the model asked for,
+        // so anything that changes the human's screen keeps its place in the
+        // queue and the reads either side of it stay on their own side.
+        const runOne = async (call: ToolCall) => {
           let args: Record<string, unknown> = {};
           try {
             args = JSON.parse(call.function.arguments || '{}');
           } catch {
             // Let the tool reject malformed arguments and say why.
           }
-          let result: unknown;
           try {
-            result = await callTool(call.function.name, args);
+            return await callTool(call.function.name, args);
           } catch (error) {
-            result = {
+            return {
               ok: false,
               error: error instanceof Error ? error.message : String(error),
             };
           }
+        };
+
+        const record = (call: ToolCall, result: unknown) => {
           historyRef.current = [
             ...historyRef.current,
             {
@@ -488,7 +502,28 @@ export function AgentPrompt({
               content: JSON.stringify(result).slice(0, 4000),
             },
           ];
+        };
+
+        let batch: ToolCall[] = [];
+        const flush = async () => {
+          if (batch.length === 0) return;
+          const running = batch;
+          batch = [];
+          const results = await Promise.all(running.map(runOne));
+          // Recorded in the order the model asked for them, not the order they
+          // happened to finish, so the transcript reads the same either way.
+          running.forEach((call, index) => record(call, results[index]));
+        };
+
+        for (const call of calls) {
+          if (PAILLETTE_READ_ONLY_TOOL_NAMES.has(call.function.name)) {
+            batch.push(call);
+            continue;
+          }
+          await flush();
+          record(call, await runOne(call));
         }
+        await flush();
       }
     } catch (error) {
       setEntries((current) => [

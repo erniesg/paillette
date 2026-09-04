@@ -2914,4 +2914,27 @@ export const PAILLETTE_TOOL_NAMES = [
  */
 export const PAILLETTE_TOOL_COUNT = PAILLETTE_TOOL_NAMES.length;
 
+/**
+ * The tools that only read.
+ *
+ * Kept here rather than derived at the call site because the caller that needs
+ * it — the in-page agent loop — wants to run several searches at once, and the
+ * only safe basis for that is `readOnlyHint`. Anything that changes what the
+ * human is looking at stays in order: two `set_results` racing would leave the
+ * board showing whichever finished last, which is not what the model asked for.
+ */
+export const PAILLETTE_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'list_collections',
+  'search_artworks',
+  'search_by_image',
+  'search_by_color',
+  'browse_collection',
+  'lookup_artwork',
+  'get_search_quota',
+  'describe_artwork',
+  'get_view_context',
+  'get_exhibition',
+  'get_index_status',
+]);
+
 export { NAMED_COLOURS };
