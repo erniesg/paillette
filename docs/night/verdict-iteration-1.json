@@ -1,0 +1,117 @@
+{
+  "verdict": "FAIL",
+  "confidence": "high",
+  "one_line": "The deterministic half is genuinely excellent and provably real, but the narrating half runs entirely on titles and artist names — the agent never sees the pictures — and the curation half that answers the challenge's actual question is unmerged, undeployed and unproven.",
+  "blocking": [
+    {
+      "what": "The agent's note is grounded in catalogue strings, not in the works. The entire payload the model receives about the flagged works is three strings: 'Peaceful Valley (Alexander Helwig Wyant)', 'Vicinity of Morestal (François-Auguste Ravier)', 'The Dawn of Creation (Samuel Jackson)'. get_view_context's flags.picks/rejects carry only id, title, artist, by, onBoard — no colour, no medium, no year, nothing visual. agent-runs.json shows lookup_artwork and describe_artwork were called zero times across all three runs. So 'leaving the darker pastoral mood behind' was inferred from two artist names the model recognises from training, not from anything on the board or anything Paillette computed.",
+      "why_it_matters": "The product's own promise is 'searchable by what its pictures look like rather than by what a catalogue happens to record'. The narration half is the catalogue. A judge who rejects two works whose titles do not telegraph their appearance — or two works by artists the model does not know — will get a note that is confidently wrong, and the load-bearing claim of the submission dies on camera.",
+      "fix": "Put visual facts into the flag entries. The dominant-colour swatches are already indexed (search_by_color works; the cards render four chips per work) and medium/classification/year are already on the card. Add colours + medium + year to flags.picks[]/flags.rejects[] in get_view_context and to flagsDelta in the turn payload, and add one system-prompt line: name the visual property you can see in the record, not the mood. Then render the note with the swatches it is describing set beside it, so the agent's claim is checkable at a glance.",
+      "effort": "medium"
+    },
+    {
+      "what": "There is no negative control. The three runs in the e2e report used the SAME two rejects and the SAME pick every time — that is one condition sampled three times, not three runs that discriminate a grounded note from a generic one. The brief asked for three runs and got them literally; it did not get the experiment.",
+      "why_it_matters": "This is the single cheapest way to find out whether the submission is hollow, and it was not done. If the note says 'the darker landscapes' when the human rejects two bright ones, the feature is a canned string and a judge trying it themselves will find that out in one attempt.",
+      "fix": "Run the same instruction twice with inverted flags: reject the two darkest works, then reject the two brightest. Record both notes verbatim. If the note tracks the flags, that pair of takes is the strongest ten seconds in the film. If it does not, you have found it before the judge did. Three model calls per condition, six total.",
+      "effort": "small"
+    },
+    {
+      "what": "compare_artworks renders ~1,700 px below the fold on /nga/search. CompareView is fixed inset-0 but a finished GSAP tween leaves transform: matrix(1,0,0,1,0,0) on the results <section>, which becomes the containing block. Measured overlay 1216×4566 inside a 1440×900 viewport; both works at y≈2530. The human sees a question in serif floating over an empty page (e2e-08, e2e-09).",
+      "why_it_matters": "Triage item 8 calls this 'the demo's best ten seconds' and the visuals lane's version of it at /night/deal is the most beautiful thing in the build. On the product page it is ten seconds of nothing. Also: even positioned correctly, the whole search chrome — nav, breadcrumb, quota pill, mode tabs, query, chip, utterance bar — is still visible above it, so it is not the 'room, nothing else on screen' §7.3 asks for.",
+      "fix": "Portal CompareView to document.body (safer than clearProps, survives anyone adding another transform later), and hide the page chrome while it is open. Cause is pinned to galleries.$galleryId.search.tsx:1813.",
+      "effort": "small"
+    },
+    {
+      "what": "set_view outranks the deal board, and the agent uses it. ResultsLayout answers table/salon/atlas before it checks whether a deal put these works on the table, so a dealt board in salon has no pinned picks, no FLIP and no deal grid. The API system prompt actively tells the model 'salon for a curated hang' — and on the very first cold run of the sofa instruction it chose salon (e2e-11, e2e-12, e2e-16).",
+      "why_it_matters": "The money shot is one model decision away from not existing, and the prompt is actively encouraging that decision. A judge who runs the demo instruction cold has a real chance of never seeing the deal at all.",
+      "fix": "Put the deal-board check first in ResultsLayout, and drop salon/atlas from the prompt's menu while flags exist. Cited at galleries.$galleryId.search.tsx:5140-5171 and apps/api/src/routes/agent.ts.",
+      "effort": "small"
+    },
+    {
+      "what": "The whole curation half is unmerged and undeployed. night/curation's five commits (exhibition object, labels API, statement rewrite, compare 'Neither', exhibition URL) are not on night/integration; https://paillette-stg.berlayar.ai/exhibition returns 404; the branch conflicts with integration on exactly one file — galleries.$galleryId.search.tsx — and the conflict is the line that mounts <ExhibitionHead />, which integration's e8c248e deleted. So on the deployed build there is no UI entry point to the exhibition at all: no editable statement, no share button, no labels. The lane also shipped no report, unlike every sibling, and it is currently rate-limited and backing off.",
+      "why_it_matters": "§5c is the half of the brief that answers the challenge's actual question. Culling is one-sided; writing is not. Without it the submission is a very good relevance-feedback UI with an agent attached, and that is delegation in a better costume.",
+      "fix": "Resolve the one conflict by deciding how ExhibitionHead and DealBoard coexist on the search page, merge, deploy, and walk the loop by hand on staging the way integration walked the culling loop. Also fix the real bug the lane's own test caught: share-link.tsx:65 throws on a missing clipboard but the button text never updates (share-link.test.tsx:136 fails).",
+      "effort": "large"
+    },
+    {
+      "what": "No evidence anywhere that the same work gets two different labels under two different statements. apps/api/src/routes/labels.ts does put the statement in the prompt and hard-refuses without one, and the system prompt repeats the weather/grief line — but every test in labels.test.ts stubs the model (stubOpenAi), and the strongest assertion is only expect(brief).toContain('A show about departure'), i.e. the statement reached the outbound HTTP body. That is transport, not contextuality. The exhibition screenshots (40, 42) show one show, one set of labels, and the title and statement in them are hand-authored fixtures — no capture script is committed and no model run is recorded.",
+      "why_it_matters": "The lane's own code comments say in five places that if the label reads the same regardless of the statement the feature is fake. The one test that would settle it — same artworkIds, two statements, assert the labels differ — is the test that was not written.",
+      "fix": "Run write_labels twice against the live model on the same 6 works with two genuinely different statements, commit both outputs verbatim into a report, and put the A/B in the video. If they read the same, cut the feature rather than shipping it.",
+      "effort": "medium"
+    },
+    {
+      "what": "'Re-selects and re-labels around the correction' is a system prompt, not a feature. Editing the statement calls writeExhibition, which sets state and appends to an edit journal, and stops. Nothing re-runs selection or label generation. The journal is only drained when the human submits a NEW turn with typed text; a bare statement edit with no text falls through submitHumanTurn's `if (text?.trim())` into runRedeal, which is the deterministic flag-based redeal and does not read the statement at all.",
+      "why_it_matters": "§5c step 4 is the beat where the human's meaning changes what the agent does. As built, the most consequential gesture in the lane's own framing has no automatic consequence, and whether the model complies with the prompt has never been tested.",
+      "fix": "Make a statement edit a turn in its own right: if exhibitionEdits is non-empty and text is empty, route to the agent with the edit as the instruction rather than to runRedeal. Then prove it: edit 'weather' to 'leaving' and show the board and the labels change.",
+      "effort": "medium"
+    },
+    {
+      "what": "Twelve cards do not fit on screen, and there is no reject tray. The deal grid on /nga/search is 1984–2055 px tall; 4 of 12 cards are fully visible at 1440×900 and 5 at 1920×1080. DealResults calls DealBoard with items/preservedIds/size/renderCard and no `tray` prop, so no .lt-tray exists in the DOM and rejects exit left and vanish (galleries.$galleryId.search.tsx:5232).",
+      "why_it_matters": "§4's 'deal 12 cards, not 60, so every move reads on video' is the reason the whole interaction is legible, and it is not true of the product page. Two thirds of the deal happens off camera. The visible reject tray is also what makes 'still restorable' a thing the viewer can see rather than a thing the docs assert.",
+      "fix": "Bound the deal-board container to the viewport (the grid is already h-full auto-rows-fr, so it will size down), and pass the tray prop — DealBoard already supports it.",
+      "effort": "medium"
+    },
+    {
+      "what": "The interface narrates its own mechanism, in every un-curated shot. Counting words on screen in e2e-13 that are not the artwork's catalogue data: roughly 100, of which the agent's note is printed twice (once as the wall label, once inside the panel) and about 35 are the panel saying what it is doing — 'AGENT ACTIVITY', '● WEBMCP CONNECTED', 'PINNED BY THE AGENT · 12', 'TOOL CALLS', 'read the view · nga · 30 on screen', 'done'. §5b forbids 'chrome narrating the mechanism' by name; this is five separate instances of it. Add the italic placeholder 'something warm for above the sofa' (helper text), 'Ask' beside a bar that already says what it does, 'SEARCH' twice, and a breadcrumb reading '/ 0MS'. The panel also sits over the left edge of the board, which is where the pinned pick is.",
+      "why_it_matters": "This is the owner's standing complaint and it is visible in literally every screenshot with the panel open. The duplicated sentence is the exact thing §5b calls out.",
+      "fix": "Merge night/activity — it merges cleanly onto night/integration and it already deletes all of this: the header pill, the mini-board, the repeated note, the empty state, leaving a 69×33 px glyph resting on '·····' with no text anywhere. Take its four uncommitted working-tree changes too (dismiss-on-outside-click, dropped-count) or they are lost. Then fix the '0MS' breadcrumb and cut the placeholder and 'Ask'.",
+      "effort": "small"
+    },
+    {
+      "what": "A judge who opens staging cold does not reach the good part. Without ?webmcp-debug there is no prompt bar at all, and that flag is documented nowhere a judge would look. Nothing on screen announces that hovering a card and pressing P/X/U does anything, and nothing at all announces Enter-on-empty-bar, which is the headline beat. On top of that the obvious queries are empty: 'warm landscape' and 'golden light' return zero works on staging; 'storm at sea' returns 4.",
+      "why_it_matters": "The strongest thing in this build is a beat with no affordance behind a query flag on a page whose obvious search terms return nothing. The submission only works if you know the incantation.",
+      "fix": "Render the utterance bar without ?webmcp-debug (gate the debug bridge, not the bar). Give Enter one affordance on the board once a flag exists — a mark or a hairline, not a sentence. Seed the landing state with a query that actually returns 30+ works, and check the demo query before filming.",
+      "effort": "medium"
+    },
+    {
+      "what": "Two of the brief's §7b defects are still open in the filming harness. scripts/demo/capture.mjs still defaults PLAYWRIGHT_CORE to /Users/erniesg/.npm/_npx/… with no ~/.cache/ms-playwright fallback, and --speak still truncates: each interim chunk is written with setter.call(el, part) instead of appended, so an 88-character instruction arrives as its last 29 characters. Reproduced exactly on the deployed page.",
+      "why_it_matters": "These were listed as fixes, not findings. The truncation silently sends the agent a third of the sentence, which is the kind of thing that produces one baffling take and no explanation.",
+      "fix": "Append instead of replace in the delivery loop; honour PLAYWRIGHT_CORE then fall back to ~/.cache/ms-playwright.",
+      "effort": "small"
+    }
+  ],
+  "nice_to_have": [
+    {
+      "what": "The ledger filmstrip is built, tested and imported by nothing but /night/deal. Three lanes each declined to wire it for the same reason and left it orphaned.",
+      "fix": "Wire it into /nga/search now that night/activity has turned the panel into a glyph — the objection that blocked all three lanes (deciding the panel is replaced) has been decided.",
+      "effort": "small"
+    },
+    {
+      "what": "Under prefers-reduced-motion a redeal reorders the board — DealBoard collects picks at the front instead of animating, so a pick that started in slot 5 does not hold its position. Only spot-checked with a pick already in slot 0, so it is untested rather than known-good.",
+      "fix": "Pin held ids to their existing index in the reduced-motion path too; test with a pick in slot 5.",
+      "effort": "small"
+    },
+    {
+      "what": "The compare two-up has no Escape and no keyboard answer other than arrows.",
+      "fix": "Bind Escape to dismiss and 1/2 to choose.",
+      "effort": "small"
+    },
+    {
+      "what": "Pressing Enter inside the utterance bar leaves the caret there, so the next X types 'x' into the bar and the Enter after that sends 'xx' to the model as an instruction. Traced and reproduced. Not reachable if you drive it the way a person would, but one click in the bar arms it and nothing on screen says so.",
+      "fix": "Blur the bar after a submit.",
+      "effort": "small"
+    },
+    {
+      "what": "The first redeal after a text search is a jump cut (5 distinct layouts) because it turns a masonry into a board; only the second is a deal (25 layouts). Honest, but whoever films must know.",
+      "fix": "Either deal on first Enter, or brief the camera.",
+      "effort": "small"
+    },
+    {
+      "what": "turn-bridge.ts is still a window.fetch monkey-patch, verified inert by two lanes and deletable.",
+      "fix": "Delete it.",
+      "effort": "small"
+    },
+    {
+      "what": "The anonymous agent budget is 40 model calls per client per hour and one typed instruction costs three. An afternoon of rehearsal exhausts it.",
+      "fix": "Raise the cap for the filming IP, or film with a key.",
+      "effort": "small"
+    },
+    {
+      "what": "write_labels is genuinely agent-only — no UI path batch-generates labels — which is the one visible dent in the 'no agent-only API' claim.",
+      "fix": "Give the label field a 'draft this' affordance the human can press, so the tool wraps an operation the human can also perform.",
+      "effort": "small"
+    }
+  ],
+  "strongest": "Enter on an empty bar, proven against the recorded network log: the entire deterministic run — cold load, three flags, two redeals, a compare, a choice — made four HTTP requests, zero of them to any model route, and came back with the picks holding their slots at zero pixels of displacement across 25 distinct layouts in 205 frames. Film the second redeal, with the activity panel closed, and say out loud that no model was called. It is the only claim in the submission that is asserted negatively, and it is what makes 'one workspace with two operators, no agent-only path' true rather than rhetorical.",
+  "weakest": "Opened cold, staging is an ordinary search page: no prompt bar without the undocumented ?webmcp-debug, nothing on screen announcing P/X/U or that Enter redeals, and 'warm landscape' returns zero works. The first thing a judge notices is that there is no agent and no sign the good part exists."
+}
