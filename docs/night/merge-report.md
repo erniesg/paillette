@@ -8,8 +8,8 @@ blocker fixes were verified on a tree with no room in it.
 This is that merge, verified as one tree.
 
 Result: **`night/integration` now carries everything**, staging runs it, and the
-room still passes on the merged build. One thing is blocked, and it is not the
-merge — see §4.
+room still passes on the merged build. Running the merged build properly then
+found four things, three of which are now fixed — §6 is the part to read.
 
 ---
 
@@ -118,3 +118,134 @@ Still not demonstrated, and still not claimable: that a language model chose to
 call `annotate_atlas`, which is the leg from a typed instruction to the room's
 named rooms. `room-agent-path.ts` drives that tool through the debug back door,
 and running the first leg needs search.
+
+---
+
+## 6. What running it properly then found
+
+The merge was clean. Running the merged build honestly was not, and four
+things came out of it. Three were mine to fix and are fixed; one was a decision
+for the owner, since taken.
+
+### 6.1 The search quota — reset, on staging only
+
+`section-9` and `e2e-correction` could not run at all: `nga_public_search_quota`
+stood at **1000 of 1000**, timestamped 15:23:45, which is inside the §9 run that
+failed. Reserved *before* the cache lookup, so a query answered from the
+seven-day KV cache still spends a slot — the counter measures requests, not
+provider calls, and repeated harness queries against a warm cache drained it.
+
+Reset to 0 on `paillette-db-stg` with the owner's approval. Production
+untouched. Note for whoever owns the gate: as written it will drain again on the
+next evidence run, and moving the reservation after the cache lookup would make
+it count what it was built to count.
+
+### 6.2 A turn that ran out of turns never checked its own work
+
+The post-conditions — the labels gap, the title gap, the unmarked board — only
+ran when the model **stopped calling tools**. That is one of the two ways a turn
+ends. The other is running out of budget mid-job, and that is the one that ships
+the deliverable blank:
+
+```
+run 2 · correction: get_exhibition, write_labels, set_exhibition, search,
+                    set_exhibition, write_labels, search, set_exhibition
+        counts: added 4, dropped 9, relabelled 0, unlabelled 3
+        nudges: []
+        published /e/NHfBsL7 → 7 works, 3 of them with no wall label
+```
+
+Eight calls, ending on `set_exhibition`, three works hung after the wall was
+written and never labelled, and **no post-condition ever ran**. That is the
+critique's blocker 4 — *"works added after write_labels are never labelled, so
+the shareable exhibition usually ships blank"* — still alive after the fix
+aimed at it, because the fix was in a branch the turn never reached.
+
+So the checks now run at the ceiling as well, which is the moment a turn is
+most likely to have left something. `MAX_NUDGES` still decides how often the
+page may buy more calls and `HARD_MAX_TURNS` still ends it.
+
+Two tests, both made to fail on purpose first against the unpatched component:
+a turn that never stops calling tools is asked for the labels it never wrote
+(unpatched: stops dead at eight calls, `expected 8 to be greater than 8`), and
+a turn that ran out with nothing owed is left alone at exactly eight.
+
+### 6.3 The page nudging for a wall it would not let the model write
+
+With that fixed, three correction runs in a row still published blank walls —
+and the instrumented harness said why on the first look:
+
+```
+write_labels ×10, every one:
+  {"ok":false,"error":{"code":"LABELS_RATE_LIMITED",
+   "message":"Only 10 labelling calls may be made per hour."}}
+nudges: the same labels nudge, naming the same twelve works, after each one
+published: 12 works, 12 blank labels, nothing on screen saying why
+```
+
+`write_labels` is capped at ten calls an hour. Past that the labels gap asks
+for labels the model *cannot write*, the model tries, is refused, and the page
+asks again — a loop rather than a nudge, ending in a published show with a
+blank wall and no explanation. Some of the critique's *"four of seven published
+pages carry no wall labels"* is this, rather than the model failing to label
+newcomers.
+
+A refusal the model cannot act on now stands the gap down and is said to the
+human, who can see the blank labels and until now could not see the reason. A
+malformed call is still the model's own to fix and is still asked again. Test
+made to fail first: unpatched, the page nudges into the wall.
+
+**Worth knowing before filming:** ten labelling calls an hour is roughly three
+correction runs. It is not a limit a demo will meet — one filmed take spends
+two or three — but it is one that back-to-back evidence runs meet every time,
+and until today it looked exactly like the feature being broken.
+
+### 6.4 §5c, on the merged build, when nothing is throttled
+
+```
+drafted 12 works, unlabelled 0
+correction: added 11, dropped 11, relabelled 1, unlabelled 0, title followed
+published /e/Xd3bjeh → 12 works, 24 labels, the human's statement verbatim
+```
+
+That is the whole §5c claim, end to end, on the deployed merged build.
+
+### 6.5 The harness, three times, and the flake was always ours
+
+`section-9` read the board a flat 2.5 s after a deal, which is a bet on how long
+twelve staggered cards take, and the clause after it then pressed a key on a
+card that had already left. Under `--voice=stub` it lost that bet about half the
+time and reported it as the page losing a card.
+
+Three passes to close it, and the middle one is the one worth recording:
+
+1. Wait for two consecutive reads of the board to agree, instead of sleeping.
+2. Re-resolve in `press` rather than reporting a React re-render as a missing
+   card — the error became an explicit detach, which was progress and not a fix.
+3. **Keep the floor.** A staggered deal has gaps in it, and two reads either
+   side of one gap agree while cards are still arriving, so step 1 could return
+   *sooner* than the flat sleep it replaced. It made `--voice=off` go from 2 of
+   2 to 0 of 2 — my change, presenting as a regression in the page. The quiet
+   now has to survive a 2.5 s floor.
+
+After that, on the deployed merged build: **`--voice=off` 3 of 3 and
+`--voice=stub` 2 of 2, every clause of §9 in both.** The stub path had never
+been green twice running before today.
+
+## 7. Where it stands
+
+`night/integration` carries both lanes and the four fixes above. Staging runs
+it. On the deployed merged build:
+
+| | |
+| --- | --- |
+| §9 as one sequence, `--voice=off` | **3/3**, all six clauses |
+| §9 as one sequence, `--voice=stub` | **2/2**, all six clauses |
+| the room, `room-demo-path` | **26/26** |
+| the room, `room-demo-matrix` | **9/9** cells |
+| the agent marking the board, typed | **3/3** runs, every mark on the board |
+| §5c draft → correction → published | fully labelled, the human's words kept |
+| web / api tests | 108 files / 1383 · 46 files / 867 |
+| typecheck, lint | clean |
+
+Nothing here was run on a tree that had only one of the two lanes in it.

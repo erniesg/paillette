@@ -66,19 +66,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * reads agree. Capped, and the cap is not silent — a board that never settles
  * is a real finding and the caller should see it as one.
  */
-const settleBoard = async (page, { quietMs = 700, timeoutMs = 20_000 } = {}) => {
+const settleBoard = async (
+  page,
+  { quietMs = 900, minMs = 2500, timeoutMs = 20_000 } = {}
+) => {
   const ids = () =>
     page.evaluate(() =>
       [...document.querySelectorAll('[data-artwork-id]')]
         .map((el) => el.getAttribute('data-artwork-id'))
         .join(',')
     );
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   let previous = await ids();
   while (Date.now() < deadline) {
     await sleep(quietMs);
     const current = await ids();
-    if (current === previous && current.length) return true;
+    if (current === previous && current.length) {
+      /*
+       * Quiet is necessary and it is not sufficient.
+       *
+       * A staggered deal has gaps in it, and two reads either side of one gap
+       * agree while cards are still arriving — which is how the first version
+       * of this wait came back *sooner* than the flat 2.5s it replaced, and
+       * made the clause after it fail more often rather than less. So the
+       * floor the flat sleep provided is kept, and the quiet has to survive it.
+       */
+      const remaining = minMs - (Date.now() - started);
+      if (remaining > 0) await sleep(remaining);
+      return (await ids()) === current;
+    }
     previous = current;
   }
   return false;
