@@ -11,7 +11,7 @@ script reached through `window.__paillette_webmcp.call`.
 **Result: demonstrated, and it was already partly true before I changed
 anything.** The brief expected the model would simply never call the tool, the
 way it never called `flag_artworks` across 508 calls. That is not what happens.
-It calls it unprompted about three times in five. The other times it does
+It calls it unprompted in four runs out of six. The other times it does
 something stranger and worse, which is what the fix is for.
 
 ---
@@ -105,16 +105,18 @@ five runs on deployed staging:
 | 3 | pre-fix | `get_view_context, get_exhibition, set_view, annotate_atlas` | **no** | `/e/XwH8aJZ` — The Working Harbour / The Empty Shore |
 | 4 | post-fix | `…, set_exhibition, write_labels` → **nudge** → `set_view, annotate_atlas` | **yes** | `/e/WfW8emn` — Working Harbour / Empty Shore |
 | 5 | post-fix | `get_view_context, set_view, annotate_atlas, …` | **no** | `/e/kaxeFU4` — Working harbour / Empty shore |
+| 6 | post-fix, **neutral brief** | `get_view_context, get_exhibition, set_view, annotate_atlas, …` | **no** | `/e/dAH4peu` — The working harbour / The empty shore |
 
-- **Chosen unprompted, with no page intervention of any kind: runs 2, 3 and 5 —
-  three of five.** `nudges` is empty in all three, so no post-condition of any
+- **Chosen unprompted, with no page intervention of any kind: runs 2, 3, 5 and
+  6 — four of six.** `nudges` is empty in all four, so no post-condition of any
   kind fired; the model read the board, moved it to atlas view of its own
   accord, and named two regions with a note on each.
-- **Chosen after the page put the turn back to work: run 4** — one of five.
+- **Chosen after the page put the turn back to work: run 4** — one of six.
   Still a real result, and the room follows the show's own groups either way,
   but it is not the same sentence and is not written as one.
-- **Not chosen at all: run 1** — one of five, on the build that had no
-  post-condition to catch it.
+- **Not chosen at all: run 1** — one of six, on the build that had no
+  post-condition to catch it. Every run since the post-condition landed has
+  published named rooms, whether or not the page had to ask.
 
 **No `annotate_atlas` call in this lane was made by the harness.** The only
 script that does that is `room-agent-path.ts`, which this lane did not run.
@@ -127,13 +129,14 @@ Every published record above is live and can be checked by anyone:
 /e/XwH8aJZ  works=12 labelled=12 regions=['The Working Harbour', 'The Empty Shore']
 /e/WfW8emn  works=12 labelled=12 regions=['Working Harbour', 'Empty Shore']
 /e/kaxeFU4  works=12 labelled=0  regions=['Working harbour', 'Empty shore']
+/e/dAH4peu  works=12 labelled=12 regions=['The working harbour', 'The empty shore']
 ```
 
 `kaxeFU4` carries no labels because that run met the ten-an-hour `write_labels`
 limit; its regions are unaffected and its blank wall is the limit, not the
 feature. It is the one code above that should not be filmed.
 
-### What the grouping does *not* yet show, and it is my harness's fault
+### Did it group, or just cut the board in half? (My harness nearly hid this)
 
 Reading the four `annotate_atlas` calls back against the board they were made
 on, every one of them splits it at exactly the same place:
@@ -158,10 +161,31 @@ face six shores where the coast falls quiet."* By the time the second turn asks
 for two rooms, the two rooms are already the two halves of the board.
 
 So these runs demonstrate that the model **chooses the tool and names the
-groups**. They do not demonstrate that it re-examines twelve works and decides
-which belongs where, because it never had to. The stronger test is a brief that
-does not pre-sort — `ROOMS_BRIEF` exists for exactly this — and it is run
-below.
+groups**. On their own they do not demonstrate that it re-examines twelve works
+and decides which belongs where, because it never had to.
+
+**So the test was run again with a brief that does not pre-sort.** Same split
+sentence, but the first turn only says *"Build me a show about the coast — a
+dozen works."* The board came back mixed, in the model's own words — *"A coast
+of cliffs, working harbours, boats, and shifting weather"* — and the split turn
+then produced this, with no nudge:
+
+```
+The working harbour   n=5   board positions [5, 6, 9, 10, 11]
+   "Boats, docks, and built edges turn water into a place of work and passage."
+The empty shore       n=7   board positions [0, 1, 2, 3, 4, 7, 8]
+   "Rock, weather, light, and open water dominate these unpeopled margins."
+```
+
+**Uneven and interleaved.** Five against seven, and neither run is contiguous:
+the model went through twelve works one at a time and decided which side each
+belonged on, then wrote a reason for each group. There is no positional rule
+that produces that partition. Published as `/e/dAH4peu`, walked 26 of 26, and
+the visitor arrives in *The working harbour* and walks through to *The empty
+shore*.
+
+That is the claim at full strength, and it is the run to cite: the model chose
+the tool, chose how many groups, chose the names, and chose the membership.
 
 ## 3. Run 1, which is the finding worth having
 
@@ -303,3 +327,99 @@ looks dramatic on camera.
 `unnamed-rooms` did not fire in either run, as intended — the nudges recorded in
 both are the title gap from `unfinished-show`.
 
+---
+
+## 8. What may now be claimed, and the evidence for each
+
+**1. A person types an ordinary curator's sentence, and the model decides by
+itself to name the groups on the board.**
+Six runs on deployed staging, `annotate_atlas` read out of the model's own
+`tool_calls` in the response from `/api/public-agent/turn`. Four of the six
+chose it with no intervention of any kind — `nudges` empty in the census.
+Evidence: `docs/night/claims-evidence/rooms-*.json`. Nothing in the harness
+calls the tool: `agent-rooms.mjs` makes exactly two `__paillette_webmcp` calls
+and both are reads (`get_view_context`, `get_exhibition`).
+
+**2. It chooses the membership, not only the names.**
+Run 6, on a brief that deliberately did not pre-sort the board: five works
+against seven, at board positions `[5,6,9,10,11]` and `[0,1,2,3,4,7,8]` —
+uneven and interleaved, with a written reason for each group. No positional rule
+produces that. This is the run to cite; runs 2–5 used a brief that had already
+split the board in half, and on their own they show only that it names groups.
+
+**3. The groups it names become the rooms a stranger walks.**
+The human presses the page's own Copy link; the short code is opened cold.
+`/e/dAH4peu`, `/e/yXWeAum` and `/e/WfW8emn` each walk **26 of 26** in
+`room-demo-path.ts`, which asserts the room count, both room names and the walk
+through the doorway from the first room into the second. All published records
+are live and can be fetched by anyone.
+
+**4. It works for a visitor who is not on a desktop.**
+`room-demo-matrix.ts` against the model-named `/e/WfW8emn`: **5 of 5 cells**, 26
+steps each — desktop, phone by touch alone, reduced motion, no speech APIs, and
+all three at once.
+
+**5. When the model answers the request in prose instead, the page refuses to
+let the turn end, and the model then names the groups itself.**
+Run 4: it retitled the show *"Two Coasts"*, wrote a statement opening *"These
+two rooms divide the coast by what it asks of people"*, wrote the labels, and
+moved to end the turn with `regions` empty. The nudge is recorded in the census
+with the position it arrived at, and `set_view`/`annotate_atlas` follow it.
+**Word this as the page catching it, not as the model choosing it.**
+
+**6. The prompt was not touched.** The system prompt mentions `annotate_atlas`
+zero times and "region" zero times — checked by grep, not by memory. Every group
+in every run was composed by the model.
+
+**7. §5c: a correction the human types in their own words changes the show, and
+the published page is fully labelled.**
+Three unthrottled runs; per-run numbers in §6. Every published page carries a
+wall label on every work, every title moved off the theme the human rejected,
+and the human's statement survived verbatim in all of them.
+
+## 9. What still may not be claimed, and why
+
+**"The agent always names the groups when asked."** It does not. Four of six
+runs unprompted; one needed the page to put the turn back to work; one — on the
+build with no post-condition — published a show whose statement announces two
+rooms and which a stranger walks as one. Do not give a success rate off six
+runs; say it usually does it and that the page now catches it when it does not.
+
+**Any reliability figure for the post-condition itself.** It has been observed
+firing and being obeyed **exactly once**. That one observation is clean and is
+the exact defect it was written for, but one is not a rate. Nothing here
+supports "the page always catches it".
+
+**That the agent divides a show without being asked.** Every run asked, in a
+second typed sentence. No run shows the model volunteering regions on its own,
+and the prompt never suggests it — so an unprompted division is not evidence
+this lane has.
+
+**More than two rooms.** Every run asked for two and produced two. The planner's
+handling of three or more named regions is not exercised anywhere in this lane.
+
+**That the check understands grouping requests in general.** `asksForRooms` is a
+regex over English phrasings, probed across thirty-three sentences. Phrasings
+outside that set will be missed, and a miss is silent: the turn simply ends
+undivided, exactly as it did before this existed. It is a safety net with known
+holes, not comprehension.
+
+**A general §5c rate.** Three runs is three runs. They were paced around the
+labelling limit precisely so that they measure the feature, but three clean
+successes is not a percentage.
+
+**That a session can do many of these an hour.** `write_labels` allows ten calls
+an hour on a fixed wall-clock hour, and a correction run spends four or five.
+That is **two correction runs an hour**, and the third will publish a blank
+wall. `/e/kaxeFU4` in §2 is what that looks like and is the one code here that
+should not be filmed.
+
+**Everything room-report §10 already forbids stands unchanged** — works at real
+size, any frame rate, "runs well on a phone", 60 fps, audio, and the agent
+putting a visitor in the room. This lane touched none of them. The fps numbers
+printed by the walks above are SwiftShader on four vCPUs and are not a
+measurement of anything a visitor would see.
+
+**"26 of 26" was, until tonight, a flakier number than it read as.** See §0. The
+walks are reliable now; a reader of the earlier reports should know the harness
+could lose a race the page was winning.
