@@ -25,15 +25,24 @@ import {
 } from '~/lib/room/template';
 
 /**
- * False on the server and for one frame after hydration, then the truth.
+ * Three answers, not two, and the third one matters.
  *
- * Deliberately not read in a `useState` initialiser: that disagrees with the
- * server's render for anyone whose device *can* draw a room, and React throws
- * the markup away and warns.
+ * The server cannot know whether a device can draw a room, so before the check
+ * has run the answer is `unknown` rather than `no`. Collapsing that to `no`
+ * meant a `?v=room` link rendered the whole flat hang first — and the browser
+ * started fetching six 1400 px wall images that were about to be replaced by a
+ * room. Measured on a six-work show: eighteen requests to the image server for
+ * pictures nobody would see.
+ *
+ * Deliberately not read in a `useState` initialiser either: that disagrees
+ * with the server's render for anyone whose device *can* draw a room, and
+ * React throws the markup away and warns.
  */
-export const useRoomAvailable = (): boolean => {
-  const [available, setAvailable] = useState(false);
-  useEffect(() => setAvailable(canRenderRoom()), []);
+export type RoomAvailability = 'unknown' | 'yes' | 'no';
+
+export const useRoomAvailable = (): RoomAvailability => {
+  const [available, setAvailable] = useState<RoomAvailability>('unknown');
+  useEffect(() => setAvailable(canRenderRoom() ? 'yes' : 'no'), []);
   return available;
 };
 
@@ -47,13 +56,14 @@ export const TemplateSwitch = ({
   available,
 }: {
   template: ExhibitionTemplate;
-  available: boolean;
+  available: RoomAvailability;
 }) => {
   const location = useLocation();
   const here = `${location.pathname}${location.search}`;
 
   const offered = EXHIBITION_TEMPLATES.filter(
-    (candidate) => candidate === 'page' || available || candidate === template
+    (candidate) =>
+      candidate === 'page' || available === 'yes' || candidate === template
   );
   if (offered.length < 2) return null;
 

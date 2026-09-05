@@ -2317,6 +2317,11 @@ html[data-theme='light'] .themeable-surface code {
   overflow: hidden;
 }
 
+.exhibition-room-stage {
+  position: absolute;
+  inset: 0;
+}
+
 .exhibition-room-canvas {
   display: block;
   width: 100%;

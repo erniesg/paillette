@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   BASE_WIDTH,
   MAX_NEAR_TEXTURES,
+
   NEAR_WIDTH,
+  PICTURE_BUDGET_BYTES,
+  PLATE_BUDGET_BYTES,
   TEXTURE_BUDGET_BYTES,
   TextureBudget,
+  nearWidthFor,
   nearestIds,
   textureBytes,
 } from '~/lib/room/texture-budget';
@@ -16,7 +20,7 @@ describe('textureBytes', () => {
   it('counts what the GPU takes, not what the JPEG weighs', () => {
     // 384 × 288 × 4 bytes × 4/3 for the mip chain.
     expect(at(BASE_WIDTH)).toBe(589824);
-    expect(at(NEAR_WIDTH)).toBe(10240000);
+    expect(at(NEAR_WIDTH)).toBe(7840000);
   });
 
   it('leaves the base tier of a thirty-work show far inside the ceiling', () => {
@@ -34,11 +38,44 @@ describe('textureBytes', () => {
     expect(at(1400) * 30).toBeCloseTo(224 * 1024 * 1024, -6);
   });
 
-  /** Both caps satisfied at once, which is the state the scene actually runs in. */
-  it('fits every base texture and a full set of near ones inside the ceiling', () => {
-    expect(at(BASE_WIDTH) * 30 + at(NEAR_WIDTH) * MAX_NEAR_TEXTURES).toBeLessThan(
-      TEXTURE_BUDGET_BYTES
-    );
+  /** Every cap satisfied at once, which is the state the scene actually runs in. */
+  it('fits every base texture, a full set of near ones and every plate', () => {
+    const worst =
+      at(BASE_WIDTH) * 30 +
+      textureBytes(NEAR_WIDTH, NEAR_WIDTH) * MAX_NEAR_TEXTURES +
+      PLATE_BUDGET_BYTES;
+    expect(worst).toBeLessThan(TEXTURE_BUDGET_BYTES);
+  });
+
+  it('splits one stated ceiling between the pictures and the plates', () => {
+    expect(PICTURE_BUDGET_BYTES + PLATE_BUDGET_BYTES).toBe(TEXTURE_BUDGET_BYTES);
+  });
+});
+
+/**
+ * A tall record asked for at 1600 px *wide* came back 1600 × 2144 — 18.3 MB,
+ * nearly double a landscape's, from the same request. Six of those overrun the
+ * ceiling on their own.
+ */
+describe('nearWidthFor', () => {
+  it('leaves a landscape work exactly where it was', () => {
+    expect(nearWidthFor(4 / 3)).toBe(NEAR_WIDTH);
+    expect(nearWidthFor(1)).toBe(NEAR_WIDTH);
+  });
+
+  it('bounds a portrait work by its longer side instead', () => {
+    const aspect = 384 / 514;
+    const width = nearWidthFor(aspect);
+    expect(width).toBeLessThan(NEAR_WIDTH);
+    expect(Math.round(width / aspect)).toBeCloseTo(NEAR_WIDTH, -1);
+  });
+
+  it('keeps every shape inside one texture cost', () => {
+    for (const aspect of [0.25, 0.5, 0.75, 1, 1.5, 3]) {
+      const width = nearWidthFor(aspect);
+      const bytes = textureBytes(width, Math.round(width / aspect));
+      expect(bytes).toBeLessThanOrEqual(textureBytes(NEAR_WIDTH, NEAR_WIDTH) + 1);
+    }
   });
 });
 

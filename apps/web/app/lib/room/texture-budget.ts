@@ -23,14 +23,34 @@
  * The two tiers, in IIIF width.
  *
  * 384 is chosen against the wall, not against the screen: a work hung at
- * 65 cm and seen from three metres across a 90° field is a few hundred pixels
+ * 65 cm and seen from three metres across a 62° field is a few hundred pixels
  * tall, so a 384 px texture is already at or past the display resolution for
- * everything that is not being looked at directly. 1600 is for the one work
- * filling the view in the focused beat, where the whole point is that you can
- * see the brushwork.
+ * everything that is not being looked at directly.
+ *
+ * 1400 is the focused tier, and it is 1400 rather than 1600 because the
+ * arithmetic said so. The near tier is bounded by a work's *longer* side, so
+ * the worst case is a square: at 1600 that is 13.7 MB apiece, and six of them
+ * plus thirty base textures plus the plates came to 102 MiB against a stated
+ * ceiling of 96. Rather than leave a ceiling that only held for landscapes,
+ * the tier came down to the width the flat page already serves for a wall
+ * image — which puts a focused work at parity with the page it was chosen
+ * from, and 1400 px across a work filling two thirds of a 900 px viewport is
+ * still better than twice the resolution being displayed.
  */
 export const BASE_WIDTH = 384;
-export const NEAR_WIDTH = 1600;
+export const NEAR_WIDTH = 1400;
+
+/**
+ * The width to ask for so a work of any shape costs about the same.
+ *
+ * Asking for a fixed width is fine for a landscape and ruinous for a tall one:
+ * a 384 × 514 record asked for at 1600 px wide came back 1600 × 2144, which is
+ * 18.3 MB — nearly double a landscape's, from the same request. Bounding the
+ * *longer* side instead caps every near texture at `NEAR_WIDTH` square however
+ * the picture is proportioned, and leaves landscapes exactly where they were.
+ */
+export const nearWidthFor = (aspect: number): number =>
+  aspect >= 1 ? NEAR_WIDTH : Math.max(64, Math.round(NEAR_WIDTH * aspect));
 
 export type Tier = 'base' | 'near';
 
@@ -61,6 +81,26 @@ export const textureBytes = (width: number, height: number): number =>
  * `docs/night/room-report.md`.
  */
 export const TEXTURE_BUDGET_BYTES = 96 * 1024 * 1024;
+
+/**
+ * The printed label beside each work, and what one costs.
+ *
+ * Text drawn to a canvas is a texture like any other — 393 kB of video memory
+ * apiece — so they are made on approach and thrown away on departure for the
+ * same reason the pictures are. They live in their *own* budget rather than
+ * sharing the pictures', which is the bug this constant exists to have fixed:
+ * eight plates and six pictures competing for six slots meant the plates,
+ * admitted last each cycle, evicted every high-resolution picture in the room
+ * on a loop. A wall of blurry pictures with crisp labels next to them.
+ */
+export const PLATE_TEXTURE_WIDTH = 384;
+export const PLATE_TEXTURE_HEIGHT = 192;
+export const MAX_PLATES = 8;
+export const PLATE_BUDGET_BYTES =
+  textureBytes(PLATE_TEXTURE_WIDTH, PLATE_TEXTURE_HEIGHT) * MAX_PLATES;
+
+/** What is left for the pictures, so the two together honour the ceiling. */
+export const PICTURE_BUDGET_BYTES = TEXTURE_BUDGET_BYTES - PLATE_BUDGET_BYTES;
 
 /**
  * How many works may hold a high-resolution texture at once.

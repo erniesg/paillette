@@ -10,8 +10,13 @@ import {
   allocateWalls,
   chunkWorks,
   groupWorks,
+  BASE_FIELD_OF_VIEW,
+  FOCUS_FILL,
+  MIN_HORIZONTAL_FOV,
+  fieldOfView,
   hangHeight,
   planRoom,
+  viewingDistance,
   type Placement,
   type RoomWorkInput,
 } from '~/lib/room/plan';
@@ -317,5 +322,89 @@ describe('planRoom', () => {
       'The Empty Shore',
     ]);
     expect(plan.placements.filter((p) => p.roomIndex === 0)).toHaveLength(3);
+  });
+});
+
+/**
+ * The focused beat is "it fills the view", so the assertions are about framing
+ * rather than about a distance in metres.
+ */
+describe('viewingDistance', () => {
+  const laptop = { fov: fieldOfView(16 / 10), aspect: 16 / 10 };
+  const phone = { fov: fieldOfView(390 / 844), aspect: 390 / 844 };
+
+  /**
+   * The fraction of the frame a work takes up in whichever direction it is
+   * actually bound by — which on a phone is the width, not the height. The
+   * first version of this measured the vertical fraction only and read an
+   * upright phone as framing a square work at a third of the screen.
+   */
+  const filled = (
+    widthM: number,
+    heightM: number,
+    screen: { fov: number; aspect: number }
+  ) => {
+    const distance = viewingDistance(widthM, heightM, screen.fov, screen.aspect);
+    const visibleHeight = 2 * distance * Math.tan(screen.fov / 2);
+    return Math.max(heightM / visibleHeight, widthM / (visibleHeight * screen.aspect));
+  };
+
+  it('frames a small print and a large canvas at the same scale', () => {
+    expect(filled(2, 2, laptop)).toBeCloseTo(filled(1.2, 1.2, laptop), 3);
+  });
+
+  it('fills the frame it is actually being shown on, laptop or phone', () => {
+    for (const screen of [laptop, phone]) {
+      for (const size of [0.65, 1.2, 2, 4]) {
+        expect(filled(size, size, screen)).toBeLessThanOrEqual(FOCUS_FILL + 0.001);
+      }
+      // Anything big enough not to hit the standoff hits the fill exactly.
+      expect(filled(2, 2, screen)).toBeCloseTo(FOCUS_FILL, 5);
+      expect(filled(0.5, 3, screen)).toBeCloseTo(FOCUS_FILL, 5);
+    }
+  });
+
+  it('never presses the visitor into the wall for a tiny work', () => {
+    expect(
+      viewingDistance(0.1, 0.1, laptop.fov, laptop.aspect)
+    ).toBeGreaterThanOrEqual(0.95);
+  });
+
+  it('is framed by whichever dimension binds', () => {
+    // A panorama is held back by its width, an altarpiece by its height.
+    const wide = viewingDistance(4, 0.5, laptop.fov, laptop.aspect);
+    const tall = viewingDistance(0.5, 4, laptop.fov, laptop.aspect);
+    expect(wide).toBeGreaterThan(1);
+    expect(wide).toBeLessThan(tall);
+  });
+});
+
+/**
+ * 62° vertical on an upright phone is a 31° horizontal keyhole, which is what
+ * the first phone screenshot actually showed.
+ */
+describe('fieldOfView', () => {
+  const horizontal = (aspect: number) =>
+    2 * Math.atan(Math.tan(fieldOfView(aspect) / 2) * aspect);
+
+  it('leaves a landscape screen alone', () => {
+    expect(fieldOfView(16 / 10)).toBe(BASE_FIELD_OF_VIEW);
+    expect(fieldOfView(1)).toBe(BASE_FIELD_OF_VIEW);
+  });
+
+  it('opens a portrait screen up until it can see sideways', () => {
+    const phone = 390 / 844;
+    expect(fieldOfView(phone)).toBeGreaterThan(BASE_FIELD_OF_VIEW);
+    expect(horizontal(phone)).toBeGreaterThan(
+      2 * Math.atan(Math.tan(BASE_FIELD_OF_VIEW / 2) * phone)
+    );
+  });
+
+  it('stops before the lens starts bending the room', () => {
+    for (const aspect of [0.2, 0.4, 0.6, 0.9]) {
+      expect(fieldOfView(aspect)).toBeLessThanOrEqual((80 * Math.PI) / 180);
+    }
+    // And it does reach the horizontal field it wants, where it can.
+    expect(horizontal(0.9)).toBeGreaterThanOrEqual(MIN_HORIZONTAL_FOV - 0.001);
   });
 });

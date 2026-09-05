@@ -24,16 +24,21 @@
 
 import type * as THREE from 'three';
 import type { Placement, RoomPlan } from '~/lib/room/plan';
-import { DOOR_WIDTH_M, viewingDistance } from '~/lib/room/plan';
+import { DOOR_WIDTH_M, fieldOfView, viewingDistance } from '~/lib/room/plan';
 import {
   BASE_WIDTH,
   MAX_NEAR_TEXTURES,
-  NEAR_WIDTH,
+  MAX_PLATES,
+  PICTURE_BUDGET_BYTES,
+  PLATE_BUDGET_BYTES,
+  PLATE_TEXTURE_HEIGHT,
+  PLATE_TEXTURE_WIDTH,
   TextureBudget,
+  nearWidthFor,
   nearestIds,
   textureBytes,
 } from '~/lib/room/texture-budget';
-import { EYE_HEIGHT_M, isWalkable, stepTowards } from '~/lib/room/walkable';
+import { EYE_HEIGHT_M, isWalkable, roomAt, stepTowards } from '~/lib/room/walkable';
 import { atWidth } from '~/lib/share/iiif';
 
 export interface SceneWork {
@@ -52,6 +57,18 @@ export interface SceneStats {
   /** What the renderer itself says it is holding. The cross-check. */
   rendererTextures: number;
   pixelRatio: number;
+  /**
+   * Which room the visitor is standing in, and how many there are.
+   *
+   * Published so a screenshot named `thirty-third-room` can be *asserted* to
+   * be the third room rather than described as one. A named shot containing
+   * something other than its name is a documented failure on this project.
+   */
+  roomIndex: number;
+  roomCount: number;
+  roomName: string | null;
+  /** How far past the threshold. A doorway is not a photograph of a room. */
+  metresIntoRoom: number;
 }
 
 export interface RoomSceneOptions {
@@ -66,11 +83,68 @@ export interface RoomSceneOptions {
   onStats?: (stats: SceneStats) => void;
 }
 
-/** Charcoal, the same ground the page uses. Not black; black dissolves darks. */
-const WALL = 0x232327;
-const FAR_WALL = 0x2b2b30;
-const FLOOR = 0x151517;
-const CEILING = 0x101012;
+/**
+ * The building takes its colour from the page it is part of.
+ *
+ * The exhibition page follows the app's theme, so a room painted in hardcoded
+ * charcoal is a dark gallery inside a cream document — and, worse, the DOM the
+ * scene shares the screen with is in the *other* theme's ink, which is how the
+ * title came out pale grey on white the first time this ran. Reading
+ * `--lt-ground` and shading it means dark mode is a charcoal gallery and light
+ * mode is a white cube, which are the two rooms a museum actually builds.
+ *
+ * The shades are multipliers rather than mixes: the far wall a little lighter
+ * than the sides so a corner reads without a light in the scene, the floor
+ * darker than either, the ceiling darkest. In a light room the same ordering
+ * with gentler steps, because a white cube's walls are nearly the same value
+ * and the tonal separation has to come from the small end of the range.
+ */
+interface Palette {
+  wall: number;
+  farWall: number;
+  floor: number;
+  ceiling: number;
+  ink: string;
+  inkSoft: string;
+  inkFaint: string;
+  plate: string;
+}
+
+const readVar = (styles: CSSStyleDeclaration, name: string, fallback: string) =>
+  styles.getPropertyValue(name).trim() || fallback;
+
+const toRgb = (value: string): [number, number, number] => {
+  const hex = value.match(/^#([0-9a-f]{6})$/i);
+  if (hex?.[1]) {
+    const n = parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const rgb = value.match(/(\d+)\D+(\d+)\D+(\d+)/);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  return [26, 26, 29];
+};
+
+const shade = ([r, g, b]: [number, number, number], factor: number) => {
+  const clamp = (channel: number) =>
+    Math.max(0, Math.min(255, Math.round(channel * factor)));
+  return (clamp(r) << 16) | (clamp(g) << 8) | clamp(b);
+};
+
+const readPalette = (): Palette => {
+  const styles = getComputedStyle(document.documentElement);
+  const ground = toRgb(readVar(styles, '--lt-ground', '#1a1a1d'));
+  const light = (ground[0] + ground[1] + ground[2]) / 3 > 127;
+  return {
+    wall: shade(ground, light ? 1.03 : 1.22),
+    farWall: shade(ground, light ? 1.1 : 1.72),
+    floor: shade(ground, light ? 0.9 : 0.82),
+    ceiling: shade(ground, light ? 0.97 : 0.62),
+    ink: readVar(styles, '--ink-human', '#e6e3dc'),
+    inkSoft: readVar(styles, '--ink-human-soft', 'rgba(230, 227, 220, 0.7)'),
+    inkFaint: readVar(styles, '--ink-human-faint', 'rgba(230, 227, 220, 0.58)'),
+    plate: readVar(styles, '--lt-slide-well', '#1e1e22'),
+  };
+};
 
 /** How far a keyboard step moves, and how far a snap turn turns. */
 const STEP_M = 0.85;
@@ -89,11 +163,8 @@ const LOD_INTERVAL_MS = 220;
 /** Below this the renderer gives up some resolution rather than some frames. */
 const DEGRADE_BELOW_FPS = 40;
 
-const PLATE_TEXTURE_WIDTH = 384;
-const PLATE_TEXTURE_HEIGHT = 192;
 const PLATE_WIDTH_M = 0.32;
 const PLATE_HEIGHT_M = 0.16;
-const MAX_PLATES = 8;
 
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
@@ -137,10 +208,8 @@ export const createRoomScene = async (
    */
   const THREE_NS = await import('three');
   const {
-    BoxGeometry,
     CanvasTexture,
     Color,
-    DoubleSide,
     Fog,
     LinearFilter,
     LinearMipmapLinearFilter,
@@ -159,6 +228,7 @@ export const createRoomScene = async (
 
   const { canvas, plan, works, reducedMotion, onFocus, onStats } = options;
   const byId = new Map(works.map((work) => [work.artworkId, work]));
+  const palette = readPalette();
 
   const renderer = new WebGLRenderer({
     canvas,
@@ -173,10 +243,20 @@ export const createRoomScene = async (
   renderer.outputColorSpace = SRGBColorSpace;
 
   const scene = new Scene();
-  scene.background = new Color(WALL);
-  // Fog the colour of the wall, so the far end of an enfilade recedes rather
-  // than ending. It is also the cheapest possible distance cue with no lights.
-  scene.fog = new Fog(WALL, 8, 46);
+  scene.background = new Color(palette.wall);
+  /*
+   * Fog is the only depth cue in a scene with no lights, and the first
+   * settings were far too weak to be one.
+   *
+   * At 8–46 m nothing in a three-room enfilade fogged at all, so a doorway
+   * three metres away and the wall nine metres beyond it rendered at exactly
+   * the same value: the second room read as a flat wall with six works on it
+   * rather than as a room with another room behind it. Fogging *towards the
+   * ceiling's tone* over 5–28 m is what a gallery actually looks like — the
+   * next room is dimmer than the one you are standing in — and it is what
+   * makes the passage legible as a passage.
+   */
+  scene.fog = new Fog(palette.ceiling, 5, 28);
 
   const camera = new PerspectiveCamera(62, 1, 0.08, 90);
   camera.position.set(plan.entry.x, EYE_HEIGHT_M, plan.entry.z);
@@ -231,7 +311,7 @@ export const createRoomScene = async (
 
     let y = 64;
     if (title) {
-      context.fillStyle = 'rgba(230, 227, 220, 0.92)';
+      context.fillStyle = palette.ink;
       context.font = '54px "EB Garamond", Georgia, serif';
       for (const line of wrap(context, title, width - 96, 2)) {
         context.fillText(line, 48, y);
@@ -240,7 +320,7 @@ export const createRoomScene = async (
       y += 26;
     }
     if (statement) {
-      context.fillStyle = 'rgba(230, 227, 220, 0.66)';
+      context.fillStyle = palette.inkSoft;
       context.font = '30px "EB Garamond", Georgia, serif';
       for (const line of wrap(context, statement, width - 96, 9)) {
         context.fillText(line, 48, y);
@@ -287,25 +367,25 @@ export const createRoomScene = async (
     const centreZ = (room.southZ + room.northZ) / 2;
     const halfWidth = room.widthM / 2;
 
-    surface(room.widthM, depth, FLOOR, [room.centreX, 0, centreZ], [-Math.PI / 2, 0, 0]);
+    surface(room.widthM, depth, palette.floor, [room.centreX, 0, centreZ], [-Math.PI / 2, 0, 0]);
     surface(
       room.widthM,
       depth,
-      CEILING,
+      palette.ceiling,
       [room.centreX, wallHeight, centreZ],
       [Math.PI / 2, 0, 0]
     );
     surface(
       depth,
       wallHeight,
-      WALL,
+      palette.wall,
       [room.centreX - halfWidth, wallHeight / 2, centreZ],
       [0, Math.PI / 2, 0]
     );
     surface(
       depth,
       wallHeight,
-      WALL,
+      palette.wall,
       [room.centreX + halfWidth, wallHeight / 2, centreZ],
       [0, -Math.PI / 2, 0]
     );
@@ -320,27 +400,30 @@ export const createRoomScene = async (
       const rotation: [number, number, number] =
         faceIn > 0 ? [0, 0, 0] : [0, Math.PI, 0];
       if (!hasDoor) {
-        surface(room.widthM, wallHeight, FAR_WALL, [room.centreX, wallHeight / 2, z], rotation);
+        surface(room.widthM, wallHeight, palette.farWall, [room.centreX, wallHeight / 2, z], rotation);
         return;
       }
       const jamb = (room.widthM - DOOR_WIDTH_M) / 2;
       const offset = DOOR_WIDTH_M / 2 + jamb / 2;
-      surface(jamb, wallHeight, FAR_WALL, [room.centreX - offset, wallHeight / 2, z], rotation);
-      surface(jamb, wallHeight, FAR_WALL, [room.centreX + offset, wallHeight / 2, z], rotation);
+      surface(jamb, wallHeight, palette.farWall, [room.centreX - offset, wallHeight / 2, z], rotation);
+      surface(jamb, wallHeight, palette.farWall, [room.centreX + offset, wallHeight / 2, z], rotation);
       surface(
         DOOR_WIDTH_M,
         wallHeight - doorHeight,
-        FAR_WALL,
+        palette.farWall,
         [room.centreX, doorHeight + (wallHeight - doorHeight) / 2, z],
         rotation
       );
-      // The reveal: a thin box in the plane of the wall, so a doorway seen
-      // from an angle has an edge instead of being a cut in a sheet of paper.
-      const revealGeometry = track(new BoxGeometry(DOOR_WIDTH_M, doorHeight, 0.34));
-      const revealMaterial = track(new MeshBasicMaterial({ color: FLOOR, side: DoubleSide }));
-      const reveal = new Mesh(revealGeometry, revealMaterial);
-      reveal.position.set(room.centreX, doorHeight / 2, z);
-      scene.add(reveal);
+      /*
+       * The doorway is a hole, and it took a screenshot to notice it was not.
+       *
+       * There was a thin box here, meant to give the opening a reveal so it
+       * read as a thickness rather than a cut in a sheet of paper. A box in a
+       * doorway is a door: it filled the hole, and the enfilade rendered as a
+       * far wall with a black rectangle in the middle of it. The jambs and the
+       * lintel already describe the opening; what makes it read as a passage
+       * is seeing the next room through it.
+       */
     };
 
     crossWall(room.northZ, 1, room.doorNorth);
@@ -375,7 +458,19 @@ export const createRoomScene = async (
   // The hang
   // -------------------------------------------------------------------------
 
-  const budget = new TextureBudget();
+  /*
+   * Two budgets, because they hold different things for different reasons.
+   *
+   * The pictures compete for six high-resolution slots; the label plates
+   * compete for eight of their own. Sharing one pool meant the plates —
+   * admitted last on each pass — evicted every picture's near texture every
+   * cycle, so the room settled into blurry pictures beside crisp labels and
+   * the reported byte count was the plates alone. The two allowances are
+   * subtracted from one stated ceiling, so `TEXTURE_BUDGET_BYTES` is still the
+   * only number anybody has to hold in their head.
+   */
+  const budget = new TextureBudget(PICTURE_BUDGET_BYTES, MAX_NEAR_TEXTURES);
+  const plates = new TextureBudget(PLATE_BUDGET_BYTES, MAX_PLATES);
   const loader = new TextureLoader();
   loader.setCrossOrigin('anonymous');
   const hung: Hung[] = [];
@@ -485,16 +580,16 @@ export const createRoomScene = async (
     const context = surfaceCanvas.getContext('2d');
     if (!context) return null;
 
-    context.fillStyle = '#1c1c1f';
+    context.fillStyle = palette.plate;
     context.fillRect(0, 0, PLATE_TEXTURE_WIDTH, PLATE_TEXTURE_HEIGHT);
 
     const catalogue = [work.title, work.artist, work.date].filter(Boolean).join('   ');
-    context.fillStyle = 'rgba(230, 227, 220, 0.62)';
+    context.fillStyle = palette.inkFaint;
     context.font = '600 15px "IBM Plex Mono", ui-monospace, monospace';
     context.fillText(catalogue.toUpperCase().slice(0, 40), 20, 34);
 
     if (work.label) {
-      context.fillStyle = 'rgba(230, 227, 220, 0.86)';
+      context.fillStyle = palette.inkSoft;
       context.font = '19px "EB Garamond", Georgia, serif';
       let y = 74;
       for (const line of wrap(context, work.label, PLATE_TEXTURE_WIDTH - 40, 4)) {
@@ -515,7 +610,7 @@ export const createRoomScene = async (
     entry.plate.rotation.y = placement.rotationY;
     entry.plate.translateZ(0.021);
     // Bottom right of the work, at the height a printed label is set.
-    entry.plate.translateX(entry.widthM / 2 + PLATE_WIDTH_M / 2 + 0.09);
+    entry.plate.translateX(entry.widthM / 2 + PLATE_WIDTH_M / 2 + 0.055);
     entry.plate.translateY(-entry.heightM / 2 + PLATE_HEIGHT_M / 2);
   };
 
@@ -524,8 +619,8 @@ export const createRoomScene = async (
     const texture = drawPlate(entry.work);
     if (!texture) return;
     const bytes = textureBytes(PLATE_TEXTURE_WIDTH, PLATE_TEXTURE_HEIGHT);
-    for (const id of budget.admit(`plate:${entry.work.artworkId}`, 'near', bytes)) {
-      if (id.startsWith('plate:')) removePlate(id.slice(6));
+    for (const id of plates.admit(entry.work.artworkId, 'near', bytes)) {
+      removePlate(id);
     }
     const geometry = new PlaneGeometry(PLATE_WIDTH_M, PLATE_HEIGHT_M);
     const material = new MeshBasicMaterial({ map: texture, fog: true });
@@ -543,7 +638,7 @@ export const createRoomScene = async (
     material.map?.dispose();
     material.dispose();
     entry.plate = null;
-    budget.release(`plate:${artworkId}`);
+    plates.release(artworkId);
   };
 
   // -------------------------------------------------------------------------
@@ -587,15 +682,17 @@ export const createRoomScene = async (
 
   const loadNear = async (entry: Hung) => {
     const key = `near:${entry.work.artworkId}`;
-    if (entry.near || loading.has(key)) return;
+    // Nothing is upgraded before its small texture has told us its shape, so
+    // the width asked for is always the one bounded by the longer side.
+    if (entry.near || !entry.base || loading.has(key)) return;
+    const image = entry.base.image as { width: number; height: number };
     loading.add(key);
-    const texture = await load(entry, NEAR_WIDTH);
+    const texture = await load(entry, nearWidthFor(image.width / image.height));
     loading.delete(key);
     if (!texture) return;
 
     for (const id of budget.admit(entry.work.artworkId, 'near', bytesOf(texture))) {
-      if (id.startsWith('plate:')) removePlate(id.slice(6));
-      else downgrade(id);
+      downgrade(id);
     }
     entry.near = texture;
     entry.material.map = texture;
@@ -664,7 +761,7 @@ export const createRoomScene = async (
     for (const entry of hung) {
       const id = entry.work.artworkId;
       if (plateWanted.has(id)) {
-        budget.touch(`plate:${id}`);
+        plates.touch(id);
         addPlate(entry);
       } else if (entry.plate) {
         removePlate(id);
@@ -782,7 +879,12 @@ export const createRoomScene = async (
 
     const entry = hung.find((candidate) => candidate.work.artworkId === artworkId);
     if (!entry) return;
-    const distance = viewingDistance(entry.widthM, entry.heightM);
+    const distance = viewingDistance(
+      entry.widthM,
+      entry.heightM,
+      (camera.fov * Math.PI) / 180,
+      camera.aspect
+    );
     const normal = new Vector3(
       Math.sin(entry.placement.rotationY),
       0,
@@ -790,8 +892,17 @@ export const createRoomScene = async (
     );
     const x = entry.placement.x + normal.x * distance;
     const z = entry.placement.z + normal.z * distance;
-    // Facing the wall is facing back down the normal.
-    const targetYaw = Math.atan2(-normal.x, -normal.z);
+    /*
+     * Facing the wall means looking back down the picture's own normal.
+     *
+     * This was `atan2(-normal.x, -normal.z)` and it turned the visitor around:
+     * a camera's forward vector at yaw *y* is `(-sin y, 0, -cos y)`, so the
+     * yaw that points it along `-normal` is `atan2(normal.x, normal.z)`, not
+     * the negation of it. Clicking a picture walked you to exactly the right
+     * spot in front of it and then had you admire the opposite wall — which
+     * looked, in a screenshot, almost like a nice shot of the wall text.
+     */
+    const targetYaw = Math.atan2(normal.x, normal.z);
     const eye = Math.min(EYE_HEIGHT_M, entry.placement.y);
     const targetPitch = Math.atan2(entry.placement.y - eye, distance);
     glideTo(x, z, eye, targetYaw, targetPitch, animate ? FOCUS_MS : 0);
@@ -912,6 +1023,8 @@ export const createRoomScene = async (
     const height = canvas.clientHeight || 1;
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
+    // A phone held upright needs a wider vertical field or it sees a keyhole.
+    camera.fov = (fieldOfView(camera.aspect) * 180) / Math.PI;
     camera.updateProjectionMatrix();
   };
   resize2d();
@@ -948,6 +1061,10 @@ export const createRoomScene = async (
     if (now - lastLod > LOD_INTERVAL_MS) {
       lastLod = now;
       reconsider();
+      // Published here rather than once a second with the frame rate, because
+      // the position in it goes stale between ticks and anything reading it to
+      // decide where the visitor is standing walks straight past the answer.
+      onStats?.(snapshot());
     }
 
     renderer.render(scene, camera);
@@ -969,17 +1086,24 @@ export const createRoomScene = async (
         renderer.setPixelRatio(1);
         resize2d();
       }
-      onStats?.(snapshot());
     }
   };
 
-  const snapshot = (): SceneStats => ({
-    fps: Math.round(fps),
-    textureBytes: budget.bytes,
-    nearCount: budget.nearCount,
-    rendererTextures: renderer.info.memory.textures,
-    pixelRatio,
-  });
+  const snapshot = (): SceneStats => {
+    const roomIndex = roomAt(plan, camera.position.z);
+    return {
+      fps: Math.round(fps),
+      textureBytes: budget.bytes + plates.bytes,
+      nearCount: budget.nearCount,
+      rendererTextures: renderer.info.memory.textures,
+      pixelRatio,
+      roomIndex,
+      roomCount: plan.rooms.length,
+      roomName: plan.rooms[roomIndex]?.name ?? null,
+      metresIntoRoom:
+        (plan.rooms[roomIndex]?.southZ ?? 0) - camera.position.z,
+    };
+  };
 
   frame = requestAnimationFrame(tick);
 
@@ -1002,6 +1126,7 @@ export const createRoomScene = async (
       }
       for (const item of disposables) item.dispose();
       budget.clear();
+      plates.clear();
       // Without this the context survives the unmount, and a visitor toggling
       // between the page and the room a dozen times hits the browser's cap.
       renderer.dispose();

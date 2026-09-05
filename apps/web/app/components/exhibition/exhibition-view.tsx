@@ -148,10 +148,26 @@ export const ExhibitionView = ({
   const agentWritten = page.works.filter((work) => work.labelByAgent).length;
   const available = useRoomAvailable();
 
-  if (template === 'room' && available) {
+  if (template === 'room' && available !== 'no') {
+    /*
+     * A `?v=room` document never renders the flat hang, not even for the frame
+     * before the capability check answers.
+     *
+     * It used to, and the cost was measurable: the browser saw six `<img>`
+     * tags at the 1400 px wall width, started fetching all of them, and then
+     * the room replaced the markup — eighteen requests to the institution's
+     * image server for pictures nobody would ever see, on a page whose whole
+     * argument is that it opens fast. So the shell is charcoal and empty while
+     * the answer is unknown, and only a device that has actually failed the
+     * check falls through to the page below.
+     */
     return (
       <Suspense fallback={<main className="exhibition-room" />}>
-        <RoomView page={page} template={template} available={available} />
+        {available === 'yes' ? (
+          <RoomView page={page} template={template} available />
+        ) : (
+          <main className="exhibition-room" />
+        )}
       </Suspense>
     );
   }

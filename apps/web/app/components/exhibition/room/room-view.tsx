@@ -1,10 +1,10 @@
 /**
  * The room, as a page.
  *
- * Thin on purpose. It owns a canvas, hands the scene a plan, and renders the
- * one piece of the room that should not be a texture: the wall label of
- * whatever the visitor is standing in front of, in real type, in the same two
- * inks the flat page uses.
+ * Thin on purpose. It owns the element the scene draws into, hands the scene a
+ * plan, and renders the one piece of the room that should not be a texture:
+ * the wall label of whatever the visitor is standing in front of, in real
+ * type, in the same two inks the flat page uses.
  *
  * **The label in the focused view is the published one.** `page.works[].label`
  * is the `current` value of the exhibition field — what the human wrote, or
@@ -25,7 +25,7 @@ import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 import { parseDimensions } from '~/lib/room/dimensions';
 import { planRoom, type RoomWorkInput } from '~/lib/room/plan';
 import type { ExhibitionTemplate } from '~/lib/room/template';
-import type { RoomSceneHandle, SceneStats } from './room-scene';
+import type { RoomSceneHandle, SceneStats, SceneWork } from './room-scene';
 import { TemplateSwitch } from './template-switch';
 
 /**
@@ -46,20 +46,25 @@ export const RoomView = ({
   template: ExhibitionTemplate;
   available: boolean;
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const sceneRef = useRef<RoomSceneHandle | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const reducedMotion = usePrefersReducedMotion();
 
   /**
    * The plan, from the show.
    *
-   * `dimensions` is not on the exhibition payload — the public catalogue
-   * returns it on the artwork record and this page does not carry it through —
-   * so in practice every work here takes the declared fallback size. The parse
-   * runs anyway, against whatever the payload does have, because the day the
-   * loader starts carrying dimensions the room should start using them without
-   * anybody remembering to come back here. See `docs/night/room-report.md`.
+   * `dimensions` reaches this payload but arrives empty from the NGA ingest —
+   * the structured field is present on every record with every value null — so
+   * in practice every work here takes the declared fallback size. The parse
+   * runs anyway, because the day a collection carries real dimensions the room
+   * should start using them without anybody remembering to come back here.
+   * See `docs/night/room-report.md` for the count.
+   *
+   * Memoised because the effect below depends on it and rebuilding the plan
+   * would rebuild the whole scene. `useLoaderData` turns out to hand back a
+   * stable object per navigation — measured, by counting scene creations
+   * across three mounts of the room: three — so the array identities are a
+   * sound key and no content hash is needed.
    */
   const plan = useMemo(() => {
     const works: RoomWorkInput[] = page.works.map((work) => {
@@ -74,58 +79,94 @@ export const RoomView = ({
     return planRoom(works, page.regions);
   }, [page.works, page.regions]);
 
+  const sceneWorks = useMemo<SceneWork[]>(
+    () =>
+      page.works.map((work) => ({
+        artworkId: work.artworkId,
+        title: work.title,
+        artist: work.artist,
+        date: work.date,
+        label: work.label,
+        imageUrl: work.imageUrl,
+      })),
+    [page.works]
+  );
+
   const onFocus = useCallback((artworkId: string | null) => {
     setFocused(artworkId);
   }, []);
 
+  const { title, statement } = page;
+
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !available) return;
+    const stage = stageRef.current;
+    if (!stage || !available) return;
+
+    /*
+     * The canvas is made here rather than rendered by React, and that is a
+     * bug fix rather than a style.
+     *
+     * Tearing a scene down ends with `forceContextLoss()`, which is not
+     * optional — without it a visitor toggling between the page and the room
+     * a dozen times runs into the browser's cap on live WebGL contexts and
+     * every later room is blank. But a lost context is lost *for that canvas
+     * element, permanently*: a second `WebGLRenderer` built on the same
+     * element gets the dead context back and renders nothing, silently, with
+     * one "Context Lost" line in the console as the only clue. React reuses
+     * the element across effect runs, so a single re-run was enough to kill
+     * the room for the rest of the page's life. Owning the element means
+     * every scene gets a live context and disposal takes the whole thing.
+     */
+    const canvas = document.createElement('canvas');
+    canvas.className = 'exhibition-room-canvas';
+    canvas.tabIndex = 0;
+    // A canvas with no accessible name is announced as "canvas". Everything a
+    // screen reader actually needs is in the list further down the document.
+    canvas.setAttribute('aria-label', `${title}, walkable`);
+    stage.appendChild(canvas);
 
     let handle: RoomSceneHandle | null = null;
-    let cancelled = false;
+    let disposed = false;
 
-    void import('./room-scene').then(({ createRoomScene }) =>
-      createRoomScene({
-        canvas,
-        plan,
-        title: page.title,
-        statement: page.statement,
-        works: page.works.map((work) => ({
-          artworkId: work.artworkId,
-          title: work.title,
-          artist: work.artist,
-          date: work.date,
-          label: work.label,
-          imageUrl: work.imageUrl,
-        })),
-        reducedMotion,
-        onFocus,
-        onStats: (stats: SceneStats) => {
-          /*
-           * Instrumentation, not a control surface. The room is measured by
-           * walking it; this is only how the number gets out of the frame loop
-           * and into the report, and nothing in the product reads it.
-           */
-          (window as Window & { __paillette_room?: SceneStats }).__paillette_room =
-            stats;
-        },
-      }).then((created) => {
-        if (cancelled) {
+    void import('./room-scene')
+      .then(({ createRoomScene }) => {
+        // Checked before the scene exists, not after: creating one only to
+        // dispose it is what put a dead context on a live canvas.
+        if (disposed) return null;
+        return createRoomScene({
+          canvas,
+          plan,
+          title,
+          statement,
+          works: sceneWorks,
+          reducedMotion,
+          onFocus,
+          onStats: (stats: SceneStats) => {
+            /*
+             * Instrumentation, not a control surface. The room is measured by
+             * walking it; this is only how a number gets out of a render loop
+             * and into the report, and nothing in the product reads it.
+             */
+            (window as Window & { __paillette_room?: SceneStats }).__paillette_room =
+              stats;
+          },
+        });
+      })
+      .then((created) => {
+        if (!created) return;
+        if (disposed) {
           created.dispose();
           return;
         }
         handle = created;
-        sceneRef.current = created;
-      })
-    );
+      });
 
     return () => {
-      cancelled = true;
+      disposed = true;
       handle?.dispose();
-      sceneRef.current = null;
+      canvas.remove();
     };
-  }, [available, plan, page.works, page.title, page.statement, reducedMotion, onFocus]);
+  }, [available, plan, sceneWorks, title, statement, reducedMotion, onFocus]);
 
   const work = focused
     ? page.works.find((candidate) => candidate.artworkId === focused)
@@ -133,22 +174,11 @@ export const RoomView = ({
 
   return (
     <main className="exhibition-room" data-focused={work ? 'true' : undefined}>
-      <canvas
-        ref={canvasRef}
-        className="exhibition-room-canvas"
-        tabIndex={0}
-        /*
-         * The only string on screen that describes the interface, and it is
-         * not on screen: a canvas with no accessible name is announced as
-         * "canvas", which is worse than useless. Everything a screen reader
-         * actually needs is in the list below.
-         */
-        aria-label={`${page.title}, walkable`}
-      />
+      <div className="exhibition-room-stage" ref={stageRef} />
 
       <header className="exhibition-room-masthead">
         <h1 className="exhibition-room-title">{page.title}</h1>
-        <TemplateSwitch template={template} available={available} />
+        <TemplateSwitch template={template} available={available ? 'yes' : 'no'} />
       </header>
 
       {work && (

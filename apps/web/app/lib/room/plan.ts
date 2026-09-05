@@ -58,12 +58,43 @@ export const MAX_WORKS_PER_ROOM = 12;
 export const MIN_ROOM_WIDTH_M = 5;
 export const MIN_ROOM_DEPTH_M = 5.5;
 
-/** Floor to ceiling. Galleries are tall; a 2.4 m ceiling reads as an office. */
-export const MIN_WALL_HEIGHT_M = 3.8;
+/**
+ * Floor to ceiling.
+ *
+ * A 2.4 m ceiling reads as an office, and 3.8 — where this started — reads as
+ * an atrium once the works are prints: two metres of empty wall above a 65 cm
+ * etching is a room that looks like it lost something. 3.2 m is a real print
+ * gallery, and anything hung large pushes it up from here anyway.
+ */
+export const MIN_WALL_HEIGHT_M = 3.2;
 
-/** How far a visitor is set back from the wall when a work is focused. */
-export const VIEWING_DISTANCE_FACTOR = 1.6;
-export const MIN_VIEWING_DISTANCE_M = 1.6;
+/** The room's vertical field of view on a landscape screen, in radians. */
+export const BASE_FIELD_OF_VIEW = (62 * Math.PI) / 180;
+
+/**
+ * A portrait screen needs a different field, and forgetting that is visible.
+ *
+ * A camera's field of view is *vertical*, so 62° on a phone held upright is a
+ * horizontal field of about 31° — a keyhole. You see acres of wall above and
+ * below and almost nothing to either side, which on the first phone screenshot
+ * read as a room with nothing in it. So a tall viewport widens the vertical
+ * field until the horizontal one is at least usable, and stops before the
+ * distortion of a very wide lens takes over.
+ */
+export const MIN_HORIZONTAL_FOV = (46 * Math.PI) / 180;
+export const MAX_VERTICAL_FOV = (80 * Math.PI) / 180;
+
+export const fieldOfView = (aspect: number): number => {
+  if (aspect >= 1) return BASE_FIELD_OF_VIEW;
+  const wanted = 2 * Math.atan(Math.tan(MIN_HORIZONTAL_FOV / 2) / aspect);
+  return Math.min(MAX_VERTICAL_FOV, Math.max(BASE_FIELD_OF_VIEW, wanted));
+};
+
+/** Never closer than this, whatever the arithmetic says. */
+export const MIN_VIEWING_DISTANCE_M = 0.95;
+
+/** How much of the frame a focused work is meant to take up. */
+export const FOCUS_FILL = 0.72;
 
 export interface RoomWorkInput {
   artworkId: string;
@@ -452,9 +483,30 @@ export function hangHeight(heightM: number): number {
   return Math.max(CENTRE_LINE_M, heightM / 2 + 0.15);
 }
 
-/** How far back you have to stand for a work to fill the view. */
-export const viewingDistance = (widthM: number, heightM: number): number =>
-  Math.max(
+/**
+ * How far back to stand for a work to fill the view — on *this* screen.
+ *
+ * Derived from the camera rather than from a rule of thumb, because the beat
+ * is "it fills the view" and a fixed multiple of the work's size fills a
+ * different fraction of a phone than of a laptop. Whichever of the two
+ * dimensions binds decides, so a panorama is framed by its width and an
+ * altarpiece by its height.
+ *
+ * This is the one place the room deliberately does *not* preserve real scale.
+ * A print and a history painting arrive at the same size on screen when they
+ * are being looked at, because what the focused view is for is the label and
+ * the surface; the size is what the room itself already said, on the way in.
+ */
+export const viewingDistance = (
+  widthM: number,
+  heightM: number,
+  verticalFov: number,
+  aspect: number
+): number => {
+  const halfTan = Math.tan(verticalFov / 2);
+  return Math.max(
     MIN_VIEWING_DISTANCE_M,
-    Math.max(widthM, heightM) * VIEWING_DISTANCE_FACTOR
+    heightM / (2 * halfTan * FOCUS_FILL),
+    widthM / (2 * halfTan * aspect * FOCUS_FILL)
   );
+};
