@@ -663,7 +663,9 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
   imports and is fetched only by someone who asked for the room.
 - **The groups an agent names on the board become the rooms a stranger walks
   through.** Demonstrated end to end, twice from scratch, on freshly published
-  short codes — with the limit in the next section.
+  short codes — with the limit in the next section. **That limit is now gone:
+  `claims-report.md` runs the same path from a typed sentence, with the model
+  choosing `annotate_atlas` itself.**
 
 ### Do not say
 
@@ -693,6 +695,13 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
   and this lane never ran it. Phrase it as "when the show names its groups,
   the room follows" rather than as the agent doing it live, unless the culling
   lane has evidence for the first leg.
+
+  > **Superseded — see `claims-report.md` §1–5.** That first leg has since been
+  > run. Typed into the agent bar with nothing driven through the console, the
+  > model chose `annotate_atlas` in two runs of three, and the codes it
+  > published walk as its own two named rooms, 26 of 26, twice. The third run
+  > is why `unnamed-rooms` now exists. This bullet stands as the record of what
+  > was true when the room lane wrote it; it is no longer the limit.
 
 ### The one-line version
 
