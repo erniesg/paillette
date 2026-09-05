@@ -44,6 +44,36 @@ const CODE = process.env.CODE ?? 'u4G4Gkv';
 /** A show published before regions existed, which must be unaffected. */
 const PLAIN_CODE = process.env.PLAIN_CODE ?? 'MKwsxHy';
 
+/**
+ * What the show being walked is supposed to be, asked of the show itself.
+ *
+ * The names were hardcoded to one demo exhibition, which meant the script
+ * could only ever prove the one shape it was written against — twelve works in
+ * two named rooms. The smallest room the planner will build and the largest
+ * show that can be published had never been through a whole visit. The
+ * expectations come from the published record now, so the same twenty-six
+ * steps run against any code.
+ */
+interface Shape {
+  works: number;
+  labels: number;
+  regions: string[];
+}
+
+const readShape = async (code: string): Promise<Shape> => {
+  const response = await fetch(`${ORIGIN}/e/${code}?_data=routes%2Fe.%24code`);
+  if (!response.ok) throw new Error(`${code}: the page would not load (${response.status})`);
+  const page = (await response.json()) as {
+    works: { label: string | null }[];
+    regions?: { label: string }[];
+  };
+  return {
+    works: page.works.length,
+    labels: page.works.filter((work) => work.label).length,
+    regions: (page.regions ?? []).map((region) => region.label),
+  };
+};
+
 interface Stats {
   fps: number;
   textureBytes: number;
@@ -203,7 +233,14 @@ const main = async () => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(String(error).slice(0, 200)));
 
-  console.log(`\n${ORIGIN}  code ${CODE}\n`);
+  const shape = await readShape(CODE);
+  // Regions become rooms; a show with none is chunked by count, twelve to a room.
+  const expectedRooms = shape.regions.length || Math.max(1, Math.ceil(shape.works / 12));
+  console.log(
+    `\n${ORIGIN}  code ${CODE}  —  ${shape.works} works, ${shape.labels} labels, ` +
+      `${shape.regions.length ? shape.regions.join(' / ') : 'no named regions'}` +
+      ` → ${expectedRooms} room(s)\n`
+  );
 
   // 1 — the link, opened cold, by someone who has never used any of this.
   await page.goto(`${ORIGIN}/e/${CODE}`, { waitUntil: 'networkidle' });
@@ -217,17 +254,37 @@ const main = async () => {
   await enterRoom(page);
   check('the room is at the shareable URL', page.url(), `${ORIGIN}/e/${CODE}?v=room`);
 
-  // 3 — the show's own architecture, from its own regions.
+  // 3 — the show's own architecture, from its own structure.
   const opened = (await stats(page))!;
-  check('the show was built as named rooms', opened.roomCount > 1, true);
-  check('the visitor starts in the first one', opened.roomName, 'The Working Harbor');
+  check('the room count matches the show', opened.roomCount, expectedRooms);
+  check(
+    'the visitor starts in the first room',
+    opened.roomName,
+    shape.regions[0] ?? null
+  );
   check('every work has a texture', opened.nearCount > 0, true);
 
-  // 4 — walking, on the keyboard alone, into the second named room.
-  await walkInto(page, 1);
-  const second = (await stats(page))!;
-  check('walking arrives in the second named room', second.roomName, 'The Empty Shore');
-  check('and well inside it, not in the doorway', second.metresIntoRoom >= 2.9, true);
+  /*
+   * 4 — walking. A show with more than one room is walked into the next one;
+   * a single-room show is walked across, which is the same verb answering a
+   * different building and is the only thing the smallest room can be asked.
+   */
+  if (expectedRooms > 1) {
+    await walkInto(page, 1);
+    const second = (await stats(page))!;
+    check(
+      'walking arrives in the second room',
+      second.roomName,
+      shape.regions[1] ?? null
+    );
+    check('and well inside it, not in the doorway', second.metresIntoRoom >= 2.9, true);
+  } else {
+    const before = (await stats(page))!.metresIntoRoom;
+    await walkInto(page, 0);
+    const after = (await stats(page))!;
+    check('walking crosses the one room it has', after.metresIntoRoom > before, true);
+    check('and stays inside it', after.roomIndex, 0);
+  }
 
   // 5 — the beat: stand in front of a work and the label arrives.
   check('clicking a work opens its wall label', await clickAWork(page), true);

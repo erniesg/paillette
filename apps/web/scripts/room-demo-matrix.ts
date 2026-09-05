@@ -20,6 +20,21 @@ import { spawn } from 'node:child_process';
 
 const ROUNDS = Number(process.env.ROUNDS ?? 1);
 
+/**
+ * Shows of other shapes, walked on a desktop.
+ *
+ * The visitor conditions below all run against one exhibition — twelve works
+ * in two named rooms — so until this existed the smallest room the planner
+ * will build and the largest show that can be published had never been through
+ * a whole visit. `SHAPES` is a comma-separated list of published codes; the
+ * demo path reads each one's structure and expects what that structure
+ * implies, rather than one demo's region names.
+ */
+const SHAPES = (process.env.SHAPES ?? '')
+  .split(',')
+  .map((code) => code.trim())
+  .filter(Boolean);
+
 interface Cell {
   name: string;
   env: Record<string, string>;
@@ -70,8 +85,13 @@ const main = async () => {
   );
   const failures: string[] = [];
 
+  const cells: Cell[] = [
+    ...CELLS,
+    ...SHAPES.map((code) => ({ name: `show ${code}`, env: { CODE: code } })),
+  ];
+
   for (let round = 1; round <= ROUNDS; round += 1) {
-    for (const cell of CELLS) {
+    for (const cell of cells) {
       const result = await run(cell);
       console.log(
         `  ${result.ok ? 'ok  ' : 'FAIL'} ${cell.name.padEnd(38)} ${String(result.steps).padStart(2)} steps` +
@@ -81,13 +101,14 @@ const main = async () => {
     }
     if (ROUNDS > 1) console.log('');
   }
+  const total = cells.length * ROUNDS;
 
   if (failures.length) {
     console.log(`\n${failures.length} failing cell(s):`);
     for (const failure of failures) console.log(`  ${failure}`);
     process.exitCode = 1;
   } else {
-    console.log(`\n  ${CELLS.length * ROUNDS} of ${CELLS.length * ROUNDS} cells green\n`);
+    console.log(`\n  ${total} of ${total} cells green\n`);
   }
 };
 
