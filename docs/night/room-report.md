@@ -271,9 +271,37 @@ the honest position rather than quoting a figure I did not see.
 | a code that does not exist, or is not a code | 404, and no canvas is ever created | the room never turns a missing show into a blank scene |
 | a corrupt self-contained payload | 404 | |
 | a show with no labels at all | the focused panel shows the catalogue line and no empty rule | found by publishing one from the agent path by accident |
+| a phone held upright | the whole visit completes by touch alone | 26 of 26, and see the caveat below |
 
 All of these were also checked against the deployed staging build, not only
 locally.
+
+### The phone, honestly
+
+The full twenty-six-step visit completes on a 390 × 844 viewport with touch as
+the only input, including with reduced motion and with every speech API
+removed. But a phone held upright has a **horizontal field of about 42°**,
+against a desktop's 87°, and that is physics rather than a setting: the room's
+vertical field is already widened to the 80° limit to compensate, and widening
+further starts bending the room.
+
+What that means in practice: **on a phone you see roughly one work at a time
+and you have to look around.** Deep in a wide room you can be facing the gap
+between two works. That is also true in a real gallery standing close to a
+wall, but it is worth saying before somebody films a phone and is surprised.
+
+One change came out of it. Walking used to stop 0.95 m from a wall — arm's
+length — and on a phone that put the visitor nose-first into bare plaster with
+a picture just off each edge of the screen. It stops at 1.4 m now, which makes
+the two verbs mean different things: **walking gets you around the room,
+clicking a work gets you up to it.** A test holds that walking can never
+already put you closer than the focused view would.
+
+It is not a guarantee that a work is always in frame. A first attempt at that
+test was written and then deleted: a 42° field in a nine-metre room cannot
+promise it, and the standoff that would force it leaves the smallest rooms with
+no interior at all. Tuning constants until a test passes, when the test encodes
+a property the design does not have, is backwards.
 
 ---
 
@@ -389,6 +417,24 @@ did not compose.
     already existed. Not harmless — a payload change on the common path — and
     the gap that let it through was that nothing asserted what a *grouped*
     board publishes.
+
+### Found by running it as somebody other than a desktop
+
+15. **Walking parked a phone visitor nose-first into bare plaster.** Tapping
+    the floor walks as far along that line as the building allows, and the
+    building allowed arm's length. Fine at a desktop's 87° horizontal field;
+    at a phone's 42° it is 0.78 m of wall, less than the gap between two hung
+    works, so the visitor arrived at the far wall with a picture just off each
+    edge of the screen. It looks like an empty room. Walking stops 1.4 m short
+    now.
+16. **The title swallowed taps.** Both masthead children took pointer events,
+    and the `h1` is set 22 rem wide — on a 390 px screen a patch of what looks
+    like room was an unclickable heading. A title is not a control.
+17. **Two of the three phone "failures" were the script**, and that is worth
+    recording because the first pass blamed the product. It tapped a pixel to
+    give the canvas the keyboard, and on a phone that pixel is the title; and
+    it used arrow keys at all, which a phone does not have. A phone visitor
+    walks by tapping the floor and does it in two taps.
 
 ### Checks that were not checking
 
@@ -514,7 +560,18 @@ rather than described. It throws on the first thing that is not true.
 Run three times locally and three times against deployed staging: **25 of 25
 each time, no flakes** — 26 of 26 on a show that has labels, since one step only
 applies then. Peak on the walk: 31.0–48.5 MiB of texture, four to six works at
-full resolution, 22–25 fps under SwiftShader.
+full resolution, 22–26 fps under SwiftShader.
+
+**And across the conditions a visitor arrives in.**
+`scripts/room-demo-matrix.ts` runs the whole visit five ways — desktop; a phone
+with touch as the only input; reduced motion; every speech API deleted before
+the page loads; and all three constraints at once. Against deployed staging,
+three rounds: **15 of 15 cells green, 26 steps each.**
+
+```
+PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=Gt7HNyF ROUNDS=3 \
+  pnpm --filter web exec tsx scripts/room-demo-matrix.ts
+```
 
 ```
 PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=u4G4Gkv \
@@ -558,6 +615,9 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
 - **A shared short link carries all of that**, including the named rooms.
 - **Walking, clicking a picture, and reading its wall label all work by mouse,
   by touch, and by keyboard alone** — and with no speech APIs present at all.
+  The whole visit was run five ways, three times, on deployed staging: desktop,
+  phone with touch only, reduced motion, no speech, and all three at once.
+  15 of 15.
 - **A device that cannot draw a room is never offered one**, and never told
   why; it simply gets the page that has always worked. Same for a context the
   browser takes away mid-visit.
@@ -580,8 +640,11 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
   as a capability waiting on data, never as something visible in the demo.
 - **Any frame rate.** This machine has no GPU a browser will use; every number
   is SwiftShader on four vCPUs. There is no laptop or phone measurement.
-- **"Runs well on a phone."** It runs *correctly* on a phone-sized viewport and
-  responds to touch. Nobody has run it on a phone.
+- **"Runs well on a phone."** The whole visit *completes* on a phone-sized
+  viewport by touch alone — but a portrait phone has a ~42° horizontal field,
+  so you see about one work at a time and must look around. Nobody has run it
+  on actual phone hardware. Say "it works on a phone", not "it is good on a
+  phone", and do not film one without looking at §5 first.
 - **"60 fps."** Not measured, on anything.
 - **Music, or audio of any kind.** There is none.
 - **That the agent can put a visitor in the room.** It cannot; the template is a

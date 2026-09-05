@@ -1,7 +1,7 @@
 {
   "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
   "six": {
-    "fps": 30,
+    "fps": 31,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 12,
@@ -46,9 +46,9 @@
   },
   "thirty": {
     "fps": 25,
-    "textureBytes": 61612326,
+    "textureBytes": 62331174,
     "nearCount": 6,
-    "rendererTextures": 28,
+    "rendererTextures": 29,
     "pixelRatio": 1,
     "roomIndex": 0,
     "roomCount": 3,
@@ -57,9 +57,9 @@
   },
   "thirty-second-room": {
     "fps": 24,
-    "textureBytes": 63335328,
+    "textureBytes": 64054176,
     "nearCount": 6,
-    "rendererTextures": 31,
+    "rendererTextures": 32,
     "pixelRatio": 1,
     "roomIndex": 1,
     "roomCount": 3,
@@ -67,26 +67,26 @@
     "metresIntoRoom": 4.505777790477641
   },
   "thirty-third-room": {
-    "fps": 29,
-    "textureBytes": 66411179,
+    "fps": 28,
+    "textureBytes": 68918485,
     "nearCount": 6,
-    "rendererTextures": 35,
+    "rendererTextures": 37,
     "pixelRatio": 1,
     "roomIndex": 2,
     "roomCount": 3,
     "roomName": null,
-    "metresIntoRoom": 3.3615555809552813
+    "metresIntoRoom": 4.211555580955281
   },
   "thirtyAfterWalk": {
-    "fps": 29,
-    "textureBytes": 66411179,
+    "fps": 28,
+    "textureBytes": 68918485,
     "nearCount": 6,
-    "rendererTextures": 35,
+    "rendererTextures": 37,
     "pixelRatio": 1,
     "roomIndex": 2,
     "roomCount": 3,
     "roomName": null,
-    "metresIntoRoom": 3.3615555809552813
+    "metresIntoRoom": 4.211555580955281
   },
   "regions-first": {
     "fps": 27,
@@ -100,7 +100,7 @@
     "metresIntoRoom": 1.4
   },
   "regions-second": {
-    "fps": 24,
+    "fps": 26,
     "textureBytes": 48719472,
     "nearCount": 6,
     "rendererTextures": 18,
@@ -108,7 +108,7 @@
     "roomIndex": 1,
     "roomCount": 2,
     "roomName": "The Empty Shore",
-    "metresIntoRoom": 4.399999999999999
+    "metresIntoRoom": 4.059999999999999
   },
   "shortcode-regions-first": {
     "fps": 27,
