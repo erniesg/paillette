@@ -47,6 +47,18 @@ export const TITLE_MAX_CHARS = 90;
 export const STATEMENT_MAX_CHARS = 800;
 export const LABEL_MAX_CHARS = 320;
 
+/** A region's name. The same ceiling the board's own `annotate_atlas` uses. */
+export const REGION_LABEL_MAX_CHARS = 60;
+
+/**
+ * More than this and an arrangement stops being an argument.
+ *
+ * The atlas tool says two to four regions read and six is the most it can
+ * carry legibly; the walkable view turns each one into a room, and a
+ * twelve-room enfilade for a twenty-four work show is a corridor.
+ */
+export const MAX_REGIONS = 6;
+
 /**
  * A curator revising a show republishes it a few times; twenty an hour is
  * generous for that and useless as a way to fill a table with someone else's
@@ -79,6 +91,25 @@ export interface ExhibitionWork {
   artworkId: string;
   label: string | null;
   labelByAgent: boolean;
+}
+
+/**
+ * A named grouping of works. The walkable view turns each one into a room.
+ *
+ * Stored *inside* the existing `works` column rather than beside it, which is
+ * the reason this needed no migration. That column is TEXT holding JSON and
+ * this route is its only writer, so a row can hold either shape:
+ *
+ *   `[ …works ]`                      — every row written before regions
+ *   `{ "works": [ … ], "regions": [ … ] }`
+ *
+ * The reader accepts both and the writer only uses the object form when there
+ * are regions to put in it, so nothing already published changes and a show
+ * with no groupings is byte-for-byte what it was.
+ */
+export interface ExhibitionRegion {
+  label: string;
+  artworkIds: string[];
 }
 
 const jsonError = (code: string, message: string) => ({
@@ -129,17 +160,29 @@ const withinCreateRateLimit = async (
   }
 };
 
-/** Reading a stored hang. Tolerant, because the column is the only writer. */
-const readWorks = (raw: string): ExhibitionWork[] => {
+/** Reading a stored hang. Tolerant, because this route is the only writer. */
+const readHang = (raw: string): { works: ExhibitionWork[]; regions: ExhibitionRegion[] } => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [];
+    return { works: [], regions: [] };
   }
-  if (!Array.isArray(parsed)) return [];
+
+  // Both shapes, so a row written before regions existed still reads.
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { works?: unknown })?.works)
+      ? (parsed as { works: unknown[] }).works
+      : [];
+  const rawRegions = Array.isArray(parsed)
+    ? []
+    : Array.isArray((parsed as { regions?: unknown })?.regions)
+      ? (parsed as { regions: unknown[] }).regions
+      : [];
+
   const works: ExhibitionWork[] = [];
-  for (const entry of parsed) {
+  for (const entry of list) {
     const artworkId = asTrimmedString((entry as { artworkId?: unknown })?.artworkId);
     if (!artworkId) continue;
     const label = asTrimmedString((entry as { label?: unknown })?.label);
@@ -149,21 +192,51 @@ const readWorks = (raw: string): ExhibitionWork[] => {
       labelByAgent: asBoolean((entry as { labelByAgent?: unknown })?.labelByAgent),
     });
   }
-  return works;
+
+  /*
+   * A region may only name works this exhibition actually hangs.
+   *
+   * Filtered on the way out as well as on the way in, because the column is
+   * storage rather than a contract: a row edited by hand, or written by an
+   * older version of this route, must not be able to make the page draw an
+   * empty room or hang a work the show does not contain.
+   */
+  const hung = new Set(works.map((work) => work.artworkId));
+  const regions: ExhibitionRegion[] = [];
+  for (const entry of rawRegions) {
+    const label = asTrimmedString((entry as { label?: unknown })?.label).slice(
+      0,
+      REGION_LABEL_MAX_CHARS
+    );
+    const ids = (entry as { artworkIds?: unknown })?.artworkIds;
+    if (!label || !Array.isArray(ids)) continue;
+    const artworkIds = ids
+      .map((id) => asTrimmedString(id))
+      .filter((id) => hung.has(id));
+    if (artworkIds.length) regions.push({ label, artworkIds });
+  }
+
+  return { works, regions };
 };
 
-const toResponse = (row: ExhibitionRow) => ({
-  code: row.code,
-  path: shareCodePath(row.code),
-  collectionId: row.collection_id,
-  title: row.title,
-  titleByAgent: row.title_by_agent === 1,
-  statement: row.statement,
-  statementByAgent: row.statement_by_agent === 1,
-  works: readWorks(row.works),
-  createdAt: row.created_at,
-  viewCount: row.view_count,
-});
+const toResponse = (row: ExhibitionRow) => {
+  const { works, regions } = readHang(row.works);
+  return {
+    code: row.code,
+    path: shareCodePath(row.code),
+    collectionId: row.collection_id,
+    title: row.title,
+    titleByAgent: row.title_by_agent === 1,
+    statement: row.statement,
+    statementByAgent: row.statement_by_agent === 1,
+    works,
+    // Omitted rather than sent empty, so a show with no groupings looks
+    // exactly as it did before regions existed.
+    ...(regions.length ? { regions } : {}),
+    createdAt: row.created_at,
+    viewCount: row.view_count,
+  };
+};
 
 const exhibitions = new Hono<{ Bindings: Env }>();
 
@@ -177,6 +250,7 @@ exhibitions.post('/public-exhibitions', async (c) => {
     statement?: unknown;
     statementByAgent?: unknown;
     works?: unknown;
+    regions?: unknown;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -271,6 +345,46 @@ exhibitions.post('/public-exhibitions', async (c) => {
   const statement =
     asTrimmedString(body.statement).slice(0, STATEMENT_MAX_CHARS) || null;
 
+  /*
+   * Regions, resolved against the hang that survived rather than the one that
+   * was asked for.
+   *
+   * A work the catalogue could not find has already been dropped from `hang`,
+   * and a region still naming it would publish a room with a hole in it. A
+   * region left with nothing at all is dropped entirely, because an empty
+   * named room is a room the show does not have — the walkable view would
+   * build four walls and hang nothing in them.
+   *
+   * A work claimed by two regions belongs to the first that claimed it. The
+   * alternative is hanging the same picture twice, which is a lie about the
+   * show, and this is the same rule the client-side planner applies.
+   */
+  const hungIds = new Set(hang.map((work) => work.artworkId));
+  const claimed = new Set<string>();
+  const regions: ExhibitionRegion[] = [];
+  for (const entry of Array.isArray(body.regions) ? body.regions : []) {
+    if (regions.length >= MAX_REGIONS) break;
+    const label = asTrimmedString((entry as { label?: unknown })?.label).slice(
+      0,
+      REGION_LABEL_MAX_CHARS
+    );
+    const ids = (entry as { artworkIds?: unknown })?.artworkIds;
+    if (!label || !Array.isArray(ids)) continue;
+    const artworkIds: string[] = [];
+    for (const raw of ids) {
+      const artworkId = asTrimmedString(raw);
+      if (!artworkId || !hungIds.has(artworkId) || claimed.has(artworkId)) continue;
+      claimed.add(artworkId);
+      artworkIds.push(artworkId);
+    }
+    if (artworkIds.length) regions.push({ label, artworkIds });
+  }
+
+  // The array form for a show with no groupings, byte-for-byte what every
+  // row already stored looks like. Only a show that names its groups gets the
+  // object, and `readHang` accepts both.
+  const stored = regions.length ? JSON.stringify({ works: hang, regions }) : JSON.stringify(hang);
+
   for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt += 1) {
     const code = generateShareCode();
     try {
@@ -286,7 +400,7 @@ exhibitions.post('/public-exhibitions', async (c) => {
           statement,
           asBoolean(body.titleByAgent) ? 1 : 0,
           asBoolean(body.statementByAgent) ? 1 : 0,
-          JSON.stringify(hang)
+          stored
         )
         .run();
 
@@ -297,6 +411,7 @@ exhibitions.post('/public-exhibitions', async (c) => {
             code,
             path: shareCodePath(code),
             works: hang.length,
+            ...(regions.length ? { regions: regions.length } : {}),
             // Said plainly rather than left for the curator to discover by
             // counting: a work that is not in the catalogue is not in the show.
             dropped: works.length - hang.length,

@@ -38,7 +38,7 @@ type ShareState = 'idle' | 'working' | 'copied' | 'failed';
 
 const buildPayload = (collectionId: string): ExhibitionLinkPayload => {
   const state = getWebMcpState().exhibition;
-  return {
+  const payload: ExhibitionLinkPayload = {
     collectionId,
     title: state.title.current?.value ?? null,
     titleByAgent: state.title.current?.by === 'agent',
@@ -50,6 +50,24 @@ const buildPayload = (collectionId: string): ExhibitionLinkPayload => {
       labelByAgent: work.labelBy === 'agent',
     })),
   };
+
+  /*
+   * The named groupings travel with the show — and only when there are any.
+   *
+   * They are what the walkable view turns into separate rooms, so a curator
+   * who took the trouble to say "these six are the working harbour" has that
+   * survive being shared rather than only surviving the tab.
+   *
+   * Omitted rather than sent empty, because a show with no groupings has to
+   * publish byte-for-byte what it published before this existed. `regions: []`
+   * is not harmless — it is a payload change on the common path, and the test
+   * that caught it was right to care.
+   */
+  const regions = state.regions
+    .map((region) => ({ label: region.label, artworkIds: region.artworkIds }))
+    .filter((region) => region.label && region.artworkIds.length);
+
+  return regions.length ? { ...payload, regions } : payload;
 };
 
 /**

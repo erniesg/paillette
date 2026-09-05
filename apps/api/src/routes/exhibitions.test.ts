@@ -32,7 +32,13 @@ type Stored = {
  */
 const database = () => {
   const rows = new Map<string, Stored>();
-  const catalogue = new Set(['nga:1', 'nga:2', 'nga:3']);
+  // `nga:404` is deliberately absent, and is what every "not in the catalogue"
+  // case uses. Nine real ids rather than three so the region cap has enough
+  // works to spread across; a region cannot claim one already claimed, so
+  // testing a cap of six needs at least seven works to claim.
+  const catalogue = new Set(
+    Array.from({ length: 9 }, (_, index) => `nga:${index + 1}`)
+  );
   const inserts: string[] = [];
 
   const db = {
@@ -410,5 +416,182 @@ describe('the boundary', () => {
   it('needs no authentication, like the rest of the open-access surface', async () => {
     // No API key, no session header, no user id — and still 201/200.
     expect((await post(aShow)).status).toBe(201);
+  });
+});
+
+/**
+ * Named groupings, which the walkable view turns into separate rooms.
+ *
+ * The interesting part is the storage: regions ride *inside* the existing
+ * `works` JSON column so that shipping them needed no D1 migration, which puts
+ * the whole weight on the reader accepting two shapes and the writer only
+ * using the new one when it has to. Every assertion below was checked against
+ * a deliberately broken version first.
+ */
+describe('regions', () => {
+  const grouped = {
+    ...aShow,
+    works: [
+      { artworkId: 'nga:1', label: 'a', labelByAgent: true },
+      { artworkId: 'nga:2', label: 'b', labelByAgent: false },
+      { artworkId: 'nga:3', label: 'c', labelByAgent: false },
+    ],
+    regions: [
+      { label: 'The Working Harbor', artworkIds: ['nga:1', 'nga:3'] },
+      { label: 'The Empty Shore', artworkIds: ['nga:2'] },
+    ],
+  };
+
+  const publishAndOpen = async (payload: unknown) => {
+    const created = await post(payload);
+    const { data } = (await created.json()) as { data: { code: string } };
+    const response = await get(data.code);
+    const body = (await response.json()) as {
+      data: { regions?: { label: string; artworkIds: string[] }[] };
+    };
+    return { code: data.code, regions: body.data.regions };
+  };
+
+  it('round-trips a named grouping through a short code', async () => {
+    const { regions } = await publishAndOpen(grouped);
+    expect(regions).toEqual([
+      { label: 'The Working Harbor', artworkIds: ['nga:1', 'nga:3'] },
+      { label: 'The Empty Shore', artworkIds: ['nga:2'] },
+    ]);
+  });
+
+  /**
+   * The reason no migration was needed, and the thing that would break every
+   * link already published if it stopped being true.
+   */
+  it('stores a show with no groupings exactly as it always did', async () => {
+    const created = await post(aShow);
+    const { data } = (await created.json()) as { data: { code: string } };
+    const row = db.rows.get(data.code)!;
+    expect(Array.isArray(JSON.parse(row.works))).toBe(true);
+
+    const response = await get(data.code);
+    const body = (await response.json()) as { data: { regions?: unknown } };
+    expect(body.data.regions).toBeUndefined();
+  });
+
+  it('reads a row written before regions existed', async () => {
+    const created = await post(aShow);
+    const { data } = (await created.json()) as { data: { code: string } };
+    // Exactly the bytes an older version of this route wrote.
+    const row = db.rows.get(data.code)!;
+    row.works = JSON.stringify([
+      { artworkId: 'nga:1', label: 'a', labelByAgent: false },
+    ]);
+
+    const response = await get(data.code);
+    const body = (await response.json()) as {
+      data: { works: { artworkId: string }[]; regions?: unknown };
+    };
+    expect(body.data.works).toEqual([
+      { artworkId: 'nga:1', label: 'a', labelByAgent: false },
+    ]);
+    expect(body.data.regions).toBeUndefined();
+  });
+
+  it('drops a region naming a work the catalogue does not have', async () => {
+    const { regions } = await publishAndOpen({
+      ...grouped,
+      regions: [
+        { label: 'Ghosts', artworkIds: ['nga:404'] },
+        { label: 'Real', artworkIds: ['nga:1'] },
+      ],
+    });
+    expect(regions).toEqual([{ label: 'Real', artworkIds: ['nga:1'] }]);
+  });
+
+  it('hangs a work claimed by two regions only once', async () => {
+    const { regions } = await publishAndOpen({
+      ...grouped,
+      regions: [
+        { label: 'First', artworkIds: ['nga:1', 'nga:2'] },
+        { label: 'Second', artworkIds: ['nga:1', 'nga:3'] },
+      ],
+    });
+    expect(regions).toEqual([
+      { label: 'First', artworkIds: ['nga:1', 'nga:2'] },
+      { label: 'Second', artworkIds: ['nga:3'] },
+    ]);
+  });
+
+  it('refuses a region with no name and one that names nothing', async () => {
+    const { regions } = await publishAndOpen({
+      ...grouped,
+      regions: [
+        { label: '   ', artworkIds: ['nga:1'] },
+        { label: 'Empty', artworkIds: [] },
+        { label: 'Not an array', artworkIds: 'nga:2' },
+      ],
+    });
+    expect(regions).toBeUndefined();
+  });
+
+  it('truncates a name rather than storing a paragraph', async () => {
+    const { regions } = await publishAndOpen({
+      ...grouped,
+      regions: [{ label: 'x'.repeat(200), artworkIds: ['nga:1'] }],
+    });
+    expect(regions![0]!.label).toHaveLength(60);
+  });
+
+  it('stops at six regions, because past that an enfilade is a corridor', async () => {
+    const works = Array.from({ length: 9 }, (_, index) => ({
+      artworkId: `nga:${index + 1}`,
+    }));
+    const { regions } = await publishAndOpen({
+      ...grouped,
+      works,
+      // Nine regions, one work each, so the cap is what stops it rather than
+      // the works running out — which is what the first version of this test
+      // actually measured.
+      regions: works.map((work, index) => ({
+        label: `Room ${index}`,
+        artworkIds: [work.artworkId],
+      })),
+    });
+    expect(regions).toHaveLength(6);
+    expect(regions!.map((region) => region.label)).toEqual([
+      'Room 0',
+      'Room 1',
+      'Room 2',
+      'Room 3',
+      'Room 4',
+      'Room 5',
+    ]);
+  });
+
+  it('refuses regions that are not an array at all', async () => {
+    const { regions } = await publishAndOpen({ ...grouped, regions: 'leaving' });
+    expect(regions).toBeUndefined();
+  });
+
+  /**
+   * The column is storage, not a contract. A row edited by hand must not be
+   * able to make the page draw a room with nothing in it.
+   */
+  it('filters a stored region against the works the row actually holds', async () => {
+    const created = await post(grouped);
+    const { data } = (await created.json()) as { data: { code: string } };
+    const row = db.rows.get(data.code)!;
+    row.works = JSON.stringify({
+      works: [{ artworkId: 'nga:1', label: 'a', labelByAgent: false }],
+      regions: [
+        { label: 'Half gone', artworkIds: ['nga:1', 'nga:2'] },
+        { label: 'All gone', artworkIds: ['nga:2'] },
+      ],
+    });
+
+    const response = await get(data.code);
+    const body = (await response.json()) as {
+      data: { regions?: { label: string; artworkIds: string[] }[] };
+    };
+    expect(body.data.regions).toEqual([
+      { label: 'Half gone', artworkIds: ['nga:1'] },
+    ]);
   });
 });

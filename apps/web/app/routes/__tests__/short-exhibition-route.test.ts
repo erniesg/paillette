@@ -177,3 +177,85 @@ describe('a code that does not open', () => {
     expect(seen).toHaveLength(0);
   });
 });
+
+/**
+ * Named groupings, over the short link.
+ *
+ * The walkable view turns each region into a separate room, and until this
+ * existed a grouped show shared as `/e/:code` was silently flattened into one
+ * enfilade chunked by count — the same show, arranged as if it had never said
+ * how it was grouped. The API carries them now; this is the page builder's
+ * half, including what it does when the catalogue has since lost a work a
+ * region names.
+ */
+describe('regions over a short code', () => {
+  const grouped = (regions: unknown) =>
+    exhibition({
+      works: [
+        { artworkId: 'a', label: 'one', labelByAgent: false },
+        { artworkId: 'b', label: 'two', labelByAgent: false },
+      ],
+      regions,
+    });
+
+  it('carries a named grouping onto the page', async () => {
+    stub({
+      show: grouped([
+        { label: 'The Working Harbor', artworkIds: ['a'] },
+        { label: 'The Empty Shore', artworkIds: ['b'] },
+      ]),
+      rows: { a: record('a'), b: record('b') },
+    });
+    const page = await (await run(CODE)).json();
+    expect(page.regions).toEqual([
+      { label: 'The Working Harbor', artworkIds: ['a'] },
+      { label: 'The Empty Shore', artworkIds: ['b'] },
+    ]);
+  });
+
+  it('says nothing about regions for a show that has none', async () => {
+    stub({ rows: { a: record('a'), b: record('b') } });
+    const page = await (await run(CODE)).json();
+    expect(page.regions).toBeUndefined();
+  });
+
+  /**
+   * A region is a name over a set, and the set losing a member does not unmake
+   * the name — but a region left with nothing would build a room with no works
+   * in it, which is a room the show does not have.
+   */
+  it('drops a work the catalogue no longer resolves, and an emptied region with it', async () => {
+    stub({
+      show: grouped([
+        { label: 'Still here', artworkIds: ['a', 'b'] },
+        { label: 'All gone', artworkIds: ['b'] },
+      ]),
+      // `b` has left the catalogue since the show was published.
+      rows: { a: record('a') },
+    });
+    const page = await (await run(CODE)).json();
+    expect(page.works.map((work: any) => work.artworkId)).toEqual(['a']);
+    expect(page.missing).toBe(1);
+    expect(page.regions).toEqual([{ label: 'Still here', artworkIds: ['a'] }]);
+  });
+
+  it('ignores regions that are not the shape they should be', async () => {
+    stub({
+      show: grouped([
+        { label: '', artworkIds: ['a'] },
+        { label: 'No ids', artworkIds: [] },
+        { label: 'Not an array', artworkIds: 'a' },
+        'not an object',
+      ]),
+      rows: { a: record('a'), b: record('b') },
+    });
+    const page = await (await run(CODE)).json();
+    expect(page.regions).toBeUndefined();
+  });
+
+  it('ignores a regions key that is not an array at all', async () => {
+    stub({ show: grouped('leaving'), rows: { a: record('a'), b: record('b') } });
+    const page = await (await run(CODE)).json();
+    expect(page.regions).toBeUndefined();
+  });
+});

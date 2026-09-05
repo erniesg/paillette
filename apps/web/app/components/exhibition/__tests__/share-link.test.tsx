@@ -21,7 +21,7 @@ import {
   rememberArtworks,
 } from '~/lib/webmcp/artwork-index';
 import { __resetFlagsForTest, setFlag } from '~/lib/webmcp/flags';
-import { writeExhibition } from '~/lib/webmcp/exhibition';
+import { setRegions, writeExhibition } from '~/lib/webmcp/exhibition';
 import { decodeExhibitionLink } from '~/lib/exhibition-link';
 import { __resetWebMcpStateForTest, setBoard } from '~/lib/webmcp/store';
 
@@ -276,5 +276,45 @@ describe('when the clipboard is unavailable', () => {
     await click();
     await screen.findByRole('button', { name: 'Copied' });
     expect(screen.queryByLabelText('Exhibition link')).toBeNull();
+  });
+});
+
+/**
+ * Named groupings, which the walkable view turns into separate rooms.
+ *
+ * They used to die with the tab: the board knew them, the share payload did
+ * not carry them, and a grouped show opened from its own link as if it had
+ * never said how it was grouped. The pair below is the whole contract — a
+ * grouped show sends them, and a show with no groupings sends a payload that
+ * is byte-for-byte what it was before regions existed, which is the half a
+ * first attempt got wrong.
+ */
+describe('named groupings in the published show', () => {
+  it('publishes the regions the board named', async () => {
+    aShow();
+    setRegions(
+      [
+        { label: 'The Working Harbor', artworkIds: ['a'] },
+        { label: 'The Empty Shore', artworkIds: ['b'] },
+      ],
+      { by: 'agent' }
+    );
+    render(<ShareExhibitionLink />);
+    await click();
+
+    await waitFor(() => expect(published).toHaveLength(1));
+    expect((published[0] as { regions?: unknown }).regions).toEqual([
+      { label: 'The Working Harbor', artworkIds: ['a'] },
+      { label: 'The Empty Shore', artworkIds: ['b'] },
+    ]);
+  });
+
+  it('sends no regions key at all for a show that has none', async () => {
+    aShow();
+    render(<ShareExhibitionLink />);
+    await click();
+
+    await waitFor(() => expect(published).toHaveLength(1));
+    expect(published[0]).not.toHaveProperty('regions');
   });
 });

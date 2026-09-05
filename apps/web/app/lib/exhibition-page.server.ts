@@ -273,10 +273,28 @@ export const loadExhibitionByCode = async (
         statement?: string | null;
         statementByAgent?: boolean;
         works?: { artworkId?: string; label?: string | null; labelByAgent?: boolean }[];
+        regions?: { label?: string; artworkIds?: string[] }[];
       };
     };
     const data = body?.success ? body.data : null;
     if (!data || !Array.isArray(data.works) || !data.works.length) return null;
+
+    /*
+     * Regions reach the short link too now, so a show that named its groups is
+     * walked as named rooms whichever way it was shared. The API stores them
+     * inside the hang's own JSON column, filters them against the works that
+     * actually resolved, and omits the key entirely when a show has none —
+     * which is why this reads defensively and produces `undefined` rather than
+     * an empty array for the common case.
+     */
+    const regions = (Array.isArray(data.regions) ? data.regions : [])
+      .map((region) => ({
+        label: asText(region?.label) ?? '',
+        artworkIds: (Array.isArray(region?.artworkIds) ? region.artworkIds : [])
+          .map((id) => asText(id))
+          .filter((id): id is string => Boolean(id)),
+      }))
+      .filter((region) => region.label && region.artworkIds.length);
 
     return {
       collectionId: data.collectionId || 'nga',
@@ -284,6 +302,7 @@ export const loadExhibitionByCode = async (
       titleByAgent: data.titleByAgent === true,
       statement: asText(data.statement),
       statementByAgent: data.statementByAgent === true,
+      ...(regions.length ? { regions } : {}),
       works: data.works
         .filter((work) => typeof work?.artworkId === 'string' && work.artworkId.trim())
         .map((work) => ({
