@@ -34,6 +34,10 @@ import { getWebMcpState } from '~/lib/webmcp/store';
 import { listHungWorks } from '~/lib/webmcp/exhibition';
 import { findShowGap, type ShowState } from '~/lib/webmcp/unfinished-show';
 import {
+  findUnnamedRooms,
+  type RoomsState,
+} from '~/lib/webmcp/unnamed-rooms';
+import {
   findUnmarkedBoard,
   type BoardMarkState,
 } from '~/lib/webmcp/unmarked-board';
@@ -220,6 +224,56 @@ const readShowState = (statementCorrected: boolean): ShowState => {
 };
 
 /**
+ * Whatever is actually in front of them, freshest surface first.
+ *
+ * `redeal`'s own `worksOnScreen` knows about the board and the human's grid but
+ * not about a set the agent pinned with `set_results`, and proposing a mark on
+ * a work that scrolled away two turns ago is worse than proposing none.
+ */
+const worksInFrontOfThem = (state: ReturnType<typeof getWebMcpState>) =>
+  state.board?.order?.length
+    ? [...state.board.order]
+    : state.agentResults?.items.length
+      ? state.agentResults.items.map((item) => item.id)
+      : worksOnScreen(state);
+
+/**
+ * The show as `findUnnamedRooms` needs it: what they asked for, what groups the
+ * tools actually wrote, and what there is to group.
+ *
+ * `regions` is read from the store rather than from the turn's tool names for
+ * the reason `unmarked-board` learned: `annotate_atlas` can be called and
+ * refused — every region naming works that have left the board draws nothing —
+ * and a tool that was called and drew nothing has left the human looking at an
+ * undivided show.
+ */
+const readRoomsState = (said: string): RoomsState => {
+  const state = getWebMcpState();
+  return {
+    said,
+    regions: state.exhibition.regions.map((region) => ({
+      label: region.label,
+      artworkIds: region.artworkIds,
+    })),
+    // The works there are to divide: what is hanging if a show has been
+    // drafted, and otherwise whatever is in front of them — the same cascade
+    // the board reader uses, because a set the agent pinned with set_results is
+    // just as groupable as a dealt board and neither is `worksOnScreen` alone.
+    hung: (listHungWorks(state.exhibition).length
+      ? listHungWorks(state.exhibition).map((work) => work.artworkId)
+      : worksInFrontOfThem(state)
+    ).map((artworkId) => {
+      const summary = lookUpWork(artworkId);
+      return {
+        artworkId,
+        title: summary?.title ?? null,
+        artist: summary?.artist ?? null,
+      };
+    }),
+  };
+};
+
+/**
  * The board as `findUnmarkedBoard` needs it: what is in front of the human and
  * what either party has already marked on it.
  *
@@ -234,15 +288,7 @@ const readBoardMarkState = (
   const flags = new Map(
     state.flags.map((flag) => [flag.artworkId, flag] as const)
   );
-  // Whatever is actually in front of them, freshest surface first. `redeal`'s
-  // own `worksOnScreen` knows about the board and the human's grid but not
-  // about a set the agent pinned with set_results, and proposing a mark on a
-  // work that scrolled away two turns ago is worse than proposing none.
-  const onScreen = state.board?.order?.length
-    ? [...state.board.order]
-    : state.agentResults?.items.length
-      ? state.agentResults.items.map((item) => item.id)
-      : worksOnScreen(state);
+  const onScreen = worksInFrontOfThem(state);
   return {
     // Their hands, not their words. A flag or an answered two-up is a gesture
     // this turn is a reply to; a sentence on its own is not.
@@ -543,6 +589,24 @@ export function AgentPrompt({
         const gap = findShowGap(readShowState(statementCorrected), nudged);
         if (gap && putBackToWork(gap.message)) {
           nudged.add(gap.key);
+          return true;
+        }
+
+        /*
+         * And: if they asked for the show to be divided, is it divided?
+         *
+         * Measured on staging, typed rather than driven through the console:
+         * asked to split a show into two rooms, two runs in three called
+         * `annotate_atlas` and one wrote the division into its title, its
+         * statement and all twelve of its labels while leaving `regions` empty.
+         * That one published a show a stranger walks as a single room, and
+         * nothing on screen or in the turn said anything was wrong — every
+         * sentence in it was about two rooms. See `unnamed-rooms`; the groups
+         * stay entirely the model's to choose.
+         */
+        const rooms = findUnnamedRooms(readRoomsState(instruction), nudged);
+        if (rooms && putBackToWork(rooms.message)) {
+          nudged.add(rooms.key);
           return true;
         }
 

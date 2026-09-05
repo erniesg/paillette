@@ -12,6 +12,7 @@ import {
 } from '~/lib/webmcp/store';
 import { setFlag, __resetFlagsForTest } from '~/lib/webmcp/flags';
 import {
+  setRegions,
   writeExhibition,
   __resetExhibitionForTest,
 } from '~/lib/webmcp/exhibition';
@@ -1087,6 +1088,103 @@ describe('AgentPrompt — a turn that answers gestures', () => {
     await type('harbour scenes');
 
     expect(bodies).toHaveLength(1);
+  });
+
+  /*
+   * The rooms that were only ever described.
+   *
+   * Typed at on staging, asked to split a show into two rooms, one run in three
+   * wrote the division into its title, its statement and all twelve of its
+   * labels and left `regions` empty — publishing a show a stranger walks as a
+   * single room. What is tested here is what the page does about it, not what
+   * the prompt asked for: the prompt does not mention `annotate_atlas` at all.
+   */
+  const sixWorksHung = () => {
+    const ids = ['nga-1', 'nga-2', 'nga-3', 'nga-4', 'nga-5', 'nga-6'];
+    rememberArtworks(
+      ids.map((id) => ({
+        id,
+        galleryId: 'nga',
+        title: `Work ${id}`,
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      })) as unknown as Parameters<typeof rememberArtworks>[0]
+    );
+    writeExhibition(
+      {
+        title: 'Coastlines',
+        statement: 'Sixty-eight words about the edge of land.',
+        works: ids.map((artworkId) => ({
+          artworkId,
+          label: `A label for ${artworkId}.`,
+        })),
+      },
+      { by: 'agent' }
+    );
+    return ids;
+  };
+
+  it('refuses to end when the show was to be divided and only the prose was', async () => {
+    setModelContext({ getTools: async () => [] });
+    sixWorksHung();
+    // Exactly what staging did: retitle, restate, relabel, and never group.
+    const bodies = scriptModel([
+      {
+        role: 'assistant',
+        tool_calls: [
+          {
+            id: 't1',
+            function: { name: 'set_exhibition', arguments: '{}' },
+          },
+        ],
+      },
+      { role: 'assistant', content: 'Divided into two rooms.' },
+    ]);
+
+    render(<AgentPrompt />);
+    await type('Split these into two rooms: the working harbour and the empty shore.');
+
+    expect(nudgesIn(bodies).join(' ')).toContain('annotate_atlas');
+    // And the works are named, so it can group without searching again.
+    expect(nudgesIn(bodies).join(' ')).toContain('nga-4');
+  });
+
+  it('lets the turn end once the groups are on the board', async () => {
+    setModelContext({ getTools: async () => [] });
+    const ids = sixWorksHung();
+    // Set here rather than dispatched: what satisfies the check is the groups
+    // the page ended up holding, not the call that put them there.
+    setRegions(
+      [
+        { label: 'The Working Harbour', artworkIds: ids.slice(0, 3) },
+        { label: 'The Empty Shore', artworkIds: ids.slice(3) },
+      ],
+      { by: 'agent' }
+    );
+    const bodies = scriptModel([
+      { role: 'assistant', content: 'Two rooms.' },
+    ]);
+
+    render(<AgentPrompt />);
+    await type('Split these into two rooms: the working harbour and the empty shore.');
+
+    expect(bodies).toHaveLength(1);
+    expect(nudgesIn(bodies).join(' ')).not.toContain('annotate_atlas');
+  });
+
+  it('asks nothing of the commonest sentence on the page', async () => {
+    setModelContext({ getTools: async () => [] });
+    sixWorksHung();
+    const bodies = scriptModel([
+      { role: 'assistant', content: 'Twelve storms.' },
+    ]);
+
+    render(<AgentPrompt />);
+    await type('Build me a room about storms at sea.');
+
+    expect(bodies).toHaveLength(1);
+    expect(nudgesIn(bodies).join(' ')).not.toContain('annotate_atlas');
   });
 });
 
