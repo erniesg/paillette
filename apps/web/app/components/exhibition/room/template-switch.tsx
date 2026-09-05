@@ -61,9 +61,20 @@ export const TemplateSwitch = ({
   const location = useLocation();
   const here = `${location.pathname}${location.search}`;
 
+  /*
+   * ROOM is offered when a room can be drawn, and at no other time.
+   *
+   * This used to also offer whichever template the URL had asked for, so that
+   * the switch never rendered with the current view missing from it. On
+   * staging, with WebGL disabled, that put the word ROOM on a page that was
+   * showing the flat view and could not show anything else — a control that
+   * does nothing, which is the one thing the degradation was supposed to
+   * avoid. Fewer than two real choices is not a switch, and this page had no
+   * controls at all before the room existed, so rendering nothing is a state
+   * it already knows how to be in.
+   */
   const offered = EXHIBITION_TEMPLATES.filter(
-    (candidate) =>
-      candidate === 'page' || available === 'yes' || candidate === template
+    (candidate) => candidate === 'page' || available === 'yes'
   );
   if (offered.length < 2) return null;
 
