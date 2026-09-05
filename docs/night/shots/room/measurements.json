@@ -1,7 +1,7 @@
 {
   "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
   "six": {
-    "fps": 31,
+    "fps": 30,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 12,
@@ -12,7 +12,7 @@
     "metresIntoRoom": 1.4
   },
   "six-wall-text": {
-    "fps": 27,
+    "fps": 30,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 17,
@@ -23,7 +23,7 @@
     "metresIntoRoom": 1.4
   },
   "six-focused": {
-    "fps": 24,
+    "fps": 25,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 12,
@@ -34,7 +34,7 @@
     "metresIntoRoom": 4.55
   },
   "one": {
-    "fps": 31,
+    "fps": 30,
     "textureBytes": 7904683,
     "nearCount": 1,
     "rendererTextures": 4,
@@ -45,7 +45,7 @@
     "metresIntoRoom": 1.4
   },
   "thirty": {
-    "fps": 24,
+    "fps": 25,
     "textureBytes": 62331174,
     "nearCount": 6,
     "rendererTextures": 29,
@@ -70,23 +70,23 @@
     "fps": 28,
     "textureBytes": 68918485,
     "nearCount": 6,
-    "rendererTextures": 38,
+    "rendererTextures": 37,
     "pixelRatio": 1,
     "roomIndex": 2,
     "roomCount": 3,
     "roomName": null,
-    "metresIntoRoom": 3.3615555809552813
+    "metresIntoRoom": 4.211555580955281
   },
   "thirtyAfterWalk": {
-    "fps": 29,
+    "fps": 28,
     "textureBytes": 68918485,
     "nearCount": 6,
-    "rendererTextures": 38,
+    "rendererTextures": 37,
     "pixelRatio": 1,
     "roomIndex": 2,
     "roomCount": 3,
     "roomName": null,
-    "metresIntoRoom": 3.3615555809552813
+    "metresIntoRoom": 4.211555580955281
   },
   "regions-first": {
     "fps": 27,
@@ -110,8 +110,30 @@
     "roomName": "The Empty Shore",
     "metresIntoRoom": 4.399999999999999
   },
+  "shortcode-regions-first": {
+    "fps": 28,
+    "textureBytes": 28562305,
+    "nearCount": 3,
+    "rendererTextures": 7,
+    "pixelRatio": 1,
+    "roomIndex": 0,
+    "roomCount": 2,
+    "roomName": "The Working Harbor",
+    "metresIntoRoom": 1.4
+  },
+  "shortcode-regions-second": {
+    "fps": 27,
+    "textureBytes": 32538251,
+    "nearCount": 4,
+    "rendererTextures": 13,
+    "pixelRatio": 1,
+    "roomIndex": 1,
+    "roomCount": 2,
+    "roomName": "The Empty Shore",
+    "metresIntoRoom": 3.549999999999999
+  },
   "phone": {
-    "fps": 20,
+    "fps": 23,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 7,

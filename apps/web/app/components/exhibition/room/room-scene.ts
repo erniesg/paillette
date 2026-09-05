@@ -841,6 +841,8 @@ export const createRoomScene = async (
   let yaw = 0;
   let pitch = 0;
   let standing = { x: plan.entry.x, z: plan.entry.z };
+  /** Where the visitor was looking before a work took the camera. */
+  let standingYaw = 0;
 
   interface Move {
     fromX: number;
@@ -913,6 +915,7 @@ export const createRoomScene = async (
     const destination = walkTowards(plan, standing, { x, z });
     if (destination.x === standing.x && destination.z === standing.z) return;
     standing = destination;
+    standingYaw = yaw;
     if (focused) setFocus(null, false);
     glideTo(destination.x, destination.z, EYE_HEIGHT_M, yaw, pitch, GLIDE_MS);
   };
@@ -929,14 +932,31 @@ export const createRoomScene = async (
       STEP_M
     );
     standing = next;
+    standingYaw = yaw;
+    /*
+     * The step cancels whatever the camera was in the middle of.
+     *
+     * Without this the step writes a position and the frame loop, still
+     * interpolating an earlier glide, writes over it — so a key pressed within
+     * half a second of clicking the floor, or of backing out of a work, does
+     * nothing at all. It looks exactly like a dropped keypress, and it is why
+     * the demo path could click a picture and then walk nowhere.
+     */
+    move = null;
     // A step is a step, not a glide: short enough that easing it would only
     // add latency between the key and the movement.
     camera.position.set(next.x, EYE_HEIGHT_M, next.z);
+    pitch = 0;
+    applyLook();
   };
 
   /** Turning always snaps. A swung turn is the part that makes people ill. */
   const turn = (direction: 1 | -1) => {
+    // Same reason as `step`: a turn during an unfinished glide is overwritten
+    // by it a frame later, and reads as a key the room ignored.
+    move = null;
     yaw += TURN_RADIANS * direction;
+    if (!focused) standingYaw = yaw;
     applyLook();
   };
 
@@ -945,8 +965,31 @@ export const createRoomScene = async (
     focused = artworkId;
     onFocus(artworkId);
 
+    /*
+     * Backing out of a work leaves you standing in front of it.
+     *
+     * The first version treated focusing as an excursion and returned the
+     * visitor to wherever they had been — so clicking a picture at the far end
+     * of a room and then closing the label teleported them back to the door,
+     * undoing travel they had asked for. In a gallery you walk over to a
+     * picture and you are then *there*; leaning back does not put you across
+     * the room again. So focusing sets where the visitor is standing, and
+     * exiting returns to that rather than to the past.
+     *
+     * Which also fixed the more confusing half: the room the scene reported
+     * standing in changed while a work was focused and changed back when it
+     * was closed, so anything reading the position saw the visitor in two
+     * places within a second.
+     */
     if (!artworkId) {
-      glideTo(standing.x, standing.z, EYE_HEIGHT_M, yaw, 0, animate ? FOCUS_MS : 0);
+      glideTo(
+        standing.x,
+        standing.z,
+        EYE_HEIGHT_M,
+        standingYaw,
+        0,
+        animate ? FOCUS_MS : 0
+      );
       return;
     }
 
@@ -978,6 +1021,14 @@ export const createRoomScene = async (
     const targetYaw = Math.atan2(normal.x, normal.z);
     const eye = Math.min(EYE_HEIGHT_M, entry.placement.y);
     const targetPitch = Math.atan2(entry.placement.y - eye, distance);
+    /*
+     * The camera may end up a little inside the wall standoff — a small work
+     * is looked at from closer than the room otherwise lets you stand — so
+     * where the visitor is left *standing* is the last legal point on the way
+     * there, and the lean-in is the difference between the two.
+     */
+    standing = walkTowards(plan, standing, { x, z });
+    standingYaw = targetYaw;
     glideTo(x, z, eye, targetYaw, targetPitch, animate ? FOCUS_MS : 0);
     void loadNear(entry);
   }
@@ -1012,6 +1063,9 @@ export const createRoomScene = async (
     if (!dragged) return;
     yaw -= dx * 0.0035;
     pitch = Math.max(-0.75, Math.min(0.75, pitch - dy * 0.0032));
+    // Looking around deliberately is the heading you keep; looking around
+    // because a work took the camera is not.
+    if (!focused) standingYaw = yaw;
     move = null;
     applyLook();
   };

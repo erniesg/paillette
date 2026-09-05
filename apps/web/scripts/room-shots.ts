@@ -253,6 +253,32 @@ const main = async () => {
   }
   await shot(page, 'regions-second', { room: 1, wellInside: true });
 
+  /*
+   * ---- the same thing, over a published short code -------------------------
+   *
+   * The self-contained link above carries its regions in the URL. This is the
+   * link people actually share, and until recently it flattened a grouped show
+   * into one enfilade. `CODE` is a show published through the ordinary
+   * endpoint with two named regions.
+   */
+  const code = process.env.CODE;
+  if (code) {
+    await page.goto(`${ORIGIN}/e/${code}?v=room`, { waitUntil: 'networkidle' });
+    await page.locator('canvas.exhibition-room-canvas').waitFor({ state: 'visible' });
+    await settle(page);
+    const opened = await readStats(page);
+    if (opened?.roomName !== 'The Working Harbor') {
+      throw new Error(`short code: expected the first named room, got ${opened?.roomName}`);
+    }
+    await shot(page, 'shortcode-regions-first', { room: 0 });
+    await walkInto(page, 1);
+    const next = await readStats(page);
+    if (next?.roomName !== 'The Empty Shore') {
+      throw new Error(`short code: expected the second named room, got ${next?.roomName}`);
+    }
+    await shot(page, 'shortcode-regions-second', { room: 1, wellInside: true });
+  }
+
   // ---- the empty case: the room with nothing hung in it ---------------------
   const blind = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const blindPage = await blind.newPage();
