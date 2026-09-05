@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { planRoom, type RoomWorkInput } from '~/lib/room/plan';
+import {
+  DEFAULT_WORK_AREA_M2,
+  fieldOfView,
+  planRoom,
+  viewingDistance,
+  type RoomWorkInput,
+} from '~/lib/room/plan';
 import {
   WALL_STANDOFF_M,
   isWalkable,
@@ -163,5 +169,88 @@ describe('walkTowards', () => {
       { x: second.widthM / 2 - WALL_STANDOFF_M, z: second.northZ + WALL_STANDOFF_M }
     );
     expect(roomAt(enfilade, arrived.z)).toBe(0);
+  });
+});
+
+/**
+ * The standoff and the minimum room size are two constants that have to agree.
+ *
+ * Walking stops 1.4 m short of every wall, so a room narrower than 2.8 m has
+ * no interior at all — every square metre of it is standoff, `isWalkable`
+ * answers false everywhere, and the room becomes a picture you cannot enter.
+ * Nothing else in the suite would notice: the enfilade test walks along the
+ * centre line, and the plan tests never ask whether the result can be stood
+ * in. Raising the standoff to fix a phone is exactly the kind of change that
+ * would break this quietly.
+ */
+describe('every room the planner can build can be stood in', () => {
+  const shapes = [1, 2, 3, 4, 6, 12, 13, 24, 30, 61];
+
+  it('has a walkable interior whatever the show is', () => {
+    for (const count of shapes) {
+      const plan = planRoom(unmeasured(count));
+      for (const room of plan.rooms) {
+        expect(room.widthM).toBeGreaterThan(WALL_STANDOFF_M * 2);
+        expect(room.depthM).toBeGreaterThan(WALL_STANDOFF_M * 2);
+        // And the centre of the room is somewhere a visitor may actually be.
+        expect(
+          isWalkable(plan, room.centreX, (room.southZ + room.northZ) / 2)
+        ).toBe(true);
+      }
+      expect(isWalkable(plan, plan.entry.x, plan.entry.z)).toBe(true);
+    }
+  });
+
+  it('leaves enough depth to back away from a wall and see it', () => {
+    // Two standoffs plus a stride. Below this the room is a corridor you
+    // cannot turn round in, whatever the arithmetic says.
+    for (const count of shapes) {
+      const plan = planRoom(unmeasured(count));
+      for (const room of plan.rooms) {
+        expect(room.depthM - WALL_STANDOFF_M * 2).toBeGreaterThan(0.85);
+      }
+    }
+  });
+
+  it('still connects one room to the next at this standoff', () => {
+    const plan = planRoom(unmeasured(30));
+    expect(plan.rooms.length).toBeGreaterThan(1);
+    let position = { x: plan.entry.x, z: plan.entry.z };
+    for (let step = 0; step < 120; step += 1) {
+      position = stepTowards(plan, position, 0, 0.4);
+    }
+    expect(roomAt(plan, position.z)).toBe(plan.rooms.length - 1);
+  });
+});
+
+/**
+ * The standoff and the focus distance have to agree, or the model is incoherent.
+ *
+ * The rule the room offers is: **walking gets you around the room, clicking a
+ * work gets you up to it.** That is only true if walking cannot already put you
+ * closer to a wall than clicking would — otherwise "get up to it" sometimes
+ * means backing away, and the two verbs stop meaning different things.
+ *
+ * This is what defends 1.4 m over the 0.95 m it started at: on a phone, the
+ * distance at which a default-sized work fills the frame is 1.16 m, so an
+ * arm's-length standoff let walking overshoot the focused view. It is *not* a
+ * guarantee that a work is in frame wherever you stop — a 42° horizontal field
+ * in a nine-metre room cannot promise that, and a test demanding it would force
+ * a standoff that leaves the smallest rooms with no interior at all. What put
+ * a picture back on screen in the phone screenshot was this change; that it is
+ * enough in general is a judgement, not an invariant, and the report says so.
+ */
+describe('walking never gets you closer than looking does', () => {
+  const SCREENS = [
+    { name: 'desktop', aspect: 16 / 10 },
+    { name: 'phone upright', aspect: 390 / 844 },
+  ];
+
+  it('leaves the focused view something to close', () => {
+    const side = Math.sqrt(DEFAULT_WORK_AREA_M2);
+    for (const screen of SCREENS) {
+      const focus = viewingDistance(side, side, fieldOfView(screen.aspect), screen.aspect);
+      expect(WALL_STANDOFF_M).toBeGreaterThan(focus);
+    }
   });
 });

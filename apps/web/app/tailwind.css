@@ -2355,7 +2355,15 @@ html[data-theme='light'] .themeable-surface code {
   pointer-events: none;
 }
 
-.exhibition-room-masthead > * {
+/*
+ * The switch takes pointer events. The title does not.
+ *
+ * Both children used to, and on a phone that made the top-left corner of the
+ * scene deaf: the title is set at 22rem wide over a 390 px screen, so a
+ * sizeable patch of what looks like room is actually an `h1` swallowing taps.
+ * A title is not a control and has no business intercepting anything.
+ */
+.exhibition-room-masthead .exhibition-template {
   pointer-events: auto;
 }
 

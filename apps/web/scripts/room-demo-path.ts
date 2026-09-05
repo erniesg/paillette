@@ -9,6 +9,12 @@
  *   PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai \
  *   CODE=u4G4Gkv pnpm --filter web exec tsx scripts/room-demo-path.ts
  *
+ * The conditions a visitor arrives in are knobs, because one green run on a
+ * 1440×900 desktop with default motion and a browser that can speak is one
+ * green run, not a working feature. `VIEWPORT=phone`, `MOTION=reduce` and
+ * `SPEECH=off` each change what a visitor has, and `room-demo-matrix.ts`
+ * sweeps them.
+ *
  * The scene publishes its own position and texture accounting on
  * `window.__paillette_room`. That is a readout — the only way to get a number
  * out of a render loop — and nothing in the product reads it. No step below is
@@ -18,6 +24,21 @@
 import { chromium, type Page } from '@playwright/test';
 
 const ORIGIN = process.env.PAILLETTE_ORIGIN ?? 'http://localhost:5199';
+
+/** 1440×900, or a phone held upright with a 3× screen. */
+const VIEWPORT =
+  process.env.VIEWPORT === 'phone'
+    ? {
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      }
+    : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 };
+
+const REDUCED = process.env.MOTION === 'reduce';
+const SILENT = process.env.SPEECH === 'off';
+const TOUCH = process.env.VIEWPORT === 'phone';
 /** A published show with two named regions. */
 const CODE = process.env.CODE ?? 'u4G4Gkv';
 /** A show published before regions existed, which must be unaffected. */
@@ -55,26 +76,99 @@ const enterRoom = async (page: Page) => {
 };
 
 /** Click across the wall until a label opens. A visitor hunts too. */
+const tap = async (page: Page, x: number, y: number) => {
+  // A phone has a finger, not a pointer, and the room has to answer both.
+  if (TOUCH) await page.touchscreen.tap(x, y);
+  else await page.mouse.click(x, y);
+};
+
+/**
+ * Look around until a work is in front of you, then tap it.
+ *
+ * A portrait phone has a horizontal field of about 42°, so deep in a room you
+ * see roughly one work at a time and it may be at the edge of the frame. A
+ * visitor turns their head; so does this. The sweep alone was enough on a
+ * desktop's 87° field and was not on a phone, which read as "the room will not
+ * let you tap anything" when the room was fine and the script was staring
+ * straight ahead.
+ */
+const lookAround = async (page: Page, degrees: number) => {
+  const box = (await page.locator('canvas.exhibition-room-canvas').boundingBox())!;
+  const midX = box.x + box.width / 2;
+  const midY = box.y + box.height / 2;
+  const dx = degrees * 8;
+  if (TOUCH) {
+    await page.touchscreen.tap(midX, midY);
+    await page.mouse.move(midX, midY);
+  }
+  await page.mouse.move(midX, midY);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step += 1) {
+    await page.mouse.move(midX + (dx * step) / 10, midY);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+};
+
 const clickAWork = async (page: Page) => {
   const box = (await page.locator('canvas.exhibition-room-canvas').boundingBox())!;
   const focus = page.locator('.exhibition-room-focus');
-  for (const fy of [0.53, 0.5, 0.56]) {
-    for (const fx of [0.4, 0.6, 0.3, 0.7, 0.2, 0.8]) {
-      await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
-      await page.waitForTimeout(450);
-      if (await focus.isVisible()) return true;
+  const sweep = async () => {
+    for (const fy of [0.53, 0.5, 0.56, 0.46, 0.6]) {
+      for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9]) {
+        await tap(page, box.x + box.width * fx, box.y + box.height * fy);
+        await page.waitForTimeout(380);
+        if (await focus.isVisible()) return true;
+      }
     }
+    return false;
+  };
+
+  if (await sweep()) return true;
+  // Nothing straight ahead: turn, and look again. Twice each way.
+  for (const turn of [-35, 70, -70]) {
+    await lookAround(page, turn);
+    if (await sweep()) return true;
   }
   return false;
 };
 
 const walkInto = async (page: Page, room: number) => {
-  await page
-    .locator('canvas.exhibition-room-canvas')
-    .click({ position: { x: 40, y: 40 } });
-  for (let press = 0; press < 80; press += 1) {
+  const box = (await page.locator('canvas.exhibition-room-canvas').boundingBox())!;
+  const arrived = async () => {
     const now = await stats(page);
-    if (now && now.roomIndex === room && now.metresIntoRoom >= 2.9) break;
+    return Boolean(now && now.roomIndex === room && now.metresIntoRoom >= 2.9);
+  };
+
+  if (TOUCH) {
+    /*
+     * A phone has no arrow keys, so a phone visitor walks by tapping the floor
+     * — and the room walks them as far along that line as the building allows.
+     * Driving a phone with `keyboard.press` is what made this look broken when
+     * it was not: the tap meant to focus the canvas landed on the title, which
+     * on a 390 px screen covers a good deal of the top-left.
+     */
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (await arrived()) break;
+      await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.72);
+      await page.waitForTimeout(900);
+    }
+    await page.waitForTimeout(2000);
+    return;
+  }
+
+  // Tab to the room the way somebody without a mouse reaches it, rather than
+  // clicking a pixel chosen for being empty.
+  for (let press = 0; press < 12; press += 1) {
+    const reached = await page.evaluate(() =>
+      Boolean(document.activeElement?.classList.contains('exhibition-room-canvas'))
+    );
+    if (reached) break;
+    await page.keyboard.press('Tab');
+  }
+  for (let press = 0; press < 80; press += 1) {
+    if (await arrived()) break;
     await page.keyboard.press('ArrowUp');
     await page.waitForTimeout(90);
   }
@@ -83,7 +177,28 @@ const walkInto = async (page: Page, room: number) => {
 
 const main = async () => {
   const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    ...VIEWPORT,
+    reducedMotion: REDUCED ? 'reduce' : 'no-preference',
+  });
+  if (SILENT) {
+    /*
+     * Every speech API removed before a byte of the page runs. Text first is
+     * not "voice is optional" — it is that the whole visit completes with no
+     * speech available at all, and the read-aloud is *absent* rather than a
+     * control that fails when pressed.
+     */
+    await context.addInitScript({
+      content: `
+        Object.defineProperty(window, 'speechSynthesis', {
+          get: () => undefined, configurable: true,
+        });
+        window.SpeechSynthesisUtterance = undefined;
+        window.SpeechRecognition = undefined;
+        window.webkitSpeechRecognition = undefined;
+      `,
+    });
+  }
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(String(error).slice(0, 200)));

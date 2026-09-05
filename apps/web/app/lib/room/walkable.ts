@@ -18,8 +18,24 @@
 import type { RoomPlan, RoomShape } from './plan';
 import { DOOR_WIDTH_M } from './plan';
 
-/** How close to a wall a visitor may stand. Roughly arm's length plus a step. */
-export const WALL_STANDOFF_M = 0.95;
+/**
+ * How close to a wall walking can take you.
+ *
+ * This was 0.95 m — arm's length — and it made a real bad moment, which a
+ * phone found first. Tapping the floor walks as far along that line as the
+ * building allows, so a tap toward the far wall parked the visitor a metre
+ * from it. At a metre you cannot see a work anyway: a phone held upright has a
+ * horizontal field of about 42°, which at that distance is 0.78 m of wall —
+ * less than the gap between two hung works, so the visitor arrived nose-first
+ * into bare plaster with a picture just off each edge of the screen.
+ *
+ * 1.4 m is a viewing distance rather than a safety margin, and it makes the
+ * interaction model coherent: **walking gets you around the room, and clicking
+ * a work gets you up to it.** Focusing still leans closer than this — that is
+ * what focusing is for — and leaves you standing here when you close the
+ * label.
+ */
+export const WALL_STANDOFF_M = 1.4;
 
 /** Eye height. Not a camera setting — a person. */
 export const EYE_HEIGHT_M = 1.62;
