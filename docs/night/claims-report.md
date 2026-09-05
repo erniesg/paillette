@@ -257,9 +257,14 @@ and it then called `set_view` with atlas and `annotate_atlas` with two named
 regions of its own choosing.
 
 The harness now records **where** a nudge landed in the census — how many tool
-calls had been chosen when it arrived — so the ordering behind "the page put it
-back to work and *then* it called the tool" is on the record rather than taken
-on trust.
+calls had been chosen when it arrived — so that the ordering behind "the page
+put it back to work and *then* it called the tool" is on the record rather than
+argued from the source. **That instrumentation went in after run 4 was
+captured**, so no nudged run has been recorded with it yet: run 4's evidence has
+the nudge text and the tool order but no index, and the ordering there rests on
+`findUnnamedRooms` only ever being evaluated inside `finishTheJob`. That is a
+sound argument and checkable in `agent-prompt.tsx`, but it is an argument rather
+than a timestamp, and the next nudged run will be the first to carry one.
 
 ## 5. The whole chain, walked
 
@@ -453,6 +458,14 @@ runs; say it usually does it and that the page now catches it when it does not.
 firing and being obeyed **exactly once**. That one observation is clean and is
 the exact defect it was written for, but one is not a rate. Nothing here
 supports "the page always catches it".
+
+**That the nudge-then-call ordering is recorded rather than reasoned.** For that
+single observation it is not. `rooms-after-fix.json` has the nudge text and the
+turn's tool order but no index for the nudge, because the positional
+instrumentation was added afterwards. The ordering follows from
+`findUnnamedRooms` being evaluated only inside `finishTheJob` — sound, and
+checkable in the source — but if a reader wants it as data rather than as an
+argument, that run does not yet exist.
 
 **That the agent divides a show without being asked.** Every run asked, in a
 second typed sentence. No run shows the model volunteering regions on its own,
