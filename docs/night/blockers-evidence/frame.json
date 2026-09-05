@@ -1,0 +1,502 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "quietMs": 16717,
+  "sweep": [
+    {
+      "scrollY": 0,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 235,
+        "bottom": 255,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 499,
+        "bottom": 525,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 8
+    },
+    {
+      "scrollY": 20,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 215,
+        "bottom": 235,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 479,
+        "bottom": 505,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 8
+    },
+    {
+      "scrollY": 40,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 195,
+        "bottom": 215,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 459,
+        "bottom": 485,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 8
+    },
+    {
+      "scrollY": 60,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 175,
+        "bottom": 195,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 439,
+        "bottom": 465,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 8
+    },
+    {
+      "scrollY": 80,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 155,
+        "bottom": 175,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 419,
+        "bottom": 445,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 100,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 135,
+        "bottom": 155,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 399,
+        "bottom": 425,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 120,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 115,
+        "bottom": 135,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 379,
+        "bottom": 405,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 140,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 95,
+        "bottom": 115,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 359,
+        "bottom": 385,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 160,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 75,
+        "bottom": 95,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 339,
+        "bottom": 365,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 180,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 55,
+        "bottom": 75,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 319,
+        "bottom": 345,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 200,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 35,
+        "bottom": 55,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 299,
+        "bottom": 325,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 220,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": 15,
+        "bottom": 35,
+        "left": 336,
+        "whole": true,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 279,
+        "bottom": 305,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 240,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": -5,
+        "bottom": 15,
+        "left": 336,
+        "whole": false,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 259,
+        "bottom": 285,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 260,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": -25,
+        "bottom": -5,
+        "left": 336,
+        "whole": false,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 239,
+        "bottom": 265,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 280,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": -45,
+        "bottom": -25,
+        "left": 336,
+        "whole": false,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 219,
+        "bottom": 245,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    },
+    {
+      "scrollY": 300,
+      "marks": {
+        "human": 1,
+        "agent": 2
+      },
+      "human": {
+        "top": -65,
+        "bottom": -45,
+        "left": 336,
+        "whole": false,
+        "rule": "rgb(82, 82, 82)"
+      },
+      "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+      "note": {
+        "top": 199,
+        "bottom": 225,
+        "left": 220,
+        "whole": true,
+        "rule": "rgb(94, 200, 216)"
+      },
+      "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+      "noteProvenance": "agent",
+      "cards": 12,
+      "wholeCards": 12
+    }
+  ],
+  "best": {
+    "scrollY": 80,
+    "marks": {
+      "human": 1,
+      "agent": 2
+    },
+    "human": {
+      "top": 155,
+      "bottom": 175,
+      "left": 336,
+      "whole": true,
+      "rule": "rgb(82, 82, 82)"
+    },
+    "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+    "note": {
+      "top": 419,
+      "bottom": 445,
+      "left": 220,
+      "whole": true,
+      "rule": "rgb(94, 200, 216)"
+    },
+    "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+    "noteProvenance": "agent",
+    "cards": 12,
+    "wholeCards": 12
+  },
+  "frame": {
+    "file": "/tmp/blk-frame3/two-inks.png",
+    "scrollY": 80,
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "humanText": "I want something to hang above the sofa in my living room. Warm, not busy, nothing grim.",
+    "noteText": "You asked warm and quiet; the picked bone-toned sea holds while the darkest storm scenes leave.",
+    "noteProvenance": "agent",
+    "wholeCards": 12,
+    "cardsOnBoard": 12,
+    "marks": {
+      "human": 1,
+      "agent": 2
+    },
+    "png": {
+      "width": 1440,
+      "height": 900
+    },
+    "inkSamples": [
+      {
+        "name": "human rule",
+        "x": 336,
+        "y": 165,
+        "hex": "#525252",
+        "cssRule": "rgb(82, 82, 82)"
+      },
+      {
+        "name": "agent rule",
+        "x": 220,
+        "y": 432,
+        "hex": "#5ec8d8",
+        "cssRule": "rgb(94, 200, 216)"
+      }
+    ],
+    "chrome": {
+      "strings": [
+        "P",
+        "ai",
+        "llette",
+        "🎤",
+        "12",
+        "works",
+        "Copy link",
+        "12 / 12 works",
+        "“",
+        "storms at sea",
+        "”"
+      ],
+      "words": 17,
+      "textColours": 9
+    }
+  }
+}

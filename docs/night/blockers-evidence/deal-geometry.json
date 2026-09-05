@@ -1,0 +1,81 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "steps": [
+    {
+      "label": "first deal (grid → board)",
+      "note": "One pick holds — bone.",
+      "provenance": "human",
+      "noteHeight": 44,
+      "cards": 12,
+      "picks": 1,
+      "dealError": null
+    },
+    {
+      "label": "before the second Enter",
+      "note": "One pick holds — bone.",
+      "noteHeight": 44,
+      "picks": [
+        {
+          "id": "open-access-art:nga:148513",
+          "top": 248
+        },
+        {
+          "id": "open-access-art:nga:182672",
+          "top": 248
+        },
+        {
+          "id": "open-access-art:nga:226371",
+          "top": 246
+        }
+      ]
+    },
+    {
+      "label": "after the second Enter",
+      "note": "Three picks hold — bone and umber.",
+      "provenance": "human",
+      "noteHeight": 44,
+      "dealError": null,
+      "boardChanged": true,
+      "movement": [
+        {
+          "id": "open-access-art:nga:148513",
+          "before": 248,
+          "after": 248,
+          "moved": 0
+        },
+        {
+          "id": "open-access-art:nga:182672",
+          "before": 248,
+          "after": 248,
+          "moved": 0
+        },
+        {
+          "id": "open-access-art:nga:226371",
+          "before": 246,
+          "after": 246,
+          "moved": 0
+        }
+      ],
+      "modelCalls": 0
+    },
+    {
+      "label": "with the note row taken away",
+      "removed": true,
+      "everyCardMovedBy": [
+        -44,
+        -30,
+        -15
+      ]
+    },
+    {
+      "label": "with the exhibition strip taken away",
+      "removed": true,
+      "headHeight": 104,
+      "everyCardMovedBy": [
+        1,
+        48,
+        96
+      ]
+    }
+  ]
+}

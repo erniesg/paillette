@@ -342,8 +342,61 @@ describe('Enter on an empty bar', () => {
     await submitHumanTurn();
 
     expect(getWebMcpState().agentResults?.label).toBe(
-      '1 work, dealt away from 1 reject'
+      'One reject out — “Work g2”.'
     );
+  });
+
+  /*
+   * The beat the whole submission is built on, and the defect that survived two
+   * iterations of being reported.
+   *
+   * The note wrapper hides an empty note. The deterministic path had no model
+   * to write one with, so it passed none — and the human's own Enter deleted
+   * the agent's wall label, collapsing 44px of sentence plus 12px of margin and
+   * sliding every card, picks included, 56px up into the gap. §7.1 calls this
+   * frame "the single most important visual in the submission" and its entire
+   * content is that the picks do not move.
+   *
+   * The board writes its own line instead, with no model in the path, which is
+   * the same argument the deal itself makes.
+   */
+  it('writes its own note, so the human’s Enter does not delete the sentence', async () => {
+    rememberArtworks([artwork('keep'), artwork('drop')]);
+    setBoard({
+      order: ['keep', 'drop'],
+      dealt: ['keep', 'drop'],
+      note: 'The agent’s sentence, from the turn before this one.',
+      lastChangeBy: 'agent',
+      redeals: 1,
+      at: 1,
+    });
+    setFlag('keep', 'pick', { by: 'human' });
+    setFlag('drop', 'reject', { by: 'human' });
+    stubExemplarRoute(['n1']);
+
+    await submitHumanTurn();
+
+    const state = getWebMcpState();
+    expect(state.board?.note).toBe(
+      'One pick holds — “Work keep”.'
+    );
+    // The same string the board renders, so the row cannot collapse.
+    expect(state.agentResults?.note).toBe(state.board?.note);
+    // Graphite, not cyan: the human dealt this one.
+    expect(state.agentResults?.origin).toBe('human');
+    // And still no model anywhere in the path.
+    expect(calls.some((call) => call.url.includes('public-agent'))).toBe(false);
+  });
+
+  it('leaves a note the caller wrote alone', async () => {
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+    stubExemplarRoute(['n1']);
+
+    const result = await runRedeal({ by: 'agent', note: 'Following the greys.' });
+
+    expect(result.ok).toBe(true);
+    expect(getWebMcpState().board?.note).toBe('Following the greys.');
   });
 
   it('hands a typed turn to the agent instead of redealing', async () => {
@@ -385,6 +438,45 @@ describe('widening when the collection runs out', () => {
 });
 
 describe('when the deal cannot run', () => {
+  /**
+   * The flag the interface hangs its "in flight" mark on.
+   *
+   * `dealing` was only ever asserted *false* after a deal, which is true of a
+   * deal that never set it. The mark under the utterance bar reads this while
+   * the request is out — on a slow connection it is the only thing that says
+   * Enter did anything — so the mid-flight value is the contract.
+   */
+  it('reports the deal as in flight while the request is out', async () => {
+    rememberArtworks([artwork('keep')]);
+    setFlag('keep', 'pick', { by: 'human' });
+
+    let release: (value: unknown) => void = () => {};
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await gate;
+        const results = [artwork('n1')];
+        rememberArtworks(results);
+        return Response.json({
+          success: true,
+          data: { results, count: 1, queryTime: 1 },
+        });
+      })
+    );
+
+    expect(getWebMcpState().dealing).toBe(false);
+    const inFlight = runRedeal({ by: 'human' });
+    await Promise.resolve();
+    expect(getWebMcpState().dealing).toBe(true);
+
+    release(null);
+    await inFlight;
+    expect(getWebMcpState().dealing).toBe(false);
+  });
+
   it('refuses a second deal while one is in flight, rather than racing it', async () => {
     // Enter is cheap to press and a slow deal is not fast. Two in flight write
     // the board twice from two reads of the same state — the later wins and

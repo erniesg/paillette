@@ -18,9 +18,19 @@
  * Both had prompt wording telling the model to do them. Wording is how you ask
  * for good judgement; it is not how you guarantee a post-condition. So these
  * are checks against the state the tools actually wrote, run when the model
- * thinks it has finished, and each one can put the turn back to work exactly
- * once. The model still writes the words — nothing here composes prose — it is
- * only stopped from walking away mid-job.
+ * thinks it has finished, and each one can put the turn back to work. The model
+ * still writes the words — nothing here composes prose — it is only stopped
+ * from walking away mid-job.
+ *
+ * **Once per gap was wrong, and it shipped the deliverable blank.** A correction
+ * turn writes labels for the six works hanging, is nudged once and satisfied,
+ * then drops four of them and hangs six others — and those six are never
+ * labelled, because the gap had already had its go. Measured on staging: a board
+ * ending with two labelled works and six carrying `labelBy: null`, and four of
+ * seven published `/e/:code` pages with no wall label anywhere on them. So a
+ * nudge is now identified by *what it was about* rather than by which gap it
+ * was: a different set of unlabelled works is a different job, and the caller's
+ * own ceiling on how many nudges a turn may issue is what stops it looping.
  */
 
 export type ShowGap = 'labels' | 'title';
@@ -40,6 +50,12 @@ export interface ShowState {
 
 export interface ShowNudge {
   gap: ShowGap;
+  /**
+   * What this nudge is about, not merely which gap it is. The caller keys its
+   * "already asked" set on this, so asking again for the *same* six works is
+   * refused and asking for six different ones is not.
+   */
+  key: string;
   message: string;
 }
 
@@ -52,38 +68,44 @@ const unlabelled = (state: ShowState) =>
 
 export const findShowGap = (
   state: ShowState,
-  already: ReadonlySet<ShowGap>
+  already: ReadonlySet<string>
 ): ShowNudge | null => {
   // Nothing is owed until there is a theme to write against. `write_labels`
   // refuses without a statement, and rightly: a label with no theme is a
   // caption.
   if (!state.statement?.trim()) return null;
 
-  if (!already.has('labels')) {
-    const missing = unlabelled(state);
-    if (missing.length) {
-      return {
-        gap: 'labels',
-        message:
-          `The statement is written and ${missing.length} of the ${state.hung.length} works on the wall have no label: ` +
-          `${missing.join(', ')}. Call write_labels for them now, against that statement, before you reply. ` +
-          'A show whose works carry no labels is a list, and the labels are the only place the theme touches the individual pictures.',
-      };
-    }
+  const missing = unlabelled(state);
+  // Keyed on the works, so a second helping of newcomers is a second job. The
+  // ids are sorted because "which six" is the question, not what order the hang
+  // happens to report them in.
+  const labelsKey = `labels:${[...missing].sort().join(',')}`;
+  if (missing.length && !already.has(labelsKey)) {
+    return {
+      gap: 'labels',
+      key: labelsKey,
+      message:
+        `The statement is written and ${missing.length} of the ${state.hung.length} works on the wall have no label: ` +
+        `${missing.join(', ')}. Call write_labels for them now, against that statement, before you reply. ` +
+        'A show whose works carry no labels is a list, and the labels are the only place the theme touches the individual pictures. ' +
+        'Works you have just hung count: a picture you added after writing the wall is exactly the one a reader will find blank.',
+    };
   }
 
   // Only after a correction, and only onto a title the agent wrote itself. A
   // title the human typed is theirs; `set_exhibition` would park a write onto
   // it as a proposal anyway, and pestering them for one is worse than silence.
+  const titleKey = `title:${state.title?.trim() ?? ''}`;
   if (
     state.statementCorrected &&
-    !already.has('title') &&
+    !already.has(titleKey) &&
     !state.titleHeldByHuman &&
     state.titleBy === 'agent' &&
     state.title?.trim()
   ) {
     return {
       gap: 'title',
+      key: titleKey,
       message:
         `The show is still called "${state.title.trim()}". You wrote that against the theme they have just replaced, ` +
         'and it is the first thing a reader sees on the shared page — a room whose name contradicts its own statement reads as a mistake. ' +

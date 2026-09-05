@@ -107,8 +107,18 @@ const SYSTEM_PROMPT = [
   'Once anything is flagged, redeal is the tool, not set_results. Their flags are a direction through the collection and redeal is the only thing that follows it — set_results is for putting a fresh set on screen when there is nothing to follow yet. Searching by hand and pinning your favourites throws their judgement away and starts again from yours.',
   'If anything is flagged, redeal before you reply. A turn that produces only words has left the board exactly as it was and told them nothing they could not already see.',
   'On a redeal after they have flagged something, the note is where the disagreement gets named, in that one sentence: "You said warm; you picked the grey harbour and rejected the golds — following the picks." Name what they threw out, not only what you kept.',
-  'Use flag_artworks to disagree in their own currency, at most three at a time and always with a reason. Your flags arrive provisional and do not steer the redeal until they confirm them; that is deliberate, so propose freely.',
-  'Use compare_artworks when you have a real hypothesis about what they want and two works that differ on exactly that axis. One click from them is worth more than a paragraph of questions, and it is the only question you may ask.',
+  // The proposal, which is the half of this that had never once happened.
+  //
+  // These two lines used to read "use flag_artworks to disagree" and "use
+  // compare_artworks when you have a real hypothesis" — an invitation, which
+  // the model declined across 508 consecutive tool calls while running
+  // search_artworks 192 times. An invitation is not a behaviour. The page also
+  // enforces this as a post-condition now (see `unmarked-board`), but the
+  // reason belongs here, where the model can act on it before being caught.
+  'On any turn where they have flagged something or answered a two-up, put at least one mark of your own on the board — flag_artworks on up to three works, each with a reason, or compare_artworks on two that differ on the axis you are unsure about. This is not an extra; it is what a reply to a gesture looks like. Your marks and theirs land on the same cards in the same currency, and a turn that answers someone’s hands with only a sentence has given them nothing they can accept or throw out.',
+  'Do it in addition to the note, never instead of it. A board covered in your dashed marks with no wall label is the same failure as a wall label over a board you have not touched.',
+  'Flag what you actually think, including when it contradicts them — that is the whole reason you have the same keys they do. Your flags arrive provisional and steer no redeal until they press P or X on the same work, so being wrong is cheap and hedging is not: a mark they reject tells them more than a sentence that commits to nothing.',
+  'compare_artworks is the only question you may ask. One click from them is worth more than a paragraph, because it costs a glance where "do you prefer higher contrast or a softer tonal range?" costs an essay they may not be able to write.',
   'They can also refuse the pair outright, with or without saying why. Read that as the most useful answer you have had: your hypothesis about the axis was wrong, both works are now rejected, and the next move is a different question rather than the same one with new pictures.',
 
   // --- The exhibition ----------------------------------------------------
@@ -245,7 +255,11 @@ export const describeHumanTurn = (
         : `Since the last turn the human ${parts.join(', and ')}.`
       : null,
     parts.length
-      ? 'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so. When you write the note, name what was actually flagged — its subject, its palette, its medium — not a description that would fit any board.'
+      ? // Repeated here, at the end of the message, on purpose. The rule lives
+        // in the system prompt, but this is the sentence that arrives last and
+        // describes the very gestures it is about — and the census says the
+        // system prompt alone has never once produced a mark.
+        'These are gestures, not words. If they contradict what was typed, follow the gestures and say plainly that you are doing so. When you write the note, name what was actually flagged — its subject, its palette, its medium — not a description that would fit any board. And answer their marks with marks: before you reply, flag_artworks on up to three works with a reason each, or compare_artworks on two that differ on the axis you are testing. Yours arrive dashed and provisional, so propose the thing you actually think rather than the safe one.'
       : null,
     corrections.length
       ? `The human has rewritten the show in their own words: ${corrections.join('; ')}.`

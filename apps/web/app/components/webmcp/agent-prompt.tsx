@@ -32,11 +32,12 @@ import {
 } from '~/lib/voice/speech-channel';
 import { getWebMcpState } from '~/lib/webmcp/store';
 import { listHungWorks } from '~/lib/webmcp/exhibition';
+import { findShowGap, type ShowState } from '~/lib/webmcp/unfinished-show';
 import {
-  findShowGap,
-  type ShowGap,
-  type ShowState,
-} from '~/lib/webmcp/unfinished-show';
+  findUnmarkedBoard,
+  type BoardMarkState,
+} from '~/lib/webmcp/unmarked-board';
+import { worksOnScreen } from '~/lib/webmcp/redeal';
 import { onAgentTurnRequest } from '~/lib/webmcp/agent-request';
 import { submitHumanTurn, toTurnPayload } from '~/lib/webmcp/turn';
 import { recallArtwork } from '~/lib/webmcp/artwork-index';
@@ -145,7 +146,59 @@ const lookUpWork = (id: string): SceneWork | null => {
   };
 };
 
+/**
+ * How many model calls one typed instruction may spend of its own accord.
+ *
+ * Eight, unchanged, and deliberately not raised: the transcripts show five or
+ * six of them routinely going on searching, and a bigger allowance for a model
+ * that is dithering only buys more dithering, on someone's screen, at a price.
+ */
 const MAX_TURNS = 8;
+
+/**
+ * What a nudge is worth, on top of that.
+ *
+ * The post-conditions below can put the turn back to work, and before this the
+ * work they asked for came out of the same eight — so a run that had spent six
+ * turns searching was told to write six wall labels and then hit the ceiling
+ * with the wall still blank. That is the §5c correction failing at 2 in 3 and
+ * the newcomers shipping unlabelled, both measured on staging.
+ *
+ * A nudge is the page demanding something, so the page pays for it: two calls,
+ * one to do the work and one to reply afterwards. The model cannot reach this
+ * budget by talking itself into another search — only by being caught leaving a
+ * job half done — which is why it is safe to be generous with.
+ */
+const TURNS_PER_NUDGE = 2;
+/** Past this the loop is not converging and a person is watching a spinner. */
+const HARD_MAX_TURNS = 16;
+/** Each nudge costs a model call, so the count is the real ceiling on them. */
+const MAX_NUDGES = 4;
+
+/**
+ * Searching is what a correction turn does instead of the job.
+ *
+ * §5c step 4 is *re-select and re-label*, in that order of importance: the same
+ * works read differently under a new statement, and that is the change the
+ * human will actually see. Measured by hand on staging, a corrected statement
+ * produced 0 labels changed and 0 works changed in 180 s twice in four runs —
+ * the turn spent itself hunting for candidates and ran out before it wrote
+ * anything. The prompt has said "do the labels first and the searching last"
+ * since iteration 3.
+ *
+ * So on a correction turn the searches are simply closed until the wall has
+ * been rewritten. Not a refusal to the human — they see none of this — and not
+ * a cap on how much the agent may search afterwards. It is an ordering, made
+ * true rather than requested, and it costs the loop nothing: the model is told
+ * why in the tool result and does the labels next.
+ */
+const SEARCH_TOOL_NAMES = new Set([
+  'search_artworks',
+  'search_by_color',
+  'search_by_image',
+  'search_by_exemplars',
+  'browse_collection',
+]);
 
 /**
  * The show as `findShowGap` needs it, read from the state the tools actually
@@ -163,6 +216,52 @@ const readShowState = (statementCorrected: boolean): ShowState => {
       label: work.label,
     })),
     statementCorrected,
+  };
+};
+
+/**
+ * The board as `findUnmarkedBoard` needs it: what is in front of the human and
+ * what either party has already marked on it.
+ *
+ * Read from the store rather than from the tool results, for the same reason
+ * the show is: what the model said it did and what the page ended up holding
+ * are different questions, and only the second one is on screen.
+ */
+const readBoardMarkState = (
+  gestures: ReturnType<typeof toTurnPayload> | null
+): BoardMarkState => {
+  const state = getWebMcpState();
+  const flags = new Map(
+    state.flags.map((flag) => [flag.artworkId, flag] as const)
+  );
+  // Whatever is actually in front of them, freshest surface first. `redeal`'s
+  // own `worksOnScreen` knows about the board and the human's grid but not
+  // about a set the agent pinned with set_results, and proposing a mark on a
+  // work that scrolled away two turns ago is worse than proposing none.
+  const onScreen = state.board?.order?.length
+    ? [...state.board.order]
+    : state.agentResults?.items.length
+      ? state.agentResults.items.map((item) => item.id)
+      : worksOnScreen(state);
+  return {
+    // Their hands, not their words. A flag or an answered two-up is a gesture
+    // this turn is a reply to; a sentence on its own is not.
+    humanGestured: Boolean(
+      gestures?.flagsDelta?.length || gestures?.compareChoice
+    ),
+    // The two-up is a room, so while one is open there is no board to mark.
+    comparing: Boolean(state.compare),
+    board: onScreen.map((artworkId) => {
+      const summary = lookUpWork(artworkId);
+      const flag = flags.get(artworkId);
+      return {
+        artworkId,
+        title: summary?.title ?? null,
+        artist: summary?.artist ?? null,
+        flag: flag?.flag ?? null,
+        by: flag?.by ?? null,
+      };
+    }),
   };
 };
 
@@ -367,8 +466,29 @@ export function AgentPrompt({
           (edit) => edit.field === 'statement' && edit.value.trim()
         )
       );
-      /** Each unfinished-show gap gets one nudge per turn, and no more. */
-      const nudged = new Set<ShowGap>();
+      /**
+       * What the page has already put this turn back to work over, keyed on the
+       * job rather than on the kind of job — so the same six unlabelled works
+       * are never asked for twice, and six different ones are not mistaken for
+       * them. `MAX_NUDGES` is the ceiling, not this set.
+       */
+      const nudged = new Set<string>();
+      /** Every tool the model chose this turn. The census, as the page sees it. */
+      const called = new Set<string>();
+      /**
+       * Grows only when the page demands work the model had not budgeted for.
+       * See `TURNS_PER_NUDGE`.
+       */
+      let budget = MAX_TURNS;
+      const putBackToWork = (message: string): boolean => {
+        if (nudged.size >= MAX_NUDGES) return false;
+        historyRef.current = [
+          ...historyRef.current,
+          { role: 'system', content: message },
+        ];
+        budget = Math.min(budget + TURNS_PER_NUDGE, HARD_MAX_TURNS);
+        return true;
+      };
 
       const context = getModelContext();
       const registered = (await context?.getTools?.()) ?? [];
@@ -383,7 +503,7 @@ export function AgentPrompt({
         },
       }));
 
-      for (let turn = 0; turn < MAX_TURNS; turn += 1) {
+      for (let turn = 0; turn < budget; turn += 1) {
         const response = await fetch('/api/public-agent/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -450,24 +570,80 @@ export function AgentPrompt({
            * `nudged` counts. The model still writes every word.
            */
           const gap = findShowGap(readShowState(statementCorrected), nudged);
-          if (gap) {
-            nudged.add(gap.gap);
-            historyRef.current = [
-              ...historyRef.current,
-              { role: 'system', content: gap.message },
-            ];
+          if (gap && putBackToWork(gap.message)) {
+            nudged.add(gap.key);
+            continue;
+          }
+
+          /*
+           * And: did it answer their hands with anything but a sentence?
+           *
+           * The same shape as the show gaps and for the same reason. This one
+           * exists because the prompt has invited the model to flag since
+           * iteration 3 and it has now declined 508 tool calls in a row —
+           * `flag_artworks` 0, `compare_artworks` 0 — while the reports
+           * demonstrated both through the debug console. An invitation the
+           * model can refuse forever without disobeying anything is not a
+           * behaviour, and asking for it in stronger prose has been tried
+           * twice. See `unmarked-board`.
+           */
+          const marks = readBoardMarkState(gestures);
+          const unmarked = findUnmarkedBoard(marks, called);
+          // Keyed on the board, like the labels gap is keyed on the works: a
+          // turn that flagged and then redealt has dealt its own marks away and
+          // is looking at a different board, which is a job it has not done
+          // rather than the one it already did. `MAX_NUDGES` is the ceiling.
+          const boardKey = `unmarked:${marks.board
+            .map((work) => work.artworkId)
+            .join(',')}`;
+          if (unmarked && !nudged.has(boardKey) && putBackToWork(unmarked)) {
+            nudged.add(boardKey);
             continue;
           }
 
           const said = (message.content ?? '').trim();
           if (said) {
             setEntries((current) => [...current, { kind: 'agent', text: said }]);
-            // The note is always shown. Whether it is also *heard* depends on
-            // one thing: how the human's last turn arrived. Text in, text out;
-            // voice in, voice out. That single rule is what makes typing and
-            // talking feel like one conversation, and it needs nothing as
-            // heavy as a manager deciding whose go it is.
-            if (shouldSpeakReply(channel)) speechRef.current?.speak(said);
+          }
+          /*
+           * Text in, text out; voice in, voice out — and the thing that gets
+           * spoken is whatever the agent actually said, which is usually the
+           * note.
+           *
+           * This used to speak `said` alone, and a spoken turn was therefore
+           * answered in silence nearly every time. Two rules in the build were
+           * pulling against each other: §5 says the *note* is "spoken only if
+           * the human's last turn was spoken", while the system prompt tells
+           * the model never to repeat its note as its reply and to "say
+           * nothing at all" if it has nothing to add — which it usually does
+           * not, correctly. So `message.content` came back empty, and the one
+           * sentence the human was owed sat on the wall unread.
+           *
+           * Measured on staging: the utterance landed in the field, the turn
+           * ran, the note was written — *"You asked for warmth; you kept the
+           * spare monochrome sailor and rejected storm ships…"* — and nothing
+           * was spoken.
+           *
+           * The reply wins when there is one, because it is the sentence that
+           * adds something the wall does not already carry. `firstSentence`
+           * caps either at one sentence: the board is the rest of the answer.
+           */
+          if (shouldSpeakReply(channel)) {
+            // Whichever sentence is actually on the wall. A dealt board carries
+            // its note on `board`; a board the agent pinned with `set_results`
+            // carries it on `agentResults`, and the page renders whichever is
+            // in front of the human. Reading only `board` spoke nothing on a
+            // `set_results` turn, which is how the first attempt at this fix
+            // still came back silent on staging. Newest wins.
+            const state = getWebMcpState();
+            const onTheWall = [
+              { note: state.board?.note, at: state.board?.at ?? 0 },
+              { note: state.agentResults?.note, at: state.agentResults?.at ?? 0 },
+            ]
+              .filter((entry) => entry.note?.trim())
+              .sort((a, b) => b.at - a.at)[0];
+            const aloud = said || onTheWall?.note?.trim() || '';
+            if (aloud) speechRef.current?.speak(aloud);
           }
           return;
         }
@@ -484,14 +660,35 @@ export function AgentPrompt({
         // so anything that changes the human's screen keeps its place in the
         // queue and the reads either side of it stay on their own side.
         const runOne = async (call: ToolCall) => {
+          const name = call.function.name;
+          called.add(name);
           let args: Record<string, unknown> = {};
           try {
             args = JSON.parse(call.function.arguments || '{}');
           } catch {
             // Let the tool reject malformed arguments and say why.
           }
+          // The ordering §5c asks for, enforced rather than requested. See
+          // `SEARCH_TOOL_NAMES`. Lifted the moment the wall has been rewritten,
+          // and never applied to a show that has nothing hanging yet.
+          if (
+            statementCorrected &&
+            SEARCH_TOOL_NAMES.has(name) &&
+            !called.has('write_labels') &&
+            readShowState(statementCorrected).hung.length > 0
+          ) {
+            return {
+              ok: false,
+              error: {
+                code: 'RELABEL_FIRST',
+                message:
+                  'Not yet. They have rewritten the statement, and every label already on the wall was written against the theme they just replaced.',
+                hint: 'Call write_labels for the works currently hanging, against their new statement. Searching is open again immediately afterwards, and dropping and hanging works is still the rest of the job.',
+              },
+            };
+          }
           try {
-            return await callTool(call.function.name, args);
+            return await callTool(name, args);
           } catch (error) {
             return {
               ok: false,
@@ -1048,9 +1245,19 @@ export function AgentPrompt({
                 Provenance is ink, not a caption. Graphite rule for the human,
                 coloured rule for the agent — the same two hands the board
                 draws, so neither turn needs a word saying whose it was.
+
+                `data-provenance` carries the same fact for anything reading the
+                DOM. The human's echo was a bare span, so every harness checking
+                §9's "two colours of ink in every state" through
+                `[data-provenance]` was asking a question the page could only
+                ever answer "agent" to — and two iterations of reports asserted
+                two inks off a selector that could not see one of them.
               */}
               {entry.kind === 'you' && (
-                <p className="border-l-2 border-neutral-600 pl-3 text-neutral-300">
+                <p
+                  data-provenance="human"
+                  className="border-l-2 border-neutral-600 pl-3 text-neutral-300"
+                >
                   {segmentUtterance(entry.text, entry.referents).map(
                     (segment, at) =>
                       segment.kind === 'text' ? (
@@ -1062,7 +1269,10 @@ export function AgentPrompt({
                 </p>
               )}
               {entry.kind === 'agent' && (
-                <p className="border-l-2 border-primary-500/70 pl-3 text-neutral-400">
+                <p
+                  data-provenance="agent"
+                  className="border-l-2 border-primary-500/70 pl-3 text-neutral-400"
+                >
                   {entry.text}
                 </p>
               )}

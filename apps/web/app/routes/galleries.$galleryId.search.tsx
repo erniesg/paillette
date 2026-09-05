@@ -2596,6 +2596,10 @@ export default function SearchPage() {
         onLogoClick={resetSearchHome}
         onLogin={() => void login({ returnTo: getCurrentReturnTo() })}
         onSignup={() => void signup({ returnTo: getCurrentReturnTo() })}
+        /* The header is a sibling of `main`, so it is outside the
+           `data-board-mode` subtree the rest of the fold hangs off. Passed
+           rather than reached for with CSS. */
+        quiet={boardIsDealt}
       />
 
       <main
@@ -3013,17 +3017,33 @@ export default function SearchPage() {
           confirmed and going away when the flags do. It is the same `↵` the
           submit button carries, so the two read as one key. Nothing to read.
         */}
-        {hasConfirmedFlags && (
-          <div className="lt-enter-armed mx-auto max-w-3xl" aria-hidden>
+        {/* Or while a deal is out, which is the one time the mark has to be
+            there whether or not a flag armed it: an agent's `redeal` can put
+            one in flight with nothing confirmed on the board. */}
+        {(hasConfirmedFlags || webmcpState.dealing) && (
+          <div
+            className="lt-enter-armed mx-auto max-w-3xl"
+            /* The deal is out. The rule travels; nothing says so in words. See
+               `lt-enter-dealing` — the store has carried `dealing` since the
+               loop was built and nothing had ever read it, so a deterministic
+               redeal on a slow connection was completely silent until the
+               board changed under the human's hands. */
+            data-dealing={String(webmcpState.dealing)}
+            aria-hidden
+          >
             <span>↵</span>
           </div>
         )}
-        {/* The same fact in words, for anyone the mark cannot reach. Off
-            screen, where a sentence costs nothing. */}
+        {/* The same facts in words, for anyone the marks cannot reach. Off
+            screen, where a sentence costs nothing. `role="status"` announces
+            the change, so the wait is audible in the one place a moving
+            hairline is no use at all. */}
         <p className="sr-only" role="status">
-          {hasConfirmedFlags
-            ? 'Enter on the empty bar redeals the board from your flags.'
-            : ''}
+          {webmcpState.dealing
+            ? 'Dealing.'
+            : hasConfirmedFlags
+              ? 'Enter on the empty bar redeals the board from your flags.'
+              : ''}
         </p>
 
         {/* The one case where silence is the wrong answer. Enter is cheap to
@@ -3100,19 +3120,34 @@ export default function SearchPage() {
               <div className="mx-auto max-w-7xl">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="lt-catalogue">
-                    {isBrowsingCollection
-                      ? isLoading && !results.length
-                        ? 'Loading collection'
-                        : visibleRankedResults.length
-                          ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
-                          : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
-                      : isLoading
-                        ? 'Searching'
-                        : results.length
-                          ? `${visibleResults.length} / ${results.length} works`
-                          : hasMounted && shouldSearch
-                            ? 'No works'
-                            : 'Ready'}
+                    {/*
+                      The count stands down on a dealt board.
+
+                      Measured in one 1440×900 frame of a dealt board: "12 / 12
+                      works" here and "12 works" in the exhibition rail two
+                      inches below it, the same twelve pictures counted twice on
+                      one screen. And on a board the number is not even about
+                      what is on screen — it is the size of the search result
+                      the deal replaced. The hang's own count belongs to the
+                      show and stays; this one is chrome describing something
+                      that is no longer there. Clearing the flags brings it
+                      back with the rest of the rail.
+                    */}
+                    {boardIsDealt
+                      ? null
+                      : isBrowsingCollection
+                        ? isLoading && !results.length
+                          ? 'Loading collection'
+                          : visibleRankedResults.length
+                            ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
+                            : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
+                        : isLoading
+                          ? 'Searching'
+                          : results.length
+                            ? `${visibleResults.length} / ${results.length} works`
+                            : hasMounted && shouldSearch
+                              ? 'No works'
+                              : 'Ready'}
                     {(submittedSearch?.kind === 'text' ||
                       submittedSearch?.kind === 'colour') && (
                       // The human's own words, set in the same serif italic
@@ -3239,7 +3274,25 @@ export default function SearchPage() {
                       Palette order: {selectedPalette?.name || sortColours[0]}
                     </span>
                   )}
-                  <div className="flex flex-wrap items-center gap-2">
+                  {/*
+                    Sort, View and Settings fold away with the rest of the
+                    search form once a deal is on the table.
+
+                    Two reasons, and the second is not cosmetic. The chrome
+                    census on a dealt board was 48 visible words excluding the
+                    artwork data and the note, 23 of them in this one band
+                    between the human's bar and the agent's sentence — against
+                    §7's two inks and §5b's whole argument. And the View row was
+                    offering Masonry, Salon, Atlas and Table over a board where
+                    choosing any of them destroys the deal: a live control whose
+                    only effect is to throw away the human's work.
+
+                    Sorting a hang is meaningless anyway — the order is the
+                    curation — so nothing here is a capability being taken away.
+                    The search field stays, and clearing the flags brings the
+                    rail straight back.
+                  */}
+                  <div className="lt-board-fold flex flex-wrap items-center gap-2">
                     <div className="lt-rail">
                       <span className="lt-rail-legend lt-catalogue">Sort</span>
                       <div className="flex min-w-0 flex-1 items-center gap-1 p-1">
