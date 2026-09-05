@@ -243,9 +243,12 @@ Job B below measures §5c and not this change.
 **Both checks were made to fail on purpose first.**
 
 - Against the unpatched function — the world as it was, where no such check
-  exists and nothing is ever asked for — **13 of 24 failed**. The 11 that passed
-  are the negative cases, which pass trivially when the answer is always "no";
-  they pin the false-positive boundary and do not carry the fix.
+  exists and nothing is ever asked for — **19 of 43 fail**, re-run just now
+  against the test file as it stands rather than quoted from when it was
+  smaller. The 24 that pass are the negative cases, which pass trivially when
+  the answer is always "no"; they pin the false-positive boundary and do not
+  carry the fix. (It was 13 of 24 when first done; the boundary probe has since
+  added cases on both sides.)
 - Unwired from the turn loop, the wiring test reads
   `AssertionError: expected '' to contain 'annotate_atlas'` — no nudge at all.
 
