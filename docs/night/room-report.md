@@ -58,6 +58,14 @@ the link people actually share — and it needed no database migration; the
 regions ride inside the hang's own JSON column, and a show with no groupings is
 stored byte-for-byte as it always was.
 
+**What the agent names, the visitor walks.** `annotate_atlas` is the tool an
+agent uses to say "these six are the working harbour"; those groups become the
+rooms. Run end to end and checked in as `scripts/room-agent-path.ts`: the agent
+deals twelve works, writes the show, writes a label per work, names two groups;
+the human presses Copy link; the short code that comes back opens as two named
+rooms you can walk between. See §10 for exactly how much of that is
+demonstrated and how much is not.
+
 **Text first.** Nothing in the room needs a voice. Verified in a browser with
 every speech API deleted before the page loads: the room draws, a work is
 clickable, the label reads, and the read-aloud is simply *absent* rather than
@@ -258,7 +266,11 @@ the honest position rather than quoting a figure I did not see.
 | image server unreachable | walls, doorways, wall text and label plates; no pictures | `empty.png` |
 | one work's image fails | a blank plate at the fallback size, the same mark the flat page draws | the flat page and the room agree about what the show contains |
 | no speech synthesis | the read-aloud is absent; everything else is unchanged | every speech API deleted before load: room draws, label reads, zero controls, no errors |
-| a slow connection, visitor leaves | textures still in flight are disposed on arrival | up to thirty leaked GPU textures before this |
+| a slow connection, visitor leaves | textures still in flight are disposed on arrival | six page/room round trips mid-load: still draws, 51.8 MiB, no leak |
+| a slow image server | the room is a room before it is a hang | canvas up in 1.5 s; **walkable 3.40 m before a single picture arrives**; pictures then arrive |
+| a code that does not exist, or is not a code | 404, and no canvas is ever created | the room never turns a missing show into a blank scene |
+| a corrupt self-contained payload | 404 | |
+| a show with no labels at all | the focused panel shows the catalogue line and no empty rule | found by publishing one from the agent path by accident |
 
 All of these were also checked against the deployed staging build, not only
 locally.
@@ -289,6 +301,7 @@ picture, press arrow keys. Nothing was posed by calling into the scene.
 | `phone-page.png`, `phone-six.png`, `phone-focused.png` | 390 × 844 at DPR 3 |
 | `degraded-no-webgl.png` | `?v=room` on a browser that cannot make a context |
 | `degraded-context-lost.png` | the context taken away mid-visit, falling back to the page |
+| `agent-board.png` | the board after the agent has dealt, labelled and named two groups — the state that becomes the two rooms |
 | `staging-e-code.png` | the real short link, on staging |
 
 **The named-shot problem was taken seriously**, because the handoff says it has
@@ -484,12 +497,24 @@ picture, read its label, press Escape, click PAGE — with every claim asserted
 rather than described. It throws on the first thing that is not true.
 
 Run three times locally and three times against deployed staging: **25 of 25
-each time, no flakes.** Peak on the walk: 31.0 MiB of texture, four works at
+each time, no flakes** — 26 of 26 on a show that has labels, since one step only
+applies then. Peak on the walk: 31.0–48.5 MiB of texture, four to six works at
 full resolution, 22–25 fps under SwiftShader.
 
 ```
 PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=u4G4Gkv \
   pnpm --filter web exec tsx scripts/room-demo-path.ts
+```
+
+**And the path in front of it.** `scripts/room-agent-path.ts` publishes a show
+the way the app does — the agent's tools, then the human's share button — and
+prints the code for the script above to walk. Chained, the pair covers
+`annotate_atlas` through to a stranger walking two named rooms. Run twice from
+scratch: 26 of 26 both times.
+
+```
+pnpm --filter web exec tsx scripts/room-agent-path.ts   # prints a fresh code
+CODE=<that code> pnpm --filter web exec tsx scripts/room-demo-path.ts
 ```
 
 Reproduce the numbers:
@@ -527,6 +552,9 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
 - **The room adds nothing to what a normal visitor downloads.** The flat page's
   own chunk is 1.99 kB gzipped; the 181 kB 3D library is behind two dynamic
   imports and is fetched only by someone who asked for the room.
+- **The groups an agent names on the board become the rooms a stranger walks
+  through.** Demonstrated end to end, twice from scratch, on freshly published
+  short codes — with the limit in the next section.
 
 ### Do not say
 
@@ -544,6 +572,15 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
 - **That the agent can put a visitor in the room.** It cannot; the template is a
   property of the URL the visitor holds. What the agent *does* reach is the
   regions, which become the rooms.
+- **"The agent decides how to lay the room out" — not as demonstrated here.**
+  `room-agent-path.ts` drives `annotate_atlas` through
+  `window.__paillette_webmcp.call`, the developer's back door. That proves the
+  tool works and that its effect survives publishing, sharing and being opened
+  cold by a stranger. It does *not* prove a language model chose to call it:
+  the leg from a typed instruction to a tool call belongs to the culling lane,
+  and this lane never ran it. Phrase it as "when the show names its groups,
+  the room follows" rather than as the agent doing it live, unless the culling
+  lane has evidence for the first leg.
 
 ### The one-line version
 

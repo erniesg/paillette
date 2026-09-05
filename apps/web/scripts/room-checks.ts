@@ -60,8 +60,19 @@ const renderer = async (browser: Browser) => {
 
 const main = async () => {
   const links = JSON.parse(process.env.ROOM_LINKS ?? '{}') as Record<string, string>;
-  const six = `${ORIGIN}${links.six ?? '/e/MKwsxHy'}`;
-  const room = `${six}${six.includes('?') ? '&' : '?'}v=room`;
+  /*
+   * A show is named either by a short code or by a self-contained link that
+   * already carries a query string, and adding `v=room` to the wrong one makes
+   * `/e/CODE&v=room` — which is not a URL and fails thirty seconds later as a
+   * canvas that never appears. Built properly rather than concatenated.
+   */
+  const asRoom = (path: string) => {
+    const url = new URL(path, ORIGIN);
+    url.searchParams.set('v', 'room');
+    return url.toString();
+  };
+  const six = new URL(links.six ?? '/e/MKwsxHy', ORIGIN).toString();
+  const room = asRoom(links.six ?? '/e/MKwsxHy');
 
   const browser = await chromium.launch({ args: ARGS });
 
@@ -243,7 +254,7 @@ const main = async () => {
   console.log('\ntexture budget under the most pressure it sees');
   {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await openRoom(page, `${ORIGIN}${links.thirty}&v=room`, 11000);
+    await openRoom(page, asRoom(links.thirty ?? links.six ?? '/e/MKwsxHy'), 11000);
     let peak = 0;
     await page.locator('canvas.exhibition-room-canvas').click({ position: { x: 40, y: 40 } });
     for (let step = 0; step < 40; step += 1) {
