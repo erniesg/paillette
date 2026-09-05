@@ -22,7 +22,7 @@
 
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { json, redirect } from '@remix-run/cloudflare';
-import { useLoaderData } from '@remix-run/react';
+import { useLoaderData, useSearchParams } from '@remix-run/react';
 import {
   ExhibitionView,
   exhibitionMeta,
@@ -32,6 +32,7 @@ import {
   EXHIBITION_LINK_PARAM,
 } from '~/lib/exhibition-link';
 import { buildExhibitionPage } from '~/lib/exhibition-page.server';
+import { TEMPLATE_PARAM, readTemplate, stripTemplate } from '~/lib/room/template';
 import {
   getServerEnv,
   isAllowedPublicSearchRouteId,
@@ -52,8 +53,9 @@ export const loader = async ({ context, request }: LoaderFunctionArgs) => {
     payload,
     env: getServerEnv(context),
     // The long link is its own canonical URL: this show was never stored
-    // under a shorter name, so there is no better one to point at.
-    canonicalUrl: url.toString(),
+    // under a shorter name, so there is no better one to point at. Minus the
+    // template, which says how somebody is looking rather than what at.
+    canonicalUrl: stripTemplate(url.toString()),
     signal: request.signal,
   });
   if (!page) throw new Response('Not found', { status: 404 });
@@ -70,5 +72,11 @@ export const meta: MetaFunction<typeof loader> = ({ data }) =>
   exhibitionMeta(data ?? undefined);
 
 export default function ExhibitionRoute() {
-  return <ExhibitionView page={useLoaderData<typeof loader>()} />;
+  const [searchParams] = useSearchParams();
+  return (
+    <ExhibitionView
+      page={useLoaderData<typeof loader>()}
+      template={readTemplate(searchParams.get(TEMPLATE_PARAM))}
+    />
+  );
 }

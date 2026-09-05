@@ -31,6 +31,32 @@ export interface HungWork {
   imageUrl: string | null;
   label: string | null;
   labelByAgent: boolean;
+  /**
+   * What the catalogue recorded about how big the thing is, unparsed.
+   *
+   * Carried raw rather than normalised here because only the room has an
+   * opinion about it, and `~/lib/room/dimensions` is where the refusing is
+   * done. Two shapes reach us: the API's structured object on every artwork,
+   * and dimension text on collections that keep it that way. In this
+   * deployment the NGA ingest fills the structured object with nulls, so in
+   * practice this is a null-shaped field carrying a fact — see
+   * `docs/night/room-report.md`.
+   */
+  dimensions:
+    | string
+    | {
+        height?: number | null;
+        width?: number | null;
+        depth?: number | null;
+        unit?: string | null;
+      }
+    | null;
+}
+
+/** A named grouping of works. In the room these become separate rooms. */
+export interface HungRegion {
+  label: string;
+  artworkIds: string[];
 }
 
 export interface ExhibitionPage {
@@ -38,6 +64,14 @@ export interface ExhibitionPage {
   statement: string | null;
   statementByAgent: boolean;
   works: HungWork[];
+  /**
+   * The show's own named groupings, when it has any.
+   *
+   * The flat page does not draw them — the atlas is where regions are a
+   * visible arrangement — but the room turns each one into a room, which is
+   * the strongest thing the feature does with them.
+   */
+  regions?: HungRegion[];
   /** Works the link asked for that the catalogue could not resolve. Reported. */
   missing: number;
   /** The short code, when this show has one. Null for a self-contained link. */
@@ -73,6 +107,33 @@ const readImageUrl = (artwork: Record<string, unknown>): string | null => {
   }
   const fallback = asText(artwork.image_url);
   return fallback && /^https?:\/\//i.test(fallback) ? fallback : null;
+};
+
+/**
+ * The size fields, passed on without an opinion.
+ *
+ * Every candidate a record might carry, in the order a catalogue means them,
+ * and the first one that is *present* wins — not the first one that parses,
+ * because deciding what is readable is the room's job and doing half of it
+ * here would put the refusal logic in two places.
+ */
+const readDimensions = (artwork: Record<string, unknown>): HungWork['dimensions'] => {
+  const metadata =
+    artwork.metadata && typeof artwork.metadata === 'object'
+      ? (artwork.metadata as Record<string, unknown>)
+      : {};
+  for (const candidate of [
+    artwork.dimensions,
+    artwork.dimensions_text,
+    metadata.dimensions,
+    metadata.dimensions_text,
+  ]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate as HungWork['dimensions'];
+    }
+  }
+  return null;
 };
 
 /** The API's root, without the `/api/v1` the versioned routes live under. */
@@ -304,6 +365,7 @@ export const buildExhibitionPage = async ({
       imageUrl: readImageUrl(record),
       label: work.label,
       labelByAgent: work.labelByAgent,
+      dimensions: readDimensions(record),
     });
   });
 

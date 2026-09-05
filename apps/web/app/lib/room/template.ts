@@ -39,7 +39,7 @@ export const templateHref = (
   currentPathWithQuery: string,
   template: ExhibitionTemplate
 ): string => {
-  const [path, query = ''] = currentPathWithQuery.split('?');
+  const [path = '', query = ''] = currentPathWithQuery.split('?');
   const params = new URLSearchParams(query);
   if (template === DEFAULT_TEMPLATE) params.delete(TEMPLATE_PARAM);
   else params.set(TEMPLATE_PARAM, template);

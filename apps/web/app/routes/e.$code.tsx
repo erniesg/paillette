@@ -16,8 +16,9 @@
 
 import type { LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
 import { json } from '@remix-run/cloudflare';
-import { useLoaderData } from '@remix-run/react';
+import { useLoaderData, useSearchParams } from '@remix-run/react';
 import { readShareCode, shareCodePath } from '@paillette/types/share-codes';
+import { TEMPLATE_PARAM, readTemplate } from '~/lib/room/template';
 import {
   ExhibitionView,
   exhibitionMeta,
@@ -86,6 +87,22 @@ export const loader = async ({ context, params, request }: LoaderFunctionArgs) =
 export const meta: MetaFunction<typeof loader> = ({ data }) =>
   exhibitionMeta(data ?? undefined);
 
+/**
+ * The template is read on the client, not in the loader, and deliberately.
+ *
+ * `/e/abc` and `/e/abc?v=room` are the same document from the same fetch — the
+ * show does not change because somebody chose to walk it — so making the
+ * loader depend on the parameter would mean a second round trip to the API
+ * every time the two words are clicked, and a second cache key for one record.
+ * `useSearchParams` also means the switch is a client navigation: the walls do
+ * not reload when you step back out to the page.
+ */
 export default function ShortExhibitionRoute() {
-  return <ExhibitionView page={useLoaderData<typeof loader>()} />;
+  const [searchParams] = useSearchParams();
+  return (
+    <ExhibitionView
+      page={useLoaderData<typeof loader>()}
+      template={readTemplate(searchParams.get(TEMPLATE_PARAM))}
+    />
+  );
 }

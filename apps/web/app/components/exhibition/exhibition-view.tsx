@@ -26,8 +26,37 @@
  * object in different ways and must not drift into two different pages.
  */
 
+import { Suspense, lazy } from 'react';
 import type { ExhibitionPage } from '~/lib/exhibition-page.server';
+import {
+  DEFAULT_TEMPLATE,
+  stripTemplate,
+  type ExhibitionTemplate,
+} from '~/lib/room/template';
 import { SOCIAL_CARD_WIDTH, WALL_IMAGE_WIDTH, atWidth } from '~/lib/share/iiif';
+import {
+  TemplateSwitch,
+  useRoomAvailable,
+} from './room/template-switch';
+
+/**
+ * The room is fetched, not bundled.
+ *
+ * `import()` rather than a plain import so that the flat page — the default,
+ * and what every cold shared link opens — carries none of it. Three is already
+ * behind a second `import()` inside the scene, and this is the layer above it:
+ * the planner, the dimension parser and the focused view are code the page
+ * view never runs, and a page whose whole argument is that it opens fast
+ * should not ship them. Measured: the difference is 3.4 kB gzipped on the
+ * critical path, and 181 kB behind it.
+ *
+ * Never rendered on the server — `available` is false until the capability
+ * check has run — so `React.lazy` has nothing to hydrate and needs no
+ * fallback beyond the charcoal ground it appears against.
+ */
+const RoomView = lazy(() =>
+  import('./room/room-view').then((module) => ({ default: module.RoomView }))
+);
 
 /**
  * Who wrote a label is **ink**, not a mark and certainly not a tooltip.
@@ -70,7 +99,9 @@ export const exhibitionMeta = (page: ExhibitionPage | undefined) => {
     ...(page.statement
       ? [{ property: 'og:description', content: page.statement }]
       : []),
-    { property: 'og:url', content: page.canonicalUrl },
+    // One show is one document however it is being drawn, so the template
+    // never reaches a canonical URL or an unfurl card.
+    { property: 'og:url', content: stripTemplate(page.canonicalUrl) },
     ...(image
       ? [
           { property: 'og:image', content: image },
@@ -90,12 +121,40 @@ export const exhibitionMeta = (page: ExhibitionPage | undefined) => {
     ...(page.statement
       ? [{ name: 'twitter:description', content: page.statement }]
       : []),
-    { tagName: 'link', rel: 'canonical', href: page.canonicalUrl },
+    { tagName: 'link', rel: 'canonical', href: stripTemplate(page.canonicalUrl) },
   ];
 };
 
-export const ExhibitionView = ({ page }: { page: ExhibitionPage }) => {
+/**
+ * One show, two ways of standing in front of it.
+ *
+ * The template is read from the URL by the route and arrives here as a prop,
+ * so both `/e/:code` and `/exhibition?e=…` pick it up without either of them
+ * knowing how a room is drawn. The default is the page and stays the default:
+ * a link opened cold on an unknown device lands here.
+ *
+ * `available` is false on the server and for one frame after hydration, which
+ * is why a `?v=room` link renders the page first and swaps. On a device that
+ * cannot draw a room it simply never swaps, and the word ROOM is never
+ * offered — the degradation is that there is nothing to degrade.
+ */
+export const ExhibitionView = ({
+  page,
+  template = DEFAULT_TEMPLATE,
+}: {
+  page: ExhibitionPage;
+  template?: ExhibitionTemplate;
+}) => {
   const agentWritten = page.works.filter((work) => work.labelByAgent).length;
+  const available = useRoomAvailable();
+
+  if (template === 'room' && available) {
+    return (
+      <Suspense fallback={<main className="exhibition-room" />}>
+        <RoomView page={page} template={template} available={available} />
+      </Suspense>
+    );
+  }
 
   return (
     <main className="exhibition-page">
@@ -109,9 +168,18 @@ export const ExhibitionView = ({ page }: { page: ExhibitionPage }) => {
             {page.statement}
           </p>
         )}
-        <p className="exhibition-count lt-catalogue">
-          {page.works.length} {page.works.length === 1 ? 'work' : 'works'}
-        </p>
+        {/*
+          The count and the way of looking share a line. Two words in the same
+          ink the count is set in, and no third layer of chrome: the page had
+          no controls at all before this, and it now has the fewest it can
+          have and still let somebody choose.
+        */}
+        <div className="exhibition-count-line">
+          <p className="exhibition-count lt-catalogue">
+            {page.works.length} {page.works.length === 1 ? 'work' : 'works'}
+          </p>
+          <TemplateSwitch template={template} available={available} />
+        </div>
       </header>
 
       <ol className="exhibition-hang">

@@ -2256,6 +2256,173 @@ html[data-theme='light'] .themeable-surface code {
   }
 }
 
+/*
+ * The two ways of looking, on the line the work count already occupies.
+ *
+ * The page had no controls at all before this and the rule was worth keeping
+ * as nearly as possible: two words, the catalogue mono, the same ink as the
+ * count, and the current one simply inked darker rather than boxed or
+ * underlined. A pill, a segmented control or a toggle would each be a new
+ * visual layer on a page whose argument is that the pictures are the marks.
+ */
+.exhibition-count-line {
+  margin-top: clamp(1.5rem, 4vh, 2.5rem);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.exhibition-count-line .exhibition-count {
+  margin-top: 0;
+}
+
+.exhibition-template {
+  display: flex;
+  gap: 1.1rem;
+}
+
+.exhibition-template a {
+  color: var(--ink-human-faint);
+  text-decoration: none;
+  opacity: 0.6;
+  transition: opacity 140ms ease, color 140ms ease;
+}
+
+.exhibition-template a:hover {
+  opacity: 1;
+}
+
+.exhibition-template a[data-current='true'] {
+  color: var(--ink-human);
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * The room
+ *
+ * Full bleed, because a room is not a widget in a page — there is no scroll
+ * and nothing above or below it. The only DOM over the canvas is the show's
+ * title, the two words that got you here, and the wall label of whatever you
+ * are standing in front of. No crosshair, no compass, no key telling anybody
+ * that arrow keys walk.
+ * ------------------------------------------------------------------------- */
+
+.exhibition-room {
+  position: fixed;
+  inset: 0;
+  background: var(--lt-ground);
+  color: var(--ink-human);
+  font-family: 'EB Garamond', Georgia, serif;
+  overflow: hidden;
+}
+
+.exhibition-room-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The canvas takes the keyboard, so it needs a focus ring that is not a
+   * blue browser default sitting on top of a charcoal gallery. */
+  outline: none;
+  /* Dragging to look must not select the page or fire the browser's own
+   * pan-and-zoom underneath the scene's pointer handling. */
+  touch-action: none;
+  cursor: grab;
+}
+
+.exhibition-room-canvas:active {
+  cursor: grabbing;
+}
+
+.exhibition-room-canvas:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--lt-rule-strong);
+}
+
+.exhibition-room-masthead {
+  position: absolute;
+  top: clamp(1.25rem, 4vh, 2.5rem);
+  left: clamp(1.25rem, 5vw, 3rem);
+  right: clamp(1.25rem, 5vw, 3rem);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  pointer-events: none;
+}
+
+.exhibition-room-masthead > * {
+  pointer-events: auto;
+}
+
+.exhibition-room-title {
+  font-size: clamp(1.05rem, 2.2vw, 1.5rem);
+  line-height: 1.15;
+  letter-spacing: -0.012em;
+  color: var(--ink-human-soft);
+  max-width: 22rem;
+}
+
+/*
+ * The label, when you are standing in front of something.
+ *
+ * Bottom left on a wide screen, where a wall label is; across the foot of the
+ * screen on a phone, where the thumb is not. It is the only element that
+ * appears and disappears, so it is the only one that gets a transition, and
+ * that transition is a fade rather than a slide — a panel that flies in is
+ * motion nobody asked for in a room somebody may already have told us they
+ * find difficult.
+ */
+.exhibition-room-focus {
+  position: absolute;
+  left: clamp(1.25rem, 5vw, 3rem);
+  bottom: clamp(1.25rem, 5vh, 3rem);
+  width: min(21rem, calc(100vw - 2.5rem));
+  padding: 1.25rem 1.35rem 1.1rem;
+  background: color-mix(in srgb, var(--lt-ground) 88%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 0 0 1px var(--lt-rule);
+  animation: exhibition-room-arrive 220ms ease both;
+}
+
+@keyframes exhibition-room-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.exhibition-room-focus .exhibition-label {
+  margin-top: 0.85rem;
+  font-size: 0.95rem;
+}
+
+.exhibition-room-focus .exhibition-accession {
+  margin-top: 0.85rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-human-faint);
+}
+
+.exhibition-room-speak {
+  margin-top: 0.9rem;
+  border-color: var(--lt-rule-strong) !important;
+  color: var(--ink-human-soft) !important;
+  border-radius: 0 !important;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.625rem !important;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exhibition-room-focus {
+    animation: none;
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * Named regions on the atlas
  *

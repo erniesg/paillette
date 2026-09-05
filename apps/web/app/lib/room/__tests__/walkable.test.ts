@@ -15,7 +15,7 @@ const unmeasured = (count: number): RoomWorkInput[] =>
 
 describe('isWalkable', () => {
   const plan = planRoom(unmeasured(6));
-  const room = plan.rooms[0];
+  const room = plan.rooms[0]!;
 
   it('lets the visitor stand where the visitor starts', () => {
     expect(isWalkable(plan, plan.entry.x, plan.entry.z)).toBe(true);
@@ -50,12 +50,12 @@ describe('the doorway between rooms', () => {
    * and the enfilade is a set of sealed boxes.
    */
   it('connects one room to the next', () => {
-    const first = plan.rooms[0];
+    const first = plan.rooms[0]!;
     expect(isWalkable(plan, first.centreX, first.northZ)).toBe(true);
   });
 
   it('does not let the visitor walk through the wall beside the door', () => {
-    const first = plan.rooms[0];
+    const first = plan.rooms[0]!;
     expect(isWalkable(plan, first.centreX + 3, first.northZ)).toBe(false);
   });
 
@@ -82,7 +82,7 @@ describe('stepTowards', () => {
   });
 
   it('stops at a wall instead of passing through it', () => {
-    const room = plan.rooms[0];
+    const room = plan.rooms[0]!;
     let position = { x: 0, z: plan.entry.z };
     for (let step = 0; step < 40; step += 1) {
       position = stepTowards(plan, position, 0, 0.5);
@@ -92,7 +92,7 @@ describe('stepTowards', () => {
   });
 
   it('takes a shorter step rather than none when a full one would not fit', () => {
-    const room = plan.rooms[0];
+    const room = plan.rooms[0]!;
     const from = { x: 0, z: room.northZ + WALL_STANDOFF_M + 0.4 };
     const to = stepTowards(plan, from, 0, 1.2);
     expect(to.z).toBeLessThan(from.z);

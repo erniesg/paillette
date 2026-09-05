@@ -27,13 +27,10 @@ const gapsAlong = (placements: Placement[], axis: 'x' | 'z') => {
   const sorted = [...placements].sort((a, b) => a[axis] - b[axis]);
   const gaps: number[] = [];
   for (let index = 1; index < sorted.length; index += 1) {
-    const previous = sorted[index - 1];
-    const current = sorted[index];
+    const previous = sorted[index - 1]!;
+    const current = sorted[index]!;
     gaps.push(
-      current[axis] -
-        previous[axis] -
-        current.widthM / 2 -
-        previous.widthM / 2
+      current[axis] - previous[axis] - current.widthM / 2 - previous.widthM / 2
     );
   }
   return gaps;
@@ -91,7 +88,7 @@ describe('groupWorks', () => {
       // Whatever no region claimed still has to hang somewhere.
       null,
     ]);
-    expect(groups[2].works.map((entry) => entry.work.artworkId)).toEqual(['w1']);
+    expect(groups[2]!.works.map((entry) => entry.work.artworkId)).toEqual(['w1']);
   });
 
   it('hangs a work claimed twice only once', () => {
@@ -151,8 +148,14 @@ describe('planRoom', () => {
 
   it('runs the west wall away from the door and the east wall back towards it', () => {
     const plan = planRoom(unmeasured(6));
-    const [westA, westB] = plan.placements.filter((p) => p.side === 'west');
-    const [eastA, eastB] = plan.placements.filter((p) => p.side === 'east');
+    const [westA, westB] = plan.placements.filter((p) => p.side === 'west') as [
+      Placement,
+      Placement,
+    ];
+    const [eastA, eastB] = plan.placements.filter((p) => p.side === 'east') as [
+      Placement,
+      Placement,
+    ];
     // The visitor faces -z, so walking on means z decreasing.
     expect(westB.z).toBeLessThan(westA.z);
     expect(eastB.z).toBeGreaterThan(eastA.z);
@@ -160,7 +163,7 @@ describe('planRoom', () => {
 
   it('faces every picture into the room it is hung in', () => {
     const plan = planRoom(unmeasured(12));
-    const room = plan.rooms[0];
+    const room = plan.rooms[0]!;
     for (const placement of plan.placements) {
       // A plane's own normal is +z; rotating it by rotationY gives where it looks.
       const normalX = Math.sin(placement.rotationY);
@@ -190,7 +193,7 @@ describe('planRoom', () => {
   it('keeps every work inside the walls of its own room', () => {
     const plan = planRoom(unmeasured(30));
     for (const placement of plan.placements) {
-      const room = plan.rooms[placement.roomIndex];
+      const room = plan.rooms[placement.roomIndex]!;
       const halfWidth = room.widthM / 2;
       expect(placement.x).toBeGreaterThanOrEqual(room.centreX - halfWidth - 0.001);
       expect(placement.x).toBeLessThanOrEqual(room.centreX + halfWidth + 0.001);
@@ -226,29 +229,44 @@ describe('planRoom', () => {
   it('grows the room to fit the works rather than cropping them', () => {
     // One work does not need any of the minimum, so the minimum is what it gets.
     const single = planRoom(unmeasured(1));
-    expect(single.rooms[0].widthM).toBe(MIN_ROOM_WIDTH_M);
-    expect(single.rooms[0].depthM).toBe(MIN_ROOM_DEPTH_M);
+    expect(single.rooms[0]!.widthM).toBe(MIN_ROOM_WIDTH_M);
+    expect(single.rooms[0]!.depthM).toBe(MIN_ROOM_DEPTH_M);
     // Three across the far wall already exceed it, which is the floor doing
     // its job rather than a cap: 3 × 1.55 m of wall plus two corners is 6.2 m.
     const small = planRoom(unmeasured(3));
-    expect(small.rooms[0].widthM).toBeGreaterThan(MIN_ROOM_WIDTH_M);
+    expect(small.rooms[0]!.widthM).toBeGreaterThan(MIN_ROOM_WIDTH_M);
     const large = planRoom(unmeasured(12));
-    expect(large.rooms[0].widthM).toBeGreaterThan(single.rooms[0].widthM);
-    expect(large.rooms[0].depthM).toBeGreaterThan(single.rooms[0].depthM);
+    expect(large.rooms[0]!.widthM).toBeGreaterThan(single.rooms[0]!.widthM);
+    expect(large.rooms[0]!.depthM).toBeGreaterThan(single.rooms[0]!.depthM);
     // A wide work widens the wall it hangs on, corner margins included.
     const wide = planRoom([{ artworkId: 'big', size: { widthM: 6, heightM: 2 } }]);
-    expect(wide.rooms[0].widthM).toBeGreaterThanOrEqual(6 + CORNER_M * 2);
+    expect(wide.rooms[0]!.widthM).toBeGreaterThanOrEqual(6 + CORNER_M * 2);
   });
 
   it('lays the rooms out as an enfilade, each one behind the last', () => {
     const plan = planRoom(unmeasured(30));
     expect(plan.rooms).toHaveLength(3);
     for (let index = 1; index < plan.rooms.length; index += 1) {
-      expect(plan.rooms[index].southZ).toBe(plan.rooms[index - 1].northZ);
-      expect(plan.rooms[index].doorSouth).toBe(true);
+      expect(plan.rooms[index]!.southZ).toBe(plan.rooms[index - 1]!.northZ);
+      expect(plan.rooms[index]!.doorSouth).toBe(true);
     }
-    expect(plan.rooms[0].doorSouth).toBe(false);
+    expect(plan.rooms[0]!.doorSouth).toBe(false);
     expect(plan.rooms.at(-1)!.doorNorth).toBe(false);
+  });
+
+  /**
+   * Rooms of differing widths leave a step in the side walls at every
+   * threshold, and you can see out through it. Depth is where the variation
+   * is allowed to live.
+   */
+  it('gives the whole enfilade one width so the side walls do not step', () => {
+    const plan = planRoom([
+      ...Array.from({ length: 12 }, (_, i) => ({ artworkId: `a${i}`, size: null })),
+      { artworkId: 'wide', size: { widthM: 5, heightM: 2 } },
+    ]);
+    expect(plan.rooms.length).toBeGreaterThan(1);
+    expect(new Set(plan.rooms.map((room) => room.widthM)).size).toBe(1);
+    expect(new Set(plan.rooms.map((room) => room.centreX)).size).toBe(1);
   });
 
   it('hangs at the museum centre line, and raises only what would not fit', () => {
@@ -257,7 +275,7 @@ describe('planRoom', () => {
     // A four-metre canvas centred at 1.45 would have its foot below the floor.
     expect(hangHeight(4)).toBeCloseTo(2.15, 5);
     const plan = planRoom([{ artworkId: 'big', size: { widthM: 3, heightM: 4 } }]);
-    expect(plan.placements[0].y - 4 / 2).toBeGreaterThan(0);
+    expect(plan.placements[0]!.y - 4 / 2).toBeGreaterThan(0);
     expect(plan.wallHeightM).toBeGreaterThan(4);
   });
 
@@ -267,9 +285,8 @@ describe('planRoom', () => {
       { artworkId: 'unknown', size: null },
     ]);
     expect(plan.measuredCount).toBe(1);
-    const [known, unknown] = ['known', 'unknown'].map(
-      (id) => plan.placements.find((p) => p.artworkId === id)!
-    );
+    const known = plan.placements.find((p) => p.artworkId === 'known')!;
+    const unknown = plan.placements.find((p) => p.artworkId === 'unknown')!;
     expect(known.measured).toBe(true);
     expect(known.widthM).toBe(0.9);
     expect(unknown.measured).toBe(false);
@@ -285,8 +302,8 @@ describe('planRoom', () => {
 
   it('stands the visitor inside the first room, facing the show', () => {
     const plan = planRoom(unmeasured(6));
-    expect(plan.entry.z).toBeLessThan(plan.rooms[0].southZ);
-    expect(plan.entry.z).toBeGreaterThan(plan.rooms[0].northZ);
+    expect(plan.entry.z).toBeLessThan(plan.rooms[0]!.southZ);
+    expect(plan.entry.z).toBeGreaterThan(plan.rooms[0]!.northZ);
   });
 
   it('builds a room per region when the show names its groups', () => {

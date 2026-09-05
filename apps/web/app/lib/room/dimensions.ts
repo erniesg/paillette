@@ -143,7 +143,8 @@ const fromString = (text: string): PhysicalSize | null => {
     const match = MEASUREMENT.exec(segment);
     if (!match) continue;
 
-    const scale = UNIT_TO_CM[match[3].toLowerCase().replace(/\.$/, '')];
+    const unit = match[3] ?? '';
+    const scale = UNIT_TO_CM[unit.toLowerCase().replace(/\.$/, '')];
     if (!scale) continue;
 
     const heightCm = Number(match[1]) * scale;

@@ -134,17 +134,31 @@ const slotFor = (widthM: number) => Math.max(MIN_SLOT_M, widthM + SLOT_MARGIN_M)
 /**
  * A wall's worth of works: how much wall they need, and where each centre
  * lands along it once the whole run is centred on the wall.
+ *
+ * The offset is carried back attached to its work rather than in a parallel
+ * array indexed alongside it. Two arrays that have to stay the same length is
+ * an invariant nobody can see; this way there is nothing to keep in step.
  */
-const layOut = (widths: number[]): { runM: number; offsets: number[] } => {
-  const slots = widths.map(slotFor);
+interface Placed<T> {
+  entry: T;
+  offset: number;
+  slotM: number;
+}
+
+const layOut = <T>(
+  entries: T[],
+  widthOf: (entry: T) => number
+): { runM: number; placed: Placed<T>[] } => {
+  const slots = entries.map((entry) => slotFor(widthOf(entry)));
   const runM = slots.reduce((total, slot) => total + slot, 0);
-  const offsets: number[] = [];
+  const placed: Placed<T>[] = [];
   let cursor = -runM / 2;
-  for (const slot of slots) {
-    offsets.push(cursor + slot / 2);
-    cursor += slot;
-  }
-  return { runM, offsets };
+  entries.forEach((entry, index) => {
+    const slotM = slots[index] ?? MIN_SLOT_M;
+    placed.push({ entry, offset: cursor + slotM / 2, slotM });
+    cursor += slotM;
+  });
+  return { runM, placed };
 };
 
 /**
@@ -254,12 +268,22 @@ export const planRoom = (
 ): RoomPlan => {
   const groups = groupWorks(works, regions);
 
-  const rooms: RoomShape[] = [];
-  const placements: Placement[] = [];
-  let tallest = 0;
-  let southZ = 0;
+  type Run = { runM: number; placed: Placed<Group['works'][number]>[] };
 
-  groups.forEach((group, roomIndex) => {
+  interface Draft {
+    terminal: boolean;
+    westRun: Run;
+    eastRun: Run;
+    northLeftRun: Run;
+    northRightRun: Run;
+    doorNorth: boolean;
+    widthNeed: number;
+    depthM: number;
+  }
+
+  let tallest = 0;
+
+  const drafts: Draft[] = groups.map((group, roomIndex) => {
     const terminal = roomIndex === groups.length - 1;
     const { west, north, east } = allocateWalls(group.works.length, terminal);
 
@@ -268,11 +292,9 @@ export const planRoom = (
     const northWorks = group.works.slice(west, west + north);
     const eastWorks = group.works.slice(west + north, west + north + east);
 
-    const sizes = group.works.map((entry) => sizeOf(entry.work));
-    for (const size of sizes) tallest = Math.max(tallest, size.heightM);
-
-    const westRun = layOut(westWorks.map((entry) => sizeOf(entry.work).widthM));
-    const eastRun = layOut(eastWorks.map((entry) => sizeOf(entry.work).widthM));
+    for (const entry of group.works) {
+      tallest = Math.max(tallest, sizeOf(entry.work).heightM);
+    }
 
     /*
      * The far wall of a room you walk through has a hole in it, and works
@@ -287,26 +309,60 @@ export const planRoom = (
     const northRight = doorNorth
       ? northWorks.slice(Math.ceil(northWorks.length / 2))
       : [];
-    const northLeftRun = layOut(northLeft.map((entry) => sizeOf(entry.work).widthM));
-    const northRightRun = layOut(northRight.map((entry) => sizeOf(entry.work).widthM));
+
+    const wallWidth = (entry: Group['works'][number]) => sizeOf(entry.work).widthM;
+    const westRun = layOut(westWorks, wallWidth);
+    const eastRun = layOut(eastWorks, wallWidth);
+    const northLeftRun = layOut(northLeft, wallWidth);
+    const northRightRun = layOut(northRight, wallWidth);
 
     const northNeed = doorNorth
       ? Math.max(northLeftRun.runM, northRightRun.runM) * 2 + DOOR_WIDTH_M
       : northLeftRun.runM;
 
-    const widthM = Math.max(MIN_ROOM_WIDTH_M, northNeed + CORNER_M * 2);
-    const depthM = Math.max(
-      MIN_ROOM_DEPTH_M,
-      westRun.runM + CORNER_M * 2,
-      eastRun.runM + CORNER_M * 2
-    );
+    return {
+      terminal,
+      westRun,
+      eastRun,
+      northLeftRun,
+      northRightRun,
+      doorNorth,
+      widthNeed: northNeed + CORNER_M * 2,
+      depthM: Math.max(
+        MIN_ROOM_DEPTH_M,
+        westRun.runM + CORNER_M * 2,
+        eastRun.runM + CORNER_M * 2
+      ),
+    };
+  });
+
+  /*
+   * One width for the whole enfilade, taken from the room that needs the most.
+   *
+   * Rooms of differing widths would leave a step in the side walls at every
+   * threshold — a seam where one room is narrower than the one behind it and
+   * you can see out through the gap. Depth still varies room by room, which is
+   * where the variation reads anyway: you feel a long room as long.
+   */
+  const widthM = drafts.reduce(
+    (widest, draft) => Math.max(widest, draft.widthNeed),
+    MIN_ROOM_WIDTH_M
+  );
+
+  const rooms: RoomShape[] = [];
+  const placements: Placement[] = [];
+  let southZ = 0;
+
+  drafts.forEach((draft, roomIndex) => {
+    const { westRun, eastRun, northLeftRun, northRightRun, doorNorth, depthM } =
+      draft;
 
     const centreX = 0;
     const northZ = southZ - depthM;
 
     rooms.push({
       index: roomIndex,
-      name: group.name,
+      name: groups[roomIndex]?.name ?? null,
       widthM,
       depthM,
       centreX,
@@ -343,49 +399,28 @@ export const planRoom = (
     };
 
     // West wall: hung south to north, because that is the way you walk it.
-    westWorks.forEach((entry, position) => {
-      const slotM = slotFor(sizeOf(entry.work).widthM);
-      push(
-        entry,
-        'west',
-        centreX - widthM / 2,
-        centreZ - westRun.offsets[position],
-        Math.PI / 2,
-        slotM
-      );
-    });
+    for (const { entry, offset, slotM } of westRun.placed) {
+      push(entry, 'west', centreX - widthM / 2, centreZ - offset, Math.PI / 2, slotM);
+    }
 
-    const hangNorth = (
-      run: { runM: number; offsets: number[] },
-      entries: typeof northWorks,
-      flankCentre: number
-    ) => {
-      entries.forEach((entry, position) => {
-        const slotM = slotFor(sizeOf(entry.work).widthM);
-        push(entry, 'north', flankCentre + run.offsets[position], northZ, 0, slotM);
-      });
+    const hangNorth = (run: Run, flankCentre: number) => {
+      for (const { entry, offset, slotM } of run.placed) {
+        push(entry, 'north', flankCentre + offset, northZ, 0, slotM);
+      }
     };
 
     if (doorNorth) {
       const flank = (widthM - DOOR_WIDTH_M) / 4 + DOOR_WIDTH_M / 4;
-      hangNorth(northLeftRun, northLeft, centreX - flank);
-      hangNorth(northRightRun, northRight, centreX + flank);
+      hangNorth(northLeftRun, centreX - flank);
+      hangNorth(northRightRun, centreX + flank);
     } else {
-      hangNorth(northLeftRun, northLeft, centreX);
+      hangNorth(northLeftRun, centreX);
     }
 
     // East wall: hung north to south, walked on the way back out.
-    eastWorks.forEach((entry, position) => {
-      const slotM = slotFor(sizeOf(entry.work).widthM);
-      push(
-        entry,
-        'east',
-        centreX + widthM / 2,
-        centreZ + eastRun.offsets[position],
-        -Math.PI / 2,
-        slotM
-      );
-    });
+    for (const { entry, offset, slotM } of eastRun.placed) {
+      push(entry, 'east', centreX + widthM / 2, centreZ + offset, -Math.PI / 2, slotM);
+    }
 
     southZ = northZ;
   });
