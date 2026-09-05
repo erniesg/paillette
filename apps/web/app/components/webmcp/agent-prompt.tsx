@@ -490,6 +490,65 @@ export function AgentPrompt({
         return true;
       };
 
+      /**
+       * The checks that run when the turn thinks it is over, wherever it ends.
+       *
+       * These used to live inside the branch for a model that had stopped
+       * calling tools, which is one of the two ways a turn ends. The other is
+       * running out of budget mid-job, and that is the one that shipped the
+       * deliverable blank: a correction turn spent all eight calls hanging
+       * works, ended on `set_exhibition` with three of seven still unlabelled,
+       * and no post-condition ever ran — measured on staging as a published
+       * `/e/:code` page with three works carrying no wall label. A job left
+       * half done is exactly the case these exist for, so being cut off is the
+       * last moment they should be skipped rather than the one moment they are.
+       */
+      const finishTheJob = (): boolean => {
+        /*
+         * Before it walks away: did it finish the show?
+         *
+         * Two post-conditions the prompt asked for and staging measured as
+         * not happening — an opening draft with a statement and no label on
+         * any work, and a corrected statement with the title still naming
+         * the theme the human had just rejected. Wording is how you ask for
+         * judgement; it is not how you guarantee a post-condition. Each gap
+         * can put the turn back to work exactly once, which is what
+         * `nudged` counts. The model still writes every word.
+         */
+        const gap = findShowGap(readShowState(statementCorrected), nudged);
+        if (gap && putBackToWork(gap.message)) {
+          nudged.add(gap.key);
+          return true;
+        }
+
+        /*
+         * And: did it answer their hands with anything but a sentence?
+         *
+         * The same shape as the show gaps and for the same reason. This one
+         * exists because the prompt has invited the model to flag since
+         * iteration 3 and it has now declined 508 tool calls in a row —
+         * `flag_artworks` 0, `compare_artworks` 0 — while the reports
+         * demonstrated both through the debug console. An invitation the
+         * model can refuse forever without disobeying anything is not a
+         * behaviour, and asking for it in stronger prose has been tried
+         * twice. See `unmarked-board`.
+         */
+        const marks = readBoardMarkState(gestures);
+        const unmarked = findUnmarkedBoard(marks, called);
+        // Keyed on the board, like the labels gap is keyed on the works: a
+        // turn that flagged and then redealt has dealt its own marks away and
+        // is looking at a different board, which is a job it has not done
+        // rather than the one it already did. `MAX_NUDGES` is the ceiling.
+        const boardKey = `unmarked:${marks.board
+          .map((work) => work.artworkId)
+          .join(',')}`;
+        if (unmarked && !nudged.has(boardKey) && putBackToWork(unmarked)) {
+          nudged.add(boardKey);
+          return true;
+        }
+        return false;
+      };
+
       const context = getModelContext();
       const registered = (await context?.getTools?.()) ?? [];
       // The page's own schemas become the model's function definitions; nothing
@@ -558,49 +617,7 @@ export function AgentPrompt({
 
         const calls = message.tool_calls ?? [];
         if (calls.length === 0) {
-          /*
-           * Before it walks away: did it finish the show?
-           *
-           * Two post-conditions the prompt asked for and staging measured as
-           * not happening — an opening draft with a statement and no label on
-           * any work, and a corrected statement with the title still naming
-           * the theme the human had just rejected. Wording is how you ask for
-           * judgement; it is not how you guarantee a post-condition. Each gap
-           * can put the turn back to work exactly once, which is what
-           * `nudged` counts. The model still writes every word.
-           */
-          const gap = findShowGap(readShowState(statementCorrected), nudged);
-          if (gap && putBackToWork(gap.message)) {
-            nudged.add(gap.key);
-            continue;
-          }
-
-          /*
-           * And: did it answer their hands with anything but a sentence?
-           *
-           * The same shape as the show gaps and for the same reason. This one
-           * exists because the prompt has invited the model to flag since
-           * iteration 3 and it has now declined 508 tool calls in a row —
-           * `flag_artworks` 0, `compare_artworks` 0 — while the reports
-           * demonstrated both through the debug console. An invitation the
-           * model can refuse forever without disobeying anything is not a
-           * behaviour, and asking for it in stronger prose has been tried
-           * twice. See `unmarked-board`.
-           */
-          const marks = readBoardMarkState(gestures);
-          const unmarked = findUnmarkedBoard(marks, called);
-          // Keyed on the board, like the labels gap is keyed on the works: a
-          // turn that flagged and then redealt has dealt its own marks away and
-          // is looking at a different board, which is a job it has not done
-          // rather than the one it already did. `MAX_NUDGES` is the ceiling.
-          const boardKey = `unmarked:${marks.board
-            .map((work) => work.artworkId)
-            .join(',')}`;
-          if (unmarked && !nudged.has(boardKey) && putBackToWork(unmarked)) {
-            nudged.add(boardKey);
-            continue;
-          }
-
+          if (finishTheJob()) continue;
           const said = (message.content ?? '').trim();
           if (said) {
             setEntries((current) => [...current, { kind: 'agent', text: said }]);
@@ -729,6 +746,16 @@ export function AgentPrompt({
           record(call, await runOne(call));
         }
         await flush();
+
+        /*
+         * The last turn it is allowed, and it is still working.
+         *
+         * The loop is about to end without the model ever saying it had
+         * finished, so nothing below would have looked at what it left. Ask
+         * now: a gap that puts the turn back to work buys the calls to close
+         * it, and `MAX_NUDGES` still decides how often that may happen.
+         */
+        if (turn + 1 >= budget) finishTheJob();
       }
     } catch (error) {
       setEntries((current) => [

@@ -49,6 +49,40 @@ const SPOKEN = 'Something quieter, please.';
 
 await mkdir(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Wait until the board has stopped changing, rather than for a fixed guess.
+ *
+ * A deal is staggered per card, so the id list starts differing from the old
+ * one long before the last card has landed. The wait that follows an Enter
+ * fires on that first difference, and a flat sleep after it was a bet on how
+ * long twelve cards take — one this harness lost roughly half the time under
+ * `--voice=stub`, by reading the board mid-deal and then pressing a key on a
+ * card that had already left. The clause under test passed; the *next* clause
+ * timed out on a stale id, which is the worst shape a harness failure can
+ * take, because it accuses the page of something the page did not do.
+ *
+ * So: read the ids, wait, read again, and only continue when two consecutive
+ * reads agree. Capped, and the cap is not silent — a board that never settles
+ * is a real finding and the caller should see it as one.
+ */
+const settleBoard = async (page, { quietMs = 700, timeoutMs = 20_000 } = {}) => {
+  const ids = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('[data-artwork-id]')]
+        .map((el) => el.getAttribute('data-artwork-id'))
+        .join(',')
+    );
+  const deadline = Date.now() + timeoutMs;
+  let previous = await ids();
+  while (Date.now() < deadline) {
+    await sleep(quietMs);
+    const current = await ids();
+    if (current === previous && current.length) return true;
+    previous = current;
+  }
+  return false;
+};
 const log = (line) => process.stdout.write(`${line}\n`);
 
 /**
@@ -494,7 +528,9 @@ const main = async () => {
         { timeout: 60_000 }
       )
       .catch(() => {});
-    await sleep(2500);
+    // The deal is staggered; wait for the last card rather than for a guess.
+    await settleBoard(page);
+    await sleep(400);
 
     // Once more, board to board — the first Enter folds the search form away,
     // so a card moving there is the fold rather than the claim under test.
@@ -512,7 +548,9 @@ const main = async () => {
         { timeout: 60_000 }
       )
       .catch(() => {});
-    await sleep(2500);
+    // The deal is staggered; wait for the last card rather than for a guess.
+    await settleBoard(page);
+    await sleep(400);
     const afterSecond = await flagsOnScreen(page);
     const noteAfterDeal = await page.evaluate(() => {
       const label = document.querySelector('.paillette-wall-label');

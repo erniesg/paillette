@@ -1218,3 +1218,147 @@ describe('AgentPrompt — after the human rewrites the statement', () => {
     expect(search).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AgentPrompt — a turn that runs out of turns mid-job', () => {
+  /**
+   * The way §5c actually shipped blank.
+   *
+   * The post-conditions only ran on a model that had stopped calling tools,
+   * and a correction turn that spends its whole allowance hanging works never
+   * stops: measured on staging, eight calls ending on `set_exhibition` with
+   * three of seven works unlabelled, no nudge issued, and a published
+   * `/e/:code` page with three wall labels missing. So the turn has to be
+   * asked at the ceiling too, which is the moment it is most likely to have
+   * left something.
+   */
+  const aShowNobodyLabelled = () => {
+    rememberArtworks([
+      {
+        id: 'nga-2',
+        galleryId: 'nga',
+        title: "Estuary at Day's End",
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      },
+      {
+        id: 'nga-3',
+        galleryId: 'nga',
+        title: 'A Corner of the Room',
+        artist: 'Someone Else',
+        imageUrl: null,
+        similarity: 1,
+      },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    writeExhibition(
+      {
+        title: 'The Hour Before',
+        statement: 'Eighty words about the hour before someone goes.',
+        works: [{ artworkId: 'nga-2' }, { artworkId: 'nga-3' }],
+      },
+      { by: 'agent' }
+    );
+  };
+
+  /** A model that never says it is done: every reply hangs another work. */
+  const modelThatNeverStops = () => {
+    const bodies: { messages: { role: string; content?: string }[] }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        bodies.push(JSON.parse(init.body));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              message: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    id: `t${bodies.length}`,
+                    function: {
+                      name: 'set_exhibition',
+                      arguments: '{}',
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+        };
+      })
+    );
+    return bodies;
+  };
+
+  it('asks for the labels it never wrote instead of stopping silently', async () => {
+    aShowNobodyLabelled();
+    const hang = vi.fn(async () => ({ ok: true }));
+    setModelContext({
+      getTools: async () => [{ name: 'set_exhibition', execute: hang }],
+    });
+    const bodies = modelThatNeverStops();
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'hang the leaving show' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    // MAX_TURNS is eight, and the only way past it is being caught mid-job.
+    expect(bodies.length).toBeGreaterThan(8);
+    const nudges = (bodies.at(-1)?.messages ?? [])
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content ?? '')
+      .join(' ');
+    expect(nudges).toContain('write_labels');
+    // Named, so the work it owes needs no search to find.
+    expect(nudges).toContain('nga-2');
+    expect(nudges).toContain('nga-3');
+  });
+
+  it('leaves a turn alone when it ran out with nothing owed', async () => {
+    rememberArtworks([
+      {
+        id: 'nga-2',
+        galleryId: 'nga',
+        title: "Estuary at Day's End",
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    writeExhibition(
+      {
+        title: 'The Hour Before',
+        statement: 'Eighty words about the hour before someone goes.',
+        works: [{ artworkId: 'nga-2', label: 'A label somebody wrote.' }],
+      },
+      { by: 'agent' }
+    );
+    const hang = vi.fn(async () => ({ ok: true }));
+    setModelContext({
+      getTools: async () => [{ name: 'set_exhibition', execute: hang }],
+    });
+    const bodies = modelThatNeverStops();
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'go on then' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    // Eight and no more: the ceiling is still the ceiling for a turn that has
+    // left nothing behind, and the extra calls are only ever bought by a gap.
+    expect(bodies.length).toBe(8);
+    expect(
+      (bodies.at(-1)?.messages ?? []).filter(
+        (message) => message.role === 'system'
+      )
+    ).toHaveLength(0);
+  });
+});
