@@ -112,6 +112,13 @@ const clickAWork = async (page: Page): Promise<boolean> => {
  * threshold, because standing in a doorway is not a photograph of a room.
  */
 const walkInto = async (page: Page, room: number) => {
+  // The canvas takes the keyboard when it is clicked, exactly as it does for a
+  // visitor. Pressing arrow keys without this sends them to the document and
+  // nothing moves — which is what "expected the second room, got the first"
+  // turned out to be, rather than a walkability bug.
+  await page
+    .locator('canvas.exhibition-room-canvas')
+    .click({ position: { x: 40, y: 40 } });
   for (let step = 0; step < 80; step += 1) {
     const stats = await readStats(page);
     if (
@@ -222,7 +229,6 @@ const main = async () => {
   await shot(page, 'thirty', { room: 0 });
 
   // Walk the enfilade, on the keyboard, one step at a time.
-  await page.locator('canvas.exhibition-room-canvas').click({ position: { x: 40, y: 40 } });
   await walkInto(page, 1);
   await shot(page, 'thirty-second-room', { room: 1, wellInside: true });
   await walkInto(page, 2);
@@ -230,6 +236,22 @@ const main = async () => {
 
   // The budget under the most pressure it ever sees: stand in a room and look.
   measured.thirtyAfterWalk = await readStats(page);
+
+  // ---- regions, which are rooms ---------------------------------------------
+  await page.goto(`${ORIGIN}${links.grouped}&v=room`, { waitUntil: 'networkidle' });
+  await page.locator('canvas.exhibition-room-canvas').waitFor({ state: 'visible' });
+  await settle(page);
+  const named = await readStats(page);
+  if (named?.roomName !== 'The Working Harbor') {
+    throw new Error(`regions: expected to open in the first named room, got ${named?.roomName}`);
+  }
+  await shot(page, 'regions-first', { room: 0 });
+  await walkInto(page, 1);
+  const second = await readStats(page);
+  if (second?.roomName !== 'The Empty Shore') {
+    throw new Error(`regions: expected the second named room, got ${second?.roomName}`);
+  }
+  await shot(page, 'regions-second', { room: 1, wellInside: true });
 
   // ---- the empty case: the room with nothing hung in it ---------------------
   const blind = await browser.newContext({ viewport: { width: 1440, height: 900 } });

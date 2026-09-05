@@ -70,6 +70,11 @@ export interface ExhibitionLinkWork {
   labelByAgent: boolean;
 }
 
+export interface ExhibitionLinkRegion {
+  label: string;
+  artworkIds: string[];
+}
+
 export interface ExhibitionLinkPayload {
   collectionId: string;
   title: string | null;
@@ -77,6 +82,17 @@ export interface ExhibitionLinkPayload {
   statement: string | null;
   statementByAgent: boolean;
   works: ExhibitionLinkWork[];
+  /**
+   * The show's named groupings, when it has any.
+   *
+   * Added without bumping `VERSION`, which is the right call for exactly this
+   * shape of change: the key is optional, an old reader ignores what it does
+   * not recognise and produces the same exhibition it always did, and a new
+   * reader given an old link sees no regions — which is true, because the link
+   * carries none. A version bump would break every link already in the world
+   * to add a field that costs nothing to miss.
+   */
+  regions?: ExhibitionLinkRegion[];
 }
 
 /**
@@ -94,6 +110,14 @@ type Wire = {
   s?: [string, 0 | 1];
   /** [id, label, 1 if the agent wrote it] */
   w: [string, string, 0 | 1][];
+  /**
+   * [name, index into `w`, …] — positions, not ids.
+   *
+   * An NGA id is thirty characters and a region naming six works would repeat
+   * a hundred and eighty of them, in a format whose whole budget is URL
+   * length. The indices are single digits for any show this can carry.
+   */
+  r?: [string, ...number[]][];
 };
 
 const toBase64Url = (bytes: Uint8Array): string => {
@@ -192,6 +216,19 @@ const toWire = (payload: ExhibitionLinkPayload): Wire => ({
     work.label ?? '',
     work.labelByAgent ? 1 : 0,
   ]),
+  ...(payload.regions?.length
+    ? {
+        r: payload.regions
+          .map((region) => {
+            const positions = region.artworkIds
+              .map((id) => payload.works.findIndex((w) => w.artworkId === id))
+              .filter((index) => index >= 0);
+            return [region.label, ...positions] as [string, ...number[]];
+          })
+          // A region naming nothing that is in the show is not a region.
+          .filter((entry) => entry.length > 1),
+      }
+    : {}),
 });
 
 export const encodeExhibitionLink = async (
@@ -232,18 +269,43 @@ export const decodeExhibitionLink = async (
   }
   if (!wire || wire.v !== VERSION || !Array.isArray(wire.w)) return null;
 
-  const works: ExhibitionLinkWork[] = [];
-  for (const entry of wire.w) {
+  /*
+   * Decoded positionally, holes and all, and compacted afterwards.
+   *
+   * Regions travel as indices into the encoded list, so dropping a malformed
+   * work while decoding would shift every later position by one and quietly
+   * move works between regions — a bug that produces a plausible arrangement
+   * rather than an error. Keeping the holes until the region lookup is done
+   * means an index always means what it meant when it was written.
+   */
+  const slots = wire.w.map((entry) => {
     const artworkId = typeof entry?.[0] === 'string' ? entry[0].trim() : '';
-    if (!artworkId) continue;
+    if (!artworkId) return null;
     const label = typeof entry[1] === 'string' ? entry[1].trim() : '';
-    works.push({
+    return {
       artworkId,
       label: label || null,
       labelByAgent: entry[2] === 1,
-    });
-  }
+    };
+  });
+  const works: ExhibitionLinkWork[] = slots.filter(
+    (slot): slot is ExhibitionLinkWork => slot !== null
+  );
   if (!works.length) return null;
+
+  const regions: ExhibitionLinkRegion[] = [];
+  if (Array.isArray(wire.r)) {
+    for (const entry of wire.r) {
+      const label = typeof entry?.[0] === 'string' ? entry[0].trim() : '';
+      if (!label) continue;
+      const artworkIds: string[] = [];
+      for (const position of entry.slice(1)) {
+        const work = typeof position === 'number' ? slots[position] : undefined;
+        if (work) artworkIds.push(work.artworkId);
+      }
+      if (artworkIds.length) regions.push({ label, artworkIds });
+    }
+  }
 
   return {
     collectionId: typeof wire.c === 'string' && wire.c ? wire.c : 'nga',
@@ -252,6 +314,7 @@ export const decodeExhibitionLink = async (
     statement: wire.s?.[0]?.trim() || null,
     statementByAgent: wire.s?.[1] === 1,
     works,
+    ...(regions.length ? { regions } : {}),
   };
 };
 

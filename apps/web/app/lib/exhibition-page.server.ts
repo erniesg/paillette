@@ -371,11 +371,27 @@ export const buildExhibitionPage = async ({
 
   if (!works.length) return null;
 
+  /*
+   * Regions survive a work the catalogue could not resolve, minus that work.
+   *
+   * A region is a name over a set, and the set losing a member does not
+   * unmake the name — but a region left with nothing in it would build an
+   * empty room in the walkable view, which is a room the show does not have.
+   */
+  const hung = new Set(works.map((work) => work.artworkId));
+  const regions = (payload.regions ?? [])
+    .map((region) => ({
+      label: region.label,
+      artworkIds: region.artworkIds.filter((id) => hung.has(id)),
+    }))
+    .filter((region) => region.artworkIds.length > 0);
+
   return {
     title: payload.title ?? 'Untitled',
     statement: payload.statement,
     statementByAgent: payload.statementByAgent,
     works,
+    ...(regions.length ? { regions } : {}),
     missing: payload.works.length - works.length,
     code,
     canonicalUrl,

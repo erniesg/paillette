@@ -45,7 +45,8 @@ const browse = async (limit: number): Promise<BrowseResult[]> => {
 const link = async (
   title: string,
   statement: string,
-  works: BrowseResult[]
+  works: BrowseResult[],
+  regions?: { label: string; artworkIds: string[] }[]
 ): Promise<string> => {
   const encoded = await encodeExhibitionLink({
     collectionId: 'nga',
@@ -59,6 +60,7 @@ const link = async (
       // Alternating, so the two provenance inks are both visible in a shot.
       labelByAgent: index % 3 !== 0,
     })),
+    ...(regions ? { regions } : {}),
   });
   return `/exhibition?e=${encoded}`;
 };
@@ -85,7 +87,25 @@ const main = async () => {
     pool.slice(0, 1)
   );
 
-  console.log(JSON.stringify({ one, six, thirty }, null, 2));
+  // Named groupings become separate rooms, which is the strongest thing the
+  // walkable view does that the flat page cannot.
+  const grouped = await link(
+    'The Working Harbor, The Empty Shore',
+    'Twelve works in two rooms. The first is a place with a job to do; the second is what is left when the job stops. The wall between them is the argument.',
+    pool.slice(0, 12),
+    [
+      {
+        label: 'The Working Harbor',
+        artworkIds: pool.slice(0, 6).map((work) => work.id),
+      },
+      {
+        label: 'The Empty Shore',
+        artworkIds: pool.slice(6, 12).map((work) => work.id),
+      },
+    ]
+  );
+
+  console.log(JSON.stringify({ one, six, thirty, grouped }, null, 2));
 };
 
 void main();

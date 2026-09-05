@@ -12,7 +12,7 @@
     "metresIntoRoom": 1.4
   },
   "six-wall-text": {
-    "fps": 31,
+    "fps": 30,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 17,
@@ -23,7 +23,7 @@
     "metresIntoRoom": 1.4
   },
   "six-focused": {
-    "fps": 25,
+    "fps": 24,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 12,
@@ -34,7 +34,7 @@
     "metresIntoRoom": 4.55
   },
   "one": {
-    "fps": 31,
+    "fps": 30,
     "textureBytes": 7904683,
     "nearCount": 1,
     "rendererTextures": 4,
@@ -45,7 +45,7 @@
     "metresIntoRoom": 1.4
   },
   "thirty": {
-    "fps": 26,
+    "fps": 24,
     "textureBytes": 62331174,
     "nearCount": 6,
     "rendererTextures": 29,
@@ -56,7 +56,7 @@
     "metresIntoRoom": 1.4
   },
   "thirty-second-room": {
-    "fps": 25,
+    "fps": 23,
     "textureBytes": 64054176,
     "nearCount": 6,
     "rendererTextures": 32,
@@ -67,7 +67,7 @@
     "metresIntoRoom": 4.505777790477641
   },
   "thirty-third-room": {
-    "fps": 28,
+    "fps": 27,
     "textureBytes": 68918485,
     "nearCount": 6,
     "rendererTextures": 38,
@@ -78,7 +78,7 @@
     "metresIntoRoom": 3.3615555809552813
   },
   "thirtyAfterWalk": {
-    "fps": 28,
+    "fps": 27,
     "textureBytes": 68918485,
     "nearCount": 6,
     "rendererTextures": 38,
@@ -88,8 +88,30 @@
     "roomName": null,
     "metresIntoRoom": 3.3615555809552813
   },
+  "regions-first": {
+    "fps": 25,
+    "textureBytes": 54362081,
+    "nearCount": 6,
+    "rendererTextures": 15,
+    "pixelRatio": 1,
+    "roomIndex": 0,
+    "roomCount": 2,
+    "roomName": "The Working Harbor",
+    "metresIntoRoom": 1.4
+  },
+  "regions-second": {
+    "fps": 25,
+    "textureBytes": 48719472,
+    "nearCount": 6,
+    "rendererTextures": 19,
+    "pixelRatio": 1,
+    "roomIndex": 1,
+    "roomCount": 2,
+    "roomName": "The Empty Shore",
+    "metresIntoRoom": 3.549999999999999
+  },
   "phone": {
-    "fps": 24,
+    "fps": 21,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 7,

@@ -250,3 +250,91 @@ describe('a link that is not one', () => {
     });
   });
 });
+
+/**
+ * Regions travel as *positions* in the work list, because an NGA id is thirty
+ * characters and a format whose whole budget is URL length cannot afford to
+ * repeat them. Positions are cheap and they are also the thing most likely to
+ * go quietly wrong, so this is where the assertions are.
+ */
+describe('regions in a self-contained link', () => {
+  const show = (
+    works: { artworkId: string; label: string | null; labelByAgent: boolean }[],
+    regions?: { label: string; artworkIds: string[] }[]
+  ) => ({
+    collectionId: 'nga',
+    title: 'A Show',
+    titleByAgent: false,
+    statement: null,
+    statementByAgent: false,
+    works,
+    ...(regions ? { regions } : {}),
+  });
+
+  const work = (id: string) => ({ artworkId: id, label: null, labelByAgent: false });
+
+  it('round-trips a named grouping', async () => {
+    const payload = show(
+      [work('a'), work('b'), work('c')],
+      [
+        { label: 'The Working Harbor', artworkIds: ['a', 'c'] },
+        { label: 'The Empty Shore', artworkIds: ['b'] },
+      ]
+    );
+    const decoded = await decodeExhibitionLink(await encodeExhibitionLink(payload));
+    expect(decoded?.regions).toEqual([
+      { label: 'The Working Harbor', artworkIds: ['a', 'c'] },
+      { label: 'The Empty Shore', artworkIds: ['b'] },
+    ]);
+  });
+
+  it('says nothing about regions when a show has none', async () => {
+    const decoded = await decodeExhibitionLink(
+      await encodeExhibitionLink(show([work('a')]))
+    );
+    expect(decoded?.regions).toBeUndefined();
+  });
+
+  /**
+   * The bug this exists for: dropping a malformed work while decoding used to
+   * shift every later position by one, which does not fail — it silently moves
+   * works into the wrong region and produces a perfectly plausible show.
+   */
+  it('keeps a region pointing at the same works when an id is malformed', async () => {
+    const encoded = await encodeExhibitionLink(
+      show(
+        [work('a'), { artworkId: '   ', label: null, labelByAgent: false }, work('c')],
+        [{ label: 'Leaving', artworkIds: ['c'] }]
+      )
+    );
+    const decoded = await decodeExhibitionLink(encoded);
+    expect(decoded?.works.map((entry) => entry.artworkId)).toEqual(['a', 'c']);
+    expect(decoded?.regions).toEqual([{ label: 'Leaving', artworkIds: ['c'] }]);
+  });
+
+  it('drops a region that names nothing in the show', async () => {
+    const decoded = await decodeExhibitionLink(
+      await encodeExhibitionLink(
+        show([work('a')], [{ label: 'Ghosts', artworkIds: ['nope'] }])
+      )
+    );
+    expect(decoded?.regions).toBeUndefined();
+  });
+
+  /**
+   * Added without bumping the format version, so a reader that predates
+   * regions has to still produce the exhibition it always did.
+   */
+  it('is ignored by a reader that does not know about it', async () => {
+    const withRegions = await encodeExhibitionLink(
+      show([work('a'), work('b')], [{ label: 'Leaving', artworkIds: ['a'] }])
+    );
+    const without = await encodeExhibitionLink(show([work('a'), work('b')]));
+    const [a, b] = await Promise.all([
+      decodeExhibitionLink(withRegions),
+      decodeExhibitionLink(without),
+    ]);
+    expect(a?.works).toEqual(b?.works);
+    expect(a?.title).toBe(b?.title);
+  });
+});
