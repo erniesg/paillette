@@ -60,7 +60,12 @@ URL flips, the canvas is often still up and no work has drawn, so
 `the flat page is intact` was reading a count that was about to be right.
 
 Both are now conditions rather than sleeps (`waitForURL`, then wait for the
-first work to be visible). After the change, `/e/WfW8emn` walks **3 of 3**.
+first work to be visible). Nothing is weakened: the URL still has to be exactly
+the plain one and the flat page still has to have works on it.
+
+After the change, **12 of 12 walks pass** — three serial, three run in parallel
+at 5 to 8 fps (the load band both failures happened in), the five matrix cells,
+and the one-room show. No failure of any step since.
 
 **What this costs the room lane's claims.** "26 of 26" and the matrix's "9 of 9"
 were run against a script that could fail this step under load, so those numbers
@@ -127,6 +132,36 @@ Every published record above is live and can be checked by anyone:
 `kaxeFU4` carries no labels because that run met the ten-an-hour `write_labels`
 limit; its regions are unaffected and its blank wall is the limit, not the
 feature. It is the one code above that should not be filmed.
+
+### What the grouping does *not* yet show, and it is my harness's fault
+
+Reading the four `annotate_atlas` calls back against the board they were made
+on, every one of them splits it at exactly the same place:
+
+```
+before run 2   Working Harbour    board positions [0,1,2,3,4,5]
+               Empty Shore                        [6,7,8,9,10,11]
+before run 3   The Working Harbour                [0,1,2,3,4,5]
+               The Empty Shore                    [6,7,8,9,10,11]
+after  run 1   Working Harbour                    [0,1,2,3,4,5]
+               Empty Shore                        [6,7,8,9,10,11]
+after  run 2   Working harbour                    [0,1,2,3,4,5]
+               Empty shore                        [6,7,8,9,10,11]
+```
+
+A clean first-half / second-half cut, four times out of four. That is not the
+model being lazy — it is **my brief having done the work for it.** The first
+typed turn says *"a dozen works, half of them working harbours and half of them
+empty shores"*, and the board comes back already assembled that way; the
+`set_results` notes say so in the model's own words — *"Six harbours at work
+face six shores where the coast falls quiet."* By the time the second turn asks
+for two rooms, the two rooms are already the two halves of the board.
+
+So these runs demonstrate that the model **chooses the tool and names the
+groups**. They do not demonstrate that it re-examines twelve works and decides
+which belongs where, because it never had to. The stronger test is a brief that
+does not pre-sort — `ROOMS_BRIEF` exists for exactly this — and it is run
+below.
 
 ## 3. Run 1, which is the finding worth having
 
