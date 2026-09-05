@@ -1362,3 +1362,95 @@ describe('AgentPrompt — a turn that runs out of turns mid-job', () => {
     ).toHaveLength(0);
   });
 });
+
+describe('AgentPrompt — labels the page will not let it write', () => {
+  /**
+   * The wall that could not be written, and the loop that kept asking.
+   *
+   * `write_labels` allows ten calls an hour. Measured on staging: a turn made
+   * ten of them, every one answered `LABELS_RATE_LIMITED`, every one followed
+   * by the same nudge naming the same twelve works — and the show was then
+   * published with twelve blank labels and nothing on screen saying why. A
+   * post-condition the model cannot satisfy is a loop, not a nudge.
+   */
+  it('stops asking for the labels, and says why', async () => {
+    rememberArtworks([
+      {
+        id: 'nga-2',
+        galleryId: 'nga',
+        title: "Estuary at Day's End",
+        artist: 'Fitz Henry Lane',
+        imageUrl: null,
+        similarity: 1,
+      },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    writeExhibition(
+      {
+        title: 'The Hour Before',
+        statement: 'Eighty words about the hour before someone goes.',
+        works: [{ artworkId: 'nga-2' }],
+      },
+      { by: 'agent' }
+    );
+
+    const refuse = vi.fn(async () => ({
+      ok: false,
+      error: {
+        code: 'LABELS_RATE_LIMITED',
+        message: 'Only 10 labelling calls may be made per hour. Try again later.',
+      },
+    }));
+    setModelContext({
+      getTools: async () => [{ name: 'write_labels', execute: refuse }],
+    });
+
+    const bodies: { messages: { role: string; content?: string }[] }[] = [];
+    let call = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        bodies.push(JSON.parse(init.body));
+        call += 1;
+        // It tries once, is refused, and then says it is done.
+        const message =
+          call === 1
+            ? {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    id: 'w1',
+                    function: {
+                      name: 'write_labels',
+                      arguments: JSON.stringify({ artworkIds: ['nga-2'] }),
+                    },
+                  },
+                ],
+              }
+            : { role: 'assistant', content: 'I could not write the labels.' };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { message } }),
+        };
+      })
+    );
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'label the show' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    // The work is still unlabelled, and the page asked for it exactly zero
+    // more times: the second request is the model's own reply, not a nudge.
+    expect(
+      (bodies.at(-1)?.messages ?? []).filter(
+        (message) => message.role === 'system'
+      )
+    ).toHaveLength(0);
+    expect(refuse).toHaveBeenCalledTimes(1);
+    // And the human is told, rather than left with a blank wall.
+    expect(await screen.findByText(/labelling calls/i)).toBeTruthy();
+  });
+});

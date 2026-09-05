@@ -166,10 +166,31 @@ const waitForQuiet = async (page, deadlineMs = 210_000) => {
   return -1;
 };
 
-/** Hover a card and press a culling key, exactly as a person does. */
+/**
+ * Hover a card and press a culling key, exactly as a person does.
+ *
+ * Re-resolved on failure rather than reported as one. A flag re-renders the
+ * board, and React can replace the node between the locator resolving and the
+ * action running — which surfaced as "Element is not attached to the DOM" and,
+ * before the settle wait above, as a plain timeout. Both accused the page of
+ * losing a card it still had. A card that is genuinely gone fails all three
+ * attempts and is still a failure, which is the distinction worth keeping.
+ */
 const press = async (page, id, key) => {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await pressOnce(page, id, key);
+    } catch (error) {
+      if (attempt === 3) throw error;
+      await sleep(600);
+    }
+  }
+};
+
+const pressOnce = async (page, id, key) => {
   await page.evaluate(() => document.activeElement?.blur?.());
   const card = page.locator(`[data-artwork-id="${id}"]`).first();
+  await card.waitFor({ state: 'attached', timeout: 15_000 });
   await card.scrollIntoViewIfNeeded();
   await card.hover();
   await page.keyboard.press(key);

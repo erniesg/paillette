@@ -106,12 +106,31 @@ const main = async () => {
     const page = await ctx.newPage();
     const chosen = [];
     const nudges = [];
+    /*
+     * What the model passed to write_labels, and what came back.
+     *
+     * Eight calls to a tool that works when driven by hand, and a wall that
+     * stays blank, is a question about arguments rather than about the tool.
+     * Both halves are already on the wire — the ids in the model's own
+     * tool_call, the tool's answer in the next request's tool message — so
+     * this only writes down what was going past.
+     */
+    const labelCalls = [];
     page.on('response', async (response) => {
       if (!response.url().includes('/api/public-agent/turn')) return;
       try {
         const body = await response.json();
         for (const call of body?.data?.message?.tool_calls ?? []) {
           chosen.push(call.function?.name);
+          if (call.function?.name === 'write_labels') {
+            let args = null;
+            try {
+              args = JSON.parse(call.function?.arguments || '{}');
+            } catch {
+              args = { unparseable: call.function?.arguments };
+            }
+            labelCalls.push({ id: call.id, args, result: null });
+          }
         }
       } catch {
         // Not JSON: an error page, which the run records elsewhere.
@@ -121,6 +140,14 @@ const main = async () => {
       try {
         const last = JSON.parse(route.request().postData() ?? 'null')
           ?.messages?.at(-1);
+        for (const message of JSON.parse(route.request().postData() ?? 'null')
+          ?.messages ?? []) {
+          if (message?.role !== 'tool') continue;
+          const waiting = labelCalls.find(
+            (entry) => entry.id === message.tool_call_id && entry.result === null
+          );
+          if (waiting) waiting.result = String(message.content ?? '').slice(0, 400);
+        }
         if (last?.role === 'system') {
           nudges.push(String(last.content).slice(0, 120));
         }
@@ -185,6 +212,7 @@ const main = async () => {
     const after = await readShow(page);
     record.after = after;
     record.correctionTools = chosen.slice(at);
+    record.labelCalls = labelCalls;
     record.nudges = nudges;
 
     const before = new Map(drafted.works.map((work) => [work.id, work.label]));

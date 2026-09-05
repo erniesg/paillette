@@ -476,6 +476,18 @@ export function AgentPrompt({
       /** Every tool the model chose this turn. The census, as the page sees it. */
       const called = new Set<string>();
       /**
+       * Work the page asked for and the *page* then refused.
+       *
+       * `write_labels` is rate limited to ten calls an hour, and when that
+       * limit is reached the labels gap asks for labels the model is not able
+       * to write. Measured on staging: ten `write_labels` calls in one turn,
+       * every one answered `LABELS_RATE_LIMITED`, every one followed by the
+       * same nudge, and a show published with twelve blank labels and nobody
+       * told why. A post-condition that cannot be satisfied is not a nudge,
+       * it is a loop — so the gap stands down and the human is told instead.
+       */
+      let labelsRefused: string | null = null;
+      /**
        * Grows only when the page demands work the model had not budgeted for.
        * See `TURNS_PER_NUDGE`.
        */
@@ -504,6 +516,19 @@ export function AgentPrompt({
        * last moment they should be skipped rather than the one moment they are.
        */
       const finishTheJob = (): boolean => {
+        /*
+         * Nothing is owed by a model that was refused. Asking again spends a
+         * nudge on a wall that cannot be written, and the human — who can see
+         * the blank labels perfectly well — is the one who needs telling.
+         */
+        if (labelsRefused) {
+          setEntries((current) =>
+            current.some((entry) => entry.text === labelsRefused)
+              ? current
+              : [...current, { kind: 'error', text: labelsRefused as string }]
+          );
+          return false;
+        }
         /*
          * Before it walks away: did it finish the show?
          *
@@ -715,6 +740,15 @@ export function AgentPrompt({
         };
 
         const record = (call: ToolCall, result: unknown) => {
+          if (call.function.name === 'write_labels') {
+            const error = (result as { error?: { code?: string; message?: string } })
+              ?.error;
+            // Only the limits. A malformed call is the model's to fix and it
+            // should be asked again; an exhausted allowance is not.
+            if (error?.code === 'LABELS_RATE_LIMITED') {
+              labelsRefused = error.message ?? 'The labelling limit is used up.';
+            }
+          }
           historyRef.current = [
             ...historyRef.current,
             {
