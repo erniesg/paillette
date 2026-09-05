@@ -1,0 +1,1103 @@
+[
+  {
+    "run": 1,
+    "draftMs": 55979,
+    "drafted": {
+      "title": "When the Sea Rises",
+      "titleBy": "agent",
+      "statement": "This room gathers images made at the threshold where water becomes weather. Ships lean, shores break, and horizons disappear beneath darkening skies; human craft and human scale remain precarious before a moving element that cannot be contained. Across paintings, drawings, and prints, storm becomes both spectacle and measure: a drama of wind and wreckage, but also an expansive field in which distance, silence, and survival are felt.",
+      "statementBy": "agent",
+      "statementTheirs": false,
+      "works": [
+        {
+          "id": "open-access-art:nga:65898",
+          "label": "Ships press close to a rocky coast, turning the shoreline into a second danger alongside the sea. The painting fixes maritime distress at the point where escape narrows.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:111194",
+          "label": "Wreckage gives the storm a human cost, not just a dramatic sky and sea. Disaster becomes the scene\u2019s organizing force.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:50729",
+          "label": "The title makes the sea itself the loudest presence: a vast, forceful expanse beyond the scale of any vessel. Storm is measured here through immensity.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:178128",
+          "label": "A steamship moves through churning water beside a wooden pier while dense clouds coil overhead. Its modern machinery remains exposed to the same unstable weather as the figures at shore.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:127672",
+          "label": "A stranded vessel marks the aftermath, when the sea\u2019s violence has already remade the coast into a place of immobilization. The ship is no longer a means of passage but an object left behind.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:121881",
+          "label": "Ships buckle against violent waves and a jagged coast beneath dark clouds split by a sharp flash of light. Gouache on vellum concentrates the storm into a compact field of wreckage and impact.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:74882",
+          "label": "Etched tone gives the Norwegian coast a weathered, darkened surface, binding land, sea, and storm into one rough atmosphere. The print makes exposure feel built into the coastline.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:199082",
+          "label": "Watercolor, gouache, and gum arabic build a rocky shore under storm conditions, where the coast offers no easy refuge. The mixed media keeps the scene poised between wet atmosphere and hard ground.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:165229",
+          "label": "Two sailing ships work through choppy waves while another recedes beneath a sky crowded with gray cloud. Pen lines and gray wash make wind and water feel inseparable.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:117659",
+          "label": "Etching and engraving turn a tempest into a network of hard lines, making the boats appear caught inside the storm\u2019s force. Human craft is reduced to a fragile set of forms on an agitated sea.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:110821",
+          "label": "A figure is cast into the stormy sea, bringing bodily peril into a maritime drama otherwise often carried by ships alone. The engraving makes the water a site of immediate danger and judgment.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:152407",
+          "label": "The wreck rests at the shore, where the storm\u2019s action has ended but its damage remains. Etching on chine coll\u00e9 gives that aftermath a spare, lingering weight.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "draftTools": [
+      "get_search_quota",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_by_color",
+      "search_artworks",
+      "search_artworks",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "correctionMs": 86189,
+    "after": {
+      "title": "Before the Door Closes",
+      "titleBy": "agent",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "statementBy": "human",
+      "statementTheirs": true,
+      "works": [
+        {
+          "id": "open-access-art:nga:178128",
+          "label": "The steamship presses away from the pier while small figures remain at its edge, fixing departure in a tense interval between shore and open water. Dark, active brushwork makes the distance ahead feel unsettled without making weather the subject.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:127672",
+          "label": "A stranded vessel turns a journey into an aftermath: the ship remains, but its passage has stopped. Its title gives the scene the weight of something left behind.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:165229",
+          "label": "Two ships push through rough water as a smaller vessel recedes in the distance, separating the scene into departures at different stages. The gray wash holds them in a fleeting, precarious interval between one place and another.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:134320",
+          "label": "A corner of the artist\u2019s room makes absence legible through the attention given to an interior fragment. Watercolor, gouache, and graphite preserve the quiet evidence of a space after its occupant has stepped away.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:92343",
+          "label": "The guards\u2019 rooms of the Palais des Papes are recorded as an interior that outlasts those who once occupied it. The albumen print turns architectural space into a durable trace of departure.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:166640",
+          "label": "The descending figure is caught mid-gesture, looking back and waving a fan while moving away. As one frame from a sequence, the collotype makes leaving visible as a succession of small, unstable moments.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:131713",
+          "label": "The woman\u2019s title ties her presence to the effects of a night already passing, placing her at the edge of an encounter or departure. Etching, aquatint, and roulette keep that moment suspended rather than fully explained.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:39017",
+          "label": "At low tide, the shore is exposed as a temporary record of what the water has withdrawn from. The lithograph gives leaving a visible shape in the ground left open behind it.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:110679",
+          "label": "A marine view sets the sea as the space between an unseen point of departure and an unseen destination. In this exhibition, its etched expanse reads as the distance that remains after someone has gone.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:32994",
+          "label": "The three-master and accompanying galley move across open sea as a paired departure, already separated from land. Fine engraved lines make the vessels seem small against the distance they are entering.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:51738",
+          "label": "A ship navigating near rocks brings departure close to obstruction, with passage still uncertain. The etching fixes the vessel in the narrow interval between safe ground and the open route beyond.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "correctionTools": [
+      "get_exhibition",
+      "write_labels",
+      "set_exhibition",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "set_exhibition",
+      "write_labels",
+      "flag_artworks",
+      "write_labels",
+      "set_exhibition"
+    ],
+    "labelCalls": [
+      {
+        "id": "call_2mEQMqDECELjqXbXbqUATi0b",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:65898",
+            "open-access-art:nga:111194",
+            "open-access-art:nga:50729",
+            "open-access-art:nga:178128",
+            "open-access-art:nga:127672",
+            "open-access-art:nga:121881",
+            "open-access-art:nga:74882",
+            "open-access-art:nga:199082",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:117659",
+            "open-access-art:nga:110821",
+            "open-access-art:nga:152407"
+          ],
+          "voice": "Terse, vivid museum labels focused on each work's role in a room about storms at sea."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:65898\",\"work\":\"Ships in Distress off a Rocky Coast \u2014 Ludolf Backhuysen\",\"label\":\"Ships press close to a rocky coast, turning the shoreline into a second danger alongside the sea. The painting fixes maritime distress at the point where escape narrows.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:111194\",\"work\":\"The Shipwreck \u2014 "
+      },
+      {
+        "id": "call_l6rdhOLoHnjnOBObLW2JkuPN",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:65898",
+            "open-access-art:nga:111194",
+            "open-access-art:nga:50729",
+            "open-access-art:nga:178128",
+            "open-access-art:nga:127672",
+            "open-access-art:nga:121881",
+            "open-access-art:nga:74882",
+            "open-access-art:nga:199082",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:117659",
+            "open-access-art:nga:110821",
+            "open-access-art:nga:152407"
+          ],
+          "voice": "Write against the human's new statement: departure, absence, and the traces left behind; avoid weather as the theme."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:65898\",\"work\":\"Ships in Distress off a Rocky Coast \u2014 Ludolf Backhuysen\",\"label\":\"Ships pressed against a rocky coast turn departure into an emergency: the route outward has become a place where leaving may fail.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:111194\",\"work\":\"The Shipwreck \u2014 Claude-Joseph Vernet\",\"label\":\"The wrec"
+      },
+      {
+        "id": "call_nD5XfxDh6kW1vDvFH1jMTywC",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:178128",
+            "open-access-art:nga:127672",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:134320",
+            "open-access-art:nga:92343",
+            "open-access-art:nga:166640",
+            "open-access-art:nga:131713",
+            "open-access-art:nga:39017",
+            "open-access-art:nga:110679",
+            "open-access-art:nga:32994",
+            "open-access-art:nga:51738"
+          ],
+          "voice": "Use the human's statement as the brief: departure, held glances, and interiors or places that retain a person's absence. Avoid weather as the subject."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:178128\",\"work\":\"Marine \u2014 Eug\u00e8ne Isabey\",\"label\":\"A steamship pulls through rough water as figures remain on the pier, fixing the scene at the split second between watching and being left behind. The dark, shifting paint makes departure feel unstable rather than complete.\",\"writtenFrom\":\"caption\"},{\"artworkId\":\"open-access-art:nga:127672\",\"work"
+      },
+      {
+        "id": "call_XRUFamVJFYsSSTeZAcvQwXGz",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:178128",
+            "open-access-art:nga:127672",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:134320",
+            "open-access-art:nga:92343",
+            "open-access-art:nga:166640",
+            "open-access-art:nga:131713",
+            "open-access-art:nga:39017",
+            "open-access-art:nga:110679",
+            "open-access-art:nga:32994",
+            "open-access-art:nga:51738"
+          ],
+          "voice": "Rewrite every label to follow the human-written statement: a departure poised in time, and spaces retaining someone's trace. Do not make weather the subject."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:178128\",\"work\":\"Marine \u2014 Eug\u00e8ne Isabey\",\"label\":\"The steamship presses away from the pier while small figures remain at its edge, fixing departure in a tense interval between shore and open water. Dark, active brushwork makes the distance ahead feel unsettled without making weather the subject.\",\"writtenFrom\":\"caption\"},{\"artworkId\":\"open-acce"
+      }
+    ],
+    "nudges": [
+      "The show is still called \"The Shape Left Behind\". You wrote that against the theme they have just replaced, and it is th",
+      "The show is still called \"Before the Door Closes\". You wrote that against the theme they have just replaced, and it is t"
+    ],
+    "counts": {
+      "added": 8,
+      "dropped": 9,
+      "relabelled": 3,
+      "unlabelled": 0,
+      "titleChanged": true,
+      "statementIsTheirs": true
+    },
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/fP3rNvf",
+    "published": {
+      "status": 200,
+      "title": "Before the Door Closes",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "works": 11,
+      "labels": 22
+    },
+    "errors": [],
+    "lane_run": 1,
+    "lane_note": "paced"
+  },
+  {
+    "run": 2,
+    "draftMs": 37000,
+    "drafted": {
+      "title": "The Sea in Uproar",
+      "titleBy": "agent",
+      "statement": "At sea, weather is never merely a backdrop. These works follow vessels and bodies into a shifting theatre of wind, spray, darkness, and exposed horizon. Some stage catastrophe: a ship breaking apart, sailors at risk, a biblical castaway. Others linger on the interval before or after danger, when a vessel\u2019s small scale makes the water seem immeasurable. Across print, drawing, and painting, the sea becomes both a physical force and a measure of human vulnerability.",
+      "statementBy": "agent",
+      "statementTheirs": false,
+      "works": [
+        {
+          "id": "open-access-art:nga:110821",
+          "label": "Jonah\u2019s plunge makes the storm a force of judgment as well as weather. Fine engraved lines carry the biblical castaway into an exposed, violent sea.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:165229",
+          "label": "Two sailing ships pitch against choppy water beneath a sky crowded with gray cloud. Ink and wash make the distant vessel seem especially small against the storm\u2019s reach.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:119967",
+          "label": "Its title gives the sea a voice, while black etched marks turn that sound into a restless surface. The print presses weather and water into a single field of force.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:123678",
+          "label": "The compact medium of etching suits a sea reduced to sharp contrasts and pressure. Storm becomes a condition that overtakes the horizon rather than a distant spectacle.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:57729",
+          "label": "Catastrophe is named without relief: the shipwreck fixes attention on the moment when a vessel can no longer hold against the sea. Engraved and etched marks make ruin legible as a hard, graphic event.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:152396",
+          "label": "Roulette and etching give the wreck a broken, abrasive texture. The chine coll\u00e9 sheet heightens the sense of a fragile human construction set against water\u2019s destructive force.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:43197",
+          "label": "The named wreck brings maritime disaster into the immediacy of lithography. Its subject shifts the exhibition\u2019s danger from generalized storm to a specific loss at sea.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:111194",
+          "label": "Oil paint gives shipwreck the scale of a public drama, where sea and sky surround human disaster. The title leaves no safe distance between the vessel and the force that has undone it.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:148481",
+          "label": "After the storm, danger has not disappeared; it has become an aftermath to be measured. Etching holds onto the sea\u2019s lingering disturbance rather than the peak of catastrophe.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:136208",
+          "label": "Green and black printing separates water, air, and hulls while binding them into a single marine atmosphere. The shipping scene registers the precarious calm that can precede upheaval.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:7850",
+          "label": "An etched sea scene turns the open water into a network of lines, where horizon and vessel must be read through shifting conditions. Its small scale underscores how little command a ship has over its setting.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:136220",
+          "label": "Mezzotint\u2019s dense tones give this shipping scene a weighty, unsettled atmosphere. Against that darkened expanse, vessels appear contingent\u2014held briefly between weather and water.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "draftTools": [
+      "get_view_context",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_by_color",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "correctionMs": 92532,
+    "after": {
+      "title": "The Room That Remains",
+      "titleBy": "agent",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "statementBy": "human",
+      "statementTheirs": true,
+      "works": [
+        {
+          "id": "open-access-art:nga:165229",
+          "label": "Two ships press onward while a smaller vessel recedes behind them. The dense wash and restless lines hold the moment when departure has already begun but no one is yet out of sight.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:119967",
+          "label": "Its title makes the sea a sound that remains after the vessels have passed. Black marks on Japanese paper turn distance into something audible and hard to leave behind.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:148481",
+          "label": "The title locates the image in the afterward: the interval when an ordeal has ended but its mark still lingers. Etching\u2019s spare black line suits a scene held in the quiet after someone goes.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:136208",
+          "label": "A shipping scene from a named collection carries the trace of more than one absence: the ships\u2019 passage and the former owner\u2019s possession. Green and black ink leave the image suspended between keeping and letting go.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:7850",
+          "label": "A sea scene offers a place made for departure, with no figure named to anchor it. Its etched lines preserve the open distance where a person might have stood before leaving.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:136220",
+          "label": "The reference to John Chicheley makes this shipping scene feel like something retained after its owner has gone. In green and black, the vessels become records of movement held still on paper.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "correctionTools": [
+      "get_exhibition",
+      "write_labels",
+      "set_exhibition",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "set_exhibition",
+      "write_labels",
+      "write_labels",
+      "search_artworks",
+      "set_exhibition",
+      "write_labels",
+      "set_exhibition"
+    ],
+    "labelCalls": [
+      {
+        "id": "call_CMd73m9u3tdCK4WcJT1l9UCC",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:110821",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:57729",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:43197",
+            "open-access-art:nga:111194",
+            "open-access-art:nga:148481",
+            "open-access-art:nga:136208",
+            "open-access-art:nga:7850",
+            "open-access-art:nga:136220"
+          ],
+          "voice": "terse, vivid museum labels"
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:110821\",\"work\":\"Jonah Thrown into the Stormy Sea \u2014 Justus Sadeler after Paul Bril\",\"label\":\"Jonah\u2019s plunge makes the storm a force of judgment as well as weather. Fine engraved lines carry the biblical castaway into an exposed, violent sea.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Pe"
+      },
+      {
+        "id": "call_T5EcY9qgs0fwELHqP3jONQTr",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:110821",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:57729",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:43197",
+            "open-access-art:nga:111194",
+            "open-access-art:nga:148481",
+            "open-access-art:nga:136208",
+            "open-access-art:nga:7850",
+            "open-access-art:nga:136220"
+          ],
+          "voice": "Terse, intimate labels focused on departure, waiting, and absence; do not foreground weather."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:110821\",\"work\":\"Jonah Thrown into the Stormy Sea \u2014 Justus Sadeler after Paul Bril\",\"label\":\"Jonah\u2019s expulsion turns departure into a violent severing: one body cast away while the ship continues without him.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johannes Schotel\",\"label\":\"T"
+      },
+      {
+        "id": "call_zObBUAfNxlvZsdM4SzYrhodk",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:148481",
+            "open-access-art:nga:136208",
+            "open-access-art:nga:7850",
+            "open-access-art:nga:136220"
+          ],
+          "voice": "Terse, intimate labels about departure, waiting, and the space left behind; do not foreground weather."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johannes Schotel\",\"label\":\"Two ships strain across the water while a smaller vessel recedes behind them. The space between them feels like the first distance of a departure.\",\"writtenFrom\":\"caption\"},{\"artworkId\":\"open-access-art:nga:119967\",\"work\":\"The Much Resounding Sea \u2014 Thomas Moran\",\"label\":"
+      },
+      {
+        "id": "call_JD5CZRQkQhaxeNSaEUdu2Wc8",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:148481",
+            "open-access-art:nga:136208",
+            "open-access-art:nga:7850",
+            "open-access-art:nga:136220"
+          ],
+          "voice": "Terse, intimate labels about departure, waiting, and the space left behind; do not foreground weather."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johannes Schotel\",\"label\":\"Two ships hold against the waves while a third has already become distant. The gray wash leaves the sea crowded with motion and the sky heavy with what remains unresolved.\",\"writtenFrom\":\"caption\"},{\"artworkId\":\"open-access-art:nga:119967\",\"work\":\"The Much Resounding Sea"
+      },
+      {
+        "id": "call_b979sPAtvTkB1Zg4NLJsezph",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:148481",
+            "open-access-art:nga:136208",
+            "open-access-art:nga:7850",
+            "open-access-art:nga:136220"
+          ],
+          "voice": "Terse, intimate labels centered on leaving, waiting, and the imprinted absence left in a room; no weather language."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johannes Schotel\",\"label\":\"Two ships press onward while a smaller vessel recedes behind them. The dense wash and restless lines hold the moment when departure has already begun but no one is yet out of sight.\",\"writtenFrom\":\"caption\"},{\"artworkId\":\"open-access-art:nga:119967\",\"work\":\"The Much Reso"
+      }
+    ],
+    "nudges": [
+      "The show is still called \"The Shape They Leave\". You wrote that against the theme they have just replaced, and it is the",
+      "The show is still called \"Before the Door Closes\". You wrote that against the theme they have just replaced, and it is t"
+    ],
+    "counts": {
+      "added": 0,
+      "dropped": 6,
+      "relabelled": 6,
+      "unlabelled": 0,
+      "titleChanged": true,
+      "statementIsTheirs": true
+    },
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/mxP9fHA",
+    "published": {
+      "status": 200,
+      "title": "The Room That Remains",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "works": 6,
+      "labels": 12
+    },
+    "errors": [],
+    "lane_run": 2,
+    "lane_note": "paced"
+  },
+  {
+    "run": 1,
+    "draftMs": 35801,
+    "drafted": {
+      "title": "When the Sea Breaks",
+      "titleBy": "agent",
+      "statement": "This room follows the sea at its most unstable: ships heel into wind, horizons disappear, and wreckage turns travel into survival. Across oil, ink, etching, and lithography, artists make weather tangible through broken lines, dark water, and a scale that diminishes human control. The storm is not only an event but a condition of looking\u2014an encounter with force, uncertainty, and the thin interval between danger and release.",
+      "statementBy": "agent",
+      "statementTheirs": false,
+      "works": [
+        {
+          "id": "open-access-art:nga:111194",
+          "label": "The title fixes the scene at the point where sea travel has become wreckage. Oil on canvas gives the disaster a physical weight suited to the room\u2019s unstable waters.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:165229",
+          "label": "Two sailing ships push through choppy water beneath a sky crowded with gray storm clouds, while a smaller vessel recedes in the distance. Ink and wash make wind and wave into a field of shifting pressure.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:119967",
+          "label": "Black etched, drypoint, and roulette marks give the sea its repeated, pounding presence. The title makes sound part of the storm, extending danger beyond what can be seen.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:123678",
+          "label": "Etching reduces storm and sea to a dark, worked surface where boundaries can break down. Its title holds the image in the moment before weather yields.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:152396",
+          "label": "The title names shipwreck as the storm\u2019s final condition rather than its threat. Roulette and etching press the image into a rough, unsettled field.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:43197",
+          "label": "This lithograph turns a named wreck into a stark record of maritime catastrophe. Its printed blacks sharpen the exhibition\u2019s movement from peril at sea to survival after loss.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:209724",
+          "label": "A boat faces the stormy sea in an etching whose title leaves no shelter outside the weather. The small scale of printmaking reinforces the vessel\u2019s exposure to a larger force.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:110821",
+          "label": "The engraving places a human body at the threshold between ship and stormy water. Its biblical title makes the sea a site of immediate judgment and danger.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:210462",
+          "label": "A yacht and escort vessel establish a maritime order built around accompaniment and watchfulness. Fine etched and drypoint lines make that order feel contingent against the open Waddenzee.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:210481",
+          "label": "The named boat types bring attention to vessels designed for working water rather than conquering it. Etching and drypoint hold their forms in delicate lines, vulnerable to any change in sea or sky.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:136213",
+          "label": "Green and black printing gives this shipping scene an atmosphere of deepening water and weather. The gathered vessels register the sea as a shared, uncertain passage.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:148481",
+          "label": "The title shifts attention to the interval after violence, when the storm has passed but its force remains near. Etching preserves that aftermath in a spare black-and-white surface.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "draftTools": [
+      "get_view_context",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_by_color",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "correctionMs": 89136,
+    "after": {
+      "title": "The Hour Before",
+      "titleBy": "agent",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "statementBy": "human",
+      "statementTheirs": true,
+      "works": [
+        {
+          "id": "open-access-art:nga:212093",
+          "label": "The brig is held alone on the water, its dark hull a compact sign of someone already underway. The photograph fixes the interval when departure has begun but the vessel has not yet disappeared.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:162392",
+          "label": "A wharf is a place made for crossing between land and water, and this print keeps that threshold active. Its marks gather around the harbor edge, where waiting and leaving share the same ground.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:46562",
+          "label": "The title names a return, but the arriving fishing vessel also carries the fact of its recent absence. The harbor becomes the point where those left behind and those coming back meet.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:127672",
+          "label": "The ship cannot continue: stranded on shore, it turns a vehicle of departure into a fixed remnant. Its halted body makes the coast read as a place that retains what the water has given up.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:144761",
+          "label": "This riverside view follows a working edge of passage, where ships, banks, and distant structures hold a space between destinations. The layered etched surface gives that in-between place the density of a remembered departure.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:169631",
+          "label": "Warehouses face the Thames as buildings of storage and transit, standing after cargo and people have moved on. The spare black lines make their waterfront presence feel like a record of repeated comings and goings.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:224453",
+          "label": "The large tower anchors a harbor built around arrival and exit. Boats and architecture divide the scene between the shelter of the port and the open route beyond it.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:138469",
+          "label": "An empty caf\u00e9 turns an ordinary interior into evidence of a recent or anticipated absence. Graphite and softened shading leave the room present while its occupants remain elsewhere.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:166494",
+          "label": "The window sets a boundary between an interior and the city beyond it. Its view makes the room a place of pause, where looking outward can become a form of waiting.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:178305",
+          "label": "A letter brings an absent person into the room without closing the distance between them. The painted scene centers the fragile interval between receiving news and answering it.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:195388",
+          "label": "Named for the figure associated with prolonged waiting, this painting places patience at the center of departure's aftermath. The title makes absence a condition measured over time rather than a single moment.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:210462",
+          "label": "The yacht and escort vessel travel as a pair, making departure a coordinated act rather than a solitary one. Their movement across the Waddenzee links protection, accompaniment, and the uncertainty of going beyond shore.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:210481",
+          "label": "By naming a class of boats rather than a single voyage, the print makes maritime leaving feel routine and repeated. Drypoint and etching preserve these working vessels as a record of crossings that have already passed.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:136213",
+          "label": "Drawn from a named collection, this shipping scene is already a retained image of vessels elsewhere. Its green and black impressions make maritime movement feel held in place, like a trace kept after the ships have gone.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:148481",
+          "label": "The title begins after the crisis, when the passage has ended but its effects remain. Etching gives that aftermath a spare permanence, marking the quiet interval in which loss can be counted.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "correctionTools": [
+      "get_exhibition",
+      "write_labels",
+      "set_exhibition",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "set_exhibition",
+      "write_labels",
+      "get_exhibition",
+      "write_labels",
+      "set_exhibition"
+    ],
+    "labelCalls": [
+      {
+        "id": "call_NkSJrrnyVwwP7Hfr5RbJyqJ9",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:111194",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:43197",
+            "open-access-art:nga:209724",
+            "open-access-art:nga:110821",
+            "open-access-art:nga:210462",
+            "open-access-art:nga:210481",
+            "open-access-art:nga:136213",
+            "open-access-art:nga:148481"
+          ],
+          "voice": "Terse and atmospheric; foreground visible weather, risk, and the shifting boundary between sea and sky.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:111194\",\"work\":\"The Shipwreck \u2014 Claude-Joseph Vernet\",\"label\":\"The title fixes the scene at the point where sea travel has become wreckage. Oil on canvas gives the disaster a physical weight suited to the room\u2019s unstable waters.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johanne"
+      },
+      {
+        "id": "call_H6HFwbiuERGgn1186zbsRdjU",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:111194",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:43197",
+            "open-access-art:nga:209724",
+            "open-access-art:nga:110821",
+            "open-access-art:nga:210462",
+            "open-access-art:nga:210481",
+            "open-access-art:nga:136213",
+            "open-access-art:nga:148481"
+          ],
+          "voice": "Read each work through departure, waiting, absence, and the trace left behind; do not frame the show as weather.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:111194\",\"work\":\"The Shipwreck \u2014 Claude-Joseph Vernet\",\"label\":\"The title fixes the scene at the point when a voyage has broken apart, turning departure into an unresolved absence. Oil paint gives that rupture a sustained, physical presence.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Pe"
+      },
+      {
+        "id": "call_P0kNAzOFmAE0tokulzGHncYj",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:212093",
+            "open-access-art:nga:162392",
+            "open-access-art:nga:46562",
+            "open-access-art:nga:127672",
+            "open-access-art:nga:144761",
+            "open-access-art:nga:169631",
+            "open-access-art:nga:224453",
+            "open-access-art:nga:138469",
+            "open-access-art:nga:166494",
+            "open-access-art:nga:178305",
+            "open-access-art:nga:195388",
+            "open-access-art:nga:210462"
+          ],
+          "voice": "Read each work through departure, waiting, absence, and the trace left behind; do not frame the show as weather.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:212093\",\"work\":\"Brig on the Water \u2014 Gustave Le Gray\",\"label\":\"The brig sits alone on open water, its dark hull and tall rigging held in sharp outline. It becomes a figure of departure already underway, leaving the shore\u2014and whoever remains there\u2014outside the frame.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:162392\",\"work\":\"Em"
+      },
+      {
+        "id": "call_mC4vZJgX0gRQAAyGaWXAkmlV",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:212093",
+            "open-access-art:nga:162392",
+            "open-access-art:nga:46562",
+            "open-access-art:nga:127672",
+            "open-access-art:nga:144761",
+            "open-access-art:nga:169631",
+            "open-access-art:nga:224453",
+            "open-access-art:nga:138469",
+            "open-access-art:nga:166494",
+            "open-access-art:nga:178305",
+            "open-access-art:nga:195388",
+            "open-access-art:nga:210462"
+          ],
+          "voice": "Read through the threshold of departure, waiting, and absence held in rooms and harbors; avoid weather as the organizing subject.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:212093\",\"work\":\"Brig on the Water \u2014 Gustave Le Gray\",\"label\":\"The brig is held alone on the water, its dark hull a compact sign of someone already underway. The photograph fixes the interval when departure has begun but the vessel has not yet disappeared.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:162392\",\"work\":\"Embarcadere"
+      }
+    ],
+    "nudges": [
+      "The show is still called \"The Shape Left Behind\". You wrote that against the theme they have just replaced, and it is th",
+      "The show is still called \"The Hour Before\". You wrote that against the theme they have just replaced, and it is the firs"
+    ],
+    "counts": {
+      "added": 11,
+      "dropped": 8,
+      "relabelled": 4,
+      "unlabelled": 0,
+      "titleChanged": true,
+      "statementIsTheirs": true
+    },
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/rJjWvei",
+    "published": {
+      "status": 200,
+      "title": "The Hour Before",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "works": 15,
+      "labels": 30
+    },
+    "errors": [],
+    "lane_run": 3,
+    "lane_note": "paced"
+  },
+  {
+    "run": 1,
+    "draftMs": 30250,
+    "drafted": {
+      "title": "When the Sea Rises",
+      "titleBy": "agent",
+      "statement": "This room follows the sea at the point when it refuses to be scenery. Ships pitch, shores disappear, and the horizon becomes a moving boundary between endurance and disaster. Across engravings, drawings, watercolors, and paint, artists make weather legible through broken masts, gathering cloud, blackened water, and fragile vessels. The storm is never only meteorological: it tests scale, courage, faith, and the human wish to find a course through forces beyond command.",
+      "statementBy": "agent",
+      "statementTheirs": false,
+      "works": [
+        {
+          "id": "open-access-art:nga:110821",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:165229",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:119967",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:148513",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:123678",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:66678",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:152407",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:152396",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:117659",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:1226",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:209724",
+          "label": null,
+          "labelBy": null
+        },
+        {
+          "id": "open-access-art:nga:52005",
+          "label": null,
+          "labelBy": null
+        }
+      ],
+      "unlabelled": 12
+    },
+    "draftTools": [
+      "get_search_quota",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_by_color",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "correctionMs": 74393,
+    "after": {
+      "title": "Before the Door Closes",
+      "titleBy": "agent",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "statementBy": "human",
+      "statementTheirs": true,
+      "works": [
+        {
+          "id": "open-access-art:nga:134320",
+          "label": "A spare room corner, built from watercolor, gouache, and graphite, holds its furniture and pale surfaces in suspension. Nothing moves, but the space feels arranged around an absence about to become final.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:2931",
+          "label": "The armoire stands as a closed domestic threshold: a place for possessions to be gathered, hidden, or left behind. Its etched lines make the furniture feel like a record of someone\u2019s imminent departure.",
+          "labelBy": "agent"
+        },
+        {
+          "id": "open-access-art:nga:160960",
+          "label": "A young woman remains inside the room, making departure feel not yet completed. Her presence sharpens the surrounding interior into something that will retain her outline after she is gone.",
+          "labelBy": "agent"
+        }
+      ],
+      "unlabelled": 0
+    },
+    "correctionTools": [
+      "get_exhibition",
+      "write_labels",
+      "set_exhibition",
+      "search_artworks",
+      "write_labels",
+      "set_exhibition",
+      "write_labels",
+      "set_exhibition",
+      "write_labels",
+      "write_labels",
+      "write_labels"
+    ],
+    "labelCalls": [
+      {
+        "id": "call_mKmPHDb2fuITYMU6U7pMUsXs",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:110821",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:148513",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:66678",
+            "open-access-art:nga:152407",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:117659",
+            "open-access-art:nga:1226",
+            "open-access-art:nga:209724",
+            "open-access-art:nga:52005"
+          ],
+          "voice": "Terse, vivid museum labels; foreground the work's role in this exhibition."
+        },
+        "result": "{\"ok\":false,\"error\":{\"code\":\"LABELS_RATE_LIMITED\",\"message\":\"Only 10 labelling calls may be made per hour. Try again later.\"}}"
+      },
+      {
+        "id": "call_qMqAM9L2HbJhrHu6IemDEUh7",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:110821",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:148513",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:66678",
+            "open-access-art:nga:152407",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:117659",
+            "open-access-art:nga:1226",
+            "open-access-art:nga:209724",
+            "open-access-art:nga:52005"
+          ],
+          "voice": "Attentive to departure, anticipation, absence, and what remains; terse museum labels."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:110821\",\"work\":\"Jonah Thrown into the Stormy Sea \u2014 Justus Sadeler after Paul Bril\",\"label\":\"Jonah\u2019s forced passage into the sea turns departure into an abrupt severing: a body leaves the ship as the storm closes around him.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johannes Sch"
+      },
+      {
+        "id": "call_yPBKFZsbAOEusoQtP46FBOjm",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:110821",
+            "open-access-art:nga:165229",
+            "open-access-art:nga:119967",
+            "open-access-art:nga:148513",
+            "open-access-art:nga:123678",
+            "open-access-art:nga:66678",
+            "open-access-art:nga:152407",
+            "open-access-art:nga:152396",
+            "open-access-art:nga:117659",
+            "open-access-art:nga:1226",
+            "open-access-art:nga:209724",
+            "open-access-art:nga:52005"
+          ],
+          "voice": "Terse labels about departure, anticipation, absence, and spaces that retain a person\u2019s presence."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:110821\",\"work\":\"Jonah Thrown into the Stormy Sea \u2014 Justus Sadeler after Paul Bril\",\"label\":\"Jonah\u2019s removal is the image\u2019s sharpest fact: a body cast away from the vessel while the sea closes around the act of leaving.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:165229\",\"work\":\"Ships in a Stormy Sea \u2014 Petrus Johannes Schotel\""
+      },
+      {
+        "id": "call_AKIUzUsSMaY5RidNUvTVpdu8",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:134320",
+            "open-access-art:nga:2931",
+            "open-access-art:nga:160960"
+          ],
+          "voice": "Terse labels about departure, anticipation, absence, and spaces that retain a person\u2019s presence."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:134320\",\"work\":\"A Corner of the Artist's Room, Rue Terre Neuve, Meudon \u2014 Gwen John\",\"label\":\"A bed, chair, and pale wall hold the quiet order of a room between occupations. The spare watercolor makes absence feel newly settled into the furniture.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:2931\",\"work\":\"The Armoire \u2014 Jean-Hon"
+      },
+      {
+        "id": "call_p6ivS0tiMRPoAP1FsuQN3Nlq",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:134320",
+            "open-access-art:nga:2931",
+            "open-access-art:nga:160960"
+          ],
+          "voice": "Terse labels centered on anticipation, departure, and a domestic interior retaining traces of a person."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:134320\",\"work\":\"A Corner of the Artist's Room, Rue Terre Neuve, Meudon \u2014 Gwen John\",\"label\":\"A spare corner of a room holds the quiet pressure of an imminent exit. In watercolor, gouache, and graphite, the interior feels less occupied than held in readiness.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:2931\",\"work\":\"The Armoir"
+      },
+      {
+        "id": "call_PxVNCCR2zHjwYhG1XU0YyH7Y",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:134320",
+            "open-access-art:nga:2931",
+            "open-access-art:nga:160960"
+          ],
+          "voice": "Terse labels centered on anticipation, departure, and a domestic interior retaining traces of a person."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:134320\",\"work\":\"A Corner of the Artist's Room, Rue Terre Neuve, Meudon \u2014 Gwen John\",\"label\":\"A spare room corner holds its pause in thin washes of watercolor and gouache. The absence of a figure makes the interior feel like the moment after a person has stepped away.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:2931\",\"work\":\"T"
+      },
+      {
+        "id": "call_XlqaxnfSHYcU9dGBU7RbZCRn",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:134320",
+            "open-access-art:nga:2931",
+            "open-access-art:nga:160960"
+          ],
+          "voice": "Terse labels centered on anticipation, departure, and a domestic interior retaining traces of a person."
+        },
+        "result": null
+      }
+    ],
+    "nudges": [
+      "The show is still called \"The Shape That Remains\". You wrote that against the theme they have just replaced, and it is t",
+      "The show is still called \"Before the Door Closes\". You wrote that against the theme they have just replaced, and it is t"
+    ],
+    "counts": {
+      "added": 3,
+      "dropped": 12,
+      "relabelled": 0,
+      "unlabelled": 0,
+      "titleChanged": true,
+      "statementIsTheirs": true
+    },
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/PEBhgSw",
+    "published": {
+      "status": 200,
+      "title": "Before the Door Closes",
+      "statement": "It is not about weather. It is about leaving \u2014 the hour before someone goes, and the room that keeps their shape after they have gone.",
+      "works": 3,
+      "labels": 6
+    },
+    "errors": [],
+    "lane_run": 4,
+    "lane_note": "THROTTLED \u2014 discarded"
+  }
+]

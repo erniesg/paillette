@@ -1,0 +1,448 @@
+[
+  {
+    "run": 1,
+    "briefMs": 69824,
+    "afterBrief": {
+      "regions": [],
+      "works": [
+        {
+          "id": "open-access-art:nga:197476",
+          "label": "Pen and ink reduces the rocky shore to firm, dark contours, setting stable land against the implied movement of the sea beyond it."
+        },
+        {
+          "id": "open-access-art:nga:57489",
+          "label": "Graphite and gouache bring a Maine shoreline into sharp relation between drawn structure and changing coastal light."
+        },
+        {
+          "id": "open-access-art:nga:143861",
+          "label": "Watercolor and graphite trace an Italian shore as a meeting point of terrain and open water, held in a light, portable medium suited to travel and observation."
+        },
+        {
+          "id": "open-access-art:nga:46595",
+          "label": "The title directs attention to scattered foam, where the sea’s smallest visible marks register its constant motion against the coast."
+        },
+        {
+          "id": "open-access-art:nga:75952",
+          "label": "Brown wash, blotting, and scraping make moonlit water and rock emerge through tonal contrast, turning the shoreline into a precarious boundary after dark."
+        },
+        {
+          "id": "open-access-art:nga:55280",
+          "label": "An etching of a fishing boat stopping among Collioure’s rocks places labor and shelter within a coast shaped by both water and stone."
+        },
+        {
+          "id": "open-access-art:nga:136747",
+          "label": "The view of Honfleur brings a harbor town into the exhibition’s coastal world of anchorage, exchange, and departure."
+        },
+        {
+          "id": "open-access-art:nga:205059",
+          "label": "This etched view of Collier’s Point fixes a distant New Zealand headland on paper, linking a specific shore to the wider routes of travel and image-making."
+        },
+        {
+          "id": "open-access-art:nga:134323",
+          "label": "Watercolor and graphite describe rocks and gorge at the Avon, where land narrows and channels the passage of water."
+        },
+        {
+          "id": "open-access-art:nga:10944",
+          "label": "The Little Rotherhithe shifts the exhibition from open coast to working river edge, where built shorelines meet maritime traffic and labor."
+        },
+        {
+          "id": "open-access-art:nga:180934",
+          "label": "Charcoal and gouache record North River Dock as a dense urban waterfront, with the drawing’s reused advertisement support underscoring the commercial setting."
+        },
+        {
+          "id": "open-access-art:nga:148255",
+          "label": "In black etching, Gloucester Harbor becomes a network of water, vessels, and shore—a protected edge shaped by work on the sea."
+        }
+      ],
+      "unlabelled": 0,
+      "title": "At the Water’s Edge",
+      "onScreen": 12
+    },
+    "briefTools": [
+      "get_view_context",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_by_color",
+      "search_artworks",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "splitMs": 22478,
+    "after": {
+      "regions": [
+        {
+          "label": "The working harbour",
+          "by": "agent",
+          "works": 5
+        },
+        {
+          "label": "The empty shore",
+          "by": "agent",
+          "works": 7
+        }
+      ],
+      "works": [
+        {
+          "id": "open-access-art:nga:197476",
+          "label": "Pen and ink reduces the rocky shore to firm, dark contours, setting stable land against the implied movement of the sea beyond it."
+        },
+        {
+          "id": "open-access-art:nga:57489",
+          "label": "Graphite and gouache bring a Maine shoreline into sharp relation between drawn structure and changing coastal light."
+        },
+        {
+          "id": "open-access-art:nga:143861",
+          "label": "Watercolor and graphite trace an Italian shore as a meeting point of terrain and open water, held in a light, portable medium suited to travel and observation."
+        },
+        {
+          "id": "open-access-art:nga:46595",
+          "label": "The title directs attention to scattered foam, where the sea’s smallest visible marks register its constant motion against the coast."
+        },
+        {
+          "id": "open-access-art:nga:75952",
+          "label": "Brown wash, blotting, and scraping make moonlit water and rock emerge through tonal contrast, turning the shoreline into a precarious boundary after dark."
+        },
+        {
+          "id": "open-access-art:nga:55280",
+          "label": "An etching of a fishing boat stopping among Collioure’s rocks places labor and shelter within a coast shaped by both water and stone."
+        },
+        {
+          "id": "open-access-art:nga:136747",
+          "label": "The view of Honfleur brings a harbor town into the exhibition’s coastal world of anchorage, exchange, and departure."
+        },
+        {
+          "id": "open-access-art:nga:205059",
+          "label": "This etched view of Collier’s Point fixes a distant New Zealand headland on paper, linking a specific shore to the wider routes of travel and image-making."
+        },
+        {
+          "id": "open-access-art:nga:134323",
+          "label": "Watercolor and graphite describe rocks and gorge at the Avon, where land narrows and channels the passage of water."
+        },
+        {
+          "id": "open-access-art:nga:10944",
+          "label": "The Little Rotherhithe shifts the exhibition from open coast to working river edge, where built shorelines meet maritime traffic and labor."
+        },
+        {
+          "id": "open-access-art:nga:180934",
+          "label": "Charcoal and gouache record North River Dock as a dense urban waterfront, with the drawing’s reused advertisement support underscoring the commercial setting."
+        },
+        {
+          "id": "open-access-art:nga:148255",
+          "label": "In black etching, Gloucester Harbor becomes a network of water, vessels, and shore—a protected edge shaped by work on the sea."
+        }
+      ],
+      "unlabelled": 0,
+      "title": "Coast: Work and Solitude",
+      "onScreen": 12
+    },
+    "splitTools": [
+      "get_view_context",
+      "get_exhibition",
+      "set_view",
+      "annotate_atlas",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "nudges": [],
+    "chose": true,
+    "annotateCalls": [
+      {
+        "id": "call_hXaROvLfl0PazK5Z34Z8issj",
+        "name": "annotate_atlas",
+        "args": {
+          "regions": [
+            {
+              "label": "The working harbour",
+              "artworkIds": [
+                "open-access-art:nga:55280",
+                "open-access-art:nga:136747",
+                "open-access-art:nga:10944",
+                "open-access-art:nga:180934",
+                "open-access-art:nga:148255"
+              ],
+              "note": "Boats, docks, and built edges turn water into a place of work and passage."
+            },
+            {
+              "label": "The empty shore",
+              "artworkIds": [
+                "open-access-art:nga:197476",
+                "open-access-art:nga:57489",
+                "open-access-art:nga:143861",
+                "open-access-art:nga:46595",
+                "open-access-art:nga:75952",
+                "open-access-art:nga:205059",
+                "open-access-art:nga:134323"
+              ],
+              "note": "Rock, weather, light, and open water dominate these unpeopled margins."
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"regions\":[{\"label\":\"The working harbour\",\"artworkIds\":[\"open-access-art:nga:55280\",\"open-access-art:nga:136747\",\"open-access-art:nga:10944\",\"open-access-art:nga:180934\",\"open-access-art:nga:148255\"],\"note\":\"Boats, docks, and built edges turn water into a place of work and passage.\"},{\"la"
+      }
+    ],
+    "calledAfterNudge": [],
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/dAH4peu",
+    "code": "dAH4peu",
+    "published": {
+      "works": 12,
+      "labels": 12,
+      "regions": [
+        "The working harbour",
+        "The empty shore"
+      ]
+    },
+    "errors": [],
+    "census": [
+      {
+        "id": "call_TIEXqlemm10k06XL71ndc056",
+        "name": "get_view_context",
+        "args": {},
+        "result": "{\"ok\":true,\"page\":{\"path\":\"/nga/search\",\"collection\":\"nga\",\"collectionName\":\"National Gallery of Art, Washington — open access\",\"onSearchPage\":true},\"humanSearch\":{\"query\":null,\"facet\":null,\"colour\":null,\"active\":false},\"humanResults\":null,\"agentResults\":null,\"openArtwork\":null,\"flags\":{\"picks\":[],\""
+      },
+      {
+        "id": "call_5aEppaa8DQGEM7vm8t4b6G6L",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "rocky coast",
+          "topK": 10,
+          "minScore": 0.24
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"rocky coast\",\"count\":10,\"queryTimeMs\":22346,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"rocky coast\",\"semanticQuery\":\"rocky coast\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":189,\"remaining\":811},\"results\":[{\""
+      },
+      {
+        "id": "call_Q1FkzJkJiWf4dVERM8Wv891x",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "coastal harbour",
+          "topK": 10,
+          "minScore": 0.24
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"coastal harbour\",\"count\":0,\"queryTimeMs\":29423,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"coastal harbour\",\"semanticQuery\":\"coastal harbour\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":192,\"remaining\":808},\"r"
+      },
+      {
+        "id": "call_2YioClsReNH9mK0Mar6FJ6xi",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "shoreline figures",
+          "topK": 10,
+          "minScore": 0.24
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"shoreline figures\",\"count\":10,\"queryTimeMs\":26256,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"shoreline figures\",\"semanticQuery\":\"shoreline figures\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":190,\"remaining\":"
+      },
+      {
+        "id": "call_FOogXjYOG1IT9DsZYmnrhH86",
+        "name": "search_by_color",
+        "args": {
+          "collection": "nga",
+          "color": "navy",
+          "query": "sea",
+          "topK": 10
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"color\":{\"input\":\"Navy\",\"hex\":\"#1a2f52\",\"swatch\":\"navy\"},\"query\":\"sea\",\"method\":\"semantic search on the colour’s language, then CIEDE2000 re-rank against each work’s extracted palette (the same local refinement the page performs — the public search route deliberately do"
+      },
+      {
+        "id": "call_Rg5441ZQLHHbQrKVJvkGQf06",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "harbour",
+          "topK": 12,
+          "minScore": 0.2
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"harbour\",\"count\":12,\"queryTimeMs\":0,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"harbour\",\"semanticQuery\":\"harbour\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":193,\"remaining\":807},\"results\":[{\"id\":\"open-access"
+      },
+      {
+        "id": "call_y8ozFznKx2TmoxKliXuXeRR6",
+        "name": "set_results",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:197476",
+            "open-access-art:nga:57489",
+            "open-access-art:nga:143861",
+            "open-access-art:nga:46595",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:55280",
+            "open-access-art:nga:136747",
+            "open-access-art:nga:205059",
+            "open-access-art:nga:134323",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:148255"
+          ],
+          "note": "A coast of cliffs, working harbours, boats, and shifting weather.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"pinned\":12,\"note\":\"A coast of cliffs, working harbours, boats, and shifting weather.\",\"effect\":\"The human’s screen now reflects this.\"}"
+      },
+      {
+        "id": "call_LjpKk20GNkSI5PvVSy4Ust5j",
+        "name": "set_view",
+        "args": {
+          "view": "salon"
+        },
+        "result": "{\"ok\":true,\"view\":\"salon\",\"effect\":\"The human’s grid is now laid out this way.\"}"
+      },
+      {
+        "id": "call_hHuxr0ZTuVYOLp8V7J6D6z6Q",
+        "name": "set_exhibition",
+        "args": {
+          "title": "At the Water’s Edge",
+          "statement": "The coast is a threshold: land holding fast while water, weather, trade, and travel keep everything in motion. These works move from exposed rock and moonlit surf to crowded wharves and small boats finding shelter. Drawings, etchings, and paintings make the shoreline feel both local and immense—a place worked, watched, crossed, and continually remade by tide and light.",
+          "works": [
+            {
+              "artworkId": "open-access-art:nga:197476"
+            },
+            {
+              "artworkId": "open-access-art:nga:57489"
+            },
+            {
+              "artworkId": "open-access-art:nga:143861"
+            },
+            {
+              "artworkId": "open-access-art:nga:46595"
+            },
+            {
+              "artworkId": "open-access-art:nga:75952"
+            },
+            {
+              "artworkId": "open-access-art:nga:55280"
+            },
+            {
+              "artworkId": "open-access-art:nga:136747"
+            },
+            {
+              "artworkId": "open-access-art:nga:205059"
+            },
+            {
+              "artworkId": "open-access-art:nga:134323"
+            },
+            {
+              "artworkId": "open-access-art:nga:10944"
+            },
+            {
+              "artworkId": "open-access-art:nga:180934"
+            },
+            {
+              "artworkId": "open-access-art:nga:148255"
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"title\":{\"text\":\"At the Water’s Edge\",\"by\":\"agent\"},\"statement\":{\"text\":\"The coast is a threshold: land holding fast while water, weather, trade, and travel keep everything in motion. These works move from exposed rock and moonlit surf to crowded wharves and small boats finding shelter. D"
+      },
+      {
+        "id": "call_dzumdaAFBTeqpDPEmPIZKhD9",
+        "name": "write_labels",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:197476",
+            "open-access-art:nga:57489",
+            "open-access-art:nga:143861",
+            "open-access-art:nga:46595",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:55280",
+            "open-access-art:nga:136747",
+            "open-access-art:nga:205059",
+            "open-access-art:nga:134323",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:148255"
+          ],
+          "voice": "Clear, concise gallery labels attentive to coast as a threshold."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:197476\",\"work\":\"Rocky Coast — Alfred Thompson Bricher\",\"label\":\"Pen and ink reduces the rocky shore to firm, dark contours, setting stable land against the implied movement of the sea beyond it.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-acc"
+      },
+      {
+        "id": "call_jhAl5mMMoFwEFEnt120BRSIJ",
+        "name": "get_view_context",
+        "args": {},
+        "result": "{\"ok\":true,\"page\":{\"path\":\"/nga/search\",\"collection\":\"nga\",\"collectionName\":\"National Gallery of Art, Washington — open access\",\"onSearchPage\":true},\"humanSearch\":{\"query\":null,\"facet\":null,\"colour\":null,\"active\":false},\"humanResults\":{\"describedAs\":\"search (12 results)\",\"count\":12,\"total\":null,\"obs"
+      },
+      {
+        "id": "call_3O8q3Gub1hsDuVDt5LVkFdzf",
+        "name": "get_exhibition",
+        "args": {},
+        "result": "{\"ok\":true,\"title\":{\"text\":\"At the Water’s Edge\",\"by\":\"agent\"},\"statement\":{\"text\":\"The coast is a threshold: land holding fast while water, weather, trade, and travel keep everything in motion. These works move from exposed rock and moonlit surf to crowded wharves and small boats finding shelter. D"
+      },
+      {
+        "id": "call_SvPwy5LhrJJAul5y42VhPLQb",
+        "name": "set_view",
+        "args": {
+          "view": "atlas"
+        },
+        "result": "{\"ok\":true,\"view\":\"atlas\",\"effect\":\"The human’s grid is now laid out this way.\"}"
+      },
+      {
+        "id": "call_hXaROvLfl0PazK5Z34Z8issj",
+        "name": "annotate_atlas",
+        "args": {
+          "regions": [
+            {
+              "label": "The working harbour",
+              "artworkIds": [
+                "open-access-art:nga:55280",
+                "open-access-art:nga:136747",
+                "open-access-art:nga:10944",
+                "open-access-art:nga:180934",
+                "open-access-art:nga:148255"
+              ],
+              "note": "Boats, docks, and built edges turn water into a place of work and passage."
+            },
+            {
+              "label": "The empty shore",
+              "artworkIds": [
+                "open-access-art:nga:197476",
+                "open-access-art:nga:57489",
+                "open-access-art:nga:143861",
+                "open-access-art:nga:46595",
+                "open-access-art:nga:75952",
+                "open-access-art:nga:205059",
+                "open-access-art:nga:134323"
+              ],
+              "note": "Rock, weather, light, and open water dominate these unpeopled margins."
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"regions\":[{\"label\":\"The working harbour\",\"artworkIds\":[\"open-access-art:nga:55280\",\"open-access-art:nga:136747\",\"open-access-art:nga:10944\",\"open-access-art:nga:180934\",\"open-access-art:nga:148255\"],\"note\":\"Boats, docks, and built edges turn water into a place of work and passage.\"},{\"la"
+      },
+      {
+        "id": "call_sfuClUdhqwkDP0GCtUnJeIxv",
+        "name": "set_exhibition",
+        "args": {
+          "title": "Coast: Work and Solitude",
+          "statement": "The coast divides into two kinds of edge. In the working harbour, boats, docks, and waterfront buildings make water a route for labour, trade, shelter, and departure. On the empty shore, rock, surf, moonlight, and open horizons diminish human presence, placing weather and tidal change at the center. Together these rooms treat the coastline as both infrastructure and exposure: a place made busy by people, and a place where land meets the sea on its own terms."
+        },
+        "result": "{\"ok\":true,\"title\":{\"text\":\"Coast: Work and Solitude\",\"by\":\"agent\"},\"statement\":{\"text\":\"The coast divides into two kinds of edge. In the working harbour, boats, docks, and waterfront buildings make water a route for labour, trade, shelter, and departure. On the empty shore, rock, surf, moonlight, a"
+      },
+      {
+        "id": "call_kfOrX83j5wQb8QLPTfb1bnP4",
+        "name": "write_labels",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:55280",
+            "open-access-art:nga:136747",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:148255",
+            "open-access-art:nga:197476",
+            "open-access-art:nga:57489",
+            "open-access-art:nga:143861",
+            "open-access-art:nga:46595",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:205059",
+            "open-access-art:nga:134323"
+          ],
+          "voice": "Write toward the two-room structure: working harbour versus empty shore."
+        },
+        "result": "{\"ok\":false,\"error\":{\"code\":\"LABELS_RATE_LIMITED\",\"message\":\"Only 10 labelling calls may be made per hour. Try again later.\"}}"
+      }
+    ]
+  }
+]
