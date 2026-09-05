@@ -177,12 +177,15 @@ The empty shore       n=7   board positions [0, 1, 2, 3, 4, 7, 8]
    "Rock, weather, light, and open water dominate these unpeopled margins."
 ```
 
-**Uneven and interleaved.** Five against seven, and neither run is contiguous:
-the model went through twelve works one at a time and decided which side each
-belonged on, then wrote a reason for each group. There is no positional rule
-that produces that partition. Published as `/e/dAH4peu`, walked 26 of 26, and
+**Uneven and interleaved.** Five against seven, and neither group is a
+contiguous stretch of the board. What that rules out is the thing worth ruling
+out: no positional rule — no first half, no alternating, no split at any single
+index — produces that partition, so the assignment has to have been made per
+work against what each picture is. (What the model did internally is not
+something this evidence can speak to; the output is.) Each group also carries a
+reason the model wrote for it. Published as `/e/dAH4peu`, walked 26 of 26, and
 the visitor arrives in *The working harbour* and walks through to *The empty
-shore*.
+shore*. The same show walks 5 of 5 matrix cells as well.
 
 That is the claim at full strength, and it is the run to cite: the model chose
 the tool, chose how many groups, chose the names, and chose the membership.
@@ -349,15 +352,17 @@ split the board in half, and on their own they show only that it names groups.
 
 **3. The groups it names become the rooms a stranger walks.**
 The human presses the page's own Copy link; the short code is opened cold.
-`/e/dAH4peu`, `/e/yXWeAum` and `/e/WfW8emn` each walk **26 of 26** in
-`room-demo-path.ts`, which asserts the room count, both room names and the walk
-through the doorway from the first room into the second. All published records
-are live and can be fetched by anyone.
+`/e/dAH4peu`, `/e/yXWeAum`, `/e/XwH8aJZ` and `/e/WfW8emn` each walk **26 of
+26** in `room-demo-path.ts`, which asserts the room count, both room names and
+the walk through the doorway from the first room into the second — the names
+coming from the published record, so a wrong name fails rather than passes. All
+published records are live and can be fetched by anyone.
 
 **4. It works for a visitor who is not on a desktop.**
-`room-demo-matrix.ts` against the model-named `/e/WfW8emn`: **5 of 5 cells**, 26
-steps each — desktop, phone by touch alone, reduced motion, no speech APIs, and
-all three at once.
+`room-demo-matrix.ts` against both model-named codes, `/e/WfW8emn` and the
+neutral-brief `/e/dAH4peu`: **5 of 5 cells each, 10 of 10 in total**, 26 steps
+apiece — desktop, phone by touch alone, reduced motion, no speech APIs, and all
+three at once.
 
 **5. When the model answers the request in prose instead, the page refuses to
 let the turn end, and the model then names the groups itself.**
