@@ -259,6 +259,84 @@ const main = async () => {
     await page.close();
   }
 
+  console.log('\nfailure paths');
+  {
+    // A link that does not resolve, asked for as a room. The room must not be
+    // the thing that turns a 404 into a blank canvas.
+    for (const [what, path] of [
+      ['a code that does not exist', '/e/zzzzzzz?v=room'],
+      ['a code that is not a code', '/e/!!!?v=room'],
+      ['a self-contained link with a corrupt payload', '/exhibition?e=1notreal&v=room'],
+    ] as const) {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      const response = await page.goto(`${ORIGIN}${path}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await page.waitForTimeout(1200);
+      say(what, `${response?.status()}, ${await page.locator('canvas.exhibition-room-canvas').count()} canvases`);
+      await page.close();
+    }
+
+    /*
+     * A slow image server. The room has to be a room before it is a hang: the
+     * walls, the doorways and the wall text come from the plan, not from the
+     * network, so a visitor can walk while the pictures are still arriving.
+     */
+    const slow = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await slow.route('**://api.nga.gov/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      await route.continue();
+    });
+    const started = Date.now();
+    await slow.goto(room, { waitUntil: 'domcontentloaded' });
+    await slow.locator('canvas.exhibition-room-canvas').waitFor({ state: 'visible' });
+    say('slow images: canvas up after', `${Date.now() - started} ms`);
+    await slow.waitForTimeout(2000);
+    await slow
+      .locator('canvas.exhibition-room-canvas')
+      .click({ position: { x: 40, y: 40 } });
+    const before = (await stats(slow))!.metresIntoRoom;
+    for (let press = 0; press < 4; press += 1) {
+      await slow.keyboard.press('ArrowUp');
+      await slow.waitForTimeout(120);
+    }
+    await slow.waitForTimeout(400);
+    say(
+      'slow images: walkable before any picture',
+      `${((await stats(slow))!.metresIntoRoom - before).toFixed(2)} m`
+    );
+    await slow.waitForTimeout(9000);
+    say('slow images: pictures do arrive', `${(await stats(slow))!.nearCount} at full resolution`);
+    await slow.close();
+
+    /*
+     * Leaving mid-load, six times over. This is the one that would have caught
+     * both of the lifecycle bugs: textures still in flight when the scene goes
+     * away, and a WebGL context that cannot be recreated on a reused canvas.
+     */
+    const churn = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await churn.route('**://api.nga.gov/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await route.continue();
+    });
+    await churn.goto(room, { waitUntil: 'domcontentloaded' });
+    for (let trip = 0; trip < 6; trip += 1) {
+      await churn.locator('canvas.exhibition-room-canvas').waitFor({ state: 'visible' });
+      await churn.waitForTimeout(700);
+      await churn.getByRole('link', { name: 'Page', exact: true }).click();
+      await churn.waitForTimeout(500);
+      await churn.getByRole('link', { name: 'Room', exact: true }).click();
+    }
+    await churn.locator('canvas.exhibition-room-canvas').waitFor({ state: 'visible' });
+    await churn.waitForTimeout(11000);
+    const survived = await stats(churn);
+    say(
+      'six page/room round trips mid-load: still draws',
+      survived ? `${survived.nearCount} at full resolution, ${(survived.textureBytes / 1024 / 1024).toFixed(1)} MiB` : 'NO SCENE'
+    );
+    await churn.close();
+  }
+
   await browser.close();
   console.log('');
 };

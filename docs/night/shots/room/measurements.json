@@ -12,7 +12,7 @@
     "metresIntoRoom": 1.4
   },
   "six-wall-text": {
-    "fps": 30,
+    "fps": 31,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 17,
@@ -34,7 +34,7 @@
     "metresIntoRoom": 4.55
   },
   "one": {
-    "fps": 30,
+    "fps": 31,
     "textureBytes": 7904683,
     "nearCount": 1,
     "rendererTextures": 4,
@@ -46,9 +46,9 @@
   },
   "thirty": {
     "fps": 25,
-    "textureBytes": 62331174,
+    "textureBytes": 61612326,
     "nearCount": 6,
-    "rendererTextures": 29,
+    "rendererTextures": 28,
     "pixelRatio": 1,
     "roomIndex": 0,
     "roomCount": 3,
@@ -57,9 +57,9 @@
   },
   "thirty-second-room": {
     "fps": 24,
-    "textureBytes": 64054176,
+    "textureBytes": 63335328,
     "nearCount": 6,
-    "rendererTextures": 32,
+    "rendererTextures": 31,
     "pixelRatio": 1,
     "roomIndex": 1,
     "roomCount": 3,
@@ -67,26 +67,26 @@
     "metresIntoRoom": 4.505777790477641
   },
   "thirty-third-room": {
-    "fps": 28,
-    "textureBytes": 68918485,
+    "fps": 29,
+    "textureBytes": 66411179,
     "nearCount": 6,
-    "rendererTextures": 37,
+    "rendererTextures": 35,
     "pixelRatio": 1,
     "roomIndex": 2,
     "roomCount": 3,
     "roomName": null,
-    "metresIntoRoom": 4.211555580955281
+    "metresIntoRoom": 3.3615555809552813
   },
   "thirtyAfterWalk": {
-    "fps": 28,
-    "textureBytes": 68918485,
+    "fps": 29,
+    "textureBytes": 66411179,
     "nearCount": 6,
-    "rendererTextures": 37,
+    "rendererTextures": 35,
     "pixelRatio": 1,
     "roomIndex": 2,
     "roomCount": 3,
     "roomName": null,
-    "metresIntoRoom": 4.211555580955281
+    "metresIntoRoom": 3.3615555809552813
   },
   "regions-first": {
     "fps": 27,
@@ -111,10 +111,10 @@
     "metresIntoRoom": 4.399999999999999
   },
   "shortcode-regions-first": {
-    "fps": 28,
-    "textureBytes": 28562305,
-    "nearCount": 3,
-    "rendererTextures": 7,
+    "fps": 27,
+    "textureBytes": 54362081,
+    "nearCount": 6,
+    "rendererTextures": 15,
     "pixelRatio": 1,
     "roomIndex": 0,
     "roomCount": 2,
@@ -122,10 +122,10 @@
     "metresIntoRoom": 1.4
   },
   "shortcode-regions-second": {
-    "fps": 27,
-    "textureBytes": 32538251,
-    "nearCount": 4,
-    "rendererTextures": 13,
+    "fps": 28,
+    "textureBytes": 48719472,
+    "nearCount": 6,
+    "rendererTextures": 20,
     "pixelRatio": 1,
     "roomIndex": 1,
     "roomCount": 2,
@@ -133,7 +133,7 @@
     "metresIntoRoom": 3.549999999999999
   },
   "phone": {
-    "fps": 23,
+    "fps": 24,
     "textureBytes": 49289185,
     "nearCount": 6,
     "rendererTextures": 7,

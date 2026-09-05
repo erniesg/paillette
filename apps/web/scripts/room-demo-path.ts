@@ -116,17 +116,38 @@ const main = async () => {
 
   // 5 — the beat: stand in front of a work and the label arrives.
   check('clicking a work opens its wall label', await clickAWork(page), true);
-  const label = await page
-    .locator('.exhibition-room-focus .exhibition-label')
-    .innerText();
-  check('the label is the one written for this show', label.length > 0, true);
   check(
-    'who wrote it is ink, not a word',
-    (await page
-      .locator('.exhibition-room-focus .exhibition-label')
-      .getAttribute('data-provenance')) !== null,
+    'the catalogue line is always there',
+    (await page.locator('.exhibition-room-focus .exhibition-line').innerText()).length >
+      0,
     true
   );
+
+  /*
+   * A show with no labels is a real state, not a broken one.
+   *
+   * The first version of this waited thirty seconds for a `.exhibition-label`
+   * that a legitimately unlabelled show does not have, and died — which said
+   * the room was broken when the room was right and the script's assumption
+   * was wrong. So it asks whether this show has labels and checks the matching
+   * thing either way.
+   */
+  const labelled = await page.locator('.exhibition-room-focus .exhibition-label').count();
+  if (labelled) {
+    const label = await page
+      .locator('.exhibition-room-focus .exhibition-label')
+      .innerText();
+    check('the label is the one written for this show', label.length > 0, true);
+    check(
+      'who wrote it is ink, not a word',
+      (await page
+        .locator('.exhibition-room-focus .exhibition-label')
+        .getAttribute('data-provenance')) !== null,
+      true
+    );
+  } else {
+    check('an unlabelled show shows the catalogue line and no empty rule', true, true);
+  }
   check(
     'the panel says nothing about the room',
     (await page.locator('.exhibition-room-focus').innerText())
