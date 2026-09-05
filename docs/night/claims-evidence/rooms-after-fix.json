@@ -1,0 +1,898 @@
+[
+  {
+    "run": 1,
+    "briefMs": 56132,
+    "afterBrief": {
+      "regions": [],
+      "works": [
+        {
+          "id": "open-access-art:nga:166433",
+          "label": "The title fixes the shore at noon, when longshore labor pauses rather than disappears. It places working bodies at the coast\u2019s edge and makes rest part of the harbor\u2019s daily rhythm."
+        },
+        {
+          "id": "open-access-art:nga:32790",
+          "label": "Shipbuilding turns Gloucester Harbor into a site of assembly, where the water\u2019s edge supports construction as well as passage. The wood engraving\u2019s printed lines suit a scene organized around built form and collective work."
+        },
+        {
+          "id": "open-access-art:nga:11613",
+          "label": "The wharf becomes a dense urban edge in this etching, where land meets water through docks and waterfront infrastructure. Its black-and-white surface holds the harbor as a working environment rather than an open retreat."
+        },
+        {
+          "id": "open-access-art:nga:180934",
+          "label": "A New York dock brings the coastline into the city, defined by a named working berth rather than an uninterrupted horizon. Charcoal and gouache on the back of an advertisement make the scene feel quick, practical, and tied to commerce."
+        },
+        {
+          "id": "open-access-art:nga:10921",
+          "label": "Limehouse names a waterfront district, locating the shoreline amid the built world of the port. Etching and drypoint reduce that setting to a spare network of marks, where the river\u2019s edge remains close to labor and habitation."
+        },
+        {
+          "id": "open-access-art:nga:10944",
+          "label": "This smaller Rotherhithe scene narrows the waterfront to an intimate scale. Its etched lines make the shore feel enclosed by the structures and traffic of a riverside neighborhood."
+        },
+        {
+          "id": "open-access-art:nga:195170",
+          "label": "The New Jersey coast shifts attention away from docks and construction toward the exposed meeting of sea and land. Oil paint gives that open margin room for weather and distance to take over."
+        },
+        {
+          "id": "open-access-art:nga:182272",
+          "label": "Pale washes spread across layered waves, reflective water, and a clouded sky, leaving the shoreline nearly weightless. With no visible workers or structures, the coast becomes a quiet field of tide and atmosphere."
+        },
+        {
+          "id": "open-access-art:nga:180015",
+          "label": "An overturned boat rests alone on sand, while a weathered structure and distant pier remain secondary. The vessel suggests a connection to coastal work, but its stillness places it on the emptied side of the shore."
+        },
+        {
+          "id": "open-access-art:nga:147425",
+          "label": "Rendered only in black etching, the beach is pared down to its essential edge between land and water. The title\u2019s broad setting leaves the scene open to the slower conditions of shore, weather, and tide."
+        },
+        {
+          "id": "open-access-art:nga:75952",
+          "label": "Moonlight turns the rocky coast into a remote, dark margin, far from the activity of a harbor. Brown wash, blotting, and scraped passages make the scene feel shaped by uneven light and rough ground."
+        },
+        {
+          "id": "open-access-art:nga:194571",
+          "label": "Graphite traces a shore in its most reduced form, without the materials of a port or the force of a built waterfront. The lake\u2019s edge becomes a spare place for distance and quiet observation."
+        }
+      ],
+      "unlabelled": 0,
+      "title": "Working Water, Empty Edge",
+      "onScreen": 12
+    },
+    "briefTools": [
+      "list_collections",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "search_artworks",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "splitMs": 34671,
+    "after": {
+      "regions": [
+        {
+          "label": "Working Harbour",
+          "by": "agent",
+          "works": 6
+        },
+        {
+          "label": "Empty Shore",
+          "by": "agent",
+          "works": 6
+        }
+      ],
+      "works": [
+        {
+          "id": "open-access-art:nga:166433",
+          "label": "Longshoremen pause at midday, making the waterfront a place where labor sets the rhythm of the shore."
+        },
+        {
+          "id": "open-access-art:nga:32790",
+          "label": "The shipyard puts construction at the water\u2019s edge, where vessels and workers bind the harbor to trade and movement."
+        },
+        {
+          "id": "open-access-art:nga:11613",
+          "label": "Wharf-side buildings and vessels compress the shoreline into a working corridor of docks, traffic, and industry."
+        },
+        {
+          "id": "open-access-art:nga:180934",
+          "label": "Charcoal and gouache catch the North River dock as an active urban edge, structured by piers and shipping."
+        },
+        {
+          "id": "open-access-art:nga:10921",
+          "label": "At Limehouse, the river is crowded with the built forms and boats that make a harbor a place of exchange."
+        },
+        {
+          "id": "open-access-art:nga:10944",
+          "label": "The small Rotherhithe waterfront is defined by its closely packed vessels and riverside structures, turning the bank into a working zone."
+        },
+        {
+          "id": "open-access-art:nga:195170",
+          "label": "The New Jersey coast shifts attention away from harbor activity toward the open meeting of shore, sea, and sky."
+        },
+        {
+          "id": "open-access-art:nga:182272",
+          "label": "Soft washes spread waves, reflective water, and clouded sky across a nearly empty shore. The fading forms slow the coastline into atmosphere and distance."
+        },
+        {
+          "id": "open-access-art:nga:180015",
+          "label": "An overturned boat rests on the sand beside a weathered structure and distant pier. No work is underway; the vessel becomes part of a quiet, worn shoreline."
+        },
+        {
+          "id": "open-access-art:nga:147425",
+          "label": "Black etched marks reduce the beach to a spare coastal interval, with little to interrupt the shore\u2019s openness."
+        },
+        {
+          "id": "open-access-art:nga:75952",
+          "label": "Moonlight and rocky ground make the coast a place of weather, darkness, and remote exposure rather than use."
+        },
+        {
+          "id": "open-access-art:nga:194571",
+          "label": "Graphite holds the lake shore in a pared-back study, leaving land and water to define the scene without harbor structures."
+        }
+      ],
+      "unlabelled": 0,
+      "title": "Two Coasts",
+      "onScreen": 12
+    },
+    "splitTools": [
+      "get_view_context",
+      "get_exhibition",
+      "set_exhibition",
+      "write_labels",
+      "set_view",
+      "annotate_atlas"
+    ],
+    "nudges": [
+      "They asked you to divide this show, and the show is not divided. Naming the groups in your statement or your labels does not divide it \u2014 the statement is one bl"
+    ],
+    "chose": true,
+    "annotateCalls": [
+      {
+        "id": "call_GCq214ZDJ3lKpAF1WxnRSqWr",
+        "name": "annotate_atlas",
+        "args": {
+          "regions": [
+            {
+              "label": "Working Harbour",
+              "artworkIds": [
+                "open-access-art:nga:166433",
+                "open-access-art:nga:32790",
+                "open-access-art:nga:11613",
+                "open-access-art:nga:180934",
+                "open-access-art:nga:10921",
+                "open-access-art:nga:10944"
+              ],
+              "note": "Ships, docks, warehouses, and the labour that makes a coast circulate."
+            },
+            {
+              "label": "Empty Shore",
+              "artworkIds": [
+                "open-access-art:nga:195170",
+                "open-access-art:nga:182272",
+                "open-access-art:nga:180015",
+                "open-access-art:nga:147425",
+                "open-access-art:nga:75952",
+                "open-access-art:nga:194571"
+              ],
+              "note": "A quieter edge of tide, weather, moonlight, and distance."
+            }
+          ]
+        },
+        "result": null
+      }
+    ],
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/WfW8emn",
+    "code": "WfW8emn",
+    "published": {
+      "works": 12,
+      "labels": 12,
+      "regions": [
+        "Working Harbour",
+        "Empty Shore"
+      ]
+    },
+    "errors": [],
+    "census": [
+      {
+        "id": "call_0LXS8GXBx1YsBuPVX7zU8hJg",
+        "name": "list_collections",
+        "args": {},
+        "result": "{\"ok\":true,\"collections\":[{\"id\":\"nga\",\"name\":\"National Gallery of Art, Washington \u2014 open access\",\"description\":\"Open-access artworks released by the National Gallery of Art, Washington. Every record carries source-labelled catalogue metadata, an extracted colour palette, and a generated visual descr"
+      },
+      {
+        "id": "call_XrTFfs3tZjf3OfQXqvGqXljZ",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "working harbour",
+          "topK": 12,
+          "minScore": 0.22
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"working harbour\",\"count\":12,\"queryTimeMs\":0,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"working harbour\",\"semanticQuery\":\"working harbour\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":156,\"remaining\":844},\"resu"
+      },
+      {
+        "id": "call_lxfxZVW1URDGNtizAeSyVk8f",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "empty shore",
+          "topK": 12,
+          "minScore": 0.22
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"empty shore\",\"count\":12,\"queryTimeMs\":0,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"empty shore\",\"semanticQuery\":\"empty shore\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":157,\"remaining\":843},\"results\":[{\"id\":"
+      },
+      {
+        "id": "call_HHrcG8fL43JVUXIYdKOswHkL",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "dock workers ships",
+          "topK": 12,
+          "minScore": 0.22
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"dock workers ships\",\"count\":12,\"queryTimeMs\":9630,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"dock workers ships\",\"semanticQuery\":\"dock workers ships\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":158,\"remaining"
+      },
+      {
+        "id": "call_6DvW1gWHFcu2qAICSaNeDmU5",
+        "name": "search_artworks",
+        "args": {
+          "collection": "nga",
+          "query": "deserted beach",
+          "topK": 12,
+          "minScore": 0.22
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"deserted beach\",\"count\":12,\"queryTimeMs\":13114,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"deserted beach\",\"semanticQuery\":\"deserted beach\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":159,\"remaining\":841},\"res"
+      },
+      {
+        "id": "call_XYCediEzL4k6yY4oNrfWGa5y",
+        "name": "set_results",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:166433",
+            "open-access-art:nga:32790",
+            "open-access-art:nga:11613",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:10921",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:195170",
+            "open-access-art:nga:182272",
+            "open-access-art:nga:180015",
+            "open-access-art:nga:147425",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:194571"
+          ],
+          "note": "Six harbours at work face six shores where the coast falls quiet.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"pinned\":12,\"note\":\"Six harbours at work face six shores where the coast falls quiet.\",\"effect\":\"The human\u2019s screen now reflects this.\"}"
+      },
+      {
+        "id": "call_RgONNbhGWxbPQ01uazSy6bEV",
+        "name": "set_view",
+        "args": {
+          "view": "salon"
+        },
+        "result": "{\"ok\":true,\"view\":\"salon\",\"effect\":\"The human\u2019s grid is now laid out this way.\"}"
+      },
+      {
+        "id": "call_hc08MiUDXbtVPUSrh2kD3TM2",
+        "name": "set_exhibition",
+        "args": {
+          "title": "Working Water, Empty Edge",
+          "statement": "The coast appears here as a threshold between labor and release. In the harbour, ships, warehouses, wharves, and workers make the shoreline a place of exchange and construction. Across from them, open beaches and rocky margins slow the scene down, leaving weather, tide, and distance to occupy the frame. Together, these twelve works ask how the same meeting of land and water can hold both collective effort and profound solitude.",
+          "works": [
+            {
+              "artworkId": "open-access-art:nga:166433",
+              "position": 0
+            },
+            {
+              "artworkId": "open-access-art:nga:32790",
+              "position": 1
+            },
+            {
+              "artworkId": "open-access-art:nga:11613",
+              "position": 2
+            },
+            {
+              "artworkId": "open-access-art:nga:180934",
+              "position": 3
+            },
+            {
+              "artworkId": "open-access-art:nga:10921",
+              "position": 4
+            },
+            {
+              "artworkId": "open-access-art:nga:10944",
+              "position": 5
+            },
+            {
+              "artworkId": "open-access-art:nga:195170",
+              "position": 6
+            },
+            {
+              "artworkId": "open-access-art:nga:182272",
+              "position": 7
+            },
+            {
+              "artworkId": "open-access-art:nga:180015",
+              "position": 8
+            },
+            {
+              "artworkId": "open-access-art:nga:147425",
+              "position": 9
+            },
+            {
+              "artworkId": "open-access-art:nga:75952",
+              "position": 10
+            },
+            {
+              "artworkId": "open-access-art:nga:194571",
+              "position": 11
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"title\":{\"text\":\"Working Water, Empty Edge\",\"by\":\"agent\"},\"statement\":{\"text\":\"The coast appears here as a threshold between labor and release. In the harbour, ships, warehouses, wharves, and workers make the shoreline a place of exchange and construction. Across from them, open beaches a"
+      },
+      {
+        "id": "call_PnIv10pNqIuUfBIpGpW0pZBu",
+        "name": "write_labels",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:166433",
+            "open-access-art:nga:32790",
+            "open-access-art:nga:11613",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:10921",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:195170",
+            "open-access-art:nga:182272",
+            "open-access-art:nga:180015",
+            "open-access-art:nga:147425",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:194571"
+          ],
+          "voice": "Direct, attentive to the contrast between work and solitude."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:166433\",\"work\":\"The Longshoremen's Noon \u2014 John George Brown\",\"label\":\"The title fixes the shore at noon, when longshore labor pauses rather than disappears. It places working bodies at the coast\u2019s edge and makes rest part of the harbor\u2019s daily r"
+      },
+      {
+        "id": "call_4FN2AscDcMeUbpSu4R1NHNpj",
+        "name": "get_view_context",
+        "args": {},
+        "result": "{\"ok\":true,\"page\":{\"path\":\"/nga/search\",\"collection\":\"nga\",\"collectionName\":\"National Gallery of Art, Washington \u2014 open access\",\"onSearchPage\":true},\"humanSearch\":{\"query\":null,\"facet\":null,\"colour\":null,\"active\":false},\"humanResults\":{\"describedAs\":\"search (12 results)\",\"count\":12,\"total\":null,\"obs"
+      },
+      {
+        "id": "call_rhmB64nOPlFWPJkCw13CB04s",
+        "name": "get_exhibition",
+        "args": {},
+        "result": "{\"ok\":true,\"title\":{\"text\":\"Working Water, Empty Edge\",\"by\":\"agent\"},\"statement\":{\"text\":\"The coast appears here as a threshold between labor and release. In the harbour, ships, warehouses, wharves, and workers make the shoreline a place of exchange and construction. Across from them, open beaches a"
+      },
+      {
+        "id": "call_763jUT25H6bnbXPDoD1jSGOm",
+        "name": "set_exhibition",
+        "args": {
+          "title": "Two Coasts",
+          "statement": "These two rooms divide the coast by what it asks of people. The working harbour gathers ships, docks, warehouses, and labor at the water\u2019s edge; it is a shoreline built for circulation, construction, and trade. The empty shore withdraws those structures and bodies, opening space for tide, weather, moonlight, and distance. Moving between them reveals not two different places, but two tempos held by the same boundary of land and water.",
+          "works": [
+            {
+              "artworkId": "open-access-art:nga:166433",
+              "position": 0
+            },
+            {
+              "artworkId": "open-access-art:nga:32790",
+              "position": 1
+            },
+            {
+              "artworkId": "open-access-art:nga:11613",
+              "position": 2
+            },
+            {
+              "artworkId": "open-access-art:nga:180934",
+              "position": 3
+            },
+            {
+              "artworkId": "open-access-art:nga:10921",
+              "position": 4
+            },
+            {
+              "artworkId": "open-access-art:nga:10944",
+              "position": 5
+            },
+            {
+              "artworkId": "open-access-art:nga:195170",
+              "position": 6
+            },
+            {
+              "artworkId": "open-access-art:nga:182272",
+              "position": 7
+            },
+            {
+              "artworkId": "open-access-art:nga:180015",
+              "position": 8
+            },
+            {
+              "artworkId": "open-access-art:nga:147425",
+              "position": 9
+            },
+            {
+              "artworkId": "open-access-art:nga:75952",
+              "position": 10
+            },
+            {
+              "artworkId": "open-access-art:nga:194571",
+              "position": 11
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"title\":{\"text\":\"Two Coasts\",\"by\":\"agent\"},\"statement\":{\"text\":\"These two rooms divide the coast by what it asks of people. The working harbour gathers ships, docks, warehouses, and labor at the water\u2019s edge; it is a shoreline built for circulation, construction, and trade. The empty shor"
+      },
+      {
+        "id": "call_lUY9pgwuozfPOZg6pQ25BP3H",
+        "name": "write_labels",
+        "args": {
+          "collection": "nga",
+          "artworkIds": [
+            "open-access-art:nga:166433",
+            "open-access-art:nga:32790",
+            "open-access-art:nga:11613",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:10921",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:195170",
+            "open-access-art:nga:182272",
+            "open-access-art:nga:180015",
+            "open-access-art:nga:147425",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:194571"
+          ],
+          "voice": "Make the first six read as the Working Harbour room and the final six as the Empty Shore room; direct and concise."
+        },
+        "result": "{\"ok\":true,\"labels\":[{\"artworkId\":\"open-access-art:nga:166433\",\"work\":\"The Longshoremen's Noon \u2014 John George Brown\",\"label\":\"Longshoremen pause at midday, making the waterfront a place where labor sets the rhythm of the shore.\",\"writtenFrom\":\"catalogue\"},{\"artworkId\":\"open-access-art:nga:32790\",\"wor"
+      },
+      {
+        "id": "call_en7SPCLFarpFU1J5zvmIIzEE",
+        "name": "set_view",
+        "args": {
+          "view": "atlas"
+        },
+        "result": "{\"ok\":true,\"view\":\"atlas\",\"effect\":\"The human\u2019s grid is now laid out this way.\"}"
+      },
+      {
+        "id": "call_GCq214ZDJ3lKpAF1WxnRSqWr",
+        "name": "annotate_atlas",
+        "args": {
+          "regions": [
+            {
+              "label": "Working Harbour",
+              "artworkIds": [
+                "open-access-art:nga:166433",
+                "open-access-art:nga:32790",
+                "open-access-art:nga:11613",
+                "open-access-art:nga:180934",
+                "open-access-art:nga:10921",
+                "open-access-art:nga:10944"
+              ],
+              "note": "Ships, docks, warehouses, and the labour that makes a coast circulate."
+            },
+            {
+              "label": "Empty Shore",
+              "artworkIds": [
+                "open-access-art:nga:195170",
+                "open-access-art:nga:182272",
+                "open-access-art:nga:180015",
+                "open-access-art:nga:147425",
+                "open-access-art:nga:75952",
+                "open-access-art:nga:194571"
+              ],
+              "note": "A quieter edge of tide, weather, moonlight, and distance."
+            }
+          ]
+        },
+        "result": null
+      }
+    ]
+  },
+  {
+    "run": 2,
+    "briefMs": 25601,
+    "afterBrief": {
+      "regions": [],
+      "works": [
+        {
+          "id": "open-access-art:nga:11613",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:180934",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:10922",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:32790",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:10944",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:148255",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:194571",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:180015",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:195170",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:182272",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:75952",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:160661",
+          "label": null
+        }
+      ],
+      "unlabelled": 12,
+      "title": "Coastlines: Work and Stillness",
+      "onScreen": 12
+    },
+    "briefTools": [
+      "get_view_context",
+      "search_artworks",
+      "search_artworks",
+      "set_results",
+      "set_view",
+      "set_exhibition",
+      "write_labels"
+    ],
+    "splitMs": 20039,
+    "after": {
+      "regions": [
+        {
+          "label": "Working harbour",
+          "by": "agent",
+          "works": 6
+        },
+        {
+          "label": "Empty shore",
+          "by": "agent",
+          "works": 6
+        }
+      ],
+      "works": [
+        {
+          "id": "open-access-art:nga:11613",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:180934",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:10922",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:32790",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:10944",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:148255",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:194571",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:180015",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:195170",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:182272",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:75952",
+          "label": null
+        },
+        {
+          "id": "open-access-art:nga:160661",
+          "label": null
+        }
+      ],
+      "unlabelled": 12,
+      "title": "Coastlines: Work and Stillness",
+      "onScreen": 12
+    },
+    "splitTools": [
+      "get_view_context",
+      "set_view",
+      "annotate_atlas",
+      "get_exhibition",
+      "write_labels"
+    ],
+    "nudges": [],
+    "chose": true,
+    "annotateCalls": [
+      {
+        "id": "call_mSNKX2wRhID6IIH4NryTuuMY",
+        "name": "annotate_atlas",
+        "args": {
+          "regions": [
+            {
+              "label": "Working harbour",
+              "artworkIds": [
+                "open-access-art:nga:11613",
+                "open-access-art:nga:180934",
+                "open-access-art:nga:10922",
+                "open-access-art:nga:32790",
+                "open-access-art:nga:10944",
+                "open-access-art:nga:148255"
+              ],
+              "note": "Wharves, docks, shipbuilding, and traffic at the water\u2019s edge."
+            },
+            {
+              "label": "Empty shore",
+              "artworkIds": [
+                "open-access-art:nga:194571",
+                "open-access-art:nga:180015",
+                "open-access-art:nga:195170",
+                "open-access-art:nga:182272",
+                "open-access-art:nga:75952",
+                "open-access-art:nga:160661"
+              ],
+              "note": "The coast opens outward, with only a vessel or distant settlement interrupting it."
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"regions\":[{\"label\":\"Working harbour\",\"artworkIds\":[\"open-access-art:nga:11613\",\"open-access-art:nga:180934\",\"open-access-art:nga:10922\",\"open-access-art:nga:32790\",\"open-access-art:nga:10944\",\"open-access-art:nga:148255\"],\"note\":\"Wharves, docks, shipbuilding, and traffic at the water\u2019s e"
+      }
+    ],
+    "shareUrl": "https://paillette-stg.berlayar.ai/e/kaxeFU4",
+    "code": "kaxeFU4",
+    "published": {
+      "works": 12,
+      "labels": 0,
+      "regions": [
+        "Working harbour",
+        "Empty shore"
+      ]
+    },
+    "errors": [],
+    "census": [
+      {
+        "id": "call_iRJ6FliTup5XRZla0RAWOYhT",
+        "name": "get_view_context",
+        "args": {},
+        "result": "{\"ok\":true,\"page\":{\"path\":\"/nga/search\",\"collection\":\"nga\",\"collectionName\":\"National Gallery of Art, Washington \u2014 open access\",\"onSearchPage\":true},\"humanSearch\":{\"query\":null,\"facet\":null,\"colour\":null,\"active\":false},\"humanResults\":null,\"agentResults\":null,\"openArtwork\":null,\"flags\":{\"picks\":[],\""
+      },
+      {
+        "id": "call_m9ofCzfe4qdbRsMeP2I90Z2n",
+        "name": "search_artworks",
+        "args": {
+          "query": "working harbour",
+          "collection": "nga",
+          "topK": 12,
+          "minScore": 0.2
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"working harbour\",\"count\":12,\"queryTimeMs\":0,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"working harbour\",\"semanticQuery\":\"working harbour\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":161,\"remaining\":839},\"resu"
+      },
+      {
+        "id": "call_yqOmeYGLdwJNaAONDH9BzHYb",
+        "name": "search_artworks",
+        "args": {
+          "query": "empty shore",
+          "collection": "nga",
+          "topK": 12,
+          "minScore": 0.2
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"query\":\"empty shore\",\"count\":12,\"queryTimeMs\":0,\"interpretation\":{\"parserVersion\":\"nga-v7\",\"originalQuery\":\"empty shore\",\"semanticQuery\":\"empty shore\",\"constraints\":{},\"corrections\":[],\"unresolved\":[]},\"quota\":{\"limit\":1000,\"used\":160,\"remaining\":840},\"results\":[{\"id\":"
+      },
+      {
+        "id": "call_3x7GGtinZzelRoNIgwZkEFOZ",
+        "name": "set_results",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:11613",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:10922",
+            "open-access-art:nga:32790",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:148255",
+            "open-access-art:nga:194571",
+            "open-access-art:nga:180015",
+            "open-access-art:nga:195170",
+            "open-access-art:nga:182272",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:160661"
+          ],
+          "note": "Six coasts at work, six held in stillness: docks, boats, warehouses, and the open margin of sea and land.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":true,\"collection\":\"nga\",\"pinned\":12,\"note\":\"Six coasts at work, six held in stillness: docks, boats, warehouses, and the open margin of sea and land.\",\"effect\":\"The human\u2019s screen now reflects this.\"}"
+      },
+      {
+        "id": "call_5FS2LuAnJRpxUNycubJWinpc",
+        "name": "set_view",
+        "args": {
+          "view": "salon"
+        },
+        "result": "{\"ok\":true,\"view\":\"salon\",\"effect\":\"The human\u2019s grid is now laid out this way.\"}"
+      },
+      {
+        "id": "call_QOCT52Utmfl3oLe66gRs3Sa6",
+        "name": "set_exhibition",
+        "args": {
+          "title": "Coastlines: Work and Stillness",
+          "statement": "Along the coast, labour and solitude occupy the same edge of the world. Harbours gather boats, docks, warehouses, and shipbuilding into a working geography shaped by exchange and industry. On the empty shore, attention shifts outward: a beached vessel, a rocky margin, water, weather, and an almost unbroken horizon. Together these works make the coast a threshold\u2014at once a place of human effort and a space where the land seems to wait.",
+          "works": [
+            {
+              "artworkId": "open-access-art:nga:11613"
+            },
+            {
+              "artworkId": "open-access-art:nga:180934"
+            },
+            {
+              "artworkId": "open-access-art:nga:10922"
+            },
+            {
+              "artworkId": "open-access-art:nga:32790"
+            },
+            {
+              "artworkId": "open-access-art:nga:10944"
+            },
+            {
+              "artworkId": "open-access-art:nga:148255"
+            },
+            {
+              "artworkId": "open-access-art:nga:194571"
+            },
+            {
+              "artworkId": "open-access-art:nga:180015"
+            },
+            {
+              "artworkId": "open-access-art:nga:195170"
+            },
+            {
+              "artworkId": "open-access-art:nga:182272"
+            },
+            {
+              "artworkId": "open-access-art:nga:75952"
+            },
+            {
+              "artworkId": "open-access-art:nga:160661"
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"title\":{\"text\":\"Coastlines: Work and Stillness\",\"by\":\"agent\"},\"statement\":{\"text\":\"Along the coast, labour and solitude occupy the same edge of the world. Harbours gather boats, docks, warehouses, and shipbuilding into a working geography shaped by exchange and industry. On the empty sho"
+      },
+      {
+        "id": "call_O3rCWDNg55SZA3wjHyNgt0sn",
+        "name": "write_labels",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:11613",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:10922",
+            "open-access-art:nga:32790",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:148255",
+            "open-access-art:nga:194571",
+            "open-access-art:nga:180015",
+            "open-access-art:nga:195170",
+            "open-access-art:nga:182272",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:160661"
+          ],
+          "voice": "terse and attentive to the contrast between coastal labour and stillness",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":false,\"error\":{\"code\":\"LABELS_RATE_LIMITED\",\"message\":\"Only 10 labelling calls may be made per hour. Try again later.\"}}"
+      },
+      {
+        "id": "call_PB78MOoD2t6wUuispeWaHP3e",
+        "name": "get_view_context",
+        "args": {},
+        "result": "{\"ok\":true,\"page\":{\"path\":\"/nga/search\",\"collection\":\"nga\",\"collectionName\":\"National Gallery of Art, Washington \u2014 open access\",\"onSearchPage\":true},\"humanSearch\":{\"query\":null,\"facet\":null,\"colour\":null,\"active\":false},\"humanResults\":{\"describedAs\":\"search (12 results)\",\"count\":12,\"total\":null,\"obs"
+      },
+      {
+        "id": "call_JmYJgTk3FH5ZH2MPPhEDvywV",
+        "name": "set_view",
+        "args": {
+          "view": "atlas"
+        },
+        "result": "{\"ok\":true,\"view\":\"atlas\",\"effect\":\"The human\u2019s grid is now laid out this way.\"}"
+      },
+      {
+        "id": "call_mSNKX2wRhID6IIH4NryTuuMY",
+        "name": "annotate_atlas",
+        "args": {
+          "regions": [
+            {
+              "label": "Working harbour",
+              "artworkIds": [
+                "open-access-art:nga:11613",
+                "open-access-art:nga:180934",
+                "open-access-art:nga:10922",
+                "open-access-art:nga:32790",
+                "open-access-art:nga:10944",
+                "open-access-art:nga:148255"
+              ],
+              "note": "Wharves, docks, shipbuilding, and traffic at the water\u2019s edge."
+            },
+            {
+              "label": "Empty shore",
+              "artworkIds": [
+                "open-access-art:nga:194571",
+                "open-access-art:nga:180015",
+                "open-access-art:nga:195170",
+                "open-access-art:nga:182272",
+                "open-access-art:nga:75952",
+                "open-access-art:nga:160661"
+              ],
+              "note": "The coast opens outward, with only a vessel or distant settlement interrupting it."
+            }
+          ]
+        },
+        "result": "{\"ok\":true,\"regions\":[{\"label\":\"Working harbour\",\"artworkIds\":[\"open-access-art:nga:11613\",\"open-access-art:nga:180934\",\"open-access-art:nga:10922\",\"open-access-art:nga:32790\",\"open-access-art:nga:10944\",\"open-access-art:nga:148255\"],\"note\":\"Wharves, docks, shipbuilding, and traffic at the water\u2019s e"
+      },
+      {
+        "id": "call_SIMHFHL5Tvswul4Jw1CEStHU",
+        "name": "get_exhibition",
+        "args": {},
+        "result": "{\"ok\":true,\"title\":{\"text\":\"Coastlines: Work and Stillness\",\"by\":\"agent\"},\"statement\":{\"text\":\"Along the coast, labour and solitude occupy the same edge of the world. Harbours gather boats, docks, warehouses, and shipbuilding into a working geography shaped by exchange and industry. On the empty sho"
+      },
+      {
+        "id": "call_mGxsLplpRsOmlokFOmGgATrz",
+        "name": "write_labels",
+        "args": {
+          "artworkIds": [
+            "open-access-art:nga:11613",
+            "open-access-art:nga:180934",
+            "open-access-art:nga:10922",
+            "open-access-art:nga:32790",
+            "open-access-art:nga:10944",
+            "open-access-art:nga:148255",
+            "open-access-art:nga:194571",
+            "open-access-art:nga:180015",
+            "open-access-art:nga:195170",
+            "open-access-art:nga:182272",
+            "open-access-art:nga:75952",
+            "open-access-art:nga:160661"
+          ],
+          "voice": "Make the first six read as the Working Harbour room and the final six as the Empty Shore room; keep labels concise.",
+          "collection": "nga"
+        },
+        "result": "{\"ok\":false,\"error\":{\"code\":\"LABELS_RATE_LIMITED\",\"message\":\"Only 10 labelling calls may be made per hour. Try again later.\"}}"
+      }
+    ]
+  }
+]
