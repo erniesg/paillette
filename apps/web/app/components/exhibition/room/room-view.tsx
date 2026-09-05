@@ -192,7 +192,7 @@ export const RoomView = ({
     : null;
 
   return (
-    <main className="exhibition-room" data-focused={work ? 'true' : undefined}>
+    <main className="exhibition-room">
       <div className="exhibition-room-stage" ref={stageRef} />
 
       <header className="exhibition-room-masthead">

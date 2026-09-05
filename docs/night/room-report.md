@@ -453,6 +453,21 @@ no groupings is stored byte-for-byte as it always was. Six regions maximum.
 **Not attempted:** VR/WebXR; frames or mounts on the works; footsteps or any
 audio; a minimap; multiple visitors; saved positions; a light model of any kind.
 
+**One wordiness decision I made and did not act on**, recorded so it can be
+overruled with the reasoning rather than re-derived. The show's title appears
+twice while the room is open: small in the top-left, and large on the entrance
+wall behind you. That is a duplication, and cutting the overlay would be the
+stricter reading of "prefer a mark or a position over a word" — a museum does
+not print the show's title on your retina while you walk; it is at the door.
+
+I kept it, because the visitor starts facing *away* from the wall text, so on
+first paint a cold-opened room would have no name anywhere on screen. Terse is
+not the same as cryptic, and an unnamed room is cryptic. The alternative that
+resolves both — the title fading once the visitor first moves, the way you walk
+past entrance signage — is new behaviour rather than removed words, and this
+round was for hardening. If the overlay reads as chrome to the owner, deleting
+`.exhibition-room-title` is a two-line change and nothing else depends on it.
+
 **Known rough edges:**
 
 - The room takes its palette from the app theme, so light mode is a white cube.
