@@ -133,8 +133,12 @@ Every published record above is live and can be checked by anyone:
 ```
 
 `kaxeFU4` carries no labels because that run met the ten-an-hour `write_labels`
-limit; its regions are unaffected and its blank wall is the limit, not the
-feature. It is the one code above that should not be filmed.
+limit. Walked, it is 26 of 26 like the others: both rooms are named, the walk
+between them works, and the page handles the blank wall deliberately rather than
+badly — clicking a work still opens its panel with the catalogue line and no
+empty rule where a label would be, which is a step the walk asserts. So the
+limit costs the wall text and nothing else. It is still the one code here not to
+film, because there is nothing to read on the wall.
 
 ### Did it group, or just cut the board in half? (My harness nearly hid this)
 
@@ -298,37 +302,89 @@ published from the page's own share control.
 
 **Pacing, because the limit is the thing that makes this delicate.** A
 correction run spends four or five `write_labels` calls, and the cap is ten an
-hour keyed on a fixed wall-clock hour (`floor(Date.now() / 3_600_000)`), not a
-rolling window. Three back to back is twelve to fifteen calls and the third run
-measures the limit instead of the feature. So runs 1 and 2 were taken in one
-clock hour and stopped there — **nine of ten calls used, none refused** — and
-run 3 was taken in the next.
+hour keyed on a **fixed wall-clock hour** (`floor(Date.now() / 3_600_000)`), not
+a rolling window — which is worth knowing, because it means the budget refills
+at the top of the hour rather than sixty minutes after you spent it. Three runs
+back to back is twelve to fifteen calls, so the third measures the limit instead
+of the feature. Runs 1 and 2 were taken in one clock hour and stopped there
+deliberately — **nine of ten calls used, none refused** — and run 3 in the next.
+Starting a run forty-three seconds before the hour is not far enough into the
+next bucket; see below.
 
 | | added | dropped | relabelled | unlabelled | titleChanged | statementIsTheirs | `write_labels` | refused |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | run 1 | 8 | 9 | 3 | **0** | yes | yes | 4 | **0** |
 | run 2 | 0 | 6 | 6 | **0** | yes | yes | 5 | **0** |
+| run 3 | 11 | 8 | 4 | **0** | yes | yes | 4 | **0** |
 
 Published, counted from the published record rather than from the DOM:
 
 ```
 /e/fP3rNvf  11 works, 11 with a label,  "Before the Door Closes"
 /e/mxP9fHA   6 works,  6 with a label,  "The Room That Remains"
+/e/rJjWvei  15 works, 15 with a label,  "The Hour Before"
 ```
 
-Every work on both published pages carries a wall label. Both titles moved off
-the weather and onto the leaving, which is the correction the human typed. Both
-kept the human's statement verbatim.
+**Three of three on every criterion.** Every work on every published page
+carries a wall label. Every title moved off the weather and onto the leaving,
+which is the correction the human typed. Every run kept the human's statement
+verbatim. Against the critique's roughly 1 in 4, that is the change — but see
+§9 before quoting a rate off three runs.
 
-The two runs also show the §5c work being done two different ways, which is
-worth knowing before filming: run 1 mostly **exchanged** the show (8 in, 9 out,
-3 of the survivors relabelled), run 2 kept nothing new at all and **rewrote the
-whole wall** (0 in, 6 out, all 6 survivors relabelled). Both are correct
-responses to "it is not about weather, it is about leaving"; only one of them
-looks dramatic on camera.
+The three also show the §5c work being done in different proportions, which is
+worth knowing before filming: run 1 mostly **exchanged** the show (8 in, 9 out),
+run 3 **grew** it (11 in, 8 out, ending at fifteen works), and run 2 added
+nothing at all and **rewrote the whole wall** (0 in, 6 out, all 6 survivors
+relabelled). All three are correct responses to "it is not about weather, it is
+about leaving"; they do not look the same on camera.
+
+### The fourth run, which measured the limit instead
+
+There was an earlier attempt at run 3, started at 18:59:17 — forty-three seconds
+before the hour. Its drafting turn's `write_labels` fired at about 18:59:47,
+inside the bucket that already had ten calls in it, and came back
+`LABELS_RATE_LIMITED`. So it drafted twelve works with **no labels at all**, and
+the correction then dropped all twelve and hung three:
+
+```
+drafted   12 works, unlabelled 12
+correction  added 3, dropped 12, relabelled 0, unlabelled 0
+published /e/PEBhgSw — 3 works
+```
+
+It is discarded and not counted above. `relabelled 0` there means "there were no
+labels to change", not "the agent relabelled nothing" — which is exactly the
+misreading the instrumented `labelCalls` exists to prevent, and the reason the
+refusals are quoted rather than the counts trusted. It is recorded here because
+a run that looks like a feature failure and is actually a quota failure is the
+single easiest way to misreport this number.
 
 `unnamed-rooms` did not fire in either run, as intended — the nudges recorded in
 both are the title gap from `unfinished-show`.
+
+## 7. Gates, quota, and what this lane cost
+
+```
+pnpm --filter web build       ✓
+pnpm --filter web typecheck   ✓
+pnpm --filter web lint        ✓  clean
+pnpm --filter web test        ✓  109 files / 1429 tests
+pnpm --filter api test        ✓   46 files /  867 tests
+```
+
+Baseline was 108 files / 1383 tests. The difference is one new file and
+forty-six tests, all of them mine: forty-three in `unnamed-rooms.test.ts` and
+three wired into `agent-prompt.test.tsx`. The api suite is untouched.
+
+**NGA public search quota: 146 at the start of this lane, 206 at the end — 60
+spent.** It was not reset, raised or otherwise touched. The counter is reserved
+before the cache lookup, so every one of those sixty is a request this lane
+made, not a provider call: six `agent-rooms` runs at four or five searches each,
+four `e2e-correction` runs at three or four, and two `agent-marks` runs.
+
+At that rate the remaining 794 is roughly eighty more evidence runs, which is
+not the binding constraint. **The `write_labels` cap is** — ten an hour, two
+correction runs, and a third that publishes a blank wall.
 
 ---
 
@@ -359,10 +415,11 @@ coming from the published record, so a wrong name fails rather than passes. All
 published records are live and can be fetched by anyone.
 
 **4. It works for a visitor who is not on a desktop.**
-`room-demo-matrix.ts` against both model-named codes, `/e/WfW8emn` and the
-neutral-brief `/e/dAH4peu`: **5 of 5 cells each, 10 of 10 in total**, 26 steps
-apiece — desktop, phone by touch alone, reduced motion, no speech APIs, and all
-three at once.
+`room-demo-matrix.ts` re-run as one sweep over everything this lane published —
+the five visitor conditions on `/e/dAH4peu` plus a desktop walk of `yXWeAum`,
+`XwH8aJZ`, `WfW8emn` and `vdtNJVm`: **9 of 9 cells green**, 26 steps apiece.
+Desktop, phone by touch alone, reduced motion, no speech APIs, and all three at
+once. `/e/WfW8emn` separately walked 5 of 5 conditions earlier in the round.
 
 **5. When the model answers the request in prose instead, the page refuses to
 let the turn end, and the model then names the groups itself.**
@@ -378,9 +435,11 @@ in every run was composed by the model.
 
 **7. §5c: a correction the human types in their own words changes the show, and
 the published page is fully labelled.**
-Three unthrottled runs; per-run numbers in §6. Every published page carries a
-wall label on every work, every title moved off the theme the human rejected,
-and the human's statement survived verbatim in all of them.
+Three unthrottled runs — `write_labels` 4, 5 and 4 calls, **none refused** —
+with per-run numbers in §6. All three: `unlabelled 0`, title changed, statement
+kept verbatim. The published pages carry a wall label on **every** work
+(11/11, 6/6, 15/15), counted from the published record. A fourth attempt was
+throttled and is reported and discarded rather than folded in.
 
 ## 9. What still may not be claimed, and why
 
@@ -410,8 +469,13 @@ undivided, exactly as it did before this existed. It is a safety net with known
 holes, not comprehension.
 
 **A general §5c rate.** Three runs is three runs. They were paced around the
-labelling limit precisely so that they measure the feature, but three clean
-successes is not a percentage.
+labelling limit precisely so that they measure the feature rather than the
+quota, and all three succeeded on every criterion — but "3 of 3" is not a
+percentage, and the honest sentence is "it worked every time we ran it cleanly
+tonight, three times", not "it works 100% of the time". The critique's 1-in-4
+was measured on a different build and is not a like-for-like baseline; what can
+be said is that the failure it described — published pages with no wall label —
+did not happen in any clean run here.
 
 **That a session can do many of these an hour.** `write_labels` allows ten calls
 an hour on a fixed wall-clock hour, and a correction run spends four or five.
