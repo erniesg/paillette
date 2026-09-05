@@ -2411,15 +2411,22 @@ html[data-theme='light'] .themeable-surface code {
   color: var(--ink-human-faint);
 }
 
+/*
+ * The read-aloud, as a mark.
+ *
+ * It sits on the accession line with the other apparatus, in the same faint
+ * ink, and it is a triangle rather than the words READ ALOUD in a box. A wall
+ * label carries an audio-guide symbol, not a sentence about listening.
+ */
 .exhibition-room-speak {
-  margin-top: 0.9rem;
-  border-color: var(--lt-rule-strong) !important;
-  color: var(--ink-human-soft) !important;
-  border-radius: 0 !important;
-  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.625rem !important;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  color: var(--ink-human-faint);
+  font-size: 0.7rem;
+  line-height: 1;
+  transition: color 140ms ease;
+}
+
+.exhibition-room-speak:hover {
+  color: var(--ink-human);
 }
 
 @media (prefers-reduced-motion: reduce) {

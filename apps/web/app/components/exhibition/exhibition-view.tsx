@@ -26,7 +26,7 @@
  * object in different ways and must not drift into two different pages.
  */
 
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 import {
   DEFAULT_TEMPLATE,
@@ -146,7 +146,15 @@ export const ExhibitionView = ({
   template?: ExhibitionTemplate;
 }) => {
   const agentWritten = page.works.filter((work) => work.labelByAgent).length;
-  const available = useRoomAvailable();
+  const detected = useRoomAvailable();
+  /*
+   * A context lost mid-visit demotes the device for the rest of the page's
+   * life. It is the same answer as "this browser cannot draw a room", arrived
+   * at later, and it has to reach the switch as well as the renderer or the
+   * word ROOM would survive the thing it points at.
+   */
+  const [roomLost, setRoomLost] = useState(false);
+  const available = roomLost ? 'no' : detected;
 
   if (template === 'room' && available !== 'no') {
     /*
@@ -164,7 +172,12 @@ export const ExhibitionView = ({
     return (
       <Suspense fallback={<main className="exhibition-room" />}>
         {available === 'yes' ? (
-          <RoomView page={page} template={template} available />
+          <RoomView
+            page={page}
+            template={template}
+            available
+            onUnavailable={() => setRoomLost(true)}
+          />
         ) : (
           <main className="exhibition-room" />
         )}

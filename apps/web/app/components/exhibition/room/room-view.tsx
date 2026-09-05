@@ -19,35 +19,40 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SpeakButton } from '~/components/artwork/speak-button';
 import { usePrefersReducedMotion } from '~/components/board/use-prefers-reduced-motion';
 import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 import { parseDimensions } from '~/lib/room/dimensions';
 import { planRoom, type RoomWorkInput } from '~/lib/room/plan';
 import type { ExhibitionTemplate } from '~/lib/room/template';
 import type { RoomSceneHandle, SceneStats, SceneWork } from './room-scene';
+import { FocusedLabel, catalogueLine } from './room-focus';
 import { TemplateSwitch } from './template-switch';
-
-/**
- * The catalogue's own words, in the order a wall label sets them.
- *
- * Shared by the focused panel and the read-aloud, so the two cannot drift into
- * saying different things about the same picture.
- */
-const catalogueLine = (work: ExhibitionPage['works'][number]) =>
-  [work.title, work.artist, work.date, work.medium].filter(Boolean).join(', ');
 
 export const RoomView = ({
   page,
   template,
   available,
+  onUnavailable,
 }: {
   page: ExhibitionPage;
   template: ExhibitionTemplate;
   available: boolean;
+  /** Told once, when the device stops being able to draw a room at all. */
+  onUnavailable?: () => void;
 }) => {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
+  /**
+   * The browser took the context away mid-visit.
+   *
+   * A GPU reset or an OS reclaiming memory leaves the canvas black forever, and
+   * nothing the scene can do brings it back. The honest answer is the one a
+   * device that never had WebGL already gets: the flat page, with no apology on
+   * screen and the word ROOM gone, because it is now a control that would not
+   * work. Handing back to `ExhibitionView` rather than rendering an error is
+   * what makes that true for free.
+   */
+  const [lost, setLost] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
 
   /**
@@ -100,7 +105,7 @@ export const RoomView = ({
 
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || !available) return;
+    if (!stage || !available || lost) return;
 
     /*
      * The canvas is made here rather than rendered by React, and that is a
@@ -141,6 +146,10 @@ export const RoomView = ({
           works: sceneWorks,
           reducedMotion,
           onFocus,
+          onContextLost: () => {
+            setLost(true);
+            onUnavailable?.();
+          },
           onStats: (stats: SceneStats) => {
             /*
              * Instrumentation, not a control surface. The room is measured by
@@ -166,7 +175,17 @@ export const RoomView = ({
       handle?.dispose();
       canvas.remove();
     };
-  }, [available, plan, sceneWorks, title, statement, reducedMotion, onFocus]);
+  }, [
+    available,
+    lost,
+    plan,
+    sceneWorks,
+    title,
+    statement,
+    reducedMotion,
+    onFocus,
+    onUnavailable,
+  ]);
 
   const work = focused
     ? page.works.find((candidate) => candidate.artworkId === focused)
@@ -181,40 +200,7 @@ export const RoomView = ({
         <TemplateSwitch template={template} available={available ? 'yes' : 'no'} />
       </header>
 
-      {work && (
-        <aside className="exhibition-room-focus" key={work.artworkId}>
-          <p className="exhibition-line">
-            <span className="exhibition-work-title">{work.title}</span>
-            {work.artist && <span>{work.artist}</span>}
-            {work.date && <span>{work.date}</span>}
-            {work.medium && <span>{work.medium}</span>}
-          </p>
-
-          {work.label && (
-            <p
-              className="exhibition-label"
-              data-provenance={work.labelByAgent ? 'agent' : 'human'}
-            >
-              {work.label}
-            </p>
-          )}
-
-          <p className="exhibition-accession lt-catalogue">
-            {work.accession && <span>{work.accession}</span>}
-            {work.sourceUrl && (
-              <a href={work.sourceUrl} rel="noreferrer noopener">
-                Catalogue record
-              </a>
-            )}
-          </p>
-
-          {/* The page's own read-aloud, not a second one built for the room. */}
-          <SpeakButton
-            className="exhibition-room-speak"
-            text={[catalogueLine(work), work.label].filter(Boolean).join('. ')}
-          />
-        </aside>
-      )}
+      {work && <FocusedLabel key={work.artworkId} work={work} />}
 
       {/*
         The show as a document, for anyone whose way in is not a camera.
