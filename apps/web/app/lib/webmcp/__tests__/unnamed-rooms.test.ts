@@ -1,10 +1,15 @@
 /**
  * The rooms that were only ever described.
  *
- * Every case below was written against the behaviour measured on staging
- * before the check existed: three typed runs asking for two rooms, three runs
- * where `annotate_atlas` was never called, and one that published twelve works
- * under the title "The Working Harbour / The Empty Shore" with `regions: []`.
+ * Every case below was written against behaviour measured on staging rather
+ * than imagined. Three typed runs asking for two rooms: two called
+ * `annotate_atlas` of their own accord, and the third published twelve works
+ * under the title "The Working Harbour / The Empty Shore", with a statement
+ * opening "This exhibition is divided into two rooms", and `regions: []`.
+ *
+ * The phrasings in `asksForRooms` come from a boundary probe over thirty-one
+ * sentences, not from reading the regex — which is how the inflection miss and
+ * the "by the shore" false positive were both found.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -35,6 +40,14 @@ describe('asksForRooms', () => {
     'Hang these as two rooms.',
     'Can you separate the harbours from the shores into two groups?',
     'I want three groups here.',
+    // Inflections. Bare stems missed this one, which a boundary probe over
+    // thirty-one phrasings caught and reading the regex did not.
+    'I want these separated into halves.',
+    'Try splitting these into two rooms.',
+    'These should be grouped by subject.',
+    'Cluster them by mood.',
+    'Put them in two groups please.',
+    'Make this two rooms.',
   ])('hears a division in %j', (said) => {
     expect(asksForRooms(said)).toBe(true);
   });
@@ -50,6 +63,24 @@ describe('asksForRooms', () => {
     'Find me some seascapes.',
     'Something warm for above the sofa.',
     'Write me a title and a statement.',
+    'Show me more like this one.',
+    'Warmer.',
+    'Rembrandt etchings from the 1640s.',
+    'Give this room a better name.',
+    // A dividing verb that divides nothing on this page.
+    'Separate the wheat from the chaff.',
+    'Can you break down what these have in common?',
+    'Sort these by date.',
+    'A group portrait.',
+    // "by" is a grouping preposition after "group" and a preposition of place
+    // after almost anything else; matching stems made both of these fire once.
+    'Breaking waves by the shore.',
+    'A groundbreaking painting by Turner.',
+    'A broken column by a ruined temple.',
+    // The two sentences `e2e-correction.mjs` types, so the §5c rate below is a
+    // measurement of §5c and not of this check.
+    'Build me a room about storms at sea — pick a dozen works, and write me a title and a statement for it.',
+    'It is not about weather. It is about leaving — the hour before someone goes, and the room that keeps their shape after they have gone.',
     null,
     '',
   ])('hears no division in %j', (said) => {

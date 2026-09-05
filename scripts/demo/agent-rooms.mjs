@@ -166,7 +166,22 @@ const main = async () => {
           if (waiting) waiting.result = String(message.content ?? '').slice(0, 300);
         }
         const last = sent?.messages?.at(-1);
-        if (last?.role === 'system') nudges.push(String(last.content).slice(0, 160));
+        /*
+         * Where in the census the nudge landed, not merely that one did.
+         *
+         * "The page put the turn back to work and *then* it called the tool" is
+         * an ordering claim, and a list of nudges beside a list of tool names
+         * does not carry it — a reader has to take the sequence on trust. So a
+         * nudge records how many tool calls had already been chosen when it
+         * arrived: anything at a higher index came after it.
+         */
+        if (last?.role === 'system') {
+          nudges.push({
+            afterCall: chosen.length,
+            following: chosen.at(-1)?.name ?? null,
+            text: String(last.content).slice(0, 200),
+          });
+        }
       } catch {
         // Ignored; the census is read off the responses.
       }
@@ -239,7 +254,17 @@ const main = async () => {
           after.regions.map((r) => `${r.label} (${r.works}, by ${r.by})`).join(' / ') || 'none'
         }`
     );
-    if (nudges.length) log(`           nudges: ${nudges.length}`);
+    for (const nudge of nudges) {
+      log(
+        `           nudge after call ${nudge.afterCall} (${nudge.following}): ` +
+          `${nudge.text.slice(0, 60)}…`
+      );
+    }
+    // The ordering, stated rather than left to the reader: which calls the
+    // model chose only after the page refused to let the turn end.
+    record.calledAfterNudge = nudges.length
+      ? record.splitTools.slice(nudges[0].afterCall - at)
+      : [];
     await shot('02-rooms');
 
     // --- the human publishes: the page's own control --------------------

@@ -72,7 +72,25 @@ const NAMED_WORKS = 12;
  * actually expressed: a dividing verb aimed at something, or a plural count of
  * groups.
  */
-const DIVIDE_VERB = /\b(split|divide|separate|group|cluster|break|partition)\b/;
+/*
+ * Stems, not bare forms, and two lists rather than one.
+ *
+ * A boundary probe over thirty-one phrasings found both halves of this. Bare
+ * forms missed "I want these *separated* into halves", which is the same ask as
+ * "separate these into halves" — so these match stems. But widening to stems
+ * and keeping one list then fired on "Breaking waves *by* the shore", because
+ * "by" is a grouping preposition after "group" and a preposition of place after
+ * almost anything else.
+ *
+ * So a verb that groups may take either "into" or "by"; a verb that merely
+ * divides has to land on "into". `\b` before each stem is what keeps
+ * "groundbreaking" from reading as "break".
+ */
+const GROUPING_VERB = /\b(group|cluster)\w*\b/;
+const DIVIDING_VERB = /\b(split|divid|separat|break|partition)\w*\b/;
+const DIVIDE_VERB = new RegExp(
+  `${GROUPING_VERB.source}|${DIVIDING_VERB.source}`
+);
 /** The thing a division produces, always plural — "a room" is a whole show. */
 const GROUP_NOUN =
   /\b(rooms|groups|groupings|sections|clusters|halves|parts|wings)\b/;
@@ -83,9 +101,12 @@ const COUNTED_GROUPS =
 export const asksForRooms = (said: string | null): boolean => {
   const text = (said ?? '').toLowerCase();
   if (!text.trim()) return false;
-  // "split these into two rooms", "group them by subject", "break it into
-  // sections" — a dividing verb that lands somewhere.
-  if (DIVIDE_VERB.test(text) && /\b(into|in ?to|by)\b/.test(text)) return true;
+  // "split these into two rooms", "break it into sections" — a division that
+  // lands on something.
+  if (DIVIDE_VERB.test(text) && /\b(into|in ?to)\b/.test(text)) return true;
+  // "group them by subject", "cluster them by mood" — "by" only for the verbs
+  // where it names an axis rather than a place.
+  if (GROUPING_VERB.test(text) && /\bby\b/.test(text)) return true;
   if (DIVIDE_VERB.test(text) && GROUP_NOUN.test(text)) return true;
   // "hang these as two rooms" — the count does the work without a verb.
   return COUNTED_GROUPS.test(text);
