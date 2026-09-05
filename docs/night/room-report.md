@@ -330,6 +330,9 @@ picture, press arrow keys. Nothing was posed by calling into the scene.
 | `degraded-no-webgl.png` | `?v=room` on a browser that cannot make a context |
 | `degraded-context-lost.png` | the context taken away mid-visit, falling back to the page |
 | `agent-board.png` | the board after the agent has dealt, labelled and named two groups — the state that becomes the two rooms |
+| `one-work-room.png` | the smallest room the planner will build |
+| `three-named-rooms.png` | a three-room enfilade from three named regions |
+| `unlabelled-focus.png` | the focused panel on a show with no labels: catalogue line, accession, the read-aloud mark, and no empty rule |
 | `staging-e-code.png` | the real short link, on staging |
 
 **The named-shot problem was taken seriously**, because the handoff says it has
@@ -435,6 +438,13 @@ did not compose.
     give the canvas the keyboard, and on a phone that pixel is the title; and
     it used arrow keys at all, which a phone does not have. A phone visitor
     walks by tapping the floor and does it in two taps.
+18. **The demo path could only prove the show it was written against.** Its
+    assertions named one exhibition's regions, so pointing it at any other show
+    failed on the region names rather than on anything real — which is a
+    harness that cannot be reused, not a passing test. It reads each show's own
+    structure now. Nothing was broken by this; it is recorded because "the
+    check only works on the fixture" is the quiet way a suite stops meaning
+    anything.
 
 ### Checks that were not checking
 
@@ -562,16 +572,40 @@ each time, no flakes** — 26 of 26 on a show that has labels, since one step on
 applies then. Peak on the walk: 31.0–48.5 MiB of texture, four to six works at
 full resolution, 22–26 fps under SwiftShader.
 
-**And across the conditions a visitor arrives in.**
-`scripts/room-demo-matrix.ts` runs the whole visit five ways — desktop; a phone
-with touch as the only input; reduced motion; every speech API deleted before
-the page loads; and all three constraints at once. Against deployed staging,
-three rounds: **15 of 15 cells green, 26 steps each.**
+**And across the conditions a visitor arrives in, and the shapes a show can
+be.** `scripts/room-demo-matrix.ts` runs the whole visit nine ways:
+
+| cell | what it is |
+| --- | --- |
+| desktop | 1440 × 900, mouse and keyboard |
+| phone, touch only | 390 × 844 at DPR 3, taps and drags, no keyboard |
+| reduced motion | `prefers-reduced-motion: reduce` |
+| no speech APIs | every speech API deleted before the page loads |
+| all three at once | the most constrained visitor |
+| 1 work, 1 room | the smallest building the planner will make |
+| 24 works, 2 rooms | the largest show a short code can carry |
+| 23 works, 3 named rooms | a three-room enfilade |
+| 6 works, 0 labels | a show nobody wrote labels for |
+
+The expectations are read from each published show — works, labels, regions,
+and how many rooms that implies — rather than hardcoded to one demo, so the
+same twenty-six steps run against any code.
+
+Against deployed staging, two rounds: **18 of 18 cells green.** The unlabelled
+show scores 25, not 26, because one step only applies to a show that has
+labels.
 
 ```
-PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=Gt7HNyF ROUNDS=3 \
+PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=Gt7HNyF \
+  SHAPES=ULfYaHK,3HTKkN5,Cc5KKWJ,toztyWt ROUNDS=2 \
   pnpm --filter web exec tsx scripts/room-demo-matrix.ts
 ```
+
+One of those shapes exercised the failure the prompt asks about without being
+asked to: the three-region show was published with twenty-four ids and came
+back with **twenty-three works**, because one no longer resolves in the
+catalogue. The region that named it lost a member, kept its name, and the show
+still built three rooms.
 
 ```
 PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=u4G4Gkv \
@@ -615,9 +649,9 @@ Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
 - **A shared short link carries all of that**, including the named rooms.
 - **Walking, clicking a picture, and reading its wall label all work by mouse,
   by touch, and by keyboard alone** — and with no speech APIs present at all.
-  The whole visit was run five ways, three times, on deployed staging: desktop,
-  phone with touch only, reduced motion, no speech, and all three at once.
-  15 of 15.
+  The whole visit was run nine ways, twice, on deployed staging — desktop,
+  phone with touch only, reduced motion, no speech, all three at once, and four
+  different shapes of show from one work to twenty-four. **18 of 18.**
 - **A device that cannot draw a room is never offered one**, and never told
   why; it simply gets the page that has always worked. Same for a context the
   browser takes away mid-visit.
