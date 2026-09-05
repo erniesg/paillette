@@ -5,6 +5,13 @@ A walkable 3D gallery is now one of the ways an exhibition can be shown. It is
 was measured on this branch rather than estimated; where a number could not be
 obtained honestly, it says so instead.
 
+**For the submission lane.** Sections 1, 6 and 10 are the ones to write from.
+§1 is what is demonstrably true, §10 is what is *not* — read it before claiming
+anything. The single claim to avoid is "works are hung at their real size":
+the code does it, no record in this deployment has a size to hang at, and §3 is
+the honest number. The safe headline is that **the person opening a shared link
+chooses how to see the show, and one of the choices is walking through it**.
+
 ---
 
 ## 1. What shipped
@@ -44,8 +51,24 @@ pinned to the corner of the screen for six rooms.
 for the whole visit; six near or focused works hold a large one; walking away
 disposes it. Two tiers and two pools, one stated ceiling.
 
+**Named groupings become separate rooms, over both kinds of link.** A show that
+says "these six are the working harbour and these six are the empty shore" is
+walked as two rooms with a doorway between them. This works over `/e/:code` —
+the link people actually share — and it needed no database migration; the
+regions ride inside the hang's own JSON column, and a show with no groupings is
+stored byte-for-byte as it always was.
+
+**Text first.** Nothing in the room needs a voice. Verified in a browser with
+every speech API deleted before the page loads: the room draws, a work is
+clickable, the label reads, and the read-aloud is simply *absent* rather than
+present and dead.
+
 **Nothing on screen explains any of it.** No crosshair, no compass, no key
-telling anybody that arrow keys walk, no caption saying you can move.
+telling anybody that arrow keys walk, no caption saying you can move, and no
+control captioned with a sentence. The read-aloud is a ▶ on the accession line
+in the catalogue ink — a wall label carries an audio-guide symbol, not a
+paragraph about listening. There is a test that the focused panel renders no
+string the room invented for itself.
 
 ---
 
@@ -168,13 +191,15 @@ high-resolution textures held  6
 
 Per-shot, from `docs/night/shots/room/measurements.json`:
 
-| show | texture | near | GL textures live |
-| --- | --- | --- | --- |
-| 1 work | 7.5 MiB | 1 | 4 |
-| 6 works | 47.0 MiB | 6 | 12 |
-| 30 works, first room | 59.4 MiB | 6 | 29 |
-| 30 works, third room | 65.7 MiB | 6 | 38 |
-| 6 works on a phone viewport | 47.0 MiB | 6 | 7 |
+| show | texture | at full resolution |
+| --- | --- | --- |
+| 1 work | 7.5 MiB | 1 |
+| 6 works | 47.0 MiB | 6 |
+| 12 works in two named rooms | 51.8 MiB | 6 |
+| 30 works, first room | 59.4 MiB | 6 |
+| 30 works, third room | 65.7 MiB | 6 |
+| 6 works on a phone viewport | 47.0 MiB | 6 |
+| the full demo path, end to end | 31.0 MiB | 4 |
 
 96 MiB is not a comfortable round number: a 2018-class phone with 3 GB of RAM
 gives a tab a few hundred megabytes for everything, and WebGL contexts on iOS
@@ -229,7 +254,11 @@ the honest position rather than quoting a figure I did not see.
 | JavaScript off | six works render, ROOM never offered | 6 `.exhibition-work` elements |
 | sustained fps < 40 | pixel ratio drops to 1, once, and never climbs back | oscillating between two ratios looks worse than sitting at the lower one |
 | `prefers-reduced-motion` | movement is instant, not slowed | same 3.10 m walk: no-preference eases over several frames, `reduce` arrives INSTANT |
+| context lost mid-visit | falls back to the flat page; ROOM disappears with it | lost on purpose in a browser: flat page shown, six works, ROOM not offered |
 | image server unreachable | walls, doorways, wall text and label plates; no pictures | `empty.png` |
+| one work's image fails | a blank plate at the fallback size, the same mark the flat page draws | the flat page and the room agree about what the show contains |
+| no speech synthesis | the read-aloud is absent; everything else is unchanged | every speech API deleted before load: room draws, label reads, zero controls, no errors |
+| a slow connection, visitor leaves | textures still in flight are disposed on arrival | up to thirty leaked GPU textures before this |
 
 All of these were also checked against the deployed staging build, not only
 locally.
@@ -254,9 +283,12 @@ picture, press arrow keys. Nothing was posed by calling into the scene.
 | `thirty-third-room.png` | the third |
 | `regions-first.png` | "The Working Harbor" |
 | `regions-second.png` | "The Empty Shore" — the same show, one wall later |
+| `shortcode-regions-first.png` | the same, from a **published short code** rather than a self-contained link |
+| `shortcode-regions-second.png` | and its second named room |
 | `empty.png` | **the empty case**: the room with nothing hung in it |
 | `phone-page.png`, `phone-six.png`, `phone-focused.png` | 390 × 844 at DPR 3 |
 | `degraded-no-webgl.png` | `?v=room` on a browser that cannot make a context |
+| `degraded-context-lost.png` | the context taken away mid-visit, falling back to the page |
 | `staging-e-code.png` | the real short link, on staging |
 
 **The named-shot problem was taken seriously**, because the handoff says it has
@@ -319,6 +351,32 @@ looking at it.
     was offering whichever template the URL had asked for. Now ROOM is offered
     when a room can be drawn and at no other time.
 
+### Found in a later round, by running the whole visit rather than each beat
+
+The three above are from the first pass. These came from running the *sequence*
+end to end, which is a different kind of bug: each beat worked alone and they
+did not compose.
+
+11. **Closing a wall label teleported the visitor back across the room.**
+    Focusing was modelled as an excursion — go and look, then return to where
+    you were. In a gallery you walk over to a picture and you are then *there*.
+    It also produced a stranger symptom, which is how it was caught: the room
+    the scene reported standing in changed while a work was focused and changed
+    back a second later.
+12. **A key pressed during a glide did nothing.** `step` and `turn` wrote the
+    camera directly while the frame loop was still interpolating an earlier
+    move, which overwrote them a frame later. For about half a second after
+    clicking the floor, or after closing a label, the room ignored the
+    keyboard — indistinguishable from a dropped keypress.
+13. **The demo script raced the thing it was checking**, asserting a walk had
+    happened while an unfinished glide was still carrying the visitor. Worth
+    recording alongside the product bugs: a check that races its subject is the
+    same failure as a check that asserts nothing.
+14. **Publishing sent `regions: []` on every show.** Caught by a test that
+    already existed. Not harmless — a payload change on the common path — and
+    the gap that let it through was that nothing asserted what a *grouped*
+    board publishes.
+
 ### Checks that were not checking
 
 The handoff warns that two tests here recently passed by asserting the absence
@@ -370,13 +428,14 @@ covering it. The template is a property of the URL the visitor holds, and the
 visitor is the one who chooses. The agent's existing `annotate_atlas` regions do
 reach the room, which is the real connection between the two.
 
-**Regions do not survive `/e/:code`.** They travel in the self-contained link
-(`/exhibition?e=…`) as positions rather than ids — measured at **70 characters**
-of URL for two named regions over a twelve-work show, against 180 characters for
-the ids alone — and the room reads them. The stored exhibition has no column
-for regions, and adding one is an API and D1 migration this lane did not take
-on. A short link renders the same show as one enfilade chunked by count, which
-is the correct thing to do with a show that never said how it was grouped.
+**Regions now survive both kinds of link.** In the self-contained link
+(`/exhibition?e=…`) they travel as positions rather than ids — measured at
+**70 characters** of URL for two named regions over a twelve-work show, against
+180 for the ids alone. Over `/e/:code` they are stored inside the hang's own
+JSON column, which is why this needed **no D1 migration**: the column is TEXT
+holding JSON and one route is its only writer, so a row holds either
+`[ …works ]` or `{ works, regions }`, the reader accepts both, and a show with
+no groupings is stored byte-for-byte as it always was. Six regions maximum.
 
 **Not attempted:** VR/WebXR; frames or mounts on the works; footsteps or any
 audio; a minimap; multiple visitors; saved positions; a light model of any kind.
@@ -402,17 +461,36 @@ audio; a minimap; multiple visitors; saved positions; a light model of any kind.
 ```
 pnpm --filter web build       ✓
 pnpm --filter web typecheck   ✓  (clean; run after build, as the handoff notes)
-pnpm --filter web test        ✓  104 files / 1311 tests
+pnpm --filter web test        ✓  105 files / 1325 tests
+pnpm --filter api test        ✓   46 files /  867 tests
 pnpm --filter web lint        ✓  one pre-existing error in components/board/deal-board.tsx
                                  (a rule this repo does not configure); none in new code
 ```
 
-Baseline at the start of this lane was 97 files / 1204 tests. This lane adds
-seven test files and 107 tests and regresses nothing.
+Baselines measured on this branch before the lane started: **web 97 files /
+1204 tests, api 46 files / 857 tests.** This lane adds nine web test files and
+121 web tests, ten api tests, and regresses nothing. (The night brief quotes
+web 59/593 and api 41/770; those numbers do not match this repository at any
+point in this lane, so the measured baselines are used.)
 
-Deployed to **staging only** (`paillette-stg.berlayar.ai`), twice, and verified
-against the deployed build rather than only locally. Production untouched. The
-API was not modified, so `apps/api` was not deployed.
+Deployed to **staging only** (`paillette-stg.berlayar.ai`) — web four times,
+api once — and every claim above re-checked against the deployed build rather
+than only locally. Production untouched.
+
+**The demo path, as a script.** `scripts/room-demo-path.ts` is the whole visit
+in twenty-five steps, every one an action a visitor performs — open the short
+link cold, click ROOM, walk on the keyboard into the second named room, click a
+picture, read its label, press Escape, click PAGE — with every claim asserted
+rather than described. It throws on the first thing that is not true.
+
+Run three times locally and three times against deployed staging: **25 of 25
+each time, no flakes.** Peak on the walk: 31.0 MiB of texture, four works at
+full resolution, 22–25 fps under SwiftShader.
+
+```
+PAILLETTE_ORIGIN=https://paillette-stg.berlayar.ai CODE=u4G4Gkv \
+  pnpm --filter web exec tsx scripts/room-demo-path.ts
+```
 
 Reproduce the numbers:
 
@@ -424,3 +502,65 @@ ROOM_LINKS="$(…)" pnpm --filter web exec tsx scripts/room-shots.ts
 
 Live: <https://paillette-stg.berlayar.ai/e/MKwsxHy> opens the page;
 <https://paillette-stg.berlayar.ai/e/MKwsxHy?v=room> opens the room.
+
+---
+
+## 10. For the submission lane: what may and may not be claimed
+
+### Safe to say — demonstrated, on deployed staging, repeatedly
+
+- **The person who opens a shared exhibition link chooses how to see it.** Two
+  words on the page; the room is the one you have to ask for. A cold link
+  always opens the flat page.
+- **The room is built from the exhibition, not chosen from a menu.** The number
+  of works decides the size of the room, the curation's order is the route you
+  walk, and named groupings become separate rooms with a doorway between them.
+- **A shared short link carries all of that**, including the named rooms.
+- **Walking, clicking a picture, and reading its wall label all work by mouse,
+  by touch, and by keyboard alone** — and with no speech APIs present at all.
+- **A device that cannot draw a room is never offered one**, and never told
+  why; it simply gets the page that has always worked. Same for a context the
+  browser takes away mid-visit.
+- **Thirty works stay inside a 96 MiB texture ceiling**, with a measured peak
+  of 70.4 MiB across every run and never more than six works at full
+  resolution.
+- **The room adds nothing to what a normal visitor downloads.** The flat page's
+  own chunk is 1.99 kB gzipped; the 181 kB 3D library is behind two dynamic
+  imports and is fetched only by someone who asked for the room.
+
+### Do not say
+
+- **"Works are hung at their real size."** The code does this and it is tested,
+  but **no record in this deployment has a size to hang at** — all sixty
+  sampled carry an empty `dimensions` object. Every work in every screenshot is
+  at one declared fallback size. If real scale is mentioned at all it has to be
+  as a capability waiting on data, never as something visible in the demo.
+- **Any frame rate.** This machine has no GPU a browser will use; every number
+  is SwiftShader on four vCPUs. There is no laptop or phone measurement.
+- **"Runs well on a phone."** It runs *correctly* on a phone-sized viewport and
+  responds to touch. Nobody has run it on a phone.
+- **"60 fps."** Not measured, on anything.
+- **Music, or audio of any kind.** There is none.
+- **That the agent can put a visitor in the room.** It cannot; the template is a
+  property of the URL the visitor holds. What the agent *does* reach is the
+  regions, which become the rooms.
+
+### The one-line version
+
+> A shared exhibition can be read as a page or walked as a room, and the room is
+> built out of the show itself — its order becomes the route, and the groups the
+> curation named become the rooms you walk between.
+
+### If a demo is filmed
+
+`scripts/room-demo-path.ts` is the exact sequence, and it passes 25 of 25 on
+staging. In human terms: open `https://paillette-stg.berlayar.ai/e/u4G4Gkv`,
+click **ROOM**, hold the up arrow to walk through the doorway into *The Empty
+Shore*, click a picture, read the label that appears bottom-left, press
+**Escape**, click **PAGE**.
+
+Two things to know before filming: the room takes several seconds to load its
+textures, so give it about eight; and the first thing on screen is the room you
+are standing in, not the show's title — the title and statement are painted on
+the wall *behind* the camera, which is where a gallery puts them and which you
+have to turn around to see.
