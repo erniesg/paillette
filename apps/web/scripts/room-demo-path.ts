@@ -355,9 +355,25 @@ const main = async () => {
   );
 
   // 7 — back out, and the flat page is exactly the page.
+  //
+  // Conditions, not a bet on the clock. This was a flat 1500 ms sleep, and on a
+  // loaded machine it loses: the same published code failed here three times in
+  // six walks while passing the other three, always with the room still on
+  // screen. Measured over five attempts afterwards, the URL always arrives —
+  // never once did it fail to — but it takes 957 to 2257 ms, so the sleep was
+  // simply short. The page is fine; the harness was guessing.
+  //
+  // The second wait is the one the timing hides: at the instant the URL flips,
+  // the canvas is often still up and no work has drawn yet, so a count taken
+  // right then reads zero on a page that is about to be perfectly intact.
   await page.getByRole('link', { name: 'Page', exact: true }).click();
-  await page.waitForTimeout(1500);
+  await page.waitForURL(`${ORIGIN}/e/${CODE}`, { timeout: 30_000 }).catch(() => {});
   check('PAGE returns to the plain URL', page.url(), `${ORIGIN}/e/${CODE}`);
+  await page
+    .locator('.exhibition-work')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .catch(() => {});
   check('the flat page is intact', await page.locator('.exhibition-work').count() > 0, true);
 
   // 8 — a show published before regions existed is untouched by any of it.
