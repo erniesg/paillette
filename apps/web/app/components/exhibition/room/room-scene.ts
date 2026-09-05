@@ -85,6 +85,16 @@ export interface RoomSceneOptions {
   statement: string | null;
   reducedMotion: boolean;
   onFocus: (artworkId: string | null) => void;
+  /**
+   * The browser took the context away — not us.
+   *
+   * A GPU reset, a laptop switching graphics, an OS reclaiming memory: the
+   * canvas goes black and stays black, and nothing in the scene can recover it
+   * without rebuilding everything. The honest answer is the same one a device
+   * that never had WebGL gets, so this hands the page back to the flat view
+   * rather than leaving a visitor looking at a dead rectangle.
+   */
+  onContextLost?: () => void;
   onStats?: (stats: SceneStats) => void;
 }
 
@@ -474,6 +484,9 @@ export const createRoomScene = async (
    * subtracted from one stated ceiling, so `TEXTURE_BUDGET_BYTES` is still the
    * only number anybody has to hold in their head.
    */
+  /** Set by `dispose`, read by everything that can finish after it. */
+  let disposed = false;
+
   const budget = new TextureBudget(PICTURE_BUDGET_BYTES, MAX_NEAR_TEXTURES);
   const plates = new TextureBudget(PLATE_BUDGET_BYTES, MAX_PLATES);
   const loader = new TextureLoader();
@@ -537,6 +550,26 @@ export const createRoomScene = async (
    * fallback area in the picture's true aspect, which is the most that can be
    * said honestly: we know its shape, not its size.
    */
+  /**
+   * A work with no picture is a blank plate, not a hole in the wall.
+   *
+   * The flat page draws `.exhibition-image-missing` — a slightly lighter
+   * rectangle with a hairline — for a work whose image will not resolve, and
+   * the room has to say the same thing or the two views disagree about what
+   * the show contains. Without this the mesh stayed at opacity 0 forever and
+   * the wall had a label plate hanging beside nothing, which reads as a bug
+   * rather than as an absence.
+   */
+  const showMissing = (entry: Hung) => {
+    if (entry.base) return;
+    // `plate` is a CSS colour string, not a hex number: `set` takes both.
+    entry.material.color.set(palette.plate);
+    entry.material.opacity = 1;
+    entry.material.transparent = false;
+    entry.material.needsUpdate = true;
+    positionPlate(entry);
+  };
+
   const resize = (entry: Hung, aspect: number) => {
     if (entry.placement.measured) {
       entry.widthM = entry.placement.widthM;
@@ -676,7 +709,23 @@ export const createRoomScene = async (
     loading.add(key);
     const texture = await load(entry, BASE_WIDTH);
     loading.delete(key);
-    if (!texture) return;
+    if (!texture) {
+      showMissing(entry);
+      return;
+    }
+    /*
+     * A texture that arrives after the visitor has gone is a leak.
+     *
+     * `dispose()` walks the works it knows about, and a load still in flight
+     * is not one of them — so on a slow connection, leaving the room mid-load
+     * used to hand thirty decoded textures to a scene that no longer exists
+     * and never disposes them. This is the only place that can be checked,
+     * because it is the only place that knows the load finished.
+     */
+    if (disposed) {
+      texture.dispose();
+      return;
+    }
     entry.base = texture;
     budget.admit(entry.work.artworkId, 'base', bytesOf(texture));
     const image = texture.image as { width: number; height: number };
@@ -695,6 +744,10 @@ export const createRoomScene = async (
     const texture = await load(entry, nearWidthFor(image.width / image.height));
     loading.delete(key);
     if (!texture) return;
+    if (disposed) {
+      texture.dispose();
+      return;
+    }
 
     for (const id of budget.admit(entry.work.artworkId, 'near', bytesOf(texture))) {
       downgrade(id);
@@ -774,9 +827,12 @@ export const createRoomScene = async (
     }
   };
 
-  // Every work gets its small texture up front. Sixteen MiB for a thirty-work
+  // Every work gets its small texture up front. Seventeen MiB for a thirty-work
   // show, and it is what makes a wall a wall rather than a set of holes.
-  for (const entry of hung) void loadBase(entry);
+  for (const entry of hung) {
+    if (entry.work.imageUrl) void loadBase(entry);
+    else showMissing(entry);
+  }
 
   // -------------------------------------------------------------------------
   // Walking
@@ -1025,6 +1081,21 @@ export const createRoomScene = async (
     event.preventDefault();
   };
 
+  /*
+   * A context we did not throw away.
+   *
+   * `forceContextLoss()` in `dispose` fires this too, which is why it checks
+   * `disposed` first — the teardown path has already told React what it needs
+   * to know, and reporting a loss there would bounce a visitor who simply
+   * clicked PAGE back to the page they had just asked for.
+   */
+  const onContextLost = (event: Event) => {
+    event.preventDefault();
+    if (disposed) return;
+    options.onContextLost?.();
+  };
+  canvas.addEventListener('webglcontextlost', onContextLost);
+
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
@@ -1128,6 +1199,7 @@ export const createRoomScene = async (
     focus: (artworkId) => setFocus(artworkId, true),
     stats: snapshot,
     dispose: () => {
+      disposed = true;
       running = false;
       cancelAnimationFrame(frame);
       observer?.disconnect();
@@ -1136,6 +1208,7 @@ export const createRoomScene = async (
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('keydown', onKeyDown);
+      canvas.removeEventListener('webglcontextlost', onContextLost);
       for (const entry of hung) {
         entry.base?.dispose();
         entry.near?.dispose();
