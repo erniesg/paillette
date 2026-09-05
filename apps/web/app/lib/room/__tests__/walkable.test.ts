@@ -5,6 +5,7 @@ import {
   isWalkable,
   roomAt,
   stepTowards,
+  walkTowards,
 } from '~/lib/room/walkable';
 
 const unmeasured = (count: number): RoomWorkInput[] =>
@@ -107,5 +108,60 @@ describe('roomAt', () => {
     for (const room of plan.rooms) {
       expect(roomAt(plan, (room.southZ + room.northZ) / 2)).toBe(room.index);
     }
+  });
+});
+
+/**
+ * The failure this was written for: refusing any destination outside the
+ * walkable set meant that from the door of a five-metre room, almost every
+ * floor pixel on screen projects past the far wall and clicking it did
+ * nothing — silently, with no feedback, on the primary way of moving.
+ */
+describe('walkTowards', () => {
+  const plan = planRoom(unmeasured(6));
+  const room = plan.rooms[0]!;
+  const from = { x: plan.entry.x, z: plan.entry.z };
+
+  it('walks as far as it can towards a point beyond the far wall', () => {
+    const to = { x: 0, z: room.northZ - 4 };
+    const arrived = walkTowards(plan, from, to);
+    expect(arrived.z).toBeLessThan(from.z - 1);
+    expect(isWalkable(plan, arrived.x, arrived.z)).toBe(true);
+    expect(arrived.z).toBeGreaterThanOrEqual(room.northZ + WALL_STANDOFF_M - 0.001);
+  });
+
+  it('arrives exactly where a reachable point is', () => {
+    const to = { x: 1, z: -3 };
+    const arrived = walkTowards(plan, from, to);
+    expect(arrived.x).toBeCloseTo(to.x, 6);
+    expect(arrived.z).toBeCloseTo(to.z, 6);
+  });
+
+  it('stays put when there is nowhere to go in that direction', () => {
+    const cornered = { x: room.centreX + room.widthM / 2 - WALL_STANDOFF_M, z: -3 };
+    const arrived = walkTowards(plan, cornered, { x: cornered.x + 5, z: -3 });
+    expect(arrived).toEqual(cornered);
+  });
+
+  it('goes through a doorway rather than stopping at it', () => {
+    const enfilade = planRoom(unmeasured(30));
+    const arrived = walkTowards(
+      enfilade,
+      { x: enfilade.entry.x, z: enfilade.entry.z },
+      { x: 0, z: enfilade.rooms.at(-1)!.northZ }
+    );
+    expect(roomAt(enfilade, arrived.z)).toBe(enfilade.rooms.length - 1);
+  });
+
+  it('will not cut a corner through a wall to reach a walkable room', () => {
+    const enfilade = planRoom(unmeasured(30));
+    const second = enfilade.rooms[1]!;
+    // A point in the next room, but off to one side of the doorway.
+    const arrived = walkTowards(
+      enfilade,
+      { x: enfilade.entry.x, z: enfilade.entry.z },
+      { x: second.widthM / 2 - WALL_STANDOFF_M, z: second.northZ + WALL_STANDOFF_M }
+    );
+    expect(roomAt(enfilade, arrived.z)).toBe(0);
   });
 });

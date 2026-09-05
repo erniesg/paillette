@@ -53,32 +53,62 @@ export const isWalkable = (plan: RoomPlan, x: number, z: number): boolean =>
     (room) => insideRoom(room, x, z) || insideDoor(room, x, z)
   );
 
+/** How finely a walk is checked along its own line. */
+export const MARCH_M = 0.2;
+
 /**
- * The furthest point along a step that is still inside the building.
+ * The furthest point towards a destination that is still inside the building.
  *
- * Tried at decreasing fractions rather than solved, because the walkable set
- * is a union of rectangles and the exact intersection is not worth the code —
- * a visitor pressed against a wall wants to stop at the wall, not at the
- * analytically correct millimetre of it.
+ * Marched rather than solved, because the walkable set is a union of
+ * rectangles and the exact intersection is not worth the code — a visitor
+ * pressed against a wall wants to stop at the wall, not at the analytically
+ * correct millimetre of it. Marching also gets the doorways right for free: a
+ * line that passes through a door corridor keeps going into the next room,
+ * and one that does not stops at the wall.
+ *
+ * The alternative — testing only the destination and refusing anything
+ * outside — is what shipped first, and it made clicking the floor do nothing
+ * at all for most of the screen. Standing at the door of a five-metre room,
+ * almost every floor pixel projects past the far wall's standoff.
+ */
+export const walkTowards = (
+  plan: RoomPlan,
+  from: { x: number; z: number },
+  to: { x: number; z: number }
+): { x: number; z: number } => {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const distance = Math.hypot(dx, dz);
+  if (distance < 1e-6) return from;
+
+  const steps = Math.ceil(distance / MARCH_M);
+  let furthest = from;
+  for (let step = 1; step <= steps; step += 1) {
+    const fraction = step / steps;
+    const x = from.x + dx * fraction;
+    const z = from.z + dz * fraction;
+    if (!isWalkable(plan, x, z)) break;
+    furthest = { x, z };
+  }
+  return furthest;
+};
+
+/**
+ * One step forward or back, in the direction the visitor is facing.
+ *
+ * Heading 0 faces -z, the way the show runs, matching the camera's own default
+ * orientation so nothing has to be negated at the call site.
  */
 export const stepTowards = (
   plan: RoomPlan,
   from: { x: number; z: number },
   headingRadians: number,
   distanceM: number
-): { x: number; z: number } => {
-  // Heading 0 faces -z, the way the show runs, matching the camera's own
-  // default orientation so nothing has to be negated at the call site.
-  const dx = -Math.sin(headingRadians) * distanceM;
-  const dz = -Math.cos(headingRadians) * distanceM;
-
-  for (const fraction of [1, 0.66, 0.33]) {
-    const x = from.x + dx * fraction;
-    const z = from.z + dz * fraction;
-    if (isWalkable(plan, x, z)) return { x, z };
-  }
-  return from;
-};
+): { x: number; z: number } =>
+  walkTowards(plan, from, {
+    x: from.x - Math.sin(headingRadians) * distanceM,
+    z: from.z - Math.cos(headingRadians) * distanceM,
+  });
 
 /**
  * Which room a visitor is standing in, for deciding what to keep in memory.

@@ -38,7 +38,12 @@ import {
   nearestIds,
   textureBytes,
 } from '~/lib/room/texture-budget';
-import { EYE_HEIGHT_M, isWalkable, roomAt, stepTowards } from '~/lib/room/walkable';
+import {
+  EYE_HEIGHT_M,
+  roomAt,
+  stepTowards,
+  walkTowards,
+} from '~/lib/room/walkable';
 import { atWidth } from '~/lib/share/iiif';
 
 export interface SceneWork {
@@ -837,11 +842,23 @@ export const createRoomScene = async (
   }
   applyLook();
 
+  /**
+   * Walk towards where the visitor pointed, as far as the building allows.
+   *
+   * This used to refuse anything outside the walkable set, which sounded
+   * careful and was close to unusable: standing at the door of a 5.5 m room,
+   * every floor pixel except the bottom five per cent of the screen projects
+   * *past* the far wall's standoff, so clicking the floor did nothing at all
+   * and said nothing about why. Walking as far along the line as fits is both
+   * what every game does and what a person means by pointing at the far end of
+   * a room — go that way.
+   */
   const walkTo = (x: number, z: number) => {
-    if (!isWalkable(plan, x, z)) return;
-    standing = { x, z };
+    const destination = walkTowards(plan, standing, { x, z });
+    if (destination.x === standing.x && destination.z === standing.z) return;
+    standing = destination;
     if (focused) setFocus(null, false);
-    glideTo(x, z, EYE_HEIGHT_M, yaw, pitch, GLIDE_MS);
+    glideTo(destination.x, destination.z, EYE_HEIGHT_M, yaw, pitch, GLIDE_MS);
   };
 
   const step = (direction: 1 | -1) => {
