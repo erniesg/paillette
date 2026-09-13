@@ -30,7 +30,7 @@ describe('layoutPlate', () => {
   });
 
   it('breaks an unbroken title without discarding any characters', () => {
-    const title = 'Supercalifragilisticexpialidocious';
+    const title = 'Supercalifragilisticexpialidocious'.repeat(5);
     const layout = layoutPlate({ title, artist: null, date: null, label: null }, measure);
 
     expect(
@@ -39,6 +39,8 @@ describe('layoutPlate', () => {
         .map((line) => line.text)
         .join('')
     ).toBe(title);
+    expect(layout.lines.length).toBeGreaterThan(1);
+    expect(layout.lines.every(line => measure(line.text) <= 464)).toBe(true);
   });
 
   it('uses no reserved description space when a work has no label', () => {
@@ -74,5 +76,6 @@ describe('layoutPlate', () => {
         .join('')
     ).toBe(label.replace(/\s+/g, ''));
     expect(layout.heightPx).toBeGreaterThan(100);
+    expect(layout.lines.every(line => measure(line.text) <= 464)).toBe(true);
   });
 });

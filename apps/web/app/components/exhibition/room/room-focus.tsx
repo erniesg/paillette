@@ -65,7 +65,12 @@ export const FocusedLabel = ({
     <p className="exhibition-accession lt-catalogue">
       {work.accession && <span>{work.accession}</span>}
       {work.sourceUrl && (
-        <a href={work.sourceUrl} rel="noreferrer noopener">
+        <a
+          href={work.sourceUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          aria-label="Catalogue record (opens in a new tab)"
+        >
           Catalogue record
         </a>
       )}

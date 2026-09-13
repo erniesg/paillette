@@ -1,9 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HungWork } from '~/lib/exhibition-page.server';
 import {
+  LabelSuggestionError,
   requestLabelSuggestion,
   LABEL_SUGGESTION_MAX_CHARS,
 } from '~/lib/exhibition-label-suggestion';
+
+const suggestionErrorMessage = (error: unknown): string => {
+  if (!(error instanceof LabelSuggestionError)) {
+    return 'The label service is unavailable. Try again shortly.';
+  }
+  switch (error.code) {
+    case 'rate_limited':
+      return 'Too many label requests. Try again later.';
+    case 'not_authorized':
+      return 'Label generation is unavailable for this exhibition.';
+    case 'invalid_response':
+      return 'The label service returned an invalid response.';
+    default:
+      return 'The label service is unavailable. Try again shortly.';
+  }
+};
 
 export interface LabelEditorProps {
   work: HungWork;
@@ -121,7 +138,7 @@ export const LabelEditor = ({
       setSuggestion(next);
     } catch (caught) {
       if ((caught as { name?: string } | null)?.name !== 'AbortError' && sequence.current === request) {
-        setError('Couldn’t generate a label. Try again.');
+        setError(suggestionErrorMessage(caught));
       }
     } finally {
       if (sequence.current === request) setBusy(false);

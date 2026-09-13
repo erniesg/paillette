@@ -8,8 +8,20 @@
  */
 
 export const LABEL_SUGGESTION_MAX_CHARS = 320;
+export const LABEL_SUGGESTION_TIMEOUT_MS = 10_000;
 
-export class LabelSuggestionError extends Error {}
+export type LabelSuggestionErrorCode =
+  | 'rate_limited'
+  | 'unavailable'
+  | 'not_authorized'
+  | 'invalid_response';
+
+export class LabelSuggestionError extends Error {
+  constructor(readonly code: LabelSuggestionErrorCode) {
+    super(code);
+    this.name = 'LabelSuggestionError';
+  }
+}
 
 type LabelResponse = {
   success?: unknown;
@@ -36,6 +48,14 @@ const labelFor = (payload: unknown, artworkId: string): string | null => {
   return label && label.length <= LABEL_SUGGESTION_MAX_CHARS ? label : null;
 };
 
+const aborted = () => new DOMException('The request was aborted.', 'AbortError');
+
+const statusError = (status: number): LabelSuggestionError => {
+  if (status === 429) return new LabelSuggestionError('rate_limited');
+  if (status === 401 || status === 403) return new LabelSuggestionError('not_authorized');
+  return new LabelSuggestionError('unavailable');
+};
+
 export const requestLabelSuggestion = async ({
   collectionId,
   artworkId,
@@ -49,25 +69,43 @@ export const requestLabelSuggestion = async ({
   exhibitionStatement: string;
   signal?: AbortSignal;
 }): Promise<string> => {
-  const response = await fetch('/api/public-labels', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      collectionId,
-      artworkIds: [artworkId],
-      title: exhibitionTitle,
-      statement: exhibitionStatement,
-    }),
-    signal,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, LABEL_SUGGESTION_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+
+  let response: Response;
+  try {
+    response = await fetch('/api/public-labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collectionId,
+        artworkIds: [artworkId],
+        title: exhibitionTitle,
+        statement: exhibitionStatement,
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    if (signal?.aborted) throw aborted();
+    throw new LabelSuggestionError('unavailable');
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
+
+  if (!response.ok) throw statusError(response.status);
 
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
-    throw new LabelSuggestionError('The label service returned an invalid response.');
+    throw new LabelSuggestionError('invalid_response');
   }
-  const label = response.ok ? labelFor(payload, artworkId) : null;
-  if (!label) throw new LabelSuggestionError('The label service returned no usable label.');
+  const label = labelFor(payload, artworkId);
+  if (!label) throw new LabelSuggestionError('invalid_response');
   return label;
 };

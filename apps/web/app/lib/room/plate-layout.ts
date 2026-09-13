@@ -73,8 +73,12 @@ export const wrapPlateText = (
   };
 
   for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
-    if (!line || measure(next, font) <= maxWidth) {
+    if (!line) {
+      pushWord(word);
+      continue;
+    }
+    const next = `${line} ${word}`;
+    if (measure(next, font) <= maxWidth) {
       line = next;
       continue;
     }

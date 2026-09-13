@@ -30,6 +30,7 @@ import type { FrameStyle } from '~/lib/room/frame';
 import type { ExhibitionTemplate } from '~/lib/room/template';
 import type { RoomSceneHandle, SceneStats, SceneWork } from './room-scene';
 import { FocusedLabel, catalogueLine } from './room-focus';
+import { WalkControls, type WalkDirection } from './walk-controls';
 import { TemplateSwitch } from './template-switch';
 
 export const RoomView = ({
@@ -54,6 +55,13 @@ export const RoomView = ({
 }) => {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<RoomSceneHandle | null>(null);
+  const moveVisitor = useCallback(
+    (direction: WalkDirection, active: boolean) => {
+      handleRef.current?.setMovement(direction, active);
+    },
+    []
+  );
+  const resetVisitor = useCallback(() => handleRef.current?.resetView(), []);
   const labelsRef = useRef(page.works);
   labelsRef.current = page.works;
   const frameRef = useRef(frame);
@@ -255,6 +263,11 @@ export const RoomView = ({
         )}
       </header>
 
+      <WalkControls
+        onMove={moveVisitor}
+        onReset={resetVisitor}
+        disabled={editLocked}
+      />
       {controls && <div className="exhibition-room-tools">{controls}</div>}
       {work && (
         <FocusedLabel

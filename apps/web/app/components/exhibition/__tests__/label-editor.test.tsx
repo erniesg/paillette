@@ -140,13 +140,32 @@ describe('LabelEditor', () => {
     expect(onCommit).toHaveBeenCalledWith('The harbor holds the last warmth.', 'agent');
   });
 
-  it.each([429, 502])('keeps the current label when generation fails with %i', async (status) => {
+  it.each([
+    [429, 'Too many label requests. Try again later.'],
+    [502, 'The label service is unavailable. Try again shortly.'],
+    [503, 'The label service is unavailable. Try again shortly.'],
+    [504, 'The label service is unavailable. Try again shortly.'],
+    [401, 'Label generation is unavailable for this exhibition.'],
+    [403, 'Label generation is unavailable for this exhibition.'],
+  ])('keeps the current label when generation fails with %i', async (status, message) => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status })));
     renderEditor({ work: work({ label: 'The curator’s reading.' }) });
 
     await userEvent.click(screen.getByRole('button', { name: 'Generate label' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t generate a label. Try again.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByRole('textbox')).toHaveValue('The curator’s reading.');
+  });
+
+  it('reports an unreachable label service without clearing curator text', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network unavailable'); }));
+    renderEditor({ work: work({ label: 'The curator’s reading.' }) });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Generate label' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The label service is unavailable. Try again shortly.'
+    );
     expect(screen.getByRole('textbox')).toHaveValue('The curator’s reading.');
   });
 
@@ -167,7 +186,9 @@ describe('LabelEditor', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Generate label' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t generate a label. Try again.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The label service returned an invalid response.'
+    );
     expect(screen.queryByText('Wrong wall.')).toBeNull();
   });
 
