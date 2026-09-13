@@ -2534,3 +2534,66 @@ html[data-theme='light'] .themeable-surface code {
 .paillette-region-work {
   cursor: pointer;
 }
+
+/* Exhibition presentation controls and editable copies. */
+.exhibition-controls {
+  color: var(--ink-human);
+  text-align: left;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.exhibition-masthead .exhibition-controls { margin-top: 1.5rem; }
+.exhibition-controls-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.exhibition-controls button,
+.exhibition-frame-select,
+.paillette-label-editor button {
+  min-height: 2.5rem;
+  border: 1px solid var(--lt-rule-strong);
+  background: var(--lt-ground);
+  color: var(--ink-human);
+  border-radius: 3px;
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  cursor: pointer;
+}
+.exhibition-controls button:hover,
+.paillette-label-editor button:hover { background: var(--lt-slide-well); }
+.exhibition-controls button:disabled,
+.paillette-label-editor button:disabled { opacity: 0.5; cursor: default; }
+.exhibition-controls :focus-visible,
+.paillette-label-editor :focus-visible { outline: 2px solid var(--ink-human); outline-offset: 3px; }
+.exhibition-frame-control { display: flex; align-items: center; gap: 0.5rem; margin-right: 0.25rem; }
+.exhibition-draft-status { margin-top: 0.65rem; max-width: 52ch; color: var(--ink-human-soft); }
+.exhibition-copy-link { display: block; margin-top: 0.75rem; }
+.exhibition-copy-link input { display: block; width: 100%; padding: 0.5rem; margin-top: 0.35rem; background: var(--lt-ground); border: 1px solid var(--lt-rule-strong); color: var(--ink-human); }
+.exhibition-room-tools {
+  position: absolute;
+  top: clamp(4.6rem, 11vh, 6.5rem);
+  left: clamp(1.25rem, 5vw, 3rem);
+  right: clamp(1.25rem, 5vw, 3rem);
+  max-width: 44rem;
+  pointer-events: none;
+}
+.exhibition-room-tools .exhibition-controls { pointer-events: auto; width: fit-content; max-width: 100%; }
+.exhibition-room-tools .exhibition-draft-status,
+.exhibition-room-tools .exhibition-copy-link { padding: 0.5rem 0.65rem; background: var(--lt-ground); }
+.paillette-label-editor { margin-top: 0.85rem; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.75rem; line-height: 1.5; }
+.paillette-label-editor textarea { display: block; width: 100%; min-height: 7.2rem; resize: vertical; border: 1px solid var(--lt-rule-strong); border-radius: 3px; padding: 0.7rem; background: var(--lt-ground); color: var(--ink-human); font-family: 'EB Garamond', Georgia, serif; font-size: 1.05rem; line-height: 1.45; }
+.paillette-label-editor > div { margin-top: 0.65rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.paillette-label-editor > div > p { flex-basis: 100%; font-family: 'EB Garamond', Georgia, serif; font-size: 1.1rem; margin: 0.3rem 0; }
+.paillette-label-editor > p { margin-top: 0.6rem; }
+.paillette-label-editor [role='alert'], .exhibition-controls [role='alert'] { margin-top: 0.6rem; }
+.exhibition-room-focus:has(.paillette-label-editor) { width: min(27rem, calc(100vw - 2.5rem)); max-height: min(65vh, 38rem); overflow-y: auto; background: var(--lt-ground); }
+.exhibition-page[data-frame='black'] .exhibition-image { outline: 10px solid #252321; }
+.exhibition-page[data-frame='white'] .exhibition-image { outline: 10px solid #eeeae2; box-shadow: 0 0 0 11px #c5c1b8; }
+.exhibition-page[data-frame='oak'] .exhibition-image { outline: 13px solid #98734c; }
+.exhibition-page[data-frame='gilt'] .exhibition-image { outline: 11px ridge #b49350; }
+@media (max-width: 600px) {
+  .exhibition-room-masthead { align-items: flex-start; gap: 0.7rem; }
+  .exhibition-room-title { max-width: 62%; }
+  .exhibition-room-tools { top: 5rem; }
+  .exhibition-controls { font-size: 0.6875rem; }
+  .exhibition-controls-row { gap: 0.35rem; }
+  .exhibition-room-focus:has(.paillette-label-editor) { bottom: 1.25rem; max-height: 58vh; }
+}

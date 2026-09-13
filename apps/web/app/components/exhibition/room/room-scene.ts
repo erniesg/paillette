@@ -44,6 +44,7 @@ import {
   stepTowards,
   walkTowards,
 } from '~/lib/room/walkable';
+import type { FrameStyle } from '~/lib/room/frame';
 import { atWidth } from '~/lib/share/iiif';
 
 export interface SceneWork {
@@ -58,9 +59,13 @@ export interface SceneWork {
 export interface SceneStats {
   fps: number;
   textureBytes: number;
+  /** Fixed shared building materials; counted separately from artwork LOD. */
+  architecturalTextureBytes: number;
   nearCount: number;
   /** What the renderer itself says it is holding. The cross-check. */
   rendererTextures: number;
+  /** The renderer's previous frame: architectural and artwork batching check. */
+  rendererDrawCalls: number;
   pixelRatio: number;
   /**
    * Which room the visitor is standing in, and how many there are.
@@ -83,6 +88,8 @@ export interface RoomSceneOptions {
   /** Painted on the entrance wall, the way a gallery sets its wall text. */
   title: string | null;
   statement: string | null;
+  /** The finish around every work. This mutates in place after scene setup. */
+  frame?: FrameStyle;
   reducedMotion: boolean;
   onFocus: (artworkId: string | null) => void;
   /**
@@ -119,6 +126,9 @@ interface Palette {
   farWall: number;
   floor: number;
   ceiling: number;
+  /** The narrow value changes that make planes meet as architecture. */
+  shadow: number;
+  cove: number;
   ink: string;
   inkSoft: string;
   inkFaint: string;
@@ -154,6 +164,10 @@ const readPalette = (): Palette => {
     farWall: shade(ground, light ? 1.1 : 1.72),
     floor: shade(ground, light ? 0.9 : 0.82),
     ceiling: shade(ground, light ? 0.97 : 0.62),
+    // These stay very close to their surrounding planes. They describe a
+    // skirting shadow and a ceiling cove; they are never decorative colour.
+    shadow: shade(ground, light ? 0.9 : 0.78),
+    cove: shade(ground, light ? 0.98 : 0.92),
     ink: readVar(styles, '--ink-human', '#e6e3dc'),
     inkSoft: readVar(styles, '--ink-human-soft', 'rgba(230, 227, 220, 0.7)'),
     inkFaint: readVar(styles, '--ink-human-faint', 'rgba(230, 227, 220, 0.58)'),
@@ -196,6 +210,8 @@ interface Hung {
   work: SceneWork;
   mesh: THREE.Mesh;
   material: THREE.MeshBasicMaterial;
+  /** Slot in the single instanced reveal mesh. */
+  backingIndex: number;
   plate: THREE.Mesh | null;
   base: THREE.Texture | null;
   near: THREE.Texture | null;
@@ -206,6 +222,10 @@ interface Hung {
 
 export interface RoomSceneHandle {
   focus: (artworkId: string | null) => void;
+  /** Changes only the backing batch, leaving the visitor's camera intact. */
+  setFrame: (style: FrameStyle) => void;
+  /** Repaints a visible wall label without reconstructing the room. */
+  setLabel: (artworkId: string, label: string | null) => void;
   dispose: () => void;
   /** Read once, after a visit, for the report. Never drives the product. */
   stats: () => SceneStats;
@@ -226,13 +246,16 @@ export const createRoomScene = async (
     CanvasTexture,
     Color,
     Fog,
+    InstancedMesh,
     LinearFilter,
     LinearMipmapLinearFilter,
     Mesh,
     MeshBasicMaterial,
+    Object3D,
     PerspectiveCamera,
     PlaneGeometry,
     Raycaster,
+    RepeatWrapping,
     SRGBColorSpace,
     Scene,
     TextureLoader,
@@ -286,15 +309,96 @@ export const createRoomScene = async (
     return item;
   };
 
+  /*
+   * The building receives two shared, neutral material maps. They are small,
+   * deterministic and use no mipmaps, so their 512 KiB total is exact rather
+   * than a hidden per-room or per-artwork cost.
+   */
+  const floorCanvas = document.createElement('canvas');
+  floorCanvas.width = 256;
+  floorCanvas.height = 256;
+  const floorContext = floorCanvas.getContext('2d');
+  if (floorContext) {
+    floorContext.fillStyle = '#f4f4f4';
+    floorContext.fillRect(0, 0, floorCanvas.width, floorCanvas.height);
+    // Four large, barely different stone slabs. The broad joints are legible
+    // at a glance; the surface does not turn into a tiled grid on a phone.
+    floorContext.fillStyle = '#f1f1f1';
+    floorContext.fillRect(128, 0, 128, 128);
+    floorContext.fillStyle = '#f6f6f6';
+    floorContext.fillRect(0, 128, 128, 128);
+    floorContext.fillStyle = '#f2f2f2';
+    floorContext.fillRect(128, 128, 128, 128);
+    floorContext.strokeStyle = '#e9e9e9';
+    floorContext.lineWidth = 1;
+    floorContext.beginPath();
+    floorContext.moveTo(128.5, 0);
+    floorContext.lineTo(128.5, floorCanvas.height);
+    floorContext.moveTo(0, 128.5);
+    floorContext.lineTo(floorCanvas.width, 128.5);
+    floorContext.stroke();
+  }
+  const floorTexture = track(new CanvasTexture(floorCanvas));
+  floorTexture.colorSpace = SRGBColorSpace;
+  floorTexture.wrapS = RepeatWrapping;
+  floorTexture.wrapT = RepeatWrapping;
+  floorTexture.repeat.set(1.15, 1.5);
+  floorTexture.generateMipmaps = false;
+  floorTexture.minFilter = LinearFilter;
+  floorTexture.magFilter = LinearFilter;
+  floorTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  floorTexture.needsUpdate = true;
+
+  /*
+   * The wall wash is baked, not illuminated: its middle is lifted just
+   * enough to receive a picture, while its corners and base settle back. It
+   * gives a quiet room depth under MeshBasic without changing any artwork's
+   * source colour or requiring lights, shadow maps, or post-processing.
+   */
+  const wallCanvas = document.createElement('canvas');
+  wallCanvas.width = 256;
+  wallCanvas.height = 256;
+  const wallContext = wallCanvas.getContext('2d');
+  if (wallContext) {
+    const vertical = wallContext.createLinearGradient(0, 0, 0, wallCanvas.height);
+    vertical.addColorStop(0, '#eeeeee');
+    vertical.addColorStop(0.2, '#f7f7f7');
+    vertical.addColorStop(0.55, '#fafafa');
+    vertical.addColorStop(0.86, '#f2f2f2');
+    vertical.addColorStop(1, '#dfdfdf');
+    wallContext.fillStyle = vertical;
+    wallContext.fillRect(0, 0, wallCanvas.width, wallCanvas.height);
+    const corners = wallContext.createLinearGradient(0, 0, wallCanvas.width, 0);
+    corners.addColorStop(0, 'rgba(0, 0, 0, 0.075)');
+    corners.addColorStop(0.14, 'rgba(0, 0, 0, 0)');
+    corners.addColorStop(0.86, 'rgba(0, 0, 0, 0)');
+    corners.addColorStop(1, 'rgba(0, 0, 0, 0.075)');
+    wallContext.fillStyle = corners;
+    wallContext.fillRect(0, 0, wallCanvas.width, wallCanvas.height);
+  }
+  const wallTexture = track(new CanvasTexture(wallCanvas));
+  wallTexture.colorSpace = SRGBColorSpace;
+  wallTexture.generateMipmaps = false;
+  wallTexture.minFilter = LinearFilter;
+  wallTexture.magFilter = LinearFilter;
+  wallTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  wallTexture.needsUpdate = true;
+  const architecturalTextureBytes =
+    floorCanvas.width * floorCanvas.height * 4 +
+    wallCanvas.width * wallCanvas.height * 4;
+
   const surface = (
     width: number,
     height: number,
     colour: number,
     position: [number, number, number],
-    rotation: [number, number, number]
+    rotation: [number, number, number],
+    map: THREE.Texture | null = null
   ) => {
     const geometry = track(new PlaneGeometry(width, height));
-    const material = track(new MeshBasicMaterial({ color: colour, fog: true }));
+    const material = track(
+      new MeshBasicMaterial({ color: colour, fog: true, map })
+    );
     const mesh = new Mesh(geometry, material);
     mesh.position.set(...position);
     mesh.rotation.set(...rotation);
@@ -382,7 +486,14 @@ export const createRoomScene = async (
     const centreZ = (room.southZ + room.northZ) / 2;
     const halfWidth = room.widthM / 2;
 
-    surface(room.widthM, depth, palette.floor, [room.centreX, 0, centreZ], [-Math.PI / 2, 0, 0]);
+    surface(
+      room.widthM,
+      depth,
+      palette.floor,
+      [room.centreX, 0, centreZ],
+      [-Math.PI / 2, 0, 0],
+      floorTexture
+    );
     surface(
       room.widthM,
       depth,
@@ -395,15 +506,37 @@ export const createRoomScene = async (
       wallHeight,
       palette.wall,
       [room.centreX - halfWidth, wallHeight / 2, centreZ],
-      [0, Math.PI / 2, 0]
+      [0, Math.PI / 2, 0],
+      wallTexture
     );
     surface(
       depth,
       wallHeight,
       palette.wall,
       [room.centreX + halfWidth, wallHeight / 2, centreZ],
-      [0, -Math.PI / 2, 0]
+      [0, -Math.PI / 2, 0],
+      wallTexture
     );
+
+    /*
+     * The strips do the quiet architectural work a lighting model would
+     * normally do. A low shadow gap grounds plaster to floor; the cove near
+     * the ceiling gives the room an edge without putting a spotlight on art.
+     * They are planes instead of boxes so they keep the original scene's
+     * small geometry and draw-call budget.
+     */
+    const sideAccent = (x: number, rotationY: number) => {
+      surface(depth, 0.025, palette.shadow, [x, 0.013, centreZ], [0, rotationY, 0]);
+      surface(
+        depth,
+        0.03,
+        palette.cove,
+        [x, wallHeight - 0.015, centreZ],
+        [0, rotationY, 0]
+      );
+    };
+    sideAccent(room.centreX - halfWidth + 0.006, Math.PI / 2);
+    sideAccent(room.centreX + halfWidth - 0.006, -Math.PI / 2);
 
     /*
      * A cross wall is either solid or has a doorway punched through it, and a
@@ -415,18 +548,70 @@ export const createRoomScene = async (
       const rotation: [number, number, number] =
         faceIn > 0 ? [0, 0, 0] : [0, Math.PI, 0];
       if (!hasDoor) {
-        surface(room.widthM, wallHeight, palette.farWall, [room.centreX, wallHeight / 2, z], rotation);
+        surface(
+          room.widthM,
+          wallHeight,
+          palette.farWall,
+          [room.centreX, wallHeight / 2, z],
+          rotation,
+          wallTexture
+        );
+        surface(
+          room.widthM,
+          0.025,
+          palette.shadow,
+          [room.centreX, 0.013, z + faceIn * 0.006],
+          rotation
+        );
+        surface(
+          room.widthM,
+          0.03,
+          palette.cove,
+          [room.centreX, wallHeight - 0.015, z + faceIn * 0.006],
+          rotation
+        );
         return;
       }
       const jamb = (room.widthM - DOOR_WIDTH_M) / 2;
       const offset = DOOR_WIDTH_M / 2 + jamb / 2;
-      surface(jamb, wallHeight, palette.farWall, [room.centreX - offset, wallHeight / 2, z], rotation);
-      surface(jamb, wallHeight, palette.farWall, [room.centreX + offset, wallHeight / 2, z], rotation);
+      surface(
+        jamb,
+        wallHeight,
+        palette.farWall,
+        [room.centreX - offset, wallHeight / 2, z],
+        rotation,
+        wallTexture
+      );
+      surface(
+        jamb,
+        wallHeight,
+        palette.farWall,
+        [room.centreX + offset, wallHeight / 2, z],
+        rotation,
+        wallTexture
+      );
       surface(
         DOOR_WIDTH_M,
         wallHeight - doorHeight,
         palette.farWall,
         [room.centreX, doorHeight + (wallHeight - doorHeight) / 2, z],
+        rotation,
+        wallTexture
+      );
+      // A threshold and top cove give the opening a constructed edge while
+      // leaving its middle entirely open to the next room.
+      surface(
+        room.widthM,
+        0.03,
+        palette.cove,
+        [room.centreX, wallHeight - 0.015, z + faceIn * 0.006],
+        rotation
+      );
+      surface(
+        DOOR_WIDTH_M,
+        0.025,
+        palette.shadow,
+        [room.centreX, 0.013, z + faceIn * 0.006],
         rotation
       );
       /*
@@ -477,7 +662,8 @@ export const createRoomScene = async (
    * Two budgets, because they hold different things for different reasons.
    *
    * The pictures compete for six high-resolution slots; the label plates
-   * compete for eight of their own. Sharing one pool meant the plates —
+   * compete for eight of their own. The fixed architectural maps reserve
+   * their 512 KiB before either pool is admitted. Sharing one pool meant the plates —
    * admitted last on each pass — evicted every picture's near texture every
    * cycle, so the room settled into blurry pictures beside crisp labels and
    * the reported byte count was the plates alone. The two allowances are
@@ -487,12 +673,63 @@ export const createRoomScene = async (
   /** Set by `dispose`, read by everything that can finish after it. */
   let disposed = false;
 
-  const budget = new TextureBudget(PICTURE_BUDGET_BYTES, MAX_NEAR_TEXTURES);
+  const budget = new TextureBudget(
+    PICTURE_BUDGET_BYTES - architecturalTextureBytes,
+    MAX_NEAR_TEXTURES
+  );
   const plates = new TextureBudget(PLATE_BUDGET_BYTES, MAX_PLATES);
   const loader = new TextureLoader();
   loader.setCrossOrigin('anonymous');
   const hung: Hung[] = [];
   const pickable: THREE.Object3D[] = [];
+
+  /*
+   * Reveals are one opaque instanced surface, not one transparent mesh per
+   * work. Every slot starts at zero scale; texture arrival replaces only its
+   * matrix. The room therefore pays one draw call whether it holds one work
+   * or thirty, and the reveal never enters the picking set.
+   */
+  const backingGeometry = track(new PlaneGeometry(1, 1));
+  const backingMaterial = track(
+    new MeshBasicMaterial({ color: palette.cove, fog: true })
+  );
+  const backings = track(
+    new InstancedMesh(backingGeometry, backingMaterial, plan.placements.length)
+  );
+  // Instance bounds change as images arrive; one small always-visible batch
+  // avoids recomputing them and is cheaper than risking a culled reveal.
+  backings.frustumCulled = false;
+  const backingTransform = new Object3D();
+  backingTransform.scale.set(0, 0, 0);
+  backingTransform.updateMatrix();
+  for (let index = 0; index < plan.placements.length; index += 1) {
+    backings.setMatrixAt(index, backingTransform.matrix);
+  }
+  backings.instanceMatrix.needsUpdate = true;
+  scene.add(backings);
+
+  /*
+   * The same instanced backing batch has two jobs: its narrow default reveal
+   * keeps an unframed work off plaster, while its wider variants become the
+   * visible stock of a frame. Keeping this behind the artwork preserves the
+   * source image exactly and means a frame can never intercept a work click.
+   */
+  const frameAppearance = (style: FrameStyle) => {
+    switch (style) {
+      case 'black':
+        return { colour: 0x191816, revealM: 0.08, depthM: 0.01 };
+      case 'white':
+        return { colour: 0xf2f0eb, revealM: 0.075, depthM: 0.01 };
+      case 'oak':
+        return { colour: 0x765536, revealM: 0.105, depthM: 0.008 };
+      case 'gilt':
+        return { colour: 0xb18a39, revealM: 0.12, depthM: 0.006 };
+      case 'none':
+        return { colour: palette.cove, revealM: 0.035, depthM: 0.012 };
+    }
+  };
+  let frameStyle: FrameStyle = options.frame ?? 'none';
+  backingMaterial.color.setHex(frameAppearance(frameStyle).colour);
 
   const prepare = (texture: THREE.Texture) => {
     texture.colorSpace = SRGBColorSpace;
@@ -533,6 +770,7 @@ export const createRoomScene = async (
       work,
       mesh,
       material,
+      backingIndex: hung.length,
       plate: null,
       base: null,
       near: null,
@@ -567,7 +805,29 @@ export const createRoomScene = async (
     entry.material.opacity = 1;
     entry.material.transparent = false;
     entry.material.needsUpdate = true;
+    revealBacking(entry);
     positionPlate(entry);
+  };
+
+  const revealBacking = (entry: Hung) => {
+    const appearance = frameAppearance(frameStyle);
+    backingTransform.position.set(
+      entry.placement.x,
+      entry.placement.y,
+      entry.placement.z
+    );
+    backingTransform.rotation.set(0, entry.placement.rotationY, 0);
+    // The painting lives at 2 cm from its wall. A frame is a physical layer
+    // behind it, never an overlay over its colours.
+    backingTransform.translateZ(appearance.depthM);
+    backingTransform.scale.set(
+      entry.widthM + appearance.revealM,
+      entry.heightM + appearance.revealM,
+      1
+    );
+    backingTransform.updateMatrix();
+    backings.setMatrixAt(entry.backingIndex, backingTransform.matrix);
+    backings.instanceMatrix.needsUpdate = true;
   };
 
   const resize = (entry: Hung, aspect: number) => {
@@ -596,6 +856,7 @@ export const createRoomScene = async (
     entry.material.opacity = 1;
     entry.material.transparent = false;
     entry.material.needsUpdate = true;
+    revealBacking(entry);
     positionPlate(entry);
   };
 
@@ -1235,9 +1496,11 @@ export const createRoomScene = async (
     const roomIndex = roomAt(plan, camera.position.z);
     return {
       fps: Math.round(fps),
-      textureBytes: budget.bytes + plates.bytes,
+      textureBytes: budget.bytes + plates.bytes + architecturalTextureBytes,
+      architecturalTextureBytes,
       nearCount: budget.nearCount,
       rendererTextures: renderer.info.memory.textures,
+      rendererDrawCalls: renderer.info.render.calls,
       pixelRatio,
       roomIndex,
       roomCount: plan.rooms.length,
@@ -1251,6 +1514,22 @@ export const createRoomScene = async (
 
   return {
     focus: (artworkId) => setFocus(artworkId, true),
+    setFrame: (style) => {
+      if (style === frameStyle) return;
+      frameStyle = style;
+      backingMaterial.color.setHex(frameAppearance(style).colour);
+      for (const entry of hung) revealBacking(entry);
+      backingMaterial.needsUpdate = true;
+    },
+    setLabel: (artworkId, label) => {
+      const entry = hung.find((candidate) => candidate.work.artworkId === artworkId);
+      if (!entry || entry.work.label === label) return;
+      entry.work.label = label;
+      if (entry.plate) {
+        removePlate(artworkId);
+        addPlate(entry);
+      }
+    },
     stats: snapshot,
     dispose: () => {
       disposed = true;

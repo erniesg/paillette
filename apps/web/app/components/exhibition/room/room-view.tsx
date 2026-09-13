@@ -6,23 +6,27 @@
  * the wall label of whatever the visitor is standing in front of, in real
  * type, in the same two inks the flat page uses.
  *
- * **The label in the focused view is the published one.** `page.works[].label`
- * is the `current` value of the exhibition field — what the human wrote, or
- * what they accepted — and a `proposed` rewording never reaches this payload
- * at all. So the room cannot render an agent's unaccepted suggestion as though
- * it had been taken, which is the provenance rule holding by construction
- * rather than by a check somebody has to remember.
+ * Labels come from the published exhibition or its explicitly edited local
+ * copy. Unaccepted AI suggestions live in the editor, never in the scene.
+ * The parent owns draft persistence; this view updates wall plates in place.
  *
- * There is no instruction anywhere on screen. Click the floor and you move,
- * click a picture and you stand in front of it, drag to look, arrow keys to
- * walk and turn. Nothing here says so.
+ * Click the floor to move, a picture to focus, or drag to look. Presentation
+ * controls and an optional label editor share the same camera.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { usePrefersReducedMotion } from '~/components/board/use-prefers-reduced-motion';
 import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 import { parseDimensions } from '~/lib/room/dimensions';
 import { planRoom, type RoomWorkInput } from '~/lib/room/plan';
+import type { FrameStyle } from '~/lib/room/frame';
 import type { ExhibitionTemplate } from '~/lib/room/template';
 import type { RoomSceneHandle, SceneStats, SceneWork } from './room-scene';
 import { FocusedLabel, catalogueLine } from './room-focus';
@@ -33,14 +37,41 @@ export const RoomView = ({
   template,
   available,
   onUnavailable,
+  frame = 'none',
+  controls,
+  renderLabelEditor,
+  editLocked = false,
 }: {
   page: ExhibitionPage;
+  frame?: FrameStyle;
+  controls?: ReactNode;
+  renderLabelEditor?: (work: ExhibitionPage['works'][number]) => ReactNode;
+  editLocked?: boolean;
   template: ExhibitionTemplate;
   available: boolean;
   /** Told once, when the device stops being able to draw a room at all. */
   onUnavailable?: () => void;
 }) => {
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const handleRef = useRef<RoomSceneHandle | null>(null);
+  const labelsRef = useRef(page.works);
+  labelsRef.current = page.works;
+  const frameRef = useRef(frame);
+  frameRef.current = frame;
+  const lockedRef = useRef(editLocked);
+  lockedRef.current = editLocked;
+  // Only geometry/catalogue changes rebuild the scene. Draft text and frame
+  // choices update the existing handle so the visitor keeps their position.
+  const shapeKey = JSON.stringify({
+    works: page.works.map(
+      ({ label: _label, labelByAgent: _by, ...work }) => work
+    ),
+    regions: page.regions,
+  });
+  const structure = useMemo(
+    () => JSON.parse(shapeKey) as Pick<ExhibitionPage, 'works' | 'regions'>,
+    [shapeKey]
+  );
   const [focused, setFocused] = useState<string | null>(null);
   /**
    * The browser took the context away mid-visit.
@@ -72,7 +103,7 @@ export const RoomView = ({
    * sound key and no content hash is needed.
    */
   const plan = useMemo(() => {
-    const works: RoomWorkInput[] = page.works.map((work) => {
+    const works: RoomWorkInput[] = structure.works.map((work) => {
       const size = parseDimensions(work.dimensions);
       return {
         artworkId: work.artworkId,
@@ -81,20 +112,20 @@ export const RoomView = ({
           : null,
       };
     });
-    return planRoom(works, page.regions);
-  }, [page.works, page.regions]);
+    return planRoom(works, structure.regions);
+  }, [structure]);
 
   const sceneWorks = useMemo<SceneWork[]>(
     () =>
-      page.works.map((work) => ({
+      structure.works.map((work) => ({
         artworkId: work.artworkId,
         title: work.title,
         artist: work.artist,
         date: work.date,
-        label: work.label,
+        label: null,
         imageUrl: work.imageUrl,
       })),
-    [page.works]
+    [structure]
   );
 
   const onFocus = useCallback((artworkId: string | null) => {
@@ -140,6 +171,7 @@ export const RoomView = ({
         if (disposed) return null;
         return createRoomScene({
           canvas,
+          frame: frameRef.current,
           plan,
           title,
           statement,
@@ -156,8 +188,9 @@ export const RoomView = ({
              * walking it; this is only how a number gets out of a render loop
              * and into the report, and nothing in the product reads it.
              */
-            (window as Window & { __paillette_room?: SceneStats }).__paillette_room =
-              stats;
+            (
+              window as Window & { __paillette_room?: SceneStats }
+            ).__paillette_room = stats;
           },
         });
       })
@@ -168,10 +201,16 @@ export const RoomView = ({
           return;
         }
         handle = created;
+        handleRef.current = created;
+        created.setFrame(frameRef.current);
+        for (const work of labelsRef.current)
+          created.setLabel(work.artworkId, work.label);
+        stage.inert = lockedRef.current;
       });
 
     return () => {
       disposed = true;
+      if (handleRef.current === handle) handleRef.current = null;
       handle?.dispose();
       canvas.remove();
     };
@@ -187,6 +226,17 @@ export const RoomView = ({
     onUnavailable,
   ]);
 
+  useEffect(() => {
+    handleRef.current?.setFrame(frame);
+  }, [frame]);
+  useEffect(() => {
+    for (const work of page.works)
+      handleRef.current?.setLabel(work.artworkId, work.label);
+  }, [page.works]);
+  useEffect(() => {
+    if (stageRef.current) stageRef.current.inert = editLocked;
+  }, [editLocked]);
+
   const work = focused
     ? page.works.find((candidate) => candidate.artworkId === focused)
     : null;
@@ -197,10 +247,22 @@ export const RoomView = ({
 
       <header className="exhibition-room-masthead">
         <h1 className="exhibition-room-title">{page.title}</h1>
-        <TemplateSwitch template={template} available={available ? 'yes' : 'no'} />
+        {!editLocked && (
+          <TemplateSwitch
+            template={template}
+            available={available ? 'yes' : 'no'}
+          />
+        )}
       </header>
 
-      {work && <FocusedLabel key={work.artworkId} work={work} />}
+      {controls && <div className="exhibition-room-tools">{controls}</div>}
+      {work && (
+        <FocusedLabel
+          key={work.artworkId}
+          work={work}
+          labelEditor={renderLabelEditor?.(work)}
+        />
+      )}
 
       {/*
         The show as a document, for anyone whose way in is not a camera.
