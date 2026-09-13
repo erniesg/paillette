@@ -131,9 +131,71 @@ def simple_material(name, color, roughness=0.5, metallic=0.0):
     return mat
 
 
+def ceiling_material():
+    """A warm matte ceiling that stays evenly lit without adding room light."""
+    mat = simple_material("Ceiling lime", (.89, .86, .78), .86)
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    emission = bsdf.inputs.get("Emission Color") or bsdf.inputs.get("Emission")
+    strength = bsdf.inputs.get("Emission Strength")
+    if emission:
+        emission.default_value = (.89, .86, .78, 1.0)
+    if strength:
+        # This neutralizes the area-light footprint on the ceiling while
+        # retaining the existing gallery light balance below it.
+        strength.default_value = 1.50
+    return mat
+
+
+def frame_ring(name, center, width, height, normal, horizontal, material):
+    """Build one continuous, beveled frame ring around an artwork opening."""
+    vertical = Vector((0, 0, 1))
+    normal, horizontal = Vector(normal), Vector(horizontal)
+    outer_u, outer_v = width / 2 + .11, height / 2 + .11
+    inner_u, inner_v = width / 2, height / 2
+    depth = .11
+    # Clockwise rectangles in the frame's horizontal/vertical plane. Joining
+    # the strips as one mesh gives the corners a clean mitred profile.
+    outer = [(-outer_u, -outer_v), (outer_u, -outer_v), (outer_u, outer_v), (-outer_u, outer_v)]
+    inner = [(-inner_u, -inner_v), (inner_u, -inner_v), (inner_u, inner_v), (-inner_u, inner_v)]
+    vertices = []
+    for offset in (-depth / 2, depth / 2):
+        for ring in (outer, inner):
+            for u, v in ring:
+                vertices.append(Vector(center) + horizontal * u + vertical * v + normal * offset)
+    faces = []
+    # Front and back annular faces, plus the outer and inner returns.
+    for i in range(4):
+        nxt = (i + 1) % 4
+        faces.extend(((i, nxt, 4 + nxt, 4 + i), (8 + i, 12 + i, 12 + nxt, 8 + nxt),
+                      (i, 8 + i, 8 + nxt, nxt), (4 + i, 4 + nxt, 12 + nxt, 12 + i)))
+    mesh = bpy.data.meshes.new(name + " mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.materials.append(material)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bevel = obj.modifiers.new("Soft mitred frame edges", "BEVEL")
+    bevel.width = .018
+    bevel.segments = 3
+    return obj
+
+
+def artwork_path(work):
+    """Resolve the cached NGA filename while retaining support for local URLs."""
+    direct = ART / Path(work["imageUrl"]).name
+    if direct.exists():
+        return direct
+    parts = work["imageUrl"].split("/")
+    if "iiif" in parts:
+        identifier = parts[parts.index("iiif") + 1]
+        cached = ART / f"nga-{identifier}.jpg"
+        if cached.exists():
+            return cached
+    return direct
+
+
 def add_frame(work, location, width, height, wall):
     """Add a dimensional artwork frame on X-facing or Y-facing gallery walls."""
-    art_path = ART / Path(work["imageUrl"]).name
+    art_path = artwork_path(work)
     img = bpy.data.images.load(str(art_path), check_existing=True)
     art_mat = bpy.data.materials.new("Artwork | " + work["title"])
     art_mat.use_nodes = True
@@ -152,10 +214,8 @@ def add_frame(work, location, width, height, wall):
         art.name = "Artwork | " + work["title"]
         art.scale = (width / 2, height / 2, 1)
         art.data.materials.append(art_mat)
-        cube("Frame top", (location[0], location[1] - .10, z + height / 2 + .055), (width/2+.09, .055, .055), frame, .018)
-        cube("Frame bottom", (location[0], location[1] - .10, z - height / 2 - .055), (width/2+.09, .055, .055), frame, .018)
-        cube("Frame L", (location[0]-width/2-.055, location[1] - .10, z), (.055, .055, height/2), frame, .018)
-        cube("Frame R", (location[0]+width/2+.055, location[1] - .10, z), (.055, .055, height/2), frame, .018)
+        frame_ring("Frame | " + work["title"], (location[0], location[1] - .10, z), width, height,
+                   (0, -1, 0), (1, 0, 0), frame)
     else:
         # Side wall faces inward across X.
         direction = 1 if location[0] < 0 else -1
@@ -166,10 +226,8 @@ def add_frame(work, location, width, height, wall):
         art.scale = (width / 2, height / 2, 1)
         art.data.materials.append(art_mat)
         x = location[0] + direction * .10
-        cube("Frame top", (x, location[1], z + height/2+.055), (.055, width/2+.09, .055), frame, .018)
-        cube("Frame bottom", (x, location[1], z - height/2-.055), (.055, width/2+.09, .055), frame, .018)
-        cube("Frame L", (x, location[1]-width/2-.055, z), (.055, .055, height/2), frame, .018)
-        cube("Frame R", (x, location[1]+width/2+.055, z), (.055, .055, height/2), frame, .018)
+        frame_ring("Frame | " + work["title"], (x, location[1], z), width, height,
+                   (direction, 0, 0), (0, 1, 0), frame)
     # Small white label establishes a human viewing scale.
     label = simple_material("Label stock", (.87, .84, .77), .7)
     if wall == "back":
@@ -205,7 +263,7 @@ def main():
     # Four boards per 512 px tile: 4 × 0.18 m wide, 1.2 m long, laid along Y.
     oak = textured_material("Warm oak planks", oak_c, oak_n, (17.5, 16.7, 1.0), .45)
     lime = textured_material("Hand troweled lime plaster", plaster_c, plaster_n, (3.0, 4.0, 3.0), .77)
-    ceiling = simple_material("Ceiling lime", (.83, .81, .75), .82)
+    ceiling = ceiling_material()
     black = simple_material("Architecture charcoal", (.028, .024, .02), .34, .3)
     brass = simple_material("Aged brass", (.36, .20, .065), .28, .68)
 
@@ -221,9 +279,13 @@ def main():
     cube("Entry lintel", (0, -10.0, 3.65), (2.7, .38, .55), lime)
     cube("Entry threshold", (0, -9.65, .015), (2.7, .55, .018), brass)
 
-    # Ceiling tracks visibly lead the viewer through the space.
-    for x in (-3.4, 0, 3.4):
-        cube("Recessed lighting track", (x, .4, 4.08), (.045, 9.25, .045), black, .012)
+    # Two slim tracks cover the side-wall fixtures without crossing the entry
+    # view. They begin and end within the gallery rather than at the camera.
+    for x in (-3.32, 3.32):
+        cube("Recessed lighting track", (x, 1.65, 4.105), (.018, 6.55, .018), black, .006)
+    # The end-wall fixture mounts to a small ceiling stub, so no spotlight
+    # floats after removing the central track.
+    cube("End wall spotlight mount", (0, 9.30, 4.105), (.22, .018, .018), black, .006)
 
     works = json.loads(WORKS.read_text())
     chosen = [works[i] for i in (0, 4, 6, 11, 14, 18, 22)]

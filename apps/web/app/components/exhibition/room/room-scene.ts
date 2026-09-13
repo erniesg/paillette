@@ -39,6 +39,10 @@ import {
   walkTowards,
 } from '~/lib/room/walkable';
 import type { FrameStyle } from '~/lib/room/frame';
+import {
+  buildFrameVertices,
+  FRAME_VERTEX_COUNT,
+} from '~/lib/room/frame-geometry';
 import { layoutPlate, PLATE_WIDTH_PX } from '~/lib/room/plate-layout';
 import { atWidth } from '~/lib/share/iiif';
 
@@ -209,7 +213,7 @@ interface Hung {
   mesh: THREE.Mesh;
   /** Artwork stays unlit so the supplied image pixels keep their source colour. */
   material: THREE.MeshBasicMaterial;
-  /** Slots in the two shared dimensional frame-rail batches. */
+  /** Fixed vertex range in the shared continuous frame batch. */
   frameIndex: number;
   plate: THREE.Mesh | null;
   base: THREE.Texture | null;
@@ -255,14 +259,14 @@ export const createRoomScene = async (
     Color,
     Fog,
     HemisphereLight,
-    InstancedMesh,
+    BufferAttribute,
+    BufferGeometry,
     LinearFilter,
     LinearMipmapLinearFilter,
     Mesh,
     MeshBasicMaterial,
     MeshStandardMaterial,
     NoColorSpace,
-    Object3D,
     PerspectiveCamera,
     PlaneGeometry,
     Raycaster,
@@ -382,7 +386,13 @@ export const createRoomScene = async (
     })
   );
   const ceilingMaterial = track(
-    new MeshStandardMaterial({ color: palette.ceiling, roughness: 0.94 })
+    new MeshStandardMaterial({
+      color: palette.ceiling,
+      roughness: 1,
+      // A small bounced-light floor avoids a dark slab above the warm walls.
+      emissive: palette.ceiling,
+      emissiveIntensity: 0.24,
+    })
   );
   const trimMaterial = track(
     new MeshStandardMaterial({ color: palette.cove, roughness: 0.72 })
@@ -394,9 +404,9 @@ export const createRoomScene = async (
   const trackGeometry = track(new BoxGeometry(1, 1, 1));
   const fixtureMaterial = track(
     new MeshStandardMaterial({
-      color: 0x24211e,
-      roughness: 0.45,
-      metalness: 0.25,
+      color: 0x514f4a,
+      roughness: 0.72,
+      metalness: 0.08,
     })
   );
   const surface = (
@@ -639,20 +649,20 @@ export const createRoomScene = async (
     crossWall(room.northZ, 1, room.doorNorth);
     if (!room.doorSouth) crossWall(room.southZ, -1, false);
 
-    // A short track with two restrained pools gives plaster and frame rails
+    // Slim, flush-mounted tracks leave a clear perimeter and give frame rails
     // their relief. Shadow maps stay off: thirty artworks must remain mobile.
     for (const xOffset of [-room.widthM * 0.22, room.widthM * 0.22]) {
       const rail = new Mesh(trackGeometry, fixtureMaterial);
-      rail.position.set(room.centreX + xOffset, wallHeight - 0.08, centreZ);
-      rail.scale.set(0.045, 0.045, Math.min(2.2, depth * 0.42));
+      rail.position.set(room.centreX + xOffset, wallHeight - 0.018, centreZ);
+      rail.scale.set(0.026, 0.024, Math.max(0.6, depth - 1.2));
       scene.add(rail);
       const fixture = new Mesh(trackGeometry, fixtureMaterial);
       fixture.position.set(
         room.centreX + xOffset,
-        wallHeight - 0.14,
+        wallHeight - 0.07,
         centreZ - 0.32
       );
-      fixture.scale.set(0.16, 0.07, 0.11);
+      fixture.scale.set(0.085, 0.095, 0.085);
       scene.add(fixture);
       const light = new SpotLight(0xfff2dd, 6.5, 8, Math.PI / 5, 0.45, 1.5);
       light.position.set(room.centreX + xOffset, wallHeight - 0.18, centreZ);
@@ -717,13 +727,14 @@ export const createRoomScene = async (
   const hung: Hung[] = [];
   const pickable: THREE.Object3D[] = [];
 
-  /*
-   * Reveals are one opaque instanced surface, not one transparent mesh per
-   * work. Every slot starts at zero scale; texture arrival replaces only its
-   * matrix. The room therefore pays one draw call whether it holds one work
-   * or thirty, and the reveal never enters the picking set.
-   */
-  const frameGeometry = track(new BoxGeometry(1, 1, 1));
+  // Joined frame rings share one draw call. Each work owns a fixed vertex
+  // range, updated only when its image aspect or the chosen finish changes.
+  const framePositions = new Float32Array(
+    plan.placements.length * FRAME_VERTEX_COUNT * 3
+  );
+  const frameGeometry = track(new BufferGeometry());
+  const framePositionAttribute = new BufferAttribute(framePositions, 3);
+  frameGeometry.setAttribute('position', framePositionAttribute);
   const backingMaterial = track(
     new MeshStandardMaterial({
       color: palette.cove,
@@ -731,42 +742,13 @@ export const createRoomScene = async (
       metalness: 0.04,
     })
   );
-  const backings = track(
-    new InstancedMesh(
-      frameGeometry,
-      backingMaterial,
-      plan.placements.length * 2
-    )
-  );
-  const sideBackings = track(
-    new InstancedMesh(
-      frameGeometry,
-      backingMaterial,
-      plan.placements.length * 2
-    )
-  );
-  // Instance bounds change as images arrive; one small always-visible batch
-  // avoids recomputing them and is cheaper than risking a culled reveal.
+  const backings = new Mesh(frameGeometry, backingMaterial);
   backings.frustumCulled = false;
-  sideBackings.frustumCulled = false;
-  const backingTransform = new Object3D();
-  backingTransform.scale.set(0, 0, 0);
-  backingTransform.updateMatrix();
-  for (let index = 0; index < plan.placements.length; index += 1) {
-    backings.setMatrixAt(index * 2, backingTransform.matrix);
-    backings.setMatrixAt(index * 2 + 1, backingTransform.matrix);
-    sideBackings.setMatrixAt(index * 2, backingTransform.matrix);
-    sideBackings.setMatrixAt(index * 2 + 1, backingTransform.matrix);
-  }
-  backings.instanceMatrix.needsUpdate = true;
-  sideBackings.instanceMatrix.needsUpdate = true;
   scene.add(backings);
-  scene.add(sideBackings);
 
   /*
-   * The same instanced backing batch has two jobs: its narrow default reveal
-   * keeps an unframed work off plaster, while its wider variants become the
-   * visible stock of a frame. Keeping this behind the artwork preserves the
+   * The joined frame batch varies in width and finish. An unframed work
+   * leaves its ring degenerate and invisible. Keeping this behind the artwork preserves the
    * source image exactly and means a frame can never intercept a work click.
    */
   const frameAppearance = (style: FrameStyle) => {
@@ -866,53 +848,31 @@ export const createRoomScene = async (
 
   const revealBacking = (entry: Hung) => {
     const appearance = frameAppearance(frameStyle);
-    backingTransform.position.set(
-      entry.placement.x,
-      entry.placement.y,
-      entry.placement.z
-    );
-    backingTransform.rotation.set(0, entry.placement.rotationY, 0);
-    // Four physical rails would cost four meshes per work. Two instanced box
-    // pairs retain that depth and relief in just two draw calls for the show.
-    backingTransform.translateZ(0.025 + FRAME_RAIL_DEPTH_M / 2);
-    backingTransform.position.y += entry.heightM / 2 + appearance.railM / 2;
-    backingTransform.scale.set(
-      entry.widthM + appearance.railM * 2,
-      appearance.railM,
-      FRAME_RAIL_DEPTH_M
-    );
-    backingTransform.updateMatrix();
-    backings.setMatrixAt(entry.frameIndex * 2, backingTransform.matrix);
-    backingTransform.position.y -= entry.heightM + appearance.railM;
-    backingTransform.updateMatrix();
-    backings.setMatrixAt(entry.frameIndex * 2 + 1, backingTransform.matrix);
-    backingTransform.position.set(
-      entry.placement.x,
-      entry.placement.y,
-      entry.placement.z
-    );
-    backingTransform.rotation.set(0, entry.placement.rotationY, 0);
-    backingTransform.translateZ(0.025 + FRAME_RAIL_DEPTH_M / 2);
-    backingTransform.translateX(-(entry.widthM / 2 + appearance.railM / 2));
-    backingTransform.scale.set(
-      appearance.railM,
-      entry.heightM + appearance.railM * 2,
-      FRAME_RAIL_DEPTH_M
-    );
-    backingTransform.updateMatrix();
-    sideBackings.setMatrixAt(entry.frameIndex * 2, backingTransform.matrix);
-    backingTransform.position.set(
-      entry.placement.x,
-      entry.placement.y,
-      entry.placement.z
-    );
-    backingTransform.rotation.set(0, entry.placement.rotationY, 0);
-    backingTransform.translateZ(0.025 + FRAME_RAIL_DEPTH_M / 2);
-    backingTransform.translateX(entry.widthM / 2 + appearance.railM / 2);
-    backingTransform.updateMatrix();
-    sideBackings.setMatrixAt(entry.frameIndex * 2 + 1, backingTransform.matrix);
-    backings.instanceMatrix.needsUpdate = true;
-    sideBackings.instanceMatrix.needsUpdate = true;
+    const offset = entry.frameIndex * FRAME_VERTEX_COUNT * 3;
+    if (appearance.railM === 0 || entry.material.opacity === 0) {
+      framePositions.fill(0, offset, offset + FRAME_VERTEX_COUNT * 3);
+    } else {
+      const vertices = buildFrameVertices({
+        width: entry.widthM,
+        height: entry.heightM,
+        rail: appearance.railM,
+        depth: FRAME_RAIL_DEPTH_M,
+      });
+      const cosine = Math.cos(entry.placement.rotationY);
+      const sine = Math.sin(entry.placement.rotationY);
+      for (let index = 0; index < vertices.length; index += 3) {
+        const x = vertices[index]!;
+        const y = vertices[index + 1]!;
+        const z = vertices[index + 2]!;
+        framePositions[offset + index] =
+          entry.placement.x + x * cosine + z * sine;
+        framePositions[offset + index + 1] = entry.placement.y + y;
+        framePositions[offset + index + 2] =
+          entry.placement.z - x * sine + z * cosine;
+      }
+    }
+    framePositionAttribute.needsUpdate = true;
+    frameGeometry.computeVertexNormals();
   };
 
   const resize = (entry: Hung, aspect: number) => {
