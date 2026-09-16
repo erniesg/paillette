@@ -1,6 +1,11 @@
 import { json } from '@remix-run/cloudflare';
 import type { ApiResponse, SearchResponse, SearchTextRequest } from '~/types';
-export { isHiddenPublicNgsArtwork } from './public-ngs-visibility';
+import { isVisiblePublicNgsArtwork } from './public-ngs-visibility';
+export {
+  isHiddenPublicNgsArtwork,
+  isPublicNgsSourceArtwork,
+  isVisiblePublicNgsArtwork,
+} from './public-ngs-visibility';
 
 type WorkerContext = {
   cloudflare?: {
@@ -25,7 +30,7 @@ type PublicTextSearchRequest = Required<Omit<SearchTextRequest, 'facet'>> &
 
 export const PUBLIC_TEXT_SEARCH_CACHE_TOP_K = 100;
 export const PUBLIC_TEXT_SEARCH_CACHE_MIN_SCORE = 0;
-export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '8';
+export const PUBLIC_TEXT_SEARCH_CACHE_VERSION = '9';
 export const PUBLIC_SEARCH_CACHE_CONTROL =
   'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
@@ -38,6 +43,21 @@ const ORG_ID_ALIASES: Record<string, string> = {
 
 export const resolvePublicSearchOrgId = (orgId: string) =>
   ORG_ID_ALIASES[orgId.toLowerCase()] || orgId;
+
+const NGS_PUBLIC_ORG_ID = ORG_ID_ALIASES.ngs;
+
+export const isPublicSearchNgsOrg = (orgId: string) =>
+  resolvePublicSearchOrgId(orgId) === NGS_PUBLIC_ORG_ID;
+
+export const filterPublicSearchResults = <T>(
+  results: T[],
+  orgId: string
+) =>
+  isPublicSearchNgsOrg(orgId)
+    ? results.filter((artwork) =>
+        isVisiblePublicNgsArtwork(artwork as Record<string, any>)
+      )
+    : results;
 
 const getProcessEnv = () => {
   const runtime = globalThis as typeof globalThis & {
@@ -78,13 +98,14 @@ export const getCanonicalPublicTextSearchRequest = (
 
 export const filterPublicTextSearchResponse = (
   payload: ApiResponse<SearchResponse>,
-  request: PublicTextSearchRequest
+  request: PublicTextSearchRequest,
+  orgId: string
 ): ApiResponse<SearchResponse> => {
   if (!payload.success || !payload.data) {
     return payload;
   }
 
-  const results = payload.data.results
+  const results = filterPublicSearchResults(payload.data.results, orgId)
     .filter((artwork) => artwork.similarity >= request.minScore)
     .slice(0, request.topK);
 

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   PUBLIC_TEXT_SEARCH_CACHE_VERSION,
   buildPublicTextSearchCacheKey,
+  filterPublicSearchResults,
   isHiddenPublicNgsArtwork,
+  isPublicNgsSourceArtwork,
+  isVisiblePublicNgsArtwork,
 } from '../public-search.server';
 
 describe('isHiddenPublicNgsArtwork', () => {
@@ -64,6 +67,81 @@ describe('isHiddenPublicNgsArtwork', () => {
           'https://www.roots.gov.sg/Collection-Landing/listing/1016995',
       })
     ).toBe(false);
+  });
+});
+
+describe('isVisiblePublicNgsArtwork', () => {
+  it('keeps National Gallery Singapore National Collection records', () => {
+    expect(
+      isPublicNgsSourceArtwork({
+        metadata: {
+          sourceInstitution: 'National Gallery Singapore',
+          sourceCollection: 'National Collection',
+        },
+      })
+    ).toBe(true);
+    expect(
+      isVisiblePublicNgsArtwork({
+        metadata: {
+          sourceInstitution: 'National Gallery Singapore',
+          sourceCollection: 'National Collection',
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('rejects non-NGS source institutions and hidden Roots-only rows', () => {
+    expect(
+      isVisiblePublicNgsArtwork({
+        metadata: {
+          sourceInstitution: 'Singapore Art Museum',
+          sourceCollection: 'SAM Collection',
+        },
+      })
+    ).toBe(false);
+    expect(
+      isVisiblePublicNgsArtwork({
+        accession_number: 'AB2004-00006',
+        source_collection: 'National Collection',
+        source_institution: 'National Gallery Singapore',
+        source_url:
+          'https://www.roots.gov.sg/Collection-Landing/listing/1030018',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('filterPublicSearchResults', () => {
+  it('filters the ngs alias to NGS National Collection rows only', () => {
+    const results = filterPublicSearchResults(
+      [
+        {
+          id: 'ngs',
+          metadata: {
+            sourceInstitution: 'National Gallery Singapore',
+            sourceCollection: 'National Collection',
+          },
+        },
+        {
+          id: 'sam',
+          metadata: {
+            sourceInstitution: 'Singapore Art Museum',
+            sourceCollection: 'SAM Collection',
+          },
+        },
+      ],
+      'ngs'
+    );
+
+    expect(results.map((artwork) => artwork.id)).toEqual(['ngs']);
+  });
+
+  it('does not source-filter non-NGS public collections', () => {
+    const results = [{ id: 'open-without-ngs-labels' }];
+
+    expect(filterPublicSearchResults(results, 'open-access-art')).toEqual(
+      results
+    );
   });
 });
 

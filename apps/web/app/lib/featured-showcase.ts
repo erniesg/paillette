@@ -12,6 +12,7 @@ const CHUNG_CHENG_NGS_URL =
   'https://www.nationalgallery.sg/sg/en/our-collections/search-collection.artwork.html/national-collection/yeo-hwee-bin/2019/2019-00754_cropped.tif.html';
 export const CHUNG_CHENG_ROOTS_IMAGE_URL =
   'https://www.roots.gov.sg/CollectionImages/1454646.jpg';
+export const CHUNG_CHENG_CANVAS_IMAGE_URL = '/api/chung-cheng-image';
 export const CHUNG_CHENG_STATUE_MASK_IMAGE_URL =
   'https://www.nationalgallery.sg/content/dam/national-collections-artworks/national-collection/yeo-hwee-bin/2019/2019-00754_cropped.tif/_jcr_content/renditions/cq5dam.zoom.2048.2048.jpeg';
 

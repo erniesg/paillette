@@ -5,11 +5,11 @@ import {
   buildPublicSearchCacheHeaders,
   buildPublicTextSearchCacheKey,
   buildPublicSearchHeaders,
+  filterPublicSearchResults,
   filterPublicTextSearchResponse,
   getApiBaseUrl,
   getCanonicalPublicTextSearchRequest,
   getServerEnv,
-  isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   publicSearchConfigError,
   readPublicTextSearchCache,
@@ -140,8 +140,14 @@ export const action = async ({
   if (cachedPayload) {
     const responsePayload = filterPublicTextSearchResponse(
       cachedPayload,
-      requestedSearchPayload
+      requestedSearchPayload,
+      resolvedOrgId
     );
+    const cachedResults = cachedPayload.data?.results ?? [];
+    const rawResultCount = cachedResults.length;
+    const hiddenFilteredCount =
+      rawResultCount -
+      filterPublicSearchResults(cachedResults, resolvedOrgId).length;
 
     if (shouldLogUsage && responsePayload.success && responsePayload.data) {
       const results = responsePayload.data.results;
@@ -155,9 +161,9 @@ export const action = async ({
           topK: searchPayload.topK,
           minScore: searchPayload.minScore,
           facet: requestedSearchPayload.facet,
-          rawResultCount: cachedPayload.data?.results.length ?? results.length,
+          rawResultCount,
           resultCount: results.length,
-          hiddenFilteredCount: 0,
+          hiddenFilteredCount,
           queryTime: responsePayload.data.queryTime,
           colours: Array.isArray(usageContext.colours)
             ? usageContext.colours
@@ -191,8 +197,9 @@ export const action = async ({
     (await response.json()) as ApiResponse<SearchResponse>;
   if (responsePayload.success && responsePayload.data) {
     const rawResultCount = responsePayload.data.results.length;
-    const results = responsePayload.data.results.filter(
-      (artwork) => !isHiddenPublicNgsArtwork(artwork as any)
+    const results = filterPublicSearchResults(
+      responsePayload.data.results,
+      resolvedOrgId
     );
     responsePayload.data = {
       ...responsePayload.data,
@@ -208,7 +215,8 @@ export const action = async ({
 
     const requestedResponsePayload = filterPublicTextSearchResponse(
       responsePayload,
-      requestedSearchPayload
+      requestedSearchPayload,
+      resolvedOrgId
     );
 
     if (shouldLogUsage) {

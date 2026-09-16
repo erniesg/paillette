@@ -1431,6 +1431,7 @@ searchRoutes.post('/search/image', async (c) => {
     // Fetch artwork details from database
     const artworkIds = vectorResults.map((r) => r.id);
     const placeholders = artworkIds.map(() => '?').join(',');
+    const orgFilter = orgId ? 'AND org_id = ?' : '';
 
     const { results: artworks } = await c.env.DB.prepare(
       `
@@ -1468,10 +1469,11 @@ searchRoutes.post('/search/image', async (c) => {
       FROM artworks
       WHERE id IN (${placeholders})
         AND deleted_at IS NULL
+        ${orgFilter}
         ${backableSearchSql(orgId)}
       `
     )
-      .bind(...artworkIds)
+      .bind(...artworkIds, ...(orgId ? [orgId] : []))
       .all<ArtworkSearchRow>();
 
     // Combine vector results with artwork details

@@ -489,14 +489,14 @@ export const buildZhongZhengBurstTextGlyphs = ({
       const tangentialAngle = outwardAngle + Math.PI / 2;
       const outwardDistance =
         radius *
-        (0.44 + getZhongZhengSeededUnit(particleSeed + 29) * 1.08) *
+        (0.24 + getZhongZhengSeededUnit(particleSeed + 29) * 0.68) *
         burstEase *
         Math.sqrt(localInfluence) *
         clampedProgress;
       const tangentialDistance =
         radius *
         (getZhongZhengSeededUnit(particleSeed + 37) - 0.5) *
-        0.3 *
+        0.18 *
         burstEase *
         Math.sqrt(localInfluence) *
         clampedProgress;
@@ -542,7 +542,7 @@ export const buildZhongZhengBurstTextGlyphs = ({
           localInfluence *
           trailFalloff *
           (maskAlpha / 255) *
-          (0.32 + burstEase * 0.68),
+          (0.52 + burstEase * 0.58),
         scale:
           (trailIndex === 0 ? 1.06 : Math.max(0.68, 1 - trailIndex * 0.09)) *
           (0.84 + burstEase * 0.22),
@@ -773,7 +773,14 @@ export const buildZhongZhengDisintegrationFramePixels = ({
     }
 
     const clearedCore = clampZhongZhengNumber((dissolve - 0.58) / 0.34, 0, 1);
-    const alphaMultiplier = (1 - dissolve * 0.98) * (1 - clearedCore);
+    const materialFloor =
+      pointer.active && effectMaskAlpha > 0
+        ? 0.42 * clampedProgress * (effectMaskAlpha / 255)
+        : 0;
+    const alphaMultiplier = Math.max(
+      1 - dissolve * 0.62 - clearedCore * 0.2,
+      materialFloor
+    );
     output[dataIndex] = sourcePixels[dataIndex] || 0;
     output[dataIndex + 1] = sourcePixels[dataIndex + 1] || 0;
     output[dataIndex + 2] = sourcePixels[dataIndex + 2] || 0;

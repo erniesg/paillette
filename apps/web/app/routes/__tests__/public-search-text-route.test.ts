@@ -3,11 +3,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { action } from '../api.public-search.$orgId.text';
 import type { ApiResponse, SearchResponse } from '~/types';
 
-const result = (id: string, similarity: number) => ({
+const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
+
+const result = (
+  id: string,
+  similarity: number,
+  sourceInstitution = 'National Gallery Singapore',
+  sourceCollection = 'National Collection'
+) => ({
   id,
-  galleryId: 'cf98791d-f3cc-4f9f-b40c-a350efadbd05',
+  galleryId: NGS_ORG_ID,
   imageUrl: null,
+  metadata: {
+    sourceInstitution,
+    sourceCollection,
+    source_institution: sourceInstitution,
+    source_collection: sourceCollection,
+  },
   similarity,
+  source_collection: sourceCollection,
+  source_institution: sourceInstitution,
   title: `Artwork ${id}`,
 });
 
@@ -102,6 +117,80 @@ describe('public text search route caching', () => {
       'strong',
     ]);
     expect(secondPayload.data?.count).toBe(1);
+    expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBe('HIT');
+  });
+
+  it('filters non-NGS source rows before returning and caching NGS text results', async () => {
+    let cachedResponse: Response | undefined;
+    const mixedSourcePayload: ApiResponse<SearchResponse> = {
+      success: true,
+      data: {
+        results: [
+          result('sam', 0.98, 'Singapore Art Museum', 'SAM Collection'),
+          result('ngs', 0.9),
+          result(
+            'nms',
+            0.88,
+            'National Museum of Singapore',
+            'National Museum Collection'
+          ),
+        ],
+        count: 3,
+        queryTime: 88,
+      },
+    };
+    const cache = {
+      match: vi.fn(async () => cachedResponse?.clone()),
+      put: vi.fn(async (_request: Request, response: Response) => {
+        cachedResponse = response.clone();
+      }),
+    };
+    const mockFetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify(mixedSourcePayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('caches', { default: cache });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const firstResponse = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest({
+        query: 'portrait',
+        topK: 10,
+        minScore: 0.2,
+        usageContext: { auto: true },
+      }),
+    } as any);
+    const firstPayload =
+      (await firstResponse.json()) as ApiResponse<SearchResponse>;
+
+    expect(firstPayload.data?.results.map((artwork) => artwork.id)).toEqual([
+      'ngs',
+    ]);
+    expect(firstPayload.data?.count).toBe(1);
+    expect(firstResponse.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
+
+    const secondResponse = await action({
+      context: {},
+      params: { orgId: 'ngs' },
+      request: makeRequest({
+        query: 'portrait',
+        topK: 10,
+        minScore: 0.2,
+        usageContext: { auto: true },
+      }),
+    } as any);
+    const secondPayload =
+      (await secondResponse.json()) as ApiResponse<SearchResponse>;
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(secondPayload.data?.results.map((artwork) => artwork.id)).toEqual([
+      'ngs',
+    ]);
     expect(secondResponse.headers.get('X-Paillette-Search-Cache')).toBe('HIT');
   });
 

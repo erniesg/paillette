@@ -3,9 +3,9 @@ import { json } from '@remix-run/cloudflare';
 import type { ApiResponse, ArtworkSearchResult, SearchResponse } from '~/types';
 import {
   buildPublicSearchHeaders,
+  filterPublicSearchResults,
   getApiBaseUrl,
   getServerEnv,
-  isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   publicSearchConfigError,
   resolvePublicSearchOrgId,
@@ -120,8 +120,9 @@ export const action = async ({
   const payload = (await response.json()) as ApiResponse<SearchResponse>;
   if (payload.success && payload.data) {
     const rawResultCount = payload.data.results.length;
-    const results = payload.data.results.filter(
-      (artwork) => !isHiddenPublicNgsArtwork(artwork as any)
+    const results = filterPublicSearchResults(
+      payload.data.results,
+      resolvedOrgId
     );
     payload.data = {
       ...payload.data,

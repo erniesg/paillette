@@ -10,6 +10,13 @@ const firstText = (...values: unknown[]) => {
   return null;
 };
 
+const normalizeLabel = (value: string | null) =>
+  value
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() ?? '';
+
 const isRootsUrl = (value: string | null) =>
   Boolean(value && /^https:\/\/www\.roots\.gov\.sg\//i.test(value));
 
@@ -53,3 +60,28 @@ export const isHiddenPublicNgsArtwork = (artwork: Record<string, any>) => {
         HIDDEN_ROOTS_ONLY_NGS_ACCESSIONS.has(normalizedAccession))
   );
 };
+
+export const isPublicNgsSourceArtwork = (artwork: Record<string, any>) => {
+  const metadata = asRecord(artwork.metadata || artwork.custom_metadata);
+  const sourceInstitution = firstText(
+    artwork.source_institution,
+    artwork.sourceInstitution,
+    metadata.source_institution,
+    metadata.sourceInstitution
+  );
+  const sourceCollection = firstText(
+    artwork.source_collection,
+    artwork.sourceCollection,
+    metadata.source_collection,
+    metadata.sourceCollection
+  );
+
+  return (
+    normalizeLabel(sourceInstitution) ===
+      normalizeLabel('National Gallery Singapore') &&
+    normalizeLabel(sourceCollection) === normalizeLabel('National Collection')
+  );
+};
+
+export const isVisiblePublicNgsArtwork = (artwork: Record<string, any>) =>
+  isPublicNgsSourceArtwork(artwork) && !isHiddenPublicNgsArtwork(artwork);

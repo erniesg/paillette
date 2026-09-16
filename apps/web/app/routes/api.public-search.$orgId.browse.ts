@@ -7,9 +7,9 @@ import type {
   ArtworkSearchResult,
 } from '~/types';
 import {
+  filterPublicSearchResults,
   getApiBaseUrl,
   getServerEnv,
-  isHiddenPublicNgsArtwork,
   logPublicUsageEvent,
   resolvePublicSearchOrgId,
 } from '~/lib/public-search.server';
@@ -171,9 +171,13 @@ export const loader = async ({
     return json(payload, { status: response.status });
   }
 
-  const results = payload.data
-    .filter((artwork) => !isHiddenPublicNgsArtwork(artwork as any))
-    .map((artwork) => mapArtworkToSearchResult(artwork));
+  const visibleArtworks = filterPublicSearchResults(
+    payload.data,
+    resolvedOrgId
+  );
+  const results = visibleArtworks.map((artwork) =>
+    mapArtworkToSearchResult(artwork)
+  );
 
   await logPublicUsageEvent(request, env, {
     eventType: 'browse',

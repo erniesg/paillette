@@ -9,6 +9,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -42,7 +43,11 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { getApiClientForRequest, getPreferredOrgRouteId } from '~/lib/api';
+import {
+  apiClient,
+  getApiClientForRequest,
+  getPreferredOrgRouteId,
+} from '~/lib/api';
 import { CaptionSourceToggle } from '~/components/artwork/caption-source-toggle';
 import { CitationPanel } from '~/components/artwork/citation-panel';
 import { MetadataSourceToggle } from '~/components/artwork/metadata-source-toggle';
@@ -77,7 +82,7 @@ import {
   type EvalSuggestion,
 } from '~/lib/search-suggestions';
 import {
-  CHUNG_CHENG_STATUE_MASK_IMAGE_URL,
+  CHUNG_CHENG_CANVAS_IMAGE_URL,
   getChungChengFeaturedArtwork,
   isChungChengFeatureSuggestion,
 } from '~/lib/featured-showcase';
@@ -85,6 +90,7 @@ import {
   buildZhongZhengDisintegrationFramePixels,
   buildZhongZhengAsciiParticles,
   buildZhongZhengBurstTextGlyphs,
+  buildZhongZhengMatrixTextGlyphs,
   clipZhongZhengPixelsToMask,
   getZhongZhengSeededUnit,
   type ZhongZhengPointerState,
@@ -105,6 +111,9 @@ import type {
 } from '~/types';
 import { useUser } from '~/contexts/user-context';
 
+const useClientLayoutEffect =
+  typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 const SEARCH_DISPLAY_INCREMENT = 30;
 const BROWSE_PAGE_SIZE = 60;
 const MIN_BROWSE_PAGE_SIZE = 12;
@@ -118,6 +127,7 @@ const IDLE_SUGGESTION_PREFETCH_DELAY_MS = 2500;
 const IDLE_SUGGESTION_PREFETCH_LIMIT = 2;
 const IDLE_SHOWCASE_CACHE_VERSION = 'v1';
 const IDLE_SHOWCASE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CHUNG_CHENG_FEATURE_EXIT_MS = 420;
 const IDLE_SHOWCASE_QUERY_DELAY_MS = 900;
 export const MASONRY_IMAGE_CLASS_NAME =
   'h-full w-full object-contain transition-opacity duration-300 group-hover:opacity-90';
@@ -141,7 +151,9 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
   try {
     const [gallery, holidaySuggestions] = await Promise.all([
-      getApiClientForRequest(request).getGallery(galleryId),
+      getApiClientForRequest(request)
+        .getGallery(galleryId)
+        .catch(() => apiClient.getGallery(galleryId)),
       getUpcomingSingaporeHolidaySuggestions(new Date(), {
         allowNetwork: false,
       }),
@@ -1033,6 +1045,9 @@ export default function SearchPage() {
   const colourRailRef = useRef<HTMLDivElement | null>(null);
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const idleShowcaseRef = useRef<HTMLDivElement | null>(null);
+  const idleSearchControlsRef = useRef<HTMLDivElement | null>(null);
+  const idleSearchControlsRectRef = useRef<DOMRectReadOnly | null>(null);
+  const idleSearchControlsAnimationRef = useRef<Animation | null>(null);
   const resultsAreaRef = useRef<HTMLElement | null>(null);
   const previousUrlSearchStateRef = useRef(
     `${normalizedUrlQuery}:${urlSearchFacet || ''}`
@@ -1043,6 +1058,10 @@ export default function SearchPage() {
   );
   const [displayIdleSuggestion, setDisplayIdleSuggestion] =
     useState<EvalSuggestion | null>(null);
+  const [renderChungChengFeature, setRenderChungChengFeature] =
+    useState(false);
+  const [chungChengFeatureExiting, setChungChengFeatureExiting] =
+    useState(false);
   const normalizedTextQuery = normalizeSearchQuery(textQuery);
   const normalizedCommittedTextQuery = normalizeSearchQuery(committedTextQuery);
   const hasCommittedTextSearch =
@@ -1317,6 +1336,9 @@ export default function SearchPage() {
   });
 
   const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
+  const activeIdleSuggestionKey = activeIdleSuggestion
+    ? getSuggestionKey(activeIdleSuggestion)
+    : '';
   const activeIdleSuggestionQuery = activeIdleSuggestion?.query || '';
   const shouldLoadIdleShowcase = allowIdleShowcaseQuery && !hasActiveSearch;
   const idleShowcaseQuery = useQuery({
@@ -1435,10 +1457,105 @@ export default function SearchPage() {
     isChungChengFeatureSuggestion(activeIdleSuggestion);
   const isChungChengFeatureActive =
     !hasActiveSearch && activeIdleSuggestionIsChungCheng;
+  const shouldRenderChungChengFeature =
+    isChungChengFeatureActive || renderChungChengFeature;
+  const shouldReserveChungChengFeatureSpace = shouldRenderChungChengFeature;
   const chungChengFeaturedArtwork = useMemo(
     () => getChungChengFeaturedArtwork(idleShowcaseResults),
     [idleShowcaseResults]
   );
+
+  useEffect(() => {
+    if (!hasMounted) return undefined;
+
+    if (isChungChengFeatureActive) {
+      setRenderChungChengFeature(true);
+      setChungChengFeatureExiting(false);
+      return undefined;
+    }
+
+    if (!renderChungChengFeature) return undefined;
+
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    setChungChengFeatureExiting(true);
+
+    const handle = window.setTimeout(
+      () => {
+        setRenderChungChengFeature(false);
+        setChungChengFeatureExiting(false);
+      },
+      reduceMotion ? 0 : CHUNG_CHENG_FEATURE_EXIT_MS
+    );
+
+    return () => window.clearTimeout(handle);
+  }, [hasMounted, isChungChengFeatureActive, renderChungChengFeature]);
+
+  useClientLayoutEffect(() => {
+    if (!hasMounted || hasActiveSearch) {
+      idleSearchControlsAnimationRef.current?.cancel();
+      idleSearchControlsAnimationRef.current = null;
+      idleSearchControlsRectRef.current = null;
+      return undefined;
+    }
+
+    const node = idleSearchControlsRef.current;
+    if (!node) return undefined;
+
+    const nextRect = node.getBoundingClientRect();
+    const previousRect = idleSearchControlsRectRef.current;
+    idleSearchControlsRectRef.current = nextRect;
+
+    if (!previousRect) return undefined;
+
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    if (reduceMotion) return undefined;
+
+    const deltaX = previousRect.left - nextRect.left;
+    const deltaY = previousRect.top - nextRect.top;
+    const hasMeaningfulMove = Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1;
+    if (!hasMeaningfulMove) return undefined;
+
+    idleSearchControlsAnimationRef.current?.cancel();
+    const animation = node.animate(
+      [
+        {
+          opacity: 0.88,
+          transform: `translate3d(${deltaX.toFixed(2)}px, ${deltaY.toFixed(
+            2
+          )}px, 0)`,
+        },
+        { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+      ],
+      {
+        duration: 520,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      }
+    );
+
+    idleSearchControlsAnimationRef.current = animation;
+    animation.onfinish = () => {
+      if (idleSearchControlsAnimationRef.current === animation) {
+        idleSearchControlsAnimationRef.current = null;
+      }
+    };
+    animation.oncancel = animation.onfinish;
+
+    return () => {
+      if (idleSearchControlsAnimationRef.current === animation) {
+        animation.cancel();
+        idleSearchControlsAnimationRef.current = null;
+      }
+    };
+  }, [
+    activeIdleSuggestionKey,
+    hasActiveSearch,
+    hasMounted,
+    shouldReserveChungChengFeatureSpace,
+  ]);
 
   useEffect(() => {
     if (!hasMounted) return undefined;
@@ -1878,10 +1995,10 @@ export default function SearchPage() {
           className={
             hasActiveSearch
               ? 'mx-auto max-w-6xl'
-              : 'relative -mx-5 -mt-10 min-h-[calc(100vh-3.5rem)] overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
+              : 'relative -mx-5 -mt-10 flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b border-white/[0.08] px-5 py-16 lg:-mx-8 lg:px-8'
           }
         >
-          {!hasActiveSearch && hasMounted && !isChungChengFeatureActive && (
+          {!hasActiveSearch && hasMounted && (
             <IdleShowcaseBackdrop
               ref={idleShowcaseRef}
               artworks={idleShowcaseResults}
@@ -1893,164 +2010,180 @@ export default function SearchPage() {
             />
           )}
 
-          {!hasActiveSearch && hasMounted && isChungChengFeatureActive && (
-            <div className="pointer-events-none absolute inset-x-0 top-[clamp(0.75rem,3vh,3rem)] z-10 flex justify-center px-5">
-              <ZhongZhengAsciiFeature
-                artwork={chungChengFeaturedArtwork}
-                isVisible
-                layout="anchored"
-                onSelectArtwork={selectArtwork}
-              />
-            </div>
-          )}
-
           <div
             className={
               hasActiveSearch
                 ? 'relative z-10 w-full'
-                : 'absolute left-1/2 top-1/2 z-20 w-[calc(100%-2.5rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2'
+                : `relative z-10 mx-auto w-full max-w-5xl ${
+                    shouldReserveChungChengFeatureSpace
+                      ? 'py-4 sm:py-6'
+                      : 'py-12'
+                  }`
             }
           >
-            <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
-              <span>{gallery.name}</span>
-              <span>/</span>
-              <span>collection search</span>
-              {hasActiveSearch &&
-                currentQuery.data?.queryTime !== undefined && (
-                  <>
-                    <span>/</span>
-                    <span>{Math.round(currentQuery.data.queryTime)}ms</span>
-                  </>
-                )}
-            </div>
-
-            <div className="space-y-4">
-              {searchMode === 'text' && (
-                <form
-                  className="relative"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    runTextSearch();
-                  }}
-                >
-                  <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
-                  <input
-                    value={textQuery}
-                    onChange={(event) => updateTextDraft(event.target.value)}
-                    autoFocus
-                    placeholder="search by feeling, era, subject..."
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!canSubmitTextSearch}
-                    className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
-                    aria-label="Search text"
-                  >
-                    <Search className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Search</span>
-                  </button>
-                </form>
-              )}
-
-              {searchMode === 'image' && (
-                <div
-                  {...getRootProps()}
-                  className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
-                    isDragActive
-                      ? 'border-fuchsia-300 bg-fuchsia-300/10'
-                      : 'border-white/15 bg-white/[0.025] hover:border-white/30'
-                  }`}
-                >
-                  <input {...getInputProps()} />
-                  {imagePreview ? (
-                    <div className="relative w-full max-w-lg">
-                      <img
-                        src={imagePreview}
-                        alt="Query preview"
-                        className="max-h-64 w-full object-contain"
-                      />
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          clearImage();
-                        }}
-                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-black/75 text-white transition-colors hover:bg-black"
-                        aria-label="Clear image"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-center">
-                      <Camera className="mx-auto h-8 w-8 text-white/45" />
-                      <p className="mt-3 text-sm text-white/65">
-                        Drop an image to search visually
-                      </p>
-                      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
-                        jpg / png / webp
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            {shouldRenderChungChengFeature && (
+              <div
+                className={`transition-[opacity,transform,filter] duration-[420ms] ease-out ${
+                  isChungChengFeatureActive && !chungChengFeatureExiting
+                    ? 'translate-y-0 opacity-100 blur-0'
+                    : '-translate-y-3 opacity-0 blur-[1px]'
+                }`}
+              >
+                <ZhongZhengAsciiFeature
+                  artwork={chungChengFeaturedArtwork}
+                  isVisible={
+                    isChungChengFeatureActive && !chungChengFeatureExiting
+                  }
+                  onSelectArtwork={selectArtwork}
+                />
+              </div>
+            )}
 
             <div
-              className={`mt-4 flex flex-wrap items-center gap-2 ${
-                hasActiveSearch ? 'justify-center' : 'justify-center'
-              }`}
+              ref={idleSearchControlsRef}
+              className={!hasActiveSearch ? 'will-change-transform' : undefined}
             >
-              {!hasUncommittedInitialText && (
-                <SuggestionPicker
-                  suggestions={suggestionPool}
-                  currentQuery={textQuery}
-                  activeSearch={activeSearchSummary}
-                  displaySuggestion={displayIdleSuggestion}
-                  onSelect={runEvalSearch}
-                  onPreviewChange={setIdleSuggestion}
-                />
-              )}
-              <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
-                <ModeButton
-                  active={searchMode === 'text'}
-                  icon={Search}
-                  label="Text"
-                  onClick={() => {
-                    setIsBrowsingCollection(false);
-                    setSearchMode('text');
-                  }}
-                />
-                <ModeButton
-                  active={searchMode === 'image'}
-                  icon={ImageIcon}
-                  label="Image"
-                  onClick={() => {
-                    setIsBrowsingCollection(false);
-                    setSearchMode('image');
-                  }}
-                />
-                <ModeButton
-                  active={searchMode === 'colour'}
-                  icon={Palette}
-                  label="Colour"
-                  onClick={() => {
-                    if (searchMode === 'colour') {
-                      if (searchColours.length) {
-                        clearColourSearch();
-                      }
-                      setSearchMode('text');
-                      return;
-                    }
+              <div className="mb-4 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-white/35">
+                <span>{gallery.name}</span>
+                <span>/</span>
+                <span>collection search</span>
+                {hasActiveSearch &&
+                  currentQuery.data?.queryTime !== undefined && (
+                    <>
+                      <span>/</span>
+                      <span>{Math.round(currentQuery.data.queryTime)}ms</span>
+                    </>
+                  )}
+              </div>
 
-                    setIsBrowsingCollection(false);
-                    setSearchMode('colour');
-                    setSortMode('colour');
-                    setSortColours(searchColours);
-                    revealColourRail();
-                  }}
-                />
+              <div className="space-y-4">
+                {searchMode === 'text' && (
+                  <form
+                    className="relative"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      runTextSearch();
+                    }}
+                  >
+                    <Search className="absolute left-0 top-1/2 h-6 w-6 -translate-y-1/2 text-white/30" />
+                    <input
+                      value={textQuery}
+                      onChange={(event) => updateTextDraft(event.target.value)}
+                      autoFocus
+                      placeholder="search by feeling, era, subject..."
+                      className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!canSubmitTextSearch}
+                      className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.12] hover:text-white disabled:pointer-events-none disabled:opacity-35 sm:px-4"
+                      aria-label="Search text"
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Search</span>
+                    </button>
+                  </form>
+                )}
+
+                {searchMode === 'image' && (
+                  <div
+                    {...getRootProps()}
+                    className={`flex min-h-44 cursor-pointer items-center justify-center rounded-lg border border-dashed px-6 py-8 transition-colors ${
+                      isDragActive
+                        ? 'border-fuchsia-300 bg-fuchsia-300/10'
+                        : 'border-white/15 bg-white/[0.025] hover:border-white/30'
+                    }`}
+                  >
+                    <input {...getInputProps()} />
+                    {imagePreview ? (
+                      <div className="relative w-full max-w-lg">
+                        <img
+                          src={imagePreview}
+                          alt="Query preview"
+                          className="max-h-64 w-full object-contain"
+                        />
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            clearImage();
+                          }}
+                          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-black/75 text-white transition-colors hover:bg-black"
+                          aria-label="Clear image"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <Camera className="mx-auto h-8 w-8 text-white/45" />
+                        <p className="mt-3 text-sm text-white/65">
+                          Drop an image to search visually
+                        </p>
+                        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
+                          jpg / png / webp
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div
+                className={`mt-4 flex flex-wrap items-center gap-2 ${
+                  hasActiveSearch ? 'justify-center' : 'justify-center'
+                }`}
+              >
+                {!hasUncommittedInitialText && (
+                  <SuggestionPicker
+                    suggestions={suggestionPool}
+                    currentQuery={textQuery}
+                    activeSearch={activeSearchSummary}
+                    displaySuggestion={displayIdleSuggestion}
+                    onSelect={runEvalSearch}
+                    onPreviewChange={setIdleSuggestion}
+                  />
+                )}
+                <div className="ml-0 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-1 sm:ml-2">
+                  <ModeButton
+                    active={searchMode === 'text'}
+                    icon={Search}
+                    label="Text"
+                    onClick={() => {
+                      setIsBrowsingCollection(false);
+                      setSearchMode('text');
+                    }}
+                  />
+                  <ModeButton
+                    active={searchMode === 'image'}
+                    icon={ImageIcon}
+                    label="Image"
+                    onClick={() => {
+                      setIsBrowsingCollection(false);
+                      setSearchMode('image');
+                    }}
+                  />
+                  <ModeButton
+                    active={searchMode === 'colour'}
+                    icon={Palette}
+                    label="Colour"
+                    onClick={() => {
+                      if (searchMode === 'colour') {
+                        if (searchColours.length) {
+                          clearColourSearch();
+                        }
+                        setSearchMode('text');
+                        return;
+                      }
+
+                      setIsBrowsingCollection(false);
+                      setSearchMode('colour');
+                      setSortMode('colour');
+                      setSortColours(searchColours);
+                      revealColourRail();
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -2489,11 +2622,19 @@ function SuggestionPicker({
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [manualPauseUntil, setManualPauseUntil] = useState(0);
+  const manualPauseUntilRef = useRef(0);
   const suggestion = suggestions[index] ?? suggestions[0] ?? null;
   const visibleSuggestion = activeSearch
     ? null
     : suggestion || displaySuggestion;
   const canCycleSuggestions = !activeSearch && suggestions.length > 1;
+  const isCyclePaused = paused || manualPauseUntil > 0;
+  const pauseManualCycling = useCallback(() => {
+    const pauseUntil = Date.now() + 12000;
+    manualPauseUntilRef.current = pauseUntil;
+    setManualPauseUntil(pauseUntil);
+  }, []);
 
   useEffect(() => {
     if (!suggestions.length) return;
@@ -2504,18 +2645,37 @@ function SuggestionPicker({
     if (
       activeSearch ||
       open ||
-      paused ||
+      isCyclePaused ||
       suggestions.length < 2
     ) {
       return undefined;
     }
 
     const handle = window.setInterval(() => {
+      if (manualPauseUntilRef.current > Date.now()) return;
       setIndex((value) => (value + 1) % suggestions.length);
     }, 9000);
 
     return () => window.clearInterval(handle);
-  }, [activeSearch, open, paused, suggestions.length]);
+  }, [activeSearch, isCyclePaused, open, suggestions.length]);
+
+  useEffect(() => {
+    if (!manualPauseUntil) return undefined;
+
+    const remainingMs = manualPauseUntil - Date.now();
+    if (remainingMs <= 0) {
+      manualPauseUntilRef.current = 0;
+      setManualPauseUntil(0);
+      return undefined;
+    }
+
+    const handle = window.setTimeout(() => {
+      manualPauseUntilRef.current = 0;
+      setManualPauseUntil(0);
+    }, remainingMs);
+
+    return () => window.clearTimeout(handle);
+  }, [manualPauseUntil]);
 
   useEffect(() => {
     if (activeSearch) return;
@@ -2528,6 +2688,7 @@ function SuggestionPicker({
 
   const cycleSuggestion = (direction: -1 | 1) => {
     if (suggestions.length < 2) return;
+    pauseManualCycling();
     setIndex(
       (value) => (value + direction + suggestions.length) % suggestions.length
     );
@@ -2587,7 +2748,11 @@ function SuggestionPicker({
         <button
           type="button"
           data-suggestion-query={visibleSuggestion?.query || ''}
-          onClick={() => visibleSuggestion && onSelect(visibleSuggestion)}
+          onClick={() => {
+            if (!visibleSuggestion) return;
+            pauseManualCycling();
+            onSelect(visibleSuggestion);
+          }}
           className={`inline-flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
             visibleSuggestion &&
             activeQuery === visibleSuggestion.query.toLowerCase()
@@ -2646,6 +2811,7 @@ function SuggestionPicker({
               <DropdownMenu.Item
                 key={getSuggestionKey(option)}
                 onSelect={() => {
+                  pauseManualCycling();
                   setIndex(optionIndex);
                   onSelect(option);
                 }}
@@ -3203,7 +3369,7 @@ const extractZhongZhengMaskFromImage = (
   const pedestalAlpha = new Uint8ClampedArray(width * height);
   const sourcePixels = new Uint8ClampedArray(width * height * 4);
   const noise = new Uint8ClampedArray(width * height);
-  const pedestalStartY = Math.floor(height * 0.82);
+  const pedestalStartY = Math.floor(height * 0.872);
 
   for (let index = 0; index < alpha.length; index += 1) {
     const currentAlpha =
@@ -3229,12 +3395,15 @@ const extractZhongZhengMaskFromImage = (
     const y = Math.floor(index / width);
     const pedestalLuma =
       statueRed * 0.2126 + statueGreen * 0.7152 + statueBlue * 0.0722;
+    const pedestalChroma =
+      Math.max(statueRed, statueGreen, statueBlue) -
+      Math.min(statueRed, statueGreen, statueBlue);
 
     alpha[index] = maskAlpha;
     noise[index] = Math.round(textureNoise * 255);
     pedestalAlpha[index] =
-      y >= pedestalStartY && pedestalLuma >= 104
-        ? Math.round(maskAlpha * clampNumber((pedestalLuma - 86) / 78, 0, 1))
+      y >= pedestalStartY && pedestalLuma >= 92 && pedestalChroma <= 42
+        ? Math.round(maskAlpha * clampNumber((pedestalLuma - 88) / 72, 0, 1))
         : 0;
 
     if (maskAlpha <= 0) {
@@ -3423,18 +3592,32 @@ const drawZhongZhengDisintegrationFrame = (
   if (pointer.active && progress > 0.08) {
     const elapsedMs = Math.max(0, timeMs - (pointer.activeSinceMs || timeMs));
     const fontSize = Math.max(9.25, Math.min(15.5, state.width * 0.024));
-    const glyphs = buildZhongZhengBurstTextGlyphs({
+    const matrixGlyphs = buildZhongZhengMatrixTextGlyphs({
       width: state.width,
       height: state.height,
       alpha: state.pedestalAlpha,
       pointer,
       progress,
       elapsedMs,
-      radiusPixels: radiusPixels * 1.24,
+      radiusPixels: radiusPixels * 0.92,
       fontSize,
-      streamCount: 70,
-      trailLength: 4,
+      streamCount: 42,
+      trailLength: 3,
     });
+    const burstGlyphs = buildZhongZhengBurstTextGlyphs({
+      width: state.width,
+      height: state.height,
+      alpha: state.pedestalAlpha,
+      pointer,
+      progress,
+      elapsedMs,
+      radiusPixels: radiusPixels * 1.08,
+      fontSize,
+      streamCount: 128,
+      trailLength: 5,
+      cycleMs: 4200,
+    });
+    const glyphs = [...matrixGlyphs, ...burstGlyphs];
 
     context.save();
     context.textAlign = 'center';
@@ -3475,12 +3658,10 @@ const drawZhongZhengDisintegrationFrame = (
 function ZhongZhengAsciiFeature({
   artwork,
   isVisible,
-  layout = 'default',
   onSelectArtwork,
 }: {
   artwork: ArtworkSearchResult;
   isVisible: boolean;
-  layout?: 'default' | 'anchored';
   onSelectArtwork: (artwork: ArtworkSearchResult) => void;
 }) {
   const fallbackParticles = useMemo(() => buildZhongZhengAsciiParticles(), []);
@@ -3499,18 +3680,6 @@ function ZhongZhengAsciiFeature({
   const [maskState, setMaskState] = useState<ZhongZhengMaskState | null>(null);
   const [maskLoadFailed, setMaskLoadFailed] = useState(false);
   const title = getDisplayTitle(artwork);
-  const isAnchoredLayout = layout === 'anchored';
-  const buttonClassName = `featured-showcase-hero chung-cheng-ascii-button group pointer-events-auto relative mx-auto flex flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 ${
-    isAnchoredLayout
-      ? 'mb-0 w-[min(92vw,46rem)]'
-      : 'mb-8 w-[min(94vw,72rem)] lg:mb-10'
-  }`;
-  const stageClassName = isAnchoredLayout
-    ? 'chung-cheng-ascii-stage relative block h-[clamp(12rem,28vh,20rem)] w-full max-w-[34rem] sm:h-[clamp(15rem,34vh,24rem)] md:h-[clamp(18rem,42vh,31rem)] md:max-w-[42rem]'
-    : 'chung-cheng-ascii-stage relative block h-[clamp(24rem,56vh,39rem)] w-full max-w-[58rem] sm:h-[clamp(27rem,60vh,42rem)]';
-  const statueFrameClassName = isAnchoredLayout
-    ? 'chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(46vw,13rem)] -translate-x-1/2 sm:w-[min(40vw,16rem)] md:w-[min(42vw,20rem)]'
-    : 'chung-cheng-ascii-statue-frame absolute left-1/2 top-0 block aspect-[1539/2048] w-[min(76vw,25rem)] -translate-x-1/2 sm:w-[min(58vw,27rem)]';
 
   const scheduleRender = useCallback((targetProgress: number) => {
     if (animationFrameRef.current !== null) {
@@ -3566,7 +3735,7 @@ function ZhongZhengAsciiFeature({
     const loadMask = async () => {
       try {
         const maskImage = await loadZhongZhengImage(
-          CHUNG_CHENG_STATUE_MASK_IMAGE_URL
+          CHUNG_CHENG_CANVAS_IMAGE_URL
         );
         const nextMaskState = extractZhongZhengMaskFromImage(maskImage);
         if (!cancelled && nextMaskState) {
@@ -3697,19 +3866,18 @@ function ZhongZhengAsciiFeature({
       onPointerCancel={deactivatePointer}
       onLostPointerCapture={deactivatePointer}
       onBlur={deactivatePointer}
-      className={buttonClassName}
+      className="featured-showcase-hero chung-cheng-ascii-button group pointer-events-auto relative mx-auto mb-8 flex w-[min(94vw,72rem)] flex-col items-center text-center outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:pointer-events-none disabled:opacity-60 lg:mb-10"
       aria-label={`View ${title} artwork details`}
       data-featured-showcase="chung-cheng"
-      data-featured-layout={layout}
       data-pointer-active={pointerActive ? 'true' : 'false'}
       data-particle-source={
         maskState ? `image-canvas-${maskState.textureSource}` : 'ascii-fallback'
       }
     >
-      <span className={stageClassName}>
+      <span className="chung-cheng-ascii-stage relative block h-[clamp(28rem,64vh,43rem)] w-full max-w-[58rem] sm:h-[clamp(31rem,68vh,46rem)]">
         <span
           ref={stageRef}
-          className={statueFrameClassName}
+          className="chung-cheng-ascii-statue-frame absolute left-1/2 top-2 block aspect-[902/1200] w-[min(72vw,21.5rem)] -translate-x-1/2 sm:top-3 sm:w-[min(48vw,23.5rem)]"
         >
           <span className="chung-cheng-ascii-statue-orbit absolute inset-0 block">
             <span className="chung-cheng-ascii-statue absolute inset-0 block">
@@ -3744,11 +3912,7 @@ function ZhongZhengAsciiFeature({
           </span>
         </span>
       </span>
-      <span
-        className={`flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40 ${
-          isAnchoredLayout ? 'mt-2' : 'mt-4'
-        }`}
-      >
+      <span className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
         <span className="truncate">Zhong Zheng Ren</span>
         <span className="text-white/25">/</span>
         <span>中正人</span>
