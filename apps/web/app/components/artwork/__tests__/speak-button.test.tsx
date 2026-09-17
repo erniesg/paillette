@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SpeakButton } from '../speak-button';
@@ -16,6 +16,12 @@ describe('SpeakButton', () => {
   const stubSpeech = () => {
     const speak = vi.fn();
     const cancel = vi.fn();
+    const utterances: {
+      text: string;
+      rate: number;
+      onend: (() => void) | null;
+      onerror: (() => void) | null;
+    }[] = [];
     vi.stubGlobal('speechSynthesis', { speak, cancel });
     vi.stubGlobal(
       'SpeechSynthesisUtterance',
@@ -26,10 +32,11 @@ describe('SpeakButton', () => {
         onerror: (() => void) | null = null;
         constructor(text: string) {
           this.text = text;
+          utterances.push(this);
         }
       }
     );
-    return { speak, cancel };
+    return { speak, cancel, utterances };
   };
 
   it('renders nothing when the browser has no speech synthesis', () => {
@@ -58,5 +65,45 @@ describe('SpeakButton', () => {
     );
     // Mid-utterance the control has to become a way to stop it.
     expect(screen.getByRole('button', { name: /stop reading/i })).toBeTruthy();
+  });
+
+  it('keeps the description and explains a speech-engine failure', async () => {
+    const { utterances } = stubSpeech();
+    render(<SpeakButton text="A calm harbour under a bruised sky." />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /read aloud/i }));
+    act(() => utterances[0]?.onerror?.());
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Couldn’t start reading. Try again.'
+    );
+    expect(screen.getByRole('button', { name: /read aloud/i })).toBeTruthy();
+  });
+
+  it('explains a synchronous speech-engine failure', async () => {
+    const { speak } = stubSpeech();
+    speak.mockImplementation(() => {
+      throw new Error('engine unavailable');
+    });
+    render(<SpeakButton text="A calm harbour." />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /read aloud/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Couldn’t start reading. Try again.'
+    );
+  });
+
+  it('ignores an old utterance failure after a newer reading begins', async () => {
+    const { utterances } = stubSpeech();
+    render(<SpeakButton text="A calm harbour." />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /read aloud/i }));
+    await userEvent.click(screen.getByRole('button', { name: /stop reading/i }));
+    await userEvent.click(screen.getByRole('button', { name: /read aloud/i }));
+    act(() => utterances[0]?.onerror?.());
+
+    expect(screen.getByRole('button', { name: /stop reading/i })).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

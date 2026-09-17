@@ -60,6 +60,9 @@ export interface HungRegion {
 }
 
 export interface ExhibitionPage {
+  /** Source metadata retained when sharing an edited copy. */
+  collectionId?: string;
+  titleByAgent?: boolean;
   title: string;
   statement: string | null;
   statementByAgent: boolean;
@@ -406,6 +409,8 @@ export const buildExhibitionPage = async ({
     .filter((region) => region.artworkIds.length > 0);
 
   return {
+    collectionId: payload.collectionId,
+    titleByAgent: payload.titleByAgent,
     title: payload.title ?? 'Untitled',
     statement: payload.statement,
     statementByAgent: payload.statementByAgent,

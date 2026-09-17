@@ -1,3 +1,5 @@
+import { FRAME_PARAM } from './frame';
+
 /**
  * Which way this exhibition is being shown.
  *
@@ -24,8 +26,9 @@ export type ExhibitionTemplate = (typeof EXHIBITION_TEMPLATES)[number];
 
 export const DEFAULT_TEMPLATE: ExhibitionTemplate = 'page';
 
-export const readTemplate = (value: string | null | undefined): ExhibitionTemplate =>
-  value === 'room' ? 'room' : DEFAULT_TEMPLATE;
+export const readTemplate = (
+  value: string | null | undefined
+): ExhibitionTemplate => (value === 'room' ? 'room' : DEFAULT_TEMPLATE);
 
 /**
  * The URL for a template, from wherever we are now.
@@ -59,6 +62,7 @@ export const stripTemplate = (url: string): string => {
   try {
     const parsed = new URL(url);
     parsed.searchParams.delete(TEMPLATE_PARAM);
+    parsed.searchParams.delete(FRAME_PARAM);
     return parsed.toString();
   } catch {
     return url;

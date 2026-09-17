@@ -7,15 +7,11 @@
  * be paying for a diff nobody needs. It also keeps the thing that matters most
  * — every `dispose()` — in plain sight rather than behind a cache.
  *
- * **Nothing here is lit.** Every material is `MeshBasicMaterial`, which is the
- * design decision as much as the performance one. A lighting model renders a
- * painting as a painting *under a light*, and every one of those makes a Titian
- * muddier than a Titian; unlit means each work is exactly its own colours, and
- * the house rule that the works are the only saturated thing on screen holds in
- * three dimensions the same way it holds on the page. The walls read as walls
- * from tone alone: the far wall a shade lighter than the sides, the floor
- * darker than either, and fog the colour of the wall carrying depth. That is
- * also why this runs at all on a phone — thirty unlit quads and no shadow maps.
+ * Architecture is physically lit with shared `MeshStandardMaterial` surfaces:
+ * plaster catches its normal map, oak catches a soft ceiling pool, and rail
+ * depth makes frames read as objects. Artworks deliberately remain
+ * `MeshBasicMaterial`, so the supplied image pixels retain their original
+ * colour. There are no shadow maps or per-work lights on the mobile path.
  *
  * The geometry, the walkable set and the texture accounting are all in
  * `~/lib/room/*` and tested there. What is left here is the parts that need a
@@ -31,8 +27,6 @@ import {
   MAX_PLATES,
   PICTURE_BUDGET_BYTES,
   PLATE_BUDGET_BYTES,
-  PLATE_TEXTURE_HEIGHT,
-  PLATE_TEXTURE_WIDTH,
   TextureBudget,
   nearWidthFor,
   nearestIds,
@@ -44,6 +38,12 @@ import {
   stepTowards,
   walkTowards,
 } from '~/lib/room/walkable';
+import type { FrameStyle } from '~/lib/room/frame';
+import {
+  buildFrameVertices,
+  FRAME_VERTEX_COUNT,
+} from '~/lib/room/frame-geometry';
+import { layoutPlate, PLATE_WIDTH_PX } from '~/lib/room/plate-layout';
 import { atWidth } from '~/lib/share/iiif';
 
 export interface SceneWork {
@@ -58,9 +58,13 @@ export interface SceneWork {
 export interface SceneStats {
   fps: number;
   textureBytes: number;
+  /** Fixed shared building materials; counted separately from artwork LOD. */
+  architecturalTextureBytes: number;
   nearCount: number;
   /** What the renderer itself says it is holding. The cross-check. */
   rendererTextures: number;
+  /** The renderer's previous frame: architectural and artwork batching check. */
+  rendererDrawCalls: number;
   pixelRatio: number;
   /**
    * Which room the visitor is standing in, and how many there are.
@@ -83,6 +87,8 @@ export interface RoomSceneOptions {
   /** Painted on the entrance wall, the way a gallery sets its wall text. */
   title: string | null;
   statement: string | null;
+  /** The finish around every work. This mutates in place after scene setup. */
+  frame?: FrameStyle;
   reducedMotion: boolean;
   onFocus: (artworkId: string | null) => void;
   /**
@@ -119,6 +125,9 @@ interface Palette {
   farWall: number;
   floor: number;
   ceiling: number;
+  /** The narrow value changes that make planes meet as architecture. */
+  shadow: number;
+  cove: number;
   ink: string;
   inkSoft: string;
   inkFaint: string;
@@ -154,6 +163,10 @@ const readPalette = (): Palette => {
     farWall: shade(ground, light ? 1.1 : 1.72),
     floor: shade(ground, light ? 0.9 : 0.82),
     ceiling: shade(ground, light ? 0.97 : 0.62),
+    // These stay very close to their surrounding planes. They describe a
+    // skirting shadow and a ceiling cove; they are never decorative colour.
+    shadow: shade(ground, light ? 0.9 : 0.78),
+    cove: shade(ground, light ? 0.98 : 0.92),
     ink: readVar(styles, '--ink-human', '#e6e3dc'),
     inkSoft: readVar(styles, '--ink-human-soft', 'rgba(230, 227, 220, 0.7)'),
     inkFaint: readVar(styles, '--ink-human-faint', 'rgba(230, 227, 220, 0.58)'),
@@ -178,8 +191,11 @@ const LOD_INTERVAL_MS = 220;
 /** Below this the renderer gives up some resolution rather than some frames. */
 const DEGRADE_BELOW_FPS = 40;
 
-const PLATE_WIDTH_M = 0.32;
-const PLATE_HEIGHT_M = 0.16;
+const PLATE_WIDTH_M = 0.42;
+const FRAME_RAIL_DEPTH_M = 0.045;
+const ENTRANCE_YAW = 0;
+const HELD_WALK_M_PER_SECOND = 2.4;
+const HELD_TURN_RADIANS_PER_SECOND = 1.7;
 
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
@@ -195,7 +211,10 @@ interface Hung {
   placement: Placement;
   work: SceneWork;
   mesh: THREE.Mesh;
+  /** Artwork stays unlit so the supplied image pixels keep their source colour. */
   material: THREE.MeshBasicMaterial;
+  /** Fixed vertex range in the shared continuous frame batch. */
+  frameIndex: number;
   plate: THREE.Mesh | null;
   base: THREE.Texture | null;
   near: THREE.Texture | null;
@@ -206,6 +225,17 @@ interface Hung {
 
 export interface RoomSceneHandle {
   focus: (artworkId: string | null) => void;
+  /** Changes only the backing batch, leaving the visitor's camera intact. */
+  setFrame: (style: FrameStyle) => void;
+  /** Repaints a visible wall label without reconstructing the room. */
+  setLabel: (artworkId: string, label: string | null) => void;
+  /** Held controls: left/right turn and forward/backward walk each frame. */
+  setMovement: (
+    direction: 'forward' | 'backward' | 'left' | 'right',
+    active: boolean
+  ) => void;
+  /** Returns to the unfocused entrance view without rebuilding the gallery. */
+  resetView: () => void;
   dispose: () => void;
   /** Read once, after a visit, for the report. Never drives the product. */
   stats: () => SceneStats;
@@ -223,18 +253,27 @@ export const createRoomScene = async (
    */
   const THREE_NS = await import('three');
   const {
+    AmbientLight,
+    BoxGeometry,
     CanvasTexture,
     Color,
     Fog,
+    HemisphereLight,
+    BufferAttribute,
+    BufferGeometry,
     LinearFilter,
     LinearMipmapLinearFilter,
     Mesh,
     MeshBasicMaterial,
+    MeshStandardMaterial,
+    NoColorSpace,
     PerspectiveCamera,
     PlaneGeometry,
     Raycaster,
+    RepeatWrapping,
     SRGBColorSpace,
     Scene,
+    SpotLight,
     TextureLoader,
     Vector2,
     Vector3,
@@ -259,19 +298,8 @@ export const createRoomScene = async (
 
   const scene = new Scene();
   scene.background = new Color(palette.wall);
-  /*
-   * Fog is the only depth cue in a scene with no lights, and the first
-   * settings were far too weak to be one.
-   *
-   * At 8–46 m nothing in a three-room enfilade fogged at all, so a doorway
-   * three metres away and the wall nine metres beyond it rendered at exactly
-   * the same value: the second room read as a flat wall with six works on it
-   * rather than as a room with another room behind it. Fogging *towards the
-   * ceiling's tone* over 5–28 m is what a gallery actually looks like — the
-   * next room is dimmer than the one you are standing in — and it is what
-   * makes the passage legible as a passage.
-   */
-  scene.fog = new Fog(palette.ceiling, 5, 28);
+  // A distant atmospheric fade complements the physically lit architecture.
+  scene.fog = new Fog(palette.ceiling, 11, 38);
 
   const camera = new PerspectiveCamera(62, 1, 0.08, 90);
   camera.position.set(plan.entry.x, EYE_HEIGHT_M, plan.entry.z);
@@ -281,26 +309,123 @@ export const createRoomScene = async (
   // -------------------------------------------------------------------------
 
   const disposables: { dispose: () => void }[] = [];
+  /** Read by texture completions as well as the renderer teardown. */
+  let disposed = false;
   const track = <T extends { dispose: () => void }>(item: T): T => {
     disposables.push(item);
     return item;
   };
 
+  const materials = new TextureLoader();
+  materials.setCrossOrigin('anonymous');
+  const loadArchitectureMap = async (
+    path: string,
+    repeatX: number,
+    repeatY: number
+  ) => {
+    const texture = await new Promise<THREE.Texture | null>((resolve) =>
+      materials.load(path, resolve, undefined, () => resolve(null))
+    );
+    if (!texture || disposed) {
+      texture?.dispose();
+      return null;
+    }
+    texture.wrapS = RepeatWrapping;
+    texture.wrapT = RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.colorSpace = path.includes('normal')
+      ? NoColorSpace
+      : SRGBColorSpace;
+    texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    texture.needsUpdate = true;
+    disposables.push(texture);
+    return texture;
+  };
+  const floorWidth = plan.rooms[0]?.widthM ?? 5;
+  const floorDepth = plan.rooms[0]?.depthM ?? 6;
+  const [oakColor, oakNormal, plasterColor, plasterNormal] = await Promise.all([
+    loadArchitectureMap(
+      '/room/materials/oak-color.png',
+      floorWidth / 0.72,
+      floorDepth / 1.2
+    ),
+    loadArchitectureMap(
+      '/room/materials/oak-normal.png',
+      floorWidth / 0.72,
+      floorDepth / 1.2
+    ),
+    loadArchitectureMap('/room/materials/plaster-color.png', 18, 12),
+    loadArchitectureMap('/room/materials/plaster-normal.png', 18, 12),
+  ]);
+  const architecturalTextureBytes = 4 * 512 * 512 * 4 * (4 / 3);
+  const floorMaterial = track(
+    new MeshStandardMaterial({
+      color: 0xffffff,
+      map: oakColor,
+      normalMap: oakNormal,
+      roughness: 0.58,
+      metalness: 0,
+    })
+  );
+  const plasterMaterial = track(
+    new MeshStandardMaterial({
+      color: palette.wall,
+      roughnessMap: plasterColor,
+      normalMap: plasterNormal,
+      normalScale: new Vector2(0.025, 0.025),
+      roughness: 0.92,
+    })
+  );
+  const farWallMaterial = track(
+    new MeshStandardMaterial({
+      color: palette.farWall,
+      roughnessMap: plasterColor,
+      normalMap: plasterNormal,
+      normalScale: new Vector2(0.025, 0.025),
+      roughness: 0.9,
+    })
+  );
+  const ceilingMaterial = track(
+    new MeshStandardMaterial({
+      color: palette.ceiling,
+      roughness: 1,
+      // A small bounced-light floor avoids a dark slab above the warm walls.
+      emissive: palette.ceiling,
+      emissiveIntensity: 0.24,
+    })
+  );
+  const trimMaterial = track(
+    new MeshStandardMaterial({ color: palette.cove, roughness: 0.72 })
+  );
+  const shadowMaterial = track(
+    new MeshStandardMaterial({ color: palette.shadow, roughness: 0.84 })
+  );
+  const surfaceGeometry = track(new PlaneGeometry(1, 1));
+  const trackGeometry = track(new BoxGeometry(1, 1, 1));
+  const fixtureMaterial = track(
+    new MeshStandardMaterial({
+      color: 0x514f4a,
+      roughness: 0.72,
+      metalness: 0.08,
+    })
+  );
   const surface = (
     width: number,
     height: number,
-    colour: number,
+    material: THREE.Material,
     position: [number, number, number],
     rotation: [number, number, number]
   ) => {
-    const geometry = track(new PlaneGeometry(width, height));
-    const material = track(new MeshBasicMaterial({ color: colour, fog: true }));
-    const mesh = new Mesh(geometry, material);
+    const mesh = new Mesh(surfaceGeometry, material);
+    mesh.scale.set(width, height, 1);
     mesh.position.set(...position);
     mesh.rotation.set(...rotation);
     scene.add(mesh);
     return mesh;
   };
+
+  scene.add(new AmbientLight(0xffffff, 1.15));
+  scene.add(new HemisphereLight(0xfffaf0, 0x877566, 1.25));
 
   /**
    * A block of text on a wall, drawn to a transparent canvas.
@@ -382,28 +507,60 @@ export const createRoomScene = async (
     const centreZ = (room.southZ + room.northZ) / 2;
     const halfWidth = room.widthM / 2;
 
-    surface(room.widthM, depth, palette.floor, [room.centreX, 0, centreZ], [-Math.PI / 2, 0, 0]);
     surface(
       room.widthM,
       depth,
-      palette.ceiling,
+      floorMaterial,
+      [room.centreX, 0, centreZ],
+      [-Math.PI / 2, 0, 0]
+    );
+    surface(
+      room.widthM,
+      depth,
+      ceilingMaterial,
       [room.centreX, wallHeight, centreZ],
       [Math.PI / 2, 0, 0]
     );
     surface(
       depth,
       wallHeight,
-      palette.wall,
+      plasterMaterial,
       [room.centreX - halfWidth, wallHeight / 2, centreZ],
       [0, Math.PI / 2, 0]
     );
     surface(
       depth,
       wallHeight,
-      palette.wall,
+      plasterMaterial,
       [room.centreX + halfWidth, wallHeight / 2, centreZ],
       [0, -Math.PI / 2, 0]
     );
+
+    /*
+     * The strips do the quiet architectural work a lighting model would
+     * normally do. A low shadow gap grounds plaster to floor; the cove near
+     * the ceiling gives the room an edge without putting a spotlight on art.
+     * They are planes instead of boxes so they keep the original scene's
+     * small geometry and draw-call budget.
+     */
+    const sideAccent = (x: number, rotationY: number) => {
+      surface(
+        depth,
+        0.025,
+        shadowMaterial,
+        [x, 0.013, centreZ],
+        [0, rotationY, 0]
+      );
+      surface(
+        depth,
+        0.03,
+        trimMaterial,
+        [x, wallHeight - 0.015, centreZ],
+        [0, rotationY, 0]
+      );
+    };
+    sideAccent(room.centreX - halfWidth + 0.006, Math.PI / 2);
+    sideAccent(room.centreX + halfWidth - 0.006, -Math.PI / 2);
 
     /*
      * A cross wall is either solid or has a doorway punched through it, and a
@@ -415,18 +572,66 @@ export const createRoomScene = async (
       const rotation: [number, number, number] =
         faceIn > 0 ? [0, 0, 0] : [0, Math.PI, 0];
       if (!hasDoor) {
-        surface(room.widthM, wallHeight, palette.farWall, [room.centreX, wallHeight / 2, z], rotation);
+        surface(
+          room.widthM,
+          wallHeight,
+          farWallMaterial,
+          [room.centreX, wallHeight / 2, z],
+          rotation
+        );
+        surface(
+          room.widthM,
+          0.025,
+          shadowMaterial,
+          [room.centreX, 0.013, z + faceIn * 0.006],
+          rotation
+        );
+        surface(
+          room.widthM,
+          0.03,
+          trimMaterial,
+          [room.centreX, wallHeight - 0.015, z + faceIn * 0.006],
+          rotation
+        );
         return;
       }
       const jamb = (room.widthM - DOOR_WIDTH_M) / 2;
       const offset = DOOR_WIDTH_M / 2 + jamb / 2;
-      surface(jamb, wallHeight, palette.farWall, [room.centreX - offset, wallHeight / 2, z], rotation);
-      surface(jamb, wallHeight, palette.farWall, [room.centreX + offset, wallHeight / 2, z], rotation);
+      surface(
+        jamb,
+        wallHeight,
+        farWallMaterial,
+        [room.centreX - offset, wallHeight / 2, z],
+        rotation
+      );
+      surface(
+        jamb,
+        wallHeight,
+        farWallMaterial,
+        [room.centreX + offset, wallHeight / 2, z],
+        rotation
+      );
       surface(
         DOOR_WIDTH_M,
         wallHeight - doorHeight,
-        palette.farWall,
+        farWallMaterial,
         [room.centreX, doorHeight + (wallHeight - doorHeight) / 2, z],
+        rotation
+      );
+      // A threshold and top cove give the opening a constructed edge while
+      // leaving its middle entirely open to the next room.
+      surface(
+        room.widthM,
+        0.03,
+        trimMaterial,
+        [room.centreX, wallHeight - 0.015, z + faceIn * 0.006],
+        rotation
+      );
+      surface(
+        DOOR_WIDTH_M,
+        0.025,
+        shadowMaterial,
+        [room.centreX, 0.013, z + faceIn * 0.006],
         rotation
       );
       /*
@@ -443,6 +648,31 @@ export const createRoomScene = async (
 
     crossWall(room.northZ, 1, room.doorNorth);
     if (!room.doorSouth) crossWall(room.southZ, -1, false);
+
+    // Slim, flush-mounted tracks leave a clear perimeter and give frame rails
+    // their relief. Shadow maps stay off: thirty artworks must remain mobile.
+    for (const xOffset of [-room.widthM * 0.22, room.widthM * 0.22]) {
+      const rail = new Mesh(trackGeometry, fixtureMaterial);
+      rail.position.set(room.centreX + xOffset, wallHeight - 0.018, centreZ);
+      rail.scale.set(0.026, 0.024, Math.max(0.6, depth - 1.2));
+      scene.add(rail);
+      const fixture = new Mesh(trackGeometry, fixtureMaterial);
+      fixture.position.set(
+        room.centreX + xOffset,
+        wallHeight - 0.07,
+        centreZ - 0.32
+      );
+      fixture.scale.set(0.085, 0.095, 0.085);
+      scene.add(fixture);
+      const light = new SpotLight(0xfff2dd, 6.5, 8, Math.PI / 5, 0.45, 1.5);
+      light.position.set(room.centreX + xOffset, wallHeight - 0.18, centreZ);
+      light.target.position.set(
+        room.centreX + xOffset * 0.55,
+        0.55,
+        centreZ - 0.5
+      );
+      scene.add(light, light.target);
+    }
   }
 
   /*
@@ -460,7 +690,9 @@ export const createRoomScene = async (
     const text = wallText(options.title, options.statement);
     if (text) {
       const geometry = track(new PlaneGeometry(width, width * 0.5));
-      const material = track(new MeshBasicMaterial({ map: text, transparent: true }));
+      const material = track(
+        new MeshBasicMaterial({ map: text, transparent: true })
+      );
       const mesh = new Mesh(geometry, material);
       mesh.position.set(firstRoom.centreX, 1.62, firstRoom.southZ - 0.02);
       mesh.rotation.y = Math.PI;
@@ -477,22 +709,64 @@ export const createRoomScene = async (
    * Two budgets, because they hold different things for different reasons.
    *
    * The pictures compete for six high-resolution slots; the label plates
-   * compete for eight of their own. Sharing one pool meant the plates —
+   * compete for eight of their own. The fixed architectural maps reserve
+   * their 512 KiB before either pool is admitted. Sharing one pool meant the plates —
    * admitted last on each pass — evicted every picture's near texture every
    * cycle, so the room settled into blurry pictures beside crisp labels and
    * the reported byte count was the plates alone. The two allowances are
    * subtracted from one stated ceiling, so `TEXTURE_BUDGET_BYTES` is still the
    * only number anybody has to hold in their head.
    */
-  /** Set by `dispose`, read by everything that can finish after it. */
-  let disposed = false;
-
-  const budget = new TextureBudget(PICTURE_BUDGET_BYTES, MAX_NEAR_TEXTURES);
+  const budget = new TextureBudget(
+    PICTURE_BUDGET_BYTES - architecturalTextureBytes,
+    MAX_NEAR_TEXTURES
+  );
   const plates = new TextureBudget(PLATE_BUDGET_BYTES, MAX_PLATES);
   const loader = new TextureLoader();
   loader.setCrossOrigin('anonymous');
   const hung: Hung[] = [];
   const pickable: THREE.Object3D[] = [];
+
+  // Joined frame rings share one draw call. Each work owns a fixed vertex
+  // range, updated only when its image aspect or the chosen finish changes.
+  const framePositions = new Float32Array(
+    plan.placements.length * FRAME_VERTEX_COUNT * 3
+  );
+  const frameGeometry = track(new BufferGeometry());
+  const framePositionAttribute = new BufferAttribute(framePositions, 3);
+  frameGeometry.setAttribute('position', framePositionAttribute);
+  const backingMaterial = track(
+    new MeshStandardMaterial({
+      color: palette.cove,
+      roughness: 0.54,
+      metalness: 0.04,
+    })
+  );
+  const backings = new Mesh(frameGeometry, backingMaterial);
+  backings.frustumCulled = false;
+  scene.add(backings);
+
+  /*
+   * The joined frame batch varies in width and finish. An unframed work
+   * leaves its ring degenerate and invisible. Keeping this behind the artwork preserves the
+   * source image exactly and means a frame can never intercept a work click.
+   */
+  const frameAppearance = (style: FrameStyle) => {
+    switch (style) {
+      case 'black':
+        return { colour: 0x191816, railM: 0.04 };
+      case 'white':
+        return { colour: 0xf2f0eb, railM: 0.038 };
+      case 'oak':
+        return { colour: 0x765536, railM: 0.052 };
+      case 'gilt':
+        return { colour: 0xb18a39, railM: 0.07 };
+      case 'none':
+        return { colour: palette.cove, railM: 0 };
+    }
+  };
+  let frameStyle: FrameStyle = options.frame ?? 'none';
+  backingMaterial.color.setHex(frameAppearance(frameStyle).colour);
 
   const prepare = (texture: THREE.Texture) => {
     texture.colorSpace = SRGBColorSpace;
@@ -533,6 +807,7 @@ export const createRoomScene = async (
       work,
       mesh,
       material,
+      frameIndex: hung.length,
       plate: null,
       base: null,
       near: null,
@@ -567,7 +842,37 @@ export const createRoomScene = async (
     entry.material.opacity = 1;
     entry.material.transparent = false;
     entry.material.needsUpdate = true;
+    revealBacking(entry);
     positionPlate(entry);
+  };
+
+  const revealBacking = (entry: Hung) => {
+    const appearance = frameAppearance(frameStyle);
+    const offset = entry.frameIndex * FRAME_VERTEX_COUNT * 3;
+    if (appearance.railM === 0 || entry.material.opacity === 0) {
+      framePositions.fill(0, offset, offset + FRAME_VERTEX_COUNT * 3);
+    } else {
+      const vertices = buildFrameVertices({
+        width: entry.widthM,
+        height: entry.heightM,
+        rail: appearance.railM,
+        depth: FRAME_RAIL_DEPTH_M,
+      });
+      const cosine = Math.cos(entry.placement.rotationY);
+      const sine = Math.sin(entry.placement.rotationY);
+      for (let index = 0; index < vertices.length; index += 3) {
+        const x = vertices[index]!;
+        const y = vertices[index + 1]!;
+        const z = vertices[index + 2]!;
+        framePositions[offset + index] =
+          entry.placement.x + x * cosine + z * sine;
+        framePositions[offset + index + 1] = entry.placement.y + y;
+        framePositions[offset + index + 2] =
+          entry.placement.z - x * sine + z * cosine;
+      }
+    }
+    framePositionAttribute.needsUpdate = true;
+    frameGeometry.computeVertexNormals();
   };
 
   const resize = (entry: Hung, aspect: number) => {
@@ -596,6 +901,7 @@ export const createRoomScene = async (
     entry.material.opacity = 1;
     entry.material.transparent = false;
     entry.material.needsUpdate = true;
+    revealBacking(entry);
     positionPlate(entry);
   };
 
@@ -613,27 +919,30 @@ export const createRoomScene = async (
    */
   const drawPlate = (work: SceneWork): THREE.Texture | null => {
     const surfaceCanvas = document.createElement('canvas');
-    surfaceCanvas.width = PLATE_TEXTURE_WIDTH;
-    surfaceCanvas.height = PLATE_TEXTURE_HEIGHT;
+    surfaceCanvas.width = PLATE_WIDTH_PX;
+    surfaceCanvas.height = 64;
     const context = surfaceCanvas.getContext('2d');
     if (!context) return null;
+    const layout = layoutPlate(work, (text, font) => {
+      context.font = font;
+      return context.measureText(text).width;
+    });
+    surfaceCanvas.width = layout.widthPx;
+    surfaceCanvas.height = layout.heightPx;
+    const draw = surfaceCanvas.getContext('2d');
+    if (!draw) return null;
 
-    context.fillStyle = palette.plate;
-    context.fillRect(0, 0, PLATE_TEXTURE_WIDTH, PLATE_TEXTURE_HEIGHT);
-
-    const catalogue = [work.title, work.artist, work.date].filter(Boolean).join('   ');
-    context.fillStyle = palette.inkFaint;
-    context.font = '600 15px "IBM Plex Mono", ui-monospace, monospace';
-    context.fillText(catalogue.toUpperCase().slice(0, 40), 20, 34);
-
-    if (work.label) {
-      context.fillStyle = palette.inkSoft;
-      context.font = '19px "EB Garamond", Georgia, serif';
-      let y = 74;
-      for (const line of wrap(context, work.label, PLATE_TEXTURE_WIDTH - 40, 4)) {
-        context.fillText(line, 20, y);
-        y += 26;
-      }
+    draw.fillStyle = palette.plate;
+    draw.fillRect(0, 0, layout.widthPx, layout.heightPx);
+    for (const line of layout.lines) {
+      draw.font = line.font;
+      draw.fillStyle =
+        line.colorRole === 'title'
+          ? palette.ink
+          : line.colorRole === 'metadata'
+            ? palette.inkFaint
+            : palette.inkSoft;
+      draw.fillText(line.text, line.x, line.y);
     }
 
     const texture = new CanvasTexture(surfaceCanvas);
@@ -641,34 +950,44 @@ export const createRoomScene = async (
     return texture;
   };
 
+  const plateHeight = (entry: Hung) =>
+    (entry.plate?.userData.heightM as number | undefined) ??
+    PLATE_WIDTH_M * 0.4;
+
   const positionPlate = (entry: Hung) => {
     if (!entry.plate) return;
     const { placement } = entry;
     entry.plate.position.set(placement.x, placement.y, placement.z);
     entry.plate.rotation.y = placement.rotationY;
     entry.plate.translateZ(0.021);
-    // Bottom right of the work, at the height a printed label is set.
-    entry.plate.translateX(entry.widthM / 2 + PLATE_WIDTH_M / 2 + 0.055);
-    entry.plate.translateY(-entry.heightM / 2 + PLATE_HEIGHT_M / 2);
+    // This begins outside the physical outer rail, including the wide gilt.
+    const outerEdge = entry.widthM / 2 + frameAppearance(frameStyle).railM;
+    entry.plate.translateX(outerEdge + 0.06 + PLATE_WIDTH_M / 2);
+    entry.plate.translateY(-entry.heightM / 2 + plateHeight(entry) / 2);
   };
 
   const addPlate = (entry: Hung) => {
     if (entry.plate) return;
     const texture = drawPlate(entry.work);
     if (!texture) return;
-    const bytes = textureBytes(PLATE_TEXTURE_WIDTH, PLATE_TEXTURE_HEIGHT);
+    const image = texture.image as { width: number; height: number };
+    const bytes = textureBytes(image.width, image.height);
     for (const id of plates.admit(entry.work.artworkId, 'near', bytes)) {
       removePlate(id);
     }
-    const geometry = new PlaneGeometry(PLATE_WIDTH_M, PLATE_HEIGHT_M);
+    const heightM = PLATE_WIDTH_M * (image.height / image.width);
+    const geometry = new PlaneGeometry(PLATE_WIDTH_M, heightM);
     const material = new MeshBasicMaterial({ map: texture, fog: true });
     entry.plate = new Mesh(geometry, material);
+    entry.plate.userData.heightM = heightM;
     positionPlate(entry);
     scene.add(entry.plate);
   };
 
   const removePlate = (artworkId: string) => {
-    const entry = hung.find((candidate) => candidate.work.artworkId === artworkId);
+    const entry = hung.find(
+      (candidate) => candidate.work.artworkId === artworkId
+    );
     if (!entry?.plate) return;
     scene.remove(entry.plate);
     entry.plate.geometry.dispose();
@@ -699,7 +1018,9 @@ export const createRoomScene = async (
   };
 
   const bytesOf = (texture: THREE.Texture) => {
-    const image = texture.image as { width?: number; height?: number } | undefined;
+    const image = texture.image as
+      | { width?: number; height?: number }
+      | undefined;
     return textureBytes(image?.width ?? 0, image?.height ?? 0);
   };
 
@@ -749,7 +1070,11 @@ export const createRoomScene = async (
       return;
     }
 
-    for (const id of budget.admit(entry.work.artworkId, 'near', bytesOf(texture))) {
+    for (const id of budget.admit(
+      entry.work.artworkId,
+      'near',
+      bytesOf(texture)
+    )) {
       downgrade(id);
     }
     entry.near = texture;
@@ -764,7 +1089,9 @@ export const createRoomScene = async (
    * back to being a picture on a wall across the room, which is what it is.
    */
   const downgrade = (artworkId: string) => {
-    const entry = hung.find((candidate) => candidate.work.artworkId === artworkId);
+    const entry = hung.find(
+      (candidate) => candidate.work.artworkId === artworkId
+    );
     if (!entry?.near) return;
     entry.near.dispose();
     entry.near = null;
@@ -838,11 +1165,12 @@ export const createRoomScene = async (
   // Walking
   // -------------------------------------------------------------------------
 
-  let yaw = 0;
+  let yaw = ENTRANCE_YAW;
   let pitch = 0;
   let standing = { x: plan.entry.x, z: plan.entry.z };
   /** Where the visitor was looking before a work took the camera. */
-  let standingYaw = 0;
+  let standingYaw = ENTRANCE_YAW;
+  const held = new Set<'forward' | 'backward' | 'left' | 'right'>();
 
   interface Move {
     fromX: number;
@@ -960,6 +1288,31 @@ export const createRoomScene = async (
     applyLook();
   };
 
+  const heldMove = (elapsedSeconds: number) => {
+    if (!held.size) return;
+    move = null;
+    if (focused) setFocus(null, false);
+    const turnDirection =
+      (held.has('left') ? 1 : 0) - (held.has('right') ? 1 : 0);
+    if (turnDirection)
+      yaw += turnDirection * HELD_TURN_RADIANS_PER_SECOND * elapsedSeconds;
+    const walkDirection =
+      (held.has('forward') ? 1 : 0) - (held.has('backward') ? 1 : 0);
+    if (walkDirection) {
+      const next = stepTowards(
+        plan,
+        { x: camera.position.x, z: camera.position.z },
+        walkDirection > 0 ? yaw : yaw + Math.PI,
+        HELD_WALK_M_PER_SECOND * elapsedSeconds
+      );
+      standing = next;
+      camera.position.set(next.x, EYE_HEIGHT_M, next.z);
+      standingYaw = yaw;
+    }
+    pitch = 0;
+    applyLook();
+  };
+
   function setFocus(artworkId: string | null, animate: boolean) {
     if (artworkId === focused) return;
     focused = artworkId;
@@ -993,7 +1346,9 @@ export const createRoomScene = async (
       return;
     }
 
-    const entry = hung.find((candidate) => candidate.work.artworkId === artworkId);
+    const entry = hung.find(
+      (candidate) => candidate.work.artworkId === artworkId
+    );
     if (!entry) return;
     const distance = viewingDistance(
       entry.widthM,
@@ -1180,11 +1535,17 @@ export const createRoomScene = async (
   let fps = 0;
   let lastLod = 0;
   let degraded = false;
+  const settleAt = performance.now() + 4000;
   let running = true;
+  let lastTick = performance.now();
 
   const tick = (now: number) => {
     if (!running) return;
     frame = requestAnimationFrame(tick);
+    const elapsedSeconds = Math.min(0.05, Math.max(0, (now - lastTick) / 1000));
+    lastTick = now;
+
+    heldMove(elapsedSeconds);
 
     if (move) {
       const t = Math.min(1, (now - move.start) / move.duration);
@@ -1222,10 +1583,16 @@ export const createRoomScene = async (
        * never climbs back — oscillating between two pixel ratios looks far
        * worse than sitting at the lower one.
        */
-      if (!degraded && fps > 0 && fps < DEGRADE_BELOW_FPS && pixelRatio > 1) {
+      if (
+        !degraded &&
+        now >= settleAt &&
+        fps > 0 &&
+        fps < DEGRADE_BELOW_FPS &&
+        pixelRatio > 1.5
+      ) {
         degraded = true;
-        pixelRatio = 1;
-        renderer.setPixelRatio(1);
+        pixelRatio = Math.max(1.5, pixelRatio - 0.5);
+        renderer.setPixelRatio(pixelRatio);
         resize2d();
       }
     }
@@ -1235,15 +1602,16 @@ export const createRoomScene = async (
     const roomIndex = roomAt(plan, camera.position.z);
     return {
       fps: Math.round(fps),
-      textureBytes: budget.bytes + plates.bytes,
+      textureBytes: budget.bytes + plates.bytes + architecturalTextureBytes,
+      architecturalTextureBytes,
       nearCount: budget.nearCount,
       rendererTextures: renderer.info.memory.textures,
+      rendererDrawCalls: renderer.info.render.calls,
       pixelRatio,
       roomIndex,
       roomCount: plan.rooms.length,
       roomName: plan.rooms[roomIndex]?.name ?? null,
-      metresIntoRoom:
-        (plan.rooms[roomIndex]?.southZ ?? 0) - camera.position.z,
+      metresIntoRoom: (plan.rooms[roomIndex]?.southZ ?? 0) - camera.position.z,
     };
   };
 
@@ -1251,10 +1619,41 @@ export const createRoomScene = async (
 
   return {
     focus: (artworkId) => setFocus(artworkId, true),
+    setFrame: (style) => {
+      if (style === frameStyle) return;
+      frameStyle = style;
+      backingMaterial.color.setHex(frameAppearance(style).colour);
+      for (const entry of hung) revealBacking(entry);
+      backingMaterial.needsUpdate = true;
+    },
+    setLabel: (artworkId, label) => {
+      const entry = hung.find(
+        (candidate) => candidate.work.artworkId === artworkId
+      );
+      if (!entry || entry.work.label === label) return;
+      entry.work.label = label;
+      if (entry.plate) {
+        removePlate(artworkId);
+        addPlate(entry);
+      }
+    },
+    setMovement: (direction, active) => {
+      if (active) held.add(direction);
+      else held.delete(direction);
+    },
+    resetView: () => {
+      held.clear();
+      focused = null;
+      onFocus(null);
+      standing = { x: plan.entry.x, z: plan.entry.z };
+      standingYaw = ENTRANCE_YAW;
+      glideTo(plan.entry.x, plan.entry.z, EYE_HEIGHT_M, ENTRANCE_YAW, 0, 0);
+    },
     stats: snapshot,
     dispose: () => {
       disposed = true;
       running = false;
+      held.clear();
       cancelAnimationFrame(frame);
       observer?.disconnect();
       canvas.removeEventListener('pointerdown', onPointerDown);
