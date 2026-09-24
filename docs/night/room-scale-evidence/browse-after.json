@@ -1,0 +1,457 @@
+{
+ "url": "https://paillette-stg.berlayar.ai/api/public-search/nga/browse?limit=50",
+ "items": 50,
+ "nonNullDimensions": 36,
+ "works": [
+  {
+   "id": "open-access-art:nga:55688",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:75959",
+   "dimensions": {
+    "height": 25.3,
+    "width": 35.4,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:171807",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:163145",
+   "dimensions": {
+    "height": 45.1,
+    "width": 56.8,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:7275",
+   "dimensions": {
+    "height": 117.4,
+    "width": 88,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:135509",
+   "dimensions": {
+    "height": 7.6,
+    "width": 7,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:227216",
+   "dimensions": {
+    "height": 8.8,
+    "width": 15.9,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:20820",
+   "dimensions": {
+    "height": 21.6,
+    "width": 29.1,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:227224",
+   "dimensions": {
+    "height": 8,
+    "width": 7.6,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:55683",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:55682",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:55676",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:19933",
+   "dimensions": {
+    "height": 45.7,
+    "width": 55.1,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:6829",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:75861",
+   "dimensions": {
+    "height": 16.3,
+    "width": 10.7,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:227143",
+   "dimensions": {
+    "height": 8,
+    "width": 15.3,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:4869",
+   "dimensions": {
+    "height": 27.6,
+    "width": 39.2,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:6828",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:227342",
+   "dimensions": {
+    "height": 9.8,
+    "width": 14,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:67141",
+   "dimensions": {
+    "height": 41,
+    "width": 28.5,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:27792",
+   "dimensions": {
+    "height": 35.8,
+    "width": 20.1,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:55670",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:27809",
+   "dimensions": {
+    "height": 48.3,
+    "width": 32.4,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:143679",
+   "dimensions": {
+    "height": 22,
+    "width": 30.2,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:16363",
+   "dimensions": {
+    "height": 33.9,
+    "width": 27.4,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:1692",
+   "dimensions": {
+    "height": 8.3,
+    "width": 12.7,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:53322",
+   "dimensions": {
+    "height": 8.8,
+    "width": 12.7,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:1680",
+   "dimensions": {
+    "height": 7.9,
+    "width": 12.7,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:1693",
+   "dimensions": {
+    "height": 89,
+    "width": 12.5,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:55661",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:227071",
+   "dimensions": {
+    "height": 9.4,
+    "width": 5.5,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:27773",
+   "dimensions": {
+    "height": 35.5,
+    "width": 28,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:28487",
+   "dimensions": {
+    "height": 37.7,
+    "width": 26.5,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:22065",
+   "dimensions": {
+    "height": 52,
+    "width": 57.7,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:55674",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:26821",
+   "dimensions": {
+    "height": 35.3,
+    "width": 28.2,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:227213",
+   "dimensions": {
+    "height": 8,
+    "width": 15.8,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:227142",
+   "dimensions": {
+    "height": 8,
+    "width": 15.2,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:55693",
+   "dimensions": {
+    "height": 18,
+    "width": 26.3,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:23257",
+   "dimensions": {
+    "height": 30.5,
+    "width": 22.6,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:32740",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:17887",
+   "dimensions": {
+    "height": 22.9,
+    "width": 30.5,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:55689",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:20338",
+   "dimensions": {
+    "height": 56.5,
+    "width": 77.8,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:6827",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:27739",
+   "dimensions": {
+    "height": 48.9,
+    "width": 37.2,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:19731",
+   "dimensions": {
+    "height": 29.6,
+    "width": 37,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:32758",
+   "dimensions": {
+    "height": null,
+    "width": null,
+    "depth": null,
+    "unit": null
+   }
+  },
+  {
+   "id": "open-access-art:nga:227301",
+   "dimensions": {
+    "height": 5.7,
+    "width": 4.2,
+    "depth": null,
+    "unit": "cm"
+   }
+  },
+  {
+   "id": "open-access-art:nga:19736",
+   "dimensions": {
+    "height": 27.9,
+    "width": 35.6,
+    "depth": null,
+    "unit": "cm"
+   }
+  }
+ ]
+}
