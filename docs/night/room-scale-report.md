@@ -144,7 +144,38 @@ the backfill.
 
 ## The six-work show
 
-AFTER_SECTION
+`apps/web/scripts/room-scale-shots.ts` opens `/e/MKwsxHy?v=room` on staging.
+It saves the entry view (`before.png` / `after.png`) and both side walls
+(`-west`, `-east`), turned by dragging exactly as a visitor would. Next to
+each set it writes the loader's data and the size the scene hung each work at
+(`before.json` / `after.json`). The browser is headless Chromium on
+SwiftShader, so none of this is a frame-rate claim.
+
+- **Before**: taken 14:23Z against the old code and null columns. 6 works, 0
+  parsed, every work at the default area. That scene predates the size readout,
+  so its hung sizes are null.
+- **After**: taken about 15:07Z against web version `16e1cc7b` (this branch)
+  and the backfilled D1. 6 works, 5 parsed, **6 distinct hung sizes**, 0 page
+  errors.
+
+| work | catalogue (cm) | hung (m) |
+|---|---|---|
+| 169148 Lory, *Voyage pittoresque* (book) | 46.5 × 35.9 × 4 | 0.353 × 0.465 |
+| 50827 Davis, *John and Abigail Montgomery* (sight size) | 22.2 × 35.3 | 0.348 × 0.222 |
+| 17711 IAD, *Sofa* (overall; the IAD object line is ignored) | 22.5 × 30.3 | 0.303 × 0.221 |
+| 138648 Puvis, *Avalanche* | 35.9 × 23.9 | 0.239 × 0.164 (fitted: photographed landscape) |
+| 51278 Callot, *The Stopping Place* | 12.8 × 13.9 | 0.139 × 0.074 (fitted: photographed about 2:1) |
+| 6370 Daumier, lithograph | empty at source | 0.597 × 0.703 (default area, unmeasured) |
+
+Hung sizes are width × height; catalogue sizes are height × width, as the
+museum writes them.
+
+One consequence is visible in `after-west.png`: the room's declared default
+area (0.42 m²) is much larger than the prints and drawings that make up most
+of this collection. The unmeasured Daumier now dwarfs the measured works next
+to it. That is honest, because the default is a declared stand-in and not a
+size, but it will read as odd. Shrinking the default is a design call for the
+room, not part of this issue, so it is left as it is.
 
 ## What was not done
 
