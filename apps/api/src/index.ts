@@ -58,6 +58,12 @@ export interface Env {
   AUTH_CLIENT_ID?: string;
   /** Per-caller hourly ceiling on agent model calls. Defaults to 40 when unset. */
   AGENT_MODEL_CALLS_PER_HOUR?: string;
+  /** Per-caller ceiling on write_labels calls in any 60 minutes. Defaults to 10. */
+  LABEL_CALLS_PER_HOUR?: string;
+  /** Per-caller ceiling on NGA public searches in any 24 hours. Defaults to 300. */
+  NGA_SEARCH_CALLS_PER_DAY?: string;
+  /** Site-wide ceiling on NGA public searches in any 24 hours. Defaults to 3000. */
+  NGA_SEARCH_SITE_CALLS_PER_DAY?: string;
   SEARCH_ACCESS_MODE?: string;
   SEARCH_ACCESS_BOOTSTRAP_EMAIL?: string;
   /** Immutable WorkOS subject for the one bootstrap administrator. */
