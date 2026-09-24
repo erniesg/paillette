@@ -129,7 +129,7 @@ const room = async (
       document.addEventListener('DOMContentLoaded', () => {
         const style = document.createElement('style');
         style.textContent = '.gallery-walk { display: none !important; }';
-        document.head.append(style);
+        document.head.appendChild(style);
       });
     });
   }
