@@ -154,7 +154,7 @@ SwiftShader, so none of this is a frame-rate claim.
 - **Before**: taken 14:23Z against the old code and null columns. 6 works, 0
   parsed, every work at the default area. That scene predates the size readout,
   so its hung sizes are null.
-- **After**: taken about 15:07Z against web version `16e1cc7b` (this branch)
+- **After**: taken 15:06:54Z against web version `16e1cc7b` (this branch)
   and the backfilled D1. 6 works, 5 parsed, **6 distinct hung sizes**, 0 page
   errors.
 
