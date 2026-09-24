@@ -26,7 +26,20 @@
  * object in different ways and must not drift into two different pages.
  */
 
-import { Suspense, lazy, useState } from 'react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { useLocation, useNavigate } from '@remix-run/react';
+import { FRAME_PARAM, frameHref, readFrame } from '~/lib/room/frame';
+import { FrameSelect } from './room/frame-select';
+import { LabelEditor } from './label-editor';
+import { useExhibitionDraft } from './use-exhibition-draft';
+import { shareExhibitionCopy } from '~/lib/exhibition-draft';
 import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 import {
   DEFAULT_TEMPLATE,
@@ -34,10 +47,7 @@ import {
   type ExhibitionTemplate,
 } from '~/lib/room/template';
 import { SOCIAL_CARD_WIDTH, WALL_IMAGE_WIDTH, atWidth } from '~/lib/share/iiif';
-import {
-  TemplateSwitch,
-  useRoomAvailable,
-} from './room/template-switch';
+import { TemplateSwitch, useRoomAvailable } from './room/template-switch';
 
 /**
  * The room is fetched, not bundled.
@@ -92,7 +102,9 @@ export const exhibitionMeta = (page: ExhibitionPage | undefined) => {
 
   return [
     { title: `${page.title} — Paillette` },
-    ...(page.statement ? [{ name: 'description', content: page.statement }] : []),
+    ...(page.statement
+      ? [{ name: 'description', content: page.statement }]
+      : []),
     { property: 'og:type', content: 'article' },
     { property: 'og:site_name', content: 'Paillette' },
     { property: 'og:title', content: page.title },
@@ -121,7 +133,11 @@ export const exhibitionMeta = (page: ExhibitionPage | undefined) => {
     ...(page.statement
       ? [{ name: 'twitter:description', content: page.statement }]
       : []),
-    { tagName: 'link', rel: 'canonical', href: stripTemplate(page.canonicalUrl) },
+    {
+      tagName: 'link',
+      rel: 'canonical',
+      href: stripTemplate(page.canonicalUrl),
+    },
   ];
 };
 
@@ -138,13 +154,169 @@ export const exhibitionMeta = (page: ExhibitionPage | undefined) => {
  * cannot draw a room it simply never swaps, and the word ROOM is never
  * offered — the degradation is that there is nothing to degrade.
  */
-export const ExhibitionView = ({
-  page,
+const ExhibitionPresentation = ({
+  page: originalPage,
   template = DEFAULT_TEMPLATE,
 }: {
   page: ExhibitionPage;
   template?: ExhibitionTemplate;
 }) => {
+  const revision = useRef(0);
+  const { page, dirty, storageError, setLabel, reset } = useExhibitionDraft(
+    originalPage,
+    () => {
+      revision.current += 1;
+    }
+  );
+  const location = useLocation();
+  const navigate = useNavigate();
+  const frame = readFrame(
+    new URLSearchParams(location.search).get(FRAME_PARAM)
+  );
+  const [editing, setEditing] = useState(false);
+  const [unsaved, setUnsaved] = useState<Record<string, boolean>>({});
+  const [sharing, setSharing] = useState(false);
+  const [sharedUrl, setSharedUrl] = useState('');
+  const [shareError, setShareError] = useState('');
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    revision.current += 1;
+    setSharedUrl('');
+    setCopied(false);
+  }, [template, frame, page]);
+  const editLocked = Object.values(unsaved).some(Boolean);
+  const setDirty = useCallback((id: string, value: boolean) => {
+    setUnsaved((current) =>
+      current[id] === value ? current : { ...current, [id]: value }
+    );
+  }, []);
+  const commitLabel = (id: string, text: string, by: 'human' | 'agent') => {
+    revision.current += 1;
+    setLabel(id, text, by);
+    setSharedUrl('');
+    setCopied(false);
+  };
+  const share = async () => {
+    const sharingRevision = revision.current;
+    setSharing(true);
+    setShareError('');
+    setCopied(false);
+    try {
+      const url = await shareExhibitionCopy(page, { template, frame });
+      if (sharingRevision !== revision.current) {
+        setShareError(
+          'Your labels, frame, or view changed. Share again for the latest copy.'
+        );
+        return;
+      }
+      setSharedUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+      } catch {
+        /* Selectable URL remains available. */
+      }
+    } catch (error) {
+      setShareError(
+        error instanceof Error ? error.message : 'Could not share this copy.'
+      );
+    } finally {
+      setSharing(false);
+    }
+  };
+  const controls = (
+    <div className="exhibition-controls">
+      <div className="exhibition-controls-row">
+        <label className="exhibition-frame-control">
+          Frame
+          <FrameSelect
+            value={frame}
+            onChange={(next) => {
+              revision.current += 1;
+              setSharedUrl('');
+              setCopied(false);
+              navigate(
+                frameHref(
+                  `${location.pathname}${location.search}${location.hash ?? ''}`,
+                  next
+                ),
+                { preventScrollReset: true, replace: true }
+              );
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={editLocked || sharing}
+          onClick={() => setEditing(!editing)}
+        >
+          {editing ? 'Done editing' : 'Edit labels'}
+        </button>
+        <button
+          type="button"
+          disabled={
+            editLocked || sharing || !page.collectionId || !page.works.length
+          }
+          onClick={() => void share()}
+        >
+          {sharing ? 'Creating link…' : dirty ? 'Share copy' : 'Copy link'}
+        </button>
+        {dirty && (
+          <button
+            type="button"
+            disabled={editLocked || sharing}
+            onClick={() => {
+              revision.current += 1;
+              reset();
+              setSharedUrl('');
+              setCopied(false);
+            }}
+          >
+            Reset labels
+          </button>
+        )}
+      </div>
+      {(editing || dirty || storageError) && (
+        <p className="exhibition-draft-status" role="status">
+          {editLocked
+            ? 'Save or discard your label before leaving this work.'
+            : storageError
+              ? 'Changes are kept in this tab only.'
+              : dirty
+                ? 'Labels saved on this device. Share a copy to send your changes.'
+                : 'Edit a copy. The original exhibition stays unchanged.'}
+          {editing && template === 'room' && !editLocked
+            ? ' Select a work to edit its label.'
+            : ''}
+        </p>
+      )}
+      {sharedUrl && (
+        <label className="exhibition-copy-link">
+          {copied ? 'Link copied' : 'Copy this link'}
+          <input
+            aria-label="Exhibition link"
+            value={sharedUrl}
+            readOnly
+            onFocus={(event) => event.currentTarget.select()}
+          />
+        </label>
+      )}
+      {shareError && <p role="alert">{shareError}</p>}
+    </div>
+  );
+  const renderLabelEditor = editing
+    ? (work: ExhibitionPage['works'][number]) => (
+        <LabelEditor
+          key={work.artworkId}
+          work={work}
+          collectionId={page.collectionId}
+          exhibitionTitle={page.title}
+          exhibitionStatement={page.statement}
+          onDirtyChange={(value) => setDirty(work.artworkId, value)}
+          onCommit={(text, by) => commitLabel(work.artworkId, text, by)}
+        />
+      )
+    : undefined;
   const agentWritten = page.works.filter((work) => work.labelByAgent).length;
   const detected = useRoomAvailable();
   /*
@@ -154,6 +326,7 @@ export const ExhibitionView = ({
    * word ROOM would survive the thing it points at.
    */
   const [roomLost, setRoomLost] = useState(false);
+  const onRoomUnavailable = useCallback(() => setRoomLost(true), []);
   const available = roomLost ? 'no' : detected;
 
   if (template === 'room' && available !== 'no') {
@@ -176,7 +349,11 @@ export const ExhibitionView = ({
             page={page}
             template={template}
             available
-            onUnavailable={() => setRoomLost(true)}
+            frame={frame}
+            controls={controls}
+            renderLabelEditor={renderLabelEditor}
+            editLocked={editLocked}
+            onUnavailable={onRoomUnavailable}
           />
         ) : (
           <main className="exhibition-room" />
@@ -186,7 +363,7 @@ export const ExhibitionView = ({
   }
 
   return (
-    <main className="exhibition-page">
+    <main className="exhibition-page" data-frame={frame}>
       <header className="exhibition-masthead">
         <h1 className="exhibition-title">{page.title}</h1>
         {page.statement && (
@@ -207,8 +384,11 @@ export const ExhibitionView = ({
           <p className="exhibition-count lt-catalogue">
             {page.works.length} {page.works.length === 1 ? 'work' : 'works'}
           </p>
-          <TemplateSwitch template={template} available={available} />
+          {!editLocked && (
+            <TemplateSwitch template={template} available={available} />
+          )}
         </div>
+        {controls}
       </header>
 
       <ol className="exhibition-hang">
@@ -217,7 +397,9 @@ export const ExhibitionView = ({
             <figure>
               {work.imageUrl ? (
                 <img
-                  src={atWidth(work.imageUrl, WALL_IMAGE_WIDTH) ?? work.imageUrl}
+                  src={
+                    atWidth(work.imageUrl, WALL_IMAGE_WIDTH) ?? work.imageUrl
+                  }
                   alt={work.label ?? work.title}
                   loading={index < 2 ? 'eager' : 'lazy'}
                   className="exhibition-image"
@@ -236,14 +418,16 @@ export const ExhibitionView = ({
                   {work.medium && <span>{work.medium}</span>}
                 </p>
 
-                {work.label && (
-                  <p
-                    className="exhibition-label"
-                    data-provenance={work.labelByAgent ? 'agent' : 'human'}
-                  >
-                    {work.label}
-                  </p>
-                )}
+                {renderLabelEditor
+                  ? renderLabelEditor(work)
+                  : work.label && (
+                      <p
+                        className="exhibition-label"
+                        data-provenance={work.labelByAgent ? 'agent' : 'human'}
+                      >
+                        {work.label}
+                      </p>
+                    )}
 
                 <p className="exhibition-accession lt-catalogue">
                   {work.accession && <span>{work.accession}</span>}
@@ -295,3 +479,13 @@ export const ExhibitionView = ({
     </main>
   );
 };
+
+export const ExhibitionView = (props: {
+  page: ExhibitionPage;
+  template?: ExhibitionTemplate;
+}) => (
+  <ExhibitionPresentation
+    key={props.page.code ?? stripTemplate(props.page.canonicalUrl)}
+    {...props}
+  />
+);

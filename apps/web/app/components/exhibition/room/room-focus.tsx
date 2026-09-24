@@ -5,18 +5,16 @@
  * is not a shortcut — it is why it is legible at any resolution, selectable,
  * translatable, and reachable by a screen reader, none of which a canvas gets.
  *
- * **The label is the published one.** `label` here is the `current` value of the
- * exhibition field — what the human wrote, or what they accepted — and a
- * `proposed` rewording never reaches this payload at all. The room cannot
- * render an agent's unaccepted suggestion as though it had been taken, by
- * construction rather than by a check somebody has to remember. Which one it is
- * shows as ink, off the same `data-provenance` attribute the flat page uses.
+ * The displayed label is published text or a committed local edit. AI
+ * suggestions remain inside the optional editor until explicitly accepted.
+ * Authorship uses the same data-provenance attribute as the flat page.
  *
  * Terse on purpose, and split out from `room-view` so that can be asserted:
  * every string below is either the catalogue's or the curator's. Nothing here
  * explains the room, and the read-aloud is a mark rather than a sentence.
  */
 
+import type { ReactNode } from 'react';
 import { SpeakButton } from '~/components/artwork/speak-button';
 import type { ExhibitionPage } from '~/lib/exhibition-page.server';
 
@@ -31,7 +29,13 @@ export type FocusedWork = ExhibitionPage['works'][number];
 export const catalogueLine = (work: FocusedWork) =>
   [work.title, work.artist, work.date, work.medium].filter(Boolean).join(', ');
 
-export const FocusedLabel = ({ work }: { work: FocusedWork }) => (
+export const FocusedLabel = ({
+  work,
+  labelEditor,
+}: {
+  work: FocusedWork;
+  labelEditor?: ReactNode;
+}) => (
   <aside className="exhibition-room-focus">
     <p className="exhibition-line">
       <span className="exhibition-work-title">{work.title}</span>
@@ -40,14 +44,15 @@ export const FocusedLabel = ({ work }: { work: FocusedWork }) => (
       {work.medium && <span>{work.medium}</span>}
     </p>
 
-    {work.label && (
-      <p
-        className="exhibition-label"
-        data-provenance={work.labelByAgent ? 'agent' : 'human'}
-      >
-        {work.label}
-      </p>
-    )}
+    {labelEditor ??
+      (work.label && (
+        <p
+          className="exhibition-label"
+          data-provenance={work.labelByAgent ? 'agent' : 'human'}
+        >
+          {work.label}
+        </p>
+      ))}
 
     {/*
       The catalogue line, the accession and the mark that reads the label
@@ -60,7 +65,12 @@ export const FocusedLabel = ({ work }: { work: FocusedWork }) => (
     <p className="exhibition-accession lt-catalogue">
       {work.accession && <span>{work.accession}</span>}
       {work.sourceUrl && (
-        <a href={work.sourceUrl} rel="noreferrer noopener">
+        <a
+          href={work.sourceUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          aria-label="Catalogue record (opens in a new tab)"
+        >
           Catalogue record
         </a>
       )}

@@ -50,7 +50,7 @@ describe('the focused wall label', () => {
     expect(screen.getByText(WORK.artist!)).toBeInTheDocument();
     expect(screen.getByText(WORK.label!)).toBeInTheDocument();
     expect(screen.getByText(WORK.accession!)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Catalogue record' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Catalogue record (opens in a new tab)' })).toHaveAttribute(
       'href',
       WORK.sourceUrl
     );
@@ -71,7 +71,7 @@ describe('the focused wall label', () => {
     expect(screen.queryByRole('button')).toBeNull();
     // Everything a visitor came for is still on the label.
     expect(screen.getByText(WORK.label!)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Catalogue record' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Catalogue record (opens in a new tab)' })).toBeInTheDocument();
   });
 
   it('reads the label and the catalogue line, not one without the other', () => {
