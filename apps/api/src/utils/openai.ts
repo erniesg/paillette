@@ -22,8 +22,15 @@ export type OpenAiFailureCode =
   | 'OPENAI_NOT_CONFIGURED'
   /** Our own KV day-counter hit `OPENAI_DAILY_CALL_LIMIT`. Ours to raise. */
   | 'OPENAI_DAILY_BUDGET_SPENT'
-  /** OpenAI itself returned 429 — the key is throttled or out of credit. */
+  /** OpenAI itself returned 429 and said it is throttling the key. */
   | 'OPENAI_RATE_LIMITED'
+  /**
+   * OpenAI returned 429 saying the account behind the key has no credit —
+   * `insufficient_quota` in its docs, `credit_balance_exhausted` as measured on
+   * staging on 2026-09-24. Also a 429, and not one that waiting fixes — only the
+   * owner topping the account up does.
+   */
+  | 'OPENAI_OUT_OF_CREDIT'
   | 'OPENAI_REQUEST_FAILED'
   | 'OPENAI_BAD_RESPONSE';
 
@@ -41,6 +48,55 @@ export class OpenAiUnavailableError extends Error {
     this.code = code;
   }
 }
+
+/**
+ * Turn a failed OpenAI response into an error that says which failure it was.
+ *
+ * OpenAI's 429 covers two situations that call for opposite responses: a
+ * throttle that passes if you wait, and an account with no credit that never
+ * does. The body says which (`error.code`), so it is read rather than guessed
+ * from the status. Only OpenAI's own code is kept — never the body — so
+ * nothing about the key or the account reaches a log.
+ */
+const OUT_OF_CREDIT_CODES = new Set([
+  'insufficient_quota',
+  'credit_balance_exhausted',
+]);
+
+const upstreamFailure = async (
+  response: Response
+): Promise<OpenAiUnavailableError> => {
+  let upstreamCode = '';
+  try {
+    const body = (await response.json()) as {
+      error?: { code?: unknown; type?: unknown };
+    };
+    const code = body?.error?.code ?? body?.error?.type;
+    upstreamCode = typeof code === 'string' ? code.slice(0, 64) : '';
+  } catch {
+    // Not JSON. The status is still enough to go on.
+  }
+  const detail = upstreamCode ? ` (${upstreamCode})` : '';
+  console.warn(`openai: ${response.status}${detail}`);
+  if (response.status === 429) {
+    return OUT_OF_CREDIT_CODES.has(upstreamCode)
+      ? new OpenAiUnavailableError(
+          `OpenAI refused the key: no credit${detail}`,
+          503,
+          'OPENAI_OUT_OF_CREDIT'
+        )
+      : new OpenAiUnavailableError(
+          `OpenAI request failed with 429${detail}`,
+          429,
+          'OPENAI_RATE_LIMITED'
+        );
+  }
+  return new OpenAiUnavailableError(
+    `OpenAI request failed with ${response.status}${detail}`,
+    503,
+    'OPENAI_REQUEST_FAILED'
+  );
+};
 
 export type OpenAiTextPart = { type: 'text'; text: string };
 export type OpenAiImagePart = {
@@ -245,13 +301,7 @@ export const openaiChatDetailed = async (
     signal: options.signal,
   });
 
-  if (!response.ok) {
-    throw new OpenAiUnavailableError(
-      `OpenAI request failed with ${response.status}`,
-      response.status === 429 ? 429 : 503,
-      response.status === 429 ? 'OPENAI_RATE_LIMITED' : 'OPENAI_REQUEST_FAILED'
-    );
-  }
+  if (!response.ok) throw await upstreamFailure(response);
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: Record<string, unknown> }>;
@@ -310,13 +360,7 @@ export const openaiCompletion = async (
     signal: options.signal,
   });
 
-  if (!response.ok) {
-    throw new OpenAiUnavailableError(
-      `OpenAI request failed with ${response.status}`,
-      response.status === 429 ? 429 : 503,
-      response.status === 429 ? 'OPENAI_RATE_LIMITED' : 'OPENAI_REQUEST_FAILED'
-    );
-  }
+  if (!response.ok) throw await upstreamFailure(response);
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;

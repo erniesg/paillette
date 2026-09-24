@@ -491,7 +491,12 @@ agent.post('/public-agent/turn', async (c) => {
               'AGENT_RATE_LIMITED',
               'The model provider is rate-limiting this site right now. Try again shortly.',
             ] as const)
-          : (['AGENT_UNAVAILABLE', 'The agent is temporarily unavailable.'] as const);
+          : failure.code === 'OPENAI_OUT_OF_CREDIT'
+            ? ([
+                'AGENT_PROVIDER_CREDIT_SPENT',
+                "The model provider has no credit left on this site's key. Waiting will not help; the account needs topping up.",
+              ] as const)
+            : (['AGENT_UNAVAILABLE', 'The agent is temporarily unavailable.'] as const);
     return c.json(jsonError(code, message), status === 429 ? 429 : 503);
   }
 });

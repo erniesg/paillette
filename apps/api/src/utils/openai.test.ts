@@ -156,3 +156,49 @@ describe('daily quota', () => {
     );
   });
 });
+
+describe('telling the upstream 429s apart', () => {
+  const failWith = (status: number, body: unknown) =>
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(body, status));
+  const quiet = () => vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  it('calls an account with no credit what it is, not a throttle', async () => {
+    const warn = quiet();
+    const fetchMock = failWith(429, {
+      error: { code: 'insufficient_quota', type: 'insufficient_quota', message: 'secret-ish detail' },
+    });
+    const error = await openaiCompletion({
+      env: ENV,
+      messages: [{ role: 'user', content: 'x' }],
+    }).catch((caught) => caught);
+    expect(error).toMatchObject({ code: 'OPENAI_OUT_OF_CREDIT', status: 503 });
+    // Only OpenAI's code reaches the log, never its message.
+    expect(String(warn.mock.calls[0]?.[0])).toBe('openai: 429 (insufficient_quota)');
+    fetchMock.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('knows the code staging actually sent', async () => {
+    const warn = quiet();
+    const fetchMock = failWith(429, { error: { code: 'credit_balance_exhausted' } });
+    const error = await openaiCompletion({
+      env: ENV,
+      messages: [{ role: 'user', content: 'x' }],
+    }).catch((caught) => caught);
+    expect(error).toMatchObject({ code: 'OPENAI_OUT_OF_CREDIT' });
+    fetchMock.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('keeps a throttle a 429 that waiting fixes', async () => {
+    const warn = quiet();
+    const fetchMock = failWith(429, { error: { code: 'rate_limit_exceeded' } });
+    const error = await openaiCompletion({
+      env: ENV,
+      messages: [{ role: 'user', content: 'x' }],
+    }).catch((caught) => caught);
+    expect(error).toMatchObject({ code: 'OPENAI_RATE_LIMITED', status: 429 });
+    fetchMock.mockRestore();
+    warn.mockRestore();
+  });
+});

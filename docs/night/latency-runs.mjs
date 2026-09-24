@@ -248,7 +248,11 @@ export const runTimedTurns = async ({ base, argv }) => {
 
   const { resolveBrowserDriver } = await import('../../scripts/demo/browser.mjs');
   const { chromium } = await resolveBrowserDriver();
-  const browser = await chromium.launch();
+  // The same override verify-demo-path.mjs takes, for a machine whose
+  // installed browser is not the build the workspace's driver expects.
+  const browser = await chromium.launch(
+    process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}
+  );
 
   try {
     for (const kind of classes) {
