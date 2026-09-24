@@ -22,8 +22,15 @@ export type OpenAiFailureCode =
   | 'OPENAI_NOT_CONFIGURED'
   /** Our own KV day-counter hit `OPENAI_DAILY_CALL_LIMIT`. Ours to raise. */
   | 'OPENAI_DAILY_BUDGET_SPENT'
-  /** OpenAI itself returned 429 — the key is throttled or out of credit. */
+  /** OpenAI itself returned 429 and said it is throttling the key. */
   | 'OPENAI_RATE_LIMITED'
+  /**
+   * OpenAI returned 429 saying the account behind the key has no credit —
+   * `insufficient_quota` in its docs, `credit_balance_exhausted` as measured on
+   * staging on 2026-09-24. Also a 429, and not one that waiting fixes — only the
+   * owner topping the account up does.
+   */
+  | 'OPENAI_OUT_OF_CREDIT'
   | 'OPENAI_REQUEST_FAILED'
   | 'OPENAI_BAD_RESPONSE';
 
@@ -41,6 +48,55 @@ export class OpenAiUnavailableError extends Error {
     this.code = code;
   }
 }
+
+/**
+ * Turn a failed OpenAI response into an error that says which failure it was.
+ *
+ * OpenAI's 429 covers two situations that call for opposite responses: a
+ * throttle that passes if you wait, and an account with no credit that never
+ * does. The body says which (`error.code`), so it is read rather than guessed
+ * from the status. Only OpenAI's own code is kept — never the body — so
+ * nothing about the key or the account reaches a log.
+ */
+const OUT_OF_CREDIT_CODES = new Set([
+  'insufficient_quota',
+  'credit_balance_exhausted',
+]);
+
+const upstreamFailure = async (
+  response: Response
+): Promise<OpenAiUnavailableError> => {
+  let upstreamCode = '';
+  try {
+    const body = (await response.json()) as {
+      error?: { code?: unknown; type?: unknown };
+    };
+    const code = body?.error?.code ?? body?.error?.type;
+    upstreamCode = typeof code === 'string' ? code.slice(0, 64) : '';
+  } catch {
+    // Not JSON. The status is still enough to go on.
+  }
+  const detail = upstreamCode ? ` (${upstreamCode})` : '';
+  console.warn(`openai: ${response.status}${detail}`);
+  if (response.status === 429) {
+    return OUT_OF_CREDIT_CODES.has(upstreamCode)
+      ? new OpenAiUnavailableError(
+          `OpenAI refused the key: no credit${detail}`,
+          503,
+          'OPENAI_OUT_OF_CREDIT'
+        )
+      : new OpenAiUnavailableError(
+          `OpenAI request failed with 429${detail}`,
+          429,
+          'OPENAI_RATE_LIMITED'
+        );
+  }
+  return new OpenAiUnavailableError(
+    `OpenAI request failed with ${response.status}${detail}`,
+    503,
+    'OPENAI_REQUEST_FAILED'
+  );
+};
 
 export type OpenAiTextPart = { type: 'text'; text: string };
 export type OpenAiImagePart = {
@@ -153,6 +209,44 @@ export type OpenAiChatOptions = {
 };
 
 /**
+ * What one model call cost, in the two currencies that decide how long a turn
+ * takes: wall time spent waiting on OpenAI, and the tokens it had to read.
+ *
+ * `cachedTokens` is the part of the prompt OpenAI served from its own prefix
+ * cache — cheaper and faster than the rest, and the reason a long system prompt
+ * that never changes is not as expensive as its length suggests. Reported
+ * rather than assumed, because that is exactly the kind of thing a latency cut
+ * gets wrong.
+ */
+export type OpenAiCallUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  cachedTokens: number | null;
+};
+
+export type OpenAiChatResult = {
+  message: Record<string, unknown>;
+  usage: OpenAiCallUsage;
+  /** From just before the request left to its body being parsed. */
+  upstreamMs: number;
+};
+
+const readUsage = (usage: unknown): OpenAiCallUsage => {
+  const record = (usage ?? {}) as {
+    prompt_tokens?: unknown;
+    completion_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown } | null;
+  };
+  const count = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return {
+    promptTokens: count(record.prompt_tokens),
+    completionTokens: count(record.completion_tokens),
+    cachedTokens: count(record.prompt_tokens_details?.cached_tokens),
+  };
+};
+
+/**
  * One tool-calling turn. Unlike `openaiCompletion` this returns the assistant
  * message untouched — including `tool_calls` — because the caller is a loop
  * that has to relay it back verbatim on the next turn.
@@ -161,7 +255,16 @@ export type OpenAiChatOptions = {
  */
 export const openaiChat = async (
   options: OpenAiChatOptions
-): Promise<Record<string, unknown>> => {
+): Promise<Record<string, unknown>> =>
+  (await openaiChatDetailed(options)).message;
+
+/**
+ * `openaiChat`, plus what the call cost. The agent route relays this to the
+ * page so a turn can say where its time went; nothing else needs it.
+ */
+export const openaiChatDetailed = async (
+  options: OpenAiChatOptions
+): Promise<OpenAiChatResult> => {
   const apiKey = options.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new OpenAiUnavailableError(
@@ -178,6 +281,7 @@ export const openaiChat = async (
     );
   }
 
+  const startedAt = Date.now();
   const response = await fetch(OPENAI_CHAT_URL, {
     method: 'POST',
     headers: {
@@ -197,17 +301,13 @@ export const openaiChat = async (
     signal: options.signal,
   });
 
-  if (!response.ok) {
-    throw new OpenAiUnavailableError(
-      `OpenAI request failed with ${response.status}`,
-      response.status === 429 ? 429 : 503,
-      response.status === 429 ? 'OPENAI_RATE_LIMITED' : 'OPENAI_REQUEST_FAILED'
-    );
-  }
+  if (!response.ok) throw await upstreamFailure(response);
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: Record<string, unknown> }>;
+    usage?: unknown;
   };
+  const upstreamMs = Date.now() - startedAt;
   const message = payload.choices?.[0]?.message;
   if (!message) {
     throw new OpenAiUnavailableError(
@@ -216,7 +316,7 @@ export const openaiChat = async (
       'OPENAI_BAD_RESPONSE'
     );
   }
-  return message;
+  return { message, usage: readUsage(payload.usage), upstreamMs };
 };
 
 export const openaiCompletion = async (
@@ -260,13 +360,7 @@ export const openaiCompletion = async (
     signal: options.signal,
   });
 
-  if (!response.ok) {
-    throw new OpenAiUnavailableError(
-      `OpenAI request failed with ${response.status}`,
-      response.status === 429 ? 429 : 503,
-      response.status === 429 ? 'OPENAI_RATE_LIMITED' : 'OPENAI_REQUEST_FAILED'
-    );
-  }
+  if (!response.ok) throw await upstreamFailure(response);
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;

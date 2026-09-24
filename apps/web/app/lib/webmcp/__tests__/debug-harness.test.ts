@@ -6,6 +6,12 @@ import {
   isWebMcpDebugRequested,
   WEBMCP_DEBUG_PARAM,
 } from '../debug-harness';
+import {
+  clearTurnTimings,
+  loadTurnTimings,
+  saveTurnTiming,
+  startTurnTiming,
+} from '../turn-timing';
 
 const setSearch = (search: string) => {
   window.history.replaceState({}, '', `/nga/search${search}`);
@@ -238,5 +244,33 @@ describe('installWebMcpDebugHarness disposal', () => {
     installWebMcpDebugHarness()();
 
     expect(document.modelContext).toBe(real);
+  });
+});
+
+describe('timing()', () => {
+  afterEach(() => {
+    clearTurnTimings();
+  });
+
+  it('prints every timed turn as a table and returns the records', () => {
+    installWebMcpDebugHarness();
+    const timer = startTurnTiming('storms at sea');
+    timer.classify('correction');
+    saveTurnTiming(timer.finish('replied'));
+
+    const table = vi.spyOn(console, 'table').mockImplementation(() => {});
+    const read = window.__paillette_webmcp!.timing();
+    expect(read).toHaveLength(1);
+    expect(table).toHaveBeenCalledWith([
+      expect.objectContaining({ kind: 'correction', modelCalls: 0, nudges: 0 }),
+    ]);
+    table.mockRestore();
+  });
+
+  it('empties the record when asked, so a harness can take one class at a time', () => {
+    installWebMcpDebugHarness();
+    saveTurnTiming(startTurnTiming('x').finish('replied'));
+    expect(window.__paillette_webmcp!.timing({ clear: true, quiet: true })).toHaveLength(1);
+    expect(loadTurnTimings()).toEqual([]);
   });
 });

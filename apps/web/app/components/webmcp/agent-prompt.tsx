@@ -48,6 +48,12 @@ import { recallArtwork } from '~/lib/webmcp/artwork-index';
 import { toAgentArtworkSummary } from '~/lib/webmcp/artwork-summary';
 import { useWebMcpState } from './use-webmcp-state';
 import { PAILLETTE_READ_ONLY_TOOL_NAMES } from '~/lib/webmcp/tools';
+import {
+  saveTurnTiming,
+  startTurnTiming,
+  type ServerCallTiming,
+  type TurnTiming,
+} from '~/lib/webmcp/turn-timing';
 
 /**
  * An agent, in the page, for visitors who did not bring one.
@@ -465,6 +471,10 @@ export function AgentPrompt({
      */
     prepared?: ReturnType<typeof toTurnPayload>
   ) => {
+    // Enter, as far as the clock is concerned. Everything the human waits
+    // through from here to the note is on this timer. See `turn-timing`.
+    const timer = startTurnTiming(instruction);
+    let outcome: TurnTiming['outcome'] = 'budget';
     setBusy(true);
     setEntries((current) => [
       ...current,
@@ -512,6 +522,25 @@ export function AgentPrompt({
           (edit) => edit.field === 'statement' && edit.value.trim()
         )
       );
+      timer.classify(
+        statementCorrected
+          ? 'correction'
+          : getWebMcpState().flags.some((flag) => flag.by === 'human')
+            ? 'redeal'
+            : 'ask'
+      );
+      /**
+       * When the wall last got a sentence, so the timer can tell the note this
+       * turn wrote from one that was already there.
+       */
+      const noteStamp = () => {
+        const state = getWebMcpState();
+        return Math.max(
+          state.board?.note?.trim() ? (state.board.at ?? 0) : 0,
+          state.agentResults?.note?.trim() ? (state.agentResults.at ?? 0) : 0
+        );
+      };
+      const noteBefore = noteStamp();
       /**
        * What the page has already put this turn back to work over, keyed on the
        * job rather than on the kind of job — so the same six unlabelled works
@@ -538,13 +567,15 @@ export function AgentPrompt({
        * See `TURNS_PER_NUDGE`.
        */
       let budget = MAX_TURNS;
-      const putBackToWork = (message: string): boolean => {
+      const putBackToWork = (message: string, key: string): boolean => {
         if (nudged.size >= MAX_NUDGES) return false;
         historyRef.current = [
           ...historyRef.current,
           { role: 'system', content: message },
         ];
         budget = Math.min(budget + TURNS_PER_NUDGE, HARD_MAX_TURNS);
+        nudged.add(key);
+        timer.nudge(key);
         return true;
       };
 
@@ -587,10 +618,7 @@ export function AgentPrompt({
          * `nudged` counts. The model still writes every word.
          */
         const gap = findShowGap(readShowState(statementCorrected), nudged);
-        if (gap && putBackToWork(gap.message)) {
-          nudged.add(gap.key);
-          return true;
-        }
+        if (gap && putBackToWork(gap.message, gap.key)) return true;
 
         /*
          * And: if they asked for the show to be divided, is it divided?
@@ -605,10 +633,7 @@ export function AgentPrompt({
          * stay entirely the model's to choose.
          */
         const rooms = findUnnamedRooms(readRoomsState(instruction), nudged);
-        if (rooms && putBackToWork(rooms.message)) {
-          nudged.add(rooms.key);
-          return true;
-        }
+        if (rooms && putBackToWork(rooms.message, rooms.key)) return true;
 
         /*
          * And: did it answer their hands with anything but a sentence?
@@ -631,8 +656,7 @@ export function AgentPrompt({
         const boardKey = `unmarked:${marks.board
           .map((work) => work.artworkId)
           .join(',')}`;
-        if (unmarked && !nudged.has(boardKey) && putBackToWork(unmarked)) {
-          nudged.add(boardKey);
+        if (unmarked && !nudged.has(boardKey) && putBackToWork(unmarked, boardKey)) {
           return true;
         }
         return false;
@@ -652,6 +676,7 @@ export function AgentPrompt({
       }));
 
       for (let turn = 0; turn < budget; turn += 1) {
+        const requestedAt = timer.mark();
         const response = await fetch('/api/public-agent/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -674,7 +699,7 @@ export function AgentPrompt({
         });
         type TurnPayload = {
           success?: boolean;
-          data?: { message: AgentMessage };
+          data?: { message: AgentMessage; timing?: ServerCallTiming };
           error?: { message?: string };
         };
         // An HTML error page from an edge, or a stale deploy with no such
@@ -690,7 +715,15 @@ export function AgentPrompt({
             },
           };
         }
+        timer.modelCall(
+          requestedAt,
+          payload.data?.timing ?? null,
+          (payload.data?.message?.tool_calls ?? []).map(
+            (call) => call.function?.name ?? '?'
+          )
+        );
         if (!response.ok || !payload.success || !payload.data) {
+          outcome = 'error';
           setEntries((current) => [
             ...current,
             {
@@ -707,6 +740,7 @@ export function AgentPrompt({
         const calls = message.tool_calls ?? [];
         if (calls.length === 0) {
           if (finishTheJob()) continue;
+          outcome = 'replied';
           const said = (message.content ?? '').trim();
           if (said) {
             setEntries((current) => [...current, { kind: 'agent', text: said }]);
@@ -793,9 +827,17 @@ export function AgentPrompt({
               },
             };
           }
+          const startedAt = timer.mark();
           try {
-            return await callTool(name, args);
+            const result = await callTool(name, args);
+            timer.tool(
+              name,
+              startedAt,
+              (result as { ok?: unknown } | null)?.ok !== false
+            );
+            return result;
           } catch (error) {
+            timer.tool(name, startedAt, false);
             return {
               ok: false,
               error: error instanceof Error ? error.message : String(error),
@@ -811,6 +853,7 @@ export function AgentPrompt({
             // should be asked again; an exhausted allowance is not.
             if (error?.code === 'LABELS_RATE_LIMITED') {
               labelsRefused = error.message ?? 'The labelling limit is used up.';
+              timer.labelsRefused();
             }
           }
           historyRef.current = [
@@ -835,6 +878,7 @@ export function AgentPrompt({
           running.forEach((call, index) => record(call, results[index]));
         };
 
+        const toolsStartedAt = timer.mark();
         for (const call of calls) {
           if (PAILLETTE_READ_ONLY_TOOL_NAMES.has(call.function.name)) {
             batch.push(call);
@@ -844,6 +888,8 @@ export function AgentPrompt({
           record(call, await runOne(call));
         }
         await flush();
+        timer.toolPhase(toolsStartedAt);
+        if (noteStamp() > noteBefore) timer.noteLanded();
 
         /*
          * The last turn it is allowed, and it is still working.
@@ -856,6 +902,7 @@ export function AgentPrompt({
         if (turn + 1 >= budget) finishTheJob();
       }
     } catch (error) {
+      outcome = 'error';
       setEntries((current) => [
         ...current,
         {
@@ -864,6 +911,7 @@ export function AgentPrompt({
         },
       ]);
     } finally {
+      saveTurnTiming(timer.finish(outcome));
       setBusy(false);
     }
   }, []);

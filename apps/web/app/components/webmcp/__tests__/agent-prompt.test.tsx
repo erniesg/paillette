@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
@@ -17,6 +17,7 @@ import {
   __resetExhibitionForTest,
 } from '~/lib/webmcp/exhibition';
 import { rememberArtworks, __resetArtworkIndexForTest } from '~/lib/webmcp/artwork-index';
+import { clearTurnTimings, loadTurnTimings } from '~/lib/webmcp/turn-timing';
 
 const PLACEHOLDER = 'Ask for what you want to see…';
 const MIC = 'Hold to speak';
@@ -1550,5 +1551,116 @@ describe('AgentPrompt — labels the page will not let it write', () => {
     expect(refuse).toHaveBeenCalledTimes(1);
     // And the human is told, rather than left with a blank wall.
     expect(await screen.findByText(/labelling calls/i)).toBeTruthy();
+  });
+});
+
+describe('AgentPrompt — timing every turn', () => {
+  // Every turn in this file leaves a record; only this block's are wanted.
+  beforeEach(() => {
+    clearTurnTimings();
+  });
+  afterEach(() => {
+    clearTurnTimings();
+  });
+
+  const TIMING = {
+    routeMs: 2100,
+    modelMs: 2000,
+    promptTokens: 5100,
+    completionTokens: 30,
+    cachedTokens: 4096,
+  };
+
+  /** One set_results that puts a note on the wall, then a reply. */
+  const turnThatPinsANote = () => {
+    const execute = vi.fn(async () => {
+      setAgentResults({
+        origin: 'agent',
+        label: 'storms',
+        note: 'Weather as a subject, not a backdrop.',
+        items: [{ id: 'nga-2' }],
+        at: Date.now() + 1,
+      } as never);
+      return { ok: true };
+    });
+    setModelContext({
+      getTools: async () => [
+        { name: 'set_results', description: 'pin', inputSchema: {}, execute },
+      ],
+    });
+    let call = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        call += 1;
+        const message =
+          call === 1
+            ? {
+                role: 'assistant',
+                tool_calls: [
+                  { id: 't1', function: { name: 'set_results', arguments: '{}' } },
+                ],
+              }
+            : { role: 'assistant', content: '' };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { message, timing: TIMING } }),
+        };
+      })
+    );
+    return execute;
+  };
+
+  const type = async (text: string) => {
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: text } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+  };
+
+  it('leaves one record per turn: model calls, tools, nudges, Enter to note', async () => {
+    const execute = turnThatPinsANote();
+    await type('storms at sea');
+    await waitFor(() => expect(loadTurnTimings()).toHaveLength(1));
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const [timing] = loadTurnTimings();
+    expect(timing).toMatchObject({
+      kind: 'ask',
+      instruction: 'storms at sea',
+      modelCallCount: 2,
+      nudges: 0,
+      outcome: 'replied',
+      labelsRefused: false,
+    });
+    expect(timing?.modelCalls[0]).toMatchObject({
+      server: TIMING,
+      requested: ['set_results'],
+      afterNudge: false,
+    });
+    expect(timing?.toolCalls).toEqual([
+      expect.objectContaining({ name: 'set_results', ok: true }),
+    ]);
+    expect(timing?.noteMs).not.toBeNull();
+    expect(timing?.noteMs).toBeLessThanOrEqual(timing?.totalMs ?? -1);
+    expect(timing?.breakdown).toMatchObject({
+      serverModelMs: 4000,
+      promptTokens: 10200,
+      cachedTokens: 8192,
+    });
+  });
+
+  it('calls a turn over a flagged board a redeal', async () => {
+    rememberArtworks([
+      { id: 'nga-2', galleryId: 'nga', title: 'A', artist: 'B', imageUrl: null, similarity: 1 },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    setFlag('nga-2', 'pick', { by: 'human' });
+    turnThatPinsANote();
+    await type('warmer');
+    await waitFor(() => expect(loadTurnTimings()).toHaveLength(1));
+    expect(loadTurnTimings()[0]?.kind).toBe('redeal');
   });
 });
