@@ -153,6 +153,44 @@ export type OpenAiChatOptions = {
 };
 
 /**
+ * What one model call cost, in the two currencies that decide how long a turn
+ * takes: wall time spent waiting on OpenAI, and the tokens it had to read.
+ *
+ * `cachedTokens` is the part of the prompt OpenAI served from its own prefix
+ * cache — cheaper and faster than the rest, and the reason a long system prompt
+ * that never changes is not as expensive as its length suggests. Reported
+ * rather than assumed, because that is exactly the kind of thing a latency cut
+ * gets wrong.
+ */
+export type OpenAiCallUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  cachedTokens: number | null;
+};
+
+export type OpenAiChatResult = {
+  message: Record<string, unknown>;
+  usage: OpenAiCallUsage;
+  /** From just before the request left to its body being parsed. */
+  upstreamMs: number;
+};
+
+const readUsage = (usage: unknown): OpenAiCallUsage => {
+  const record = (usage ?? {}) as {
+    prompt_tokens?: unknown;
+    completion_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown } | null;
+  };
+  const count = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return {
+    promptTokens: count(record.prompt_tokens),
+    completionTokens: count(record.completion_tokens),
+    cachedTokens: count(record.prompt_tokens_details?.cached_tokens),
+  };
+};
+
+/**
  * One tool-calling turn. Unlike `openaiCompletion` this returns the assistant
  * message untouched — including `tool_calls` — because the caller is a loop
  * that has to relay it back verbatim on the next turn.
@@ -161,7 +199,16 @@ export type OpenAiChatOptions = {
  */
 export const openaiChat = async (
   options: OpenAiChatOptions
-): Promise<Record<string, unknown>> => {
+): Promise<Record<string, unknown>> =>
+  (await openaiChatDetailed(options)).message;
+
+/**
+ * `openaiChat`, plus what the call cost. The agent route relays this to the
+ * page so a turn can say where its time went; nothing else needs it.
+ */
+export const openaiChatDetailed = async (
+  options: OpenAiChatOptions
+): Promise<OpenAiChatResult> => {
   const apiKey = options.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new OpenAiUnavailableError(
@@ -178,6 +225,7 @@ export const openaiChat = async (
     );
   }
 
+  const startedAt = Date.now();
   const response = await fetch(OPENAI_CHAT_URL, {
     method: 'POST',
     headers: {
@@ -207,7 +255,9 @@ export const openaiChat = async (
 
   const payload = (await response.json()) as {
     choices?: Array<{ message?: Record<string, unknown> }>;
+    usage?: unknown;
   };
+  const upstreamMs = Date.now() - startedAt;
   const message = payload.choices?.[0]?.message;
   if (!message) {
     throw new OpenAiUnavailableError(
@@ -216,7 +266,7 @@ export const openaiChat = async (
       'OPENAI_BAD_RESPONSE'
     );
   }
-  return message;
+  return { message, usage: readUsage(payload.usage), upstreamMs };
 };
 
 export const openaiCompletion = async (

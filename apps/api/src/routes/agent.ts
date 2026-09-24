@@ -21,7 +21,11 @@
 
 import { Hono } from 'hono';
 import type { Env } from '../index';
-import { openaiChat, type OpenAiToolMessage } from '../utils/openai';
+import {
+  openaiChatDetailed,
+  type OpenAiCallUsage,
+  type OpenAiToolMessage,
+} from '../utils/openai';
 
 /**
  * One conversation should not be able to spend the whole daily budget.
@@ -308,9 +312,55 @@ const withinAgentRateLimit = async (
   }
 };
 
+/**
+ * What one call on this route cost, returned beside the message.
+ *
+ * Nothing on the agent path measured time, so "a typed instruction takes 12 to
+ * 33 seconds" could be said but not explained: the page could not tell the
+ * model's share from its own. The page owns the rest of the clock — tools,
+ * nudges, the round trip — and adds this to it; see `turn-timing.ts` in the
+ * web app.
+ *
+ * Sizes are in characters, not tokens, except where OpenAI reported tokens:
+ * they are what a trim changes, and the token count is what it changes them
+ * into.
+ */
+export type AgentCallTiming = {
+  /** Handler entry to the response being built. */
+  routeMs: number;
+  /** Waiting on OpenAI alone. */
+  modelMs: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  cachedTokens: number | null;
+  systemPromptChars: number;
+  gestureChars: number;
+  toolsChars: number;
+  messagesChars: number;
+};
+
+export const agentCallTiming = (input: {
+  startedAt: number;
+  now: number;
+  upstreamMs: number;
+  usage: OpenAiCallUsage;
+  gestures: string | null;
+  tools: unknown[];
+  messages: unknown[];
+}): AgentCallTiming => ({
+  routeMs: Math.max(0, input.now - input.startedAt),
+  modelMs: Math.max(0, input.upstreamMs),
+  ...input.usage,
+  systemPromptChars: SYSTEM_PROMPT.length,
+  gestureChars: input.gestures?.length ?? 0,
+  toolsChars: JSON.stringify(input.tools).length,
+  messagesChars: JSON.stringify(input.messages).length,
+});
+
 const agent = new Hono<{ Bindings: Env }>();
 
 agent.post('/public-agent/turn', async (c) => {
+  const startedAt = Date.now();
   const raw = await c.req.text();
   if (raw.length > MAX_BODY_CHARS) {
     return c.json(
@@ -381,7 +431,7 @@ agent.post('/public-agent/turn', async (c) => {
   }
 
   try {
-    const message = await openaiChat({
+    const { message, usage, upstreamMs } = await openaiChatDetailed({
       env: c.env,
       model: AGENT_MODEL,
       // The GPT-5.x family spends its completion budget on reasoning first, so
@@ -402,9 +452,23 @@ agent.post('/public-agent/turn', async (c) => {
       signal: c.req.raw.signal,
     });
 
+    const timing = agentCallTiming({
+      startedAt,
+      now: Date.now(),
+      upstreamMs,
+      usage,
+      gestures,
+      tools,
+      messages,
+    });
     return c.json(
-      { success: true as const, data: { message } },
-      { headers: { 'Cache-Control': 'no-store' } }
+      { success: true as const, data: { message, timing } },
+      {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Server-Timing': `model;dur=${timing.modelMs}, route;dur=${timing.routeMs}`,
+        },
+      }
     );
   } catch (error) {
     const failure =
