@@ -74,6 +74,13 @@ export interface SceneStats {
   roomName: string | null;
   /** How far past the threshold. A doorway is not a photograph of a room. */
   metresIntoRoom: number;
+  /**
+   * What each work is hung at, in metres, once its image has arrived.
+   *
+   * Published so "the six works hang at different sizes" can be checked as a
+   * number rather than judged from a screenshot.
+   */
+  works: { artworkId: string; widthM: number; heightM: number; measured: boolean }[];
 }
 
 export interface RoomSceneOptions {
@@ -545,8 +552,9 @@ export const createRoomScene = async (
    * The size a work is finally hung at.
    *
    * A measured work is hung inside what the catalogue said, in the
-   * photograph's own proportions — see `fitMeasured` for why a disagreement
-   * shrinks the picture rather than stretching it. An unmeasured one is hung at the declared
+   * photograph's own proportions — see `fitMeasured` for why a
+   * disagreement shrinks the picture rather than stretching it. An
+   * unmeasured one is hung at the declared
    * fallback area in the picture's true aspect, which is the most that can be
    * said honestly: we know its shape, not its size.
    */
@@ -1245,6 +1253,12 @@ export const createRoomScene = async (
       roomName: plan.rooms[roomIndex]?.name ?? null,
       metresIntoRoom:
         (plan.rooms[roomIndex]?.southZ ?? 0) - camera.position.z,
+      works: hung.map((entry) => ({
+        artworkId: entry.work.artworkId,
+        widthM: entry.widthM,
+        heightM: entry.heightM,
+        measured: entry.placement.measured,
+      })),
     };
   };
 
