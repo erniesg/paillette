@@ -1,17 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_OPEN_ACCESS_COLLECTION_ID,
@@ -22,6 +14,7 @@ import {
   buildOpenAccessVectorLine,
   writeOpenAccessD1Sql,
 } from '../lib/open-access-art-apply.mjs';
+import { migratedDatabase } from './support/migrated-database.mjs';
 
 const sampleArtwork = {
   id: 'open-access-art:artic:27992',
@@ -260,33 +253,6 @@ describe('open access art apply plan', () => {
     assert.match(files[0].sql, /The Child''s Bath/u);
   });
 });
-
-/**
- * The schema D1 actually has, built from the migrations.
- *
- * Two early migrations do not run under plain SQLite — 0003 uses a `COMMENT`
- * clause and 0004 re-adds columns a later rebuild already carries — and
- * neither touches the dimension columns, so they are skipped by name rather
- * than by swallowing every error.
- */
-const MIGRATIONS_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../packages/database/migrations'
-);
-const SQLITE_INCOMPATIBLE_MIGRATIONS = new Set([
-  '0003_add_translation_tables.sql',
-  '0004_add_color_extraction_columns.sql',
-]);
-const migratedDatabase = () => {
-  const db = new DatabaseSync(':memory:');
-  for (const file of readdirSync(MIGRATIONS_DIR).sort()) {
-    if (!file.endsWith('.sql') || SQLITE_INCOMPATIBLE_MIGRATIONS.has(file)) {
-      continue;
-    }
-    db.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-  }
-  return db;
-};
 
 const ngaArtwork = (objectId, dimensionsText) => ({
   id: `open-access-art:nga:${objectId}`,
