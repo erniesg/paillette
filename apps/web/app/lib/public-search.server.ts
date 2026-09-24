@@ -301,6 +301,21 @@ export const buildPublicSearchHeaders = (
     }
   }
 
+  // The visitor's address, as Cloudflare's edge wrote it on the request that
+  // reached this worker, in a header of our own.
+  //
+  // Not as CF-Connecting-IP: Cloudflare rewrites that on this subrequest to
+  // this worker's own egress address (measured on staging — the API received
+  // a CF-Connecting-IP equal to its X-Real-IP and not the visitor's), so every
+  // visitor shared one per-minute window and one per-caller search day. The
+  // API trusts this header only from the key-authenticated public-search
+  // principal. It is always written from the edge value here, never relayed:
+  // whatever a browser sends under this name is replaced or dropped.
+  const connectingIp = request.headers.get('CF-Connecting-IP');
+  if (connectingIp) {
+    headers.set('X-Paillette-Visitor-Ip', connectingIp);
+  }
+
   return headers;
 };
 

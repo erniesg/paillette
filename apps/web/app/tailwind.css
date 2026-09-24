@@ -1606,6 +1606,34 @@ html[data-theme='light'] .themeable-surface.lt-ground {
   border-bottom-color: var(--ink-human);
 }
 
+/* Works with no wall label, listed before anything is published. The same
+ * mono and the same rail as the link: a list and two words, no box, no
+ * sentence explaining itself. Titles keep their case — they are names. */
+.paillette-share-unlabelled {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  margin-top: 0.5rem;
+  color: var(--ink-human);
+}
+
+.paillette-share-unlabelled ul {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+
+.paillette-share-unlabelled button {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
 /*
  * Their compare overlay, made into a room.
  *

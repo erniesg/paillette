@@ -22,6 +22,13 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
 import { openaiChat, type OpenAiToolMessage } from '../utils/openai';
+import {
+  HOUR_MS,
+  consumeRollingWindow,
+  readRollingWindow,
+  type RollingWindowState,
+} from '../utils/rolling-window';
+import { callerAddress } from '../utils/caller-address';
 
 /**
  * One conversation should not be able to spend the whole daily budget.
@@ -287,25 +294,32 @@ const getClientHash = async (connectingIp: string | undefined) => {
   return toHex(digest);
 };
 
-const withinAgentRateLimit = async (
+/** v2: a rolling list of timestamps, not the v1 clock-hour counter. */
+export const agentWindowKey = (clientHash: string) => `webmcp-agent:v2:${clientHash}`;
+
+/**
+ * Over any sixty minutes, not per clock hour — the same shape as the label
+ * budget and for the same reasons (see `rolling-window.ts`).
+ */
+const consumeAgentCall = async (env: Env, clientHash: string | null) =>
+  clientHash
+    ? consumeRollingWindow(env.CACHE, agentWindowKey(clientHash), {
+        limit: agentCallsPerHour(env),
+        windowMs: HOUR_MS,
+      })
+    : { allowed: true, state: null };
+
+/** How this caller's agent budget stands, without spending any of it. */
+export const readAgentBudget = async (
   env: Env,
-  clientHash: string | null
-): Promise<boolean> => {
-  if (!clientHash || !env.CACHE) return true;
-  const bucket = Math.floor(Date.now() / 3_600_000);
-  const key = `webmcp-agent:v1:${bucket}:${clientHash}`;
-  try {
-    const used = Number((await env.CACHE.get(key)) || '0');
-    if (Number.isFinite(used) && used >= agentCallsPerHour(env)) {
-      return false;
-    }
-    await env.CACHE.put(key, String((Number.isFinite(used) ? used : 0) + 1), {
-      expirationTtl: 7200,
-    });
-    return true;
-  } catch {
-    return true;
-  }
+  connectingIp: string | undefined
+): Promise<RollingWindowState | null> => {
+  const clientHash = await getClientHash(connectingIp);
+  if (!clientHash) return null;
+  return readRollingWindow(env.CACHE, agentWindowKey(clientHash), {
+    limit: agentCallsPerHour(env),
+    windowMs: HOUR_MS,
+  });
 };
 
 const agent = new Hono<{ Bindings: Env }>();
@@ -367,15 +381,25 @@ agent.post('/public-agent/turn', async (c) => {
       ? describeHumanTurn(body.turn as HumanTurnPayload, { continued })
       : null;
 
-  const clientHash = await getClientHash(
-    c.req.header('CF-Connecting-IP') || undefined
-  );
-  if (!(await withinAgentRateLimit(c.env, clientHash))) {
+  const clientHash = await getClientHash(callerAddress(c));
+  const window = await consumeAgentCall(c.env, clientHash);
+  if (!window.allowed) {
+    const minutes = window.state?.nextAt
+      ? Math.max(1, Math.ceil((window.state.nextAt - Date.now()) / 60_000))
+      : null;
     return c.json(
-      jsonError(
-        'AGENT_RATE_LIMITED',
-        'You have used this hour’s shared agent budget. Try again shortly.'
-      ),
+      {
+        success: false as const,
+        error: {
+          // Distinct from the provider's own throttle, which also arrives as
+          // AGENT_RATE_LIMITED: this one is a number in this repo's config.
+          code: 'AGENT_CALLS_SPENT',
+          message: minutes
+            ? `This hour's agent budget is spent. The next call opens in ${minutes} min.`
+            : "This hour's agent budget is spent. Try again shortly.",
+          details: { budget: window.state },
+        },
+      },
       429
     );
   }

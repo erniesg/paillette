@@ -31,6 +31,14 @@ import type { Env } from '../index';
 import { openaiCompletion } from '../utils/openai';
 import { OPEN_ACCESS_ORG_ID, resolveOpenAccessProviderScope } from '../utils/orgs';
 import { WEBMCP_INDEX_ORG_ID } from './indexing';
+import {
+  HOUR_MS,
+  consumeRollingWindow,
+  limitFromEnv,
+  readRollingWindow,
+  type RollingWindowState,
+} from '../utils/rolling-window';
+import { callerAddress } from '../utils/caller-address';
 
 const LABEL_MODEL = 'gpt-5.6-terra';
 
@@ -41,8 +49,20 @@ export const MAX_LABELS_PER_CALL = 12;
  * Two labelling calls an hour is a whole exhibition each; ten is rehearsal
  * room. Tighter than search, looser than vision, because this call costs one
  * completion for a wall rather than one per picture.
+ *
+ * The default, and what production gets while it sets nothing. It is a count
+ * over any sixty minutes, not per clock hour — see `rolling-window.ts` — and
+ * `LABEL_CALLS_PER_HOUR` raises it per environment, because a correction
+ * session measured on staging spends it in two runs and the third published a
+ * show with blank walls.
  */
 export const MAX_LABEL_CALLS_PER_CLIENT_PER_HOUR = 10;
+
+export const labelCallsPerHour = (env: Pick<Env, 'LABEL_CALLS_PER_HOUR'>): number =>
+  limitFromEnv(env.LABEL_CALLS_PER_HOUR, MAX_LABEL_CALLS_PER_CLIENT_PER_HOUR);
+
+/** The window's KV key. v2: a list of timestamps, not the v1 hourly counter. */
+export const labelWindowKey = (clientHash: string) => `webmcp-labels:v2:${clientHash}`;
 
 export const LABEL_MAX_CHARS = 320;
 const STATEMENT_MAX_CHARS = 800;
@@ -80,7 +100,7 @@ const toHex = (value: ArrayBuffer) =>
   ).join('');
 
 /** Only Cloudflare's injected address separates anonymous callers. */
-const getClientHash = async (connectingIp: string | undefined) => {
+export const getLabelClientHash = async (connectingIp: string | undefined) => {
   const candidate = connectingIp?.trim();
   if (!candidate || candidate.length > 45) return null;
   const digest = await crypto.subtle.digest(
@@ -90,25 +110,17 @@ const getClientHash = async (connectingIp: string | undefined) => {
   return toHex(digest);
 };
 
-const withinLabelRateLimit = async (
+/** How this caller's labelling budget stands, without spending any of it. */
+export const readLabelBudget = async (
   env: Env,
-  clientHash: string | null
-): Promise<boolean> => {
-  if (!clientHash || !env.CACHE) return true;
-  const bucket = Math.floor(Date.now() / 3_600_000);
-  const key = `webmcp-labels:v1:${bucket}:${clientHash}`;
-  try {
-    const used = Number((await env.CACHE.get(key)) || '0');
-    if (Number.isFinite(used) && used >= MAX_LABEL_CALLS_PER_CLIENT_PER_HOUR) {
-      return false;
-    }
-    await env.CACHE.put(key, String((Number.isFinite(used) ? used : 0) + 1), {
-      expirationTtl: 7200,
-    });
-    return true;
-  } catch {
-    return true;
-  }
+  connectingIp: string | undefined
+): Promise<RollingWindowState | null> => {
+  const clientHash = await getLabelClientHash(connectingIp);
+  if (!clientHash) return null;
+  return readRollingWindow(env.CACHE, labelWindowKey(clientHash), {
+    limit: labelCallsPerHour(env),
+    windowMs: HOUR_MS,
+  });
 };
 
 type WorkRow = {
@@ -258,14 +270,30 @@ labels.post('/public-labels', async (c) => {
     );
   }
 
-  const clientHash = await getClientHash(c.req.header('CF-Connecting-IP'));
-  if (!(await withinLabelRateLimit(c.env, clientHash))) {
-    c.header('Retry-After', '600');
+  const clientHash = await getLabelClientHash(callerAddress(c));
+  const limit = labelCallsPerHour(c.env);
+  const window = clientHash
+    ? await consumeRollingWindow(c.env.CACHE, labelWindowKey(clientHash), {
+        limit,
+        windowMs: HOUR_MS,
+      })
+    : { allowed: true, state: null };
+  if (!window.allowed) {
+    // When the next call opens, rather than a guess: the oldest call in the
+    // window leaving it is exactly when one more fits.
+    const retryAfterSeconds = window.state?.nextAt
+      ? Math.max(1, Math.ceil((window.state.nextAt - Date.now()) / 1000))
+      : 600;
+    c.header('Retry-After', String(retryAfterSeconds));
     return c.json(
-      jsonError(
-        'LABELS_RATE_LIMITED',
-        `Only ${MAX_LABEL_CALLS_PER_CLIENT_PER_HOUR} labelling calls may be made per hour. Try again later.`
-      ),
+      {
+        success: false as const,
+        error: {
+          code: 'LABELS_RATE_LIMITED',
+          message: `Only ${limit} labelling calls may be made in any hour. The next one opens in ${Math.ceil(retryAfterSeconds / 60)} min.`,
+          details: { budget: window.state },
+        },
+      },
       429
     );
   }

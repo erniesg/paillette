@@ -30,7 +30,7 @@ export const action = async ({ context, request }: ActionFunctionArgs) => {
   try {
     upstream = await fetch(`${apiRoot}/api/public-labels`, {
       method: 'POST',
-      headers: buildPublicIndexHeaders(request, 'application/json'),
+      headers: buildPublicIndexHeaders(request, 'application/json', env),
       body: await request.text(),
       signal: request.signal,
     });

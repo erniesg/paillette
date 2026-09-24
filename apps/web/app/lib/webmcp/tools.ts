@@ -151,13 +151,22 @@ const guard = async (run: () => Promise<ToolResult>): Promise<ToolResult> => {
   } catch (error) {
     if (isAbort(error)) throw error;
     if (error instanceof PailletteApiError) {
-      return fail(
+      const failure = fail(
         error.code,
         error.message,
         error.code === 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED'
-          ? 'The shared anonymous search quota for this collection is spent. Browsing still works; call browse_collection instead.'
+          ? 'Your search budget for today is spent. Browsing still works; call browse_collection instead, and say in your note that you could not search.'
           : INDEXING_HINTS[error.code]
       );
+      // A spent budget says when it comes back; that one field is passed on so
+      // the page can show it. Nothing else in `details` is.
+      const budget = (error.details as { budget?: unknown } | undefined)?.budget;
+      return budget && typeof budget === 'object'
+        ? {
+            ...failure,
+            error: { ...(failure.error as object), details: { budget } },
+          }
+        : failure;
     }
     // The indexing client raises its own typed error; keep its code rather
     // than flattening every indexing failure into UNEXPECTED_ERROR.
@@ -741,7 +750,7 @@ const getSearchQuotaTool = (): WebMcpTool => ({
   name: 'get_search_quota',
   title: 'Get search quota',
   description:
-    'Report the shared anonymous search budget for a collection: total, used, and remaining. This site pays per embedding call, so anonymous semantic search is capped for everyone at once. Check it before running a long chain of searches, and tell the human what is left rather than burning through it silently. Browsing (browse_collection) does not consume quota.',
+    'Report this visitor\'s search budget for a collection over the last 24 hours: limit, used, and remaining. This site pays per embedding call, so semantic search is capped per visitor per day, with a site-wide ceiling behind it. A search answered from the cache costs nothing. Check it before running a long chain of searches, and tell the human what is left rather than burning through it silently. Browsing (browse_collection) does not consume quota.',
   annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: false },
   inputSchema: {
     type: 'object',

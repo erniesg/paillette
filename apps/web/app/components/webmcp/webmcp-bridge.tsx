@@ -20,10 +20,14 @@ import {
   setBridgeAttached,
   setPageContext,
   settleActivity,
+  setSpent,
+  clearSpent,
   startActivity,
 } from '~/lib/webmcp/store';
 import { previewJson, shapedError } from '~/lib/webmcp/activity-format';
 import { summariseToolResult } from '~/lib/webmcp/summarise';
+import { BUDGET_BY_TOOL, spentFromResult } from '~/lib/webmcp/spent-budget';
+import { syncSpentFromBudgets } from '~/lib/webmcp/budgets-client';
 import { createPailletteTools } from '~/lib/webmcp/tools';
 import { installTurnBridge } from '~/lib/webmcp/turn-bridge';
 
@@ -63,6 +67,22 @@ export function WebMcpBridge() {
     hydrateFlags();
   }, []);
 
+  /*
+   * Whether a budget is already spent, before anyone runs into it.
+   *
+   * Once, on arrival at the NGA collection: the refusals keep the state
+   * current after that. A visitor who spent their labelling budget ten minutes
+   * ago and reloads should see `labels spent · 14:32` on the glyph, not find
+   * out from the next correction. A read that fails shows nothing.
+   */
+  const onNga = location.pathname.startsWith('/nga');
+  useEffect(() => {
+    if (!onNga) return;
+    const controller = new AbortController();
+    void syncSpentFromBudgets('nga', controller.signal);
+    return () => controller.abort();
+  }, [onNga]);
+
   useEffect(() => {
     if (!isWebMcpAvailable()) {
       // No host. Do not patch fetch, do not register, do not render.
@@ -98,6 +118,16 @@ export function WebMcpBridge() {
             const toolName = toolNameByActivityId.get(id) ?? '';
             toolNameByActivityId.delete(id);
             if (outcome.status === 'ok') {
+              // A cap that refused this call becomes the page's one spent
+              // state; a call on the same budget that went through ends it.
+              const spent = spentFromResult(outcome.result);
+              if (spent) setSpent(spent);
+              else if (
+                BUDGET_BY_TOOL[toolName] &&
+                (outcome.result as { ok?: unknown } | null)?.ok !== false
+              ) {
+                clearSpent(BUDGET_BY_TOOL[toolName]!);
+              }
               // `ok` here means `execute` returned rather than threw. The tools
               // answer refusals — a stale id, an exhausted collection — as a
               // returned `{ok:false}`, so the payload is what decides whether

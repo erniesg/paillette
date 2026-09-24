@@ -30,7 +30,12 @@ import {
   type SpeechChannel,
   type TurnChannel,
 } from '~/lib/voice/speech-channel';
-import { getWebMcpState } from '~/lib/webmcp/store';
+import { getWebMcpState, setSpent } from '~/lib/webmcp/store';
+import {
+  spentFromResult,
+  whatWasNotDone,
+  type SpentBudget,
+} from '~/lib/webmcp/spent-budget';
 import { listHungWorks } from '~/lib/webmcp/exhibition';
 import { findShowGap, type ShowState } from '~/lib/webmcp/unfinished-show';
 import {
@@ -203,6 +208,12 @@ const SEARCH_TOOL_NAMES = new Set([
   'search_by_exemplars',
   'browse_collection',
 ]);
+
+/** Hung works with no wall label, as the page holds them. */
+const countUnlabelled = () =>
+  listHungWorks(getWebMcpState().exhibition).filter(
+    (work) => !work.label?.trim()
+  ).length;
 
 /**
  * The show as `findShowGap` needs it, read from the state the tools actually
@@ -532,7 +543,7 @@ export function AgentPrompt({
        * told why. A post-condition that cannot be satisfied is not a nudge,
        * it is a loop — so the gap stands down and the human is told instead.
        */
-      let labelsRefused: string | null = null;
+      let labelsRefused: SpentBudget | null = null;
       /**
        * Grows only when the page demands work the model had not budgeted for.
        * See `TURNS_PER_NUDGE`.
@@ -568,10 +579,16 @@ export function AgentPrompt({
          * the blank labels perfectly well — is the one who needs telling.
          */
         if (labelsRefused) {
+          // Written when the turn ends rather than when the refusal landed, so
+          // the count is of the wall the human is actually looking at.
+          const note = whatWasNotDone({
+            spent: labelsRefused,
+            unlabelled: countUnlabelled(),
+          });
           setEntries((current) =>
-            current.some((entry) => entry.text === labelsRefused)
+            current.some((entry) => entry.text === note)
               ? current
-              : [...current, { kind: 'error', text: labelsRefused as string }]
+              : [...current, { kind: 'error', text: note }]
           );
           return false;
         }
@@ -691,11 +708,17 @@ export function AgentPrompt({
           };
         }
         if (!response.ok || !payload.success || !payload.data) {
+          // A spent budget is a state, not an error message: the glyph shows
+          // which, and the note says what this turn did not get to do.
+          const spent = spentFromResult(payload);
+          if (spent) setSpent(spent);
           setEntries((current) => [
             ...current,
             {
               kind: 'error',
-              text: payload.error?.message ?? 'The agent could not continue.',
+              text: spent
+                ? whatWasNotDone({ spent, unlabelled: countUnlabelled() })
+                : (payload.error?.message ?? 'The agent could not continue.'),
             },
           ]);
           return;
@@ -810,7 +833,10 @@ export function AgentPrompt({
             // Only the limits. A malformed call is the model's to fix and it
             // should be asked again; an exhausted allowance is not.
             if (error?.code === 'LABELS_RATE_LIMITED') {
-              labelsRefused = error.message ?? 'The labelling limit is used up.';
+              labelsRefused = spentFromResult(result);
+              // Set here as well as by the bridge: a host that runs the tool
+              // without the page's wrapper still leaves the page knowing.
+              if (labelsRefused) setSpent(labelsRefused);
             }
           }
           historyRef.current = [

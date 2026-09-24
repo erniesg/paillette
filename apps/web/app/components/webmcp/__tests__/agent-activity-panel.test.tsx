@@ -11,13 +11,15 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentActivityPanel } from '../agent-activity-panel';
-import { GLYPH_STILLS, IDLE_FRAME } from '~/lib/webmcp/activity-glyph';
+import { GLYPH_STILLS, IDLE_FRAME, SPENT_FRAME } from '~/lib/webmcp/activity-glyph';
 import {
   __resetWebMcpStateForTest,
   setBridgeAttached,
   settleActivity,
   startActivity,
   requestConfirmation,
+  setSpent,
+  clearSpent,
 } from '~/lib/webmcp/store';
 
 const cells = (): HTMLElement =>
@@ -436,5 +438,32 @@ describe('the consent gate', () => {
 
     fireEvent.click(within(ask).getByRole('button', { name: 'Decline' }));
     await expect(answered!).resolves.toBe(false);
+  });
+});
+
+describe('a spent budget', () => {
+  it('shows one terse state on the glyph, and says it for a screen reader', () => {
+    act(() => setBridgeAttached(true));
+    render(<AgentActivityPanel />);
+    act(() =>
+      setSpent({ budget: 'labels', nextAt: Date.now() + 30 * 60_000, at: Date.now() })
+    );
+
+    expect(cells()).toHaveAttribute('data-phase', 'spent');
+    expect(cells().textContent).toBe(SPENT_FRAME);
+    const line = document.querySelector('.pa-activity-spent');
+    expect(line?.textContent).toMatch(/^labels spent · /);
+    expect(screen.getByRole('status').textContent).toMatch(/^labels spent · /);
+  });
+
+  it('goes back to idle when the same budget works again', () => {
+    act(() => setBridgeAttached(true));
+    render(<AgentActivityPanel />);
+    act(() => setSpent({ budget: 'search', nextAt: null, at: Date.now() }));
+    act(() => clearSpent('labels'));
+    expect(cells()).toHaveAttribute('data-phase', 'spent');
+    act(() => clearSpent('search'));
+    expect(cells()).toHaveAttribute('data-phase', 'idle');
+    expect(document.querySelector('.pa-activity-spent')).toBeNull();
   });
 });

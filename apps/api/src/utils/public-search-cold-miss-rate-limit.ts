@@ -36,6 +36,13 @@ export interface PublicSearchRequestClientIdentityInput {
   apiKeyId?: string;
   /** Set by Cloudflare at the edge; do not substitute X-Forwarded-For. */
   connectingIp?: string;
+  /**
+   * The visitor's address as the web proxy read it from its own edge
+   * (`X-Paillette-Visitor-Ip`). Trusted only for the public-search principal,
+   * which is authenticated by a service key no browser holds, and which the
+   * proxy always overwrites rather than relays. See `getPublicSearchRequestClientIdentity`.
+   */
+  visitorIp?: string;
   forwardedFor?: string;
 }
 
@@ -97,8 +104,17 @@ export const getPublicSearchRequestClientIdentity = (
   input: PublicSearchRequestClientIdentityInput
 ): string | undefined => {
   if (input.isPublicSearchPrincipal) {
-    return isTrustedEdgeAddress(input.connectingIp)
-      ? `public-edge:${input.connectingIp!.trim()}`
+    // The proxy's own address is what Cloudflare puts in CF-Connecting-IP on
+    // its subrequest — measured on staging: the header the API received
+    // matched X-Real-IP and not the visitor — so keyed on that alone, every
+    // visitor behind the web proxy shared one per-minute window and one
+    // per-caller search day. The visitor's address travels in a header of the
+    // proxy's own, which only the key-authenticated proxy can make count.
+    const address = isTrustedEdgeAddress(input.visitorIp)
+      ? input.visitorIp
+      : input.connectingIp;
+    return isTrustedEdgeAddress(address)
+      ? `public-edge:${address!.trim()}`
       : undefined;
   }
   if (input.kind === 'api_key' && input.apiKeyId?.trim()) {

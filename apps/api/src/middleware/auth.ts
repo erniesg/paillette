@@ -1125,7 +1125,7 @@ export const requireApprovedDataAccess = async (
  * passing every test, because no test and no dev server carries this key.
  */
 const isPublicSearchApiRoute = (c: Context<AppBindings>) =>
-  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/nga\/search\/(?:text|image|color|quota|exemplars)$/.test(
+  /^(?:\/api\/v1)?\/(?:orgs|galleries)\/nga\/search\/(?:text|image|color|quota|budgets|exemplars)$/.test(
     c.req.path
   );
 

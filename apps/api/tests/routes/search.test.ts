@@ -12,6 +12,8 @@ import { PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS } from '../../src/utils/public-sear
 import type { Env } from '../../src/index';
 import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
 import { OPEN_ACCESS_ORG_ID } from '../../src/utils/orgs';
+import { getLabelClientHash, labelWindowKey } from '../../src/routes/labels';
+import { openaiQuotaKey } from '../../src/utils/openai';
 
 const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
 const NGA_ROUTE_ID = 'nga';
@@ -229,12 +231,47 @@ class FakeStatement {
   }
 }
 
+/**
+ * `nga_public_search_debits` (migration 0023): one row per debited search.
+ *
+ * `ngaPublicSearchQuota.used` is kept as a view of it — every debit on the
+ * site, which is what these tests counted before the quota was per caller —
+ * and setting it pre-fills the table from a caller no test is, the way the old
+ * tests pre-filled the singleton row.
+ */
+class FakeNgaSearchDebits {
+  rows: Array<{ id: number; client_hash: string; debited_at: number }> = [];
+  private nextId = 1;
+  readonly hard_limit = 1000;
+
+  get used() {
+    return this.rows.length;
+  }
+
+  set used(count: number) {
+    this.rows = [];
+    for (let i = 0; i < count; i += 1) this.add('prefilled-elsewhere', Date.now());
+  }
+
+  add(clientHash: string, at: number) {
+    const row = { id: this.nextId, client_hash: clientHash, debited_at: at };
+    this.nextId += 1;
+    this.rows.push(row);
+    return row;
+  }
+
+  count(clientHash: string, since: number) {
+    const live = this.rows.filter((row) => row.debited_at > since);
+    return {
+      used: live.filter((row) => row.client_hash === clientHash).length,
+      site_used: live.length,
+    };
+  }
+}
+
 class FakeSearchDb {
   daily = new Map<string, DailyUsage>();
-  ngaPublicSearchQuota: NgaPublicSearchQuotaUsage = {
-    used: 0,
-    hard_limit: 1000,
-  };
+  ngaPublicSearchQuota = new FakeNgaSearchDebits();
   ngaPublicSearchRateLimits = new Map<string, number>();
   usageEvents: UsageEvent[] = [];
   artworkEvents: ArtworkEvent[] = [];
@@ -261,7 +298,7 @@ class FakeSearchDb {
   }
 
   async batch(statements: FakeStatement[]) {
-    const quotaBefore = { ...this.ngaPublicSearchQuota };
+    const quotaBefore = [...this.ngaPublicSearchQuota.rows];
     const usageEventsBefore = [...this.usageEvents];
     const results: any[] = [];
     let previousChanges = 0;
@@ -282,31 +319,37 @@ class FakeSearchDb {
       }
       return results;
     } catch (error) {
-      this.ngaPublicSearchQuota = quotaBefore;
+      this.ngaPublicSearchQuota.rows = quotaBefore;
       this.usageEvents = usageEventsBefore;
       throw error;
     }
   }
 
   async run(sql: string, params: unknown[]) {
-    if (sql.includes('nga_public_search_quota')) {
+    if (sql.includes('nga_public_search_debits')) {
       if (this.failNgaPublicSearchQuota) {
         throw new Error('NGA quota storage unavailable');
       }
-      if (sql.includes('UPDATE nga_public_search_quota')) {
-        if (
-          this.ngaPublicSearchQuota.used >= this.ngaPublicSearchQuota.hard_limit
-        ) {
+      const debits = this.ngaPublicSearchQuota;
+      if (sql.includes('DELETE FROM nga_public_search_debits')) {
+        const [since] = params as [number];
+        const before = debits.rows.length;
+        debits.rows = debits.rows.filter((row) => row.debited_at > since);
+        return { success: true, meta: { changes: before - debits.rows.length }, results: [] };
+      }
+      if (sql.includes('INSERT INTO nga_public_search_debits')) {
+        const [clientHash, now, , since, limit, , siteLimit] = params as [
+          string, number, string, number, number, number, number,
+        ];
+        const { used, site_used } = debits.count(clientHash, since);
+        if (used >= limit || site_used >= siteLimit) {
           return { success: true, meta: { changes: 0 }, results: [] };
         }
-        this.ngaPublicSearchQuota.used += 1;
-        return {
-          success: true,
-          meta: { changes: 1 },
-          results: [this.ngaPublicSearchQuota],
-        };
+        const row = debits.add(clientHash, now);
+        return { success: true, meta: { changes: 1 }, results: [{ id: row.id }] };
       }
-      return { success: true, meta: { changes: 1 }, results: [] };
+      const [clientHash, since] = params as [string, number];
+      return { success: true, meta: { changes: 0 }, results: [debits.count(clientHash, since)] };
     }
 
     if (sql.includes('INSERT INTO api_usage_daily')) {
@@ -500,19 +543,12 @@ class FakeSearchDb {
       this.ngaPublicSearchRateLimits.set(key, used + 1);
       return { used: used + 1 } as T;
     }
-    if (sql.includes('nga_public_search_quota')) {
+    if (sql.includes('nga_public_search_debits')) {
       if (this.failNgaPublicSearchQuota) {
         throw new Error('NGA quota storage unavailable');
       }
-      if (sql.includes('UPDATE nga_public_search_quota')) {
-        if (
-          this.ngaPublicSearchQuota.used >= this.ngaPublicSearchQuota.hard_limit
-        ) {
-          return null;
-        }
-        this.ngaPublicSearchQuota.used += 1;
-      }
-      return this.ngaPublicSearchQuota as T;
+      const [clientHash, since] = params as [string, number];
+      return this.ngaPublicSearchQuota.count(clientHash, since) as T;
     }
 
     if (sql.includes('MIN(year) AS min_year')) {
@@ -927,6 +963,10 @@ const makeEnv = (db: FakeSearchDb, quota = 100): Env =>
     API_VERSION: 'v1',
     SEARCH_FUSION_MODE: 'metadata',
     DAILY_FREE_QUERY_LIMIT: String(quota),
+    // The per-caller and site-wide NGA days, pinned so the numbers below read
+    // as they did against the old 1000-search pool.
+    NGA_SEARCH_CALLS_PER_DAY: '1000',
+    NGA_SEARCH_SITE_CALLS_PER_DAY: '1000',
   }) as Env;
 
 const makeEmbeddingCache = () => {
@@ -1058,6 +1098,81 @@ describe('NGA search spotlight cache', () => {
       'nga'
     );
 
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('GET /search/budgets — what the page can still spend', () => {
+  const stringKv = (seed: Record<string, string>) => {
+    const values = new Map(Object.entries(seed));
+    return {
+      get: vi.fn(async (key: string) => values.get(key) ?? null),
+      put: vi.fn(async (key: string, value: string) => {
+        values.set(key, value);
+      }),
+    } as unknown as KVNamespace;
+  };
+
+  it('returns all four budgets for the caller, and spends none of them', async () => {
+    const now = Date.now();
+    const labelKey = labelWindowKey((await getLabelClientHash('203.0.113.9'))!);
+    const cache = stringKv({
+      [labelKey]: JSON.stringify([now - 50 * 60_000, now - 10 * 60_000]),
+      [openaiQuotaKey()]: '7',
+    });
+    const db = new FakeSearchDb();
+    const env = { ...makeEnv(db), CACHE: cache, LABEL_CALLS_PER_HOUR: '2' };
+    const request = () =>
+      makeApp().request(
+        '/api/v1/orgs/nga/search/budgets',
+        { headers: { 'X-User-Id': 'user-1', 'CF-Connecting-IP': '203.0.113.9' } },
+        env
+      );
+
+    const response = await request();
+    const payload = (await response.json()) as any;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(payload.data).toEqual({
+      labels: { limit: 2, used: 2, remaining: 0, nextAt: now - 50 * 60_000 + 3_600_000 },
+      agentCalls: { limit: 40, used: 0, remaining: 40, nextAt: null },
+      search: { limit: 1000, used: 0, remaining: 1000, nextAt: null },
+      dailySite: { limit: 500, used: 7, remaining: 493, nextAt: null },
+    });
+    // A read, twice over, changes nothing.
+    expect(((await (await request()).json()) as any).data).toEqual(payload.data);
+    expect(db.ngaPublicSearchQuota.used).toBe(0);
+    expect(db.usageEvents).toHaveLength(0);
+  });
+
+  it('answers the public proxy key, which is how the page reaches it', async () => {
+    // The same trap as exemplars: the public key is restricted to a list of
+    // routes, and no test carried the key, so staging answered FORBIDDEN.
+    const response = await makeApp().request(
+      '/api/v1/orgs/nga/search/budgets',
+      {
+        headers: {
+          'X-API-Key': 'public-search-secret',
+          'CF-Connecting-IP': '2a06:98c0:3600::103',
+          'X-Paillette-Visitor-Ip': '203.0.113.9',
+        },
+      },
+      {
+        ...makeEnv(new FakeSearchDb()),
+        ENVIRONMENT: 'production',
+        PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      } as Env
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('is the NGA collection\'s alone', async () => {
+    const response = await makeApp().request(
+      `/api/v1/orgs/${NGS_ORG_ID}/search/budgets`,
+      { headers: { 'X-User-Id': 'user-1' } },
+      makeEnv(new FakeSearchDb())
+    );
     expect(response.status).toBe(404);
   });
 });
@@ -1243,47 +1358,95 @@ describe('NGA public search quota', () => {
     expect(db.metadataSearchParams[0]).toContain('nga');
   });
 
-  it('charges authenticated NGA cache hits from the shared lifetime pool', async () => {
+  it('leaves the search quota unchanged for a cache hit', async () => {
+    // It used to charge this: the reservation ran before the cache was read,
+    // so a query answered from KV spent a slot exactly like one that paid for
+    // embeddings, and replayed harness queries drained the pool to 1000/1000.
     const db = new FakeSearchDb();
     const cache = makeEmbeddingCache();
     const env = { ...makeEnv(db), CACHE: cache };
     const app = makeApp();
     const body = { query: 'mangrove shore', topK: 1 };
 
-    const first = await textSearch(
-      app,
-      env,
-      { 'X-User-Id': 'user-1' },
-      body,
-      'nga'
-    );
-    const second = await textSearch(
-      app,
-      env,
-      { 'X-User-Id': 'user-2' },
-      body,
-      'nga'
-    );
+    const first = await textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'nga');
+    const firstPayload = (await first.json()) as any;
+    const second = await textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'nga');
     const secondPayload = (await second.json()) as any;
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(first.headers.get('X-Paillette-Search-Cache')).toBe('MISS');
     expect(second.headers.get('X-Paillette-Search-Cache')).toBe('KV-FRESH');
-    expect(secondPayload.data.quota).toEqual({
-      limit: 1000,
-      used: 2,
-      remaining: 998,
-    });
-    expect(db.ngaPublicSearchQuota.used).toBe(2);
+    expect(firstPayload.data.quota).toEqual({ limit: 1000, used: 1, remaining: 999 });
+    // The hit: same caller, same count, and it still says so.
+    expect(secondPayload.data.quota).toEqual({ limit: 1000, used: 1, remaining: 999 });
+    expect(second.headers.get('X-NGA-Search-Remaining')).toBe('999');
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
     expect(db.metadataSearchSql).toHaveLength(1);
+    // Still logged as a search they made, with where their day stood.
     expect(db.usageEvents).toHaveLength(2);
-    expect(
-      JSON.parse(db.usageEvents[1]?.metadata || '{}').search
-    ).toMatchObject({
+    expect(JSON.parse(db.usageEvents[1]?.metadata || '{}').search).toMatchObject({
       cacheDisposition: 'KV-FRESH',
-      quotaRemaining: 998,
+      quotaRemaining: 999,
     });
+  });
+
+  it('answers from the cache even when the caller has no searches left', async () => {
+    const db = new FakeSearchDb();
+    const env = { ...makeEnv(db), CACHE: makeEmbeddingCache(), NGA_SEARCH_CALLS_PER_DAY: '1' };
+    const app = makeApp();
+
+    const paid = await textSearch(app, env, { 'X-User-Id': 'user-1' }, { query: 'mangrove shore', topK: 1 }, 'nga');
+    const replay = await textSearch(app, env, { 'X-User-Id': 'user-1' }, { query: 'mangrove shore', topK: 1 }, 'nga');
+    const fresh = await textSearch(app, env, { 'X-User-Id': 'user-1' }, { query: 'harbour at dusk', topK: 1 }, 'nga');
+
+    expect(paid.status).toBe(200);
+    expect(replay.status).toBe(200);
+    expect(((await replay.json()) as any).data.quota).toEqual({ limit: 1, used: 1, remaining: 0 });
+    // Only a search that would cost something is refused.
+    expect(fresh.status).toBe(429);
+    expect(((await fresh.json()) as any).error.code).toBe('NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED');
+    expect(db.ngaPublicSearchQuota.used).toBe(1);
+  });
+
+  it('gives each visitor behind the web proxy their own day', async () => {
+    // Staging measured the proxy's own address arriving as CF-Connecting-IP
+    // on every search, so keyed on that, every visitor shared one day.
+    const db = new FakeSearchDb();
+    const env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      NGA_SEARCH_CALLS_PER_DAY: '1',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const app = makeApp();
+    const viaProxy = (visitor: string) => ({
+      'X-API-Key': 'public-search-secret',
+      'CF-Connecting-IP': '2a06:98c0:3600::103',
+      'X-Paillette-Visitor-Ip': visitor,
+    });
+
+    const first = await textSearch(app, env, viaProxy('203.0.113.9'), { query: 'mangrove shore', topK: 100, minScore: 0 }, 'nga');
+    const again = await textSearch(app, env, viaProxy('203.0.113.9'), { query: 'quiet harbour', topK: 100, minScore: 0 }, 'nga');
+    const other = await textSearch(app, env, viaProxy('198.51.100.4'), { query: 'quiet harbour', topK: 100, minScore: 0 }, 'nga');
+
+    expect(first.status).toBe(200);
+    expect(again.status).toBe(429);
+    expect(other.status).toBe(200);
+  });
+
+  it('keeps one caller from spending another caller\'s day', async () => {
+    const db = new FakeSearchDb();
+    const env = { ...makeEnv(db), CACHE: makeEmbeddingCache(), NGA_SEARCH_CALLS_PER_DAY: '1' };
+    const app = makeApp();
+
+    await textSearch(app, env, { 'X-User-Id': 'user-1' }, { query: 'mangrove shore', topK: 1 }, 'nga');
+    const spent = await textSearch(app, env, { 'X-User-Id': 'user-1' }, { query: 'quiet harbour', topK: 1 }, 'nga');
+    const other = await textSearch(app, env, { 'X-User-Id': 'user-2' }, { query: 'quiet harbour', topK: 1 }, 'nga');
+
+    expect(spent.status).toBe(429);
+    expect(other.status).toBe(200);
+    expect(((await other.json()) as any).data.quota).toEqual({ limit: 1, used: 1, remaining: 0 });
   });
 
   it('projects NGA text results before returning or retaining fresh and stale shared-cache entries', async () => {
@@ -1683,7 +1846,10 @@ describe('NGA public search quota', () => {
     expect(db.usageEvents).toHaveLength(0);
   });
 
-  it('shares the final NGA slot across authenticated users and the public API key', async () => {
+  it('holds the site-wide ceiling across authenticated users and the public API key', async () => {
+    // The per-caller day is the new shape; the site-wide day is what keeps it
+    // a spend guard however many callers there are. One slot left on the site,
+    // two different callers asking two different questions: one gets it.
     const db = new FakeSearchDb();
     db.ngaPublicSearchQuota.used = 999;
     const cache = makeEmbeddingCache();
@@ -1693,19 +1859,20 @@ describe('NGA public search quota', () => {
       CACHE: cache,
     };
     const app = makeApp();
-    const body = {
-      query: 'a still life of tropical fruit and flowers',
-      topK: 100,
-      minScore: 0,
-    };
 
     const responses = await Promise.all([
-      textSearch(app, env, { 'X-User-Id': 'user-1' }, body, 'nga'),
       textSearch(
         app,
         env,
-        { 'X-API-Key': 'public-search-secret' },
-        body,
+        { 'X-User-Id': 'user-1' },
+        { query: 'a still life of tropical fruit and flowers', topK: 100, minScore: 0 },
+        'nga'
+      ),
+      textSearch(
+        app,
+        env,
+        { 'X-API-Key': 'public-search-secret', 'CF-Connecting-IP': '203.0.113.9' },
+        { query: 'a quiet harbour at dusk', topK: 100, minScore: 0 },
         'nga'
       ),
     ]);
@@ -1716,15 +1883,14 @@ describe('NGA public search quota', () => {
     const exhaustedPayload = (await exhausted.json()) as any;
     expect(db.ngaPublicSearchQuota.used).toBe(1000);
     expect(exhausted.headers.get('X-NGA-Search-Limit')).toBe('1000');
-    expect(exhausted.headers.get('X-NGA-Search-Used')).toBe('1000');
+    // Theirs is untouched; the site is what is spent, so nothing remains.
+    expect(exhausted.headers.get('X-NGA-Search-Used')).toBe('0');
     expect(exhausted.headers.get('X-NGA-Search-Remaining')).toBe('0');
     expect(exhaustedPayload.error).toMatchObject({
       code: 'NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED',
-      details: { quota: { limit: 1000, used: 1000, remaining: 0 } },
+      details: { quota: { limit: 1000, used: 0, remaining: 0 } },
     });
     expect(db.usageEvents).toHaveLength(1);
-    // Exactly one contender acquired the final slot and performed retrieval;
-    // the exhausted contender never reaches the cache or retrieval path.
     expect(db.metadataSearchSql).toHaveLength(1);
   });
 

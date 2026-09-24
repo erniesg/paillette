@@ -23,7 +23,7 @@ import {
 import { __resetFlagsForTest, setFlag } from '~/lib/webmcp/flags';
 import { setRegions, writeExhibition } from '~/lib/webmcp/exhibition';
 import { decodeExhibitionLink } from '~/lib/exhibition-link';
-import { __resetWebMcpStateForTest, setBoard } from '~/lib/webmcp/store';
+import { __resetWebMcpStateForTest, setBoard, setSpent } from '~/lib/webmcp/store';
 
 const artwork = (id: string): ArtworkSearchResult =>
   ({
@@ -98,8 +98,16 @@ const aShow = () => {
   );
 };
 
-const click = () =>
-  userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+/**
+ * Copy the link, and take the unlabelled-works notice at "Publish anyway" if
+ * it comes up — most shows below hang a work with no label, and what these
+ * tests are about is what gets published once someone has chosen to.
+ */
+const click = async () => {
+  await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+  const anyway = screen.queryByRole('button', { name: 'Publish anyway' });
+  if (anyway) await userEvent.click(anyway);
+};
 
 describe('the link', () => {
   it('is absent when there is nothing hanging', () => {
@@ -316,5 +324,71 @@ describe('named groupings in the published show', () => {
 
     await waitFor(() => expect(published).toHaveLength(1));
     expect(published[0]).not.toHaveProperty('regions');
+  });
+});
+
+/*
+ * A show is never published with blank walls silently. Measured on staging
+ * before this: a spent labelling budget published `/e/kaxeFU4` with twelve
+ * works and no labels, and nothing on the page said so.
+ */
+describe('publishing a show with a missing label', () => {
+  it('lists the works without labels and publishes nothing yet', async () => {
+    aShow();
+    render(<ShareExhibitionLink />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+
+    const notice = await screen.findByRole('group', { name: 'Works without labels' });
+    expect(notice).toHaveTextContent('1 without a label');
+    expect(notice).toHaveTextContent('Work b');
+    expect(notice).not.toHaveTextContent('Work a');
+    expect(published).toHaveLength(0);
+    expect(copied).toHaveLength(0);
+  });
+
+  it('waits when asked, and publishes nothing', async () => {
+    aShow();
+    render(<ShareExhibitionLink />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Wait' }));
+
+    expect(screen.queryByRole('group', { name: 'Works without labels' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeEnabled();
+    expect(published).toHaveLength(0);
+  });
+
+  it('publishes anyway when asked, blank label and all', async () => {
+    aShow();
+    render(<ShareExhibitionLink />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Publish anyway' }));
+
+    await waitFor(() => expect(published).toHaveLength(1));
+    expect((published[0]!.works as { label: string | null }[])[1]?.label).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+
+  it('says when the labelling budget comes back, if that is why', async () => {
+    aShow();
+    const nextAt = Date.now() + 20 * 60_000;
+    setSpent({ budget: 'labels', nextAt, at: Date.now() });
+    render(<ShareExhibitionLink />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+
+    const notice = await screen.findByRole('group', { name: 'Works without labels' });
+    expect(notice).toHaveTextContent(/labels spent · \d{1,2}:\d{2}/);
+  });
+
+  it('does not stop a show whose every work is labelled', async () => {
+    board(['a']);
+    writeExhibition(
+      { title: 'Leaving', works: [{ artworkId: 'a', label: 'Gone.' }] },
+      { by: 'agent' }
+    );
+    render(<ShareExhibitionLink />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+
+    await waitFor(() => expect(published).toHaveLength(1));
+    expect(screen.queryByRole('group', { name: 'Works without labels' })).toBeNull();
   });
 });

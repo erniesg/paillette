@@ -22,6 +22,13 @@
  * nothing said why. Now the URL is put on screen and selected, so it can be
  * copied by hand. The selected text is the affordance; the word only says why
  * it is there.
+ *
+ * **Never a blank wall, silently.** A show with works that have no label is
+ * not published on the first click. The works are listed and the choice is
+ * theirs: wait (the agent may still be writing, or the labelling budget comes
+ * back at a time the list says), or publish anyway. Measured on staging before
+ * this: a spent labelling budget published `/e/kaxeFU4` with blank walls and
+ * nothing on the page said so.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -32,9 +39,21 @@ import {
 } from '~/lib/exhibition-link';
 import { listHungWorks, resolveHang } from '~/lib/webmcp/exhibition';
 import { getWebMcpState } from '~/lib/webmcp/store';
+import { recallArtwork } from '~/lib/webmcp/artwork-index';
+import { isStillSpent, spentLine } from '~/lib/webmcp/spent-budget';
+import { useWebMcpState } from '~/components/webmcp/use-webmcp-state';
 import { useExhibition } from './exhibition-head';
 
-type ShareState = 'idle' | 'working' | 'copied' | 'failed';
+type ShareState = 'idle' | 'working' | 'copied' | 'failed' | 'unlabelled';
+
+/** Hung works with no wall label, titled where the page knows the title. */
+const listUnlabelled = () =>
+  listHungWorks(getWebMcpState().exhibition)
+    .filter((work) => !work.label?.trim())
+    .map((work) => ({
+      artworkId: work.artworkId,
+      title: recallArtwork(work.artworkId)?.title?.trim() || work.artworkId,
+    }));
 
 const buildPayload = (collectionId: string): ExhibitionLinkPayload => {
   const state = getWebMcpState().exhibition;
@@ -100,7 +119,11 @@ export const ShareExhibitionLink = ({
   collectionId?: string;
 }) => {
   const exhibition = useExhibition();
+  const spent = useWebMcpState().spent;
   const [state, setState] = useState<ShareState>('idle');
+  const [unlabelled, setUnlabelled] = useState<
+    { artworkId: string; title: string }[]
+  >([]);
   /** Set only when the clipboard could not take it, so it can be taken by hand. */
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const field = useRef<HTMLInputElement | null>(null);
@@ -126,10 +149,18 @@ export const ShareExhibitionLink = ({
   // no link.
   if (resolveHang(exhibition).length === 0) return null;
 
-  const copy = async () => {
+  const copy = async (anyway = false) => {
     if (state === 'working') return;
     if (timer.current) clearTimeout(timer.current);
     setFallbackUrl(null);
+
+    const missing = anyway ? [] : listUnlabelled();
+    if (missing.length) {
+      setUnlabelled(missing);
+      setState('unlabelled');
+      return;
+    }
+    setUnlabelled([]);
     // Publishing is a round trip now. Without this the button sits there
     // saying "Copy link" while nothing visible happens, which is the same
     // silence this control was rewritten to remove.
@@ -161,8 +192,8 @@ export const ShareExhibitionLink = ({
     <>
       <button
         type="button"
-        onClick={copy}
-        disabled={state === 'working'}
+        onClick={() => void copy()}
+        disabled={state === 'working' || state === 'unlabelled'}
         data-share-state={state}
         className="paillette-share-link lt-catalogue"
       >
@@ -179,6 +210,32 @@ export const ShareExhibitionLink = ({
             ? 'Copy failed'
             : 'Copy link'}
       </button>
+
+      {state === 'unlabelled' && (
+        <div
+          className="paillette-share-unlabelled lt-catalogue"
+          role="group"
+          aria-label="Works without labels"
+        >
+          <span>
+            {unlabelled.length} without a label
+            {spent?.budget === 'labels' && isStillSpent(spent)
+              ? ` · ${spentLine(spent)}`
+              : ''}
+          </span>
+          <ul>
+            {unlabelled.map((work) => (
+              <li key={work.artworkId}>{work.title}</li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setState('idle')}>
+            Wait
+          </button>
+          <button type="button" onClick={() => void copy(true)}>
+            Publish anyway
+          </button>
+        </div>
+      )}
 
       {fallbackUrl && (
         <input

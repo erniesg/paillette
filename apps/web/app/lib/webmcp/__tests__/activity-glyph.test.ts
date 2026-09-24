@@ -16,6 +16,7 @@ import {
   GLYPH_ANNOUNCEMENT,
   GLYPH_STILLS,
   IDLE_FRAME,
+  SPENT_FRAME,
   kindForTool,
   readGlyphState,
   stillFrameFor,
@@ -208,5 +209,31 @@ describe('stillFrameFor', () => {
     expect(stillFrameFor({ phase: 'running', kind: 'deal', running: 1 })).toBe(
       GLYPH_STILLS.deal
     );
+  });
+});
+
+describe('a spent budget', () => {
+  const NOW = 1_000_000;
+  const labels = { budget: 'labels' as const, nextAt: NOW + 60_000, at: NOW - 1 };
+
+  it('is the state once nothing is running', () => {
+    const state = readGlyphState(newestFirst(entry()), labels, NOW);
+    expect(state).toEqual({ phase: 'spent', kind: null, running: 0 });
+    expect(stillFrameFor(state)).toBe(SPENT_FRAME);
+    expect(SPENT_FRAME).toHaveLength(CELLS);
+  });
+
+  it('yields to work in flight', () => {
+    const state = readGlyphState(newestFirst(entry({ status: 'running' })), labels, NOW);
+    expect(state.phase).toBe('running');
+  });
+
+  it('ends on its own when the budget comes back', () => {
+    expect(readGlyphState(newestFirst(entry()), labels, NOW + 60_001).phase).toBe('idle');
+  });
+
+  it('stands until cleared when the server gave no time', () => {
+    const search = { budget: 'search' as const, nextAt: null, at: NOW };
+    expect(readGlyphState([], search, NOW + 86_400_000).phase).toBe('spent');
   });
 });

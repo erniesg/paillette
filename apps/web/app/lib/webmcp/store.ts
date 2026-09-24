@@ -13,6 +13,7 @@ import type {
   AgentArtworkDetail,
   AgentArtworkSummary,
 } from './artwork-summary';
+import type { SpentBudget } from './spent-budget';
 
 export type ResultSetOrigin = 'human' | 'agent';
 
@@ -273,6 +274,12 @@ export interface WebMcpState {
    * to hide.
    */
   panelOpen: boolean;
+  /**
+   * A server-side budget that refused this page and has not come back yet.
+   * One at a time: the glyph shows one state, and the most recent refusal is
+   * the one the human just hit. See `spent-budget.ts`.
+   */
+  spent: SpentBudget | null;
 }
 
 /**
@@ -286,6 +293,7 @@ export interface WebMcpState {
 const MAX_ACTIVITY = 120;
 
 const initialState: WebMcpState = {
+  spent: null,
   page: {
     pathname: '/',
     search: '',
@@ -403,6 +411,13 @@ export const setBridgeAttached = (bridgeAttached: boolean) =>
 
 /** Expand or collapse the log. Only ever called by the human, or by consent. */
 export const setPanelOpen = (panelOpen: boolean) => update({ panelOpen });
+
+export const setSpent = (spent: SpentBudget | null) => update({ spent });
+
+/** A call on this budget just succeeded, so it is not spent any more. */
+export const clearSpent = (budget: SpentBudget['budget']) => {
+  if (state.spent?.budget === budget) update({ spent: null });
+};
 
 let activitySequence = 0;
 

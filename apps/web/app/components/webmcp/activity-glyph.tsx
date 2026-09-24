@@ -21,12 +21,16 @@ import {
   stillFrameFor,
   type GlyphState,
 } from '~/lib/webmcp/activity-glyph';
+import { spentLine, type SpentBudget } from '~/lib/webmcp/spent-budget';
 
 export function ActivityGlyph({
   state,
   reducedMotion,
+  spent = null,
 }: {
   state: GlyphState;
+  /** Which budget, when `state.phase` is `spent`. */
+  spent?: SpentBudget | null;
   /**
    * Passed in rather than read here so the panel and the glyph cannot disagree,
    * and so a test can drive both paths without touching `matchMedia`.
@@ -68,6 +72,16 @@ export function ActivityGlyph({
         {still}
       </span>
       {/*
+        The one state that is painted as words, because "which budget, and
+        until when" is not something five cells can draw. Mono, catalogue
+        size, no sentence: `labels spent · 14:32`.
+      */}
+      {phase === 'spent' && spent && (
+        <span className="pa-activity-spent lt-catalogue" data-budget={spent.budget}>
+          {spentLine(spent)}
+        </span>
+      )}
+      {/*
         The accessible rendering of a signal that is otherwise only a picture.
         Never painted: a state you can only perceive through motion, or only
         through colour, is a state some people do not have.
@@ -77,7 +91,9 @@ export function ActivityGlyph({
           ? GLYPH_ANNOUNCEMENT[kind]
           : phase === 'failed'
             ? 'last tool call failed'
-            : ''}
+            : phase === 'spent' && spent
+              ? spentLine(spent)
+              : ''}
       </span>
     </>
   );

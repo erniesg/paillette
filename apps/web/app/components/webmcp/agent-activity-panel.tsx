@@ -146,6 +146,20 @@ const CSS = `
   color: var(--pa-bad);
   opacity: 0.9;
 }
+.pa-activity-cells[data-phase='spent'] {
+  color: var(--pa-bad);
+  opacity: 0.9;
+}
+.pa-activity-spent {
+  margin-left: 0.6em;
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--pa-bad);
+  opacity: 0.85;
+}
 .pa-activity-glyph:hover .pa-activity-cells,
 .pa-activity-glyph:focus-visible .pa-activity-cells,
 .pa-activity[data-open='true'] .pa-activity-cells {
@@ -360,9 +374,10 @@ export function AgentActivityPanel() {
     pendingConfirmations,
     panelOpen,
     bridgeAttached,
+    spent,
   } = useWebMcpState();
   const reducedMotion = usePrefersReducedMotion();
-  const glyph = readGlyphState(activity);
+  const glyph = readGlyphState(activity, spent);
 
   const [expanded, setExpanded] = useState<readonly string[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -612,7 +627,7 @@ export function AgentActivityPanel() {
         data-running={glyph.running}
         onClick={() => setPanelOpen(!panelOpen)}
       >
-        <ActivityGlyph state={glyph} reducedMotion={reducedMotion} />
+        <ActivityGlyph state={glyph} reducedMotion={reducedMotion} spent={spent} />
       </button>
     </div>
   );
