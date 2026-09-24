@@ -24,7 +24,7 @@
 
 import type * as THREE from 'three';
 import type { Placement, RoomPlan } from '~/lib/room/plan';
-import { DOOR_WIDTH_M, fieldOfView, viewingDistance } from '~/lib/room/plan';
+import { DOOR_WIDTH_M, fieldOfView, fitMeasured, viewingDistance } from '~/lib/room/plan';
 import {
   BASE_WIDTH,
   MAX_NEAR_TEXTURES,
@@ -544,9 +544,9 @@ export const createRoomScene = async (
   /**
    * The size a work is finally hung at.
    *
-   * A measured work is hung at what the catalogue said and the image's own
-   * proportions are not consulted — if the record and the photograph disagree,
-   * the record is the object. An unmeasured one is hung at the declared
+   * A measured work is hung inside what the catalogue said, in the
+   * photograph's own proportions — see `fitMeasured` for why a disagreement
+   * shrinks the picture rather than stretching it. An unmeasured one is hung at the declared
    * fallback area in the picture's true aspect, which is the most that can be
    * said honestly: we know its shape, not its size.
    */
@@ -572,8 +572,9 @@ export const createRoomScene = async (
 
   const resize = (entry: Hung, aspect: number) => {
     if (entry.placement.measured) {
-      entry.widthM = entry.placement.widthM;
-      entry.heightM = entry.placement.heightM;
+      const fitted = fitMeasured(entry.placement.widthM, entry.placement.heightM, aspect);
+      entry.widthM = fitted.widthM;
+      entry.heightM = fitted.heightM;
     } else {
       const area = entry.placement.widthM * entry.placement.heightM;
       let width = Math.sqrt(area * aspect);

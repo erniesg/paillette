@@ -36,11 +36,10 @@ export interface HungWork {
    *
    * Carried raw rather than normalised here because only the room has an
    * opinion about it, and `~/lib/room/dimensions` is where the refusing is
-   * done. Two shapes reach us: the API's structured object on every artwork,
-   * and dimension text on collections that keep it that way. In this
-   * deployment the NGA ingest fills the structured object with nulls, so in
-   * practice this is a null-shaped field carrying a fact — see
-   * `docs/night/room-report.md`.
+   * done. Two shapes reach us: the API's structured object, filled by the
+   * ingest from the catalogue text in centimetres, and the text itself when
+   * the columns are empty. See `docs/night/room-scale-report.md` for how many
+   * NGA records carry which.
    */
   dimensions:
     | string
@@ -116,21 +115,37 @@ const readImageUrl = (artwork: Record<string, unknown>): string | null => {
  * and the first one that is *present* wins — not the first one that parses,
  * because deciding what is readable is the room's job and doing half of it
  * here would put the refusal logic in two places.
+ *
+ * "Present" for the structured object means at least one of height and width
+ * is a number. The API returns that object on every artwork, all nulls when
+ * the columns are empty, and treating an all-null object as present is what
+ * kept the catalogue text in `custom_metadata.dimensions_text` from ever
+ * being reached. A half-filled object *is* present and is passed on as it is:
+ * the room refuses it and hangs the default, which is the rule, and filling
+ * the gap from the text here would be exactly the second opinion this avoids.
  */
 const readDimensions = (artwork: Record<string, unknown>): HungWork['dimensions'] => {
-  const metadata =
-    artwork.metadata && typeof artwork.metadata === 'object'
-      ? (artwork.metadata as Record<string, unknown>)
+  const nested = (key: string): Record<string, unknown> => {
+    const value = artwork[key];
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
       : {};
+  };
+  const customMetadata = nested('custom_metadata');
+  const metadata = nested('metadata');
   for (const candidate of [
     artwork.dimensions,
     artwork.dimensions_text,
+    customMetadata.dimensions_text,
     metadata.dimensions,
     metadata.dimensions_text,
   ]) {
     if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
     if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
-      return candidate as HungWork['dimensions'];
+      const structured = candidate as Record<string, unknown>;
+      if (typeof structured.height === 'number' || typeof structured.width === 'number') {
+        return candidate as HungWork['dimensions'];
+      }
     }
   }
   return null;
