@@ -20,6 +20,12 @@
  */
 
 import type { ModelContext, ModelContextTool } from '~/types/webmcp';
+import {
+  clearTurnTimings,
+  loadTurnTimings,
+  timingRows,
+  type TurnTiming,
+} from './turn-timing';
 
 export const WEBMCP_DEBUG_PARAM = 'webmcp-debug';
 
@@ -48,6 +54,12 @@ export interface WebMcpDebugApi {
     input?: Record<string, unknown>,
     afterMs?: number
   ) => Promise<{ aborted: boolean; error?: string }>;
+  /**
+   * Every agent turn this tab has timed, oldest first, and a table of them in
+   * the console. `{ clear: true }` empties the record after reading it, so a
+   * harness can take one class of turns at a time.
+   */
+  timing: (options?: { clear?: boolean; quiet?: boolean }) => TurnTiming[];
 }
 
 declare global {
@@ -189,6 +201,12 @@ export const installWebMcpDebugHarness = (): (() => void) => {
           error: error instanceof Error ? error.message : String(error),
         };
       }
+    },
+    timing: (options = {}) => {
+      const timings = loadTurnTimings();
+      if (!options.quiet) console.table(timingRows(timings));
+      if (options.clear) clearTurnTimings();
+      return timings;
     },
   };
 
