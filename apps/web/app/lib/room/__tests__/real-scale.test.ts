@@ -1,18 +1,15 @@
 /**
- * Real scale, end to end — and a claim this deployment cannot demonstrate.
+ * Real scale, end to end.
  *
  * "Hang works at their true size" is the strongest argument for a room
  * existing: on a page every work is the same size as every other work, and in
  * a room a print is small and a history painting is enormous. The NGA records
- * ingested here cannot show it. All sixty sampled carry a `dimensions` object
- * with every value null, so the room hangs every one of them at the declared
- * fallback and the honest count of works hung at a recorded size is zero.
- *
- * That makes this file the only place the feature is exercised. It runs the
- * whole path a real record would take — catalogue field, parser, metres,
- * planner — over the shapes a catalogue actually writes, so the day a
- * collection arrives with dimensions the behaviour is already pinned rather
- * than merely intended.
+ * ingested before issue #76 could not show it: all sixty sampled carried a
+ * `dimensions` object with every value null. The ingest now writes the parsed
+ * catalogue measurement into those columns (see
+ * `docs/night/room-scale-report.md` for the share), and this file pins the
+ * path from there to the wall: catalogue field, parser, metres, planner,
+ * over the shapes a catalogue actually writes.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -74,7 +71,7 @@ describe('a catalogue that records how big things are', () => {
   it('mixes measured and unmeasured without pretending about either', () => {
     const { plan, of } = hang([
       { id: 'known', dimensions: { height: 120, width: 90, unit: 'cm' } },
-      // The shape every record in this deployment actually has.
+      // The shape an NGA record whose catalogue text did not parse keeps.
       { id: 'nga', dimensions: { height: null, width: null, depth: null, unit: null } },
     ]);
 
@@ -91,8 +88,9 @@ describe('a catalogue that records how big things are', () => {
    */
   it('refuses a record it cannot read rather than hanging a plausible size', () => {
     const { plan } = hang([
-      { id: 'fractions', dimensions: '24 5/8 x 38 1/8 in.' },
       { id: 'unitless', dimensions: '62.5 x 96.8' },
+      { id: 'half', dimensions: { height: 62.5, width: null, unit: 'cm' } },
+      { id: 'depicted', dimensions: 'original IAD object: 90 x 45 cm' },
       { id: 'nothing', dimensions: 'dimensions unknown' },
     ]);
     expect(plan.measuredCount).toBe(0);
