@@ -1,0 +1,59 @@
+{
+  "base": "https://paillette-stg.berlayar.ai",
+  "at": "2026-09-24T15:37:42.474Z",
+  "failures": 0,
+  "results": [
+    {
+      "name": "GET /api/public-usage/nga answers on arrival with four budgets",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "keys": [
+          "labels",
+          "agentCalls",
+          "search",
+          "dailySite"
+        ]
+      }
+    },
+    {
+      "name": "with room in every budget, the glyph is not spent",
+      "ok": true,
+      "detail": {
+        "phase": "idle"
+      }
+    },
+    {
+      "name": "Copy link lists the unlabelled work and publishes nothing yet",
+      "ok": true,
+      "detail": {
+        "noticeText": "1 without a labelLandscape with SheepWaitPublish anyway",
+        "posts": 0
+      }
+    },
+    {
+      "name": "Wait closes the notice and publishes nothing",
+      "ok": true,
+      "detail": {
+        "posts": 0
+      }
+    },
+    {
+      "name": "Publish anyway publishes and copies the link",
+      "ok": true,
+      "detail": {
+        "posts": 1,
+        "shortLink": true
+      }
+    },
+    {
+      "name": "[intercepted budgets] a spent labelling budget shows one terse state on the glyph",
+      "ok": true,
+      "detail": {
+        "phase": "spent",
+        "frame": "▁▁▁▁▁",
+        "line": "labels spent · 04:14 PM"
+      }
+    }
+  ]
+}
