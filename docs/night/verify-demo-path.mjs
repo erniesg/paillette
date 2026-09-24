@@ -14,13 +14,26 @@
  * out as skipped rather than silently dropped.
  *
  *   PLAYWRIGHT_CORE=<path> node docs/night/verify-demo-path.mjs [base] [runs]
+ *
+ * `--timing` runs something else entirely, and is the one mode here that does
+ * spend model calls: twenty typed agent turns, timed by the page itself. See
+ * `latency-runs.mjs`.
+ *
+ *   node docs/night/verify-demo-path.mjs --timing [base] [--label=baseline]
  */
 
 import { writeFileSync } from 'node:fs';
 import { resolveBrowserDriver } from '../../scripts/demo/browser.mjs';
 
-const BASE = process.argv[2] ?? 'https://paillette-stg.berlayar.ai';
-const RUNS = Number(process.argv[3] ?? 3);
+const ARGS = process.argv.slice(2);
+const POSITIONAL = ARGS.filter((arg) => !arg.startsWith('--'));
+const BASE = POSITIONAL[0] ?? 'https://paillette-stg.berlayar.ai';
+const RUNS = Number(POSITIONAL[1] ?? 3);
+
+if (ARGS.includes('--timing')) {
+  const { runTimedTurns } = await import('./latency-runs.mjs');
+  process.exit(await runTimedTurns({ base: BASE, argv: ARGS }));
+}
 const QUERY = 'warm landscape';
 const CHROME = process.env.CHROME_PATH ?? undefined;
 
