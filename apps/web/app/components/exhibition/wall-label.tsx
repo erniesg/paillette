@@ -2,15 +2,15 @@
  * The wall label under one work.
  *
  * A label belongs beside its picture and nowhere else, so it renders on the
- * card rather than in a panel. It is present only when someone has written
- * one: an empty label under every work would be twelve blank rectangles
- * asking to be filled in, which is a form, not a hang.
+ * card rather than in a panel. An empty work offers a small Add wall label
+ * control so writing the first label is as discoverable as editing one.
  *
  * The human edits it in place. The agent's unaccepted rewording sits under it,
  * dashed, one click from being taken.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
+import { requestAgentTurn } from '~/lib/webmcp/agent-request';
 import {
   acceptProposal,
   declineProposal,
@@ -22,6 +22,7 @@ import {
   subscribeWebMcpState,
   type ExhibitionField,
 } from '~/lib/webmcp/store';
+import type { HumanTurnPayload } from '~/lib/webmcp/turn';
 import { EditableText } from './editable-text';
 
 const EMPTY: ExhibitionField = { current: null, proposed: null };
@@ -42,9 +43,61 @@ export const WallLabel = ({
   title?: string;
 }) => {
   const field = useWallLabel(artworkId);
-  if (!field.current && !field.proposed) return null;
+  const [adding, setAdding] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<string | null>(null);
 
   const suffix = title ? ` for ${title}` : '';
+  const hasLabel = Boolean(field.current || field.proposed);
+
+  const suggestLabel = () => {
+    const namedWork = title ? `“${title}”` : `artwork ${artworkId}`;
+    const gestures: HumanTurnPayload = {
+      flagsDelta: [],
+      selection: [{ id: artworkId, ...(title ? { title } : {}) }],
+      hovered: null,
+      compareChoice: null,
+      exhibitionEdits: [],
+    };
+    const dispatched = requestAgentTurn({
+      instruction:
+        `Write a wall label for ${namedWork} (ID: ${artworkId}). ` +
+        `Call write_labels with artworkIds: [${JSON.stringify(artworkId)}] only.`,
+      gestures,
+    });
+    setAgentStatus(
+      dispatched
+        ? 'The agent is preparing a label suggestion.'
+        : 'Open Agent mode, then choose Suggest label to ask for a draft.'
+    );
+  };
+
+  if (!hasLabel && !adding) {
+    return (
+      <div className="paillette-wall-label-slot px-3 pb-3 pt-1">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="paillette-wall-label-add p-0 text-left text-xs underline-offset-2 hover:underline"
+            onClick={() => setAdding(true)}
+          >
+            Add wall label
+          </button>
+          <button
+            type="button"
+            className="paillette-wall-label-suggest p-0 text-left text-xs underline-offset-2 hover:underline"
+            onClick={suggestLabel}
+          >
+            Suggest label
+          </button>
+        </div>
+        {agentStatus && (
+          <p className="mt-1 text-xs" role="status">
+            {agentStatus}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="paillette-wall-label-slot px-3 pb-3 pt-1">
@@ -61,6 +114,20 @@ export const WallLabel = ({
         multiline
         textClassName="paillette-label-text"
       />
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          type="button"
+          className="paillette-wall-label-suggest p-0 text-left text-xs underline-offset-2 hover:underline"
+          onClick={suggestLabel}
+        >
+          Suggest label
+        </button>
+        {agentStatus && (
+          <p className="text-xs" role="status">
+            {agentStatus}
+          </p>
+        )}
+      </div>
     </div>
   );
 };

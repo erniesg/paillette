@@ -1,0 +1,54 @@
+{
+  "origin": "https://paillette-stg.berlayar.ai",
+  "code": "MKwsxHy",
+  "sabotage": true,
+  "passed": 0,
+  "failed": 9,
+  "results": [
+    {
+      "check": "flat",
+      "ok": false,
+      "detail": "room canvases=1 flat images=0"
+    },
+    {
+      "check": "textures (desktop)",
+      "ok": false,
+      "detail": "0/4 materials 200: oak-color.png=none oak-normal.png=none plaster-color.png=none plaster-normal.png=none"
+    },
+    {
+      "check": "walk (desktop)",
+      "ok": false,
+      "detail": "0/4 walk buttons visible inside the viewport"
+    },
+    {
+      "check": "textures (phone)",
+      "ok": false,
+      "detail": "0/4 materials 200: oak-color.png=none oak-normal.png=none plaster-color.png=none plaster-normal.png=none"
+    },
+    {
+      "check": "walk (phone)",
+      "ok": false,
+      "detail": "0/4 walk buttons visible inside the viewport"
+    },
+    {
+      "check": "frames",
+      "ok": false,
+      "detail": "196 of 1296000 pixels differ between frame=none and frame=none"
+    },
+    {
+      "check": "label",
+      "ok": false,
+      "detail": "was \"The valley empties of light before anyon…\"; edited copy shown before reload=1 after reload=0"
+    },
+    {
+      "check": "label stays local",
+      "ok": false,
+      "detail": "edited copy shown in a second tab of the same browser=1"
+    },
+    {
+      "check": "bundle",
+      "ok": false,
+      "detail": "served before=exhibition-view-DyWviQv4.js after=exhibition-view-DyWviQv4.js expected=exhibition-view-not-this-build.js"
+    }
+  ]
+}

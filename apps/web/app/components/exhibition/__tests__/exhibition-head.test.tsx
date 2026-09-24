@@ -179,9 +179,10 @@ describe('the exhibition head', () => {
 });
 
 describe('the wall label', () => {
-  it('is absent until someone writes one', () => {
+  it('offers an empty work a way to add a label', () => {
     render(<WallLabel artworkId="a" title="Work a" />);
     expect(screen.queryByLabelText(/Wall label/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add wall label' })).toBeInTheDocument();
   });
 
   it('is editable in place and becomes the human’s', async () => {

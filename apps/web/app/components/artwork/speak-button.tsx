@@ -38,6 +38,7 @@ export function SpeakButton({
 }) {
   const [supported, setSupported] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
@@ -52,6 +53,7 @@ export function SpeakButton({
   useEffect(
     () => () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
+        utteranceRef.current = null;
         window.speechSynthesis.cancel();
       }
     },
@@ -62,6 +64,7 @@ export function SpeakButton({
 
   const stop = () => {
     window.speechSynthesis.cancel();
+    utteranceRef.current = null;
     setSpeaking(false);
   };
 
@@ -69,13 +72,34 @@ export function SpeakButton({
     // Chrome queues rather than replaces, so an un-cancelled previous run would
     // play both.
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.96;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    utteranceRef.current = utterance;
-    setSpeaking(true);
-    window.speechSynthesis.speak(utterance);
+    utteranceRef.current = null;
+    setError(null);
+
+    let utterance: SpeechSynthesisUtterance | null = null;
+    try {
+      utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.96;
+      utterance.onend = () => {
+        if (utteranceRef.current !== utterance) return;
+        utteranceRef.current = null;
+        setSpeaking(false);
+      };
+      utterance.onerror = () => {
+        if (utteranceRef.current !== utterance) return;
+        utteranceRef.current = null;
+        setSpeaking(false);
+        setError('Couldn’t start reading. Try again.');
+      };
+      utteranceRef.current = utterance;
+      setSpeaking(true);
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      if (!utterance || utteranceRef.current === utterance) {
+        utteranceRef.current = null;
+        setSpeaking(false);
+        setError('Couldn’t start reading. Try again.');
+      }
+    }
   };
 
   const chrome = mark
@@ -83,14 +107,17 @@ export function SpeakButton({
     : 'inline-flex items-center gap-2 rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 transition-colors hover:border-primary-400 hover:text-white';
 
   return (
-    <button
-      type="button"
-      onClick={speaking ? stop : speak}
-      aria-label={speaking ? 'Stop reading' : label}
-      className={`${chrome} ${className}`}
-    >
-      <span aria-hidden="true">{speaking ? '■' : '▶'}</span>
-      {!mark && (speaking ? 'Stop' : label)}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={speaking ? stop : speak}
+        aria-label={speaking ? 'Stop reading' : label}
+        className={`${chrome} ${className}`}
+      >
+        <span aria-hidden="true">{speaking ? '■' : '▶'}</span>
+        {!mark && (speaking ? 'Stop' : label)}
+      </button>
+      {error && <span role="status">{error}</span>}
+    </>
   );
 }
