@@ -35,8 +35,10 @@ Across the whole file:
   That fits the four material maps.
 - The full-resolution count drops in three cells: six 6 → 4,
   `shortcode-regions-first` 6 → 3, `shortcode-regions-second` 6 → 4. Texture
-  bytes fall there. This is the scene shedding resolution under a low frame
-  rate, not a smaller budget.
+  bytes fall there. The cause is not established. The scene's low-frame-rate
+  fallback lowers the pixel ratio, not this count. The most likely reason is
+  full-resolution loads still in flight when the fixed settle time ran out on a
+  loaded machine, but no run here confirms it.
 - Renderer textures rise by 2–4 in eight cells and fall by 2–4 in five
   (`thirty-third-room`, `thirtyAfterWalk`, `regions-second` and both
   short-code shots).
