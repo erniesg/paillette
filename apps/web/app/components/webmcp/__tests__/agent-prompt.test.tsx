@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentPrompt } from '../agent-prompt';
 import { GRACE_MS } from '~/lib/voice/utterance';
 import {
+  getWebMcpState,
   setAgentResults,
   setBoard,
   setFocusedArtwork,
@@ -1548,7 +1549,62 @@ describe('AgentPrompt — labels the page will not let it write', () => {
       )
     ).toHaveLength(0);
     expect(refuse).toHaveBeenCalledTimes(1);
-    // And the human is told, rather than left with a blank wall.
-    expect(await screen.findByText(/labelling calls/i)).toBeTruthy();
+    // And the human is told what was not done, counted from the wall rather
+    // than relayed from the server: one work, still blank.
+    expect(
+      await screen.findByText(
+        'Labels not written: the labelling budget is spent. 1 work is still without a label.'
+      )
+    ).toBeTruthy();
+    // The glyph carries the same fact.
+    expect(getWebMcpState().spent).toMatchObject({ budget: 'labels' });
+  });
+});
+
+describe('AgentPrompt — a budget spent mid-turn', () => {
+  it('says what the turn did not do, and puts the spent budget on the page', async () => {
+    rememberArtworks([
+      { id: 'nga-2', galleryId: 'nga', title: 'A', artist: 'B', imageUrl: null, similarity: 1 },
+      { id: 'nga-3', galleryId: 'nga', title: 'C', artist: 'D', imageUrl: null, similarity: 1 },
+    ] as unknown as Parameters<typeof rememberArtworks>[0]);
+    writeExhibition(
+      {
+        title: 'The Hour Before',
+        statement: 'About leaving.',
+        works: [{ artworkId: 'nga-2' }, { artworkId: 'nga-3', label: 'Gone.' }],
+      },
+      { by: 'agent' }
+    );
+    setModelContext({ getTools: async () => [] });
+    const nextAt = Date.now() + 12 * 60_000;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          success: false,
+          error: {
+            code: 'AGENT_CALLS_SPENT',
+            message: "This hour's agent budget is spent. The next call opens in 12 min.",
+            details: { budget: { limit: 40, used: 40, remaining: 0, nextAt } },
+          },
+        }),
+      }))
+    );
+
+    render(<AgentPrompt />);
+    const field = await screen.findByPlaceholderText(PLACEHOLDER);
+    fireEvent.change(field, { target: { value: 'relabel the show' } });
+    await act(async () => {
+      fireEvent.submit(field.closest('form')!);
+    });
+
+    expect(
+      await screen.findByText(
+        /^Stopped before finishing: this hour's agent budget is spent until .+\. 1 work is still without a label\.$/
+      )
+    ).toBeTruthy();
+    expect(getWebMcpState().spent).toEqual({ budget: 'agentCalls', nextAt, at: expect.any(Number) });
   });
 });

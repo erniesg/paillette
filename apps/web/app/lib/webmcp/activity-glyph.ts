@@ -24,6 +24,7 @@
  */
 
 import type { ActivityEntry } from './store';
+import { isStillSpent, type SpentBudget } from './spent-budget';
 
 /**
  * The kinds of work the glyph can distinguish.
@@ -39,8 +40,11 @@ export type GlyphKind = 'scan' | 'look' | 'deal' | 'mark' | 'build' | 'read';
  * `failed` — nothing running, and the last call came back an error. A settle,
  *   not an alarm: it rests at idle weight in the error tone, so it reports
  *   rather than nags.
+ * `spent` — nothing running, and a server-side budget has refused the page and
+ *   not come back yet. Unlike `failed` it outlives the next successful call of
+ *   some other kind: the labels budget is still spent after a search works.
  */
-export type GlyphPhase = 'idle' | 'running' | 'failed';
+export type GlyphPhase = 'idle' | 'running' | 'failed' | 'spent';
 
 export interface GlyphState {
   phase: GlyphPhase;
@@ -187,6 +191,9 @@ export const IDLE_FRAME = '·····';
 /** The last call came back an error, and nothing has run since. */
 export const FAILED_FRAME = '··×··';
 
+/** A budget is spent: the field, emptied to the floor. */
+export const SPENT_FRAME = '▁▁▁▁▁';
+
 /**
  * One word per kind, for a reader who is not looking at the screen.
  *
@@ -218,7 +225,11 @@ export const GLYPH_ANNOUNCEMENT: Record<GlyphKind, string> = {
  *   resting as a cross.
  * - An aborted call is not a failure. Someone cancelled; nothing is wrong.
  */
-export const readGlyphState = (activity: ActivityEntry[]): GlyphState => {
+export const readGlyphState = (
+  activity: ActivityEntry[],
+  spent: SpentBudget | null = null,
+  now: number = Date.now()
+): GlyphState => {
   let newestRunning: ActivityEntry | null = null;
   let running = 0;
 
@@ -238,6 +249,10 @@ export const readGlyphState = (activity: ActivityEntry[]): GlyphState => {
     };
   }
 
+  // Work in flight still wins: a spent labels budget does not stop a search
+  // from being worth watching. Once it settles, the spent budget is the state.
+  if (isStillSpent(spent, now)) return { phase: 'spent', kind: null, running: 0 };
+
   const newest = activity[0];
   if (!newest) return { phase: 'idle', kind: null, running: 0 };
 
@@ -252,6 +267,7 @@ export const readGlyphState = (activity: ActivityEntry[]): GlyphState => {
 /** The single frame to paint given a state and whether motion is allowed. */
 export const stillFrameFor = (state: GlyphState): string => {
   if (state.phase === 'failed') return FAILED_FRAME;
+  if (state.phase === 'spent') return SPENT_FRAME;
   if (state.phase === 'running' && state.kind) return GLYPH_STILLS[state.kind];
   return IDLE_FRAME;
 };
