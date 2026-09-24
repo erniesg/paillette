@@ -1,0 +1,49 @@
+{
+  "label": "blocked-smoke",
+  "base": "https://paillette-stg.berlayar.ai",
+  "git": "7fdcf84",
+  "startedAt": "2026-09-24T14:17:06.710Z",
+  "turns": [
+    {
+      "class": "ask",
+      "prompt": "something warm for above the sofa",
+      "timing": {
+        "v": 1,
+        "at": 1790259435607,
+        "kind": "ask",
+        "instruction": "something warm for above the sofa",
+        "totalMs": 2968,
+        "noteMs": null,
+        "modelCalls": [
+          {
+            "ms": 2949,
+            "server": null,
+            "requested": [],
+            "afterNudge": false
+          }
+        ],
+        "toolCalls": [],
+        "modelCallCount": 1,
+        "nudges": 0,
+        "nudgeKeys": [],
+        "breakdown": {
+          "modelMs": 2949,
+          "serverModelMs": 0,
+          "toolsMs": 0,
+          "nudgeMs": 0,
+          "otherMs": 19,
+          "promptTokens": 0,
+          "cachedTokens": 0
+        },
+        "outcome": "error",
+        "labelsRefused": false
+      },
+      "errors": [],
+      "index": 0,
+      "attempt": 0,
+      "at": "2026-09-24T14:17:19.010Z"
+    }
+  ],
+  "finishedAt": "2026-09-24T14:17:19.138Z",
+  "note": "The one timed turn before the blocker was found: the page recorded it and the harness read it back, and the only model call came back 429 from OpenAI (credit_balance_exhausted, read from wrangler tail)."
+}
