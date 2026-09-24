@@ -28,6 +28,7 @@ import {
   readRollingWindow,
   type RollingWindowState,
 } from '../utils/rolling-window';
+import { callerAddress } from '../utils/caller-address';
 
 /**
  * One conversation should not be able to spend the whole daily budget.
@@ -380,9 +381,7 @@ agent.post('/public-agent/turn', async (c) => {
       ? describeHumanTurn(body.turn as HumanTurnPayload, { continued })
       : null;
 
-  const clientHash = await getClientHash(
-    c.req.header('CF-Connecting-IP') || undefined
-  );
+  const clientHash = await getClientHash(callerAddress(c));
   const window = await consumeAgentCall(c.env, clientHash);
   if (!window.allowed) {
     const minutes = window.state?.nextAt

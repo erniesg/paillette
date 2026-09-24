@@ -27,8 +27,9 @@ const noStore = (payload: ApiResponse, status: number) =>
  * the site's daily model budget, each `{limit, used, remaining, nextAt}`. It is
  * the shape `spent-budget.ts` reads, and spends none of them.
  *
- * The connecting address is forwarded because the label and agent budgets are
- * keyed on it, exactly as the label and agent proxies forward it.
+ * The connecting address travels with the public-search headers, and the
+ * label and agent budgets are keyed on it, as the label and agent proxies
+ * already key them.
  */
 export const loader = async ({ context, params, request }: LoaderFunctionArgs) => {
   const orgId = params.orgId;
@@ -45,8 +46,6 @@ export const loader = async ({ context, params, request }: LoaderFunctionArgs) =
   const env = getServerEnv(context);
   const headers = buildPublicSearchHeaders(request, env, 'application/json');
   if (!headers) return publicSearchConfigError();
-  const connectingIp = request.headers.get('CF-Connecting-IP');
-  if (connectingIp) headers.set('CF-Connecting-IP', connectingIp);
 
   let upstream: Response;
   try {

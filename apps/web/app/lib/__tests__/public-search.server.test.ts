@@ -22,6 +22,7 @@ describe('buildPublicSearchHeaders', () => {
           'X-Forwarded-For': '203.0.113.12',
           'X-Real-IP': '203.0.113.13',
           'X-User-Id': 'forged-user',
+          'X-Paillette-Visitor-Ip': '198.51.100.66',
         },
       }),
       { PAILLETTE_PUBLIC_SEARCH_API_KEY: 'test-public-service-key' },
@@ -35,6 +36,9 @@ describe('buildPublicSearchHeaders', () => {
     expect(headers?.get('Authorization')).toBeNull();
     expect(headers?.get('Cookie')).toBeNull();
     expect(headers?.get('CF-Connecting-IP')).toBeNull();
+    // The edge's value, under the proxy's own name, so the API can tell
+    // visitors apart for the per-minute and per-day limits.
+    expect(headers?.get('X-Paillette-Visitor-Ip')).toBe('203.0.113.10');
     expect(headers?.get('True-Client-IP')).toBeNull();
     expect(headers?.get('X-Forwarded-For')).toBeNull();
     expect(headers?.get('X-Real-IP')).toBeNull();
@@ -217,5 +221,17 @@ describe('isAllowedPublicSearchRouteId', () => {
     expect(isAllowedPublicSearchRouteId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toBe(
       false
     );
+  });
+});
+
+describe('buildPublicSearchHeaders — the relayed visitor address', () => {
+  it('never relays a visitor address the browser supplied', () => {
+    const headers = buildPublicSearchHeaders(
+      new Request('https://paillette.test/api/public-search/nga/text', {
+        headers: { 'X-Paillette-Visitor-Ip': '198.51.100.66' },
+      }),
+      { PAILLETTE_PUBLIC_SEARCH_API_KEY: 'test-public-service-key' }
+    );
+    expect(headers?.get('X-Paillette-Visitor-Ip')).toBeNull();
   });
 });

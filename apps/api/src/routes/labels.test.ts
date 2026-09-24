@@ -116,6 +116,34 @@ describe('POST /public-labels — the hourly window', () => {
     expect((await label(bindings)).status).toBe(429);
   });
 
+  it('counts each visitor behind the web proxy separately', async () => {
+    openAiAnswers();
+    const bindings = env({ LABEL_CALLS_PER_HOUR: '1', PAILLETTE_PUBLIC_SEARCH_API_KEY: 'server-key' });
+    const viaProxy = (visitor: string) =>
+      labels.request(
+        '/public-labels',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // What Cloudflare puts here on the proxy's subrequest: the proxy.
+            'CF-Connecting-IP': '2a06:98c0:3600::103',
+            'X-API-Key': 'server-key',
+            'X-Paillette-Visitor-Ip': visitor,
+          },
+          body: JSON.stringify({
+            collectionId: 'nga',
+            artworkIds: ['open-access-art:nga:1'],
+            statement: 'Leaving.',
+          }),
+        },
+        bindings
+      );
+    expect((await viaProxy('203.0.113.9')).status).toBe(200);
+    expect((await viaProxy('203.0.113.9')).status).toBe(429);
+    expect((await viaProxy('198.51.100.4')).status).toBe(200);
+  });
+
   it('keeps the old ceiling where nothing is set', () => {
     expect(labelCallsPerHour({})).toBe(10);
     expect(labelCallsPerHour({ LABEL_CALLS_PER_HOUR: '60' })).toBe(60);

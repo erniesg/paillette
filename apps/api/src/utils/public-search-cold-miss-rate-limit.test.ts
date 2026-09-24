@@ -405,6 +405,41 @@ describe('getPublicSearchRequestClientIdentity', () => {
     ).toBe('user:user-2');
   });
 
+  it('keys the public proxy on the visitor address it relays, not on itself', () => {
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: true,
+        kind: 'user',
+        userId: 'public-search-web',
+        connectingIp: '2a06:98c0:3600::103',
+        visitorIp: '203.0.113.45',
+      })
+    ).toBe('public-edge:203.0.113.45');
+  });
+
+  it('ignores a relayed visitor address from anyone but the public proxy', () => {
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: false,
+        kind: 'user',
+        userId: 'user-2',
+        visitorIp: '203.0.113.45',
+      })
+    ).toBe('user:user-2');
+  });
+
+  it('falls back to the connecting address when the relayed one is not an address', () => {
+    expect(
+      getPublicSearchRequestClientIdentity({
+        isPublicSearchPrincipal: true,
+        kind: 'user',
+        userId: 'public-search-web',
+        connectingIp: '203.0.113.45',
+        visitorIp: 'not an address',
+      })
+    ).toBe('public-edge:203.0.113.45');
+  });
+
   it('rejects missing or untrusted public client addresses', () => {
     expect(
       getPublicSearchRequestClientIdentity({

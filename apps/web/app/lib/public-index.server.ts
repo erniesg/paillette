@@ -31,10 +31,25 @@ export const indexErrorResponse = (
 
 export const buildPublicIndexHeaders = (
   request: Request,
-  contentType?: string
+  contentType?: string,
+  /**
+   * For the per-caller paid routes (labels, agent): the server env, so the
+   * visitor's address can be relayed under the key that makes the API believe
+   * it. Cloudflare rewrites CF-Connecting-IP on this subrequest to this
+   * worker's own address, so without this every visitor shares one budget.
+   * See `caller-address.ts` in the API.
+   */
+  relayVisitorWith?: Record<string, string | undefined>
 ) => {
   const headers = new Headers();
   if (contentType) headers.set('Content-Type', contentType);
+
+  const key = relayVisitorWith?.PAILLETTE_PUBLIC_SEARCH_API_KEY?.trim();
+  const visitor = request.headers.get('CF-Connecting-IP');
+  if (key && visitor) {
+    headers.set('X-API-Key', key);
+    headers.set('X-Paillette-Visitor-Ip', visitor);
+  }
 
   // Set by Cloudflare at the edge. Never substitute X-Forwarded-For here:
   // it is client-controlled and would let one visitor spoof another's bucket.

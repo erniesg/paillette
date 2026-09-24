@@ -50,6 +50,7 @@ import {
   reserveNgaPublicSearchQuotaWithUsageEvent,
 } from '../utils/nga-search-quota';
 import { readCallerBudgets } from '../utils/budgets';
+import { callerAddress } from '../utils/caller-address';
 import type { PublicSearchQuota } from '@paillette/types';
 import {
   matchesNgaSearchConstraints,
@@ -164,6 +165,7 @@ const ngaSearchClientIdentity = (c: any, isPublicSearchPrincipal?: boolean) => {
     userId: auth.userId,
     apiKeyId: auth.apiKeyId,
     connectingIp: c.req.header('CF-Connecting-IP'),
+    visitorIp: c.req.header('X-Paillette-Visitor-Ip'),
     // Intentionally passed only to document that it is ignored: public
     // traffic must never be partitioned by a caller-controlled XFF value.
     forwardedFor: c.req.header('X-Forwarded-For'),
@@ -3024,8 +3026,9 @@ searchRoutes.get('/search/budgets', requireAuthOrApiKey as any, async (c) => {
       404
     );
   }
+  // The same address the label and agent routes count against.
   const budgets = await readCallerBudgets(c.env, {
-    connectingIp: c.req.header('CF-Connecting-IP') || undefined,
+    connectingIp: callerAddress(c),
     searchScope: ngaQuotaScopeFor(c),
   });
   return c.json({ success: true, data: budgets });

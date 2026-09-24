@@ -46,6 +46,7 @@ const colorSearchClientIdentity = (c: any) => {
     userId: auth.userId,
     apiKeyId: auth.apiKeyId,
     connectingIp: c.req.header('CF-Connecting-IP'),
+    visitorIp: c.req.header('X-Paillette-Visitor-Ip'),
     forwardedFor: c.req.header('X-Forwarded-For'),
   });
 };

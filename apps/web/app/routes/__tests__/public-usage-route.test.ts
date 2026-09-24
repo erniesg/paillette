@@ -34,7 +34,7 @@ describe('GET /api/public-usage/:orgId — the four budgets', () => {
     expect(await response.json()).toEqual({ success: true, data: BUDGETS });
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe('https://paillette-api-stg.berlayar.ai/api/v1/orgs/nga/search/budgets');
-    expect(new Headers(init?.headers).get('CF-Connecting-IP')).toBe('203.0.113.9');
+    expect(new Headers(init?.headers).get('X-Paillette-Visitor-Ip')).toBe('203.0.113.9');
   });
 
   it('answers only for a public collection', async () => {

@@ -38,6 +38,7 @@ import {
   readRollingWindow,
   type RollingWindowState,
 } from '../utils/rolling-window';
+import { callerAddress } from '../utils/caller-address';
 
 const LABEL_MODEL = 'gpt-5.6-terra';
 
@@ -269,7 +270,7 @@ labels.post('/public-labels', async (c) => {
     );
   }
 
-  const clientHash = await getLabelClientHash(c.req.header('CF-Connecting-IP'));
+  const clientHash = await getLabelClientHash(callerAddress(c));
   const limit = labelCallsPerHour(c.env);
   const window = clientHash
     ? await consumeRollingWindow(c.env.CACHE, labelWindowKey(clientHash), {

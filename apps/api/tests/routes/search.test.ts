@@ -1146,6 +1146,27 @@ describe('GET /search/budgets — what the page can still spend', () => {
     expect(db.usageEvents).toHaveLength(0);
   });
 
+  it('answers the public proxy key, which is how the page reaches it', async () => {
+    // The same trap as exemplars: the public key is restricted to a list of
+    // routes, and no test carried the key, so staging answered FORBIDDEN.
+    const response = await makeApp().request(
+      '/api/v1/orgs/nga/search/budgets',
+      {
+        headers: {
+          'X-API-Key': 'public-search-secret',
+          'CF-Connecting-IP': '2a06:98c0:3600::103',
+          'X-Paillette-Visitor-Ip': '203.0.113.9',
+        },
+      },
+      {
+        ...makeEnv(new FakeSearchDb()),
+        ENVIRONMENT: 'production',
+        PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+      } as Env
+    );
+    expect(response.status).toBe(200);
+  });
+
   it('is the NGA collection\'s alone', async () => {
     const response = await makeApp().request(
       `/api/v1/orgs/${NGS_ORG_ID}/search/budgets`,
@@ -1386,6 +1407,32 @@ describe('NGA public search quota', () => {
     expect(fresh.status).toBe(429);
     expect(((await fresh.json()) as any).error.code).toBe('NGA_PUBLIC_SEARCH_QUOTA_EXHAUSTED');
     expect(db.ngaPublicSearchQuota.used).toBe(1);
+  });
+
+  it('gives each visitor behind the web proxy their own day', async () => {
+    // Staging measured the proxy's own address arriving as CF-Connecting-IP
+    // on every search, so keyed on that, every visitor shared one day.
+    const db = new FakeSearchDb();
+    const env = {
+      ...makeEnv(db),
+      CACHE: makeEmbeddingCache(),
+      NGA_SEARCH_CALLS_PER_DAY: '1',
+      PAILLETTE_PUBLIC_SEARCH_API_KEY: 'public-search-secret',
+    };
+    const app = makeApp();
+    const viaProxy = (visitor: string) => ({
+      'X-API-Key': 'public-search-secret',
+      'CF-Connecting-IP': '2a06:98c0:3600::103',
+      'X-Paillette-Visitor-Ip': visitor,
+    });
+
+    const first = await textSearch(app, env, viaProxy('203.0.113.9'), { query: 'mangrove shore', topK: 100, minScore: 0 }, 'nga');
+    const again = await textSearch(app, env, viaProxy('203.0.113.9'), { query: 'quiet harbour', topK: 100, minScore: 0 }, 'nga');
+    const other = await textSearch(app, env, viaProxy('198.51.100.4'), { query: 'quiet harbour', topK: 100, minScore: 0 }, 'nga');
+
+    expect(first.status).toBe(200);
+    expect(again.status).toBe(429);
+    expect(other.status).toBe(200);
   });
 
   it('keeps one caller from spending another caller\'s day', async () => {
