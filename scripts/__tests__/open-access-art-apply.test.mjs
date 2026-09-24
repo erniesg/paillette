@@ -14,6 +14,7 @@ import {
   buildOpenAccessVectorLine,
   writeOpenAccessD1Sql,
 } from '../lib/open-access-art-apply.mjs';
+import { migratedDatabase } from './support/migrated-database.mjs';
 
 const sampleArtwork = {
   id: 'open-access-art:artic:27992',
@@ -250,6 +251,93 @@ describe('open access art apply plan', () => {
     assert.match(files[0].sql, /INSERT INTO collection_artworks/u);
     assert.match(files[0].sql, /UPDATE collections SET artwork_count/u);
     assert.match(files[0].sql, /The Child''s Bath/u);
+  });
+});
+
+const ngaArtwork = (objectId, dimensionsText) => ({
+  id: `open-access-art:nga:${objectId}`,
+  collection_id: 'open-access-art',
+  image_url: `https://api.nga.gov/iiif/${objectId}/full/843,/0/default.jpg`,
+  title: `Object ${objectId}`,
+  dimensions_text: dimensionsText,
+  source_url: `https://www.nga.gov/collection/art-object-page.${objectId}.html`,
+  source_record_id: String(objectId),
+  custom_metadata: { provider: 'nga', providerRecordId: String(objectId) },
+});
+
+const appliedDimensions = (db) =>
+  db
+    .prepare(
+      `SELECT id, dimensions_height AS height, dimensions_width AS width,
+              dimensions_depth AS depth, dimensions_unit AS unit,
+              json_extract(custom_metadata, '$.dimensions_text') AS text
+       FROM artworks ORDER BY id`
+    )
+    .all()
+    .map((row) => ({ ...row }));
+
+describe('open access art dimensions', () => {
+  const records = [
+    ngaArtwork(1, 'overall: 62.5 x 96.8 cm (24 5/8 x 38 1/8 in.)'),
+    ngaArtwork(2, 'overall (diameter): 30.5 cm (12 in.)'),
+    ngaArtwork(3, 'overall: 50.8 x 40.6 x 2.5 cm (20 x 16 x 1 in.)'),
+    ngaArtwork(4, null),
+  ];
+  const apply = (db, generatedAt) => {
+    const plan = buildOpenAccessApplyPlan({ records, generatedAt });
+    for (const file of writeOpenAccessD1Sql(plan, { batchSize: 20 })) {
+      db.exec(file.sql);
+    }
+  };
+  const expected = [
+    {
+      id: 'open-access-art:nga:1',
+      height: 62.5,
+      width: 96.8,
+      depth: null,
+      unit: 'cm',
+      text: 'overall: 62.5 x 96.8 cm (24 5/8 x 38 1/8 in.)',
+    },
+    {
+      id: 'open-access-art:nga:2',
+      height: null,
+      width: null,
+      depth: null,
+      unit: null,
+      text: 'overall (diameter): 30.5 cm (12 in.)',
+    },
+    {
+      id: 'open-access-art:nga:3',
+      height: 50.8,
+      width: 40.6,
+      depth: 2.5,
+      unit: 'cm',
+      text: 'overall: 50.8 x 40.6 x 2.5 cm (20 x 16 x 1 in.)',
+    },
+    {
+      id: 'open-access-art:nga:4',
+      height: null,
+      width: null,
+      depth: null,
+      unit: null,
+      text: null,
+    },
+  ];
+
+  it('writes the parsed columns and keeps the catalogue text in every case', () => {
+    const db = migratedDatabase();
+    apply(db, '2026-09-24T00:00:00.000Z');
+    assert.deepEqual(appliedDimensions(db), expected);
+  });
+
+  it('fills the columns on a re-apply over rows the old ingest left null', () => {
+    const db = migratedDatabase();
+    apply(db, '2026-09-24T00:00:00.000Z');
+    db.exec(`UPDATE artworks SET dimensions_height = NULL, dimensions_width = NULL,
+      dimensions_depth = NULL, dimensions_unit = NULL,
+      custom_metadata = json_remove(custom_metadata, '$.dimensions_text')`);
+    apply(db, '2026-09-25T00:00:00.000Z');
+    assert.deepEqual(appliedDimensions(db), expected);
   });
 });
 

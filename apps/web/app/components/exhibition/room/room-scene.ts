@@ -24,7 +24,7 @@
 
 import type * as THREE from 'three';
 import type { Placement, RoomPlan } from '~/lib/room/plan';
-import { DOOR_WIDTH_M, fieldOfView, viewingDistance } from '~/lib/room/plan';
+import { DOOR_WIDTH_M, fieldOfView, fitMeasured, viewingDistance } from '~/lib/room/plan';
 import {
   BASE_WIDTH,
   MAX_NEAR_TEXTURES,
@@ -74,6 +74,13 @@ export interface SceneStats {
   roomName: string | null;
   /** How far past the threshold. A doorway is not a photograph of a room. */
   metresIntoRoom: number;
+  /**
+   * What each work is hung at, in metres, once its image has arrived.
+   *
+   * Published so "the six works hang at different sizes" can be checked as a
+   * number rather than judged from a screenshot.
+   */
+  works: { artworkId: string; widthM: number; heightM: number; measured: boolean }[];
 }
 
 export interface RoomSceneOptions {
@@ -544,9 +551,10 @@ export const createRoomScene = async (
   /**
    * The size a work is finally hung at.
    *
-   * A measured work is hung at what the catalogue said and the image's own
-   * proportions are not consulted — if the record and the photograph disagree,
-   * the record is the object. An unmeasured one is hung at the declared
+   * A measured work is hung inside what the catalogue said, in the
+   * photograph's own proportions — see `fitMeasured` for why a
+   * disagreement shrinks the picture rather than stretching it. An
+   * unmeasured one is hung at the declared
    * fallback area in the picture's true aspect, which is the most that can be
    * said honestly: we know its shape, not its size.
    */
@@ -572,8 +580,9 @@ export const createRoomScene = async (
 
   const resize = (entry: Hung, aspect: number) => {
     if (entry.placement.measured) {
-      entry.widthM = entry.placement.widthM;
-      entry.heightM = entry.placement.heightM;
+      const fitted = fitMeasured(entry.placement.widthM, entry.placement.heightM, aspect);
+      entry.widthM = fitted.widthM;
+      entry.heightM = fitted.heightM;
     } else {
       const area = entry.placement.widthM * entry.placement.heightM;
       let width = Math.sqrt(area * aspect);
@@ -1244,6 +1253,12 @@ export const createRoomScene = async (
       roomName: plan.rooms[roomIndex]?.name ?? null,
       metresIntoRoom:
         (plan.rooms[roomIndex]?.southZ ?? 0) - camera.position.z,
+      works: hung.map((entry) => ({
+        artworkId: entry.work.artworkId,
+        widthM: entry.widthM,
+        heightM: entry.heightM,
+        measured: entry.placement.measured,
+      })),
     };
   };
 

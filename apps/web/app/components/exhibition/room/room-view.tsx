@@ -58,12 +58,10 @@ export const RoomView = ({
   /**
    * The plan, from the show.
    *
-   * `dimensions` reaches this payload but arrives empty from the NGA ingest —
-   * the structured field is present on every record with every value null — so
-   * in practice every work here takes the declared fallback size. The parse
-   * runs anyway, because the day a collection carries real dimensions the room
-   * should start using them without anybody remembering to come back here.
-   * See `docs/night/room-report.md` for the count.
+   * `dimensions` is the catalogue's measurement as the ingest stored it, or
+   * the raw text when the columns are empty. A work the parser cannot read,
+   * or that carries only half a size, takes the declared fallback. See
+   * `docs/night/room-scale-report.md` for how much of the NGA set parses.
    *
    * Memoised because the effect below depends on it and rebuilding the plan
    * would rebuild the whole scene. `useLoaderData` turns out to hand back a

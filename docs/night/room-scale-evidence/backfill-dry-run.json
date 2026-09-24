@@ -1,0 +1,60 @@
+{
+  "env": "staging",
+  "database": "paillette-db-stg",
+  "mode": "dry-run",
+  "source": {
+    "commit": "79d114c2186ca38af27a9478717f1e509d799495",
+    "objects": 145657
+  },
+  "rows": 63253,
+  "withoutSourceText": 10689,
+  "withText": 52564,
+  "parsed": 50189,
+  "unparsed": 2375,
+  "withDepth": 1123,
+  "parsedShare": 0.7935,
+  "topUnparsedShapes": [
+    {
+      "shape": "overall (diameter): N cm (F in.) | gross weight: N gr (N lb.) | axis: N:N",
+      "count": 1316
+    },
+    {
+      "shape": "overall (diameter): N cm (F in.) | gross weight: N gr (N lb.)",
+      "count": 242
+    },
+    {
+      "shape": "overall (diameter): N cm (F in.)",
+      "count": 170
+    },
+    {
+      "shape": "overall (diameter): N cm (N in.) | gross weight: N gr (N lb.) | axis: N:N",
+      "count": 66
+    },
+    {
+      "shape": "overall (diameter): N cm (F in.) gross weight: N gr",
+      "count": 56
+    },
+    {
+      "shape": "height: N cm (F in.)",
+      "count": 52
+    },
+    {
+      "shape": "book: N × N (F × F)",
+      "count": 36
+    },
+    {
+      "shape": "overall (height): N cm (F in.)",
+      "count": 30
+    },
+    {
+      "shape": "diameter (without border): N cm (F in.)",
+      "count": 28
+    },
+    {
+      "shape": "diameter: N cm (F in.)",
+      "count": 24
+    }
+  ],
+  "updates": 52564,
+  "batches": 53
+}

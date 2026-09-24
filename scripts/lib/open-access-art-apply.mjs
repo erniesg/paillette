@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { dimensionColumns } from '@paillette/types/dimensions';
+
 import { OPEN_ACCESS_ART_COLLECTION } from './open-access-art-ingest.mjs';
 
 export const DEFAULT_OPEN_ACCESS_SYSTEM_USER_ID =
@@ -259,8 +261,16 @@ export function buildOpenAccessApplyPlan({
       recordAssetMode === 'r2'
         ? assetContentUrl(apiBase, thumbnailAssetId)
         : sourceThumbnailUrl;
+    // The catalogue's own words are kept whether or not they parse: the
+    // columns are our reading of them, and a reading can be wrong in a way
+    // only the original text can show.
+    const dimensionsText =
+      typeof artwork.dimensions_text === 'string' && artwork.dimensions_text.trim()
+        ? artwork.dimensions_text.trim()
+        : null;
     const customMetadata = {
       ...(artwork.custom_metadata || {}),
+      ...(dimensionsText ? { dimensions_text: dimensionsText } : {}),
       openAccessArt: compactObject({
         appliedAt: generatedAt,
         assetVersion,
@@ -283,6 +293,7 @@ export function buildOpenAccessApplyPlan({
 
     return {
       ...artwork,
+      ...dimensionColumns(dimensionsText),
       orgId,
       collectionId,
       uploadedBy: systemUserId,
@@ -404,10 +415,10 @@ function artworkStatement(row, generatedAt) {
   ${sqlValue(row.primary_artist_id)},
   ${sqlValue(row.culture)},
   ${sqlValue(row.origin)},
-  NULL,
-  NULL,
-  NULL,
-  NULL,
+  ${sqlValue(row.dimensions_height)},
+  ${sqlValue(row.dimensions_width)},
+  ${sqlValue(row.dimensions_depth)},
+  ${sqlValue(row.dimensions_unit)},
   ${sqlValue(row.description)},
   ${sqlJson(provenance)},
   ${sqlValue(row.credit_line)},
@@ -450,6 +461,10 @@ ON CONFLICT(id) DO UPDATE SET
   primary_artist_id = excluded.primary_artist_id,
   culture = excluded.culture,
   origin = excluded.origin,
+  dimensions_height = excluded.dimensions_height,
+  dimensions_width = excluded.dimensions_width,
+  dimensions_depth = excluded.dimensions_depth,
+  dimensions_unit = excluded.dimensions_unit,
   description = excluded.description,
   provenance = excluded.provenance,
   credit_line = excluded.credit_line,

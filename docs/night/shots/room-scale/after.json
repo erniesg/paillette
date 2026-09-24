@@ -1,0 +1,126 @@
+{
+  "label": "after",
+  "url": "https://paillette-stg.berlayar.ai/e/MKwsxHy?v=room",
+  "takenAt": "2026-09-24T15:06:54.716Z",
+  "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+  "works": 6,
+  "parsed": 5,
+  "distinctHungSizes": 6,
+  "catalogue": [
+    {
+      "artworkId": "open-access-art:nga:138648",
+      "title": "Avalanche in an Alpine Landscape",
+      "dimensions": {
+        "height": 35.9,
+        "width": 23.9,
+        "depth": null,
+        "unit": "cm"
+      },
+      "parsed": {
+        "heightCm": 35.9,
+        "widthCm": 23.9
+      }
+    },
+    {
+      "artworkId": "open-access-art:nga:51278",
+      "title": "The Stopping Place",
+      "dimensions": {
+        "height": 12.8,
+        "width": 13.9,
+        "depth": null,
+        "unit": "cm"
+      },
+      "parsed": {
+        "heightCm": 12.8,
+        "widthCm": 13.9
+      }
+    },
+    {
+      "artworkId": "open-access-art:nga:169148",
+      "title": "Voyage pittoresque de Genève à Milan par le Simplon",
+      "dimensions": {
+        "height": 46.5,
+        "width": 35.9,
+        "depth": 4,
+        "unit": "cm"
+      },
+      "parsed": {
+        "heightCm": 46.5,
+        "widthCm": 35.9
+      }
+    },
+    {
+      "artworkId": "open-access-art:nga:50827",
+      "title": "John and Abigail Montgomery",
+      "dimensions": {
+        "height": 22.2,
+        "width": 35.3,
+        "depth": null,
+        "unit": "cm"
+      },
+      "parsed": {
+        "heightCm": 22.2,
+        "widthCm": 35.3
+      }
+    },
+    {
+      "artworkId": "open-access-art:nga:6370",
+      "title": "Un Jour de représentation a bénéfice...",
+      "dimensions": null,
+      "parsed": null
+    },
+    {
+      "artworkId": "open-access-art:nga:17711",
+      "title": "Sofa",
+      "dimensions": {
+        "height": 22.5,
+        "width": 30.3,
+        "depth": null,
+        "unit": "cm"
+      },
+      "parsed": {
+        "heightCm": 22.5,
+        "widthCm": 30.3
+      }
+    }
+  ],
+  "hung": [
+    {
+      "artworkId": "open-access-art:nga:138648",
+      "widthM": 0.239,
+      "heightM": 0.16369010416666666,
+      "measured": true
+    },
+    {
+      "artworkId": "open-access-art:nga:51278",
+      "widthM": 0.139,
+      "heightM": 0.07384375000000001,
+      "measured": true
+    },
+    {
+      "artworkId": "open-access-art:nga:169148",
+      "widthM": 0.3528853754940711,
+      "heightM": 0.465,
+      "measured": true
+    },
+    {
+      "artworkId": "open-access-art:nga:50827",
+      "widthM": 0.3479510204081632,
+      "heightM": 0.222,
+      "measured": true
+    },
+    {
+      "artworkId": "open-access-art:nga:6370",
+      "widthM": 0.5973392330092134,
+      "heightM": 0.7031180555212616,
+      "measured": false
+    },
+    {
+      "artworkId": "open-access-art:nga:17711",
+      "widthM": 0.303,
+      "heightM": 0.22093749999999998,
+      "measured": true
+    }
+  ],
+  "pageErrors": []
+}

@@ -14,6 +14,7 @@ import {
   FOCUS_FILL,
   MIN_HORIZONTAL_FOV,
   fieldOfView,
+  fitMeasured,
   hangHeight,
   planRoom,
   viewingDistance,
@@ -329,6 +330,36 @@ describe('planRoom', () => {
  * The focused beat is "it fills the view", so the assertions are about framing
  * rather than about a distance in metres.
  */
+describe('fitMeasured', () => {
+  it('is the record exactly when the photograph agrees with it', () => {
+    const fitted = fitMeasured(0.968, 0.625, 0.968 / 0.625);
+    expect(fitted.widthM).toBeCloseTo(0.968, 9);
+    expect(fitted.heightM).toBeCloseTo(0.625, 9);
+  });
+
+  // 51278, Callot: recorded 12.8 x 13.9 cm, photographed at 5283 x 2811.
+  it('fits a disagreeing photograph inside the record instead of stretching it', () => {
+    const aspect = 5283 / 2811;
+    const fitted = fitMeasured(0.139, 0.128, aspect);
+    expect(fitted.widthM / fitted.heightM).toBeCloseTo(aspect, 9);
+    expect(fitted.widthM).toBeCloseTo(0.139, 9);
+    expect(fitted.heightM).toBeLessThanOrEqual(0.128);
+  });
+
+  // 138648, Puvis: recorded 35.9 high x 23.9 wide, photographed landscape.
+  it('never exceeds the record in either direction', () => {
+    const fitted = fitMeasured(0.239, 0.359, 7612 / 5204);
+    expect(fitted.widthM).toBeLessThanOrEqual(0.239 + 1e-12);
+    expect(fitted.heightM).toBeLessThanOrEqual(0.359 + 1e-12);
+    expect(fitted.widthM / fitted.heightM).toBeCloseTo(7612 / 5204, 9);
+  });
+
+  it('keeps the record when the photograph has no usable shape', () => {
+    expect(fitMeasured(0.3, 0.2, Number.NaN)).toEqual({ widthM: 0.3, heightM: 0.2 });
+    expect(fitMeasured(0.3, 0.2, 0)).toEqual({ widthM: 0.3, heightM: 0.2 });
+  });
+});
+
 describe('viewingDistance', () => {
   const laptop = { fov: fieldOfView(16 / 10), aspect: 16 / 10 };
   const phone = { fov: fieldOfView(390 / 844), aspect: 390 / 844 };
