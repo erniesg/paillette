@@ -25,6 +25,7 @@ import {
 } from '../utils/orgs';
 import {
   getNgaPublicSearchQuota,
+  ngaSearchQuotaScope,
   reserveNgaPublicSearchQuota,
   reserveNgaPublicSearchQuotaWithUsageEvent,
 } from '../utils/nga-search-quota';
@@ -35,6 +36,19 @@ import {
   getPublicSearchRequestClientIdentity,
 } from '../utils/public-search-cold-miss-rate-limit';
 import type { PublicSearchQuota } from '@paillette/types';
+
+/** Who is searching, derived exactly as the per-minute limit derives it. */
+const colorSearchClientIdentity = (c: any) => {
+  const auth = getAuth(c);
+  return getPublicSearchRequestClientIdentity({
+    isPublicSearchPrincipal: auth.scopes.includes('public_search'),
+    kind: auth.kind,
+    userId: auth.userId,
+    apiKeyId: auth.apiKeyId,
+    connectingIp: c.req.header('CF-Connecting-IP'),
+    forwardedFor: c.req.header('X-Forwarded-For'),
+  });
+};
 
 export const colorSearchRoutes = new Hono<{ Bindings: Env }>();
 
@@ -123,24 +137,19 @@ colorSearchRoutes.post('/search/color', async (c) => {
     const query = validation.data;
     if (provider === 'nga') {
       try {
-        const auth = getAuth(c as any);
         await enforcePublicSearchRequestRateLimit({
           db: c.env.DB,
-          clientIdentity: getPublicSearchRequestClientIdentity({
-            isPublicSearchPrincipal: auth.scopes.includes('public_search'),
-            kind: auth.kind,
-            userId: auth.userId,
-            apiKeyId: auth.apiKeyId,
-            connectingIp: c.req.header('CF-Connecting-IP'),
-            forwardedFor: c.req.header('X-Forwarded-For'),
-          }),
+          clientIdentity: colorSearchClientIdentity(c),
           limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
         });
       } catch (error) {
         if (error instanceof PublicSearchColdMissRateLimitError) {
           c.header('Retry-After', String(error.retryAfterSeconds));
           try {
-            const quota = await getNgaPublicSearchQuota(c.env.DB);
+            const quota = await getNgaPublicSearchQuota(
+              c.env.DB,
+              ngaSearchQuotaScope(c.env, colorSearchClientIdentity(c))
+            );
             setNgaSearchQuotaHeaders(c, quota);
             return c.json<ApiResponse>(
               {
@@ -195,9 +204,13 @@ colorSearchRoutes.post('/search/color', async (c) => {
         const reservation = usageEvent
           ? await reserveNgaPublicSearchQuotaWithUsageEvent(
               c.env.DB,
-              usageEvent
+              usageEvent,
+              ngaSearchQuotaScope(c.env, colorSearchClientIdentity(c))
             )
-          : await reserveNgaPublicSearchQuota(c.env.DB);
+          : await reserveNgaPublicSearchQuota(
+              c.env.DB,
+              ngaSearchQuotaScope(c.env, colorSearchClientIdentity(c))
+            );
         setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(

@@ -17,6 +17,9 @@ const requiredObjects = [
   'uq_users_email_casefold',
   'nga_public_search_request_rate_limits',
   'idx_nga_public_search_rate_limits_window',
+  'nga_public_search_debits',
+  'idx_nga_public_search_debits_client',
+  'idx_nga_public_search_debits_time',
 ] as const;
 
 const schemaObjects = (sqlite: NodeDatabaseSync) =>
@@ -69,6 +72,9 @@ describe('database fresh-schema provisioning', () => {
     baseline.exec(readDatabaseFile('migrations/0018_nga_public_search_quota.sql'));
     baseline.exec(
       readDatabaseFile('migrations/0020_nga_public_search_request_rate_limit.sql')
+    );
+    baseline.exec(
+      readDatabaseFile('migrations/0023_nga_public_search_client_debits.sql')
     );
     freshSchema.exec(readDatabaseFile('src/schema.sql'));
 

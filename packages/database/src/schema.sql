@@ -540,6 +540,21 @@ CREATE TABLE IF NOT EXISTS nga_public_search_request_rate_limits (
 CREATE INDEX idx_nga_public_search_rate_limits_window
   ON nga_public_search_request_rate_limits (window_start);
 
+-- Per-caller, rolling-24-hour NGA search debits (migration 0023). Replaces
+-- nga_public_search_quota as what admits a search; that table is kept until
+-- nothing deployed reads it.
+CREATE TABLE IF NOT EXISTS nga_public_search_debits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_hash TEXT NOT NULL,
+  debited_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_nga_public_search_debits_client
+  ON nga_public_search_debits (client_hash, debited_at);
+
+CREATE INDEX IF NOT EXISTS idx_nga_public_search_debits_time
+  ON nga_public_search_debits (debited_at);
+
 -- ============================================================================
 -- Translation Jobs
 -- ============================================================================

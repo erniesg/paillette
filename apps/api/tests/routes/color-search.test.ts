@@ -90,12 +90,10 @@ describe('Color Search API', () => {
                 requestRateLimitUsed += 1;
                 return { used: requestRateLimitUsed };
               }
-              if (sql.includes('nga_public_search_quota')) {
-                if (sql.includes('UPDATE nga_public_search_quota')) {
-                  if (ngsQuota.used >= ngsQuota.hard_limit) return null;
-                  ngsQuota.used += 1;
-                }
-                return ngsQuota;
+              // The per-caller count (migration 0023). Every request in
+              // this file comes from one caller, so theirs is the site's.
+              if (sql.includes('nga_public_search_debits')) {
+                return { used: ngsQuota.used, site_used: ngsQuota.used };
               }
               if (sql.includes('SELECT 1 AS allowed')) {
                 return mutationAuthorizedUserIds.has(params[0] as string)
@@ -113,16 +111,26 @@ describe('Color Search API', () => {
               return artwork;
             }),
             run: vi.fn(async () => {
-              if (sql.includes('UPDATE nga_public_search_quota')) {
-                if (ngsQuota.used >= ngsQuota.hard_limit) {
+              if (sql.includes('INSERT INTO nga_public_search_debits')) {
+                const [limit, siteLimit] = [Number(params[4]), Number(params[6])];
+                if (ngsQuota.used >= Math.min(limit, siteLimit, ngsQuota.hard_limit)) {
                   return { success: true, meta: { changes: 0 }, results: [] };
                 }
                 ngsQuota.used += 1;
                 return {
                   success: true,
                   meta: { changes: 1 },
-                  results: [ngsQuota],
+                  results: [{ id: ngsQuota.used }],
                 };
+              }
+              if (sql.includes('nga_public_search_debits')) {
+                return sql.includes('DELETE')
+                  ? { success: true, meta: { changes: 0 }, results: [] }
+                  : {
+                      success: true,
+                      meta: { changes: 0 },
+                      results: [{ used: ngsQuota.used, site_used: ngsQuota.used }],
+                    };
               }
               if (
                 sql.includes('UPDATE api_usage_daily') &&
@@ -185,6 +193,8 @@ describe('Color Search API', () => {
         send: vi.fn(async () => undefined),
       } as unknown as Queue,
       ENVIRONMENT: 'test',
+      NGA_SEARCH_CALLS_PER_DAY: '1000',
+      NGA_SEARCH_SITE_CALLS_PER_DAY: '1000',
       API_VERSION: 'v1',
       DAILY_FREE_QUERY_LIMIT: '100',
       API_KEY_PEPPER: 'test-only-mcp-capability-key',

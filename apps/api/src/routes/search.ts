@@ -6,6 +6,7 @@ import {
   enforceDailyQuota,
   getAuth,
   prepareApiUsageEvent,
+  recordApiUsageEvent,
   recordArtworkResults,
   requireAuthOrApiKey,
 } from '../middleware/auth';
@@ -44,9 +45,11 @@ import {
 } from '../generated/ngs-search-spotlight-asset';
 import {
   getNgaPublicSearchQuota,
+  ngaSearchQuotaScope,
   reserveNgaPublicSearchQuota,
   reserveNgaPublicSearchQuotaWithUsageEvent,
 } from '../utils/nga-search-quota';
+import { readCallerBudgets } from '../utils/budgets';
 import type { PublicSearchQuota } from '@paillette/types';
 import {
   matchesNgaSearchConstraints,
@@ -148,32 +151,44 @@ const SEARCH_DEGRADED_CHANNEL_ORDER: SearchDegradedChannel[] = [
   'visual_refinement',
 ];
 
+/**
+ * Who is searching, as the per-minute limit and the daily quota both see it.
+ * One derivation, so the two can never disagree about who a caller is.
+ */
+const ngaSearchClientIdentity = (c: any, isPublicSearchPrincipal?: boolean) => {
+  const auth = getAuth(c);
+  return getPublicSearchRequestClientIdentity({
+    isPublicSearchPrincipal:
+      isPublicSearchPrincipal ?? auth.scopes.includes('public_search'),
+    kind: auth.kind,
+    userId: auth.userId,
+    apiKeyId: auth.apiKeyId,
+    connectingIp: c.req.header('CF-Connecting-IP'),
+    // Intentionally passed only to document that it is ignored: public
+    // traffic must never be partitioned by a caller-controlled XFF value.
+    forwardedFor: c.req.header('X-Forwarded-For'),
+  });
+};
+
+/** This caller's NGA search day. See `nga-search-quota.ts`. */
+export const ngaQuotaScopeFor = (c: any, isPublicSearchPrincipal?: boolean) =>
+  ngaSearchQuotaScope(c.env, ngaSearchClientIdentity(c, isPublicSearchPrincipal));
+
 const enforceNgaPublicSearchRequestLimit = async (
   c: any,
   isPublicSearchPrincipal: boolean
-) => {
-  const auth = getAuth(c);
-  return enforcePublicSearchRequestRateLimit({
+) =>
+  enforcePublicSearchRequestRateLimit({
     db: c.env.DB,
-    clientIdentity: getPublicSearchRequestClientIdentity({
-      isPublicSearchPrincipal,
-      kind: auth.kind,
-      userId: auth.userId,
-      apiKeyId: auth.apiKeyId,
-      connectingIp: c.req.header('CF-Connecting-IP'),
-      // Intentionally passed only to document that it is ignored: public
-      // traffic must never be partitioned by a caller-controlled XFF value.
-      forwardedFor: c.req.header('X-Forwarded-For'),
-    }),
+    clientIdentity: ngaSearchClientIdentity(c, isPublicSearchPrincipal),
     limit: Number(c.env.PUBLIC_SEARCH_COLD_MISS_LIMIT_PER_MINUTE || ''),
   });
-};
 
 const ngaRateLimitedResponse = async (c: any, error: Error) => {
   if (error instanceof PublicSearchColdMissRateLimitError) {
     c.header('Retry-After', String(error.retryAfterSeconds));
     try {
-      const quota = await getNgaPublicSearchQuota(c.env.DB);
+      const quota = await getNgaPublicSearchQuota(c.env.DB, ngaQuotaScopeFor(c));
       setNgaSearchQuotaHeaders(c, quota);
       return c.json(
         {
@@ -2896,6 +2911,11 @@ const getNgsSpotlightSearchResponse = (
   };
 };
 
+/** A search the quota refused from inside the cache's load, carrying its reply. */
+class NgaSearchRefused {
+  constructor(readonly response: Response) {}
+}
+
 const setNgaSearchQuotaHeaders = (
   c: { header: (name: string, value: string) => void },
   quota: PublicSearchQuota
@@ -2968,7 +2988,7 @@ searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
   }
 
   try {
-    const quota = await getNgaPublicSearchQuota(c.env.DB);
+    const quota = await getNgaPublicSearchQuota(c.env.DB, ngaQuotaScopeFor(c));
     setNgaSearchQuotaHeaders(c, quota);
     return c.json({ success: true, data: quota });
   } catch (error) {
@@ -2984,6 +3004,31 @@ searchRoutes.get('/search/quota', requireAuthOrApiKey as any, async (c) => {
       503
     );
   }
+});
+
+searchRoutes.use('/search/budgets', async (c, next) => {
+  c.header('Cache-Control', 'private, no-store');
+  await next();
+});
+
+/**
+ * Every budget this caller can run out of on /nga/search, in one read that
+ * spends none of them. See `utils/budgets.ts`. The page proxies it as
+ * `GET /api/public-usage/nga`.
+ */
+searchRoutes.get('/search/budgets', requireAuthOrApiKey as any, async (c) => {
+  const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+  if ((await resolveOrgSearchScope(c.env.DB, requestedOrgId)).provider !== 'nga') {
+    return c.json<ApiResponse>(
+      { success: false, error: { code: 'NOT_FOUND', message: 'No budgets for this collection' } },
+      404
+    );
+  }
+  const budgets = await readCallerBudgets(c.env, {
+    connectingIp: c.req.header('CF-Connecting-IP') || undefined,
+    searchScope: ngaQuotaScopeFor(c),
+  });
+  return c.json({ success: true, data: budgets });
 });
 
 searchRoutes.use('/search/image', async (c, next) => {
@@ -3183,7 +3228,19 @@ searchRoutes.post('/search/text', async (c) => {
       }
     }
     let ngaQuota: PublicSearchQuota | undefined;
-    if (isNgaPublicSearch) {
+    /**
+     * Debit this caller's NGA day, or say why not.
+     *
+     * Called from inside the result cache's `load`, which an answer already in
+     * the cache never reaches. It used to run up here, before the cache was
+     * consulted, so a query answered from KV spent a slot exactly like one
+     * that paid for embeddings — and a harness replaying warm queries drained
+     * the whole deployment's lifetime counter to 1000/1000 without the
+     * provider being called once.
+     *
+     * Returns the refusal to send, or null once the search is paid for.
+     */
+    const reserveNgaSearch = async (): Promise<Response | null> => {
       try {
         const usageEvent = (c as any).get('usageEventId')
           ? undefined
@@ -3198,9 +3255,13 @@ searchRoutes.post('/search/text', async (c) => {
         const reservation = usageEvent
           ? await reserveNgaPublicSearchQuotaWithUsageEvent(
               c.env.DB,
-              usageEvent
+              usageEvent,
+              ngaQuotaScopeFor(c, isPublicSearchPrincipal)
             )
-          : await reserveNgaPublicSearchQuota(c.env.DB);
+          : await reserveNgaPublicSearchQuota(
+              c.env.DB,
+              ngaQuotaScopeFor(c, isPublicSearchPrincipal)
+            );
         setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
@@ -3216,6 +3277,7 @@ searchRoutes.post('/search/text', async (c) => {
           );
         }
         ngaQuota = reservation.quota;
+        return null;
       } catch (error) {
         console.error('NGA public search quota reservation failed:', error);
         return c.json<ApiResponse>(
@@ -3229,8 +3291,7 @@ searchRoutes.post('/search/text', async (c) => {
           503
         );
       }
-
-    }
+    };
     const structuredConstraints =
       ngaPlan?.constraints ?? canonicalNgsConstraints;
     // A facet query is itself the selected facet value (for example,
@@ -3445,13 +3506,21 @@ searchRoutes.post('/search/text', async (c) => {
         ngaPlan,
         schedule: scheduleBackgroundWork,
         load: async () => {
+          if (isNgaPublicSearch) {
+            const refusal = await reserveNgaSearch();
+            if (refusal) throw new NgaSearchRefused(refusal);
+          }
           const response = await executeSearch();
           return {
             response,
             cacheable: degradedChannels.size === 0,
           };
         },
+      }).catch((error: unknown) => {
+        if (error instanceof NgaSearchRefused) return error;
+        throw error;
       });
+      if (cached instanceof NgaSearchRefused) return cached.response;
       const cachedResponse = isNgaPublicSearch
         ? projectPublicNgaSearchResponse(cached.response)
         : cached.response;
@@ -3478,6 +3547,28 @@ searchRoutes.post('/search/text', async (c) => {
     } else {
       searchResponse = await executeSearch();
       responseCacheable = degradedChannels.size === 0;
+    }
+    if (isNgaPublicSearch && !ngaQuota) {
+      // Answered without a provider call — from the result cache, or by
+      // joining an identical search already in flight. Nothing is debited;
+      // the caller still sees where their day stands, and the search is
+      // still logged as one they made.
+      try {
+        ngaQuota = await getNgaPublicSearchQuota(
+          c.env.DB,
+          ngaQuotaScopeFor(c, isPublicSearchPrincipal)
+        );
+        setNgaSearchQuotaHeaders(c, ngaQuota);
+        if (!(c as any).get('usageEventId')) {
+          await recordApiUsageEvent(c as any, {
+            queryType: 'vector_search',
+            orgId: orgId || null,
+            metadata: { search: { mode: 'text', query } },
+          });
+        }
+      } catch (error) {
+        console.warn('NGA cached-search accounting failed:', error);
+      }
     }
     if (ngaQuota) {
       searchResponse = { ...searchResponse, quota: ngaQuota };
@@ -3690,9 +3781,13 @@ searchRoutes.post('/search/image', async (c) => {
         const reservation = usageEvent
           ? await reserveNgaPublicSearchQuotaWithUsageEvent(
               c.env.DB,
-              usageEvent
+              usageEvent,
+              ngaQuotaScopeFor(c, isPublicSearchPrincipal)
             )
-          : await reserveNgaPublicSearchQuota(c.env.DB);
+          : await reserveNgaPublicSearchQuota(
+              c.env.DB,
+              ngaQuotaScopeFor(c, isPublicSearchPrincipal)
+            );
         setNgaSearchQuotaHeaders(c, reservation.quota);
         if (!reservation.admitted) {
           return c.json<ApiResponse>(
