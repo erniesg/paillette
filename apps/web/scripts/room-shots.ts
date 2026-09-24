@@ -139,6 +139,9 @@ const main = async () => {
   await mkdir(OUT, { recursive: true });
 
   const browser = await chromium.launch({
+    // Unset, Playwright uses the build it pins. Set, a browser already on the
+    // machine stands in for it rather than downloading another.
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM ?? undefined,
     args: [
       '--enable-unsafe-swiftshader',
       '--use-gl=angle',
