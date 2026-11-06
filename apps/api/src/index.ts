@@ -173,6 +173,13 @@ const isPublicNgaArtworkRead = (c: { req: { method: string; path: string } }) =>
     c.req.path
   );
 
+// Asset content owns its authorization: only canonical NGA assets are public;
+// all other assets require credentials and an authorized reader. Let exact GET
+// requests reach that check so cached NGA images can load without a session.
+const isAssetContentRead = (c: { req: { method: string; path: string } }) =>
+  c.req.method === 'GET' &&
+  /^\/api\/v1\/assets\/[^/%]+\/content$/.test(c.req.path);
+
 // WebMCP indexing is deliberately anonymous: the demo runs in ChatGPT's
 // in-app browser with no account. The routes behind this exemption write only
 // into the hard-coded sandbox organisation seeded by migration 0021, are
@@ -183,13 +190,13 @@ const isPublicIndexingRoute = (c: { req: { path: string } }) =>
 
 api.use('*', async (c, next) => {
   // MCP owns its OAuth challenge so clients still receive the required
-  // resource metadata and scope hint. All other API data routes share this
-  // authentication/access boundary before reaching route-local middleware.
+  // resource metadata and scope hint. Asset content also owns its row-level
+  // authorization. Other API data routes share this authentication boundary.
   if (c.req.path.endsWith('/mcp')) {
     await next();
     return;
   }
-  if (isPublicNgaArtworkRead(c)) {
+  if (isPublicNgaArtworkRead(c) || isAssetContentRead(c)) {
     await next();
     return;
   }
