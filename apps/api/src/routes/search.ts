@@ -33,8 +33,11 @@ import {
   getPublicSearchRequestClientIdentity,
 } from '../utils/public-search-cold-miss-rate-limit';
 import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
+import { readNgsPreparedBundle } from '../utils/ngs-prepared-spotlights';
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
+  NGS_PREPARED_SPOTLIGHT_REVISION,
+  type PublicSearchSpotlightBundle,
   PublicSearchSpotlightBundleSchema,
   normalizePublicSearchConstraints,
   normalizePublicSearchText,
@@ -1988,7 +1991,7 @@ export async function searchNgaAttributionMatches(
   return approved;
 }
 
-async function searchArtworksHybrid(
+export async function searchArtworksHybrid(
   env: Env,
   orgId: string | undefined,
   provider: string | undefined,
@@ -2929,9 +2932,12 @@ const rewriteCachedAssetOrigin = (
   return value;
 };
 
-const getNgsSearchSpotlightBundle = (origin: string) => ({
-  ...ngsSearchSpotlightBundle,
-  suggestions: ngsSearchSpotlightBundle.suggestions.map((suggestion) => ({
+const getNgsSearchSpotlightBundle = (
+  origin: string,
+  bundle: PublicSearchSpotlightBundle = ngsSearchSpotlightBundle
+) => ({
+  ...bundle,
+  suggestions: bundle.suggestions.map((suggestion) => ({
     ...suggestion,
     artworks: suggestion.artworks.map((artwork) => ({
       ...artwork,
@@ -2955,9 +2961,10 @@ const getNgsSpotlightSearchResponse = (
   origin: string,
   facet: 'artist' | 'classification' | undefined,
   topK: number,
-  minScore: number
+  minScore: number,
+  prepared?: PublicSearchSpotlightBundle
 ): SearchResponse | undefined => {
-  const bundle = getNgsSearchSpotlightBundle(origin);
+  const bundle = getNgsSearchSpotlightBundle(origin, prepared);
   const normalizedQuery =
     normalizePublicSearchText(query).toLocaleLowerCase('en-US');
   if (!normalizedQuery) return undefined;
@@ -3030,6 +3037,28 @@ searchRoutes.get(
   requireAuthOrApiKey as any,
   async (c) => {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    if (
+      isNgsPublicOrg(requestedOrgId) &&
+      c.req.param('revision') === NGS_PREPARED_SPOTLIGHT_REVISION
+    ) {
+      c.header('Cache-Control', 'private, no-store');
+      c.header('Vary', 'Authorization, X-API-Key');
+      const bundle = await readNgsPreparedBundle(c.env.CACHE);
+      if (!bundle) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'NGS_PREPARED_NOT_READY',
+            message: 'Prepared search previews are not ready',
+          },
+        }, 503);
+      }
+      return c.json({
+        success: true,
+        data: getNgsSearchSpotlightBundle(new URL(c.req.url).origin, bundle),
+        meta: { timestamp: bundle.generatedAt },
+      });
+    }
     if (
       !isNgsPublicOrg(requestedOrgId) ||
       c.req.param('revision') !== NGS_SEARCH_SPOTLIGHT_ASSET_REVISION
@@ -3532,6 +3561,11 @@ searchRoutes.post('/search/text', async (c) => {
     let responseCacheable = true;
     let searchResponse: SearchResponse;
 
+    const preparedBundle =
+      isNgsPublicSearch && visualRefinement === undefined &&
+      constraints === undefined && topK <= 30 && minScore >= 0.2
+        ? await readNgsPreparedBundle(c.env.CACHE)
+        : undefined;
     const spotlightSearchResponse =
       isNgsPublicSearch &&
       visualRefinement === undefined &&
@@ -3541,7 +3575,8 @@ searchRoutes.post('/search/text', async (c) => {
             new URL(c.req.url).origin,
             facet,
             topK,
-            minScore
+            minScore,
+            preparedBundle
           )
         : undefined;
 
