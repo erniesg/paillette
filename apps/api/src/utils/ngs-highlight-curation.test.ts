@@ -38,6 +38,17 @@ it('allows one defensible work and never fills a thin observance with another fe
     selectNgsPreparedHighlights('hari-raya-haji', [all[0]!])
   ).toThrow(/reviewed/);
 });
+it('keeps two established Christian works without an unsupported funeral filler or changing the full list', () => {
+  const all = [
+    artwork('2021-00503', 'Sorrowful Procession'),
+    artwork('2001-02703', 'Crucifixion'),
+    artwork('1997-02957', 'Christ'),
+  ];
+  expect(
+    selectNgsPreparedHighlights('good-friday', all).map((work) => work.id)
+  ).toEqual(['2001-02703', '1997-02957']);
+  expect(all.map((work) => work.id)).toContain('2021-00503');
+});
 it('bounds every fixed curation and the additional Qixi query to a small thematic selection', () => {
   for (const definition of NGS_HOLIDAY_SPOTLIGHT_DEFINITIONS) {
     expect(
