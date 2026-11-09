@@ -3990,7 +3990,7 @@ function IdleShowcaseLayer({
               >
                 <IdleShowcaseImage
                   loadingFallback={
-                    <span className="absolute inset-0 flex items-center justify-center pb-10 text-xs text-white/45">
+                    <span className="absolute inset-0 flex items-center justify-center pb-10 text-xs text-white/70">
                       Loading image
                     </span>
                   }
@@ -4007,7 +4007,7 @@ function IdleShowcaseLayer({
                       className="relative w-full bg-[#151519]"
                       style={{ height: 'min(22vh, 20rem)' }}
                     >
-                      <NoImagePlaceholder className="pb-10" />
+                      <NoImagePlaceholder className="pb-10 text-white/70" />
                     </div>
                   }
                 />
@@ -5258,6 +5258,7 @@ function ResultCard({
       <button
         type="button"
         onClick={() => onSelectArtwork(result)}
+        aria-label={`View ${title}`}
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
         <div
