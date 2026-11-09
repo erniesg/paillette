@@ -12,7 +12,10 @@ import {
   refreshNgsPreparedSpotlights,
   validateNgsPreparedBundle,
 } from './ngs-prepared-spotlights';
-import { searchArtworksHybrid } from '../routes/search';
+import {
+  searchArtworksHybrid,
+  loadNgsCuratedHighlightArtworks,
+} from '../routes/search';
 import { NGS_ORG_ID } from './orgs';
 import type { Env } from '../index';
 import type { ArtworkSearchResult } from '../types';
@@ -21,8 +24,12 @@ import {
   QIXI_HIGHLIGHT_QUERY,
 } from './ngs-highlight-curation';
 
-vi.mock('../routes/search', () => ({ searchArtworksHybrid: vi.fn() }));
+vi.mock('../routes/search', () => ({
+  searchArtworksHybrid: vi.fn(),
+  loadNgsCuratedHighlightArtworks: vi.fn(),
+}));
 const search = vi.mocked(searchArtworksHybrid);
+const loadCurated = vi.mocked(loadNgsCuratedHighlightArtworks);
 const result = (index: number): ArtworkSearchResult => ({
   id: `art-${index}`,
   orgId: NGS_ORG_ID,
@@ -72,6 +79,8 @@ const fixtureResults = (query: string, count = 30) => {
   }));
 };
 beforeEach(() => {
+  loadCurated.mockReset();
+  loadCurated.mockResolvedValue([]);
   search.mockReset();
   search.mockImplementation(async (_env, _org, _provider, query) =>
     fixtureResults(query)
@@ -343,6 +352,56 @@ describe('NGS prepared catalogue and trusted refresh', () => {
     expect(
       suggestion.highlightArtworks!.map((artwork) => artwork.title)
     ).toEqual([titles[0], titles[3], titles[4], titles[5]]);
+  });
+
+  it('hydrates only missing reviewed IDs beyond top 30 without modifying canonical results or extra model calls', async () => {
+    const { env } = makeEnv();
+    search.mockResolvedValueOnce(
+      Array.from({ length: 30 }, (_, i) => result(i))
+    );
+    loadCurated.mockResolvedValueOnce([
+      { ...result(31), id: '2012-00268', title: 'The Funeral', similarity: 1 },
+    ]);
+    const candidate = await refreshNgsPreparedSpotlights(env, {
+      definitionIds: ['qing-ming-festival'],
+    });
+    expect(loadCurated).toHaveBeenCalledOnce();
+    expect(loadCurated).toHaveBeenCalledWith(env, NGS_ORG_ID, ['2012-00268']);
+    expect(search).toHaveBeenCalledOnce();
+    const suggestion = candidate.bundle.suggestions[0]!;
+    expect(
+      suggestion.artworks.map((artwork) => [artwork.id, artwork.similarity])
+    ).toEqual(Array.from({ length: 30 }, (_, i) => [`art-${i}`, 0.8]));
+    expect(suggestion.highlightArtworks!.map((artwork) => artwork.id)).toEqual([
+      '2012-00268',
+    ]);
+    expect(candidate.verifiedThumbnails).toEqual([
+      { assetId: 'thumb-31', objectKey: 'thumb-31', orgId: NGS_ORG_ID },
+    ]);
+    expect(candidate.published).toBe(false);
+  });
+
+  it('does not hydrate reviewed IDs already available or accept wrong-org hydrated rows', async () => {
+    const { env, put } = makeEnv();
+    await refreshNgsPreparedSpotlights(env, {
+      definitionIds: ['hari-raya-haji'],
+    });
+    expect(loadCurated).not.toHaveBeenCalled();
+    search.mockResolvedValueOnce([result(0)]);
+    loadCurated.mockResolvedValueOnce([
+      {
+        ...result(31),
+        id: '2012-00268',
+        orgId: 'other-org',
+        galleryId: 'other-org',
+      },
+    ]);
+    await expect(
+      refreshNgsPreparedSpotlights(env, {
+        definitionIds: ['qing-ming-festival'],
+      })
+    ).rejects.toThrow(/reviewed/);
+    expect(put).not.toHaveBeenCalled();
   });
 
   it('prepares Qixi thematic highlights separately without replacing its canonical full search', async () => {
