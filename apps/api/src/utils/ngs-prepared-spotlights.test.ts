@@ -169,6 +169,7 @@ describe('NGS prepared catalogue and trusted refresh', () => {
   it.each([
     'empty',
     'missing-object',
+    'oversized-object',
     'external',
     'wrong-org',
     'same-object',
@@ -178,6 +179,11 @@ describe('NGS prepared catalogue and trusted refresh', () => {
     const { env, put, entries, head, first } = makeEnv();
     if (failure === 'empty') search.mockResolvedValueOnce([]);
     if (failure === 'missing-object') head.mockResolvedValueOnce(null as never);
+    if (failure === 'oversized-object')
+      head.mockResolvedValueOnce({
+        size: 512 * 1024 + 1,
+        httpMetadata: { contentType: 'image/webp' },
+      });
     if (
       failure === 'external' ||
       failure === 'wrong-org' ||
@@ -244,6 +250,85 @@ describe('NGS prepared catalogue and trusted refresh', () => {
     ).toEqual(['art-0', 'art-2', 'art-3', 'art-4']);
     expect(head).toHaveBeenCalledWith('thumb-4');
     expect(head).not.toHaveBeenCalledWith('thumb-1');
+  });
+
+  it('preserves native weighted colour records and palette aliases instead of dropping every colour', async () => {
+    const { env } = makeEnv();
+    search.mockResolvedValueOnce([
+      {
+        ...result(0),
+        metadata: {
+          sourceInstitution: 'National Gallery Singapore',
+          dominantColors: [
+            { color: '#A9997E', percentage: 72.64 },
+            { color: '#FFFFFF', percentage: 0 },
+          ],
+          color_palette: {
+            colours: ['#8E6433', '#A9997E', '#000000'],
+            percentages: [10.46, 1, 0],
+          },
+        },
+      },
+    ]);
+    const candidate = await refreshNgsPreparedSpotlights(env, {
+      definitionIds: ['christmas-day'],
+    });
+    expect(candidate.bundle.suggestions[0]!.artworks[0]!.palette).toEqual([
+      '#a9997e',
+      '#8e6433',
+    ]);
+  });
+
+  it('uses the same palette-colour ranking as the UI for the sage suggestion', async () => {
+    const { env } = makeEnv();
+    search.mockResolvedValueOnce([
+      {
+        ...result(0),
+        metadata: {
+          sourceInstitution: 'National Gallery Singapore',
+          dominantColors: [{ color: '#a9997e', percentage: 100 }],
+        },
+      },
+      {
+        ...result(1),
+        metadata: {
+          sourceInstitution: 'National Gallery Singapore',
+          dominantColors: [{ color: '#8a9a7a', percentage: 100 }],
+        },
+      },
+    ]);
+    const candidate = await refreshNgsPreparedSpotlights(env, {
+      definitionIds: ['muted-sage-green'],
+    });
+    expect(
+      candidate.bundle.suggestions[0]!.artworks.map((artwork) => artwork.id)
+    ).toEqual(['art-1', 'art-0']);
+  });
+
+  it('prioritises actual Christmas-season results rather than other-festival hits without dropping search depth', async () => {
+    const { env } = makeEnv();
+    const titles = [
+      'Winter Street Scene in France',
+      'Mooncakes with Golden Pomelo',
+      'Still Life (Moon Festival Table)',
+      'Epiphany',
+      'One December Morning',
+      'World on a Cold Day',
+    ];
+    search.mockResolvedValueOnce(
+      titles.map((title, index) => ({ ...result(index), title }))
+    );
+    const candidate = await refreshNgsPreparedSpotlights(env, {
+      definitionIds: ['christmas-day'],
+    });
+    const artworks = candidate.bundle.suggestions[0]!.artworks;
+    expect(artworks).toHaveLength(6);
+    expect(artworks.slice(0, 4).map((artwork) => artwork.title)).toEqual([
+      titles[0],
+      titles[3],
+      titles[4],
+      titles[5],
+    ]);
   });
 
   it('rejects oversized candidates without publishing', async () => {

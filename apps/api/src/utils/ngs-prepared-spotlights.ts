@@ -3,6 +3,7 @@ import {
   NGS_PREPARED_SPOTLIGHT_REVISION,
   NGS_PREPARED_SPOTLIGHT_DEFINITIONS,
   NGS_SEARCH_SPOTLIGHT_MAX_BYTES,
+  rankByPaletteColour,
   PublicSearchSpotlightBundleSchema,
   type PublicSearchSpotlightBundle,
   type PublicSearchSpotlightArtwork,
@@ -72,6 +73,66 @@ const assetIdFromUrl = (value: string | null | undefined) => {
   }
 };
 
+// Existing catalogue palettes use weighted { color, percentage } entries,
+// not only strings. Preserve the same representations as the web generator.
+const storedPalette = (metadata: Record<string, unknown>): string[] => {
+  const colors = new Set<string>();
+  const add = (value: unknown) => {
+    if (
+      typeof value === 'string' &&
+      /^#[0-9a-f]{6}$/i.test(value) &&
+      colors.size < 32
+    )
+      colors.add(value.toLowerCase());
+  };
+  const record = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  for (const key of [
+    'dominantColors',
+    'dominant_colors',
+    'colorPalette',
+    'color_palette',
+    'colourPalette',
+    'colour_palette',
+  ]) {
+    const value = metadata[key];
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (typeof entry === 'string') {
+          add(entry);
+          continue;
+        }
+        const item = record(entry);
+        const weight =
+          item.percentage ?? item.percent ?? item.weight ?? item.ratio;
+        if (
+          typeof weight !== 'number' ||
+          !Number.isFinite(weight) ||
+          weight > 0
+        )
+          add(item.color ?? item.colour ?? item.hex);
+      }
+    } else {
+      const item = record(value);
+      const palette = item.colors ?? item.colours;
+      const weights = Array.isArray(item.percentages) ? item.percentages : [];
+      if (Array.isArray(palette))
+        palette.forEach((color, index) => {
+          const weight = weights[index];
+          if (
+            typeof weight !== 'number' ||
+            !Number.isFinite(weight) ||
+            weight > 0
+          )
+            add(color);
+        });
+    }
+  }
+  return [...colors];
+};
+
 const toArtwork = (
   result: ArtworkSearchResult
 ): PublicSearchSpotlightArtwork => {
@@ -80,7 +141,6 @@ const toArtwork = (
     const value = metadata[key] ?? metadata[alias];
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   };
-  const colours = metadata.dominantColors ?? metadata.dominant_colors;
   return {
     id: result.id,
     orgId: result.orgId || result.galleryId,
@@ -98,18 +158,7 @@ const toArtwork = (
       accessionNumber: text('accessionNumber', 'accession_number'),
       rights: text('rights', 'rights'),
     },
-    palette: Array.isArray(colours)
-      ? [
-          ...new Set(
-            colours
-              .filter(
-                (value): value is string =>
-                  typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
-              )
-              .map((value) => value.toLowerCase())
-          ),
-        ].slice(0, 32)
-      : [],
+    palette: storedPalette(metadata),
   };
 };
 
@@ -241,6 +290,29 @@ export const refreshNgsPreparedSpotlights = async (
           displayIdentities.add(identity);
           return true;
         });
+        if (definition.type === 'colour') {
+          const target = definition.colourId.startsWith('custom:')
+            ? definition.colourId.slice('custom:'.length)
+            : definition.dot;
+          artworks = rankByPaletteColour(
+            artworks,
+            [target],
+            (artwork) => artwork.palette
+          );
+        }
+        if (definition.id === 'christmas-day') {
+          // Native pilot found generic festival/day hits ahead of actual
+          // winter, December and Christian works. Prioritise those genuine
+          // returned works for the showcase, without dropping result depth.
+          const seasonal = (artwork: PublicSearchSpotlightArtwork) =>
+            /\b(christmas|nativity|epiphany|winter|december|cold day|holy family)\b/i.test(
+              artwork.title
+            );
+          artworks = [
+            ...artworks.filter(seasonal),
+            ...artworks.filter((artwork) => !seasonal(artwork)),
+          ];
+        }
         if (!artworks.length)
           throw new Error(
             `NGS preview needs real imageable results: ${definition.id}`
@@ -278,10 +350,11 @@ export const refreshNgsPreparedSpotlights = async (
             if (
               !head ||
               head.size <= 0 ||
+              head.size > 512 * 1024 ||
               !head.httpMetadata?.contentType?.startsWith('image/')
             )
               throw new Error(
-                `NGS thumbnail object missing or not an image: ${definition.id}`
+                `NGS thumbnail missing, invalid or too large: ${definition.id}`
               );
             objectKey = asset.object_key;
             verifiedObjects.set(assetId, objectKey);
