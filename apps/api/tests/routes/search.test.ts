@@ -224,12 +224,14 @@ class FakeStatement {
     return this.db.first<T>(this.sql, this.params);
   }
 
-  all<T>() {
-    return this.db.all<T>(this.sql, this.params);
+  async all<T>() {
+    const result = await this.db.all<T>(this.sql, this.params);
+    return { ...result, meta: this.db.d1Meta };
   }
 }
 
 class FakeSearchDb {
+  d1Meta?: { rows_read: number; rows_written: number; duration: number };
   daily = new Map<string, DailyUsage>();
   ngaPublicSearchQuota: NgaPublicSearchQuotaUsage = {
     used: 0,
@@ -1049,6 +1051,33 @@ describe('Search request traces', () => {
     } finally { log.mockRestore(); }
   });
 
+  it('reports optional telemetry failure and no-op without failing search', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const failing = new FakeSearchDb();
+      failing.failArtworkUsageInserts = true;
+      expect((await textSearch(makeApp(), makeEnv(failing))).status).toBe(200);
+      expect((await textSearch(makeApp(), makeEnv(new FakeSearchDb([])))).status).toBe(200);
+      const traces = tracesFrom(log);
+      expect(traces[0].spans).toContainEqual(expect.objectContaining({ stage: 'result_telemetry', status: 'error' }));
+      expect(traces[1].spans).toContainEqual(expect.objectContaining({ stage: 'result_telemetry', status: 'skipped' }));
+    } finally { log.mockRestore(); }
+  });
+
+  it('captures returned D1 artist/metadata costs without additional queries', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const db = new FakeSearchDb();
+      db.d1Meta = { rows_read: 345, rows_written: 0, duration: 2.5 };
+      await textSearch(makeApp(), makeEnv(db), undefined, { query: 'Pablo Picasso', topK: 1 });
+      const trace = tracesFrom(log)[0];
+      expect(trace.d1.artist_check).toEqual({ statements: 1, ...db.d1Meta });
+      expect(trace.d1.metadata).toEqual({ statements: 1, ...db.d1Meta });
+      expect(db.exactArtistPreflightSql).toHaveLength(1);
+      expect(db.metadataSearchSql).toHaveLength(1);
+    } finally { log.mockRestore(); }
+  });
+
   it('includes metadata-only artist check, retrieval and awaited telemetry; cached spans belong to the current request', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
@@ -1065,6 +1094,12 @@ describe('Search request traces', () => {
       ]));
       expect(traces[0].counts).toMatchObject({ requestedTopK: 1, effectiveTopK: 1 });
       expect(traces[1].caches.result).toBe('hit');
+      expect(traces[0].d1.metadata).toMatchObject({ statements: 1, rows_read: null, rows_written: null, duration: null });
+      expect(traces[1].context).toEqual(traces[0].context);
+      expect(Object.values(traces[1].attempts)).toEqual([0, 0, 0, 0, 0, 0]);
+      expect(second.headers.get('X-Paillette-Embedding-Count')).toBe('0');
+      expect(second.headers.get('Server-Timing')).toContain('total;dur=');
+      expect(second.headers.get('X-Paillette-Search-Request-Id')).toBe(traces[1].traceId);
       expect(traces[1].spans.map((span: { stage: string }) => span.stage)).not.toContain('metadata');
       expect(traces[1].spans.map((span: { stage: string }) => span.stage)).toContain('result_cache_read');
       expect(JSON.stringify(traces)).not.toMatch(/pineapple|user-1|203\.0\.113/);
@@ -1098,6 +1133,24 @@ describe('Search request traces', () => {
     } finally { log.mockRestore(); }
   });
 
+  it('counts refinement embedding and every vector getByIds chunk without replaying cached work', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const rows = Array.from({ length: 41 }, (_, index) => makeArtworkRow({ id: `angel-${index}`, title: 'Angel', artist: 'Artist' }));
+    const getByIds = vi.fn(async (ids: string[]) => ids.map((id) => ({ id, values: [0, 1] })));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: [{ embedding: [0, 1] }] }))));
+    try {
+      const env = { ...makeEnv(new FakeSearchDb(rows)), CACHE: makeEmbeddingCache(), VECTORIZE: { getByIds } as unknown as Vectorize, JINA_API_KEY: 'private-token', JINA_EMBEDDING_DIMENSIONS: '2' };
+      const body = { query: 'angels', visualRefinement: 'private refinement', topK: 41 };
+      expect((await textSearch(makeApp(), env, undefined, body)).status).toBe(200);
+      expect((await textSearch(makeApp(), env, undefined, body)).status).toBe(200);
+      const traces = tracesFrom(log);
+      expect(getByIds).toHaveBeenCalledTimes(3);
+      expect(traces[0].attempts).toMatchObject({ embedding_refinement: 1, vector_get_by_ids: 3 });
+      expect(traces[1].attempts).toMatchObject({ embedding_refinement: 0, vector_get_by_ids: 0 });
+      expect(JSON.stringify(traces)).not.toMatch(/private|angel-/);
+    } finally { log.mockRestore(); vi.unstubAllGlobals(); }
+  });
+
   it('records facet metadata without embeddings and finalizes provider failure', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
@@ -1111,6 +1164,7 @@ describe('Search request traces', () => {
         VECTORIZE: { query: vi.fn() } as unknown as Vectorize });
       expect(failed.status).toBeGreaterThanOrEqual(500);
       expect(tracesFrom(log)).toHaveLength(2);
+      expect(tracesFrom(log)[1].attempts).toMatchObject({ embedding_image: 1, vector_image: 0 });
       expect(tracesFrom(log)[1].spans).toContainEqual(expect.objectContaining({ stage: 'embedding_image_generate', status: 'timeout' }));
       expect(JSON.stringify(tracesFrom(log))).not.toContain('private-token');
     } finally { log.mockRestore(); vi.unstubAllGlobals(); }
@@ -1127,6 +1181,8 @@ describe('Search request traces', () => {
       expect(result.status).toBe(200);
       const traces = tracesFrom(log);
       expect(traces).toHaveLength(1);
+      expect(traces[0].attempts).toMatchObject({ embedding_image: 1, vector_image: 1, vector_get_by_ids: 0 });
+      expect(traces[0].d1.hydration).toMatchObject({ statements: 1, rows_read: null });
       expect(traces[0]).toMatchObject({ mode: 'image', caches: { image: 'bypass' }, counts: { requestedTopK: 10, effectiveTopK: 10, imageTopK: 10, imageCandidates: 1 } });
       expect(traces[0].spans.map((span: { stage: string }) => span.stage)).toEqual(expect.arrayContaining([
         'embedding_image_generate', 'vector_image', 'hydration', 'usage_annotation', 'result_telemetry',

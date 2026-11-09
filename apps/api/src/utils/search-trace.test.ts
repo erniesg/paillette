@@ -24,7 +24,8 @@ const capture = () => {
     at: (value: number) => {
       now = value;
     },
-    event: () => emit.mock.calls[0]![0],
+    event: () =>
+      emit.mock.calls.find(([event]) => event.event === 'search_trace')![0],
   };
 };
 const embedding = {
@@ -54,6 +55,167 @@ const cache = (get: () => Promise<unknown>) =>
 afterEach(() => vi.useRealTimers());
 
 describe('search traces', () => {
+  it('bounds routed context and degradation without serializing arbitrary intent', () => {
+    const c = capture();
+    c.trace.setContext({
+      scope: 'nga',
+      path: 'hybrid',
+      index: 'v2',
+      intent: 'private query',
+      routedIntent: 'private provider',
+    });
+    c.trace.degradation(['caption_embedding', 'private org']);
+    c.trace.finish(200);
+    expect(c.event().context).toMatchObject({
+      scope: 'nga',
+      path: 'hybrid',
+      index: 'v2',
+      intent: 'other',
+      routedIntent: 'other',
+    });
+    expect(c.event().degradedChannels).toEqual(['caption_embedding']);
+    expect(JSON.stringify(c.event())).not.toContain('private');
+  });
+
+  it('aggregates numeric D1 metadata per stage and preserves unknowns', () => {
+    const c = capture();
+    c.trace.observeD1('metadata', {
+      rows_read: 100,
+      rows_written: 0,
+      duration: 1.5,
+    });
+    c.trace.observeD1('metadata', {
+      rows_read: 23,
+      rows_written: 1,
+      duration: 2,
+    });
+    c.trace.observeD1('artist_check', undefined);
+    c.trace.observeD1('hydration', {
+      rows_read: 2,
+      rows_written: 'secret',
+      duration: NaN,
+    });
+    c.trace.observeD1('hydration', {
+      rows_read: 3,
+      rows_written: 0,
+      duration: 1,
+    });
+    c.trace.finish(200);
+    expect(c.event().d1).toEqual({
+      metadata: {
+        statements: 2,
+        rows_read: 123,
+        rows_written: 1,
+        duration: 3.5,
+      },
+      artist_check: {
+        statements: 1,
+        rows_read: null,
+        rows_written: null,
+        duration: null,
+      },
+      hydration: {
+        statements: 2,
+        rows_read: 5,
+        rows_written: null,
+        duration: null,
+      },
+    });
+    expect(c.event().responseBytes).toBeNull();
+    expect(JSON.stringify(c.event())).not.toContain('secret');
+  });
+
+  it('reports a late sibling provider attempt separately after fail-open response completion', async () => {
+    const c = capture();
+    const read = deferred<unknown>();
+    const started = deferred<void>();
+    const pending = getOrCreateQueryEmbedding({
+      ...embedding,
+      trace: c.trace,
+      cache: cache(() => {
+        started.resolve();
+        return read.promise;
+      }),
+    });
+    await started.promise;
+    c.trace.finish(200); // a parallel refinement/vector channel has already failed open
+    read.resolve(null);
+    await pending;
+    expect(c.event().attempts.embedding_image).toBe(0);
+    expect(c.emit.mock.calls.map(([event]) => event)).toContainEqual(
+      expect.objectContaining({
+        event: 'search_tail_attempt',
+        work: 'background_tail',
+        traceId: c.event().traceId,
+        attempts: { embedding_image: 1 },
+      })
+    );
+    expect(JSON.stringify(c.emit.mock.calls)).not.toMatch(/private|secret/);
+  });
+
+  it('reports background serialized cache bytes separately after foreground completion', async () => {
+    const c = capture();
+    const written = deferred<void>();
+    const kv = cache(async () => null);
+    kv.put = vi.fn(() => written.promise) as unknown as KVNamespace['put'];
+    await getOrCreateQueryEmbedding({
+      ...embedding,
+      cache: kv,
+      trace: c.trace,
+    });
+    c.trace.finish(200);
+    expect(c.emit).toHaveBeenCalledTimes(1);
+    written.resolve();
+    await vi.waitFor(() => expect(c.emit).toHaveBeenCalledTimes(2));
+    expect(c.emit.mock.calls[1]![0]).toMatchObject({
+      event: 'search_cache_write',
+      work: 'background_persistence',
+      channel: 'image',
+      bytes: 9,
+      status: 'ok',
+      traceId: c.event().traceId,
+    });
+    expect(c.event().spans).not.toContainEqual(
+      expect.objectContaining({ stage: 'cache_write' })
+    );
+  });
+
+  it('measures actual result-cache serialized bytes even when background persistence fails', async () => {
+    const c = capture();
+    const kv = cache(async () => null);
+    const put = vi.fn().mockRejectedValue(new Error('private storage error'));
+    kv.put = put;
+    await getOrLoadPublicSearchResult({
+      ...identity,
+      cache: kv,
+      trace: c.trace,
+      load: async () => ({ response, cacheable: true }),
+    });
+    c.trace.finish(200);
+    await vi.waitFor(() =>
+      expect(
+        c.emit.mock.calls.some(
+          ([event]) => event.event === 'search_cache_write'
+        )
+      ).toBe(true)
+    );
+    const bytes = new TextEncoder().encode(
+      put.mock.calls[0]![1] as string
+    ).byteLength;
+    expect(c.emit.mock.calls.map(([event]) => event)).toContainEqual(
+      expect.objectContaining({
+        event: 'search_cache_write',
+        channel: 'result',
+        bytes,
+        status: 'error',
+        work: 'background_persistence',
+      })
+    );
+    expect(JSON.stringify(c.emit.mock.calls)).not.toMatch(
+      /private|secret|987654/
+    );
+  });
+
   it('records overlapping monotonic spans and wall total, not their sum; emits once', async () => {
     const c = capture();
     const a = deferred<void>();
@@ -151,6 +313,8 @@ describe('search traces', () => {
     leader.trace.finish(200);
     follower.trace.finish(200);
     expect(generate).toHaveBeenCalledTimes(1);
+    expect(leader.event().attempts.embedding_image).toBe(1);
+    expect(follower.event().attempts.embedding_image).toBe(0);
     expect(leader.event().spans.map((s: { stage: string }) => s.stage)).toEqual(
       ['embedding_image_cache', 'embedding_image_generate']
     );
@@ -160,6 +324,56 @@ describe('search traces', () => {
     });
     expect(JSON.stringify([leader.event(), follower.event()])).not.toMatch(
       /private|secret|0\.6|0\.8/
+    );
+  });
+
+  it('counts a failed upstream attempt only for the coalesced owner', async () => {
+    const owner = capture();
+    const follower = capture();
+    const release = deferred<void>();
+    const started = deferred<void>();
+    const generate = async () => {
+      started.resolve();
+      await release.promise;
+      throw new Error('private upstream error');
+    };
+    const first = getOrCreateQueryEmbedding({
+      ...embedding,
+      trace: owner.trace,
+      generate,
+    });
+    await started.promise;
+    const followed = vi.spyOn(follower.trace, 'cache');
+    const second = getOrCreateQueryEmbedding({
+      ...embedding,
+      trace: follower.trace,
+      generate,
+    });
+    await vi.waitFor(() =>
+      expect(followed).toHaveBeenCalledWith('image', 'coalesced')
+    );
+    release.resolve();
+    expect(
+      (await Promise.allSettled([first, second])).map((value) => value.status)
+    ).toEqual(['rejected', 'rejected']);
+    owner.trace.finish(500);
+    follower.trace.finish(500);
+    expect(owner.event().attempts.embedding_image).toBe(1);
+    expect(follower.event().attempts.embedding_image).toBe(0);
+    expect(owner.event().spans).toContainEqual(
+      expect.objectContaining({
+        stage: 'embedding_image_generate',
+        status: 'error',
+      })
+    );
+    expect(follower.event().spans).toContainEqual(
+      expect.objectContaining({
+        stage: 'embedding_image_wait',
+        status: 'error',
+      })
+    );
+    expect(JSON.stringify([owner.event(), follower.event()])).not.toContain(
+      'private'
     );
   });
 
@@ -174,6 +388,7 @@ describe('search traces', () => {
     });
     hit.trace.finish(200);
     expect(hit.event().caches.image).toBe('hit');
+    expect(hit.event().attempts.embedding_image).toBe(0);
     expect(generate).not.toHaveBeenCalled();
     const failure = capture();
     await getOrCreateQueryEmbedding({
@@ -185,6 +400,7 @@ describe('search traces', () => {
     });
     failure.trace.finish(200);
     expect(failure.event()).toMatchObject({
+      attempts: { embedding_image: 1 },
       caches: { image: 'error' },
       spans: [{ status: 'error' }, { status: 'ok' }],
     });

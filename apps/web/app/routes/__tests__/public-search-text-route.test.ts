@@ -38,6 +38,98 @@ describe('public text search route quota reservation', () => {
     vi.restoreAllMocks();
   });
 
+  it('logs current requested/canonical K and wall timings once, preserving safe API diagnostics', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(searchPayload), {
+            headers: {
+              'Server-Timing':
+                'metadata;dur=2.50, private_query;dur=8, total;dur=4.00',
+              'X-Paillette-Search-Request-Id':
+                '12345678-1234-1234-1234-123456789abc',
+              'X-Paillette-Embedding-Count': '2',
+              'X-Paillette-Embedding-Cache':
+                'image:miss,caption:hit,refinement:skipped',
+              'X-Paillette-Search-Path': 'hybrid',
+              'X-Paillette-Search-Contract': '32',
+            },
+          })
+      )
+    );
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'private query', topK: 3 }),
+    } as any);
+    expect(response.headers.get('Server-Timing')).toMatch(
+      /^metadata;dur=2.50, total;dur=4.00, public_proxy;dur=\d+\.\d+$/
+    );
+    expect(response.headers.get('X-Paillette-Embedding-Count')).toBe('2');
+    expect(response.headers.get('X-Paillette-Search-Path')).toBe('hybrid');
+    const events = log.mock.calls.map(([value]) => JSON.parse(value as string));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: 'public_search_proxy',
+      scope: 'nga',
+      requestedTopK: 3,
+      normalizedTopK: 3,
+      canonicalTopK: 100,
+      apiRequestId: '12345678-1234-1234-1234-123456789abc',
+      httpStatus: 200,
+    });
+    expect(events[0].totalMs).toBeGreaterThanOrEqual(events[0].upstreamMs);
+    expect(events[0].upstreamMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(events)).not.toMatch(
+      /private|queryTime|galleryId|https/
+    );
+  });
+
+  it('logs failures/early exits once with unknown upstream work and rejects arbitrary diagnostic headers', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await action({
+      context: {},
+      params: { orgId: 'private-org' },
+      request: makeRequest({ query: 'private query' }),
+    } as any);
+    expect(JSON.parse(log.mock.calls[0]![0] as string)).toMatchObject({
+      scope: 'other',
+      upstreamMs: null,
+      requestedTopK: null,
+      errorCategory: 'rejected',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(searchPayload), {
+            headers: {
+              'X-Paillette-Search-Request-Id': 'private-org',
+              'X-Paillette-Search-Path': 'https://provider',
+              'X-Paillette-Embedding-Count': 'secret',
+              'Server-Timing': 'query;desc="private"',
+            },
+          })
+      )
+    );
+    const response = await action({
+      context: {},
+      params: { orgId: 'nga' },
+      request: makeRequest({ query: 'private query', topK: 200 }),
+    } as any);
+    expect(JSON.parse(log.mock.calls[1]![0] as string)).toMatchObject({ requestedTopK: 200, normalizedTopK: 100, canonicalTopK: 100 });
+    expect(response.headers.get('X-Paillette-Search-Request-Id')).toBeNull();
+    expect(response.headers.get('X-Paillette-Search-Path')).toBeNull();
+    expect(response.headers.get('X-Paillette-Embedding-Count')).toBeNull();
+    expect(response.headers.get('Server-Timing')).toMatch(/^public_proxy;dur=/);
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /private|provider|secret/
+    );
+  });
+
   it('normalizes the forwarded query with the shared contract', async () => {
     const mockFetch = vi.fn<typeof globalThis.fetch>(
       async () =>

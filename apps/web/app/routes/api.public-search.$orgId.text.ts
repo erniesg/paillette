@@ -31,15 +31,25 @@ const buildDynamicSearchHeaders = (response: Response) => {
   const headers = new Headers({ 'Cache-Control': 'no-store' });
   copyPublicSearchResponseHeaders(response, headers);
   const cacheStatus = response.headers.get('X-Paillette-Search-Cache');
-  if (cacheStatus) headers.set('X-Paillette-Search-Cache', cacheStatus);
+  if (
+    cacheStatus &&
+    /^(?:BYPASS|SPOTLIGHT|KV-FRESH|KV-STALE|COALESCED|MISS)$/.test(cacheStatus)
+  )
+    headers.set('X-Paillette-Search-Cache', cacheStatus);
   return headers;
 };
 
-export const action = async ({
-  context,
-  params,
-  request,
-}: ActionFunctionArgs) => {
+type ProxyDiagnostic = {
+  requestedTopK: number | null;
+  normalizedTopK: number | null;
+  canonicalTopK: number | null;
+  upstreamMs: number | null;
+};
+
+const textSearchAction = async (
+  { context, params, request }: ActionFunctionArgs,
+  diagnostic: ProxyDiagnostic
+) => {
   const orgId = params.orgId;
   if (!orgId) {
     return json<ApiResponse>(
@@ -141,10 +151,16 @@ export const action = async ({
   const canonicalSearchPayload = getCanonicalPublicTextSearchRequest(
     requestedSearchPayload
   );
+  diagnostic.requestedTopK =
+    typeof body.topK === 'number' && Number.isFinite(body.topK) &&
+    Math.abs(body.topK) <= 1_000_000 ? body.topK : null;
+  diagnostic.normalizedTopK = requestedSearchPayload.topK;
+  diagnostic.canonicalTopK = canonicalSearchPayload.topK;
   const resolvedOrgId = resolvePublicSearchOrgId(orgId);
   const apiBaseUrl = getApiBaseUrl(env);
 
   let response: Response;
+  const upstreamStart = performance.now();
   try {
     response = await fetch(
       `${apiBaseUrl}/orgs/${resolvedOrgId}/search/text`,
@@ -156,6 +172,7 @@ export const action = async ({
       }
     );
   } catch (error) {
+    diagnostic.upstreamMs = performance.now() - upstreamStart;
     if (
       typeof error === 'object' &&
       error !== null &&
@@ -180,6 +197,7 @@ export const action = async ({
   try {
     responsePayload = (await response.json()) as ApiResponse<SearchResponse>;
   } catch {
+    diagnostic.upstreamMs = performance.now() - upstreamStart;
     const status = response.ok ? 502 : response.status;
     return json<ApiResponse>(
       {
@@ -196,6 +214,7 @@ export const action = async ({
       { status, headers: buildDynamicSearchHeaders(response) }
     );
   }
+  diagnostic.upstreamMs = performance.now() - upstreamStart;
   if (responsePayload.success && responsePayload.data) {
     const results = responsePayload.data.results.filter(
       (artwork) => !isHiddenPublicNgsArtwork(artwork as any)
@@ -220,4 +239,49 @@ export const action = async ({
     status: response.status,
     headers: buildDynamicSearchHeaders(response),
   });
+};
+
+export const action = async (args: ActionFunctionArgs) => {
+  const start = performance.now();
+  const diagnostic: ProxyDiagnostic = {
+    requestedTopK: null,
+    normalizedTopK: null,
+    canonicalTopK: null,
+    upstreamMs: null,
+  };
+  let response: Response | undefined;
+  try {
+    response = await textSearchAction(args, diagnostic);
+    const timing = `public_proxy;dur=${(performance.now() - start).toFixed(2)}`;
+    response.headers.append('Server-Timing', timing);
+    return response;
+  } finally {
+    try {
+      console.log(
+        JSON.stringify({
+          event: 'public_search_proxy',
+          scope:
+            args.params.orgId === 'nga'
+              ? 'nga'
+              : args.params.orgId === 'ngs'
+                ? 'ngs'
+                : 'other',
+          apiRequestId:
+            response?.headers.get('X-Paillette-Search-Request-Id') || null,
+          ...diagnostic,
+          totalMs: performance.now() - start,
+          httpStatus: response?.status || null,
+          errorCategory: !response
+            ? 'aborted_or_exception'
+            : response.status >= 500
+              ? 'upstream'
+              : response.status >= 400
+                ? 'rejected'
+                : null,
+        })
+      );
+    } catch {
+      /* Logging cannot affect the proxy response. */
+    }
+  }
 };

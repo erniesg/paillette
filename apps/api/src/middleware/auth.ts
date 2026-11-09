@@ -1482,7 +1482,7 @@ export const recordArtworkResults = async (
   const usageEventId = c.get('usageEventId');
 
   if (!usageEventId || results.length === 0) {
-    return;
+    return 'skipped' as const;
   }
 
   try {
@@ -1496,7 +1496,9 @@ export const recordArtworkResults = async (
     );
   } catch (error) {
     console.warn('Result telemetry failed; continuing search response', error);
+    return 'error' as const;
   }
+  return 'ok' as const;
 };
 
 export const recordArtworkUsageEvents = async (

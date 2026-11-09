@@ -113,25 +113,28 @@ const readCachedEmbedding = async (
 const writeCachedEmbedding = async (
   cache: KVNamespace | undefined,
   key: string,
-  embedding: number[]
+  embedding: number[],
+  trace?: SearchTrace,
+  channel: EmbeddingChannel = 'image'
 ): Promise<void> => {
   if (!cache) {
     return;
   }
 
+  let bytes: number | undefined;
   try {
     const serialized = JSON.stringify(embedding);
-    if (
-      new TextEncoder().encode(serialized).byteLength >
-      QUERY_EMBEDDING_CACHE_MAX_BYTES
-    ) {
+    bytes = new TextEncoder().encode(serialized).byteLength;
+    if (bytes > QUERY_EMBEDDING_CACHE_MAX_BYTES) {
+      trace?.cacheWrite(channel, bytes, 'skipped');
       return;
     }
-
     await cache.put(key, serialized, {
       expirationTtl: QUERY_EMBEDDING_CACHE_TTL_SECONDS,
     });
+    trace?.cacheWrite(channel, bytes, 'ok');
   } catch {
+    if (bytes !== undefined) trace?.cacheWrite(channel, bytes, 'error');
     // Embedding generation remains usable when KV is unavailable.
   }
 };
@@ -161,7 +164,7 @@ const resolveQueryEmbedding = async (
   );
 
   if (isValidEmbedding(generated, options.dimensions)) {
-    const persistence = writeCachedEmbedding(options.cache, key, generated);
+    const persistence = writeCachedEmbedding(options.cache, key, generated, options.trace, channel);
     if (options.schedule) {
       options.schedule(persistence);
     }
