@@ -2932,6 +2932,15 @@ const rewriteCachedAssetOrigin = (
   return value;
 };
 
+const rewriteSpotlightArtwork = (
+  artwork: PublicSearchSpotlightBundle['suggestions'][number]['artworks'][number],
+  origin: string
+) => ({
+  ...artwork,
+  ...(artwork.imageUrl ? { imageUrl: rewriteCachedAssetOrigin(artwork.imageUrl, origin) } : {}),
+  ...(artwork.thumbnailUrl ? { thumbnailUrl: rewriteCachedAssetOrigin(artwork.thumbnailUrl, origin) } : {}),
+});
+
 const getNgsSearchSpotlightBundle = (
   origin: string,
   bundle: PublicSearchSpotlightBundle = ngsSearchSpotlightBundle
@@ -2939,20 +2948,8 @@ const getNgsSearchSpotlightBundle = (
   ...bundle,
   suggestions: bundle.suggestions.map((suggestion) => ({
     ...suggestion,
-    artworks: suggestion.artworks.map((artwork) => ({
-      ...artwork,
-      ...(artwork.imageUrl
-        ? { imageUrl: rewriteCachedAssetOrigin(artwork.imageUrl, origin) }
-        : {}),
-      ...(artwork.thumbnailUrl
-        ? {
-            thumbnailUrl: rewriteCachedAssetOrigin(
-              artwork.thumbnailUrl,
-              origin
-            ),
-          }
-        : {}),
-    })),
+    artworks: suggestion.artworks.map(artwork => rewriteSpotlightArtwork(artwork, origin)),
+    ...(suggestion.highlightArtworks ? { highlightArtworks: suggestion.highlightArtworks.map(artwork => rewriteSpotlightArtwork(artwork, origin)) } : {}),
   })),
 });
 

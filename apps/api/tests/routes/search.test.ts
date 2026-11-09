@@ -1199,6 +1199,7 @@ describe('NGS prepared spotlight endpoint', () => {
     corpusVersion: NGS_PREPARED_SPOTLIGHT_REVISION,
     suggestions: NGS_PREPARED_SPOTLIGHT_DEFINITIONS.map((definition) => ({
       ...definition, artworks: NGS_SEARCH_SPOTLIGHT_BUNDLE.suggestions[0].artworks.slice(0, 4),
+      highlightArtworks: NGS_SEARCH_SPOTLIGHT_BUNDLE.suggestions[0].artworks.slice(0, 1),
     })),
   });
   it('authenticates before reading KV and never searches on a visit, including a readiness miss', async () => {

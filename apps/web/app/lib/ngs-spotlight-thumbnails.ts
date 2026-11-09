@@ -1,5 +1,5 @@
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
-import { getSpotlightArtworks } from './search-spotlights';
+import { getSpotlightHighlightArtworks } from './search-spotlights';
 import { selectIdleShowcaseArtworks } from './idle-showcase';
 import { getAuthenticatedAssetUrl } from './public-asset-url';
 
@@ -10,7 +10,9 @@ export const getNgsSpotlightThumbnailPaths = (
   return [
     ...new Set(
       bundle.suggestions.flatMap((suggestion) =>
-        selectIdleShowcaseArtworks(getSpotlightArtworks(bundle, suggestion.id))
+        selectIdleShowcaseArtworks(
+          getSpotlightHighlightArtworks(bundle, suggestion.id)
+        )
           .map((artwork) =>
             getAuthenticatedAssetUrl(artwork.thumbnailUrl || artwork.imageUrl)
           )

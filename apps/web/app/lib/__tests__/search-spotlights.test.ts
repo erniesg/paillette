@@ -10,6 +10,7 @@ import {
 import {
   getSearchSpotlightPath,
   getSpotlightArtworks,
+  getSpotlightHighlightArtworks,
   getSpotlightSearchPlaceholder,
   getSpotlightSearchSubmissionOptions,
   loadSearchSpotlightBundle,
@@ -60,13 +61,13 @@ const validNgsBundle: PublicSearchSpotlightBundle = {
   ...validBundle,
   corpusVersion: 'ngs-fixture-v1',
   provider: 'ngs',
-  suggestions: NGS_PREPARED_SPOTLIGHT_DEFINITIONS.map((definition, index) => ({
-    ...definition,
-    artworks: [1, 2, 3, 4].map((cardIndex) => ({
+  suggestions: NGS_PREPARED_SPOTLIGHT_DEFINITIONS.map((definition, index) => {
+    const artworks = [1, 2, 3, 4].map((cardIndex) => ({
       ...artwork(String(index * 4 + cardIndex), 'ngs'),
       similarity: 0.9,
-    })),
-  })),
+    }));
+    return { ...definition, artworks, highlightArtworks: artworks.slice(0, 2) };
+  }),
 };
 
 const responseFor = (value: unknown, status = 200) =>
@@ -131,6 +132,10 @@ describe('search spotlight loading', () => {
         minScore: 0.2,
       })?.results
     ).toHaveLength(4);
+    expect(getSpotlightHighlightArtworks(loaded, 'christmas-day')).toHaveLength(
+      2
+    );
+    expect(getSpotlightArtworks(loaded, 'christmas-day')).toHaveLength(4);
     expect(fetcher).toHaveBeenCalledOnce();
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledWith(

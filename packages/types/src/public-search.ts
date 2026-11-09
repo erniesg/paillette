@@ -65,12 +65,22 @@ export const PublicSearchSpotlightSuggestionSchema = z
     facet: z.enum(['artist', 'classification']).optional(),
     colourId: z.string().min(1).optional(),
     artworks: z.array(PublicSearchSpotlightArtworkSchema).min(1).max(30),
+    // A small, prepared thematic showcase is separate from the full search.
+    // Optional for legacy immutable NGA/NGS bundles.
+    highlightArtworks: z
+      .array(PublicSearchSpotlightArtworkSchema)
+      .min(1)
+      .max(4)
+      .optional(),
   })
   .strict()
   .refine(
     (suggestion) =>
       new Set(suggestion.artworks.map((artwork) => artwork.id)).size ===
-      suggestion.artworks.length,
+        suggestion.artworks.length &&
+      (!suggestion.highlightArtworks ||
+        new Set(suggestion.highlightArtworks.map((artwork) => artwork.id))
+          .size === suggestion.highlightArtworks.length),
     { message: 'Spotlight artwork IDs must be unique per suggestion' }
   );
 
