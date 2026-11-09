@@ -330,6 +330,34 @@ export const copyPublicSearchResponseHeaders = (
   response: Response,
   headers: Headers
 ) => {
+  // API diagnostics use only bounded labels/numbers; never forward arbitrary text.
+  const diagnosticRules: Record<string, RegExp> = {
+    'X-Paillette-Search-Request-Id':
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    'X-Paillette-Embedding-Count': /^\d{1,6}$/,
+    'X-Paillette-Embedding-Cache':
+      /^image:(?:hit|miss|stale|coalesced|timeout|error|bypass|skipped),caption:(?:hit|miss|stale|coalesced|timeout|error|bypass|skipped),refinement:(?:hit|miss|stale|coalesced|timeout|error|bypass|skipped)$/,
+    'X-Paillette-Search-Path':
+      /^(?:unresolved|hybrid|legacy|metadata|artist|classification|image)$/,
+    'X-Paillette-Search-Contract': /^\d{1,4}$/,
+  };
+  for (const [name, rule] of Object.entries(diagnosticRules)) {
+    const value = response.headers.get(name);
+    if (value && rule.test(value)) headers.set(name, value);
+  }
+  const timing = response.headers.get('Server-Timing');
+  if (timing && timing.length <= 8192) {
+    const safeTiming = timing
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) =>
+        /^(?:total|auth_quota|scope|request_parse|request_limit|quota_reservation|intent|artist_check|retrieval|metadata|hydration|visual_refinement|vector_(?:image|caption|get_by_ids)|embedding_(?:image|caption|refinement)_(?:cache|generate|wait)|result_cache(?:_read|_wait)?|usage_annotation|result_telemetry);dur=\d+(?:\.\d+)?$/.test(
+          value
+        )
+      )
+      .slice(0, 64);
+    if (safeTiming.length) headers.set('Server-Timing', safeTiming.join(', '));
+  }
   const retryAfter = response.headers.get('Retry-After');
   if (retryAfter) {
     headers.set('Retry-After', retryAfter);

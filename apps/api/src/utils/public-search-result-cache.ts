@@ -341,7 +341,8 @@ const persistResult = async (
   key: string,
   identity: PublicSearchResultCacheIdentity,
   response: SearchResponse,
-  storedAt: number
+  storedAt: number,
+  trace?: SearchTrace
 ): Promise<void> => {
   if (!cache) return;
 
@@ -349,10 +350,9 @@ const persistResult = async (
   if (!stableValue) return;
 
   const serialized = JSON.stringify(stableValue);
-  if (
-    new TextEncoder().encode(serialized).byteLength >
-    PUBLIC_SEARCH_RESULT_CACHE_MAX_BYTES
-  ) {
+  const bytes = new TextEncoder().encode(serialized).byteLength;
+  if (bytes > PUBLIC_SEARCH_RESULT_CACHE_MAX_BYTES) {
+    trace?.cacheWrite('result', bytes, 'skipped');
     return;
   }
 
@@ -360,7 +360,9 @@ const persistResult = async (
     await cache.put(key, serialized, {
       expirationTtl: PUBLIC_SEARCH_RESULT_CACHE_HARD_TTL_SECONDS,
     });
+    trace?.cacheWrite('result', bytes, 'ok');
   } catch {
+    trace?.cacheWrite('result', bytes, 'error');
     // Search remains usable when KV persistence is unavailable.
   }
 };
@@ -392,7 +394,7 @@ const beginStaleRefresh = (
   const refresh = (async () => {
     const loaded = await options.load(true);
     if (loaded.cacheable === true) {
-      await persistResult(options.cache, key, options, loaded.response, now());
+      await persistResult(options.cache, key, options, loaded.response, now(), options.trace);
     }
   })().finally(() => {
     if (inFlightRefreshes.get(key) === refresh) {
@@ -435,7 +437,7 @@ const resolveResult = async (
   const loaded = await options.load();
   if (loaded.cacheable === true) {
     scheduleBackground(
-      persistResult(options.cache, key, options, loaded.response, now()),
+      persistResult(options.cache, key, options, loaded.response, now(), options.trace),
       options.schedule
     );
   }

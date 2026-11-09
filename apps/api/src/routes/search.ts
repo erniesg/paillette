@@ -1398,14 +1398,14 @@ const cosineSimilarity = (a: ArrayLike<number>, b: ArrayLike<number>) => {
   return denominator > 0 ? dot / denominator : null;
 };
 
-const getImageVectorsByIds = async (vectorize: Vectorize, ids: string[]) => {
+const getImageVectorsByIds = async (vectorize: Vectorize, ids: string[], trace?: SearchTrace) => {
   const chunks: string[][] = [];
   for (let offset = 0; offset < ids.length; offset += 20) {
     chunks.push(ids.slice(offset, offset + 20));
   }
 
   const chunkResults = await Promise.all(
-    chunks.map((chunk) => vectorize.getByIds(chunk))
+    chunks.map((chunk) => traceSearchStage(trace, 'vector_get_by_ids', () => vectorize.getByIds(chunk)))
   );
   return chunkResults.flat();
 };
@@ -1437,7 +1437,7 @@ const rerankByVisualRefinement = async (
         trace,
         'refinement'
       ),
-      getImageVectorsByIds(vectorize, candidateIds),
+      getImageVectorsByIds(vectorize, candidateIds, trace),
     ]);
     const visualScoreById = new Map<string, number>();
 
@@ -1707,7 +1707,8 @@ async function getArtworksByIds(
   db: D1Database,
   ids: string[],
   orgId?: string,
-  provider?: string
+  provider?: string,
+  trace?: SearchTrace
 ): Promise<Map<string, ArtworkSearchRow>> {
   if (ids.length === 0) {
     return new Map();
@@ -1773,7 +1774,10 @@ async function getArtworksByIds(
         ...(orgId ? [orgId] : []),
         ...(provider ? [provider] : [])
       )
-      .all<ArtworkSearchRow>();
+      .all<ArtworkSearchRow>().then((result) => {
+        trace?.observeD1('hydration', result.meta);
+        return result;
+      });
 
     artworks.push(...results);
   }
@@ -1791,7 +1795,8 @@ export async function searchNgaAttributionMatches(
   scope: NgaAttributionSearchScope,
   intent: NgaAttributionIntent,
   constraints: PublicSearchConstraints | undefined,
-  topK: number
+  topK: number,
+  trace?: SearchTrace
 ): Promise<ArtworkSearchResult[]> {
   const targetTokens = unicodeSearchQueryTokens(intent.targetText).slice(0, 8);
   if (!targetTokens.length) return [];
@@ -1921,7 +1926,10 @@ export async function searchNgaAttributionMatches(
         pageSize,
         offset
       )
-      .all<ArtworkMetadataSearchRow>();
+      .all<ArtworkMetadataSearchRow>().then((result) => {
+        trace?.observeD1('metadata', result.meta);
+        return result;
+      });
 
     if (!results.length) break;
 
@@ -2001,7 +2009,8 @@ async function searchArtworksHybrid(
       provider,
       query,
       structuredConstraints ? MAX_SEARCH_RESULTS : topK,
-      structuredConstraints
+      structuredConstraints,
+      trace
     ));
     trace?.count('metadataCandidates', metadataResults.length);
     return structuredConstraints
@@ -2133,7 +2142,8 @@ async function searchArtworksHybrid(
               provider,
               query,
               topK,
-              structuredConstraints
+              structuredConstraints,
+              trace
             )
           : searchArtworksByMetadata(
               env.DB,
@@ -2141,7 +2151,8 @@ async function searchArtworksHybrid(
               provider,
               metadataQuery,
               Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS),
-              structuredConstraints
+              structuredConstraints,
+              trace
             )
         )).catch((error) => {
           degradedChannels?.add('metadata');
@@ -2158,6 +2169,7 @@ async function searchArtworksHybrid(
     ngaPlanMode === 'relational'
       ? initialRoute
       : refineRoutedSearchPlan(initialRoute, query, metadataMatches);
+  trace?.setContext({ routedIntent: route.intent });
   const artistCandidateIds =
     forcedIntent === 'artist_exact'
       ? new Set(metadataMatches.map((match) => match.id))
@@ -2301,7 +2313,8 @@ async function searchArtworksHybrid(
     env.DB,
     rankedIds,
     orgId,
-    provider
+    provider,
+    trace
   ));
   const maxScore = Math.max(...rankingScoreById.values(), 0.001);
 
@@ -2339,7 +2352,8 @@ async function searchArtworksByMetadata(
   provider: string | undefined,
   query: string,
   topK: number,
-  structuredConstraints?: PublicSearchConstraints
+  structuredConstraints?: PublicSearchConstraints,
+  trace?: SearchTrace
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
   const normalizedWordQuery = normalizeSearchWords(query);
@@ -2478,7 +2492,10 @@ async function searchArtworksByMetadata(
     `
     )
     .bind(...params)
-    .all<ArtworkMetadataSearchRow>();
+    .all<ArtworkMetadataSearchRow>().then((result) => {
+      trace?.observeD1('metadata', result.meta);
+      return result;
+    });
 
   return results.map((artwork) =>
     mapSearchRow(
@@ -2494,7 +2511,8 @@ async function searchArtworksByArtistFacet(
   provider: string | undefined,
   query: string,
   topK: number,
-  structuredConstraints?: PublicSearchConstraints
+  structuredConstraints?: PublicSearchConstraints,
+  trace?: SearchTrace
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = normalizeArtistFacetQuery(query);
   const tokens = artistFacetTokens(query);
@@ -2590,7 +2608,10 @@ async function searchArtworksByArtistFacet(
     `
       )
       .bind(...baseParams, topK, offset)
-      .all<ArtworkMetadataSearchRow>();
+      .all<ArtworkMetadataSearchRow>().then((result) => {
+        trace?.observeD1('metadata', result.meta);
+        return result;
+      });
 
     if (!results.length) break;
 
@@ -2628,7 +2649,8 @@ async function searchArtworksByClassificationFacet(
   provider: string | undefined,
   query: string,
   topK: number,
-  structuredConstraints?: PublicSearchConstraints
+  structuredConstraints?: PublicSearchConstraints,
+  trace?: SearchTrace
 ): Promise<ArtworkSearchResult[]> {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -2705,7 +2727,10 @@ async function searchArtworksByClassificationFacet(
     `
       )
       .bind(...baseParams, topK, offset)
-      .all<ArtworkMetadataSearchRow>();
+      .all<ArtworkMetadataSearchRow>().then((result) => {
+        trace?.observeD1('metadata', result.meta);
+        return result;
+      });
 
     if (!results.length) break;
 
@@ -2740,7 +2765,8 @@ async function hasExactArtistFacetMatch(
   db: D1Database,
   orgId: string | undefined,
   provider: string | undefined,
-  query: string
+  query: string,
+  trace?: SearchTrace
 ) {
   const normalizedQuery = normalizeArtistFacetQuery(query);
   const tokens = artistFacetTokens(query);
@@ -2772,7 +2798,10 @@ async function hasExactArtistFacetMatch(
     `
     )
     .bind(...params)
-    .all<{ id: string }>();
+    .all<{ id: string }>().then((result) => {
+      trace?.observeD1('artist_check', result.meta);
+      return result;
+    });
 
   return results.length > 0;
 }
@@ -2861,6 +2890,8 @@ export const searchTraceMiddleware: MiddlewareHandler<{ Bindings: Env }> = async
     status = c.res.status;
   } finally {
     endPreflight(status >= 400 ? 'error' : 'ok');
+    trace.responseSize(c.res.headers.get('Content-Length'));
+    for (const [name, value] of Object.entries(trace.headers())) c.header(name, value);
     trace.finish(status);
     searchTraces.delete(c);
     searchPreflightEnds.delete(c);
@@ -2976,8 +3007,11 @@ const setNgaSearchQuotaHeaders = (
   c.header('X-NGA-Search-Remaining', String(quota.remaining));
 };
 
-const recordArtworkResults = (c: any, results: Parameters<typeof recordArtworkResultsRaw>[1]) =>
-  traceSearchStage(searchTraces.get(c), 'result_telemetry', () => recordArtworkResultsRaw(c, results));
+const recordArtworkResults = async (c: any, results: Parameters<typeof recordArtworkResultsRaw>[1]) => {
+  const end = searchTraces.get(c)?.start('result_telemetry');
+  const outcome = await recordArtworkResultsRaw(c, results);
+  end?.(outcome);
+};
 
 const annotateAcceptedSearchUsage = async (
   c: any,
@@ -3153,6 +3187,7 @@ searchRoutes.post('/search/text', async (c) => {
       requestedOrgId
     ));
     const isNgsPublicSearch = isNgsPublicOrg(orgId);
+    trace.setContext({ scope: provider === 'nga' ? 'nga' : isNgsPublicSearch ? 'ngs' : 'other', index: getEmbeddingIndexVersion(c.env) });
     const normalizedNgsQuery = isNgsPublicSearch
       ? normalizePublicSearchText(query)
       : query;
@@ -3316,7 +3351,15 @@ searchRoutes.post('/search/text', async (c) => {
     // OPENAI_API_KEY or any resolution failure leaves the search exactly as
     // it was before this feature.
     const isIndexedCollectionSearch = !isNgaPublicSearch && !isNgsPublicSearch;
+    const setTraceContext = (trace: SearchTrace) => trace.setContext({
+      scope: isNgaPublicSearch ? 'nga' : isNgsPublicSearch ? 'ngs' : 'other',
+      path: facet || (ngaPlan?.mode === 'attribution' ? 'metadata' : getSearchFusionMode(c.env, orgId)),
+      intent: facet || ngaPlan?.mode || (isIndexedCollectionSearch ? 'collection' : 'semantic'),
+      index: getEmbeddingIndexVersion(c.env),
+    });
+    setTraceContext(trace);
     const executeSearch = async (trace: SearchTrace): Promise<SearchResponse> => {
+      setTraceContext(trace);
       const indexedIntent =
         isIndexedCollectionSearch && orgId && !facet
           ? await trace.run('intent', () => resolveQueryIntent(c.env, {
@@ -3345,9 +3388,11 @@ searchRoutes.post('/search/text', async (c) => {
           c.env.DB,
           orgId,
           provider,
-          retrievalQuery
+          retrievalQuery,
+          trace
         )));
       resolvedFacet = exactFreeTextArtist ? 'artist' : facet;
+      if (exactFreeTextArtist) trace.setContext({ intent: 'artist_exact' });
       const retrievalTopK =
         ngaPlan?.mode === 'relational' ? MAX_SEARCH_RESULTS : topK;
       // A filtered query fetches a wider candidate pool than the final
@@ -3367,7 +3412,8 @@ searchRoutes.post('/search/text', async (c) => {
               { orgId, provider: 'nga' },
               ngaPlan.attribution!,
               structuredConstraints,
-              topK
+              topK,
+              trace
             ))
           : facet === 'artist'
             ? await trace.run('metadata', () => searchArtworksByArtistFacet(
@@ -3376,7 +3422,8 @@ searchRoutes.post('/search/text', async (c) => {
                 provider,
                 retrievalQuery,
                 retrievalTopK,
-                structuredConstraints
+                structuredConstraints,
+                trace
               ))
             : facet === 'classification'
               ? await trace.run('metadata', () => searchArtworksByClassificationFacet(
@@ -3385,7 +3432,8 @@ searchRoutes.post('/search/text', async (c) => {
                   provider,
                   retrievalQuery,
                   retrievalTopK,
-                  structuredConstraints
+                  structuredConstraints,
+                  trace
                 ))
               : await searchArtworksHybrid(
                   c.env,
@@ -3468,6 +3516,7 @@ searchRoutes.post('/search/text', async (c) => {
           : undefined;
 
       trace.count('results', finalResults.length);
+      trace.degradation(degradedChannels);
       return {
         results: finalResults,
         count: finalResults.length,
@@ -3749,6 +3798,7 @@ searchRoutes.post('/search/image', async (c) => {
       : 0.7;
 
     const isNgaPublicSearch = provider === 'nga';
+    trace.setContext({ scope: isNgaPublicSearch ? 'nga' : isNgsPublicOrg(orgId) ? 'ngs' : 'other', path: 'image', intent: 'image', index: getEmbeddingIndexVersion(c.env) });
     if (isNgaPublicSearch) {
       try {
         await enforceNgaPublicSearchRequestLimit(c, isPublicSearchPrincipal);
@@ -3884,7 +3934,8 @@ searchRoutes.post('/search/image', async (c) => {
       c.env.DB,
       artworkIds,
       orgId,
-      provider
+      provider,
+      trace
     ));
 
     // Combine vector results with artwork details
