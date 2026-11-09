@@ -1788,6 +1788,24 @@ async function getArtworksByIds(
   return new Map(artworks.map((artwork) => [artwork.id, artwork]));
 }
 
+// Internal trusted preparation only. A reviewed thematic selection must not
+// depend on whether a particular embedding backend ranks its ID in the top 30.
+export async function loadNgsCuratedHighlightArtworks(
+  env: Pick<Env, 'DB'>,
+  orgId: string,
+  ids: readonly string[]
+): Promise<ArtworkSearchResult[]> {
+  const uniqueIds = [...new Set(ids)];
+  if (!isNgsPublicOrg(orgId) || uniqueIds.length > 4) throw new Error('Invalid NGS curated highlight scope');
+  const rows = await getArtworksByIds(env.DB, uniqueIds, orgId, 'ngs');
+  // Same exact-ID/metadata lookup convention as existing metadata matches,
+  // not a newly measured semantic score. Never add these to canonical results.
+  return uniqueIds.flatMap(id => {
+    const row = rows.get(id);
+    return row ? [mapSearchRow(row, 1)] : [];
+  });
+}
+
 export type NgaAttributionSearchScope = {
   orgId?: string;
   provider: 'nga';

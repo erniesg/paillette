@@ -14,6 +14,7 @@ import { isNgsPublicOrg, resolveOrgSearchScope } from './orgs';
 import {
   selectNgsPreparedHighlights,
   QIXI_HIGHLIGHT_QUERY,
+  NGS_CURATED_HIGHLIGHT_IDS,
 } from './ngs-highlight-curation';
 
 export const validateNgsPreparedBundle = (value: unknown) => {
@@ -255,7 +256,8 @@ export const refreshNgsPreparedSpotlights = async (
   if (!orgId || !isNgsPublicOrg(orgId))
     throw new Error('NGS organisation unavailable');
   // Lazy import keeps the visitor reader independent of the trusted job.
-  const { searchArtworksHybrid } = await import('../routes/search');
+  const { searchArtworksHybrid, loadNgsCuratedHighlightArtworks } =
+    await import('../routes/search');
   const legacy = options.reuseLegacyEvergreen
     ? (await import('../generated/ngs-search-spotlight-asset'))
         .NGS_SEARCH_SPOTLIGHT_BUNDLE
@@ -315,6 +317,24 @@ export const refreshNgsPreparedSpotlights = async (
             `NGS preview needs real imageable results: ${definition.id}`
           );
         let highlightCandidates = artworks;
+        const reviewedIds = NGS_CURATED_HIGHLIGHT_IDS[definition.id] || [];
+        const missingIds = reviewedIds.filter(
+          (id) => !artworks.some((artwork) => artwork.id === id)
+        );
+        if (missingIds.length) {
+          const reviewed = projectResults(
+            await loadNgsCuratedHighlightArtworks(env, orgId, missingIds)
+          );
+          // Project separately: truncating a combined list to canonical topK
+          // would drop the appended reviewed works and reintroduce the bug.
+          highlightCandidates = [
+            ...artworks,
+            ...reviewed.filter(
+              (artwork) =>
+                !artworks.some((existing) => existing.id === artwork.id)
+            ),
+          ];
+        }
         if (definition.id === 'qixi-festival') {
           // A fixed, prepared-only thematic query: visitors still receive the
           // full canonical Qixi result list, unchanged, plus related previews.
@@ -419,5 +439,10 @@ export const refreshNgsPreparedSpotlights = async (
       NGS_PREPARED_SPOTLIGHT_CACHE_KEY,
       JSON.stringify(bundle)
     );
-  return { published, bundle, searchRequestCount };
+  // Trusted operator receipt only; never part of the authenticated/public
+  // bundle. Native byte audits reuse the same scoped readiness receipts.
+  const verifiedThumbnails = [...verifiedObjects].map(
+    ([assetId, objectKey]) => ({ assetId, objectKey, orgId })
+  );
+  return { published, bundle, searchRequestCount, verifiedThumbnails };
 };
