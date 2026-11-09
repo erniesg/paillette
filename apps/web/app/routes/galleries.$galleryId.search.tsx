@@ -2575,9 +2575,10 @@ export default function SearchPage() {
                     value={textQuery}
                     onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
+                    aria-label="Search the collection"
                     placeholder="search by feeling, era, subject..."
                     disabled={isSearchDisabled}
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/60 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
                   />
                   <button
                     type="submit"
@@ -2744,14 +2745,29 @@ export default function SearchPage() {
                     disabled={isSearchDisabled}
                   />
                 )}
-                {isNgsSearch && shouldLoadSpotlights && !hasActiveSearch && spotlightBundleQuery.isError && (
-                  <div role="status" className="w-full text-center text-xs text-white/70">
-                    Highlights are temporarily unavailable.{' '}
-                    <button type="button" className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300" disabled={spotlightBundleQuery.isFetching} onClick={() => { void spotlightBundleQuery.refetch(); }}>
-                      {spotlightBundleQuery.isFetching ? 'Retrying…' : 'Retry highlights'}
-                    </button>
-                  </div>
-                )}
+                {isNgsSearch &&
+                  shouldLoadSpotlights &&
+                  !hasActiveSearch &&
+                  spotlightBundleQuery.isError && (
+                    <div
+                      role="status"
+                      className="w-full text-center text-xs text-white/70"
+                    >
+                      Highlights are temporarily unavailable.{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                        disabled={spotlightBundleQuery.isFetching}
+                        onClick={() => {
+                          void spotlightBundleQuery.refetch();
+                        }}
+                      >
+                        {spotlightBundleQuery.isFetching
+                          ? 'Retrying…'
+                          : 'Retry highlights'}
+                      </button>
+                    </div>
+                  )}
                 {!hasActiveSearch && editorMode === 'colour' && (
                   <div ref={colourRailRef} className="w-full">
                     <ColourRail
@@ -3918,6 +3934,9 @@ function IdleShowcaseLayer({
       data-showcase-suggestion={layer.suggestion?.query || ''}
     >
       {showcaseItems.map((artwork, index) => {
+        // No artwork means no action: avoid invisible generic View buttons
+        // during initial prepared-data loading and recovery.
+        if (!artwork) return null;
         const itemLayout = layout[index];
         const image = artwork
           ? getArtworkImageSources(artwork, 'thumbnail')
