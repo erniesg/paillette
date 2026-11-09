@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import {
   SearchTrace,
   traceSearchStage,
@@ -2842,26 +2842,34 @@ const parseImageSearchConstraints = (
 
 export const searchRoutes = new Hono<{ Bindings: Env }>();
 
-// Register before authentication/quota middleware, including their early exits.
-for (const mode of ['text', 'image'] as const) {
-  searchRoutes.use(`/search/${mode}`, async (c, next) => {
-    const trace = new SearchTrace(mode);
-    trace.cache('result', 'bypass');
-    searchTraces.set(c, trace);
-    const endPreflight = trace.start('auth_quota');
-    searchPreflightEnds.set(c, endPreflight);
-    let status = 500;
-    try {
-      await next();
-      status = c.res.status;
-    } finally {
-      endPreflight(status >= 400 ? 'error' : 'ok');
-      trace.finish(status);
-      searchTraces.delete(c);
-      searchPreflightEnds.delete(c);
-    }
-  });
-}
+// The API also installs this before its outer authentication boundary. Router-
+// only consumers retain the same coverage without creating a second event.
+export const searchTraceMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
+  const match = c.req.path.match(/\/search\/(text|image)$/);
+  if (!match || searchTraces.has(c)) {
+    await next();
+    return;
+  }
+  const trace = new SearchTrace(match[1] as 'text' | 'image');
+  trace.cache('result', 'bypass');
+  searchTraces.set(c, trace);
+  const endPreflight = trace.start('auth_quota');
+  searchPreflightEnds.set(c, endPreflight);
+  let status = 500;
+  try {
+    await next();
+    status = c.res.status;
+  } finally {
+    endPreflight(status >= 400 ? 'error' : 'ok');
+    trace.finish(status);
+    searchTraces.delete(c);
+    searchPreflightEnds.delete(c);
+  }
+};
+
+// Register before router authentication/quota middleware, including early exits.
+searchRoutes.use('/search/text', searchTraceMiddleware);
+searchRoutes.use('/search/image', searchTraceMiddleware);
 
 const ngsSearchSpotlightBundle = PublicSearchSpotlightBundleSchema.parse(
   NGS_SEARCH_SPOTLIGHT_BUNDLE

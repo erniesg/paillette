@@ -9,7 +9,7 @@ import * as searchRouteExports from '../../src/routes/search';
 import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
 import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/public-search-cold-miss-rate-limit';
 import { PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS } from '../../src/utils/public-search-result-cache';
-import type { Env } from '../../src/index';
+import apiApp, { type Env } from '../../src/index';
 import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
 import { OPEN_ACCESS_ORG_ID } from '../../src/utils/orgs';
 
@@ -1012,6 +1012,22 @@ describe('Search request traces', () => {
   const tracesFrom = (log: ReturnType<typeof vi.spyOn>) => log.mock.calls
     .filter(([value]) => typeof value === 'string' && value.startsWith('{"event":"search_trace"'))
     .map(([value]) => JSON.parse(value as string));
+
+  it('starts before the real API auth boundary and avoids duplicate router traces', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const env = makeEnv(new FakeSearchDb());
+      const rejected = await textSearch(apiApp, env, {});
+      const accepted = await textSearch(apiApp, env);
+      expect(rejected.status).toBe(401);
+      expect(accepted.status).toBe(200);
+      const traces = tracesFrom(log);
+      expect(traces).toHaveLength(2);
+      expect(traces.map((trace) => trace.httpStatus)).toEqual([401, 200]);
+      expect(traces[0].spans).toEqual([expect.objectContaining({ stage: 'auth_quota', status: 'error' })]);
+      expect(traces[1].spans.filter((span: { stage: string }) => span.stage === 'auth_quota')).toHaveLength(1);
+    } finally { log.mockRestore(); }
+  });
 
   it('finalizes once for auth rejection, invalid text/image and quota rejection without public trace data', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});

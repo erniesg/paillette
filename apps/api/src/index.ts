@@ -4,7 +4,7 @@ import { logger } from 'hono/logger';
 import orgs from './routes/galleries';
 import artworkRoutes from './routes/artworks';
 import collectionRoutes from './routes/collections';
-import { searchRoutes } from './routes/search';
+import { searchRoutes, searchTraceMiddleware } from './routes/search';
 import { colorSearchRoutes } from './routes/color-search';
 import { embeddingsRoutes } from './routes/embeddings';
 import metadataRoutes from './routes/metadata';
@@ -185,6 +185,12 @@ const isPublicNgaArtworkRead = (c: { req: { method: string; path: string } }) =>
 // exactly so no other API surface can be reached without authentication.
 const isPublicIndexingRoute = (c: { req: { path: string } }) =>
   /^\/api\/v1\/public-index\/[A-Za-z0-9/_.-]*$/.test(c.req.path);
+
+// Capture search requests before the shared auth boundary can reject them.
+api.use('/orgs/:orgId/search/text', searchTraceMiddleware);
+api.use('/orgs/:orgId/search/image', searchTraceMiddleware);
+api.use('/galleries/:galleryId/search/text', searchTraceMiddleware);
+api.use('/galleries/:galleryId/search/image', searchTraceMiddleware);
 
 api.use('*', async (c, next) => {
   // MCP owns its OAuth challenge so clients still receive the required

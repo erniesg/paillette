@@ -5,7 +5,8 @@ or image search, including authentication/quota rejection, invalid input and
 errors. `traceId` is generated locally, not taken from a caller. It is log-only:
 no trace details or correlation headers are added to public responses.
 
-- `totalMs` is monotonic wall time from search middleware entry through awaited
+- `totalMs` is monotonic wall time from search observation middleware entry
+  (before the API's shared authentication boundary) through awaited
   downstream middleware, including usage annotation and artwork-result telemetry.
   It is **not** the response's `queryTime` (which can be cached or historical).
 - `spans` contain fixed `stage` labels, start offsets (`startMs`), durations and
@@ -48,6 +49,6 @@ already swallow provider failures may report an OK outer stage; KV read stages
 and cache outcomes retain their own failures.
 
 These are server measurements, not browser network timings or paints. Work
-before entry into the search router and background persistence are outside the
+before entry into the search observation middleware and background persistence are outside the
 foreground total. Tests use fake/deferred clocks and mocked providers; a live
 authenticated provider/browser test is not yet available.
