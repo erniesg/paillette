@@ -159,7 +159,7 @@ import {
   rankByPaletteColour,
 } from '~/lib/local-colour-refinement';
 import {
-  getSpotlightArtworks,
+  getSpotlightHighlightArtworks,
   getSpotlightSearchPlaceholder,
   getSpotlightSearchSubmissionOptions,
   loadSearchSpotlightBundle,
@@ -1897,7 +1897,10 @@ export default function SearchPage() {
     () =>
       activeSpotlightSuggestionId
         ? selectIdleShowcaseArtworks(
-            getSpotlightArtworks(spotlightBundle, activeSpotlightSuggestionId)
+            getSpotlightHighlightArtworks(
+              spotlightBundle,
+              activeSpotlightSuggestionId
+            )
           )
         : [],
     [activeSpotlightSuggestionId, spotlightBundle]

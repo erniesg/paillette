@@ -69,6 +69,22 @@ describe('prepared NGS thumbnail warming', () => {
     }
   });
 
+  it('warms only selected thematic highlights, not the unrelated full-search lead cards', async () => {
+    const selected = structuredClone(bundle);
+    for (const suggestion of selected.suggestions)
+      suggestion.highlightArtworks = [suggestion.artworks[6]!];
+    expect(getNgsSpotlightThumbnailPaths(selected)).toEqual([
+      '/api/public-assets/thumb-6/content',
+    ]);
+    const fetcher = vi.fn(async () => new Response('image'));
+    await prefetchNgsSpotlightThumbnails(
+      selected,
+      new AbortController().signal,
+      fetcher
+    );
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it('never warms public NGA or arbitrary external URLs', async () => {
     const fetcher = vi.fn();
     await prefetchNgsSpotlightThumbnails(

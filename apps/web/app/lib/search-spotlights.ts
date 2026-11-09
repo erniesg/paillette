@@ -92,6 +92,7 @@ const hasExpectedNgsSuggestions = (bundle: PublicSearchSpotlightBundle) => {
     const suggestion = byId.get(definition.id);
     return (
       suggestion?.type === definition.type &&
+      Boolean(suggestion.highlightArtworks?.length) &&
       suggestion.label === definition.label &&
       suggestion.query === definition.query &&
       suggestion.dot.toLowerCase() === definition.dot.toLowerCase() &&
@@ -226,6 +227,28 @@ export const getSpotlightArtworks = (
       },
     }))
   );
+};
+
+export const getSpotlightHighlightArtworks = (
+  bundle: PublicSearchSpotlightBundle | null | undefined,
+  suggestionId: string
+): ArtworkSearchResult[] => {
+  const suggestion = bundle?.suggestions.find(
+    (candidate) => candidate.id === suggestionId
+  );
+  if (!bundle || !suggestion) return [];
+  // Full explicit search results stay separate from the small thematic display.
+  return suggestion.highlightArtworks
+    ? getSpotlightArtworks(
+        {
+          ...bundle,
+          suggestions: [
+            { ...suggestion, artworks: suggestion.highlightArtworks },
+          ],
+        },
+        suggestionId
+      )
+    : getSpotlightArtworks(bundle, suggestionId);
 };
 
 export const getSpotlightSearchPlaceholder = (

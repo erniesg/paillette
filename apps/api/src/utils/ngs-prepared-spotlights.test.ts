@@ -16,6 +16,10 @@ import { searchArtworksHybrid } from '../routes/search';
 import { NGS_ORG_ID } from './orgs';
 import type { Env } from '../index';
 import type { ArtworkSearchResult } from '../types';
+import {
+  NGS_CURATED_HIGHLIGHT_IDS,
+  QIXI_HIGHLIGHT_QUERY,
+} from './ngs-highlight-curation';
 
 vi.mock('../routes/search', () => ({ searchArtworksHybrid: vi.fn() }));
 const search = vi.mocked(searchArtworksHybrid);
@@ -23,7 +27,7 @@ const result = (index: number): ArtworkSearchResult => ({
   id: `art-${index}`,
   orgId: NGS_ORG_ID,
   galleryId: NGS_ORG_ID,
-  title: `Real result ${index}`,
+  title: `Winter artwork ${index}`,
   similarity: 0.8,
   thumbnailUrl: `https://paillette-api.berlayar.ai/api/v1/assets/thumb-${index}/content`,
   imageUrl: null,
@@ -57,10 +61,20 @@ const makeEnv = () => {
   } as unknown as Env;
   return { env, entries, first, head, get, put };
 };
+const fixtureResults = (query: string, count = 30) => {
+  const definition = NGS_PREPARED_SPOTLIGHT_DEFINITIONS.find(
+    (definition) => definition.query === query
+  );
+  const ids = definition ? NGS_CURATED_HIGHLIGHT_IDS[definition.id] : undefined;
+  return Array.from({ length: count }, (_, index) => ({
+    ...result(index),
+    id: ids?.[index] || result(index).id,
+  }));
+};
 beforeEach(() => {
   search.mockReset();
-  search.mockResolvedValue(
-    Array.from({ length: 30 }, (_, index) => result(index))
+  search.mockImplementation(async (_env, _org, _provider, query) =>
+    fixtureResults(query)
   );
 });
 
@@ -103,14 +117,14 @@ describe('NGS prepared catalogue and trusted refresh', () => {
 
   it('retrieves sequentially and atomically publishes only after all 25 terms and objects are ready', async () => {
     const { env, put, head, entries } = makeEnv();
-    search.mockImplementation(async () => {
+    search.mockImplementation(async (_env, _org, _provider, query) => {
       expect(put).not.toHaveBeenCalled();
       expect(entries.get(NGS_PREPARED_SPOTLIGHT_CACHE_KEY)).toBe('last-good');
-      return Array.from({ length: 30 }, (_, index) => result(index));
+      return fixtureResults(query);
     });
     const refreshed = await refreshNgsPreparedSpotlights(env);
     expect(refreshed.published).toBe(true);
-    expect(search).toHaveBeenCalledTimes(25);
+    expect(search).toHaveBeenCalledTimes(26);
     expect(
       search.mock.calls.every(
         (args) => args[1] === NGS_ORG_ID && args[4] === 30
@@ -147,7 +161,9 @@ describe('NGS prepared catalogue and trusted refresh', () => {
 
   it('can prepare a genuine single-result term instead of requiring or inventing four works', async () => {
     const { env, head } = makeEnv();
-    search.mockResolvedValue([result(0)]);
+    search.mockImplementation(async (_env, _org, _provider, query) =>
+      fixtureResults(query, 1)
+    );
     const refreshed = await refreshNgsPreparedSpotlights(env);
     expect(refreshed.published).toBe(true);
     expect(
@@ -321,22 +337,65 @@ describe('NGS prepared catalogue and trusted refresh', () => {
     const candidate = await refreshNgsPreparedSpotlights(env, {
       definitionIds: ['christmas-day'],
     });
-    const artworks = candidate.bundle.suggestions[0]!.artworks;
-    expect(artworks).toHaveLength(6);
-    expect(artworks.slice(0, 4).map((artwork) => artwork.title)).toEqual([
-      titles[0],
-      titles[3],
-      titles[4],
-      titles[5],
-    ]);
+    const suggestion = candidate.bundle.suggestions[0]!;
+    expect(suggestion.artworks).toHaveLength(6);
+    expect(suggestion.artworks.map((artwork) => artwork.title)).toEqual(titles);
+    expect(
+      suggestion.highlightArtworks!.map((artwork) => artwork.title)
+    ).toEqual([titles[0], titles[3], titles[4], titles[5]]);
+  });
+
+  it('prepares Qixi thematic highlights separately without replacing its canonical full search', async () => {
+    const { env } = makeEnv();
+    search
+      .mockResolvedValueOnce([{ ...result(0), id: 'canonical-result' }])
+      .mockResolvedValueOnce([
+        { ...result(1), id: 'thematic-result', title: 'Lovers' },
+      ]);
+    const candidate = await refreshNgsPreparedSpotlights(env, {
+      definitionIds: ['qixi-festival'],
+    });
+    expect(search).toHaveBeenNthCalledWith(
+      2,
+      env,
+      NGS_ORG_ID,
+      undefined,
+      QIXI_HIGHLIGHT_QUERY,
+      30,
+      undefined,
+      undefined,
+      expect.any(Set)
+    );
+    expect(
+      candidate.bundle.suggestions[0]!.artworks.map((artwork) => artwork.id)
+    ).toEqual(['canonical-result']);
+    expect(
+      candidate.bundle.suggestions[0]!.highlightArtworks!.map(
+        (artwork) => artwork.id
+      )
+    ).toEqual(['thematic-result']);
+    expect(candidate.published).toBe(false);
+  });
+
+  it('retains last good if a reviewed holiday selection or Qixi thematic query is unavailable', async () => {
+    const { env, put } = makeEnv();
+    search.mockResolvedValueOnce([result(0)]);
+    await expect(
+      refreshNgsPreparedSpotlights(env, { definitionIds: ['hari-raya-puasa'] })
+    ).rejects.toThrow(/reviewed NGS highlight/);
+    search.mockResolvedValueOnce([result(0)]).mockResolvedValueOnce([]);
+    await expect(
+      refreshNgsPreparedSpotlights(env, { definitionIds: ['qixi-festival'] })
+    ).rejects.toThrow(/No prepared highlight/);
+    expect(put).not.toHaveBeenCalled();
   });
 
   it('rejects oversized candidates without publishing', async () => {
     const { env, put } = makeEnv();
-    search.mockResolvedValue(
-      Array.from({ length: 30 }, (_, index) => ({
-        ...result(index),
-        title: 'x'.repeat(2000),
+    search.mockImplementation(async (_env, _org, _provider, query) =>
+      fixtureResults(query).map((artwork) => ({
+        ...artwork,
+        title: 'Winter ' + 'x'.repeat(2000),
       }))
     );
     await expect(refreshNgsPreparedSpotlights(env)).rejects.toThrow(

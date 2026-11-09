@@ -11,6 +11,10 @@ import {
 import type { Env } from '../index';
 import type { ArtworkSearchResult } from '../types';
 import { isNgsPublicOrg, resolveOrgSearchScope } from './orgs';
+import {
+  selectNgsPreparedHighlights,
+  QIXI_HIGHLIGHT_QUERY,
+} from './ngs-highlight-curation';
 
 export const validateNgsPreparedBundle = (value: unknown) => {
   const bundle = PublicSearchSpotlightBundleSchema.parse(value);
@@ -28,7 +32,8 @@ export const validateNgsPreparedBundle = (value: unknown) => {
         suggestion.label !== definition.label ||
         suggestion.type !== definition.type ||
         suggestion.artworks.length < 1 ||
-        suggestion.artworks.some(
+        !suggestion.highlightArtworks?.length ||
+        [...suggestion.artworks, ...(suggestion.highlightArtworks || [])].some(
           (artwork) =>
             !isNgsPublicOrg(artwork.orgId) ||
             artwork.source.provider !== 'ngs' ||
@@ -162,6 +167,45 @@ const toArtwork = (
   };
 };
 
+const dedupeDisplay = (artworks: PublicSearchSpotlightArtwork[]) => {
+  const seen = new Set<string>();
+  const normalize = (value: string) =>
+    value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+  return artworks.filter((artwork) => {
+    const identity =
+      artwork.title && artwork.artist && Number.isFinite(artwork.year)
+        ? `display:${normalize(artwork.title)}:${normalize(artwork.artist)}:${artwork.year}`
+        : `id:${artwork.id}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+};
+const projectResults = (results: ArtworkSearchResult[]) => {
+  const ids = new Set<string>();
+  const images = new Set<string>();
+  return dedupeDisplay(
+    results
+      .filter((result) => {
+        const image = assetIdFromUrl(result.thumbnailUrl || result.imageUrl);
+        if (
+          !isNgsPublicOrg(result.orgId || result.galleryId) ||
+          !image ||
+          !result.title?.trim() ||
+          result.similarity < 0.2 ||
+          ids.has(result.id) ||
+          images.has(image)
+        )
+          return false;
+        ids.add(result.id);
+        images.add(image);
+        return true;
+      })
+      .slice(0, 30)
+      .map(toArtwork)
+  );
+};
+
 const bounded = async <T>(work: Promise<T>, timeoutMs: number): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -253,43 +297,9 @@ export const refreshNgsPreparedSpotlights = async (
           );
           if (degraded.size)
             throw new Error(`NGS retrieval degraded: ${definition.id}`);
-          const ids = new Set<string>();
-          const images = new Set<string>();
-          artworks = results
-            .filter((result) => {
-              const image = assetIdFromUrl(
-                result.thumbnailUrl || result.imageUrl
-              );
-              if (
-                !isNgsPublicOrg(result.orgId || result.galleryId) ||
-                !image ||
-                !result.title?.trim() ||
-                result.similarity < 0.2 ||
-                ids.has(result.id) ||
-                images.has(image)
-              )
-                return false;
-              ids.add(result.id);
-              images.add(image);
-              return true;
-            })
-            .slice(0, 30)
-            .map(toArtwork);
+          artworks = projectResults(results);
         }
-        // Match idle-showcase's display dedupe so its four visible cards are
-        // exactly the four whose backing objects are verified below.
-        const displayIdentities = new Set<string>();
-        const normalize = (value: string) =>
-          value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
-        artworks = artworks.filter((artwork) => {
-          const identity =
-            artwork.title && artwork.artist && Number.isFinite(artwork.year)
-              ? `display:${normalize(artwork.title)}:${normalize(artwork.artist)}:${artwork.year}`
-              : `id:${artwork.id}`;
-          if (displayIdentities.has(identity)) return false;
-          displayIdentities.add(identity);
-          return true;
-        });
+        artworks = dedupeDisplay(artworks);
         if (definition.type === 'colour') {
           const target = definition.colourId.startsWith('custom:')
             ? definition.colourId.slice('custom:'.length)
@@ -300,25 +310,39 @@ export const refreshNgsPreparedSpotlights = async (
             (artwork) => artwork.palette
           );
         }
-        if (definition.id === 'christmas-day') {
-          // Native pilot found generic festival/day hits ahead of actual
-          // winter, December and Christian works. Prioritise those genuine
-          // returned works for the showcase, without dropping result depth.
-          const seasonal = (artwork: PublicSearchSpotlightArtwork) =>
-            /\b(christmas|nativity|epiphany|winter|december|cold day|holy family)\b/i.test(
-              artwork.title
-            );
-          artworks = [
-            ...artworks.filter(seasonal),
-            ...artworks.filter((artwork) => !seasonal(artwork)),
-          ];
-        }
         if (!artworks.length)
           throw new Error(
             `NGS preview needs real imageable results: ${definition.id}`
           );
+        let highlightCandidates = artworks;
+        if (definition.id === 'qixi-festival') {
+          // A fixed, prepared-only thematic query: visitors still receive the
+          // full canonical Qixi result list, unchanged, plus related previews.
+          searchRequestCount++;
+          const degraded = new Set<import('../types').SearchDegradedChannel>();
+          highlightCandidates = projectResults(
+            await searchArtworksHybrid(
+              env,
+              orgId,
+              undefined,
+              QIXI_HIGHLIGHT_QUERY,
+              30,
+              undefined,
+              undefined,
+              degraded
+            )
+          );
+          if (degraded.size)
+            throw new Error('Qixi highlight retrieval degraded');
+        }
+        const highlightArtworks = selectNgsPreparedHighlights(
+          definition.id,
+          highlightCandidates
+        );
+        if (!highlightArtworks.length)
+          throw new Error(`No prepared highlight: ${definition.id}`);
         const objects = new Set<string>();
-        for (const artwork of artworks.slice(0, 4)) {
+        for (const artwork of highlightArtworks) {
           const assetId = assetIdFromUrl(
             artwork.thumbnailUrl || artwork.imageUrl
           );
@@ -365,7 +389,7 @@ export const refreshNgsPreparedSpotlights = async (
             );
           objects.add(objectKey);
         }
-        return { ...definition, artworks };
+        return { ...definition, artworks, highlightArtworks };
       })(),
       Math.min(timeoutMs, remainingMs)
     );
