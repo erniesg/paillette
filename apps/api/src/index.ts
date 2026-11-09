@@ -23,6 +23,7 @@ import labelRoutes from './routes/labels';
 import exhibitionRoutes from './routes/exhibitions';
 import metadataMapRoutes from './routes/metadata-map';
 import { requireAuthOrApiKey } from './middleware/auth';
+import { refreshNgsPreparedSpotlights } from './utils/ngs-prepared-spotlights';
 import {
   processOpenAccessAssetBatch,
   type OpenAccessAssetMessage,
@@ -287,6 +288,28 @@ app.onError((err, c) => {
 });
 
 export default app;
+
+// Trusted runtime entry only; no HTTP endpoint can invoke generation.
+(
+  app as unknown as {
+    scheduled: (event: ScheduledController, env: Env, ctx: ExecutionContext) => void;
+  }
+).scheduled = (_event, env, ctx) => {
+  ctx.waitUntil(
+    refreshNgsPreparedSpotlights(env)
+      .then((result) => {
+        console.log('NGS prepared refresh complete', {
+          published: result.published,
+          terms: result.bundle.suggestions.length,
+          searches: result.searchRequestCount,
+        });
+      })
+      .catch((error) => {
+        console.error('NGS prepared refresh failed; retaining last good bundle', error);
+        throw error;
+      })
+  );
+};
 
 (
   app as unknown as {

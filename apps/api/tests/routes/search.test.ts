@@ -10,7 +10,8 @@ import { isHiddenNgsPublicAccession } from '../../src/utils/ngs-public-filter';
 import { resetPublicSearchColdMissRateLimitForTests } from '../../src/utils/public-search-cold-miss-rate-limit';
 import { PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS } from '../../src/utils/public-search-result-cache';
 import apiApp, { type Env } from '../../src/index';
-import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION } from '../../src/generated/ngs-search-spotlight-asset';
+import { NGS_SEARCH_SPOTLIGHT_ASSET_REVISION, NGS_SEARCH_SPOTLIGHT_BUNDLE } from '../../src/generated/ngs-search-spotlight-asset';
+import { NGS_PREPARED_SPOTLIGHT_CACHE_KEY, NGS_PREPARED_SPOTLIGHT_DEFINITIONS, NGS_PREPARED_SPOTLIGHT_REVISION } from '@paillette/types/public-search-core';
 import { OPEN_ACCESS_ORG_ID } from '../../src/utils/orgs';
 
 const NGS_ORG_ID = 'cf98791d-f3cc-4f9f-b40c-a350efadbd05';
@@ -1189,6 +1190,64 @@ describe('Search request traces', () => {
       ]));
       expect(JSON.stringify(traces)).not.toMatch(/private-token|query\.png|embedding\":|user-1/);
     } finally { log.mockRestore(); vi.unstubAllGlobals(); }
+  });
+});
+
+describe('NGS prepared spotlight endpoint', () => {
+  const prepared = () => ({
+    ...NGS_SEARCH_SPOTLIGHT_BUNDLE,
+    corpusVersion: NGS_PREPARED_SPOTLIGHT_REVISION,
+    suggestions: NGS_PREPARED_SPOTLIGHT_DEFINITIONS.map((definition) => ({
+      ...definition, artworks: NGS_SEARCH_SPOTLIGHT_BUNDLE.suggestions[0].artworks.slice(0, 4),
+    })),
+  });
+  it('authenticates before reading KV and never searches on a visit, including a readiness miss', async () => {
+    const get = vi.fn(async () => null);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = new FakeSearchDb();
+    db.failSearchReadMessage = 'VISITOR_MUST_NOT_SEARCH';
+    const query = vi.fn();
+    const env = { ...makeEnv(db), CACHE: { get } as unknown as KVNamespace, VECTORIZE: { query } as unknown as Vectorize };
+    const path = `/api/v1/orgs/ngs/search-spotlights/${NGS_PREPARED_SPOTLIGHT_REVISION}`;
+    expect((await apiApp.request(path, {}, env)).status).toBe(401);
+    expect(get).not.toHaveBeenCalled();
+    const missing = await apiApp.request(path, { headers: { 'X-User-Id': 'user-1' } }, env);
+    expect(missing.status).toBe(503);
+    expect(missing.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(get).toHaveBeenCalledWith(NGS_PREPARED_SPOTLIGHT_CACHE_KEY);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+  it('serves all 25 prepared terms privately without retrieval', async () => {
+    const bundle = prepared();
+    const get = vi.fn(async () => JSON.stringify(bundle));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const env = { ...makeEnv(new FakeSearchDb()), CACHE: { get } as unknown as KVNamespace };
+    const response = await apiApp.request(`/api/v1/orgs/ngs/search-spotlights/${NGS_PREPARED_SPOTLIGHT_REVISION}`, { headers: { 'X-User-Id': 'user-1' } }, env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    const payload = await response.json() as { data: { suggestions: unknown[] } };
+    expect(payload.data.suggestions).toHaveLength(25);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('does not admit the anonymous NGA public-search credential to private prepared data', async () => {
+    const get = vi.fn();
+    const env = { ...makeEnv(new FakeSearchDb()), CACHE: { get } as unknown as KVNamespace, PAILLETTE_PUBLIC_SEARCH_API_KEY: 'nga-test-key' };
+    const response = await apiApp.request(`/api/v1/orgs/ngs/search-spotlights/${NGS_PREPARED_SPOTLIGHT_REVISION}`, { headers: { 'X-API-Key': 'nga-test-key' } }, env);
+    expect(response.status).toBe(403);
+    expect(get).not.toHaveBeenCalled();
+  });
+  it('uses prepared Christmas results for an exact submitted request after auth and quota middleware', async () => {
+    const get = vi.fn(async () => JSON.stringify(prepared()));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const env = { ...makeEnv(new FakeSearchDb()), CACHE: { get } as unknown as KVNamespace };
+    const response = await textSearch(makeApp(), env, { 'X-User-Id': 'user-1' }, { query: 'Christmas Day', topK: 30, minScore: 0.2 });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Paillette-Search-Cache')).toBe('SPOTLIGHT');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
