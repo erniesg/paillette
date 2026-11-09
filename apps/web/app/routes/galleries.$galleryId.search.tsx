@@ -2806,6 +2806,7 @@ export default function SearchPage() {
                     // the culling keys dead on arrival. The effect beside
                     // `boardIsDealt` handles the deal that arrives later.
                     autoFocus={!textQuery && !boardIsDealt}
+                    aria-label="Search the collection"
                     placeholder="search by feeling, era, subject..."
                     disabled={isSearchDisabled}
                     className="lt-search-field w-full py-5 pl-10 pr-20 font-wall text-3xl italic sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:opacity-45"
@@ -2979,14 +2980,29 @@ export default function SearchPage() {
                     disabled={isSearchDisabled}
                   />
                 )}
-                {isNgsSearch && shouldLoadSpotlights && !hasActiveSearch && spotlightBundleQuery.isError && (
-                  <div role="status" className="w-full text-center text-xs text-white/70">
-                    Highlights are temporarily unavailable.{' '}
-                    <button type="button" className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300" disabled={spotlightBundleQuery.isFetching} onClick={() => { void spotlightBundleQuery.refetch(); }}>
-                      {spotlightBundleQuery.isFetching ? 'Retrying…' : 'Retry highlights'}
-                    </button>
-                  </div>
-                )}
+                {isNgsSearch &&
+                  shouldLoadSpotlights &&
+                  !hasActiveSearch &&
+                  spotlightBundleQuery.isError && (
+                    <div
+                      role="status"
+                      className="w-full text-center text-xs text-white/70"
+                    >
+                      Highlights are temporarily unavailable.{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                        disabled={spotlightBundleQuery.isFetching}
+                        onClick={() => {
+                          void spotlightBundleQuery.refetch();
+                        }}
+                      >
+                        {spotlightBundleQuery.isFetching
+                          ? 'Retrying…'
+                          : 'Retry highlights'}
+                      </button>
+                    </div>
+                  )}
                 {!hasActiveSearch && editorMode === 'colour' && (
                   <div ref={colourRailRef} className="w-full">
                     <ColourRail
@@ -4309,6 +4325,9 @@ function IdleShowcaseLayer({
       data-showcase-suggestion={layer.suggestion?.query || ''}
     >
       {showcaseItems.map((artwork, index) => {
+        // No artwork means no action: avoid invisible generic View buttons
+        // during initial prepared-data loading and recovery.
+        if (!artwork) return null;
         const itemLayout = layout[index];
         const image = artwork
           ? getArtworkImageSources(artwork, 'thumbnail')
