@@ -26,6 +26,7 @@ const getAccessToken = vi.fn(async () => 'test-token');
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 it('fetches the active Christmas preview through authenticated search, retains in-flight progress across rotation, and reuses it', async () => {
@@ -81,9 +82,15 @@ it('fetches the active Christmas preview through authenticated search, retains i
     }
   );
   await waitFor(() => expect(search).toHaveBeenCalledTimes(1));
-  expect(search).toHaveBeenCalledWith('ngs', christmas.request, getAccessToken);
+  expect(search).toHaveBeenCalledWith(
+    'ngs',
+    christmas.request,
+    getAccessToken,
+    expect.any(AbortSignal)
+  );
   // Rotation to a mapped spotlight needs no preview API request.
   rerender({ active: plan('Flowers'), enabled: false });
+  expect(search.mock.calls[0]?.[3]?.aborted).toBe(false);
   await act(async () => finish(response));
   expect(client.getQueryData(getIdleSearchPreviewKey(christmas))).toEqual(
     response
@@ -151,5 +158,44 @@ it('does not request a preview when the session or submitted-result gate disable
     }
   );
   expect(search).not.toHaveBeenCalled();
+  client.clear();
+});
+
+it('bounds a hung preview without tying cancellation to rotation', async () => {
+  vi.useFakeTimers();
+  let signal: AbortSignal | undefined;
+  vi.spyOn(apiClient, 'searchText').mockImplementation(
+    (...args: Parameters<typeof apiClient.searchText>) => {
+      const requestSignal = args[3];
+      signal = requestSignal;
+      return new Promise((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () =>
+          reject(new Error('preview timeout'))
+        );
+      });
+    }
+  );
+  const client = new QueryClient();
+  renderHook(
+    () =>
+      useIdleSearchPreview({
+        plan: plan('Christmas Day'),
+        enabled: true,
+        getAccessToken,
+      }),
+    {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    }
+  );
+  expect(signal?.aborted).toBe(false);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_001);
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(
+    client.getQueryState(getIdleSearchPreviewKey(plan('Christmas Day')))?.status
+  ).toBe('error');
   client.clear();
 });
