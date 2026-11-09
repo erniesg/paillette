@@ -162,6 +162,11 @@ import {
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
+import {
+  getIdleSearchPreviewKey,
+  useIdleSearchPreview,
+} from '~/lib/idle-search-preview';
+import { IdleShowcaseImage } from '~/lib/idle-showcase-image';
 import { apiClient } from '~/lib/api';
 import {
   canRetryNgaSearch,
@@ -1467,6 +1472,48 @@ export default function SearchPage() {
   const isSearchDisabled = isNgsSearchLocked || hasExhaustedNgaSearchQuota;
   const canSearchOnPage = !isSearchDisabled;
 
+  const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
+  const activeSpotlightSuggestionId =
+    activeIdleSuggestion?.spotlightId &&
+    spotlightBundle?.suggestions.some(
+      (suggestion) => suggestion.id === activeIdleSuggestion.spotlightId
+    )
+      ? activeIdleSuggestion.spotlightId
+      : null;
+  const idlePreviewPlan = useMemo(
+    () =>
+      buildPublicTextSearchPlan({
+        orgId: publicSearchOrgId,
+        committedTextQuery: activeIdleSuggestion?.query || '',
+        facet: activeIdleSuggestion?.facet || null,
+        colourQuery: null,
+        topK,
+        minScore,
+      }),
+    [activeIdleSuggestion, publicSearchOrgId, topK, minScore]
+  );
+  const idlePreviewQuery = useIdleSearchPreview({
+    plan: idlePreviewPlan,
+    enabled:
+      hasMounted &&
+      isNgsSearch &&
+      searchAccess === 'approved' &&
+      !hasActiveSearch &&
+      !activeIdleSuggestion?.spotlightId &&
+      !activeIdleSuggestion?.colourId,
+    getAccessToken,
+  });
+  const submittedPreviewPlaceholder =
+    isNgsSearch &&
+    searchAccess === 'approved' &&
+    submittedSearch?.kind === 'text' &&
+    textSearchPlan &&
+    !submittedTextOwner?.explicitConstraints
+      ? queryClient.getQueryData<SearchResponse>(
+          getIdleSearchPreviewKey(textSearchPlan)
+        )
+      : undefined;
+
   const spotlightSearchPlaceholder = useMemo(
     () =>
       textSearchPlan
@@ -1620,7 +1667,9 @@ export default function SearchPage() {
     retry: false,
     staleTime: isNgsSearch ? 0 : PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    ...getSpotlightSearchSubmissionOptions(spotlightSearchPlaceholder),
+    ...getSpotlightSearchSubmissionOptions(
+      submittedPreviewPlaceholder || spotlightSearchPlaceholder
+    ),
     refetchOnMount: Boolean(submittedSearch),
   });
 
@@ -1685,7 +1734,6 @@ export default function SearchPage() {
     enabled: hasMounted && isBrowsingCollection && canSearchOnPage,
   });
 
-  const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
   const currentQuery =
     submittedSearch?.kind === 'image' ? imageSearchQuery : textSearchQuery;
   const rankedRawResults = currentQuery.data?.results || [];
@@ -1861,28 +1909,26 @@ export default function SearchPage() {
     isLoading,
     view,
   });
-  const activeSpotlightSuggestionId = useMemo(() => {
-    if (!activeIdleSuggestion) return null;
-
-    const spotlightId = activeIdleSuggestion.spotlightId;
-    return spotlightId &&
-      spotlightBundle?.suggestions.some(
-        (suggestion) => suggestion.id === spotlightId
-      )
-      ? spotlightId
-      : null;
-  }, [activeIdleSuggestion, spotlightBundle?.suggestions]);
   const idleShowcaseResults = useMemo(
     () =>
       activeSpotlightSuggestionId
         ? selectIdleShowcaseArtworks(
             getSpotlightArtworks(spotlightBundle, activeSpotlightSuggestionId)
           )
-        : [],
-    [activeSpotlightSuggestionId, spotlightBundle]
+        : isNgsSearch && searchAccess === 'approved'
+          ? selectIdleShowcaseArtworks(idlePreviewQuery.data?.results || [])
+          : [],
+    [
+      activeSpotlightSuggestionId,
+      spotlightBundle,
+      isNgsSearch,
+      searchAccess,
+      idlePreviewQuery.data,
+    ]
   );
   const isIdleShowcaseLoading =
-    shouldLoadSpotlights && spotlightBundleQuery.isLoading;
+    (shouldLoadSpotlights && spotlightBundleQuery.isLoading) ||
+    (isNgsSearch && !activeSpotlightSuggestionId && idlePreviewQuery.isFetching);
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
@@ -4013,39 +4059,6 @@ const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
 
 const SHOWCASE_TRANSITION_MS = 420;
 
-const preloadShowcaseImage = (src: string) =>
-  new Promise<void>((resolve) => {
-    const image = new Image();
-    let settled = false;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-
-    const decodeThenFinish = () => {
-      if (typeof image.decode === 'function') {
-        void image
-          .decode()
-          .catch(() => undefined)
-          .finally(finish);
-        return;
-      }
-
-      finish();
-    };
-
-    image.decoding = 'async';
-    image.onload = decodeThenFinish;
-    image.onerror = finish;
-    image.src = src;
-
-    if (image.complete) {
-      decodeThenFinish();
-    }
-  });
-
 type ShowcaseLayerModel = {
   key: string;
   works: ArtworkSearchResult[];
@@ -4177,17 +4190,11 @@ const IdleShowcaseBackdrop = forwardRef<
     const runId = transitionRunRef.current + 1;
     transitionRunRef.current = runId;
 
-    const transitionToBufferedWorks = async () => {
+    // Reveal the layer immediately; each real image owns its loading deadline.
+    const transitionToWorks = () => {
       setIncomingLayer(null);
       setIsCrossfading(false);
       setSuppressCommittedTransition(false);
-
-      await Promise.allSettled(
-        previewWorks
-          .map(getShowcaseImageUrl)
-          .filter((src): src is string => Boolean(src))
-          .map(preloadShowcaseImage)
-      );
 
       if (cancelled || runId !== transitionRunRef.current) return;
 
@@ -4232,7 +4239,7 @@ const IdleShowcaseBackdrop = forwardRef<
       });
     };
 
-    void transitionToBufferedWorks();
+    transitionToWorks();
 
     return () => {
       cancelled = true;
@@ -4252,6 +4259,7 @@ const IdleShowcaseBackdrop = forwardRef<
     >
       <div className="pointer-events-none absolute inset-0">
         <IdleShowcaseLayer
+          key={committedLayer.key}
           layer={committedLayer}
           isLoading={isLoading}
           isVisible={!incomingLayer || !isCrossfading}
@@ -4261,6 +4269,7 @@ const IdleShowcaseBackdrop = forwardRef<
         />
         {incomingLayer && (
           <IdleShowcaseLayer
+            key={incomingLayer.key}
             layer={incomingLayer}
             isLoading={isLoading}
             isVisible={isCrossfading}
@@ -4349,7 +4358,7 @@ function IdleShowcaseLayer({
           >
             {image.src ? (
               <span className="relative block w-fit max-w-full overflow-hidden">
-                <ImageWithFallback
+                <IdleShowcaseImage
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
                   alt=""
