@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import type { DatabaseSync as NodeDatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { searchNgaAttributionMatches } from '../../src/routes/search';
+import { SearchTrace } from '../../src/utils/search-trace';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
   DatabaseSync: typeof NodeDatabaseSync;
@@ -208,6 +209,35 @@ const searchAfter = (db: D1Database, targetText: string) =>
   );
 
 describe('NGA attribution candidate SQL on SQLite', () => {
+  it.each([1, 10])('records the actual SQL page limit for topK=%i', async (topK) => {
+    const { d1, boundValues, close } = createRealSqliteD1([
+      makeArtwork('lavinia', 'Test artwork', 'Lavinia Fontana'),
+    ]);
+    const events: unknown[] = [];
+    const trace = new SearchTrace(
+      'text',
+      'foreground',
+      () => 0,
+      (event) => events.push(event)
+    );
+    try {
+      await searchNgaAttributionMatches(
+        d1,
+        { provider: 'nga' },
+        { relationship: 'after', targetText: 'Lavinia Fontana' },
+        undefined,
+        topK,
+        trace
+      );
+      trace.finish(200);
+      const sqlLimit = boundValues[0].at(-2);
+      expect(sqlLimit).toBe(topK === 1 ? 10 : 20);
+      expect(events[0]).toMatchObject({ counts: { metadataTopK: sqlLimit } });
+    } finally {
+      close();
+    }
+  });
+
   it('prepares and executes the generated SQL with accented official names in both directions', async () => {
     const { d1, preparedSql, boundValues, close } = createRealSqliteD1(
       [

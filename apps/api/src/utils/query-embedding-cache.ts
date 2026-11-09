@@ -1,3 +1,9 @@
+import {
+  traceSearchStage,
+  type SearchTrace,
+  type EmbeddingChannel,
+} from './search-trace';
+
 const QUERY_EMBEDDING_CACHE_KEY_VERSION = 1;
 
 export const QUERY_EMBEDDING_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -14,6 +20,8 @@ export interface QueryEmbeddingIdentity {
 
 export interface QueryEmbeddingCacheOptions extends QueryEmbeddingIdentity {
   cache?: KVNamespace;
+  trace?: SearchTrace;
+  channel?: EmbeddingChannel;
   generate: (normalizedQuery: string) => Promise<number[]>;
   schedule?: (work: Promise<void>) => void;
 }
@@ -68,53 +76,65 @@ const isValidEmbedding = (
 const readCachedEmbedding = async (
   cache: KVNamespace | undefined,
   key: string,
-  dimensions: number
+  dimensions: number,
+  trace?: SearchTrace,
+  channel: EmbeddingChannel = 'image'
 ): Promise<number[] | null> => {
   if (!cache) {
     return null;
   }
 
+  const end = trace?.start(`embedding_${channel}_cache`);
+  let status: 'ok' | 'error' | 'timeout' = 'ok';
   try {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const cached = await Promise.race([
       cache.get<unknown>(key, 'json'),
       new Promise<null>((resolve) => {
-        timeout = setTimeout(
-          () => resolve(null),
-          QUERY_EMBEDDING_CACHE_READ_TIMEOUT_MS
-        );
+        timeout = setTimeout(() => {
+          status = 'timeout';
+          trace?.cache(channel, 'timeout');
+          resolve(null);
+        }, QUERY_EMBEDDING_CACHE_READ_TIMEOUT_MS);
       }),
     ]).finally(() => {
       if (timeout) clearTimeout(timeout);
     });
     return isValidEmbedding(cached, dimensions) ? cached : null;
   } catch {
+    status = 'error';
+    trace?.cache(channel, 'error');
     return null;
+  } finally {
+    end?.(status);
   }
 };
 
 const writeCachedEmbedding = async (
   cache: KVNamespace | undefined,
   key: string,
-  embedding: number[]
+  embedding: number[],
+  trace?: SearchTrace,
+  channel: EmbeddingChannel = 'image'
 ): Promise<void> => {
   if (!cache) {
     return;
   }
 
+  let bytes: number | undefined;
   try {
     const serialized = JSON.stringify(embedding);
-    if (
-      new TextEncoder().encode(serialized).byteLength >
-      QUERY_EMBEDDING_CACHE_MAX_BYTES
-    ) {
+    bytes = new TextEncoder().encode(serialized).byteLength;
+    if (bytes > QUERY_EMBEDDING_CACHE_MAX_BYTES) {
+      trace?.cacheWrite(channel, bytes, 'skipped');
       return;
     }
-
     await cache.put(key, serialized, {
       expirationTtl: QUERY_EMBEDDING_CACHE_TTL_SECONDS,
     });
+    trace?.cacheWrite(channel, bytes, 'ok');
   } catch {
+    if (bytes !== undefined) trace?.cacheWrite(channel, bytes, 'error');
     // Embedding generation remains usable when KV is unavailable.
   }
 };
@@ -123,21 +143,28 @@ const resolveQueryEmbedding = async (
   key: string,
   options: QueryEmbeddingCacheOptions
 ): Promise<number[]> => {
+  const channel = options.channel || 'image';
+  options.trace?.cache(channel, options.cache ? 'miss' : 'bypass');
   const cached = await readCachedEmbedding(
     options.cache,
     key,
-    options.dimensions
+    options.dimensions,
+    options.trace,
+    channel
   );
   if (cached) {
+    options.trace?.cache(channel, 'hit');
     return cached;
   }
 
-  const generated = await options.generate(
-    normalizeQueryEmbeddingText(options.query)
+  const generated = await traceSearchStage(
+    options.trace,
+    `embedding_${channel}_generate`,
+    () => options.generate(normalizeQueryEmbeddingText(options.query))
   );
 
   if (isValidEmbedding(generated, options.dimensions)) {
-    const persistence = writeCachedEmbedding(options.cache, key, generated);
+    const persistence = writeCachedEmbedding(options.cache, key, generated, options.trace, channel);
     if (options.schedule) {
       options.schedule(persistence);
     }
@@ -152,7 +179,13 @@ export const getOrCreateQueryEmbedding = async (
   const key = await buildQueryEmbeddingCacheKey(options);
   const existing = inFlightEmbeddings.get(key);
   if (existing) {
-    return existing;
+    const channel = options.channel || 'image';
+    options.trace?.cache(channel, 'coalesced');
+    return traceSearchStage(
+      options.trace,
+      `embedding_${channel}_wait`,
+      () => existing
+    );
   }
 
   const pending = resolveQueryEmbedding(key, options);
