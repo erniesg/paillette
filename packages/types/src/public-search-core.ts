@@ -5,8 +5,16 @@ export const PUBLIC_SEARCH_SPOTLIGHT_SCHEMA_VERSION = 1 as const;
 export const PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES = 256 * 1024;
 export const NGS_SEARCH_SPOTLIGHT_MAX_BYTES = 1024 * 1024;
 export const NGS_PREPARED_SPOTLIGHT_REVISION = 'prepared-v32' as const;
-export const NGS_PREPARED_SPOTLIGHT_CACHE_KEY = 'ngs:search-spotlights:prepared-v32' as const;
+export const NGS_PREPARED_SPOTLIGHT_CACHE_KEY =
+  'ngs:search-spotlights:prepared-v32' as const;
 export * from './ngs-spotlight-definitions';
+export {
+  getNearestPaletteColourDistance,
+  getCachedCandidatePaletteColourDistance,
+  rankByPaletteColour,
+  __resetLocalColourRefinementCachesForTest,
+  __getLocalColourRefinementCacheStatsForTest,
+} from './local-colour-refinement';
 export const PUBLIC_SEARCH_CANONICAL_TOP_K = 100 as const;
 export const PUBLIC_SEARCH_CANONICAL_MIN_SCORE = 0 as const;
 
@@ -99,16 +107,12 @@ export const validatePublicSearchConstraints = (
   }
   const classifications = new Set<string>(NGA_SEARCH_CLASSIFICATIONS);
   if (
-    constraints.classifications?.some(
-      (value) => !classifications.has(value)
-    )
+    constraints.classifications?.some((value) => !classifications.has(value))
   ) {
     return 'Unknown classification';
   }
   const mediumFamilies = new Set<string>(NGA_SEARCH_MEDIUM_FAMILIES);
-  if (
-    constraints.mediumFamilies?.some((value) => !mediumFamilies.has(value))
-  ) {
+  if (constraints.mediumFamilies?.some((value) => !mediumFamilies.has(value))) {
     return 'Unknown medium family';
   }
   return null;

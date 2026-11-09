@@ -2753,7 +2753,9 @@ export default function SearchPage() {
                       role="status"
                       className="w-full text-center text-xs text-white/70"
                     >
-                      Highlights are temporarily unavailable.{' '}
+                      {spotlightBundle
+                        ? 'Couldn’t refresh highlights. These cached previews are still available.'
+                        : 'Highlights are temporarily unavailable.'}{' '}
                       <button
                         type="button"
                         className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300"
