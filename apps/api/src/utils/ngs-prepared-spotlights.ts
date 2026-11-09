@@ -239,6 +239,7 @@ export const refreshNgsPreparedSpotlights = async (
   published: boolean;
   bundle: PublicSearchSpotlightBundle;
   searchRequestCount: number;
+  verifiedThumbnails: Array<{ assetId: string; objectKey: string; orgId: string }>;
 }> => {
   const definitions = options.definitionIds
     ? NGS_PREPARED_SPOTLIGHT_DEFINITIONS.filter(({ id }) =>
