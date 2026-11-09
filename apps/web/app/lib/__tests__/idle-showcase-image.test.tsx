@@ -73,12 +73,15 @@ it('uses the original when the thumbnail fails and retains a successful fallback
       src="/thumbnail"
       fallbackSrc="/original"
       alt="work"
+      loadingFallback={<span>Loading image</span>}
       fallback={<span>Unavailable</span>}
     />
   );
+  expect(screen.getByText('Loading image')).toBeTruthy();
   fireEvent.error(screen.getByAltText('work'));
   expect(screen.getByAltText('work').getAttribute('src')).toBe('/original');
   fireEvent.load(screen.getByAltText('work'));
+  expect(screen.queryByText('Loading image')).toBeNull();
   act(() => vi.advanceTimersByTime(SHOWCASE_IMAGE_TIMEOUT_MS * 3));
   expect(screen.getByAltText('work').getAttribute('src')).toBe('/original');
 });

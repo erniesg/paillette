@@ -20,10 +20,23 @@ export function useIdleSearchPreview({
       : ['idle-search-preview', 'disabled'],
     // Do not consume the observer's abort signal: rotation must not cancel an
     // active preview. Its result remains available on the next rotation.
-    queryFn: () =>
-      plan
-        ? apiClient.searchText(plan.queryKey[3], plan.request, getAccessToken)
-        : null,
+    queryFn: async () => {
+      if (!plan) return null;
+      // Independent of the observer: allow rotation to finish this request,
+      // but never pause automatic suggestions indefinitely on a hung network.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+      try {
+        return await apiClient.searchText(
+          plan.queryKey[3],
+          plan.request,
+          getAccessToken,
+          controller.signal
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
     // A failed automatic preview also stays quiet until cache expiry. Explicit
     // submissions use a separate query and can always retry through the API.
     enabled: (query) =>

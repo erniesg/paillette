@@ -1374,7 +1374,9 @@ export default function SearchPage() {
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
   });
-  const ngaSearchQuota = isNgaSearch ? ngaSearchQuotaQuery.data ?? null : null;
+  const ngaSearchQuota = isNgaSearch
+    ? (ngaSearchQuotaQuery.data ?? null)
+    : null;
   const hasExhaustedNgaSearchQuota =
     isNgaSearch && ngaSearchQuota?.remaining === 0;
   const isSearchDisabled = isNgsSearchLocked || hasExhaustedNgaSearchQuota;
@@ -1737,7 +1739,9 @@ export default function SearchPage() {
   );
   const isIdleShowcaseLoading =
     (shouldLoadSpotlights && spotlightBundleQuery.isLoading) ||
-    (isNgsSearch && !activeSpotlightSuggestionId && idlePreviewQuery.isFetching);
+    (isNgsSearch &&
+      !activeSpotlightSuggestionId &&
+      idlePreviewQuery.isFetching);
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
@@ -2766,6 +2770,7 @@ export default function SearchPage() {
                     displaySuggestion={displayIdleSuggestion}
                     onSelect={runEvalSearch}
                     onPreviewChange={setIdleSuggestion}
+                    pauseRotation={idlePreviewQuery.isFetching}
                     disabled={isSearchDisabled}
                   />
                 )}
@@ -2798,19 +2803,21 @@ export default function SearchPage() {
               <div className="mx-auto max-w-7xl">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
-                    {isBrowsingCollection
-                      ? isLoading && !results.length
-                        ? 'Loading collection'
-                        : visibleRankedResults.length
-                          ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
-                          : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
-                      : isLoading
-                        ? 'Searching'
-                        : results.length
-                          ? `${visibleResults.length} / ${results.length} works`
-                          : hasMounted && shouldSearch
-                            ? 'No works'
-                            : 'Ready'}
+                    {isNgsSearchLocked
+                      ? 'Sign in with approved access to search'
+                      : isBrowsingCollection
+                        ? isLoading && !results.length
+                          ? 'Loading collection'
+                          : visibleRankedResults.length
+                            ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
+                            : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
+                        : isLoading
+                          ? 'Searching'
+                          : results.length
+                            ? `${visibleResults.length} / ${results.length} works`
+                            : hasMounted && shouldSearch
+                              ? 'No works'
+                              : 'Ready'}
                     {(submittedSearch?.kind === 'text' ||
                       submittedSearch?.kind === 'colour') && (
                       <span className="ml-2 normal-case tracking-normal text-white/70">
@@ -3439,6 +3446,7 @@ function SuggestionPicker({
   displaySuggestion,
   onSelect,
   onPreviewChange,
+  pauseRotation = false,
   disabled = false,
 }: {
   suggestions: EvalSuggestion[];
@@ -3447,6 +3455,7 @@ function SuggestionPicker({
   displaySuggestion?: EvalSuggestion | null;
   onSelect: (suggestion: EvalSuggestion) => void;
   onPreviewChange?: (suggestion: EvalSuggestion) => void;
+  pauseRotation?: boolean;
   disabled?: boolean;
 }) {
   const [index, setIndex] = useState(0);
@@ -3463,7 +3472,13 @@ function SuggestionPicker({
   }, [suggestions.length]);
 
   useEffect(() => {
-    if (activeSearch || open || paused || suggestions.length < 2) {
+    if (
+      activeSearch ||
+      open ||
+      paused ||
+      pauseRotation ||
+      suggestions.length < 2
+    ) {
       return undefined;
     }
 
@@ -3472,7 +3487,7 @@ function SuggestionPicker({
     }, 9000);
 
     return () => window.clearInterval(handle);
-  }, [activeSearch, open, paused, suggestions.length]);
+  }, [activeSearch, open, paused, pauseRotation, suggestions.length]);
 
   useEffect(() => {
     if (activeSearch) return;
@@ -3966,22 +3981,34 @@ function IdleShowcaseLayer({
             }}
           >
             {image.src ? (
-              <span className="relative block w-fit max-w-full overflow-hidden">
+              <span
+                className="relative block w-fit max-w-full overflow-hidden border border-white/[0.08] bg-white/[0.05]"
+                style={{
+                  minWidth: 'min(17.6vh, 16rem)',
+                  minHeight: 'min(22vh, 20rem)',
+                }}
+              >
                 <IdleShowcaseImage
+                  loadingFallback={
+                    <span className="absolute inset-0 flex items-center justify-center pb-10 text-xs text-white/45">
+                      Loading image
+                    </span>
+                  }
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
                   alt=""
                   protectFromDownload
                   loading="eager"
                   decoding="async"
-                  className="block max-w-full object-contain"
+                  className="relative block max-w-full object-contain"
                   style={{ height: 'min(22vh, 20rem)', width: 'auto' }}
                   fallback={
                     <div
-                      className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
-                        isLoading ? 'animate-pulse' : ''
-                      }`}
-                    />
+                      className="relative w-full bg-[#151519]"
+                      style={{ height: 'min(22vh, 20rem)' }}
+                    >
+                      <NoImagePlaceholder className="pb-10" />
+                    </div>
                   }
                 />
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 max-w-full overflow-hidden bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 opacity-95 transition duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
