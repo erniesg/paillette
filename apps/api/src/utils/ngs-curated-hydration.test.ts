@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { loadNgsCuratedHighlightArtworks } from '../routes/search';
 import { NGS_ORG_ID } from './orgs';
+import { BACKABLE_NGS_PUBLIC_ARTWORK_SQL } from './ngs-public-filter';
 
 it('bounds trusted exact-ID loading to NGS and four unique IDs before database access', async () => {
   const prepare = vi.fn();
@@ -43,7 +44,11 @@ it('reuses org/provider/deleted/backable hydration and actual row metadata witho
   );
   expect(prepare.mock.calls[0]![0]).toContain('deleted_at IS NULL');
   expect(prepare.mock.calls[0]![0]).toContain('AND org_id = ?');
-  expect(bind).toHaveBeenCalledWith('2012-00268', NGS_ORG_ID, 'ngs');
+  expect(prepare.mock.calls[0]![0]).toContain(BACKABLE_NGS_PUBLIC_ARTWORK_SQL);
+  expect(prepare.mock.calls[0]![0]).not.toContain(
+    "json_extract(custom_metadata, '$.provider') = ?"
+  );
+  expect(bind).toHaveBeenCalledWith('2012-00268', NGS_ORG_ID);
   expect(result).toMatchObject([
     {
       id: '2012-00268',

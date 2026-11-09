@@ -1797,7 +1797,10 @@ export async function loadNgsCuratedHighlightArtworks(
 ): Promise<ArtworkSearchResult[]> {
   const uniqueIds = [...new Set(ids)];
   if (!isNgsPublicOrg(orgId) || uniqueIds.length > 4) throw new Error('Invalid NGS curated highlight scope');
-  const rows = await getArtworksByIds(env.DB, uniqueIds, orgId, 'ngs');
+  // BACKABLE_NGS_PUBLIC_ARTWORK_SQL enforces authoritative NGS institution,
+  // collection/source and hidden-Roots eligibility. Legacy eligible records
+  // may lack the optional custom_metadata.provider tag; it is not identity.
+  const rows = await getArtworksByIds(env.DB, uniqueIds, orgId);
   // Same exact-ID/metadata lookup convention as existing metadata matches,
   // not a newly measured semantic score. Never add these to canonical results.
   return uniqueIds.flatMap(id => {
