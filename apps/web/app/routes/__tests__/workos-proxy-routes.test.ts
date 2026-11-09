@@ -19,10 +19,7 @@ const session = {
   user: { id: 'user_approved', email: 'hello@example.test' },
 };
 
-const backendArgs = (
-  path = 'orgs/ngs/search/quota',
-  init: RequestInit = {}
-) =>
+const backendArgs = (path = 'orgs/ngs/search/quota', init: RequestInit = {}) =>
   ({
     context: {
       cloudflare: {
@@ -139,31 +136,36 @@ describe('WorkOS authenticated resource proxies', () => {
       { Origin: 'https://example.test', 'Sec-Fetch-Site': 'cross-site' },
     ],
     ['no browser provenance headers', {}],
-  ])('rejects a mutation from %s before loading a session or contacting the API', async (_label, headers) => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+  ])(
+    'rejects a mutation from %s before loading a session or contacting the API',
+    async (_label, headers) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
 
-    const response = await backendAction(
-      backendArgs('orgs/ngs/search', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query: 'mother and child' }),
-      })
-    );
+      const response = await backendAction(
+        backendArgs('orgs/ngs/search', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query: 'mother and child' }),
+        })
+      );
 
-    expect(response.status).toBe(403);
-    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    await expect(response.json()).resolves.toMatchObject({
-      error: { code: 'CSRF_VALIDATION_FAILED' },
-    });
-    expect(withWorkOSSessionMock).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(403);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: 'CSRF_VALIDATION_FAILED' },
+      });
+      expect(withWorkOSSessionMock).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
 
   it('forwards a same-origin mutation', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ success: true }), { status: 200 })
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ success: true }), { status: 200 })
+      );
     vi.stubGlobal('fetch', fetchMock);
 
     const response = await backendAction(
@@ -215,6 +217,73 @@ describe('WorkOS authenticated resource proxies', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'BACKEND_REDIRECT_REJECTED' },
     });
+  });
+
+  it.each([200, 304])(
+    'preserves private mandatory revalidation for an authorized cached NGS image (%s)',
+    async (status) => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(status === 304 ? null : 'image', {
+          status,
+          headers: {
+            'Content-Type': 'image/jpeg',
+            ETag: '"asset-etag"',
+            'Cache-Control': 'private, no-cache, must-revalidate',
+          },
+        })
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const response = await assetLoader(assetArgs());
+      expect(response.status).toBe(status);
+      expect(response.headers.get('Cache-Control')).toBe(
+        'private, no-cache, must-revalidate'
+      );
+      expect(response.headers.get('Vary')).toBe('Cookie');
+      expect(response.headers.get('ETag')).toBe('"asset-etag"');
+      expect(
+        (fetchMock.mock.calls[0]?.[1].headers as Headers).get('If-None-Match')
+      ).toBe('"asset-etag"');
+      if (status === 304) expect(await response.text()).toBe('');
+    }
+  );
+
+  it('does not validate previously received bytes after logout', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    withWorkOSSessionMock.mockImplementationOnce(async (_args, handler) =>
+      handler({ accessToken: null, user: null })
+    );
+    const response = await assetLoader(assetArgs());
+    expect(response.status).toBe(401);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not cache an upstream access rejection or follow an image redirect', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('denied', {
+          status: 403,
+          headers: {
+            'Cache-Control': 'private, no-cache, must-revalidate',
+            ETag: '"asset-etag"',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://untrusted.example/image' },
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const denied = await assetLoader(assetArgs());
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get('Cache-Control')).toBe('private, no-store');
+    const redirect = await assetLoader(assetArgs());
+    expect(redirect.status).toBe(502);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ redirect: 'manual' });
   });
 
   it('streams an approved protected asset and strips upstream-only headers', async () => {

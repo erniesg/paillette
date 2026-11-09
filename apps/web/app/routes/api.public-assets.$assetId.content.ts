@@ -22,6 +22,7 @@ const RESPONSE_HEADERS = [
   'Last-Modified',
 ] as const;
 const privateNoStore = { 'Cache-Control': 'private, no-store' };
+const PRIVATE_REVALIDATE = 'private, no-cache, must-revalidate';
 
 const errorResponse = (status: number, code: string, message: string) =>
   json(
@@ -72,6 +73,27 @@ const handleAssetContent = async (
       'The artwork image is temporarily unavailable.'
     );
   }
+  // Only the API's explicitly eligible, authorization-checked NGS images
+  // may reuse browser bytes. Every request still passed the session + API
+  // entitlement checks above; a public upstream cache policy is never copied.
+  const privateRevalidation =
+    (upstream.status === 200 || upstream.status === 304) &&
+    upstream.headers.get('Cache-Control') === PRIVATE_REVALIDATE &&
+    Boolean(upstream.headers.get('ETag'));
+  if (
+    upstream.status === 304 &&
+    privateRevalidation &&
+    request.headers.has('If-None-Match')
+  ) {
+    return new Response(null, {
+      status: 304,
+      headers: {
+        'Cache-Control': PRIVATE_REVALIDATE,
+        ETag: upstream.headers.get('ETag')!,
+        Vary: 'Cookie',
+      },
+    });
+  }
   if (upstream.status >= 300 && upstream.status < 400) {
     return errorResponse(
       502,
@@ -80,7 +102,11 @@ const handleAssetContent = async (
     );
   }
 
-  const responseHeaders = new Headers(privateNoStore);
+  const responseHeaders = new Headers(
+    privateRevalidation
+      ? { 'Cache-Control': PRIVATE_REVALIDATE, Vary: 'Cookie' }
+      : privateNoStore
+  );
   for (const name of RESPONSE_HEADERS) {
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);

@@ -1,6 +1,9 @@
 import type { HolidaySearchSuggestion } from './singapore-holidays.server';
 import { NGA_SPOTLIGHT_DEFINITIONS } from './nga-spotlight-definitions';
-import { NGS_SPOTLIGHT_DEFINITIONS } from './ngs-spotlight-definitions';
+import {
+  NGS_SPOTLIGHT_DEFINITIONS,
+  NGS_HOLIDAY_SPOTLIGHT_DEFINITIONS,
+} from './ngs-spotlight-definitions';
 
 const OCCASION_DOT = '#365f9c';
 
@@ -75,6 +78,9 @@ const toEvalHolidaySuggestion = (
   date: suggestion.date,
   isToday: suggestion.isToday,
   source: suggestion.source,
+  spotlightId: NGS_HOLIDAY_SPOTLIGHT_DEFINITIONS.find(
+    (definition) => definition.query === suggestion.query
+  )?.id,
 });
 
 export const buildSuggestionPool = (
