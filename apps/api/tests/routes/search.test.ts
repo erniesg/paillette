@@ -1008,6 +1008,118 @@ const ngsSearchSpotlights = (
     env
   );
 
+describe('Search request traces', () => {
+  const tracesFrom = (log: ReturnType<typeof vi.spyOn>) => log.mock.calls
+    .filter(([value]) => typeof value === 'string' && value.startsWith('{"event":"search_trace"'))
+    .map(([value]) => JSON.parse(value as string));
+
+  it('finalizes once for auth rejection, invalid text/image and quota rejection without public trace data', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const app = makeApp();
+      const env = makeEnv(new FakeSearchDb(), 0);
+      const unauthorized = await textSearch(app, env, {});
+      const invalid = await textSearch(app, makeEnv(new FakeSearchDb()), undefined, { query: '' });
+      const limited = await textSearch(app, env);
+      const invalidImage = await imageSearch(app, makeEnv(new FakeSearchDb()), undefined, NGS_ORG_ID, new FormData());
+      expect([unauthorized.status, invalid.status, limited.status, invalidImage.status]).toEqual([401, 400, 429, 400]);
+      const traces = tracesFrom(log);
+      expect(traces).toHaveLength(4);
+      expect(traces.map((trace) => trace.httpStatus)).toEqual([401, 400, 429, 400]);
+      expect(new Set(traces.map((trace) => trace.traceId)).size).toBe(4);
+      expect(traces[0].spans).toEqual([expect.objectContaining({ stage: 'auth_quota', status: 'error' })]);
+      expect(JSON.stringify(traces)).not.toMatch(/user-1|pineapple|203\.0\.113|query\.png/);
+      expect(await invalid.json()).not.toHaveProperty('traceId');
+    } finally { log.mockRestore(); }
+  });
+
+  it('includes metadata-only artist check, retrieval and awaited telemetry; cached spans belong to the current request', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const app = makeApp();
+      const env = { ...makeEnv(new FakeSearchDb()), CACHE: makeEmbeddingCache() };
+      const first = await textSearch(app, env);
+      const second = await textSearch(app, env);
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const traces = tracesFrom(log);
+      expect(traces).toHaveLength(2);
+      expect(traces[0].spans.map((span: { stage: string }) => span.stage)).toEqual(expect.arrayContaining([
+        'auth_quota', 'scope', 'artist_check', 'metadata', 'retrieval', 'usage_annotation', 'result_telemetry',
+      ]));
+      expect(traces[0].counts).toMatchObject({ requestedTopK: 1, effectiveTopK: 1 });
+      expect(traces[1].caches.result).toBe('hit');
+      expect(traces[1].spans.map((span: { stage: string }) => span.stage)).not.toContain('metadata');
+      expect(traces[1].spans.map((span: { stage: string }) => span.stage)).toContain('result_cache_read');
+      expect(JSON.stringify(traces)).not.toMatch(/pineapple|user-1|203\.0\.113/);
+      const payload = await second.json() as Record<string, unknown>;
+      expect(JSON.stringify(payload)).not.toContain('search_trace');
+      expect(payload).not.toHaveProperty('traceId');
+    } finally { log.mockRestore(); }
+  });
+
+  it('separates stale background refresh spans from the foreground cache hit', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const app = makeApp();
+      const cache = makeEmbeddingCache();
+      const env = { ...makeEnv(new FakeSearchDb()), CACHE: cache };
+      await textSearch(app, env);
+      for (const [key, value] of cache.values) {
+        if (key.startsWith('public-search-result:')) {
+          cache.values.set(key, { ...value as object, storedAt: Date.now() - PUBLIC_SEARCH_RESULT_CACHE_FRESH_MS - 1000 });
+        }
+      }
+      const result = await textSearch(app, env);
+      expect(result.headers.get('X-Paillette-Search-Cache')).toBe('KV-STALE');
+      await vi.waitFor(() => expect(tracesFrom(log)).toHaveLength(3));
+      const traces = tracesFrom(log);
+      const foreground = traces.find((trace) => trace.caches.result === 'stale');
+      const background = traces.find((trace) => trace.work === 'background_refresh');
+      expect(foreground.spans.map((span: { stage: string }) => span.stage)).not.toContain('metadata');
+      expect(background.spans.map((span: { stage: string }) => span.stage)).toContain('metadata');
+      expect(background.traceId).not.toBe(foreground.traceId);
+    } finally { log.mockRestore(); }
+  });
+
+  it('records facet metadata without embeddings and finalizes provider failure', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const env = makeEnv(new FakeSearchDb());
+      const facet = await textSearch(makeApp(), env, undefined, { query: 'Painting', facet: 'classification', topK: 10 });
+      expect(facet.status).toBe(200);
+      expect(tracesFrom(log)[0].spans.map((span: { stage: string }) => span.stage)).toContain('metadata');
+      expect(tracesFrom(log)[0].spans.some((span: { stage: string }) => span.stage.startsWith('embedding_'))).toBe(false);
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('provider timed out: private-token')));
+      const failed = await imageSearch(makeApp(), { ...env, JINA_API_KEY: 'private-token',
+        VECTORIZE: { query: vi.fn() } as unknown as Vectorize });
+      expect(failed.status).toBeGreaterThanOrEqual(500);
+      expect(tracesFrom(log)).toHaveLength(2);
+      expect(tracesFrom(log)[1].spans).toContainEqual(expect.objectContaining({ stage: 'embedding_image_generate', status: 'timeout' }));
+      expect(JSON.stringify(tracesFrom(log))).not.toContain('private-token');
+    } finally { log.mockRestore(); vi.unstubAllGlobals(); }
+  });
+
+  it('includes image model, vector query, hydration and result telemetry', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [0.6, 0.8] }] })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const env = { ...makeEnv(new FakeSearchDb()), JINA_API_KEY: 'private-token', JINA_EMBEDDING_DIMENSIONS: '2',
+        VECTORIZE: { query: vi.fn().mockResolvedValue({ matches: [{ id: artworkRow.id, score: 0.9 }] }) } as unknown as Vectorize };
+      const result = await imageSearch(makeApp(), env);
+      expect(result.status).toBe(200);
+      const traces = tracesFrom(log);
+      expect(traces).toHaveLength(1);
+      expect(traces[0]).toMatchObject({ mode: 'image', caches: { image: 'bypass' }, counts: { requestedTopK: 10, effectiveTopK: 10, imageTopK: 10, imageCandidates: 1 } });
+      expect(traces[0].spans.map((span: { stage: string }) => span.stage)).toEqual(expect.arrayContaining([
+        'embedding_image_generate', 'vector_image', 'hydration', 'usage_annotation', 'result_telemetry',
+      ]));
+      expect(JSON.stringify(traces)).not.toMatch(/private-token|query\.png|embedding\":|user-1/);
+    } finally { log.mockRestore(); vi.unstubAllGlobals(); }
+  });
+});
+
 describe('NGA search spotlight cache', () => {
   it('requires authentication before returning the private cached results', async () => {
     const response = await ngsSearchSpotlights(

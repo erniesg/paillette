@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { traceSearchStage, type SearchTrace } from './search-trace';
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   normalizePublicSearchText,
@@ -54,7 +55,8 @@ export interface PublicSearchResultCacheLoadResult {
 export interface PublicSearchResultCacheOptions
   extends PublicSearchResultCacheIdentity {
   cache?: KVNamespace;
-  load: () => Promise<PublicSearchResultCacheLoadResult>;
+  trace?: SearchTrace;
+  load: (background?: boolean) => Promise<PublicSearchResultCacheLoadResult>;
   schedule?: (work: Promise<void>) => void;
   now?: () => number;
 }
@@ -255,25 +257,33 @@ const reconstructResponse = (
 
 const readCacheValue = async (
   cache: KVNamespace | undefined,
-  key: string
+  key: string,
+  trace?: SearchTrace
 ): Promise<unknown | null> => {
   if (!cache) return null;
 
+  const end = trace?.start('result_cache_read');
+  let status: 'ok' | 'error' | 'timeout' = 'ok';
   try {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     return await Promise.race([
       cache.get<unknown>(key, 'json'),
       new Promise<null>((resolve) => {
-        timeout = setTimeout(
-          () => resolve(null),
-          PUBLIC_SEARCH_RESULT_CACHE_READ_TIMEOUT_MS
-        );
+        timeout = setTimeout(() => {
+          status = 'timeout';
+          trace?.cache('result', 'timeout');
+          resolve(null);
+        }, PUBLIC_SEARCH_RESULT_CACHE_READ_TIMEOUT_MS);
       }),
     ]).finally(() => {
       if (timeout) clearTimeout(timeout);
     });
   } catch {
+    status = 'error';
+    trace?.cache('result', 'error');
     return null;
+  } finally {
+    end?.(status);
   }
 };
 
@@ -281,9 +291,10 @@ const lookupCachedResult = async (
   cache: KVNamespace | undefined,
   key: string,
   identity: PublicSearchResultCacheIdentity,
-  now: number
+  now: number,
+  trace?: SearchTrace
 ): Promise<CacheLookup> => {
-  const rawValue = await readCacheValue(cache, key);
+  const rawValue = await readCacheValue(cache, key, trace);
   const parsed = CachedPublicSearchResultSchema.safeParse(rawValue);
   if (!parsed.success) return { state: 'miss' };
 
@@ -379,7 +390,7 @@ const beginStaleRefresh = (
   if (inFlightRefreshes.has(key)) return;
 
   const refresh = (async () => {
-    const loaded = await options.load();
+    const loaded = await options.load(true);
     if (loaded.cacheable === true) {
       await persistResult(options.cache, key, options, loaded.response, now());
     }
@@ -397,14 +408,23 @@ const resolveResult = async (
   options: PublicSearchResultCacheOptions,
   now: () => number
 ): Promise<DirectPublicSearchResultCacheResult> => {
-  const lookup = await lookupCachedResult(options.cache, key, options, now());
+  options.trace?.cache('result', options.cache ? 'miss' : 'bypass');
+  const lookup = await lookupCachedResult(
+    options.cache,
+    key,
+    options,
+    now(),
+    options.trace
+  );
   if (lookup.state === 'fresh') {
+    options.trace?.cache('result', 'hit');
     return {
       response: reconstructResponse(lookup.value),
       disposition: 'kv-fresh',
     };
   }
   if (lookup.state === 'stale') {
+    options.trace?.cache('result', 'stale');
     beginStaleRefresh(key, options, now);
     return {
       response: reconstructResponse(lookup.value),
@@ -431,7 +451,12 @@ export const getOrLoadPublicSearchResult = async (
   const inFlightIdentity = serializePublicSearchResultCacheIdentity(options);
   const existing = inFlightLoads.get(inFlightIdentity);
   if (existing) {
-    const resolved = await existing;
+    options.trace?.cache('result', 'coalesced');
+    const resolved = await traceSearchStage(
+      options.trace,
+      'result_cache_wait',
+      () => existing
+    );
     return { response: resolved.response, disposition: 'coalesced' };
   }
 
